@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - JBoss Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\JBossMonitoring.ps1
 #
