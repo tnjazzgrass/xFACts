@@ -261,6 +261,8 @@ function Push-GitHubFile {
         $body.sha = $ExistingSha
     }
 
+    Write-Log "  DEBUG body keys: $($body.Keys -join ', '), content length: $($body.content.Length)" "DEBUG"
+
     $jsonBody = $body | ConvertTo-Json -Compress -Depth 5
 
     try {
