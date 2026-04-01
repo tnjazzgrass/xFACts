@@ -1,0 +1,345 @@
+﻿[
+    {
+        "pageId":  "index",
+        "title":  "xFACts Secrets Revealed",
+        "sortOrder":  0,
+        "isHub":  true,
+        "sections":  [
+                         {
+                             "component":  "Documentation.Site",
+                             "description":  "Documentation site: navigation, DDL loader, ERD renderer, shared CSS, all HTML narrative/architecture/reference pages",
+                             "jsonSchema":  null,
+                             "jsonCategories":  null,
+                             "sectionOrder":  null,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "engine-room",
+        "title":  "Engine Room",
+        "sortOrder":  10,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "Engine.SharedInfrastructure",
+                             "description":  "Core platform tables and procedures",
+                             "jsonSchema":  "dbo",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         },
+                         {
+                             "component":  "Engine.Orchestrator",
+                             "description":  "Process orchestration engine with version tracking, credential management, and DDL protection ",
+                             "jsonSchema":  "Orchestrator",
+                             "jsonCategories":  null,
+                             "sectionOrder":  2,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         },
+                         {
+                             "component":  "Engine.RBAC",
+                             "description":  "Role-based access control and tracking",
+                             "jsonSchema":  "dbo",
+                             "jsonCategories":  "RBAC",
+                             "sectionOrder":  3,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "serverhealth",
+        "title":  "Server Health",
+        "sortOrder":  20,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "ServerOps.ServerHealth",
+                             "description":  "Real-time SQL Server performance and Activity monitoring, XE event capture, disk health, and server diagnostics",
+                             "jsonSchema":  "ServerOps",
+                             "jsonCategories":  "Activity,Disk",
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "replication",
+        "title":  "Replication Monitoring",
+        "sortOrder":  30,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "ServerOps.Replication",
+                             "description":  "Real-time metrics for agent health, queue depth, end-to-end latency, delivery rate and event tracking",
+                             "jsonSchema":  "ServerOps",
+                             "jsonCategories":  "Replication",
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "backup",
+        "title":  "Backup Monitoring",
+        "sortOrder":  40,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "ServerOps.Backup",
+                             "description":  "Real-time SQL backup monitoring, network copy, AWS upload, retention management, and storage utilization",
+                             "jsonSchema":  "ServerOps",
+                             "jsonCategories":  "Backup",
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "indexmaint",
+        "title":  "Index Maintenance",
+        "sortOrder":  50,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "ServerOps.Index",
+                             "description":  "Real-time index queue management, Index discovery, fragmentation scanning, priority-based rebuilds, and statistics maintenance",
+                             "jsonSchema":  "ServerOps",
+                             "jsonCategories":  "Index",
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "dbcc",
+        "title":  "DBCC Operations",
+        "sortOrder":  55,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "ServerOps.DBCC",
+                             "description":  "Scheduled DBCC integrity operations with per-database scheduling, on-demand execution, constraint tracking, and alerting",
+                             "jsonSchema":  "ServerOps",
+                             "jsonCategories":  "DBCC",
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "jboss",
+        "title":  "JBoss Monitoring",
+        "sortOrder":  60,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "JBoss",
+                             "description":  "Real-time JBoss application server health monitoring and management metrics",
+                             "jsonSchema":  "JBoss",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "jobflow",
+        "title":  "Job/Flow Monitoring",
+        "sortOrder":  70,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "JobFlow",
+                             "description":  "Real-time Debt Manager job and flow level queue activity, flow and ad-hoc job tracking, and execution history",
+                             "jsonSchema":  "JobFlow",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "batchops",
+        "title":  "Batch Monitoring",
+        "sortOrder":  80,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "BatchOps",
+                             "description":  "Real-time Debt Manager batch processing activity, complete pipeline tracking, and execution history",
+                             "jsonSchema":  "BatchOps",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "bidata",
+        "title":  "BIDATA Monitoring",
+        "sortOrder":  90,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "BIDATA",
+                             "description":  "Real-time BIDATA nightly build monitoring with process status, duration trending and build history",
+                             "jsonSchema":  "BIDATA",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "fileops",
+        "title":  "File Monitoring",
+        "sortOrder":  100,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "FileOps",
+                             "description":  "Real-time SFTP file tracking and escalation management",
+                             "jsonSchema":  "FileOps",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "dmops",
+        "title":  "DM Operations",
+        "sortOrder":  105,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "DmOps.Archive",
+                             "description":  "Account-level data archiving with BIDATA capture and consumer shell cleanup",
+                             "jsonSchema":  "DmOps",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         },
+                         {
+                             "component":  "DmOps.ShellPurge",
+                             "description":  "Consumer shell purge — removes orphaned consumer records with no remaining accounts from crs5_oltp",
+                             "jsonSchema":  "DmOps",
+                             "jsonCategories":  null,
+                             "sectionOrder":  null,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "teams",
+        "title":  "Teams Integration",
+        "sortOrder":  110,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "Teams",
+                             "description":  "Global webhook alert queue and delivery processing",
+                             "jsonSchema":  "Teams",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "jira",
+        "title":  "Jira Integration",
+        "sortOrder":  120,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "Jira",
+                             "description":  "Global ticket queue and creation processing",
+                             "jsonSchema":  "Jira",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "controlcenter",
+        "title":  "Control Center",
+        "sortOrder":  130,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "ControlCenter.Shared",
+                             "description":  "Shared Control Center infrastructure: startup, helpers module, engine events",
+                             "jsonSchema":  null,
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         },
+                         {
+                             "component":  "ControlCenter.Admin",
+                             "description":  "Administration page: process timeline, engine controls, platform management tools",
+                             "jsonSchema":  null,
+                             "jsonCategories":  null,
+                             "sectionOrder":  null,
+                             "ccSlug":  "admin",
+                             "ccTitle":  "Administration"
+                         },
+                         {
+                             "component":  "ControlCenter.Platform",
+                             "description":  "Platform Monitoring page: XE event viewer, API request logs",
+                             "jsonSchema":  null,
+                             "jsonCategories":  null,
+                             "sectionOrder":  null,
+                             "ccSlug":  "platform",
+                             "ccTitle":  "Platform Monitoring"
+                         },
+                         {
+                             "component":  "Documentation.Pipeline",
+                             "description":  "Documentation pipeline: DDL reference generation, Confluence publishing, file consolidation",
+                             "jsonSchema":  "ControlCenter",
+                             "jsonCategories":  null,
+                             "sectionOrder":  2,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
+        "pageId":  "tools",
+        "title":  "Tools",
+        "sortOrder":  140,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "Tools.Catalog",
+                             "description":  "Vendor specification catalogs for API endpoints, XML schemas, and data formats",
+                             "jsonSchema":  "Tools",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    }
+]
