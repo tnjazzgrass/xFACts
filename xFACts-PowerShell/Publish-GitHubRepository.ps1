@@ -419,6 +419,10 @@ foreach ($source in $FileSources) {
             }
 
             $contentBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+            # Strip UTF-8 BOM if present (0xEF, 0xBB, 0xBF)
+            if ($contentBytes.Length -ge 3 -and $contentBytes[0] -eq 0xEF -and $contentBytes[1] -eq 0xBB -and $contentBytes[2] -eq 0xBF) {
+                $contentBytes = $contentBytes[3..($contentBytes.Length - 1)]
+            }
             $localFiles[$repoPath] = @{
                 ContentBytes = $contentBytes
                 Source       = $file.FullName
