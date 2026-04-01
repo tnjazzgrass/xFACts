@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Applications & Integration Departmental Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration.ps1
 # 
