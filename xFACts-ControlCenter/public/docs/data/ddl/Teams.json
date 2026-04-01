@@ -1,0 +1,951 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "AlertQueue",
+                       "description":  "Queue table for pending Teams notifications awaiting PowerShell processing. Records remain after processing for audit and troubleshooting.",
+                       "module":  "Teams",
+                       "category":  "Teams",
+                       "dataFlow":  "Alerts enter via Teams.sp_QueueAlert (from T-SQL callers like Monitor-JobFlow or sp_Backup_Monitor) or direct INSERT from PowerShell scripts that build pre-built Adaptive Card JSON (like Send-DiskHealthSummary.ps1). TR_Teams_AlertQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-TeamsAlertQueue.ps1 claims Pending rows, joins through WebhookSubscription and WebhookConfig to find matching webhook URLs, delivers via HTTP POST, then updates status to Success or Failed and sets processed_dttm. Each webhook delivery attempt is also logged to Teams.RequestLog. Failed deliveries are retried inline up to a configurable maximum (teams_retry_max_attempts in GlobalConfig) with 2-second delays between attempts. Failed alerts that exhaust all retries can be manually resent from the Admin page Alert Failures card, which inserts a new Pending row with original_queue_id referencing the original failed alert. The resend follows the normal queue processing path — routing is re-resolved through WebhookSubscription at delivery time.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "queue_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this queue entry"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "source_module",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Module that queued the alert (e.g., JobFlow, ServerOps, BIDATA)"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "alert_category",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Category: CRITICAL, WARNING, or INFO"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "title",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Alert title displayed in Teams"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "message",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Full alert message body. Supports markdown. Used as plain text audit trail when card_json is populated"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "color",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Adaptive Card accent color. Auto-set by sp_QueueAlert if NULL"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "card_json",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Pre-built Adaptive Card JSON payload. When populated, the processor sends this directly instead of building a card from title/message/color. May contain emoji placeholders resolved at send time"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(\u0027Pending\u0027)",
+                                           "description":  "Current status: Pending, Success, Failed"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "trigger_type",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Category for deduplication (e.g., JobFlow_Stall, DiskHealthSummary)"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "trigger_value",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Specific value for deduplication (e.g., date)"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "retry_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of times an alert was retried (increments on new row inserts from prior failed attempts)"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When alert was queued"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "processed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When PowerShell processed this entry"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "error_message",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Error details if processing failed"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "original_queue_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "References the queue_id of the original failed alert. NULL for normal alerts. Populated only on manually resent copies created via the Admin page Alert Failures resend action. Soft reference — no FK constraint. Used by the NOT EXISTS display query to filter out failed alerts that have a successful or pending resend."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Teams_AlertQueue",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "queue_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Queue-Based Decoupling",
+                                               "note":  "Calling modules insert and continue without waiting for webhook responses. Alerting latency does not affect the calling process execution time. The orchestrator launches the processor asynchronously based on queue depth signaling.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Retained After Processing",
+                                               "note":  "Rows are updated (not deleted) when processed. This provides an audit trail and enables troubleshooting of failed deliveries without requiring a separate history table.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Two Card Paths",
+                                               "note":  "Alerts queued with simple title/message/color fields have Adaptive Cards built by the processor at send time. Alerts with card_json populated are sent as-is after emoji placeholder resolution. The card_json path enables rich layouts with multiple sections, columns, and icons that go beyond what the legacy builder supports.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Inline Retry",
+                                               "note":  "On failure, the processor retries immediately with 2-second sleep between attempts rather than reinserting a new Pending row. retry_count is updated in place on the original row and each attempt is individually logged to RequestLog. This eliminates orphaned Pending rows from trigger/running_count timing gaps that the earlier reinsert approach caused.",
+                                               "sortOrder":  4
+                                           },
+                                           {
+                                               "topic":  "Manual Resend via original_queue_id",
+                                               "note":  "Failed alerts can be resent from the Admin page Alert Failures card. Resend inserts a new Pending row copying the original alert content (source_module, alert_category, title, message, color, card_json, trigger_type, trigger_value) with original_queue_id set to the failed row\u0027s queue_id. This is a soft self-reference with no FK constraint — used only by the Admin page display query. The NOT EXISTS filter hides failed alerts that have a successful or pending resend, so the original disappears from the failure list once its resend succeeds. If the resend also fails, the original reappears. Routing is re-resolved at delivery time through WebhookSubscription rather than capturing the original delivery target, so subscription changes between failure and resend are respected.",
+                                               "sortOrder":  5
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "status",
+                                                "value":  "Pending",
+                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value. Rows remaining in Pending for more than a few minutes indicate the processor may not be running.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "alert_category",
+                                                "value":  "CRITICAL",
+                                                "meaning":  "System failures, stalls, and urgent issues requiring immediate attention. Auto-colored \"attention\" (red) by sp_QueueAlert when no explicit color is provided.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "alert_category",
+                                                "value":  "WARNING",
+                                                "meaning":  "Potential issues, thresholds approaching, and items needing review. Auto-colored \"warning\" (yellow) by sp_QueueAlert when no explicit color is provided.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "Success",
+                                                "meaning":  "Delivered to all matching webhooks. Set by Process-TeamsAlertQueue.ps1 after receiving HTTP 200 responses.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "Failed",
+                                                "meaning":  "Webhook delivery failed after all retry attempts exhausted. Set by the processor with error details in error_message.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "alert_category",
+                                                "value":  "INFO",
+                                                "meaning":  "Informational messages, successful completions, and status updates. Auto-colored \"good\" (green) by sp_QueueAlert when no explicit color is provided.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Pending alerts",
+                                           "description":  "Shows alerts waiting for processing with wait time and card path type.",
+                                           "sql":  "SELECT \r\n    queue_id, \r\n    source_module, \r\n    alert_category,\r\n    title,\r\n    CASE WHEN card_json IS NOT NULL THEN \u0027Pre-built\u0027 ELSE \u0027Legacy\u0027 END AS card_path,\r\n    created_dttm,\r\n    DATEDIFF(MINUTE, created_dttm, GETDATE()) AS minutes_waiting\r\nFROM Teams.AlertQueue\r\nWHERE status = \u0027Pending\u0027\r\nORDER BY created_dttm;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Failed alerts",
+                                           "description":  "Shows failed deliveries with error messages for troubleshooting.",
+                                           "sql":  "SELECT \r\n    queue_id,\r\n    source_module,\r\n    alert_category,\r\n    title,\r\n    error_message,\r\n    retry_count,\r\n    created_dttm\r\nFROM Teams.AlertQueue\r\nWHERE status = \u0027Failed\u0027\r\nORDER BY created_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Queue volume by module",
+                                           "description":  "Seven-day alert counts grouped by source module, category, and status.",
+                                           "sql":  "SELECT \r\n    source_module,\r\n    alert_category,\r\n    status,\r\n    COUNT(*) AS alert_count\r\nFROM Teams.AlertQueue\r\nWHERE created_dttm \u003e= DATEADD(DAY, -7, GETDATE())\r\nGROUP BY source_module, alert_category, status\r\nORDER BY source_module, alert_category, status;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Unresolved alert failures",
+                                           "description":  "Failed alerts within the lookback window that have not been successfully resent. Used by the Admin page Alert Failures card.",
+                                           "sql":  "DECLARE @lookback INT = 3;  -- or read from GlobalConfig: Teams / alert_failure_lookback_days\r\n \r\n SELECT f.queue_id, f.source_module, f.alert_category, f.title,\r\n        f.error_message, f.retry_count, f.created_dttm\r\n FROM Teams.AlertQueue f\r\n WHERE f.status = \u0027Failed\u0027\r\n   AND f.created_dttm \u003e= DATEADD(DAY, -@lookback, GETDATE())\r\n   AND NOT EXISTS (\r\n     SELECT 1 FROM Teams.AlertQueue r\r\n     WHERE r.original_queue_id = f.queue_id\r\n       AND r.status IN (\u0027Success\u0027, \u0027Sent\u0027, \u0027Pending\u0027)\r\n   )\r\n ORDER BY f.created_dttm DESC;",
+                                           "sortOrder":  4
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Teams.WebhookSubscription",
+                                                     "note":  "The processor joins AlertQueue to WebhookSubscription on source_module with NULL-as-wildcard matching on alert_category and trigger_type to determine which webhooks receive each alert.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Teams.RequestLog",
+                                                     "note":  "Each webhook delivery attempt (success or failure, including retries) creates a RequestLog entry linked back via queue_id. Provides the permanent audit trail for alert delivery.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Orchestrator.ProcessRegistry",
+                                                     "note":  "TR_Teams_AlertQueue_QueueDepth increments running_count on INSERT, signaling the orchestrator engine to launch Process-TeamsAlertQueue.ps1 on its next heartbeat.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "RequestLog",
+                       "description":  "Permanent audit log of all Teams webhook interactions including successful deliveries and failures.",
+                       "module":  "Teams",
+                       "category":  "Teams",
+                       "dataFlow":  "Process-TeamsAlertQueue.ps1 inserts one row per webhook delivery attempt, including retries. Each row captures the HTTP status_code and response_text from the webhook call. Calling modules query this table for deduplication before queuing new alerts, checking trigger_type and trigger_value with status_code = 200 to avoid sending duplicate notifications for the same condition across orchestrator cycles.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "log_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this log entry"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "queue_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Foreign key to AlertQueue. Links to the original queued alert"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "source_module",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Module that originated the alert"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "alert_category",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Alert category: CRITICAL, WARNING, INFO"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "webhook_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Name of the webhook this was sent to"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "title",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Alert title"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "status_code",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HTTP status code from webhook: 200=success"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "response_text",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Response body or error message"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "trigger_type",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Category for deduplication lookup"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "trigger_value",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Specific identifier for deduplication"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this log entry was created"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Teams_RequestLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "log_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Append-Only Audit Trail",
+                                               "note":  "Rows are never updated or deleted. Each webhook call, including individual retry attempts, generates a separate entry. This provides complete delivery history for compliance and troubleshooting.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Per-Webhook Granularity",
+                                               "note":  "If an alert routes to multiple webhooks via subscription matching, each webhook delivery gets its own log entry with independent status tracking. Enables per-channel troubleshooting when one webhook fails but others succeed.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Deduplication Source",
+                                               "note":  "Calling modules query RequestLog before queuing alerts to check if a successful delivery (status_code = 200) already exists for the same trigger_type and trigger_value combination. This prevents duplicate notifications when the same condition is detected across multiple orchestrator cycles.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "200",
+                                                "meaning":  "Success — alert delivered to webhook",
+                                                "sortOrder":  10
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "400",
+                                                "meaning":  "Bad Request — check Adaptive Card JSON structure",
+                                                "sortOrder":  11
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "401",
+                                                "meaning":  "Unauthorized — verify webhook URL in WebhookConfig",
+                                                "sortOrder":  12
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "404",
+                                                "meaning":  "Not Found — webhook deleted in Teams, recreate it",
+                                                "sortOrder":  13
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "429",
+                                                "meaning":  "Rate Limited — will retry on next processor run",
+                                                "sortOrder":  14
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "500+",
+                                                "meaning":  "Server Error — Teams-side issue, retry later",
+                                                "sortOrder":  15
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Recent activity",
+                                           "description":  "Last 20 deliveries showing module, category, webhook, and status.",
+                                           "sql":  "SELECT TOP 20 \r\n    source_module,\r\n    alert_category,\r\n    webhook_name,\r\n    title,\r\n    status_code,\r\n    created_dttm\r\nFROM Teams.RequestLog\r\nORDER BY created_dttm DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Failed deliveries",
+                                           "description":  "All entries with non-200 status codes showing response text for troubleshooting.",
+                                           "sql":  "SELECT \r\n    queue_id,\r\n    source_module,\r\n    webhook_name,\r\n    title,\r\n    status_code,\r\n    response_text,\r\n    created_dttm\r\nFROM Teams.RequestLog\r\nWHERE status_code != 200 OR status_code IS NULL\r\nORDER BY created_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Volume by module and webhook",
+                                           "description":  "Thirty-day delivery counts with success/failure breakdown per module and webhook.",
+                                           "sql":  "SELECT \r\n    source_module,\r\n    webhook_name,\r\n    COUNT(*) AS total_alerts,\r\n    SUM(CASE WHEN status_code = 200 THEN 1 ELSE 0 END) AS successful,\r\n    SUM(CASE WHEN status_code != 200 OR status_code IS NULL THEN 1 ELSE 0 END) AS failed\r\nFROM Teams.RequestLog\r\nWHERE created_dttm \u003e= DATEADD(DAY, -30, GETDATE())\r\nGROUP BY source_module, webhook_name\r\nORDER BY total_alerts DESC;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Standard deduplication pattern",
+                                           "description":  "Calling modules should check this table before queuing to prevent duplicate alerts",
+                                           "sql":  "IF NOT EXISTS (\r\n    SELECT 1 FROM Teams.RequestLog\r\n    WHERE trigger_type = @TriggerType\r\n      AND trigger_value = @TriggerValue\r\n      AND status_code = 200\r\n)\r\nBEGIN\r\n    EXEC Teams.sp_QueueAlert ...\r\nEND",
+                                           "sortOrder":  10
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Teams.AlertQueue",
+                                                     "note":  "queue_id links each log entry back to the original queued alert. Multiple RequestLog rows may reference the same queue_id when an alert routes to multiple webhooks or when retries generate additional delivery attempts.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "WebhookConfig",
+                       "description":  "Configuration table storing Teams webhook URLs and their category routing settings.",
+                       "module":  "Teams",
+                       "category":  "Teams",
+                       "dataFlow":  "Rows are manually configured when setting up Teams webhook endpoints. Process-TeamsAlertQueue.ps1 reads webhook_name, webhook_url, and is_active during alert routing, joined through WebhookSubscription via config_id. Only webhooks with is_active = 1 are included in routing.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this webhook configuration"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "webhook_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Human-readable name for this webhook (e.g., \"Apps-Critical\", \"General-Alerts\")"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "webhook_url",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Full Teams incoming webhook URL"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "alert_category",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Category filter: ALL, CRITICAL, WARNING, or INFO"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "description",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Description of this webhook\u0027s purpose"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this webhook is active. Inactive webhooks are skipped"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this configuration was created"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this configuration was last modified"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Teams_WebhookConfig",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "config_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Active Flag for Maintenance",
+                                               "note":  "The is_active flag allows disabling a webhook without deleting the configuration. Supports maintenance windows and testing scenarios without losing the webhook URL and associated subscriptions.",
+                                               "sortOrder":  1
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "alert_category",
+                                                "value":  "ALL",
+                                                "meaning":  "Descriptive label indicating this webhook is intended for all alert types. Not used in routing logic — routing is controlled entirely by WebhookSubscription.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "alert_category",
+                                                "value":  "CRITICAL",
+                                                "meaning":  "Descriptive label indicating this webhook is intended for critical alerts. Not used in routing logic.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "alert_category",
+                                                "value":  "WARNING",
+                                                "meaning":  "Descriptive label indicating this webhook is intended for warning alerts. Not used in routing logic.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "alert_category",
+                                                "value":  "INFO",
+                                                "meaning":  "Descriptive label indicating this webhook is intended for informational alerts. Not used in routing logic.",
+                                                "sortOrder":  4
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Active webhook overview",
+                                           "description":  "Shows all active webhooks with names, intended categories, and descriptions.",
+                                           "sql":  "SELECT \r\n    config_id,\r\n    webhook_name,\r\n    alert_category,\r\n    is_active,\r\n    description\r\nFROM Teams.WebhookConfig\r\nWHERE is_active = 1\r\nORDER BY webhook_name;",
+                                           "sortOrder":  1
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Teams.WebhookSubscription",
+                                                     "note":  "WebhookSubscription references WebhookConfig via config_id FK. WebhookConfig defines where alerts can go (the webhook URLs). WebhookSubscription defines which alerts go there (the routing rules based on source module, category, and trigger type).",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "WebhookSubscription",
+                       "description":  "Subscription routing table that controls which alerts are delivered to which Teams channels based on source module, category, and trigger type.",
+                       "module":  "Teams",
+                       "category":  "Teams",
+                       "dataFlow":  "Rows are manually configured to define alert routing rules. Process-TeamsAlertQueue.ps1 reads this table during every processing cycle, joining AlertQueue to WebhookSubscription on source_module with NULL-as-wildcard matching on alert_category and trigger_type, then joining to WebhookConfig for the webhook URL. Only subscriptions with is_active = 1 are evaluated.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "subscription_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this subscription"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Foreign key to WebhookConfig. Links to the webhook URL"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "channel_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Human-readable name of the Teams channel (for documentation)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "source_module",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Module name to match (e.g., JobFlow, BIDATA)"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "alert_category",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Category filter. NULL = match all categories"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "trigger_type",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Trigger type filter. NULL = match all trigger types"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this subscription is active"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "description",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Description of this subscription\u0027s purpose"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this subscription was created"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When this subscription was last modified"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Teams_WebhookSubscription",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "subscription_id"
+                                       },
+                                       {
+                                           "name":  "IX_Teams_WebhookSubscription_config_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "config_id"
+                                       },
+                                       {
+                                           "name":  "IX_Teams_WebhookSubscription_source_module",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "source_module"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_Teams_WebhookSubscription_WebhookConfig",
+                                               "column":  "config_id",
+                                               "referencedTable":  "Teams.WebhookConfig",
+                                               "referencedColumn":  "config_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "NULL-as-Wildcard Pattern",
+                                               "note":  "NULL values in alert_category and trigger_type act as wildcards, matching all values for that field. This allows broad subscriptions (all alerts from a module) and narrow subscriptions (specific trigger types only) using the same table structure without requiring separate wildcard rows.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Module-Level Routing",
+                                               "note":  "Different modules route to different channels, supporting organizational boundaries. For example, JobFlow alerts go to the Apps team channel while BIDATA alerts go to the BI team channel, without requiring separate webhook infrastructure per team.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Subscription overview",
+                                           "description":  "All subscriptions with webhook names showing channel routing and filter criteria.",
+                                           "sql":  "SELECT \r\n    s.subscription_id,\r\n    s.channel_name,\r\n    w.webhook_name,\r\n    s.source_module,\r\n    s.alert_category,\r\n    s.trigger_type,\r\n    s.is_active\r\nFROM Teams.WebhookSubscription s\r\nINNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id\r\nORDER BY s.channel_name, s.source_module;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Routing simulation",
+                                           "description":  "Shows which channels and webhooks would receive an alert for a given module, category, and trigger type. Replace the parameter values to test routing.",
+                                           "sql":  "DECLARE @Module VARCHAR(50) = \u0027JobFlow\u0027;\r\nDECLARE @Category VARCHAR(50) = \u0027CRITICAL\u0027;\r\nDECLARE @Trigger VARCHAR(50) = \u0027JobFlow_Stall\u0027;\r\n\r\nSELECT DISTINCT \r\n    s.channel_name, \r\n    w.webhook_name\r\nFROM Teams.WebhookSubscription s\r\nINNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id\r\nWHERE s.source_module = @Module\r\n  AND s.is_active = 1\r\n  AND w.is_active = 1\r\n  AND (s.alert_category IS NULL OR s.alert_category = @Category)\r\n  AND (s.trigger_type IS NULL OR s.trigger_type = @Trigger);",
+                                           "sortOrder":  2
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Teams.WebhookConfig",
+                                                     "note":  "FK on config_id. Each subscription points to exactly one webhook URL. Multiple subscriptions can point to the same webhook, allowing a single channel to receive alerts from different modules with different filter criteria.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Teams.AlertQueue",
+                                                     "note":  "No foreign key, but the processor joins these tables during routing. AlertQueue.source_module, alert_category, and trigger_type are matched against subscription filter columns with NULL-as-wildcard logic. This is the core operational relationship that drives alert delivery.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+                       {
+                           "name":  "sp_QueueAlert",
+                           "description":  "Queue procedure that inserts Teams notification requests into AlertQueue for asynchronous processing by the PowerShell processor.",
+                           "module":  "Teams",
+                           "category":  "Teams",
+                           "dataFlow":  "Called by T-SQL modules (Monitor-JobFlow stall detection, sp_Backup_Monitor, Scan-SFTPFiles alert logic, etc.) to queue Teams notifications. Inserts one row into Teams.AlertQueue with Pending status. The INSERT triggers TR_Teams_AlertQueue_QueueDepth which signals the orchestrator to launch the processor.",
+                           "parameters":  [
+                                              {
+                                                  "ordinal":  1,
+                                                  "name":  "@SourceModule",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  2,
+                                                  "name":  "@AlertCategory",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  3,
+                                                  "name":  "@Title",
+                                                  "dataType":  "varchar",
+                                                  "length":  "255",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  4,
+                                                  "name":  "@Message",
+                                                  "dataType":  "nvarchar",
+                                                  "length":  "MAX",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  5,
+                                                  "name":  "@Color",
+                                                  "dataType":  "varchar",
+                                                  "length":  "20",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  6,
+                                                  "name":  "@TriggerType",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  7,
+                                                  "name":  "@TriggerValue",
+                                                  "dataType":  "varchar",
+                                                  "length":  "100",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              }
+                                          ],
+                           "designNotes":  [
+                                               {
+                                                   "topic":  "Default Color Mapping",
+                                                   "note":  "Automatically assigns Adaptive Card accent colors based on alert category when @Color is not provided: CRITICAL maps to attention (red), WARNING to warning (yellow), INFO to good (green). Callers do not need to know Adaptive Card color names.",
+                                                   "sortOrder":  1
+                                               }
+                                           ],
+                           "relationshipNotes":  [
+                                                     {
+                                                         "relatedObject":  "Teams.AlertQueue",
+                                                         "note":  "Inserts directly into AlertQueue. This is the primary T-SQL entry point for queuing Teams alerts. PowerShell scripts that need rich Adaptive Card layouts bypass this proc and INSERT directly with card_json populated.",
+                                                         "sortOrder":  1
+                                                     }
+                                                 ]
+                       }
+                   ],
+    "triggers":  [
+                     {
+                         "name":  "TR_Teams_AlertQueue_QueueDepth",
+                         "parentTable":  "AlertQueue",
+                         "description":  "INSERT trigger on Teams.AlertQueue that signals the Orchestrator v2 engine when alerts are ready for processing. Enables queue-driven execution of Process-TeamsAlertQueue.",
+                         "module":  "Teams",
+                         "category":  "Teams",
+                         "firesOnInsert":  1,
+                         "firesOnUpdate":  0,
+                         "firesOnDelete":  0,
+                         "isEnabled":  1,
+                         "designNotes":  [
+                                             {
+                                                 "topic":  "Queue-Driven Orchestrator Signal",
+                                                 "note":  "INSERT trigger that increments running_count in Orchestrator.ProcessRegistry for Process-TeamsAlertQueue. Only updates rows where run_mode = 2 (queue-driven), enabling the orchestrator to launch the processor on-demand rather than on a fixed polling schedule. Counts the number of inserted rows to accurately track queue depth across multi-row inserts.",
+                                                 "sortOrder":  1
+                                             }
+                                         ],
+                         "relationshipNotes":  [
+                                                   {
+                                                       "relatedObject":  "Orchestrator.ProcessRegistry",
+                                                       "note":  "Directly updates ProcessRegistry.running_count to signal queue depth. The orchestrator engine checks running_count on each heartbeat and launches the processor when count \u003e 0.",
+                                                       "sortOrder":  1
+                                                   }
+                                               ]
+                     }
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Process-TeamsAlertQueue.ps1",
+                        "description":  "Queue processor that delivers Teams notifications via webhook. Claims Pending alerts from AlertQueue, resolves routing through WebhookSubscription and WebhookConfig, builds or passes through Adaptive Cards, delivers via HTTP POST, and logs results to RequestLog.",
+                        "module":  "Teams Integration",
+                        "category":  "Teams",
+                        "dataFlow":  "Launched by the orchestrator when TR_Teams_AlertQueue_QueueDepth signals queue depth \u003e 0. Reads Pending alerts from Teams.AlertQueue, joins through WebhookSubscription (source_module, alert_category, trigger_type with NULL-as-wildcard matching) and WebhookConfig (is_active filter) to determine delivery targets. For alerts without card_json, builds an Adaptive Card from title/message/color fields with emoji placeholder resolution. For alerts with card_json, resolves emoji placeholders and sends the pre-built card as-is. Delivers via HTTP POST to each matched webhook URL, updates AlertQueue status to Success or Failed, and inserts a row into Teams.RequestLog for each delivery attempt. Failed deliveries are retried inline up to teams_retry_max_attempts (from GlobalConfig) with 2-second delays between attempts.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Queue-Driven Execution",
+                                                "note":  "Runs as a queue-driven process (run_mode = 2) in the orchestrator. Only launched when alerts are waiting, not on a fixed polling schedule. This minimizes resource usage during quiet periods while ensuring near-real-time delivery when alerts are queued.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Two Card Build Paths",
+                                                "note":  "Legacy alerts with title/message/color fields have Adaptive Cards built at send time using a standard template. Alerts with pre-built card_json are sent as-is after emoji placeholder resolution. The pre-built path enables rich multi-section layouts (like disk summaries and batch status reports) that cannot be expressed with the legacy fields.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Inline Retry with Per-Attempt Logging",
+                                                "note":  "On webhook delivery failure, retries immediately with 2-second sleep between attempts rather than requeueing. Each attempt (including retries) generates a separate RequestLog entry. retry_count on AlertQueue is updated in place. This eliminates orphaned Pending rows from trigger/running_count timing gaps that the earlier requeue approach caused.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "Orchestrator v2 Integration",
+                                                "note":  "Accepts TaskId and ProcessId parameters from the orchestrator engine. Calls Complete-OrchestratorTask on completion with status, duration, and a summary of processed/success/failed counts. Supports -Execute safeguard (preview mode by default).",
+                                                "sortOrder":  4
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "Teams.AlertQueue",
+                                                      "note":  "Primary data source. Reads Pending rows, updates status to Success or Failed after delivery, and sets processed_dttm and error_message.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Teams.WebhookSubscription",
+                                                      "note":  "Joined during routing to determine which webhooks receive each alert. Subscription matching uses source_module with NULL-as-wildcard on alert_category and trigger_type.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Teams.WebhookConfig",
+                                                      "note":  "Joined during routing to get webhook URL and is_active status. Only active webhooks are included in delivery targets.",
+                                                      "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Teams.RequestLog",
+                                                      "note":  "Write target. Inserts one row per webhook delivery attempt including retries for complete audit trail.",
+                                                      "sortOrder":  4
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.GlobalConfig",
+                                                      "note":  "Reads teams_retry_max_attempts to control inline retry behavior.",
+                                                      "sortOrder":  5
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
