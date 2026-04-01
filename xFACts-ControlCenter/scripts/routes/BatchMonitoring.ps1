@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Batch Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring.ps1
 # 
