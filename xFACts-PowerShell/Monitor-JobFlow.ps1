@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     xFACts - JobFlow Monitor
 
