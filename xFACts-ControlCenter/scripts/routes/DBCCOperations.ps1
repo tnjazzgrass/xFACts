@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - DBCC Operations Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\DBCCOperations.ps1
 # 
