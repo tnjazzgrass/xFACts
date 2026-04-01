@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Platform Monitoring API
 # Location: E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring-API.ps1
 #
