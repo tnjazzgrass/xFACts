@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     xFACts - New Business Batch Status Collection
 
