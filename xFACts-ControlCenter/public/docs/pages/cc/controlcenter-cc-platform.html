@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Platform Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-action"><span class="arrows">&#128260;</span></span></span><span class="key-flip-label">Action Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when you select a server or change the time range. No automatic polling &mdash; you control when data updates.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Info Icon</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Click for a plain-English explanation of what the metric means, how it&rsquo;s calculated, and what thresholds to watch for.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div style="width:40px;height:40px;border-radius:50%;border:4px solid #4ec9b0;border-right-color:#2d2d2d;display:flex;align-items:center;justify-content:center;"><span style="font-size:10px;font-weight:700;color:#4ec9b0;">0.12%</span></div></span><span class="key-flip-label">Hero Gauge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">The headline CPU Impact number. Green under 2%, yellow 2&ndash;5%, red over 5%. This answers &ldquo;is xFACts causing slowdowns?&rdquo;</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div style="display:flex;align-items:center;gap:3px;"><div style="width:24px;height:24px;border-radius:50%;border:2px solid #4ec9b0;border-right-color:#2d2d2d;display:flex;align-items:center;justify-content:center;"><span style="font-size:6px;font-weight:700;color:#4ec9b0;">0.1</span></div><span style="font-size:7px;color:#555;">SQL01</span></div></span><span class="key-flip-label">Mini Gauge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Per-server CPU impact selector. Click to filter the entire page to that server. Click again to return to the ALL view.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div style="background:#252526;border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:3px 8px;text-align:center;"><div style="font-size:7px;color:#888;">Blocking</div><div style="font-size:12px;font-weight:600;color:#ef4444;">3</div></div></span><span class="key-flip-label">Alert Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">A metric card with alert styling. Nonzero values turn red. Clickable cards open a slideout with event-level detail.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;gap:2px;"><span style="font-size:7px;color:#4ec9b0;border:1px solid #4ec9b0;border-radius:2px;padding:1px 4px;background:#2a3a35;font-weight:600;">1h</span><span style="font-size:7px;color:#888;border:1px solid #404040;border-radius:2px;padding:1px 4px;background:#2d2d2d;">12h</span><span style="font-size:7px;color:#888;border:1px solid #404040;border-radius:2px;padding:1px 4px;background:#2d2d2d;">7d</span></span></span><span class="key-flip-label">Time Range</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Controls the analysis window for the entire page. Preset buttons plus a Custom option for arbitrary date ranges.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">Platform Monitoring</div>
+                            <div class="mock-page-subtitle">Measuring the resource impact of xFACts on the server environment</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                Updated: <span style="color:#4ec9b0;">2:34:07 PM</span>
+                                <span style="font-size:13px;color:#888;cursor:pointer;margin-left:4px;">&#8635;</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ======================================================== -->
+                    <!-- NARRATIVE SUMMARY STRIP -->
+                    <!-- ======================================================== -->
+                    <div class="mock-section" data-section="1" style="position:relative; display:flex; margin-bottom:12px; overflow:hidden;">
+                        <a href="#section-1" class="callout-marker" style="position:absolute; top:4px; left:8px; z-index:11;">1</a>
+                        <div style="width:3px; background:#4ec9b0; flex-shrink:0;"></div>
+                        <div style="padding:8px 12px 8px 16px; font-size:8px; color:#b0b0b0; line-height:1.6;">
+                            Over <strong style="color:#d4d4d4;">the last hour</strong>, xFACts executed <span style="color:#4ec9b0;">1,247 queries</span> consuming <span style="color:#4ec9b0;">0.12%</span> of total server CPU capacity across all servers (4.2s CPU time). Heaviest process: <span style="color:#4ec9b0;">Collect-DMVMetrics</span> (1.8s CPU). No blocking events, long-running queries, or open transactions detected.
+                        </div>
+                    </div>
+
+                    <!-- ======================================================== -->
+                    <!-- TOP SECTION: Performance | Hero | API -->
+                    <!-- ======================================================== -->
+                    <div style="display:flex; gap:10px; margin-bottom:10px;">
+
+                        <!-- LEFT: Platform Performance -->
+                        <div class="mock-section" data-section="3" style="flex:1; position:relative;">
+                            <a href="#section-3" class="callout-marker" style="position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:11;">3</a>
+                            <div class="mock-section-header">
+                                <span class="mock-section-title">Platform Performance <span style="font-size:9px;color:#888;cursor:pointer;margin-left:2px;">?</span></span>
+                                <span class="mock-badge-action">&#128260;</span>
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px;">
+                                <!-- Row 1: standard cards -->
+                                <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#888;">Active Sessions <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#4ec9b0;font-weight:400;">4</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#888;">Total Queries <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#4ec9b0;font-weight:400;">1,247</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#888;">Avg Duration <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#4ec9b0;font-weight:400;">3.4</div>
+                                </div>
+                                <!-- Row 2: alert cards -->
+                                <div style="background:#2d2d2d;border:1px solid rgba(78,201,176,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#888;">Blocking <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="display:flex;gap:4px;justify-content:center;align-items:baseline;">
+                                        <div style="text-align:center;"><div style="font-size:13px;color:#4ec9b0;">0</div><div style="font-size:5px;color:#666;">blocked</div></div>
+                                        <div style="width:1px;height:16px;background:#404040;"></div>
+                                        <div style="text-align:center;"><div style="font-size:13px;color:#4ec9b0;">0</div><div style="font-size:5px;color:#666;">caused</div></div>
+                                    </div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid rgba(78,201,176,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#888;">LRQ Crossovers <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#4ec9b0;font-weight:400;">0</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid rgba(78,201,176,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#888;">Open Transactions <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#4ec9b0;font-weight:400;">0</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CENTER: Hero Gauge + Server Selector -->
+                        <div class="mock-section" data-section="2" style="width:200px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; position:relative;">
+                            <a href="#section-2" class="callout-marker" style="position:absolute; top:2px; left:50%; transform:translateX(-50%); z-index:11;">2</a>
+                            <!-- Hero gauge -->
+                            <div style="width:120px; height:120px; border-radius:50%; border:8px solid #2d2d2d; position:relative; margin-top:8px;">
+                                <!-- Arc fill (simulated with border coloring) -->
+                                <div style="position:absolute;inset:0;border-radius:50%;border:8px solid transparent;border-top-color:#4ec9b0;border-left-color:#4ec9b0;border-bottom-color:#4ec9b0;transform:rotate(0deg);"></div>
+                                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                                    <div style="font-size:20px;font-weight:700;color:#4ec9b0;">0.12%</div>
+                                    <div style="font-size:7px;color:#888;font-weight:600;letter-spacing:0.5px;">CPU IMPACT <span style="color:#666;cursor:pointer;">?</span></div>
+                                </div>
+                            </div>
+                            <div style="font-size:7px;color:#888;margin-top:4px;">xFACts: 4.2s CPU &bull; 16 cores</div>
+                            <div style="font-size:8px;color:#569cd6;font-weight:600;margin-top:2px;">ALL SERVERS</div>
+                            <!-- Mini gauge row -->
+                            <div style="display:flex;align-items:center;gap:4px;margin-top:8px;">
+                                <span style="font-size:8px;color:#4ec9b0;background:#2a3a35;border:1px solid #4ec9b0;border-radius:3px;padding:1px 6px;font-weight:600;">ALL</span>
+                                <div style="display:flex;gap:3px;">
+                                    <div style="text-align:center;">
+                                        <div style="width:28px;height:28px;border-radius:50%;border:2px solid #4ec9b0;border-right-color:#2d2d2d;display:flex;align-items:center;justify-content:center;"><span style="font-size:6px;font-weight:700;color:#4ec9b0;">0.1</span></div>
+                                        <div style="font-size:5px;color:#555;margin-top:1px;">SQL01</div>
+                                    </div>
+                                    <div style="text-align:center;">
+                                        <div style="width:28px;height:28px;border-radius:50%;border:2px solid #4ec9b0;border-right-color:#2d2d2d;display:flex;align-items:center;justify-content:center;"><span style="font-size:6px;font-weight:700;color:#4ec9b0;">0.0</span></div>
+                                        <div style="font-size:5px;color:#555;margin-top:1px;">SQL02</div>
+                                    </div>
+                                    <div style="text-align:center;">
+                                        <div style="width:28px;height:28px;border-radius:50%;border:2px solid #4ec9b0;border-right-color:#2d2d2d;display:flex;align-items:center;justify-content:center;"><span style="font-size:6px;font-weight:700;color:#4ec9b0;">0.0</span></div>
+                                        <div style="font-size:5px;color:#555;margin-top:1px;">SQL03</div>
+                                    </div>
+                                    <div style="text-align:center;">
+                                        <div style="width:28px;height:28px;border-radius:50%;border:2px solid #dcdcaa;border-right-color:#2d2d2d;display:flex;align-items:center;justify-content:center;"><span style="font-size:6px;font-weight:700;color:#dcdcaa;">2.1</span></div>
+                                        <div style="font-size:5px;color:#555;margin-top:1px;">SQL04</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT: Control Center API -->
+                        <div class="mock-section" data-section="4" style="flex:1; position:relative;">
+                            <a href="#section-4" class="callout-marker" style="position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:11;">4</a>
+                            <div class="mock-section-header">
+                                <span class="mock-section-title" style="color:#569cd6;">Control Center API <span style="font-size:9px;color:#888;cursor:pointer;margin-left:2px;">?</span></span>
+                                <span class="mock-badge-action">&#128260;</span>
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px;">
+                                <div style="background:#2d2d2d;border:1px solid rgba(86,156,214,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#569cd6;">API Requests <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#569cd6;font-weight:400;">3,842</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid rgba(86,156,214,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#569cd6;">API Req/Min <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#569cd6;font-weight:400;">64</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid rgba(86,156,214,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#569cd6;">API Avg (ms) <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#569cd6;font-weight:400;">7</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid rgba(86,156,214,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#569cd6;">API P95 (ms) <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#569cd6;font-weight:400;">18</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid rgba(86,156,214,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#569cd6;">API Users <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#569cd6;font-weight:400;">3</div>
+                                </div>
+                                <div style="background:#2d2d2d;border:1px solid rgba(86,156,214,0.2);border-radius:3px;padding:5px 6px;text-align:center;">
+                                    <div style="font-size:7px;color:#569cd6;">API Errors <span style="color:#666;cursor:pointer;">?</span></div>
+                                    <div style="font-size:16px;color:#4ec9b0;font-weight:400;">0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ======================================================== -->
+                    <!-- BOTTOM SECTION: Process Breakdown | Trend | Endpoints -->
+                    <!-- ======================================================== -->
+                    <div style="display:flex; gap:10px;">
+
+                        <!-- LEFT: Process Breakdown -->
+                        <div class="mock-section" data-section="5" style="flex:1; position:relative;">
+                            <a href="#section-5" class="callout-marker" style="position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:11;">5</a>
+                            <div class="mock-section-header">
+                                <span class="mock-section-title">Process Breakdown <span style="font-size:9px;color:#888;cursor:pointer;margin-left:2px;">?</span></span>
+                                <span class="mock-badge-action">&#128260;</span>
+                            </div>
+                            <table style="width:100%;font-size:7px;border-collapse:collapse;">
+                                <thead><tr style="color:#888;border-bottom:1px solid #404040;">
+                                    <th style="text-align:left;padding:2px 4px;">Process</th>
+                                    <th style="text-align:right;padding:2px 4px;">CPU</th>
+                                    <th style="text-align:right;padding:2px 4px;">% xFACts</th>
+                                    <th style="text-align:right;padding:2px 4px;">% Server</th>
+                                </tr></thead>
+                                <tbody style="color:#d4d4d4;">
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#4ec9b0;">Collect-DMVMetrics</td><td style="text-align:right;padding:2px 4px;">1.8s</td><td style="text-align:right;padding:2px 4px;">42.9%</td><td style="text-align:right;padding:2px 4px;color:#888;">0.05%</td></tr>
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#4ec9b0;">Monitor-JobFlow</td><td style="text-align:right;padding:2px 4px;">0.9s</td><td style="text-align:right;padding:2px 4px;">21.4%</td><td style="text-align:right;padding:2px 4px;color:#888;">0.03%</td></tr>
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#4ec9b0;">Collect-XEEvents</td><td style="text-align:right;padding:2px 4px;">0.6s</td><td style="text-align:right;padding:2px 4px;">14.3%</td><td style="text-align:right;padding:2px 4px;color:#888;">0.02%</td></tr>
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#888;">Collect-ServerHealth</td><td style="text-align:right;padding:2px 4px;">0.4s</td><td style="text-align:right;padding:2px 4px;">9.5%</td><td style="text-align:right;padding:2px 4px;color:#888;">0.01%</td></tr>
+                                    <tr><td style="padding:2px 4px;color:#888;">Collect-BackupStatus</td><td style="text-align:right;padding:2px 4px;">0.3s</td><td style="text-align:right;padding:2px 4px;">7.1%</td><td style="text-align:right;padding:2px 4px;color:#888;">0.01%</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- CENTER: CPU Impact Trend -->
+                        <div class="mock-section" data-section="6" style="flex:1.3; position:relative;">
+                            <a href="#section-6" class="callout-marker" style="position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:11;">6</a>
+                            <div class="mock-section-header">
+                                <span class="mock-section-title">CPU Impact Over Time <span style="font-size:9px;color:#888;cursor:pointer;margin-left:2px;">?</span></span>
+                                <div style="display:flex;align-items:center;gap:6px;">
+                                    <div style="display:flex;gap:2px;">
+                                        <span style="font-size:7px;color:#4ec9b0;border:1px solid #4ec9b0;border-radius:2px;padding:1px 4px;background:#2a3a35;font-weight:600;">1h</span>
+                                        <span style="font-size:7px;color:#888;border:1px solid #404040;border-radius:2px;padding:1px 4px;background:#2d2d2d;">12h</span>
+                                        <span style="font-size:7px;color:#888;border:1px solid #404040;border-radius:2px;padding:1px 4px;background:#2d2d2d;">24h</span>
+                                        <span style="font-size:7px;color:#888;border:1px solid #404040;border-radius:2px;padding:1px 4px;background:#2d2d2d;">7d</span>
+                                        <span style="font-size:7px;color:#888;border:1px solid #404040;border-radius:2px;padding:1px 4px;background:#2d2d2d;">Custom</span>
+                                    </div>
+                                    <span class="mock-badge-action">&#128260;</span>
+                                </div>
+                            </div>
+                            <!-- Simulated chart area -->
+                            <div style="height:90px;position:relative;overflow:hidden;">
+                                <!-- Blue bars (query count) -->
+                                <div style="position:absolute;bottom:0;left:5%;width:6%;height:25%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:14%;width:6%;height:40%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:23%;width:6%;height:30%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:32%;width:6%;height:55%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:41%;width:6%;height:35%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:50%;width:6%;height:45%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:59%;width:6%;height:50%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:68%;width:6%;height:30%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:77%;width:6%;height:60%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <div style="position:absolute;bottom:0;left:86%;width:6%;height:35%;background:rgba(86,156,214,0.3);border-radius:1px 1px 0 0;"></div>
+                                <!-- Green line (CPU %) -->
+                                <svg style="position:absolute;inset:0;width:100%;height:100%;" preserveAspectRatio="none" viewBox="0 0 200 100">
+                                    <polyline points="10,82 28,78 46,80 64,72 82,79 100,75 118,73 136,80 154,68 172,77 190,76" fill="none" stroke="#4ec9b0" stroke-width="1.5" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT: Top API Endpoints -->
+                        <div class="mock-section" data-section="7" style="flex:1; position:relative;">
+                            <a href="#section-7" class="callout-marker" style="position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:11;">7</a>
+                            <div class="mock-section-header">
+                                <span class="mock-section-title" style="color:#569cd6;">Top API Endpoints <span style="font-size:9px;color:#888;cursor:pointer;margin-left:2px;">?</span></span>
+                                <span class="mock-badge-action">&#128260;</span>
+                            </div>
+                            <table style="width:100%;font-size:7px;border-collapse:collapse;">
+                                <thead><tr style="color:#888;border-bottom:1px solid #404040;">
+                                    <th style="text-align:left;padding:2px 4px;">Endpoint</th>
+                                    <th style="text-align:right;padding:2px 4px;">Calls</th>
+                                    <th style="text-align:right;padding:2px 4px;">Avg ms</th>
+                                </tr></thead>
+                                <tbody style="color:#d4d4d4;">
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#569cd6;font-family:Consolas,monospace;">/api/server-health/metrics</td><td style="text-align:right;padding:2px 4px;">1,204</td><td style="text-align:right;padding:2px 4px;">5</td></tr>
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#569cd6;font-family:Consolas,monospace;">/api/jobflow/status</td><td style="text-align:right;padding:2px 4px;">842</td><td style="text-align:right;padding:2px 4px;">8</td></tr>
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#569cd6;font-family:Consolas,monospace;">/api/batch/summary</td><td style="text-align:right;padding:2px 4px;">421</td><td style="text-align:right;padding:2px 4px;">12</td></tr>
+                                    <tr style="border-bottom:1px solid #333;"><td style="padding:2px 4px;color:#888;font-family:Consolas,monospace;">/api/backup/status</td><td style="text-align:right;padding:2px 4px;">210</td><td style="text-align:right;padding:2px 4px;">6</td></tr>
+                                    <tr><td style="padding:2px 4px;color:#888;font-family:Consolas,monospace;">/api/admin/timeline</td><td style="text-align:right;padding:2px 4px;">180</td><td style="text-align:right;padding:2px 4px;">14</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>Platform Monitoring is the &ldquo;are we the problem?&rdquo; page. It measures the resource impact of xFACts itself on the SQL Server environment it monitors.</p>
+                    <p>Unlike other dashboard pages, this one has no automatic refresh. Everything updates when you select a server or change the time range. It&rsquo;s an analysis tool, not a live monitor.</p>
+                    <p>The page answers two core questions: how much CPU is xFACts consuming, and how is the Control Center web interface performing?</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Narrative Summary</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> CPU Impact &amp; Server Selection</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Platform Performance</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Control Center API</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Process Breakdown</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> CPU Impact Over Time</div>
+                    <div class="sidebar-item" data-marker="7"><span class="sidebar-num">7</span> Top API Endpoints</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Narrative Summary</h2>
+            <p>The colored strip below the header that tells the story of the data in a single sentence. It dynamically generates a plain-English summary combining CPU impact percentage, query count, heaviest process, and any alert conditions &mdash; all for the currently selected server and time range.</p>
+            <p>The left accent bar changes color with the CPU impact: green under 2%, yellow between 2&ndash;5%, and red over 5%. This gives you the headline before you read the details.</p>
+            <p>The narrative updates every time you select a different server or change the time range. It synthesizes data from multiple sources into one glanceable sentence &mdash; the idea is that you can read this strip alone and know whether xFACts is behaving itself.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>CPU Impact &amp; Server Selection</h2>
+            <p>The center column serves double duty: the hero gauge shows the headline number, and the server selectors below it control what the entire page displays.</p>
+            <p><strong>Hero Gauge</strong> &mdash; A donut chart showing xFACts CPU consumption as a percentage of total server capacity. The calculation is straightforward: xFACts CPU time divided by total CPU capacity (cores &times; time period &times; 1,000ms). This is the same model Windows Task Manager uses. Below the percentage, a detail line shows raw CPU time consumed and core count.</p>
+            <p>Color thresholds: green under 2% (virtually invisible), yellow 2&ndash;5% (worth monitoring), red over 5% (investigate which processes are consuming resources).</p>
+            <p><strong>ALL Pill</strong> &mdash; When active (teal highlight), the page shows aggregate data across all monitored servers. This is the default view.</p>
+            <p><strong>Mini Gauges</strong> &mdash; Each small donut represents one server. The percentage and color show that server&rsquo;s individual CPU impact. Click a mini gauge to filter the entire page &mdash; hero gauge, narrative, cards, tables, and chart all update to show only that server&rsquo;s data. Click the same server again to return to the ALL view.</p>
+            <div class="callout tip"><p>If the ALL view shows a healthy 0.12% but one mini gauge is yellow at 2.1%, click that server to drill into what&rsquo;s different. The Process Breakdown table will show which processes are heavier on that specific server.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Platform Performance</h2>
+            <p>Six metric cards measuring the database activity generated by xFACts processes &mdash; the monitoring scripts, data collectors, and automation jobs that run on schedule. These reflect only xFACts activity, not total server activity.</p>
+            <p><strong>Active Sessions</strong> &mdash; How many xFACts processes have active database connections right now. A real-time snapshot, not a time-range total. A handful is normal.</p>
+            <p><strong>Total Queries</strong> &mdash; Total SQL queries xFACts executed during the selected time range. A high number alone isn&rsquo;t concerning &mdash; what matters is how much CPU those queries consumed.</p>
+            <p><strong>Avg Duration (ms)</strong> &mdash; Average time per query. Under 10ms means queries execute almost instantly.</p>
+            <p><strong>Blocking Events</strong> &mdash; A dual-count card. &ldquo;Blocked by others&rdquo; means xFACts was the victim. &ldquo;Caused by xFACts&rdquo; means xFACts was holding locks that blocked other applications. Zero for both is the goal. Click to open a slideout with every blocking event: timestamp, server, direction, wait time, wait type, and the application names on both sides. Click any row in the slideout to expand the actual SQL queries from both the blocked and blocking sessions.</p>
+            <p><strong>LRQ Crossovers</strong> &mdash; Queries that exceeded the configured duration threshold. Think of it as a speed trap. Click to open a slideout showing every long-running query: timestamp, server, process name, database, duration, CPU time, and logical reads. Click any row to see the full query text.</p>
+            <p><strong>Open Transactions</strong> &mdash; Connections with uncommitted transactions (real-time snapshot). Zero is normal. Persistent nonzero values hold locks and can block other queries.</p>
+            <div class="callout info"><p>Every metric card has a <strong>?</strong> icon. Click it for a detailed explanation of what that metric measures, how it&rsquo;s calculated, and what values to watch for. The info modals are extensive &mdash; they&rsquo;re the built-in documentation for the page.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Control Center API</h2>
+            <p>Six metric cards measuring the performance of the Control Center web interface itself &mdash; the dashboards and API endpoints you&rsquo;re using right now. These are separate from database monitoring activity. The blue accent color distinguishes API metrics from platform performance metrics.</p>
+            <p><strong>API Requests</strong> &mdash; Total HTTP requests handled during the time range. Every page load and auto-refresh generates several API calls.</p>
+            <p><strong>API Req/Min</strong> &mdash; Average requests per minute. Higher numbers usually mean more people have dashboards open.</p>
+            <p><strong>API Avg (ms)</strong> &mdash; Average response time. Under 50ms means pages load instantly.</p>
+            <p><strong>API P95 (ms)</strong> &mdash; The 95th percentile response time &mdash; 95% of requests were faster than this value. More useful than the average because it reveals the worst typical experience.</p>
+            <p><strong>API Users</strong> &mdash; Distinct users who accessed the Control Center during the time range. Click to open a slideout with a user-by-user breakdown showing request counts, distinct pages visited, and last active time. Summary statistics show total authenticated vs. unauthenticated requests (login page hits, expired sessions).</p>
+            <p><strong>API Errors</strong> &mdash; Requests that returned HTTP 400 or higher. Zero is the goal. Click to open a slideout showing every error with endpoint, method, status code, user, and timing. Client timeouts (HTTP 408) from backgrounded browser tabs are shown in a separate collapsible section grouped by endpoint, since they&rsquo;re typically harmless.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Process Breakdown</h2>
+            <p>A ranked table showing every xFACts process that ran queries during the selected time range. This is where you find out <em>which</em> process is responsible for the CPU number in the hero gauge.</p>
+            <p>Two percentage columns tell complementary stories. <strong>% xFACts</strong> shows each process&rsquo;s share of total xFACts CPU &mdash; useful for comparing which processes are heaviest relative to each other. <strong>% Server</strong> puts it in real-world context &mdash; what percentage of the entire server&rsquo;s capacity this individual process consumed. When every row shows values like 0.05%, 0.02%, 0.01%, that&rsquo;s a clear indicator that no single process is contributing to performance issues.</p>
+            <p>Additional columns include query count, total CPU time, average query duration, and logical reads (data pages touched in memory). Column headers are sortable &mdash; click to reorder.</p>
+            <p>Hover over any row for a tooltip combining both percentage perspectives into a plain-English summary.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>CPU Impact Over Time</h2>
+            <p>A dual-axis chart showing how xFACts CPU usage and query volume changed over the selected period.</p>
+            <p>The <strong>green line</strong> (left axis) tracks CPU percentage over time &mdash; the same metric as the hero gauge, but broken into time buckets. Hover over any point to see the exact values used in the calculation. The <strong>blue bars</strong> (right axis) show query count per bucket &mdash; these typically spike when scheduled collection processes run.</p>
+            <p>Together they tell a story: if query volume spikes but CPU stays flat, the queries are lightweight. If both spike together, a heavier process was running during that window.</p>
+            <p><strong>Time range controls</strong> &mdash; Five buttons above the chart: 1h, 12h, 24h, 7d, and Custom. These control the analysis window for the <em>entire page</em>, not just the chart. Selecting a new range updates everything &mdash; hero gauge, narrative, cards, tables, and chart. The Custom button opens a date picker for arbitrary date ranges.</p>
+            <div class="callout tip"><p>Use the 7d view to spot recurring patterns. If CPU spikes at the same time every day, it&rsquo;s probably a scheduled process running during a busy period. The Process Breakdown table will confirm which process is responsible.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-7"><div class="section">
+            <h2><span class="section-number">7</span>Top API Endpoints</h2>
+            <p>A ranked table of the most-called Control Center API endpoints, showing which dashboard features generate the most server-side work. Blue accent color matches the API card frame.</p>
+            <p>Columns include the endpoint path, call count, average response time (ms), and maximum response time. Useful for identifying if a specific endpoint is slow (high avg ms) or just heavily used (high calls but low avg ms).</p>
+            <p>The ranking is by total processing time (calls &times; average duration), so endpoints that are both popular and slow rise to the top &mdash; these are the best optimization candidates if API performance ever becomes a concern.</p>
+        </div></div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../controlcenter.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to The Control Center</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/controlcenter-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

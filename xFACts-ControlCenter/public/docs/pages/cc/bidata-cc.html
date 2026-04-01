@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIDATA Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>BIDATA Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the BIDATA monitor completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-action"><span class="arrows">&#128260;</span></span></span><span class="key-flip-label">Action Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes in response to a user action, like selecting a different date range.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">BI</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows the BIDATA monitor process. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Tooltip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Hover or click for a brief explanation of what a metric means or what the thresholds are.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">BIDATA Monitoring</div>
+                            <div class="mock-page-subtitle">Nightly build status, step execution, duration trends, build history</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">06:12:45</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                <a href="#section-1" class="callout-marker" style="position:absolute; top: 10px; left: -70%;">1</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">BIDATA</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">2m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two Column Body (equal width) -->
+                    <div style="display: flex; gap: 14px;">
+                        <!-- Left Column: Live Activity + Build Execution -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Live Activity -->
+                            <div class="mock-section" data-section="2" style="position: relative;">
+                                <a href="#section-2" class="callout-marker" style="position:absolute; top: 6px; left: 22%;">2</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Live Activity</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                    <div style="flex:1; min-width:80px; background:#1e1e1e; border:1px solid #264f26; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#888;">Status</span>
+                                            <span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">Completed</span>
+                                        </div>
+                                        <div style="font-size:14px; color:#4ec9b0; font-weight:600;">Success</div>
+                                        <div style="font-size:8px; color:#666;">Build successful</div>
+                                    </div>
+                                    <div style="flex:1; min-width:80px; background:#1e1e1e; border:1px solid #264f26; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#888;">Started</span>
+                                            <span style="font-size:9px;">&#128336;</span>
+                                        </div>
+                                        <div style="font-size:14px; color:#ccc; font-weight:600;">4:00 AM</div>
+                                        <div style="font-size:8px; color:#666;">Mar 14, 2026</div>
+                                    </div>
+                                    <div style="flex:1; min-width:80px; background:#1e1e1e; border:1px solid #264f26; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#888;">Completed</span>
+                                            <span style="font-size:9px;">&#127937;</span>
+                                        </div>
+                                        <div style="font-size:14px; color:#ccc; font-weight:600;">5:47 AM</div>
+                                        <div style="font-size:8px; color:#666;">End time</div>
+                                    </div>
+                                    <div style="flex:1; min-width:80px; background:#1e1e1e; border:1px solid #264f26; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#888;">Duration</span>
+                                            <span style="font-size:9px;">&#9201;</span>
+                                        </div>
+                                        <div style="font-size:14px; color:#ccc; font-weight:600;">1h 47m</div>
+                                        <div style="font-size:8px; color:#666;">Total time</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Current Build Execution -->
+                            <div class="mock-section" data-section="3" style="position: relative;">
+                                <a href="#section-3" class="callout-marker" style="position:absolute; top: 6px; left: 38%;">3</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Current Build Execution</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="font-size:8px;">
+                                    <div style="display:flex; gap:4px; color:#666; border-bottom:1px solid #404040; padding:3px 0;">
+                                        <span style="width:60px;"></span>
+                                        <span style="flex:3;">Step Name</span>
+                                        <span style="flex:1;">Start</span>
+                                        <span style="flex:1;">End</span>
+                                        <span style="flex:1;">Duration</span>
+                                        <span style="flex:1;">14d Var</span>
+                                    </div>
+                                    <div style="display:flex; gap:4px; color:#ccc; padding:4px 0; border-bottom:1px solid #333;">
+                                        <span style="width:60px;"><span style="background:#264f26; color:#4ec9b0; border-radius:3px; padding:0 4px; font-size:7px;">COMPLETED</span></span>
+                                        <span style="flex:3;">Truncate staging tables</span>
+                                        <span style="flex:1; color:#888;">04:00:02</span>
+                                        <span style="flex:1; color:#888;">04:00:05</span>
+                                        <span style="flex:1;">3s</span>
+                                        <span style="flex:1; color:#4ec9b0;">-12%</span>
+                                    </div>
+                                    <div style="display:flex; gap:4px; color:#ccc; padding:4px 0; border-bottom:1px solid #333;">
+                                        <span style="width:60px;"><span style="background:#264f26; color:#4ec9b0; border-radius:3px; padding:0 4px; font-size:7px;">COMPLETED</span></span>
+                                        <span style="flex:3;">Load account data</span>
+                                        <span style="flex:1; color:#888;">04:00:05</span>
+                                        <span style="flex:1; color:#888;">04:28:42</span>
+                                        <span style="flex:1;">28m 37s</span>
+                                        <span style="flex:1; color:#ce9178;">+8%</span>
+                                    </div>
+                                    <div style="display:flex; gap:4px; color:#ccc; padding:4px 0; border-bottom:1px solid #333;">
+                                        <span style="width:60px;"><span style="background:#264f26; color:#4ec9b0; border-radius:3px; padding:0 4px; font-size:7px;">COMPLETED</span></span>
+                                        <span style="flex:3;">Build indexes</span>
+                                        <span style="flex:1; color:#888;">04:28:42</span>
+                                        <span style="flex:1; color:#888;">05:15:10</span>
+                                        <span style="flex:1;">46m 28s</span>
+                                        <span style="flex:1; color:#4ec9b0;">-3%</span>
+                                    </div>
+                                    <div style="display:flex; gap:4px; color:#888; padding:4px 0; font-style:italic;">
+                                        <span style="width:60px; color:#666;">&#8230;</span>
+                                        <span style="flex:3;">+ more steps</span>
+                                        <span style="flex:1;"></span><span style="flex:1;"></span><span style="flex:1;"></span><span style="flex:1;"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Duration Trend + Build History -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Duration Trend -->
+                            <div class="mock-section" data-section="4" style="position: relative;">
+                                <a href="#section-4" class="callout-marker" style="position:absolute; top: 6px; left: 26%;">4</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Duration Trend</span>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <span class="mock-time-buttons">
+                                            <span class="mock-time-btn active">30d</span>
+                                            <span class="mock-time-btn">60d</span>
+                                            <span class="mock-time-btn">90d</span>
+                                            <span class="mock-time-btn">Custom</span>
+                                        </span>
+                                        <span class="mock-badge-action">&#128260;</span>
+                                    </div>
+                                </div>
+                                <div class="mock-chart" style="height: 80px;">
+                                    <svg viewBox="0 0 400 70" preserveAspectRatio="none" style="width:100%; height:100%;">
+                                        <rect x="10" y="20" width="10" height="50" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="25" y="15" width="10" height="55" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="40" y="22" width="10" height="48" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="55" y="18" width="10" height="52" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="70" y="25" width="10" height="45" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="85" y="10" width="10" height="60" fill="#f44747" opacity="0.7" rx="1"/>
+                                        <rect x="100" y="20" width="10" height="50" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="115" y="23" width="10" height="47" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="130" y="19" width="10" height="51" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="145" y="21" width="10" height="49" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="160" y="24" width="10" height="46" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                        <rect x="175" y="17" width="10" height="53" fill="#4ec9b0" opacity="0.7" rx="1"/>
+                                    </svg>
+                                </div>
+                                <div style="display:flex; gap:16px; font-size:8px; color:#888; margin-top:4px;">
+                                    <span>Avg <span style="color:#ccc;">1h 45m</span></span>
+                                    <span>Min <span style="color:#ccc;">1h 22m</span></span>
+                                    <span>Max <span style="color:#ccc;">2h 38m</span></span>
+                                    <span>Days <span style="color:#ccc;">30</span></span>
+                                </div>
+                            </div>
+
+                            <!-- Build History -->
+                            <div class="mock-section mock-section-tall" data-section="5" style="position: relative;">
+                                <a href="#section-5" class="callout-marker" style="position:absolute; top: 6px; right: 70%;">5</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Build History</span>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <span style="font-size:8px; color:#888;">365 builds</span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </div>
+                                </div>
+                                <div style="font-size:9px; color:#888;">
+                                    <div style="padding:5px 0; border-bottom:1px solid #333; cursor:pointer;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2026</span>
+                                        <span style="color:#666; margin-left:12px;">73 builds</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">71 ok</span>
+                                        <span style="color:#f44747; margin-left:6px;">2 failed</span>
+                                    </div>
+                                    <div style="padding:5px 0; border-bottom:1px solid #333;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2025</span>
+                                        <span style="color:#666; margin-left:12px;">292 builds</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">286 ok</span>
+                                        <span style="color:#f44747; margin-left:6px;">6 failed</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+            </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The BIDATA Monitoring page tracks the nightly build process that refreshes the Business Intelligence reporting database. The build runs as a SQL Server Agent job with multiple steps, typically starting in the early morning hours.</p>
+                    <p>This page shows whether today&rsquo;s build succeeded, how each step performed compared to its recent average, duration trends over time, and a complete build history with drill-down to individual executions.</p>
+                    <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicator</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Live Activity</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Current Build Execution</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Duration Trend</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Build History</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicator</h2>
+            <p>The single engine card in the upper right represents <code>Monitor-BIDATABuild.ps1</code> &mdash; the orchestrator process that queries SQL Server Agent job history for the BIDATA build job. It runs on a fixed interval, checking for new step completions and build status changes.</p>
+            <p>The colored bar and countdown show the health and timing of the monitor. Green means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in.</p>
+            <p>All sections except Duration Trend refresh when this process completes (lightning bolt badges). The Duration Trend refreshes when you change the date range (action badge).</p>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Live Activity</h2>
+            <p>A row of adaptive status cards showing the current or most recent build for today. The cards change based on the build&rsquo;s state.</p>
+            <p><strong>When a build is running:</strong> Cards show Status (with a spinning gear and &ldquo;Running&rdquo; badge), Started (start time), Elapsed (running duration that updates each cycle), Progress (steps completed out of total expected), and ETA (estimated completion based on historical average duration).</p>
+            <p><strong>When a build has completed:</strong> Cards show Status (&ldquo;Completed&rdquo; badge), Date, Started, Completed (end time), and Duration (total elapsed time). All cards have a green border.</p>
+            <p><strong>When a build has failed:</strong> Cards show Status (&ldquo;Failed&rdquo; badge), Date, Started, Failed At (failure time), and Failed Step (the specific step that errored). All cards have a red border.</p>
+            <p>If the build was attempted more than once today, an additional Attempts card shows the retry count.</p>
+            <div class="callout tip"><p>If it&rsquo;s past the expected build start time and Live Activity shows &ldquo;No Build Today,&rdquo; the SQL Server Agent job may not have triggered. Check the Agent job history directly or verify the job schedule hasn&rsquo;t been disabled.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Current Build Execution</h2>
+            <p>A step-by-step list showing every step of today&rsquo;s build execution. Each row displays the step&rsquo;s status badge (Completed or Failed), step name, start time, end time, duration, and a 14-day variance comparison.</p>
+            <p>The <strong>14 Day Var</strong> column shows how the step&rsquo;s duration compared to its 14-day rolling average. Green with a negative percentage means faster than usual. Orange/red with a positive percentage means slower. This immediately highlights steps that are taking longer than expected.</p>
+            <p>If a build is actively running, a final row appears with a spinning gear badge showing the currently executing step number and its elapsed time. This row updates each time the monitor process runs.</p>
+            <p>When no build has run today, the section shows a &ldquo;No Build Today&rdquo; placeholder with a sleep icon.</p>
+            <div class="callout info"><p>Individual step durations can vary significantly day to day based on data volume. The variance column helps distinguish between normal variation and genuine performance degradation. A step consistently showing +20% or more over several days may indicate a growing data issue or resource contention.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Duration Trend</h2>
+            <p>A bar chart showing total build duration over time. Each bar represents one day&rsquo;s build. Green bars are successful builds; red bars indicate failures. Click any bar to open a slideout with that day&rsquo;s full build details.</p>
+            <p>Time range buttons control how much history is displayed: 30 days (default), 60 days, 90 days, or a custom date range. Selecting Custom opens a date picker modal. The chart refreshes when you change the range (action badge).</p>
+            <p>On days where the build was attempted multiple times (failure then retry), bars show stacked segments representing each attempt&rsquo;s wall-clock duration.</p>
+            <p>Below the chart, summary statistics show the average, minimum, maximum, and number of builds in the selected range. These give quick context for whether today&rsquo;s build duration is normal.</p>
+            <div class="callout tip"><p>The trend chart is the fastest way to spot drift. If the bars are gradually getting taller over weeks, the build is taking longer &mdash; usually because data volume is growing. A sudden spike on one day could indicate a resource contention issue, a missing index, or an unusually large data load.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Build History</h2>
+            <p>A collapsible tree showing the complete history of all BIDATA builds. Organized by year and month, with build counts and success/failure tallies at every level.</p>
+            <p>Click a <strong>year</strong> to expand its months. Each month row shows the total number of builds, how many succeeded, and how many failed. Click a <strong>month</strong> to see its daily breakdown. Click a <strong>day</strong> to open a slideout with the full build details for that date &mdash; step-by-step execution, timings, and status for every step.</p>
+            <p>The build count in the section header shows the total number of builds across all history. Days with multiple build attempts (failure + retry) show the attempt count next to the date.</p>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../bidata.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to BIDATA Monitoring</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/bidata-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/bidata-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

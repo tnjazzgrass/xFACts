@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Batch Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-live"><span class="dot"></span></span></span><span class="key-flip-label">Live Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when a collector process completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">NB</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows a data collection process. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">12</div><div class="mc-label">NB</div></div></span><span class="key-flip-label">Summary Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Displays a batch count with status breakdown underneath. One card per batch type.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Tooltip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Hover or click for a brief explanation of what a metric means or what the thresholds are.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">Batch Monitoring</div>
+                            <div class="mock-page-subtitle">Real-time Debt Manager batch activity, pipeline tracking, and execution history</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">12:34:07</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                <a href="#section-1" class="callout-marker" style="position:absolute; top: 10px; left: -25%;">1</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">NB</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">2m</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">PMT</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">3m</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">Summary</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">45m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two Column Body (equal width) -->
+                    <div style="display: flex; gap: 14px;">
+                        <!-- Left Column: Today's Activity + Active Batches -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Today's Activity -->
+                            <div class="mock-section" data-section="2" style="position: relative;">
+                                <a href="#section-2" class="callout-marker" style="position:absolute; top: 6px; left: 26%;">2</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Today&rsquo;s Activity</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                        <div style="font-size:9px; color:#888;">New Business</div>
+                                        <div style="font-size:22px; color:#569cd6; font-weight:600;">12</div>
+                                        <div style="font-size:8px;"><span style="color:#4ec9b0;">10 complete</span> &nbsp;<span style="color:#569cd6;">2 active</span></div>
+                                        <div style="font-size:7px; color:#666;">4,218 accounts</div>
+                                    </div>
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                        <div style="font-size:9px; color:#888;">Payments</div>
+                                        <div style="font-size:22px; color:#ce9178; font-weight:600;">8</div>
+                                        <div style="font-size:8px;"><span style="color:#4ec9b0;">6 complete</span> &nbsp;<span style="color:#569cd6;">2 active</span></div>
+                                        <div style="font-size:7px; color:#666;">1,847 payments</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Active Batches -->
+                            <div class="mock-section" data-section="3" style="position: relative;">
+                                <a href="#section-3" class="callout-marker" style="position:absolute; top: 6px; left: 24%;">3</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Active Batches</span>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <div style="display:flex; gap:2px;">
+                                            <span style="font-size:7px; color:#ccc; background:#404040; border-radius:3px; padding:1px 6px;">All</span>
+                                            <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">NB</span>
+                                            <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">PMT</span>
+                                        </div>
+                                        <span class="mock-badge-live"><span class="mock-live-dot" style="width:6px; height:6px;"></span></span>
+                                    </div>
+                                </div>
+                                <div style="font-size:8px; color:#666; border:1px solid #333; border-radius:4px; padding:6px 10px;">
+                                    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding:3px 0; color:#666;">
+                                        <span style="flex:0.5;">Type</span><span style="flex:0.5;">ID</span><span style="flex:2;">Name</span><span style="flex:1;">Status</span><span style="flex:1.5;">Progress</span><span style="flex:0.5;">Count</span><span style="flex:0.5;">Time</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc; border-bottom:1px solid #333;">
+                                        <span style="flex:0.5;"><span style="background:#1e3a5f; color:#569cd6; border-radius:3px; padding:0 4px; font-size:7px;">NB</span></span>
+                                        <span style="flex:0.5;">4521</span><span style="flex:2;">ABC_DAILY_20260314</span>
+                                        <span style="flex:1;"><span style="background:#264f26; color:#4ec9b0; border-radius:3px; padding:0 4px; font-size:7px;">Merging</span></span>
+                                        <span style="flex:1.5;">&#9608;&#9608;&#9608;&#9608;&#9601;&#9601; 68%</span>
+                                        <span style="flex:0.5;">842</span><span style="flex:0.5;">24m</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc; border-bottom:1px solid #333;">
+                                        <span style="flex:0.5;"><span style="background:#5f3a1e; color:#ce9178; border-radius:3px; padding:0 4px; font-size:7px;">PMT</span></span>
+                                        <span style="flex:0.5;">8934</span><span style="flex:2;">Manual Payment Import</span>
+                                        <span style="flex:1;"><span style="background:#1e3a5f; color:#569cd6; border-radius:3px; padding:0 4px; font-size:7px;">Posting</span></span>
+                                        <span style="flex:1.5;">142 / 320 (44%)</span>
+                                        <span style="flex:0.5;">320</span><span style="flex:0.5;">8m</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc;">
+                                        <span style="flex:0.5;"><span style="background:#1e3a5f; color:#569cd6; border-radius:3px; padding:0 4px; font-size:7px;">NB</span></span>
+                                        <span style="flex:0.5;">4520</span><span style="flex:2;">XYZ_REFRESH_20260314</span>
+                                        <span style="flex:1;"><span style="background:#1e3a5f; color:#569cd6; border-radius:3px; padding:0 4px; font-size:7px;">Uploaded</span></span>
+                                        <span style="flex:1.5;"></span>
+                                        <span style="flex:0.5;">1,205</span><span style="flex:0.5;">1h 12m</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Process Status + Batch History -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Process Status -->
+                            <div class="mock-section" data-section="4" style="position: relative;">
+                                <a href="#section-4" class="callout-marker" style="position:absolute; top: 6px; right: 70%;">4</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Process Status</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:6px;">
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px; display:flex; justify-content:space-between; align-items:center;">
+                                        <div><span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">OK</span> <span style="font-size:9px; color:#ccc; margin-left:6px;">Collect-NBBatchStatus</span></div>
+                                        <div style="font-size:8px; color:#888;">2m ago &middot; 1.2s</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px; display:flex; justify-content:space-between; align-items:center;">
+                                        <div><span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">OK</span> <span style="font-size:9px; color:#ccc; margin-left:6px;">Collect-PMTBatchStatus</span></div>
+                                        <div style="font-size:8px; color:#888;">3m ago &middot; 0.8s</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px; display:flex; justify-content:space-between; align-items:center;">
+                                        <div><span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">OK</span> <span style="font-size:9px; color:#ccc; margin-left:6px;">Send-OpenBatchSummary</span></div>
+                                        <div style="font-size:8px; color:#888;">45m ago &middot; 0.3s</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Batch History -->
+                            <div class="mock-section mock-section-tall" data-section="5" style="position: relative;">
+                                <a href="#section-5" class="callout-marker" style="position:absolute; top: 6px; right: 70%;">5</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Batch History</span>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <div style="display:flex; gap:2px;">
+                                            <span style="font-size:7px; color:#ccc; background:#404040; border-radius:3px; padding:1px 6px;">All</span>
+                                            <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">NB</span>
+                                            <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">PMT</span>
+                                        </div>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </div>
+                                </div>
+                                <div style="font-size:9px; color:#888;">
+                                    <div style="padding:5px 0; border-bottom:1px solid #333; cursor:pointer;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2026</span>
+                                        <span style="color:#666; margin-left:12px;">1,842 batches</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">1,810 ok</span>
+                                        <span style="color:#f44747; margin-left:6px;">32 failed</span>
+                                    </div>
+                                    <div style="padding:5px 0; border-bottom:1px solid #333;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2025</span>
+                                        <span style="color:#666; margin-left:12px;">8,450 batches</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">8,312 ok</span>
+                                        <span style="color:#f44747; margin-left:6px;">138 failed</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+            </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The Batch Monitoring page tracks New Business and Payment batches as they move through Debt Manager&rsquo;s batch lifecycle. Each batch type follows a distinct pipeline of states from creation through completion.</p>
+                    <p>Two independent collectors monitor NB and PMT batches respectively, with a third process sending daily summary notifications. The page shows today&rsquo;s activity, currently in-flight batches, collector health, and full batch history.</p>
+                    <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicators</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Today&rsquo;s Activity</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Active Batches</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Process Status</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Batch History</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicators</h2>
+            <p>Three engine cards in the upper right represent the processes behind this page.</p>
+            <p><strong>NB</strong> &mdash; <code>Collect-NBBatchStatus.ps1</code>. Monitors New Business batches by querying Debt Manager&rsquo;s batch tables. Tracks each batch from upload through merge completion, detecting stalls, failures, and status transitions.</p>
+            <p><strong>PMT</strong> &mdash; <code>Collect-PMTBatchStatus.ps1</code>. Monitors Payment batches through their lifecycle from creation through posting. Tracks import, release, posting progress, and terminal states including failures and partial postings.</p>
+            <p><strong>Summary</strong> &mdash; <code>Send-OpenBatchSummary.ps1</code>. Sends a daily notification card summarizing open (incomplete) batches. Runs on a less frequent schedule than the collectors since it&rsquo;s a reporting process, not a monitoring one.</p>
+            <p>Green bar means the last run succeeded. Red means it failed. These update via WebSocket independently of the page&rsquo;s refresh cycle.</p>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Today&rsquo;s Activity</h2>
+            <p>Two summary cards showing the day&rsquo;s batch volume at a glance, one per batch type.</p>
+            <p><strong>New Business</strong> &mdash; Total NB batches today with a breakdown: completed (green), failed (red), and active/in-flight (blue). Below the status breakdown, the total account count across all today&rsquo;s NB batches gives a sense of volume.</p>
+            <p><strong>Payments</strong> &mdash; Total PMT batches today with the same breakdown: completed, failed, active. The payment count shows total payments across all batches. A muted footnote may appear showing counts for companion batch types like reapplies or other special types that are tracked but not prominently displayed.</p>
+            <p>These cards update when either collector completes (lightning bolt badge). Zero counts are normal outside of business hours &mdash; NB batches typically arrive during the day, and payment batches are created throughout the day as imports and manual entries.</p>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Active Batches</h2>
+            <p>A unified table showing every batch currently in flight across both NB and PMT types. Filter buttons at the top let you narrow to one type. This section uses live polling (pulsing dot badge) for real-time visibility into batch progress.</p>
+            <p>Each row shows the batch type tag (NB in blue, PMT in orange), batch ID, name, a color-coded status badge, progress indicator, record count, and age (how long since the batch was created).</p>
+            <p>The <strong>Progress</strong> column adapts based on the batch&rsquo;s current state. For NB batches actively merging, it shows a progress bar with processed/total counts. For PMT batches in the posting phase, it shows journal posted vs. active counts. For batches in transit between states, the column shows a descriptive label like &ldquo;Uploaded,&rdquo; &ldquo;Released,&rdquo; or &ldquo;In Queue.&rdquo; Failed batches show a red failure label.</p>
+            <div class="callout tip"><p>The age column is your early warning for stuck batches. An NB batch that&rsquo;s been &ldquo;Uploaded&rdquo; for hours without moving to &ldquo;Merging&rdquo; may be waiting in queue behind other work, or something may have prevented it from being picked up. Compare with the Process Status cards to see if the collectors are running normally.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Process Status</h2>
+            <p>One card per collector process showing its current health. Each card displays a status badge, the collector name, how long ago it last ran, and the execution duration.</p>
+            <p>Status badges reflect the process health: <strong>OK</strong> (green) means healthy and running on schedule. <strong>Running</strong> (blue) means actively executing. <strong>Delayed</strong> (yellow) means it&rsquo;s been longer than expected since the last run. <strong>Failed</strong> or <strong>Stale</strong> (red) means the last run errored or the process hasn&rsquo;t reported in beyond the critical threshold.</p>
+            <p>These cards update when any engine process completes (lightning bolt badge). A healthy page shows all three cards as OK with recent timestamps and sub-second durations.</p>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Batch History</h2>
+            <p>A collapsible tree showing the complete history of all tracked batches. Filter buttons let you view all batches or narrow to NB or PMT only. Organized by year and month with batch counts and success/failure tallies at every level.</p>
+            <p>Click a <strong>year</strong> to expand its months. Each month row shows total batches, succeeded, and failed. Click a <strong>month</strong> to load its daily breakdown. Click a <strong>day</strong> to open a slideout with every batch that was active that day &mdash; full details including batch name, type, status timeline, record counts, and duration.</p>
+            <div class="callout info"><p>The history tree includes all batches that reached a terminal state (completed or failed) on each date. A batch that started on Monday but didn&rsquo;t complete until Tuesday will appear under Tuesday&rsquo;s date. Use the NB/PMT filter to isolate one type when investigating patterns in a specific batch category.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../batchops.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Batch Monitoring</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/batchops-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/batchops-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

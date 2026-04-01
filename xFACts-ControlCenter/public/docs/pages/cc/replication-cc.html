@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Replication Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Replication Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-live"><span class="dot"></span></span></span><span class="key-flip-label">Live Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the relevant engine process completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-action"><span class="arrows">&#128260;</span></span></span><span class="key-flip-label">Action Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes in response to a user action, like selecting a different time range or date.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">REPL</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows a data collection process. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">1,247</div><div class="mc-label">PLE</div></div></span><span class="key-flip-label">Metric Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Displays a live value with color-coded status. Many are clickable &mdash; look for the arrow hint.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Tooltip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Hover or click for a brief explanation of what a metric means or what the thresholds are.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">Replication Monitoring</div>
+                            <div class="mock-page-subtitle">Agent health, queue depth, end-to-end latency, delivery rate, event log</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">12:34:07</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                <a href="#section-1" class="callout-marker" style="position:absolute; top: 10px; left: -60%;">1</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">Replication</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">2m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Body: Replication-specific layout -->
+
+                    <!-- Agent Status Cards (full width row) -->
+                    <div class="mock-section" data-section="2" style="position: relative;">
+                        <a href="#section-2" class="callout-marker" style="position:absolute; top: 6px; left: 12%;">2</a>
+                        <div class="mock-section-header"><span class="mock-section-title">Agent Status</span><span class="mock-badge-event">&#9889;</span></div>
+                        <div class="mock-agent-grid">
+                            <div class="mock-agent-card">
+                                <div class="mock-agent-name">crs5_oltp</div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Snapshot</span><span class="mock-agent-status healthy">Idle</span></div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Log Reader</span><span class="mock-agent-status healthy">Running</span></div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Distribution</span><span class="mock-agent-status healthy">Running</span></div>
+                            </div>
+                            <div class="mock-agent-card">
+                                <div class="mock-agent-name">dm_history</div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Snapshot</span><span class="mock-agent-status healthy">Idle</span></div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Log Reader</span><span class="mock-agent-status healthy">Running</span></div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Distribution</span><span class="mock-agent-status healthy">Running</span></div>
+                            </div>
+                            <div class="mock-agent-card">
+                                <div class="mock-agent-name">dm_compliance</div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Snapshot</span><span class="mock-agent-status healthy">Idle</span></div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Log Reader</span><span class="mock-agent-status healthy">Running</span></div>
+                                <div class="mock-agent-row"><span class="mock-agent-label">Distribution</span><span class="mock-agent-status warning">Retry</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Delivery Rate Chart (full width) -->
+                    <div class="mock-section" data-section="3" style="position: relative;">
+                        <a href="#section-3" class="callout-marker" style="position:absolute; top: 6px; left: 12%;">3</a>
+                        <div class="mock-section-header">
+                            <span class="mock-section-title">Delivery Rate</span>
+                            <span style="display:flex; align-items:center; gap:6px; position:relative;">
+                                <a href="#section-7" class="callout-marker" style="position:absolute; top: -2px; right: 115%;">7</a>
+                                <span class="mock-time-buttons" data-section="7">
+                                    <span class="mock-time-btn active">1h</span>
+                                    <span class="mock-time-btn">4h</span>
+                                    <span class="mock-time-btn">12h</span>
+                                    <span class="mock-time-btn">24h</span>
+                                    <span class="mock-time-btn">7d</span>
+                                </span>
+                                <span class="mock-badge-event">&#9889;</span>
+                            </span>
+                        </div>
+                        <div class="mock-chart" style="height: 70px;">
+                            <svg viewBox="0 0 400 60" preserveAspectRatio="none" style="width:100%; height:100%;">
+                                <polyline points="0,45 30,42 60,38 90,35 120,40 150,30 180,25 210,28 240,20 270,22 300,18 330,15 360,20 400,12" fill="none" stroke="#4ec9b0" stroke-width="1.5" opacity="0.8"/>
+                                <polyline points="0,50 30,48 60,46 90,44 120,47 150,42 180,40 210,43 240,38 270,40 300,36 330,34 360,38 400,30" fill="none" stroke="#569cd6" stroke-width="1.5" opacity="0.6"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Lower Grid: Charts (left) + Event Log (right) -->
+                    <div class="mock-lower-grid">
+                        <div class="mock-lower-left">
+                            <!-- Queue Depth Chart -->
+                            <div class="mock-section" data-section="4" style="position: relative;">
+                                <a href="#section-4" class="callout-marker" style="position:absolute; top: 6px; left: 18%;">4</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Queue Depth</span>
+                                    <span style="display:flex; align-items:center; gap:6px;">
+                                        <span class="mock-time-buttons" data-section="7">
+                                            <span class="mock-time-btn active">1h</span>
+                                            <span class="mock-time-btn">4h</span>
+                                            <span class="mock-time-btn">12h</span>
+                                            <span class="mock-time-btn">24h</span>
+                                            <span class="mock-time-btn">7d</span>
+                                        </span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </span>
+                                </div>
+                                <div class="mock-chart" style="height: 55px;">
+                                    <svg viewBox="0 0 300 50" preserveAspectRatio="none" style="width:100%; height:100%;">
+                                        <polyline points="0,45 40,42 80,40 120,38 160,35 200,32 240,30 300,28" fill="none" stroke="#4ec9b0" stroke-width="1.5" opacity="0.8"/>
+                                        <polyline points="0,48 40,46 80,44 120,42 160,40 200,38 240,36 300,34" fill="none" stroke="#569cd6" stroke-width="1.5" opacity="0.6"/>
+                                    </svg>
+                                </div>
+                            </div>
+                            <!-- Latency Chart -->
+                            <div class="mock-section" data-section="5" style="position: relative;">
+                                <a href="#section-5" class="callout-marker" style="position:absolute; top: 6px; left: 25%;">5</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">End-to-End Latency</span>
+                                    <span style="display:flex; align-items:center; gap:6px;">
+                                        <span class="mock-time-buttons" data-section="7">
+                                            <span class="mock-time-btn active">1h</span>
+                                            <span class="mock-time-btn">4h</span>
+                                            <span class="mock-time-btn">12h</span>
+                                            <span class="mock-time-btn">24h</span>
+                                            <span class="mock-time-btn">7d</span>
+                                        </span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </span>
+                                </div>
+                                <div class="mock-chart" style="height: 55px;">
+                                    <svg viewBox="0 0 300 50" preserveAspectRatio="none" style="width:100%; height:100%;">
+                                        <polyline points="0,30 40,28 80,25 120,32 160,20 200,22 240,18 300,15" fill="none" stroke="#ce9178" stroke-width="1.5" opacity="0.8"/>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Event Log (right column) -->
+                        <div class="mock-lower-right">
+                            <div class="mock-section mock-section-tall" data-section="6" style="position: relative;">
+                                <a href="#section-6" class="callout-marker" style="position:absolute; top: 6px; right: 40%;">6</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Event Log</span>
+                                    <span style="display:flex; align-items:center; gap:6px;">
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </span>
+                                </div>
+                                <div class="mock-event-filter">
+                                    <span class="mock-filter-pill active">All</span>
+                                    <span class="mock-filter-pill">crs5_oltp</span>
+                                    <span class="mock-filter-pill">dm_history</span>
+                                </div>
+                                <div class="mock-event-row"><span class="mock-event-time">12:34</span><span class="mock-event-agent">crs5_oltp</span><span class="mock-event-text">Distribution agent running. 142 cmds delivered.</span></div>
+                                <div class="mock-event-row"><span class="mock-event-time">12:33</span><span class="mock-event-agent">dm_history</span><span class="mock-event-text">Log Reader agent running. Scanned 28 txns.</span></div>
+                                <div class="mock-event-row"><span class="mock-event-time">12:32</span><span class="mock-event-agent">crs5_oltp</span><span class="mock-event-text">Log Reader agent running. Scanned 85 txns.</span></div>
+                                <div class="mock-event-row warning"><span class="mock-event-time">12:30</span><span class="mock-event-agent">dm_compliance</span><span class="mock-event-text">Distribution agent retrying after error.</span></div>
+                                <div class="mock-event-row"><span class="mock-event-time">12:28</span><span class="mock-event-agent">dm_history</span><span class="mock-event-text">Distribution agent running. 67 cmds delivered.</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The Replication Monitoring page tracks the health and performance of SQL Server transactional replication across all published databases.</p>
+                    <p>Unlike most Control Center pages, this one does not use live polling. All sections update when the Replication collector completes a cycle (event-driven via the engine indicator).</p>
+                    <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicator</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Agent Status</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Delivery Rate</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Queue Depth</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> End-to-End Latency</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> Event Log</div>
+                    <div class="sidebar-item" data-marker="7"><span class="sidebar-num">7</span> Time Range Selector</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicator</h2>
+            <p>The single engine card in the upper right represents the Replication collector process &mdash; <code>Collect-ReplicationHealth.ps1</code>. It runs on a fixed interval and gathers agent status, queue depth, latency, and delivery rate from the distribution database.</p>
+            <p>The colored bar and countdown show the health and timing of the collector. Green means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in.</p>
+            <p>Every section on this page refreshes when this collector completes (lightning bolt badges). There is no independent live polling on this page &mdash; the engine indicator is the single data pipeline behind everything you see.</p>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Agent Status</h2>
+            <p>One card per replicated publication showing the current state of all three replication agents: Snapshot, Log Reader, and Distribution.</p>
+            <p><strong>Snapshot Agent</strong> &mdash; Creates the initial baseline of table data and schema. Normally idle after initial setup. Should only show &ldquo;Running&rdquo; during a manual reinitialization.</p>
+            <p><strong>Log Reader Agent</strong> &mdash; Continuously reads the transaction log on the publisher and writes committed transactions to the distribution database. Should always show &ldquo;Running.&rdquo; If it stops, new changes stop flowing to subscribers.</p>
+            <p><strong>Distribution Agent</strong> &mdash; Picks up transactions from the distribution database and delivers them to the subscriber. Should always show &ldquo;Running.&rdquo; &ldquo;Retry&rdquo; means it encountered an error and is attempting to recover &mdash; this is worth watching but not always critical.</p>
+            <div class="callout info"><p>Agent status colors: green for healthy running or expected idle, yellow for retry or starting, red for stopped or failed. A single agent in retry status often resolves on its own within a few minutes. Sustained retry or stopped status needs investigation.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Delivery Rate</h2>
+            <p>A full-width trend chart showing how many commands per second are being delivered from the distribution database to subscribers. Each replicated publication gets its own line.</p>
+            <p>Healthy replication shows a steady throughput line. Drops to zero could indicate a stopped agent, network issue, or subscriber unavailability. Spikes typically correlate with large transactions or batch operations on the publisher.</p>
+            <div class="callout tip"><p>Compare the delivery rate chart with the queue depth chart below. If queue depth is climbing while delivery rate is flat or zero, commands are accumulating but not being delivered &mdash; that&rsquo;s the classic sign of a distribution agent problem.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Queue Depth</h2>
+            <p>Shows the number of commands waiting in the distribution database to be delivered to subscribers. Each publication gets its own line, color-matched to the delivery rate chart.</p>
+            <p>Under normal conditions, queue depth stays low and relatively flat. A steadily climbing line means commands are arriving faster than they&rsquo;re being delivered. A sudden spike could indicate a large transaction on the publisher (bulk update, index rebuild) or a temporary subscriber issue.</p>
+            <p>Queue depth that climbs and stays elevated is the primary indicator that replication is falling behind. Check the distribution agent status and the event log for errors.</p>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>End-to-End Latency</h2>
+            <p>Measures how long it takes for a transaction committed on the publisher to appear on the subscriber. Shown in seconds. Lower is better.</p>
+            <p>This is the metric that business stakeholders care about most &mdash; it answers &ldquo;how far behind is the replica?&rdquo; Under normal load, latency should be in the single-digit seconds. During heavy operations (overnight batch processing, large data loads), latency can spike to minutes and recover once the load subsides.</p>
+            <p>Sustained high latency with normal delivery rate and flat queue depth might indicate a subscriber performance issue (slow disk, high CPU) rather than a replication problem.</p>
+            <div class="callout warning"><p>The BIDATA build process creates significant replication load each morning. Elevated latency during the BIDATA window is expected and typically resolves within an hour of build completion. Check the Event Log for correlated BIDATA events.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>Event Log</h2>
+            <p>A scrollable log of replication agent events ordered newest-first. Shows agent messages, errors, and status changes as reported by the distribution database.</p>
+            <p><strong>Agent Filter</strong> &mdash; The pill buttons above the log let you filter to a specific publication&rsquo;s agents. &ldquo;All&rdquo; shows everything.</p>
+            <p><strong>Date Picker</strong> &mdash; Defaults to today. Select a previous date to review historical events for troubleshooting.</p>
+            <p><strong>Correlated Button</strong> &mdash; The chain-link button filters the event log to show only events that coincide with BIDATA build activity. Useful for determining whether replication disruptions are caused by the nightly BI refresh.</p>
+            <p>Warning-colored rows indicate agent retries or errors. Normal operational messages appear in the default color. The event log is your primary diagnostic tool when agent status or chart trends indicate a problem.</p>
+        </div></div>
+        <div class="guide-section" id="section-7"><div class="section">
+            <h2><span class="section-number">7</span>Time Range Selector</h2>
+            <p>Each chart has a row of time range buttons that control how much history is displayed. The options are 1 hour, 4 hours, 12 hours, 24 hours, and 7 days.</p>
+            <p>The selected range is highlighted. Clicking a different button reloads the chart data for that window. The active range is independent per chart &mdash; you can view delivery rate at 1 hour while looking at latency over 7 days.</p>
+            <p>Shorter ranges are best for diagnosing active issues. Longer ranges reveal patterns &mdash; daily cycles, weekly trends, and whether the current behavior is normal or unusual.</p>
+            <div class="callout tip"><p>Start with 1h to understand the current state, then widen to 24h or 7d to see if today&rsquo;s pattern matches recent history. If queue depth is elevated now but was elevated at the same time yesterday, it might be a normal daily load pattern rather than a problem.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../replication.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Replication Monitoring</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/replication-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/replication-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

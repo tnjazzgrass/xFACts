@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Backup Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-live"><span class="dot"></span></span></span><span class="key-flip-label">Live Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the relevant engine process completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">BK</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows a data collection process. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">5</div><div class="mc-label">FILES</div></div></span><span class="key-flip-label">Status Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Displays a count with contextual detail. Used for queue depths, retention counts, and pipeline results.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Tooltip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Hover or click for a brief explanation of what a metric means or what the thresholds are.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">Backup Monitoring</div>
+                            <div class="mock-page-subtitle">Backup pipeline status, active operations, queue/retention status, storage utilization</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">12:34:07</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                <a href="#section-1" class="callout-marker" style="position:absolute; top: 10px; left: -15%;">1</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">Backup</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">5m</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">Network</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">3m</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">AWS</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">8m</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">Retention</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">14m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two Column Body (equal width) -->
+                    <div style="display: flex; gap: 14px;">
+                        <!-- Left Column: Pipeline + Active Operations -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Pipeline Status -->
+                            <div class="mock-section" data-section="2" style="position: relative;">
+                                <a href="#section-2" class="callout-marker" style="position:absolute; top: 6px; left: 26%;">2</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Pipeline Status</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#ccc;">Backup</span>
+                                            <span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">Complete</span>
+                                        </div>
+                                        <div style="font-size:8px; color:#888;">12:30 AM</div>
+                                        <div style="font-size:8px; color:#666;">18 files (42 GB)</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#ccc;">Network Copy</span>
+                                            <span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">Complete</span>
+                                        </div>
+                                        <div style="font-size:8px; color:#888;">1:15 AM</div>
+                                        <div style="font-size:8px; color:#666;">18 files (42 GB)</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#ccc;">AWS Upload</span>
+                                            <span style="font-size:7px; color:#569cd6; background:#1e3a5f; border-radius:3px; padding:1px 6px;">Running</span>
+                                        </div>
+                                        <div style="font-size:8px; color:#888;">Running...</div>
+                                        <div style="font-size:8px; color:#666;">12 files (28 GB)</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <span style="font-size:9px; color:#ccc;">Retention</span>
+                                            <span style="font-size:7px; color:#888; background:#333; border-radius:3px; padding:1px 6px;">Idle</span>
+                                        </div>
+                                        <div style="font-size:8px; color:#888;">Yesterday 3:00 AM</div>
+                                        <div style="font-size:8px; color:#666;">6 files cleaned</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Active Operations -->
+                            <div class="mock-section" data-section="3" style="position: relative;">
+                                <a href="#section-3" class="callout-marker" style="position:absolute; top: 6px; left: 30%;">3</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Active Operations</span>
+                                    <span class="mock-badge-live"><span class="mock-live-dot" style="width:6px; height:6px;"></span></span>
+                                </div>
+                                <div style="margin-bottom:10px;">
+                                    <div style="font-size:9px; color:#ccc; margin-bottom:6px;">&#128190; Backups In Progress</div>
+                                    <div style="font-size:8px; color:#666; border:1px solid #333; border-radius:4px; padding:6px 10px;">
+                                        <div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding:3px 0; color:#666;">
+                                            <span style="flex:1;">Server</span><span style="flex:1;">Database</span><span style="flex:1;">Type</span><span style="flex:2;">Progress</span><span style="flex:1;">ETA</span>
+                                        </div>
+                                        <div style="display:flex; justify-content:space-between; padding:3px 0; color:#ccc;">
+                                            <span style="flex:1;">FA-SQL01</span><span style="flex:1;">crs5_oltp</span><span style="flex:1;">FULL</span><span style="flex:2;">&#9608;&#9608;&#9608;&#9608;&#9608;&#9601;&#9601;&#9601; 62%</span><span style="flex:1;">~18m</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="margin-bottom:10px;">
+                                    <div style="font-size:9px; color:#ccc; margin-bottom:6px;">&#128193; Network Copies In Progress</div>
+                                    <div style="font-size:8px; color:#888; padding:4px 10px;">No active network copies</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:9px; color:#ccc; margin-bottom:6px;">&#9729; AWS Uploads In Progress</div>
+                                    <div style="font-size:8px; color:#666; border:1px solid #333; border-radius:4px; padding:6px 10px;">
+                                        <div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding:3px 0; color:#666;">
+                                            <span style="flex:1;">Server</span><span style="flex:1;">Database</span><span style="flex:2;">File</span><span style="flex:1;">Size</span><span style="flex:1;">Progress</span>
+                                        </div>
+                                        <div style="display:flex; justify-content:space-between; padding:3px 0; color:#ccc;">
+                                            <span style="flex:1;">FA-SQL01</span><span style="flex:1;">xFACts</span><span style="flex:2; color:#888;">xFACts_FULL_*.bak</span><span style="flex:1;">1.2 GB</span><span style="flex:1;">45%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Queue/Retention + Storage -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Queue + Retention side by side -->
+                            <div style="display: flex; gap: 12px;">
+                                <!-- Queue Status -->
+                                <div class="mock-section" data-section="4" style="flex:1; position: relative;">
+                                    <a href="#section-4" class="callout-marker" style="position:absolute; top: 6px; left: 46%;">4</a>
+                                    <div class="mock-section-header">
+                                        <span class="mock-section-title">Queue Status</span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </div>
+                                    <div style="display:flex; gap:8px;">
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                            <div style="font-size:9px; color:#888;">Network</div>
+                                            <div style="font-size:20px; color:#4ec9b0; font-weight:600;">0</div>
+                                            <div style="font-size:8px; color:#666;">Empty</div>
+                                        </div>
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                            <div style="font-size:9px; color:#888;">AWS</div>
+                                            <div style="font-size:20px; color:#dcdcaa; font-weight:600;">6</div>
+                                            <div style="font-size:8px; color:#666;">14.2 GB</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Retention Status -->
+                                <div class="mock-section" data-section="5" style="flex:1; position: relative;">
+                                    <a href="#section-5" class="callout-marker" style="position:absolute; top: 6px; right: 34%;">5</a>
+                                    <div class="mock-section-header">
+                                        <span class="mock-section-title">Retention Status</span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </div>
+                                    <div style="display:flex; gap:8px;">
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                            <div style="font-size:9px; color:#888;">Local &#128465;</div>
+                                            <div style="font-size:20px; color:#4ec9b0; font-weight:600;">12</div>
+                                            <div style="font-size:8px; color:#666;">86 GB</div>
+                                        </div>
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                            <div style="font-size:9px; color:#888;">Network &#128465;</div>
+                                            <div style="font-size:20px; color:#4ec9b0; font-weight:600;">8</div>
+                                            <div style="font-size:8px; color:#666;">54 GB</div>
+                                        </div>
+                                    </div>
+                                    <div style="font-size:7px; color:#666; text-align:center; margin-top:6px;">Runs 3:00 AM</div>
+                                </div>
+                            </div>
+
+                            <!-- Storage Status -->
+                            <div class="mock-section" data-section="6" style="position: relative;">
+                                <a href="#section-6" class="callout-marker" style="position:absolute; top: 6px; left: 26%;">6</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Storage Status</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="margin-bottom:10px;">
+                                    <div style="font-size:9px; color:#888; margin-bottom:6px;">Local Backup Drives</div>
+                                    <div style="margin-bottom:6px;">
+                                        <div style="display:flex; justify-content:space-between; font-size:8px; margin-bottom:3px;"><span style="color:#ccc;">FA-SQL01 E:</span><span style="color:#888;">1.2 TB free (42%)</span></div>
+                                        <div style="height:8px; background:#333; border-radius:2px; overflow:hidden;"><div style="width:58%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    </div>
+                                    <div style="margin-bottom:6px;">
+                                        <div style="display:flex; justify-content:space-between; font-size:8px; margin-bottom:3px;"><span style="color:#ccc;">FA-SQL02 E:</span><span style="color:#888;">890 GB free (35%)</span></div>
+                                        <div style="height:8px; background:#333; border-radius:2px; overflow:hidden;"><div style="width:65%; height:100%; background:#dcdcaa; border-radius:2px;"></div></div>
+                                    </div>
+                                    <div>
+                                        <div style="display:flex; justify-content:space-between; font-size:8px; margin-bottom:3px;"><span style="color:#ccc;">FA-SQL03 E:</span><span style="color:#888;">2.1 TB free (55%)</span></div>
+                                        <div style="height:8px; background:#333; border-radius:2px; overflow:hidden;"><div style="width:45%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="font-size:9px; color:#888; margin-bottom:6px;">Network Storage</div>
+                                    <div>
+                                        <div style="display:flex; justify-content:space-between; font-size:8px; margin-bottom:3px;"><span style="color:#ccc;">\\FA-NAS\Backups</span><span style="color:#888;">4.8 TB free (48%)</span></div>
+                                        <div style="height:8px; background:#333; border-radius:2px; overflow:hidden;"><div style="width:52%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+            </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The Backup Monitoring page tracks the entire backup pipeline &mdash; from the initial SQL Server backup through network copy and AWS upload to eventual retention cleanup.</p>
+                    <p>Four engine indicators drive the data, one for each stage of the pipeline. Active operations show real-time progress with live polling, while pipeline status, queues, retention, and storage update when their respective engine processes complete.</p>
+                    <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicators</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Pipeline Status</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Active Operations</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Queue Status</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Retention Status</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> Storage Status</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicators</h2>
+            <p>Four engine cards in the upper right represent the four stages of the backup pipeline. Each runs independently on its own schedule, and each has its own colored bar and countdown.</p>
+            <p><strong>Backup</strong> &mdash; <code>Collect-BackupStatus.ps1</code>. Queries SQL Server&rsquo;s backup history tables and records what backups completed since the last check. This is the pipeline&rsquo;s starting point &mdash; it discovers what files need to be moved downstream.</p>
+            <p><strong>Network</strong> &mdash; <code>Process-BackupNetworkCopy.ps1</code>. Copies completed backup files from local drives to the network share. Runs on its own cycle and processes whatever the Backup collector has queued.</p>
+            <p><strong>AWS</strong> &mdash; <code>Process-BackupAWSUpload.ps1</code>. Uploads backup files to AWS S3/Glacier for off-site retention. Picks up files that have been copied to the network share and uploads them in order.</p>
+            <p><strong>Retention</strong> &mdash; <code>Process-BackupRetention.ps1</code>. Cleans up expired backup files from local and network storage based on configurable retention policies. Typically runs once daily.</p>
+            <p>Green bar means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in. These update via WebSocket independently of the page&rsquo;s refresh cycle.</p>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Pipeline Status</h2>
+            <p>Four cards showing the current state of each pipeline stage. Each card displays the process name, a status badge, the time of the last run, and file/size metrics from the most recent execution.</p>
+            <p>Status badges indicate the current state: <strong>Complete</strong> (green) means the last run finished successfully. <strong>Running</strong> (blue) means the process is actively executing. <strong>Failed</strong> (red) means the last run encountered an error. <strong>Idle</strong> (gray) means the process hasn&rsquo;t run recently or is waiting for its scheduled window.</p>
+            <p>This section refreshes when any engine process completes (lightning bolt badge). The cards give you a quick left-to-right reading of the pipeline &mdash; if Backup and Network are green but AWS shows Running, the pipeline is mid-stream and working normally.</p>
+            <div class="callout tip"><p>Read the pipeline cards left to right as a flow: Backup creates files, Network copies them, AWS uploads them, Retention cleans up. If a downstream stage shows zero files processed, check whether the upstream stage completed successfully &mdash; the pipeline is sequential.</p></div>
+			<p>Click any pipeline card to open a detail modal showing the last run&rsquo;s summary (status, timing, file count, size, duration) and a per-file results table. Failed files will display the error message in red beneath the row.</p>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Active Operations</h2>
+            <p>Real-time view of what&rsquo;s happening right now across all three active operation types. This section uses live polling (pulsing dot badge) and queries the servers directly for in-progress operations.</p>
+            <p><strong>Backups In Progress</strong> &mdash; SQL Server backup operations currently executing. Shows server, database, backup type, a progress bar with percentage, elapsed time, and estimated time remaining. This data comes from <code>sys.dm_exec_requests</code> on each monitored server.</p>
+            <p><strong>Network Copies In Progress</strong> &mdash; Files currently being copied from local backup drives to the network share. Shows server, database, filename, file size, copy progress, elapsed time, and ETA. Progress is estimated from bytes transferred.</p>
+            <p><strong>AWS Uploads In Progress</strong> &mdash; Files currently being uploaded to AWS S3. Same detail as network copies &mdash; server, database, filename, size, progress, elapsed, and ETA.</p>
+            <p>When no operations are active for a type, it shows a simple &ldquo;No active&rdquo; message. During particularly active backup windows, all three sections may be active simultaneously as different stages process different servers&rsquo; files.</p>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Queue Status</h2>
+            <p>Two cards showing how many files are waiting to be processed by the downstream pipeline stages.</p>
+            <p><strong>Network</strong> &mdash; Files that have been backed up locally but haven&rsquo;t been copied to the network share yet. The count shows pending files and the total size. Zero means the network copy process has caught up.</p>
+            <p><strong>AWS</strong> &mdash; Files that have been copied to the network share but haven&rsquo;t been uploaded to AWS yet. A non-zero count is normal during active processing &mdash; files accumulate while the uploader works through them sequentially.</p>
+            <div class="callout info"><p>Queue counts are expected to be non-zero during and immediately after the backup window. A growing queue that doesn&rsquo;t decrease over time indicates a downstream process may be stuck or failing &mdash; check the Pipeline Status cards and Engine Indicators for that stage.
+			</p></div>
+			<p>Click either queue card (when the count is greater than zero) to open a detail modal showing every pending file with backup type, server, database, filename, backup date, and size.</p>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Retention Status</h2>
+            <p>Two cards showing how many expired backup files are pending cleanup, plus the scheduled retention window.</p>
+            <p><strong>Local</strong> &mdash; Expired backup files still on the SQL Server&rsquo;s local backup drive. These are files past their configured retention period that will be deleted on the next retention run.</p>
+            <p><strong>Network</strong> &mdash; Expired backup files on the network share. Same concept &mdash; past retention, pending deletion.</p>
+            <p>The scheduled time shown at the bottom indicates when the retention process is configured to run. Retention typically runs once daily during a low-activity window to avoid competing with backup and copy operations.</p>
+            <div class="callout tip"><p>Non-zero retention counts are normal between retention runs &mdash; files expire throughout the day but aren&rsquo;t cleaned up until the scheduled window. If counts grow significantly between runs, check whether the retention process is actually executing by looking at its Engine Indicator and Pipeline Status card.</p></div>
+			<p>Click either retention card (when candidates exist) to open a slideout panel showing every file eligible for cleanup. Files are grouped by server with expandable accordions down to database and individual file level. Each database shows its retention cutoff date and chain count so you can verify the retention logic before a run executes. Backup type badges (FULL, DIFF, LOG) provide quick visual scanning.</p>
+        </div></div>
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>Storage Status</h2>
+            <p>Visual gauges showing disk utilization on every drive involved in the backup pipeline. Split into two groups: local backup drives on the SQL Servers and the network backup share.</p>
+            <p><strong>Local Backup Drives</strong> &mdash; One bar per server showing the backup drive&rsquo;s used space. Color-coded against per-drive thresholds: green when healthy, yellow when approaching capacity, red when critically low. The label shows the server name and drive letter, with free space and percentage on the right.</p>
+            <p><strong>Network Storage</strong> &mdash; The network share used for backup copies. Same gauge format with the UNC path as the label.</p>
+            <p>The segmented gauge bars use 80 segments for high visual resolution &mdash; each segment represents slightly more than 1% of the drive. This makes it easy to spot subtle changes in utilization over time.</p>
+            <div class="callout warning"><p>Storage filling up is the most common cause of backup failures. If a local drive gauge is yellow or red, check whether retention is running and whether backup sizes have grown unexpectedly. A full drive will cause the next backup to fail, which cascades through the entire pipeline.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../backup.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Backup Monitoring</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/backup-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/backup-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JBoss Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>JBoss Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the JBoss health collector completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">JB</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows the JBoss Management API collector. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Info Icon</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Click for a plain-English explanation of what the metric measures and what the values mean.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;gap:3px;"><span style="font-size:7px;padding:1px 4px;border-radius:3px;background:#264f26;color:#4ec9b0;">&#8226; HTTP</span><span style="font-size:7px;padding:1px 4px;border-radius:3px;background:#264f26;color:#4ec9b0;">&#8226; Svc</span><span style="font-size:7px;padding:1px 4px;border-radius:3px;background:#264f26;color:#4ec9b0;">&#8226; JBoss</span></span></span><span class="key-flip-label">Status Badges</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Health check indicators at the top of each server card. Green = healthy. Red = failed or stopped. Yellow = reload required.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div style="display:inline-flex;flex-direction:column;align-items:stretch;background:#252526;border:1px solid #333;border-radius:3px;padding:3px 6px;width:70px;"><div style="display:flex;justify-content:space-between;font-size:6px;"><span style="color:#888;">DB Pool</span><span style="color:#4ec9b0;">36%</span></div><div style="height:3px;background:#333;border-radius:1px;margin:2px 0;overflow:hidden;"><div style="width:36%;height:100%;background:#4ec9b0;border-radius:1px;"></div></div></div></span><span class="key-flip-label">Mini Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">A metric card with gauge bar, value, and detail row. Color shifts from green to yellow to red based on thresholds.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;"><span style="color:#ccc;">1,204</span><span style="color:#4ec9b0;font-size:7px;">+12</span></span></span><span class="key-flip-label">Delta Tracking</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Small colored annotation next to a value showing the change since the last collection cycle. Green = decrease. Orange = increase.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">JBoss Monitoring</div>
+                            <div class="mock-page-subtitle">Application server health, responsiveness, and JBoss metrics</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">12:34:07</span>
+                                <span style="font-size:13px;color:#888;cursor:pointer;margin-left:4px;">&#8635;</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                <a href="#section-1" class="callout-marker" style="position:absolute; top: 10px; left: -60%;">1</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">JBOSS</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">2m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section Header -->
+                    <div class="mock-section" data-section="2" style="position:relative; padding:0; border:none; background:transparent;">
+                        <a href="#section-2" class="callout-marker" style="position:absolute; top:-2px; left:14%; z-index:11;">2</a>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <span style="font-size:10px; color:#4ec9b0; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Application Servers <span style="color:#569cd6; cursor:pointer;">?</span></span>
+                            <span style="font-size:10px; color:#dcdcaa;">&#9889;</span>
+                        </div>
+
+                        <!-- Three Column Server Cards -->
+                        <div style="display: flex; gap: 8px;">
+
+                            <!-- ================================================ -->
+                            <!-- SERVER CARD 1: DM-PROD-APP (Primary, DC) -->
+                            <!-- ================================================ -->
+                            <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                <!-- Card Header -->
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid #333;">
+                                    <span style="font-size:9px; color:#ccc; font-weight:600;">DM-PROD-APP <span style="font-size:6px; color:#569cd6; background:#1e3a5f; border-radius:2px; padding:0 3px;">DC</span></span>
+                                    <span style="font-size:7px; color:#888;">Primary</span>
+                                </div>
+                                <!-- Status Badges -->
+                                <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px;">
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; HTTP <span style="color:#888;">42ms</span></span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; Service</span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; JBoss</span>
+                                    <span style="flex:1;"></span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:rgba(102,102,102,0.15); color:#888;">Uptime 14d 6h</span>
+                                </div>
+                                <!-- JVM Heap -->
+                                <div class="mock-section" data-section="3" style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px; position:relative;">
+                                    <a href="#section-3" class="callout-marker" style="position:absolute; top:12px; right:30px; z-index:11;">3</a>
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">JVM Heap <span style="color:#569cd6;cursor:pointer;">?</span></span><span style="color:#4ec9b0;">62%</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:62%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666;">1,812 / 2,920 MB</div>
+                                </div>
+                                <!-- Threads -->
+                                <div class="mock-section" data-section="4" style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px; position:relative;">
+                                    <a href="#section-4" class="callout-marker" style="position:absolute; top:12px; right:30px; z-index:11;">4</a>
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">Threads <span style="color:#569cd6;cursor:pointer;">?</span></span><span style="color:#ccc;">186</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:78%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666;">Peak: 238</div>
+                                </div>
+                                <!-- DB Pool -->
+                                <div class="mock-section" data-section="5" style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px; position:relative;">
+                                    <a href="#section-5" class="callout-marker" style="position:absolute; top:12px; right:30px; z-index:11;">5</a>
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">DB Pool <span style="color:#569cd6;cursor:pointer;">?</span></span><span style="color:#4ec9b0;">18 / 50</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:36%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666; display:flex; gap:8px;"><span>Idle: 32</span><span>Peak: 24</span><span>1.2ms avg</span></div>
+                                </div>
+                                <!-- Transactions -->
+                                <div class="mock-section" data-section="6" style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px; position:relative;">
+                                    <a href="#section-6" class="callout-marker" style="position:absolute; top:24px; right:56px; z-index:11;">6</a>
+                                    <div style="font-size:7px; color:#888; margin-bottom:3px;">Transactions <span style="color:#569cd6;cursor:pointer;">?</span></div>
+                                    <div style="font-size:6px; display:flex; flex-direction:column; gap:1px;">
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">In-flight</span><span style="color:#ccc;">2</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Committed</span><span style="color:#ccc;">84,291 <span style="color:#4ec9b0;font-size:5px;">+142</span></span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Timed out</span><span style="color:#4ec9b0;">0</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Rollbacks</span><span style="color:#ccc;">12 <span style="color:#dcdcaa;font-size:5px;">+1</span></span></div>
+                                    </div>
+                                </div>
+                                <!-- HTTP Server -->
+                                <div class="mock-section" data-section="7" style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px; position:relative;">
+                                    <a href="#section-7" class="callout-marker" style="position:absolute; top:16px; right:56px; z-index:11;">7</a>
+                                    <div style="font-size:7px; color:#888; margin-bottom:3px;">HTTP Server <span style="color:#569cd6;cursor:pointer;">?</span></div>
+                                    <div style="font-size:6px; display:flex; flex-direction:column; gap:1px;">
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Requests</span><span style="color:#ccc;">1,247,803 <span style="color:#4ec9b0;font-size:5px;">+384</span></span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Errors</span><span style="color:#4ec9b0;">0</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Max request</span><span style="color:#ccc;">847 ms</span></div>
+                                    </div>
+                                </div>
+                                <!-- JMS Queues -->
+                                <div class="mock-section" data-section="8" style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; position:relative;">
+                                    <a href="#section-8" class="callout-marker" style="position:absolute; top:8px; right:56px; z-index:11;">8</a>
+                                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:7px; cursor:pointer;">
+                                        <span style="color:#888;">JMS Queues <span style="color:#569cd6;cursor:pointer;">?</span></span>
+                                        <span style="display:flex;align-items:center;gap:4px;"><span style="color:#4ec9b0;">3 active</span><span style="color:#666;font-size:8px;">&#9660;</span></span>
+                                    </div>
+                                    <div style="font-size:5px;color:#666;margin-top:2px;">3 queues active &middot; 47 messages this cycle</div>
+                                </div>
+                            </div>
+
+                            <!-- ================================================ -->
+                            <!-- SERVER CARD 2: DM-PROD-APP2 (Secondary) -->
+                            <!-- ================================================ -->
+                            <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                <div data-section="9" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid #333; position:relative;">
+                                    <span style="font-size:9px; color:#ccc; font-weight:600;">DM-PROD-APP2</span>
+                                    <span style="font-size:6px; padding:1px 5px; border-radius:2px; background:rgba(86,156,214,0.15); color:#569cd6; font-weight:600; position:absolute; left:50%; transform:translateX(-50%);">Users</span>
+                                    <span style="font-size:7px; color:#888;">Secondary</span>
+                                    <a href="#section-9" class="callout-marker" style="position:absolute; top:-4px; left:62%; transform:translateX(-50%); z-index:11;">9</a>
+                                </div>
+                                <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px;">
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; HTTP <span style="color:#888;">38ms</span></span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; Service</span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; JBoss</span>
+                                    <span style="flex:1;"></span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:rgba(102,102,102,0.15); color:#888;">Uptime 14d 6h</span>
+                                </div>
+                                <!-- JVM Heap -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">JVM Heap</span><span style="color:#4ec9b0;">45%</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:45%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666;">1,314 / 2,920 MB</div>
+                                </div>
+                                <!-- Threads -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">Threads</span><span style="color:#ccc;">142</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:65%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666;">Peak: 218</div>
+                                </div>
+                                <!-- DB Pool -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">DB Pool</span><span style="color:#4ec9b0;">12 / 50</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:24%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666; display:flex; gap:8px;"><span>Idle: 38</span><span>Peak: 18</span><span>0.8ms avg</span></div>
+                                </div>
+                                <!-- Transactions -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="font-size:7px; color:#888; margin-bottom:3px;">Transactions</div>
+                                    <div style="font-size:6px; display:flex; flex-direction:column; gap:1px;">
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">In-flight</span><span style="color:#ccc;">0</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Committed</span><span style="color:#ccc;">61,408 <span style="color:#4ec9b0;font-size:5px;">+98</span></span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Timed out</span><span style="color:#4ec9b0;">0</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Rollbacks</span><span style="color:#4ec9b0;">0</span></div>
+                                    </div>
+                                </div>
+                                <!-- HTTP Server -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="font-size:7px; color:#888; margin-bottom:3px;">HTTP Server</div>
+                                    <div style="font-size:6px; display:flex; flex-direction:column; gap:1px;">
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Requests</span><span style="color:#ccc;">982,147 <span style="color:#4ec9b0;font-size:5px;">+271</span></span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Errors</span><span style="color:#4ec9b0;">0</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Max request</span><span style="color:#ccc;">612 ms</span></div>
+                                    </div>
+                                </div>
+                                <!-- JMS Queues -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:7px; cursor:pointer;">
+                                        <span style="color:#888;">JMS Queues</span>
+                                        <span style="display:flex;align-items:center;gap:4px;"><span style="color:#4ec9b0;">Idle</span><span style="color:#666;font-size:8px;">&#9654;</span></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ================================================ -->
+                            <!-- SERVER CARD 3: DM-PROD-APP3 (Secondary) -->
+                            <!-- ================================================ -->
+                            <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid #333;">
+                                    <span style="font-size:9px; color:#ccc; font-weight:600;">DM-PROD-APP3</span>
+                                    <span style="font-size:7px; color:#888;">Secondary</span>
+                                </div>
+                                <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px;">
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; HTTP <span style="color:#888;">35ms</span></span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:#264f26; color:#4ec9b0;">&#8226; Service</span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:rgba(220,220,170,0.15); color:#dcdcaa;">&#8226; JBoss <span style="color:#888;">reload-required</span></span>
+                                    <span style="flex:1;"></span>
+                                    <span style="font-size:6px; padding:1px 4px; border-radius:2px; background:rgba(102,102,102,0.15); color:#888;">Uptime 3d 11h</span>
+                                </div>
+                                <!-- JVM Heap -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">JVM Heap</span><span style="color:#dcdcaa;">78%</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:78%; height:100%; background:#dcdcaa; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666;">2,278 / 2,920 MB</div>
+                                </div>
+                                <!-- Threads -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">Threads</span><span style="color:#ccc;">158</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:70%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666;">Peak: 226</div>
+                                </div>
+                                <!-- DB Pool -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="display:flex; justify-content:space-between; font-size:7px; margin-bottom:2px;"><span style="color:#888;">DB Pool</span><span style="color:#4ec9b0;">15 / 50</span></div>
+                                    <div style="height:4px; background:#333; border-radius:2px; overflow:hidden; margin-bottom:2px;"><div style="width:30%; height:100%; background:#4ec9b0; border-radius:2px;"></div></div>
+                                    <div style="font-size:6px; color:#666; display:flex; gap:8px;"><span>Idle: 35</span><span>Peak: 21</span><span>1.0ms avg</span></div>
+                                </div>
+                                <!-- Transactions -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="font-size:7px; color:#888; margin-bottom:3px;">Transactions</div>
+                                    <div style="font-size:6px; display:flex; flex-direction:column; gap:1px;">
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">In-flight</span><span style="color:#ccc;">1</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Committed</span><span style="color:#ccc;">72,580 <span style="color:#4ec9b0;font-size:5px;">+115</span></span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Timed out</span><span style="color:#f48771;">3 <span style="font-size:5px;">+1</span></span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Rollbacks</span><span style="color:#ccc;">8</span></div>
+                                    </div>
+                                </div>
+                                <!-- HTTP Server -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px; margin-bottom:4px;">
+                                    <div style="font-size:7px; color:#888; margin-bottom:3px;">HTTP Server</div>
+                                    <div style="font-size:6px; display:flex; flex-direction:column; gap:1px;">
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Requests</span><span style="color:#ccc;">1,091,224 <span style="color:#4ec9b0;font-size:5px;">+318</span></span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Errors</span><span style="color:#4ec9b0;">0</span></div>
+                                        <div style="display:flex; justify-content:space-between;"><span style="color:#888;">Max request</span><span style="color:#ccc;">1,204 ms</span></div>
+                                    </div>
+                                </div>
+                                <!-- JMS Queues -->
+                                <div style="background:#252526; border:1px solid #333; border-radius:3px; padding:5px 6px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:7px; cursor:pointer;">
+                                        <span style="color:#888;">JMS Queues</span>
+                                        <span style="display:flex;align-items:center;gap:4px;"><span style="color:#4ec9b0;">2 active</span><span style="color:#666;font-size:8px;">&#9654;</span></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- Modal 9: Server Switch (admin only) -->
+                    <div class="mock-modal-preview" data-section="9" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:240px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:14px 16px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6); text-align:center;">
+                        <div style="font-size:11px; color:#d4d4d4; font-weight:600; margin-bottom:2px;">DM Application Server</div>
+                        <div style="font-size:8px; color:#888; margin-bottom:10px;">SharePoint navigation link target</div>
+                        <div style="display:flex; gap:6px; justify-content:center; margin-bottom:10px;">
+                            <div style="flex:1; background:#1e3a5f; border:2px solid #569cd6; border-radius:6px; padding:8px 4px; text-align:center;">
+                                <div style="font-size:11px; color:#569cd6; font-weight:700;">APP</div>
+                                <div style="font-size:7px; color:#888;">dm-prod-app</div>
+                            </div>
+                            <div style="flex:1; background:#2d2d2d; border:1px solid #404040; border-radius:6px; padding:8px 4px; text-align:center;">
+                                <div style="font-size:11px; color:#ccc; font-weight:700;">APP2</div>
+                                <div style="font-size:7px; color:#888;">dm-prod-app2</div>
+                            </div>
+                            <div style="flex:1; background:#2d2d2d; border:1px solid #404040; border-radius:6px; padding:8px 4px; text-align:center;">
+                                <div style="font-size:11px; color:#ccc; font-weight:700;">APP3</div>
+                                <div style="font-size:7px; color:#888;">dm-prod-app3</div>
+                            </div>
+                        </div>
+                        <div style="font-size:7px; color:#888; font-style:italic;">Admin only &mdash; click a server to redirect the SharePoint link</div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The JBoss Monitoring page provides a side-by-side view of all three DM application servers, showing JBoss EAP health metrics collected via the JBoss Management API.</p>
+                    <p>Each server card displays real-time status badges, JVM memory usage, thread counts, database connection pool utilization, transaction metrics, HTTP server statistics, and JMS queue depths &mdash; all with delta tracking between collection cycles.</p>
+                    <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicator</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Server Cards &amp; Status Badges</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> JVM Heap</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Threads</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> DB Pool</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> Transactions</div>
+                    <div class="sidebar-item" data-marker="7"><span class="sidebar-num">7</span> HTTP Server</div>
+                    <div class="sidebar-item" data-marker="8"><span class="sidebar-num">8</span> JMS Queues</div>
+                    <div class="sidebar-item" data-marker="9"><span class="sidebar-num">9</span> Server Switch</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicator</h2>
+            <p>The single engine card in the upper right represents <code>Collect-JBossMetrics.ps1</code> &mdash; the process that queries the JBoss Management API on each application server. It makes 9 composite API calls per cycle across 3 servers, collecting JVM metrics, thread pools, database connection pools, transaction statistics, HTTP listener stats, and JMS queue depths.</p>
+            <p>The colored bar and countdown show the health and timing of the collector. Green means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in.</p>
+            <p>All server cards refresh when this process completes (lightning bolt badge). Delta tracking between cycles shows how metrics changed since the previous collection.</p>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Server Cards &amp; Status Badges</h2>
+            <p>Three side-by-side cards, one per Debt Manager application server. Each card shows the server name, role (Primary or Secondary), and a DC badge if it&rsquo;s the domain controller. The three-column layout gives immediate visual comparison across the fleet.</p>
+            <p>At the top of each card, <strong>status badges</strong> show the health of three checkpoints:</p>
+            <p><strong>HTTP</strong> &mdash; Whether the server responds to HTTP requests. Green with response time in milliseconds means healthy. Red means the server is unreachable or returned an error. This is the first indicator that something is wrong &mdash; if HTTP fails, everything below it is potentially stale.</p>
+            <p><strong>Service</strong> &mdash; Whether the Windows service for JBoss EAP is running. Green means the service is up. Red means it&rsquo;s stopped.</p>
+            <p><strong>JBoss</strong> &mdash; The JBoss server state as reported by the Management API. Green (&ldquo;running&rdquo;) is healthy. Yellow (&ldquo;reload-required&rdquo;) means a configuration change needs a restart to take effect. Red means the server is in an unexpected state.</p>
+            <p>An <strong>Uptime</strong> badge shows how long since the JBoss instance was last restarted, formatted in days and hours.</p>
+            <div class="callout tip"><p>The question mark icon next to the &ldquo;Application Servers&rdquo; section title opens an info modal with a detailed overview of what this page monitors and how the data is collected. Each mini-card within the server cards also has its own question mark for metric-specific explanations.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>JVM Heap</h2>
+            <p>A gauge bar showing how much of the JBoss JVM&rsquo;s allocated heap memory is in use. Displays used/max in megabytes with a percentage.</p>
+            <p>Color thresholds indicate pressure: green when usage is normal, yellow when approaching capacity (75%+), red when critically high (90%+). The bar gives an instant visual read across all three servers &mdash; a server with a significantly higher heap percentage than the others may be under heavier load or experiencing a memory leak.</p>
+            <p>Below the bar, secondary detail shows non-heap memory usage and OS working set when available.</p>
+            <p>Delta tracking shows the change since the last collection cycle. A steadily climbing heap that never drops back suggests garbage collection isn&rsquo;t keeping up with allocation &mdash; a potential precursor to OutOfMemoryError.</p>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Threads</h2>
+            <p>A gauge bar showing the current JVM thread count relative to the peak. The bar fills based on current/peak ratio &mdash; a bar near 100% means the thread count is at its historical maximum.</p>
+            <p>The delta from the previous cycle indicates whether thread count is stable, growing, or decreasing. A steadily growing thread count that never drops back could indicate thread leaks &mdash; threads being created but not properly cleaned up.</p>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>DB Pool</h2>
+            <p>Database connection pool utilization showing active connections out of the maximum pool size, with a gauge bar color-coded by usage percentage. Green when under 50%, yellow at 50&ndash;80%, red above 80%.</p>
+            <p>Detail row shows idle connections, peak usage, and average connection acquisition time in milliseconds. A pool near capacity means new database requests may have to wait for a connection to become available. The delta shows whether pool usage is increasing or decreasing.</p>
+            <p>If any threads are waiting for connections, an amber alert row appears below the gauge bar with the count.</p>
+        </div></div>
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>Transactions</h2>
+            <p>JBoss transaction subsystem counters displayed as individual rows with per-cycle delta tracking.</p>
+            <p><strong>In-flight</strong> &mdash; Transactions currently executing. A real-time count, not cumulative. Non-zero is normal during active processing.</p>
+            <p><strong>Committed</strong> &mdash; Cumulative count of successful transactions since JBoss startup. The delta (green) shows throughput &mdash; how many transactions completed in the last collection cycle.</p>
+            <p><strong>Timed out</strong> &mdash; Transactions that exceeded the timeout threshold. Zero is the goal. A nonzero delta (red) often correlates with database performance issues or lock contention.</p>
+            <p><strong>Rollbacks</strong> &mdash; Transactions explicitly rolled back. Small numbers are normal. A spike in rollback deltas (yellow) may indicate application errors or resource exhaustion.</p>
+            <p><strong>Heuristics</strong> &mdash; Transactions resolved by heuristic decisions (rare in normal operations). Shown with informational styling when nonzero.</p>
+        </div></div>
+        <div class="guide-section" id="section-7"><div class="section">
+            <h2><span class="section-number">7</span>HTTP Server</h2>
+            <p>Undertow HTTP listener statistics showing cumulative counters with per-cycle deltas.</p>
+            <p><strong>Requests</strong> &mdash; Total HTTP requests served since startup. The delta shows how many requests were handled in the last collection cycle &mdash; essentially the request throughput.</p>
+            <p><strong>Errors</strong> &mdash; Requests that returned error responses. Zero is the goal. A delta spike (red) suggests the application is returning error responses to users.</p>
+            <p><strong>Data sent</strong> &mdash; Total bytes transferred to clients. The delta shows recent data throughput.</p>
+            <p><strong>Processing</strong> &mdash; Cumulative server-side processing time in milliseconds.</p>
+            <p><strong>Max request</strong> &mdash; The longest single request processed (high-water mark, not cumulative). Useful for identifying if any request took unusually long.</p>
+            <p>If the IO worker queue has pending items, an amber alert row appears indicating requests are queuing.</p>
+        </div></div>
+        <div class="guide-section" id="section-8"><div class="section">
+            <h2><span class="section-number">8</span>JMS Queues</h2>
+            <p>A collapsible accordion showing the JMS message queues configured in JBoss. Click the header to expand or collapse the queue list.</p>
+            <p>The header summary shows the queue status at a glance: &ldquo;Idle&rdquo; (green) when no queues have activity, a count of active queues with the message total when processing, or a &ldquo;stuck&rdquo; warning (red) when queues have pending messages with no consumers or no delivery activity.</p>
+            <p>When expanded, queues are split into <strong>Active</strong> (queues with recent message activity) and <strong>Inactive</strong> (idle queues, collapsed by default). Each queue row shows messages added, messages delivered, and messages currently pending, all with per-cycle deltas.</p>
+            <p>Growing pending counts mean messages are accumulating faster than they&rsquo;re being consumed. The &ldquo;stuck&rdquo; detection specifically identifies queues where messages exist but consumers aren&rsquo;t processing them &mdash; a sign that the consuming application may have stopped or disconnected.</p>
+        </div></div>
+        <div class="guide-section" id="section-9"><div class="section">
+            <h2><span class="section-number">9</span>Server Switch</h2>
+            <p>An admin-only feature for changing which DM application server the SharePoint &ldquo;Debt Manager&rdquo; navigation link points to. A blue &ldquo;Users&rdquo; badge appears on the server card header of whichever server is currently the active target.</p>
+            <p>For administrators, clicking the Users badge opens a modal with three server buttons. The currently active server is highlighted with a blue border. Click a different server to stage the switch &mdash; a confirmation dialog appears explaining that the change affects all users immediately.</p>
+            <p>The switch operation updates both a GlobalConfig setting and the SharePoint navigation node via the SharePoint REST API. It may take up to 90 seconds to complete (the SharePoint API can be slow). During the switch, the modal locks to prevent concurrent changes, and a status message shows progress.</p>
+            <p>After completion, the Users badge moves to the new server card and a success message confirms the change with the performing user&rsquo;s name.</p>
+            <div class="callout warning"><p>This immediately redirects all Frost Arnett users who click &ldquo;Debt Manager&rdquo; in SharePoint. Coordinate with the team before switching during business hours. The typical use case is redirecting to a secondary server during maintenance on the primary.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../jboss.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to JBoss Monitoring</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/jboss-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/jboss-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

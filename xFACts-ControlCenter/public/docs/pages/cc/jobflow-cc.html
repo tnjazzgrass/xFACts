@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job/Flow Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Job/Flow Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-live"><span class="dot"></span></span></span><span class="key-flip-label">Live Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the relevant engine process completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-action"><span class="arrows">&#128260;</span></span></span><span class="key-flip-label">Action Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes in response to a user action, like clicking a flow or expanding a history node.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">JF</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows a data collection process. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">247</div><div class="mc-label">JOBS</div></div></span><span class="key-flip-label">Summary Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Displays a count with contextual detail underneath. Some are clickable &mdash; look for the arrow hint.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Tooltip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Hover or click for a brief explanation of what a metric means or what the thresholds are.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">Job/Flow Monitoring</div>
+                            <div class="mock-page-subtitle">Real-time Debt Manager queue activity, flow tracking, and execution history</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">12:34:07</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                <a href="#section-1" class="callout-marker" style="position:absolute; top: 10px; left: -60%;">1</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">JobFlow</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">2m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two Column Body (equal width, matching actual page 1fr 1fr grid) -->
+                    <div style="display: flex; gap: 14px;">
+                        <!-- Left Column -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+                            <!-- Daily Summary -->
+                            <div class="mock-section" data-section="2" style="position: relative;">
+                                <a href="#section-2" class="callout-marker" style="position:absolute; top: 6px; left: 25%;">2</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Daily Summary</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px 8px; text-align:center;">
+                                        <div style="color:#666; font-size:9px; text-transform:uppercase; letter-spacing:0.5px;">Total Jobs</div>
+                                        <div style="color:#4ec9b0; font-size:22px; font-weight:600;">247</div>
+                                        <div style="font-size:8px; color:#666;">All executions</div>
+                                    </div>
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px 8px; text-align:center;">
+                                        <div style="color:#666; font-size:9px; text-transform:uppercase; letter-spacing:0.5px;">Flows</div>
+                                        <div style="color:#4ec9b0; font-size:22px; font-weight:600;">12</div>
+                                        <div style="font-size:8px;"><span style="color:#4ec9b0;">10 done</span> &nbsp;<span style="color:#569cd6;">2 active</span></div>
+                                    </div>
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px 8px; text-align:center;">
+                                        <div style="color:#666; font-size:9px; text-transform:uppercase; letter-spacing:0.5px;">Stall Events</div>
+                                        <div style="color:#4ec9b0; font-size:22px; font-weight:600;">0</div>
+                                        <div style="font-size:8px; color:#4ec9b0;">No stalls today</div>
+                                    </div>
+                                </div>
+                                <div style="border-top:1px solid #333; padding-top:8px;">
+                                    <div style="color:#4ec9b0; font-size:10px; font-weight:600; margin-bottom:6px;">Flows</div>
+                                    <div style="display:flex; justify-content:space-between; font-size:9px; color:#ccc; padding:4px 0; border-bottom:1px solid #333;">
+                                        <span>JFDINT01</span><span style="font-size:8px; color:#888;">48 jobs</span><span style="font-size:8px; color:#888;">12m</span><span style="color:#4ec9b0; font-size:8px;">Complete</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; font-size:9px; color:#ccc; padding:4px 0; border-bottom:1px solid #333;">
+                                        <span>JFDINV01</span><span style="font-size:8px; color:#888;">62 jobs</span><span style="font-size:8px; color:#888;">1h 5m</span><span style="color:#569cd6; font-size:8px;">In Progress</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; font-size:9px; color:#ccc; padding:4px 0; border-bottom:1px solid #333;">
+                                        <span>JFDLET01</span><span style="font-size:8px; color:#888;">35 jobs</span><span style="font-size:8px; color:#888;">8m</span><span style="color:#4ec9b0; font-size:8px;">Complete</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; font-size:9px; color:#ccc; padding:4px 0;">
+                                        <span>JFDRTN01</span><span style="font-size:8px; color:#888;">24 jobs</span><span style="font-size:8px; color:#888;">6m</span><span style="color:#4ec9b0; font-size:8px;">Complete</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Live Activity -->
+                            <div class="mock-section" data-section="3" style="position: relative;">
+                                <a href="#section-3" class="callout-marker" style="position:absolute; top: 8px; left: 23%;">3</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Live Activity</span>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span style="font-size:9px; color:#569cd6; border:1px solid #404040; border-radius:3px; padding:2px 8px;">&#9202; Pending <span style="background:#569cd6; color:#1e1e1e; border-radius:8px; padding:0 5px; font-size:8px; font-weight:600;">3</span></span>
+                                        <span class="mock-badge-live"><span class="mock-live-dot" style="width:6px; height:6px;"></span></span>
+                                    </div>
+                                </div>
+                                <div style="color:#4ec9b0; font-size:10px; font-weight:600; margin-bottom:6px;">Currently Executing</div>
+                                <div style="font-size:9px; color:#888; border:1px solid #333; border-radius:4px; padding:6px 10px;">
+                                    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding:3px 0; color:#666; font-size:8px;">
+                                        <span style="flex:2;">Job</span><span style="flex:1;">Flow</span><span style="flex:2;">Progress</span><span style="flex:1;">Success</span><span style="flex:1;">Failed</span><span style="flex:1;">ETA</span><span style="flex:1;">Rate</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc; border-bottom:1px solid #333;">
+                                        <span style="flex:2;">Auto Return 365</span><span style="flex:1; color:#569cd6;">JFDINV01</span><span style="flex:2;">1,247 / 3,500</span><span style="flex:1; color:#4ec9b0;">1,240</span><span style="flex:1; color:#666;">7</span><span style="flex:1;">~8m</span><span style="flex:1;">42/s</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc;">
+                                        <span style="flex:2;">Assign Blue Tag</span><span style="flex:1; color:#569cd6;">JFDINV01</span><span style="flex:2;">890 / 2,100</span><span style="flex:1; color:#4ec9b0;">890</span><span style="flex:1; color:#666;">0</span><span style="flex:1;">~12m</span><span style="flex:1;">38/s</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+                            <!-- Process Status -->
+                            <div class="mock-section" data-section="4" style="position: relative;">
+                                <a href="#section-4" class="callout-marker" style="position:absolute; top: 7px; right: 70%;">4</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Process Status</span>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <span data-section="6" style="font-size:8px; color:#888; border:1px solid #404040; border-radius:3px; padding:2px 6px; position:relative;">
+                                            <a href="#section-6" class="callout-marker" style="position:absolute; top:-4px; right: 70px;">6</a>
+                                            &#9881; App Tasks
+                                        </span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </div>
+                                </div>
+                                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
+                                    <div data-section="7" style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center; position:relative;">
+                                        <a href="#section-7" class="callout-marker" style="position:absolute; top: 42px; left: 6px;">7</a>
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Config Sync</span><span style="font-size:10px;">&#x21BB;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">0</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Detection</span><span style="font-size:10px;">&#x25C9;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">2</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Jobs Capture</span><span style="font-size:10px;">&#x2913;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">5</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Progress</span><span style="font-size:10px;">&#x25B6;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">3</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Transitions</span><span style="font-size:10px;">&#x21C4;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">1</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Stalls</span><span style="font-size:10px;">&#x23F8;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">0</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Validation</span><span style="font-size:10px;">&#x2714;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">0</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:6px; text-align:center;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;"><span style="font-size:8px; color:#888;">Missing</span><span style="font-size:10px;">&#x26A0;</span></div>
+                                        <div style="font-size:16px; color:#4ec9b0; font-weight:600;">0</div>
+                                        <div style="font-size:7px; color:#666;">2m ago</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Execution History -->
+                            <div class="mock-section mock-section-tall" data-section="5" style="position: relative;">
+                                <a href="#section-5" class="callout-marker" style="position:absolute; top: 6px; right: 65%;">5</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Execution History</span>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <span style="font-size:8px; color:#888;">12,450 jobs</span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </div>
+                                </div>
+                                <div style="font-size:9px; color:#888;">
+                                    <div style="padding:5px 0; border-bottom:1px solid #333; cursor:pointer;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2026</span>
+                                        <span style="color:#666; margin-left:12px;">12,450 jobs</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">12,380 ok</span>
+                                        <span style="color:#666; margin-left:6px;">70 failed</span>
+                                    </div>
+                                    <div style="padding:5px 0; border-bottom:1px solid #333;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2025</span>
+                                        <span style="color:#666; margin-left:12px;">48,230 jobs</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">47,890 ok</span>
+                                        <span style="color:#666; margin-left:6px;">340 failed</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden mock modals — shown when marker 6 or 7 is highlighted -->
+
+                    <!-- App Server Tasks modal preview (marker 6) -->
+                    <div class="mock-modal-preview" data-section="6" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:70%; background:#252526; border:2px solid var(--accent-blue); border-radius:6px; padding:14px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #404040;">
+                            <span style="color:#ccc; font-size:12px; font-weight:600;">App Server Task Distribution</span>
+                            <span style="color:#666; font-size:14px; cursor:pointer;">&times;</span>
+                        </div>
+                        <div style="font-size:8px; color:#888; margin-bottom:8px;">Click a cell to stage changes. Only one server should be enabled per flow.</div>
+                        <div style="font-size:8px;">
+                            <div style="display:grid; grid-template-columns: 100px repeat(3, 1fr); gap:1px; background:#333;">
+                                <div style="background:#1e1e1e; padding:4px 6px; color:#666;">Flow</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; color:#888; text-align:center;">FA-APP01</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; color:#888; text-align:center;">FA-APP02</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; color:#888; text-align:center;">FA-APP03</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; color:#ccc;">JFDINT01</div>
+                                <div style="background:#264f26; padding:4px 6px; text-align:center; color:#4ec9b0;">&#10004;</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; text-align:center; color:#333;">&middot;</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; text-align:center; color:#333;">&middot;</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; color:#ccc;">JFDINV01</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; text-align:center; color:#333;">&middot;</div>
+                                <div style="background:#264f26; padding:4px 6px; text-align:center; color:#4ec9b0;">&#10004;</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; text-align:center; color:#333;">&middot;</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; color:#ccc;">JFDLET01</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; text-align:center; color:#333;">&middot;</div>
+                                <div style="background:#1e1e1e; padding:4px 6px; text-align:center; color:#333;">&middot;</div>
+                                <div style="background:#264f26; padding:4px 6px; text-align:center; color:#4ec9b0;">&#10004;</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Flow Configuration modal preview (marker 7) -->
+                    <div class="mock-modal-preview" data-section="7" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:60%; background:#252526; border:2px solid var(--accent-blue); border-radius:6px; padding:14px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #404040;">
+                            <span style="color:#ccc; font-size:12px; font-weight:600;">Flow Configuration</span>
+                            <span style="color:#666; font-size:14px; cursor:pointer;">&times;</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                            <span style="font-size:9px; color:#888;">Flow:</span>
+                            <span style="font-size:9px; color:#ccc; background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:2px 10px;">JFDINT01 &mdash; Debt Intake Flow</span>
+                        </div>
+                        <div style="font-size:8px; display:grid; grid-template-columns: 140px 1fr; gap:1px; row-gap:6px;">
+                            <span style="color:#888;">Schedule Type</span><span style="color:#ccc;">DAILY</span>
+                            <span style="color:#888;">Expected Start</span><span style="color:#ccc;">00:15</span>
+                            <span style="color:#888;">Tolerance</span><span style="color:#ccc;">30 minutes</span>
+                            <span style="color:#888;">Monitored</span><span style="color:#4ec9b0;">Yes</span>
+                            <span style="color:#888;">Alert on Missing</span><span style="color:#4ec9b0;">Yes</span>
+                            <span style="color:#888;">Alert on Failure</span><span style="color:#4ec9b0;">Yes</span>
+                        </div>
+                    </div>
+
+            </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The Job/Flow Monitoring page tracks everything running through Debt Manager&rsquo;s processing engine &mdash; scheduled overnight flows, ad-hoc daytime jobs, and the monitoring pipeline behind them.</p>
+                    <p>It combines real-time queue visibility with historical execution data, stall detection, and administrative tools for managing flow configuration and task distribution.</p>
+                    <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicator</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Daily Summary</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Live Activity</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Process Status</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Execution History</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> App Server Tasks</div>
+                    <div class="sidebar-item" data-marker="7"><span class="sidebar-num">7</span> Flow Configuration</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicator</h2>
+            <p>The single engine card in the upper right represents <code>Monitor-JobFlow.ps1</code> &mdash; the orchestrator process that drives everything on this page. It runs on a fixed interval, querying Debt Manager&rsquo;s processing tables and updating xFACts with flow status, job progress, stall detection, and missing flow checks.</p>
+            <p>The colored bar and countdown show the health and timing of the monitor. Green means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in &mdash; which could mean the engine itself needs attention.</p>
+            <p>Most sections on this page refresh when this process completes (lightning bolt badges). The Live Activity section is the exception &mdash; it polls independently on its own timer because it queries Debt Manager directly for real-time queue state.</p>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Daily Summary</h2>
+            <p>Three summary cards at the top give you the day&rsquo;s vital signs at a glance.</p>
+            <p><strong>Total Jobs</strong> &mdash; The count of all job executions today, across all flows and ad-hoc runs. This is the raw volume number.</p>
+            <p><strong>Flows</strong> &mdash; How many distinct flows have run today, broken down by status: done (green), active (blue), and failed (red). If a flow ran more than once, the run count appears in parentheses. Click a flow in the list below for execution details.</p>
+            <p><strong>Stall Events</strong> &mdash; The number of processing stall episodes detected today. A stall means the monitoring script observed no progress across the entire processing queue for multiple consecutive checks. Zero is the goal. Click this card to open a slideout with episode details &mdash; start/end times, duration, poll count, whether an alert was sent, and whether the stall crossed midnight.</p>
+            <p>Below the cards, the <strong>Flows</strong> section lists each flow that ran today with its flow code, friendly name, job count, success/failure breakdown, duration, and status badge. Click any flow row to open a slideout with the full job-level detail for that flow&rsquo;s execution.</p>
+            <p>If ad-hoc jobs ran outside of any flow, an <strong>Ad Hoc Jobs</strong> link appears at the bottom. Click it to open a slideout with those executions.</p>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Live Activity</h2>
+            <p>This section shows what&rsquo;s happening in Debt Manager&rsquo;s processing queue right now. It refreshes on the page&rsquo;s live polling interval (pulsing dot badge) and queries Debt Manager directly &mdash; not from cached xFACts data.</p>
+            <p><strong>Currently Executing</strong> &mdash; A table of every job actively running. Each row shows the job name, flow code (or &ldquo;ad-hoc&rdquo; if unaffiliated), a progress bar with record counts, success/failure tallies, estimated time remaining, processing rate, and log ID.</p>
+            <p>The <strong>Pending</strong> button in the section header shows how many jobs are queued and waiting to execute. The count badge updates live. Click it to open a slideout listing every pending job with its name, flow, and queued time.</p>
+            <div class="callout tip"><p>During overnight processing, the Currently Executing table is your real-time window into what&rsquo;s happening. If the table is empty and the Pending count is zero during expected processing hours, something may have stopped the queue &mdash; check the Stall Events card in Daily Summary.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Process Status</h2>
+            <p>A grid of eight small cards representing each step of the JobFlow monitoring pipeline. Each card shows the step name, an icon, the result count from the last run, and how long ago it executed. These update when the engine process completes (lightning bolt badge).</p>
+            <p><strong>Config Sync</strong> &mdash; Synchronizes flow definitions between Debt Manager and xFACts. The count shows how many configuration differences (drifts) were detected. Zero means everything is in sync. A non-zero count turns the card yellow &mdash; click it to open the Flow Configuration modal for details.</p>
+            <p><strong>Flow Detection</strong> &mdash; Identifies flows that have started executing since the last check. The count shows how many new flows were detected this cycle.</p>
+            <p><strong>Completed Jobs Capture</strong> &mdash; Picks up jobs that finished since the last check and records their results. The count shows how many completions were captured.</p>
+            <p><strong>Flow Progress</strong> &mdash; Updates the running totals for active flows &mdash; how many jobs completed, how many remain, current success/failure counts.</p>
+            <p><strong>Flow State Transitions</strong> &mdash; Moves flows between states (detected, in progress, complete, validated, failed) based on their current job results and completion status.</p>
+            <p><strong>Stall Detection</strong> &mdash; Checks whether any progress has been made since the last cycle. If the processing queue hasn&rsquo;t moved, the stall counter increments. The card stays green at zero, turns yellow as the counter climbs, and turns red when it hits the configurable threshold. Hitting the threshold triggers an alert.</p>
+            <p><strong>Flow Validation</strong> &mdash; Examines completed flows for hidden problems &mdash; jobs that didn&rsquo;t run, jobs where every record failed, unexpected job counts. Flows that pass validation move to the VALIDATED state.</p>
+            <p><strong>Missing Flows</strong> &mdash; Checks whether any scheduled flows haven&rsquo;t started within their expected time window. A non-zero count means a flow that should have triggered hasn&rsquo;t been seen yet.</p>
+            <div class="callout info"><p>The Process Status cards are a diagnostic view of the monitoring pipeline itself, not the processing it monitors. If a card shows a non-zero count, it doesn&rsquo;t necessarily mean something is wrong with processing &mdash; it means the monitor found something to report. Check the Daily Summary and Live Activity sections for the actual processing state.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Execution History</h2>
+            <p>A collapsible tree showing the complete history of all flow executions. Organized by year, month, and day, with job counts and success/failure tallies at every level.</p>
+            <p>Click a <strong>year</strong> to expand its months. Each month row shows distinct flow count, total jobs, succeeded, and failed. Click a <strong>month</strong> to load its daily breakdown with day-of-week, date, flow count, and job results. Click a <strong>day</strong> to open a slideout with every flow and job that ran that day &mdash; full execution details, timings, and per-job results.</p>
+            <p>Status indicators on day rows give a visual summary: green means all jobs succeeded, yellow means some failures, red means all failed.</p>
+            <div class="callout tip"><p>Use the history tree to spot patterns. If the same flow fails every Tuesday, or if job counts suddenly drop on a specific date, the drill-down will show you exactly what happened. The year-level totals also give you a quick sense of processing volume trends.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>App Server Tasks</h2>
+            <p>A modal dialog accessed via the &ldquo;App Server Tasks&rdquo; button in the Process Status header. Shows a grid of all monitored flows and which application server each one is assigned to run on.</p>
+            <p>Each cell in the grid represents a flow/server combination. The currently assigned server is highlighted. Click a cell to stage a change &mdash; moving a flow from one server to another. Staged changes are tracked visually with color indicators showing the current assignment and the proposed new one.</p>
+            <p>After staging changes, an &ldquo;Apply Changes&rdquo; button appears. Clicking it opens a confirmation dialog listing every change before committing. Changes take effect on the next processing cycle.</p>
+            <div class="callout warning"><p>Task reassignment is an administrative action that affects which application server runs each flow. Reassigning a flow during active processing could cause the flow to restart or duplicate work. Coordinate with the team before making changes during processing hours.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-7"><div class="section">
+            <h2><span class="section-number">7</span>Flow Configuration</h2>
+            <p>A modal dialog accessed by clicking the Config Sync card in Process Status. Provides a view of each flow&rsquo;s monitoring configuration &mdash; what schedule is expected, whether monitoring is active, and what alerts are enabled.</p>
+            <p>Select a flow from the dropdown to see its current configuration. Existing flows show their schedule type, expected start time, tolerance window, monitoring status, and alert settings. The display adapts based on flow type &mdash; scheduled flows show full timing details, variable flows show simplified settings, and on-demand flows show minimal configuration.</p>
+            <p>Flows already known to xFACts can be edited (schedule, monitoring, alerts) or deactivated. Deactivation sets an end date and disables monitoring without deleting the configuration.</p>
+            <p>New flows detected in Debt Manager but not yet configured in xFACts appear with a setup form. You choose the flow type (scheduled, variable, or on-demand), fill in the appropriate settings, and save. A confirmation dialog shows a summary of all changes before committing.</p>
+            <div class="callout info"><p>Flow Configuration is how xFACts knows what to expect. If a flow&rsquo;s schedule changes in Debt Manager, updating it here ensures the Missing Flows check uses the right time window. A flow that isn&rsquo;t configured won&rsquo;t be monitored for missing runs.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../jobflow.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Job/Flow Monitoring</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/jobflow-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/jobflow-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

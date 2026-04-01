@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Monitoring &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>File Monitoring &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the SFTP scanner completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">SFTP</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows the SFTP scanner process. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+						<div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">14</div><div class="mc-label">&#128204;</div></div></span><span class="key-flip-label">Config Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Clickable card showing a configuration count. Loaded once on page open (pushpin icon).</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">2</div><div class="mc-label">ESC</div></div></span><span class="key-flip-label">Status Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Displays a count for a monitor status. Color-coded by severity &mdash; red for escalated, yellow for monitoring, green for detected.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Tooltip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Hover or click for a brief explanation of what a metric means or what the thresholds are.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">File Monitoring</div>
+                            <div class="mock-page-subtitle">SFTP file arrival tracking and escalation management</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">12:34:07</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                <a href="#section-1" class="callout-marker" style="position:absolute; top: 10px; left: -60%;">1</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">SFTP</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">5m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two Column Body (equal width) -->
+                    <div style="display: flex; gap: 14px;">
+                        <!-- Left Column: Status + Daily Queue -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Status -->
+                            <div class="mock-section" data-section="2" style="position: relative;">
+                                <a href="#section-2" class="callout-marker" style="position:absolute; top: 6px; left: 14%;">2</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Status</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #a03030; border-radius:4px; padding:10px; text-align:center;">
+                                        <div style="font-size:9px; color:#888;">Escalated</div>
+                                        <div style="font-size:22px; color:#f44747; font-weight:600;">2</div>
+                                    </div>
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                        <div style="font-size:9px; color:#888;">Monitoring</div>
+                                        <div style="font-size:22px; color:#dcdcaa; font-weight:600;">3</div>
+                                    </div>
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                        <div style="font-size:9px; color:#888;">Detected</div>
+                                        <div style="font-size:22px; color:#4ec9b0; font-weight:600;">8</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Daily Queue -->
+                            <div class="mock-section" data-section="3" style="position: relative;">
+                                <a href="#section-3" class="callout-marker" style="position:absolute; top: 8px; left: 20%;">3</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Daily Queue</span>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span style="font-size:9px; color:#569cd6; border:1px solid #404040; border-radius:3px; padding:2px 8px;">&#9202; Scheduled <span style="background:#569cd6; color:#1e1e1e; border-radius:8px; padding:0 5px; font-size:8px; font-weight:600;">4</span></span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </div>
+                                </div>
+                                <div style="font-size:8px; color:#666; border:1px solid #333; border-radius:4px; padding:6px 10px;">
+                                    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding:3px 0; color:#666;">
+                                        <span style="flex:1;">Status</span><span style="flex:2;">Monitor</span><span style="flex:1;">Time</span><span style="flex:2;">File</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc; border-bottom:1px solid #333;">
+                                        <span style="flex:1;"><span style="background:#a03030; color:#fff; border-radius:3px; padding:0 5px; font-size:7px;">ESCALATED</span></span>
+                                        <span style="flex:2;">IFU Daily</span><span style="flex:1; color:#888;">7:15 AM</span><span style="flex:2; color:#888;">&mdash;</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc; border-bottom:1px solid #333;">
+                                        <span style="flex:1;"><span style="background:#a03030; color:#fff; border-radius:3px; padding:0 5px; font-size:7px;">ESCALATED</span></span>
+                                        <span style="flex:2;">TU Refresh</span><span style="flex:1; color:#888;">8:00 AM</span><span style="flex:2; color:#888;">&mdash;</span>
+                                    </div>
+                                    <div style="border-top:2px solid #404040; margin:4px 0;"></div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc; border-bottom:1px solid #333;">
+                                        <span style="flex:1;"><span style="background:#6d5a00; color:#dcdcaa; border-radius:3px; padding:0 5px; font-size:7px;">MONITORING</span></span>
+                                        <span style="flex:2;">EQ Returns</span><span style="flex:1; color:#888;">scanning</span><span style="flex:2; color:#888;">&mdash;</span>
+                                    </div>
+                                    <div style="border-top:2px solid #404040; margin:4px 0;"></div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc; border-bottom:1px solid #333;">
+                                        <span style="flex:1;"><span style="background:#264f26; color:#4ec9b0; border-radius:3px; padding:0 5px; font-size:7px;">DETECTED</span></span>
+                                        <span style="flex:2;">Payment File</span><span style="flex:1; color:#888;">6:42 AM</span><span style="flex:2; color:#4ec9b0;">PMT_20260314.csv</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; padding:4px 0; color:#ccc;">
+                                        <span style="flex:1;"><span style="background:#264f26; color:#4ec9b0; border-radius:3px; padding:0 5px; font-size:7px;">DETECTED</span></span>
+                                        <span style="flex:2;">Scrub Results</span><span style="flex:1; color:#888;">5:18 AM</span><span style="flex:2; color:#4ec9b0;">SCRUB_0314.txt</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Config + History -->
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+                            <!-- Configuration Cards -->
+                            <div style="display: flex; gap: 12px;">
+                                <div class="mock-section" data-section="4" style="flex:1; position:relative; cursor:pointer;">
+                                    <a href="#section-4" class="callout-marker" style="position:absolute; top: 6px; left: 99%;">4</a>
+                                    <div class="mock-section-header">
+                                        <span class="mock-section-title">Monitors</span>
+                                        <span style="font-size:9px;">&#128204;</span>
+                                    </div>
+                                    <div data-section="6" style="text-align:center; padding:6px 0; position:relative;">
+                                        <a href="#section-6" class="callout-marker" style="position:absolute; top: 58px; right: 180px;">6</a>
+                                        <div style="font-size:28px; color:#569cd6; font-weight:600;">14</div>
+                                        <div style="font-size:9px; color:#888;">File Monitors</div>
+                                    </div>
+                                </div>
+                                <div class="mock-section" data-section="4" style="flex:1; position:relative; cursor:pointer;">
+                                    <div class="mock-section-header">
+                                        <span class="mock-section-title">Servers</span>
+                                        <span style="font-size:9px;">&#128204;</span>
+                                    </div>
+                                    <div style="text-align:center; padding:6px 0;">
+                                        <div style="font-size:28px; color:#569cd6; font-weight:600;">3</div>
+                                        <div style="font-size:9px; color:#888;">SFTP Servers</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Detection History -->
+                            <div class="mock-section mock-section-tall" data-section="5" style="position: relative;">
+                                <a href="#section-5" class="callout-marker" style="position:absolute; top: 6px; right: 65%;">5</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Detection History</span>
+                                    <span class="mock-badge-event">&#9889;</span>
+                                </div>
+                                <div style="font-size:9px; color:#888;">
+                                    <div style="padding:5px 0; border-bottom:1px solid #333; cursor:pointer;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2026</span>
+                                        <span style="color:#666; margin-left:12px;">14 monitors</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">842 detected</span>
+                                        <span style="color:#f44747; margin-left:6px;">12 escalated</span>
+                                    </div>
+                                    <div style="padding:5px 0; border-bottom:1px solid #333;">
+                                        <span style="color:#569cd6;">&#9654;</span> <span style="color:#ccc; font-weight:600;">2025</span>
+                                        <span style="color:#666; margin-left:12px;">11 monitors</span>
+                                        <span style="color:#4ec9b0; margin-left:6px;">3,218 detected</span>
+                                        <span style="color:#f44747; margin-left:6px;">47 escalated</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden mock modal: Management Console (marker 6) -->
+                    <div class="mock-modal-preview" data-section="6" style="position:absolute; top:75%; left:50%; transform:translate(-50%,-50%); width:90%; background:#252526; border:2px solid var(--accent-blue); border-radius:6px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6); overflow:hidden;">
+                        <!-- Title Bar -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 14px; background:#1e1e1e; border-bottom:1px solid #404040;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="color:#ccc; font-size:11px; font-weight:600;">Monitors</span>
+                                <span style="font-size:12px; color:#569cd6; cursor:pointer;" title="Flip to Servers">&#x27F3;</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:8px; color:#4ec9b0; border:1px solid #404040; border-radius:3px; padding:2px 8px;">+ Add Monitor</span>
+                                <span style="color:#666; font-size:14px; cursor:pointer;">&times;</span>
+                            </div>
+                        </div>
+                        <!-- Column Headers -->
+                        <div style="display:flex; align-items:center; gap:4px; padding:5px 14px; font-size:6px; color:#555; border-bottom:1px solid #333;">
+                            <span style="width:32px;">Status</span>
+                            <span style="flex:1.5;">Name</span>
+                            <span style="flex:0.8;">Server</span>
+                            <span style="flex:1;">Path</span>
+                            <span style="flex:0.8;">Pattern</span>
+                            <span style="width:90px;text-align:center;">Days</span>
+                            <span style="width:40px;">Start</span>
+                            <span style="width:40px;">End</span>
+                            <span style="width:40px;">Esc</span>
+                            <span style="width:36px;">Jira</span>
+                            <span style="width:50px;">Priority</span>
+                            <span style="flex:0.6;">Routing</span>
+                        </div>
+                        <!-- Monitor Row 1 -->
+                        <div style="display:flex; align-items:center; gap:4px; padding:4px 14px; font-size:7px; border-bottom:1px solid #2a2a2a;">
+                            <span style="width:32px;"><span style="font-size:6px;padding:1px 4px;border-radius:2px;background:rgba(78,201,176,0.15);color:#4ec9b0;font-weight:600;">ACTIVE</span></span>
+                            <span style="flex:1.5;color:#ccc;">IFU Daily</span>
+                            <span style="flex:0.8;color:#888;">SFTP-01</span>
+                            <span style="flex:1;color:#888;">/inbound/ifu/</span>
+                            <span style="flex:0.8;color:#888;">IFU_*.csv</span>
+                            <span style="width:90px;display:flex;gap:1px;justify-content:center;"><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">M</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">T</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">W</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">T</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">F</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">S</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">S</span></span>
+                            <span style="width:40px;color:#888;">06:00</span>
+                            <span style="width:40px;color:#888;">17:00</span>
+                            <span style="width:40px;color:#888;">07:00</span>
+                            <span style="width:36px;"><span style="font-size:5px;padding:0 3px;border-radius:1px;background:rgba(78,201,176,0.15);color:#4ec9b0;">JIRA</span></span>
+                            <span style="width:50px;display:flex;gap:1px;"><span style="font-size:5px;padding:1px 3px;border-radius:1px;background:#ce2f07;color:#fff;">Hi</span><span style="font-size:5px;padding:1px 3px;border-radius:1px;color:#444;">Md</span></span>
+                            <span style="flex:0.6;display:flex;gap:2px;align-items:center;"><span style="font-size:5px;padding:0 3px;border-radius:1px;background:rgba(86,156,214,0.15);color:#569cd6;">Apps</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.15);color:#4ec9b0;">DET</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(244,135,113,0.15);color:#f48771;">ESC</span></span>
+                        </div>
+                        <!-- Monitor Row 2 -->
+                        <div style="display:flex; align-items:center; gap:4px; padding:4px 14px; font-size:7px; border-bottom:1px solid #2a2a2a;">
+                            <span style="width:32px;"><span style="font-size:6px;padding:1px 4px;border-radius:2px;background:rgba(78,201,176,0.15);color:#4ec9b0;font-weight:600;">ACTIVE</span></span>
+                            <span style="flex:1.5;color:#ccc;">Payment File</span>
+                            <span style="flex:0.8;color:#888;">SFTP-01</span>
+                            <span style="flex:1;color:#888;">/inbound/pmt/</span>
+                            <span style="flex:0.8;color:#888;">PMT_*.csv</span>
+                            <span style="width:90px;display:flex;gap:1px;justify-content:center;"><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">M</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">T</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">W</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">T</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.2);color:#4ec9b0;">F</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">S</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">S</span></span>
+                            <span style="width:40px;color:#888;">05:00</span>
+                            <span style="width:40px;color:#888;">17:00</span>
+                            <span style="width:40px;color:#888;">08:00</span>
+                            <span style="width:36px;"><span style="font-size:5px;padding:0 3px;border-radius:1px;background:rgba(78,201,176,0.15);color:#4ec9b0;">JIRA</span></span>
+                            <span style="width:50px;display:flex;gap:1px;"><span style="font-size:5px;padding:1px 3px;border-radius:1px;background:#ce2f07;color:#fff;">Hi</span><span style="font-size:5px;padding:1px 3px;border-radius:1px;color:#444;">Md</span></span>
+                            <span style="flex:0.6;display:flex;gap:2px;align-items:center;"><span style="font-size:5px;padding:0 3px;border-radius:1px;background:rgba(86,156,214,0.15);color:#569cd6;">Apps</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(78,201,176,0.15);color:#4ec9b0;">DET</span><span style="font-size:5px;padding:0 2px;border-radius:1px;background:rgba(244,135,113,0.15);color:#f48771;">ESC</span></span>
+                        </div>
+                        <!-- Monitor Row 3 (disabled) -->
+                        <div style="display:flex; align-items:center; gap:4px; padding:4px 14px; font-size:7px; border-bottom:1px solid #2a2a2a; opacity:0.4;">
+                            <span style="width:32px;"><span style="font-size:6px;padding:1px 4px;border-radius:2px;background:rgba(102,102,102,0.15);color:#666;font-weight:600;">OFF</span></span>
+                            <span style="flex:1.5;color:#888;">TU Refresh</span>
+                            <span style="flex:0.8;color:#666;">SFTP-02</span>
+                            <span style="flex:1;color:#666;">/inbound/tu/</span>
+                            <span style="flex:0.8;color:#666;">TU_REFRESH_*.dat</span>
+                            <span style="width:90px;display:flex;gap:1px;justify-content:center;"><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">M</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">T</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">W</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">T</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">F</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">S</span><span style="font-size:5px;padding:0 2px;border-radius:1px;color:#333;">S</span></span>
+                            <span style="width:40px;color:#666;">07:00</span>
+                            <span style="width:40px;color:#666;">17:00</span>
+                            <span style="width:40px;color:#666;">08:30</span>
+                            <span style="width:36px;"><span style="font-size:5px;padding:0 3px;border-radius:1px;color:#444;">JIRA</span></span>
+                            <span style="width:50px;"></span>
+                            <span style="flex:0.6;color:#555;font-size:6px;">No routing</span>
+                        </div>
+                    </div>
+
+            </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The File Monitoring page tracks SFTP file arrivals across multiple servers. Each configured monitor watches for a specific file pattern in a specific directory, with a defined time window and escalation threshold.</p>
+                    <p>When a file arrives, it&rsquo;s detected. When it doesn&rsquo;t arrive by the escalation deadline, it escalates. The page shows today&rsquo;s queue of all monitor activity, configuration management, and detection history.</p>
+                    <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicator</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Status</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Daily Queue</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Configuration</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Detection History</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> Management Console</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicator</h2>
+            <p>The single engine card in the upper right represents <code>Scan-SFTPFiles.ps1</code> &mdash; the orchestrator process that scans all configured SFTP servers for file arrivals. It runs on a fixed interval, checking each monitored directory for files matching the configured patterns.</p>
+            <p>The colored bar and countdown show the health and timing of the scanner. Green means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in.</p>
+            <p>Every section on this page except the Configuration cards refreshes when this process completes (lightning bolt badges). The scanner is the single data pipeline behind the Daily Queue and Detection History.</p>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Status</h2>
+            <p>Three summary cards showing the current state of today&rsquo;s file monitoring activity.</p>
+            <p><strong>Escalated</strong> &mdash; Monitors where the expected file has not arrived by the escalation deadline. The card border turns red when non-zero. Each escalation triggers a Teams notification and/or Jira ticket depending on the monitor&rsquo;s alert configuration. This is the &ldquo;someone needs to look at this&rdquo; count.</p>
+            <p><strong>Monitoring</strong> &mdash; Monitors that are actively scanning. The check window has started but the file hasn&rsquo;t arrived yet and the escalation deadline hasn&rsquo;t passed. This is the &ldquo;watching and waiting&rdquo; count.</p>
+            <p><strong>Detected</strong> &mdash; Monitors where the expected file arrived successfully. This is the &ldquo;all good&rdquo; count. Includes both on-time and late detections (late detections are files that arrived after the escalation deadline but before the end of the day).</p>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Daily Queue</h2>
+            <p>A table showing every monitor that has been active today, organized into three groups separated by dividers: escalated (top), monitoring (middle), detected (bottom). Each row shows the status badge, monitor name, relevant time, and detected filename if available.</p>
+            <p>Escalated rows show the escalation time &mdash; when the deadline passed. Monitoring rows show the last scan time or the check start time. Detected rows show the detection time and the actual filename that was found.</p>
+            <p>Click any row to open the Management Console scrolled to that monitor&rsquo;s configuration. This is the quickest way to check a monitor&rsquo;s settings when investigating an escalation.</p>
+            <p>The <strong>Scheduled</strong> button in the section header shows how many monitors are configured for today but haven&rsquo;t started scanning yet (their check window hasn&rsquo;t opened). Click it to see a modal listing the upcoming monitors with their scheduled start times and countdowns.</p>
+            <div class="callout tip"><p>The Daily Queue resets each day. Monitors only appear once their check window opens. If you don&rsquo;t see a monitor you expect, check the Scheduled button &mdash; it may not have started yet. If it&rsquo;s not scheduled at all, check the Configuration section to verify the monitor is active and has the right schedule.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Configuration</h2>
+            <p>Two clickable cards that open the Management Console. The Monitors card shows the total number of configured file monitors. The Servers card shows the number of SFTP servers being scanned. Both are loaded once on page open (pushpin badge) and don&rsquo;t refresh on the engine cycle.</p>
+            <p>Click either card to open the Management Console (see section 6). The Monitors card opens to the monitor list; the Servers card opens to the server list.</p>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Detection History</h2>
+            <p>A collapsible tree showing the complete history of file detections and escalations. Organized by year and month, with counts of distinct monitors, detections, and escalations at every level.</p>
+            <p>Click a <strong>year</strong> to expand its months. Each month row shows monitor count, detection count, and escalation count. Click a <strong>month</strong> to load its daily breakdown. Click a <strong>day</strong> to open a slideout with the full timeline of events for that date &mdash; every detection and escalation with timestamps, monitor names, and filenames.</p>
+            <p>Escalation counts in the history tree help identify patterns &mdash; if the same monitor escalates every Monday, or if escalations cluster around specific dates, the history makes that visible.</p>
+        </div></div>
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>Management Console</h2>
+            <p>A slide-up panel that covers the lower portion of the page. Contains a flip card with two faces: Monitors on the front, Servers on the back. Click the flip button in the title bar to switch between them.</p>
+            <p><strong>Monitors</strong> &mdash; A scrollable list of every configured file monitor. Each row shows the monitor name, file pattern, SFTP server, directory, check start time, escalation deadline, priority, active status, and alert subscriptions. Rows are inline-editable &mdash; click a field to modify it. Changes are tracked and saved individually per row. An &ldquo;Add Monitor&rdquo; button in the title bar creates a new blank row for configuration.</p>
+            <p><strong>Servers</strong> &mdash; A list of configured SFTP servers showing the server name, host, port, and credential reference. This is a read-only view of the servers the scanner connects to.</p>
+            <p>Each monitor row can also have webhook subscriptions for escalation notifications. The webhook configuration allows routing escalation alerts to specific Teams channels or other endpoints on a per-monitor basis.</p>
+            <div class="callout warning"><p>Changes to monitor configuration take effect on the next scanner cycle. Disabling a monitor mid-day will stop it from scanning, but any existing escalation for that monitor will remain in the Daily Queue until the next day. Verify monitor settings carefully before saving &mdash; an incorrect file pattern or directory path will cause the monitor to never detect its file.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../fileops.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to File Monitoring</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/fileops-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/fileops-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

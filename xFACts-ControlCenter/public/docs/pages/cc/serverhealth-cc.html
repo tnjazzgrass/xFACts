@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Health &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Server Health &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-live"><span class="dot"></span></span></span><span class="key-flip-label">Live Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the relevant engine process completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-action"><span class="arrows">&#128260;</span></span></span><span class="key-flip-label">Action Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes in response to a user action, like selecting a different server.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">DMV</span><div class="eng-bar"></div><span class="eng-cd">47s</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows a data collection process. Green bar = healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">1,247</div><div class="mc-label">PLE</div></div></span><span class="key-flip-label">Metric Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Displays a live value with color-coded status. Many are clickable &mdash; look for the arrow hint.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-tooltip-icon">?</span></span><span class="key-flip-label">Tooltip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Hover or click for a brief explanation of what a metric means or what the thresholds are.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">Server Health</div>
+                            <div class="mock-page-subtitle">Real-time SQL Server performance and health monitoring</div>
+                        </div>
+                        <div class="mock-header-center" data-section="1" style="position: relative;">
+                            <a href="#section-1" class="callout-marker" style="position:absolute; top: 4px; left: 50%; transform: translateX(-50%);">1</a>
+                            <div class="mock-server-tab selected">
+                                <div class="mock-gauge"></div>
+                                <div class="mock-gauge-pct">12%</div>
+                                <div class="mock-gauge-name">FA-SQL01</div>
+                            </div>
+                            <div class="mock-server-tab">
+                                <div class="mock-gauge"></div>
+                                <div class="mock-gauge-pct">8%</div>
+                                <div class="mock-gauge-name">FA-SQL02</div>
+                            </div>
+                            <div class="mock-server-tab">
+                                <div class="mock-gauge"></div>
+                                <div class="mock-gauge-pct">5%</div>
+                                <div class="mock-gauge-name">FA-SQL03</div>
+                            </div>
+                            <div class="mock-server-tab">
+                                <div class="mock-gauge"></div>
+                                <div class="mock-gauge-pct">22%</div>
+                                <div class="mock-gauge-name">FA-SQL04</div>
+                            </div>
+                            <div class="mock-server-tab">
+                                <div class="mock-gauge"></div>
+                                <div class="mock-gauge-pct">3%</div>
+                                <div class="mock-gauge-name">FA-SQL05</div>
+                            </div>
+                            <div class="mock-server-tab">
+                                <div class="mock-gauge"></div>
+                                <div class="mock-gauge-pct">7%</div>
+                                <div class="mock-gauge-name">FA-SQL06</div>
+                            </div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">12:34:07</span>
+                            </div>
+                            <div class="mock-engine-row" data-section="2" style="position: relative;">
+                                <a href="#section-2" class="callout-marker" style="position:absolute; top: 0px; right: 46%;">2</a>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">DMV</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">47s</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">XE</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">2m</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">Disk</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">8m</div>
+                                </div>
+                                <div class="mock-engine">
+                                    <div class="mock-engine-label">Summary</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">14m</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Body: Two-column layout -->
+                    <div class="mock-body">
+                        <div class="mock-col-left">
+                            <div class="mock-section" data-section="3" style="position: relative;">
+                                <a href="#section-3" class="callout-marker" style="position:absolute; top: 6px; left: 15%;">3</a>
+                                <div class="mock-section-header"><span class="mock-section-title">Memory</span><span class="mock-badge-live"><span class="dot"></span></span></div>
+                                <div class="mock-metric-grid">
+                                    <div class="mock-metric"><div class="mock-metric-label">Page Life Expectancy</div><div class="mock-metric-value">1,247</div><div class="mock-metric-unit">seconds</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">Buffer Cache Hit Ratio</div><div class="mock-metric-value">99.8%</div><div class="mock-metric-unit">&nbsp;</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">Memory Grants Pending</div><div class="mock-metric-value">0</div><div class="mock-metric-unit">queries waiting</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">Lazy Writes/sec</div><div class="mock-metric-value">0</div><div class="mock-metric-unit">pages flushed</div></div>
+                                </div>
+                            </div>
+                            <div class="mock-section" data-section="4" style="position: relative;">
+                                <a href="#section-4" class="callout-marker" style="position:absolute; top: 6px; left: 20%;">4</a>
+                                <div class="mock-section-header"><span class="mock-section-title">Connections</span><span class="mock-badge-live"><span class="dot"></span></span></div>
+                                <div class="mock-metric-grid">
+                                    <div class="mock-metric"><div class="mock-metric-label">Active Connections</div><div class="mock-metric-value">84</div><div class="mock-metric-unit">sessions</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">JDBC Connections</div><div class="mock-metric-value">61</div><div class="mock-metric-unit">Java sessions</div></div>
+                                    <div class="mock-metric" data-section="10" style="position:relative;"><a href="#section-10" class="callout-marker" style="position:absolute; top: 45px; right: 110px;">10</a><div class="mock-metric-label">Zombie Connections</div><div class="mock-metric-value" style="color:#dcdcaa;">3</div><div class="mock-metric-unit">idle JDBC</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">Open Transactions</div><div class="mock-metric-value">0</div><div class="mock-metric-unit">none</div></div>
+                                </div>
+                            </div>
+                            <div class="mock-section" data-section="5" style="position: relative;">
+                                <a href="#section-5" class="callout-marker" style="position:absolute; top: 6px; left: 23%;">5</a>
+                                <div class="mock-section-header"><span class="mock-section-title">Current Activity</span><span class="mock-badge-live"><span class="dot"></span></span></div>
+                                <div class="mock-metric-grid">
+                                    <div class="mock-metric"><div class="mock-metric-label">Blocked Sessions</div><div class="mock-metric-value">0</div><div class="mock-metric-unit">waiting</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">Lead Blocker</div><div class="mock-metric-value" style="font-size:13px;">None</div><div class="mock-metric-unit">no blocking</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">Longest Wait</div><div class="mock-metric-value">0</div><div class="mock-metric-unit">no waits</div></div>
+                                    <div class="mock-metric"><div class="mock-metric-label">Active Requests</div><div class="mock-metric-value">6</div><div class="mock-metric-unit">3 run &middot; 2 rnbl &middot; 1 susp</div></div>
+                                </div>
+                            </div>
+                            <div class="mock-section" data-section="6" style="position: relative;">
+                                <a href="#section-6" class="callout-marker" style="position:absolute; top: 6px; left: 30%;">6</a>
+                                <div class="mock-section-header">
+                                    <span class="mock-section-title">Extended Events Activity</span>
+                                    <span style="display:flex; align-items:center; gap:6px;">
+                                        <span style="font-size:8px; color:#888;">15m &#9881;</span>
+                                        <span class="mock-badge-event">&#9889;</span>
+                                    </span>
+                                </div>
+                                <div class="mock-xe-grid">
+                                    <div class="mock-xe-card"><div class="mock-xe-label">Long Running Queries</div><div class="mock-xe-value">2</div></div>
+                                    <div class="mock-xe-card"><div class="mock-xe-label">Blocking</div><div class="mock-xe-value">0</div></div>
+                                    <div class="mock-xe-card"><div class="mock-xe-label">Deadlocks</div><div class="mock-xe-value">0</div></div>
+                                    <div class="mock-xe-card"><div class="mock-xe-label">LS Inbound</div><div class="mock-xe-value">14</div></div>
+                                    <div class="mock-xe-card"><div class="mock-xe-label">LS Outbound</div><div class="mock-xe-value">8</div></div>
+                                    <div class="mock-xe-card"><div class="mock-xe-label">AG Events</div><div class="mock-xe-value">0</div></div>
+                                    <div class="mock-xe-card"><div class="mock-xe-label">System Health</div><div class="mock-xe-value">1</div></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mock-col-right">
+                            <div class="mock-section" data-section="7" style="position: relative;">
+                                <a href="#section-7" class="callout-marker" style="position:absolute; top: 6px; right: 50%;">7</a>
+                                <div class="mock-section-header"><span class="mock-section-title">Server Info</span><span class="mock-badge-action">&#128260;</span></div>
+                                <div style="font-size:10px; color:#4ec9b0; font-weight:600; margin-bottom:4px;">FA-SQL01</div>
+                                <div class="mock-info-row"><span class="mock-info-label">Version</span><span class="mock-info-value">14.0.3465</span></div>
+                                <div class="mock-info-row"><span class="mock-info-label">Edition</span><span class="mock-info-value">Enterprise</span></div>
+                                <div class="mock-info-row"><span class="mock-info-label">Memory</span><span class="mock-info-value">128 GB</span></div>
+                                <div class="mock-info-row"><span class="mock-info-label">CPUs</span><span class="mock-info-value">16</span></div>
+                                <div class="mock-info-row"><span class="mock-info-label">Uptime</span><span class="mock-info-value">47d 3h</span></div>
+                                <div class="mock-info-row"><span class="mock-info-label">AG Role</span><span class="mock-info-value" style="color:#4ec9b0;">PRIMARY</span></div>
+                            </div>
+                            <div class="mock-section" data-section="8" style="position: relative;">
+                                <a href="#section-8" class="callout-marker" style="position:absolute; top: 6px; right: 50%;">8</a>
+                                <div class="mock-section-header"><span class="mock-section-title">Disk Space</span><span class="mock-badge-event">&#9889;</span></div>
+                                <div class="mock-disk-row"><span class="mock-disk-label">C:\</span><div class="mock-disk-bar"><div class="mock-disk-fill" style="width:45%;"></div></div></div>
+                                <div class="mock-disk-row"><span class="mock-disk-label">D:\</span><div class="mock-disk-bar"><div class="mock-disk-fill" style="width:62%;"></div></div></div>
+                                <div class="mock-disk-row"><span class="mock-disk-label">E:\</span><div class="mock-disk-bar"><div class="mock-disk-fill warning" style="width:84%;"></div></div></div>
+                                <div class="mock-disk-row"><span class="mock-disk-label">F:\</span><div class="mock-disk-bar"><div class="mock-disk-fill" style="width:38%;"></div></div></div>
+                            </div>
+                            <div class="mock-section" data-section="9" style="position: relative;">
+                                <a href="#section-9" class="callout-marker" style="position:absolute; top: 6px; right: 30%;">9</a>
+                                <div class="mock-section-header"><span class="mock-section-title">DMPRODAG Health</span><span class="mock-badge-live"><span class="dot"></span></span></div>
+                                <div class="mock-ag-card">
+                                    <div class="mock-ag-row"><span class="mock-ag-label">Primary</span><span class="mock-ag-value">FA-SQL01</span></div>
+                                    <div class="mock-ag-row"><span class="mock-ag-label">Secondary</span><span class="mock-ag-value">FA-SQL02</span></div>
+                                    <div class="mock-ag-row"><span class="mock-ag-label">Sync Health</span><span class="mock-ag-badge">HEALTHY</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Zombie Eradication modal preview (marker 10) -->
+                    <div class="mock-modal-preview" data-section="10" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:40%; background:#252526; border:2px solid var(--accent-blue); border-radius:6px; padding:18px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6); text-align:center;">
+                        <div style="font-size:36px; margin-bottom:6px;">&#129503;&#128299;</div>
+                        <div style="color:#ccc; font-size:12px; margin-bottom:4px;">Are you sure you want to eradicate</div>
+                        <div style="color:#dcdcaa; font-size:28px; font-weight:700; margin-bottom:4px;">3</div>
+                        <div style="color:#ccc; font-size:12px; margin-bottom:10px;">zombies?</div>
+                        <div style="color:#888; font-size:9px; margin-bottom:14px;">JDBC connections idle &gt; 60 minutes on FA-SQL01</div>
+                        <div style="display:flex; gap:10px; justify-content:center;">
+                            <span style="font-size:9px; color:#ccc; border:1px solid #404040; border-radius:4px; padding:4px 12px;">Never Mind</span>
+                            <span style="font-size:9px; color:#fff; background:#a03030; border-radius:4px; padding:4px 12px;">&#128299; Double Tap Them</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The Server Health page is the most information-dense page in the Control Center.</p>
+                    <p>It provides real-time and snapshot metrics from the Activity and Disk components of the ServerOps schema, and it can be overwhelming at first glance.</p>
+                    <p>This guide outlines each section, indicator, and clickable element so you know exactly what you&rsquo;re looking at.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Server Selection Tabs</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Engine Indicators</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Memory</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Connections</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Current Activity</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> Extended Events Activity</div>
+                    <div class="sidebar-item" data-marker="7"><span class="sidebar-num">7</span> Server Info</div>
+                    <div class="sidebar-item" data-marker="8"><span class="sidebar-num">8</span> Disk Space</div>
+                    <div class="sidebar-item" data-marker="9"><span class="sidebar-num">9</span> DMPRODAG Health</div>
+                    <div class="sidebar-item" data-marker="10"><span class="sidebar-num">10</span> Zombie Eradication</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Server Selection Tabs</h2>
+            <p>The row of mini-cards in the center of the header represents each monitored SQL Server. Each card shows the server name and a live CPU utilization gauge. Click a server to switch the entire page to that server&rsquo;s metrics.</p>
+            <p>The currently selected server has a highlighted border. All metrics, charts, and panels update to reflect the selected server. You can switch servers at any time &mdash; the page rebuilds instantly.</p>
+            <div class="callout tip"><p>The CPU gauge on each server tab gives you a quick health-check across the entire fleet without clicking into each one. If one server&rsquo;s gauge is noticeably higher than the others, that&rsquo;s worth investigating.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Engine Indicators</h2>
+            <p>The small cards in the upper right represent the orchestrator processes that feed this page with data. Server Health has four: DMV (performance metrics), XE (Extended Events), Disk (disk space collection), and Summary (disk health summary alerts).</p>
+            <p>Each indicator shows a colored bar and a countdown to the next run. Green means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in &mdash; which could mean the engine itself needs attention.</p>
+            <p>These update independently of the page&rsquo;s refresh cycle via a persistent WebSocket connection. They&rsquo;re your real-time pulse on the data pipeline behind the page.</p>
+        </div></div>
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Memory</h2>
+            <p>Four metric cards that tell you how well SQL Server is managing its memory.</p>
+            <p><strong>Page Life Expectancy (PLE)</strong> &mdash; How many seconds a data page stays in memory before being pushed out. Higher is better. When this drops, SQL Server is under memory pressure and constantly swapping data in and out. Click for historical trend (24h / 7d / 30d).</p>
+            <p><strong>Buffer Cache Hit Ratio</strong> &mdash; The percentage of data requests served from memory rather than disk. Should be 99% or higher. A drop means queries are hitting disk far more than they should. Click for trend.</p>
+            <p><strong>Memory Grants Pending</strong> &mdash; Queries waiting in line for memory. Should be zero. Non-zero means queries are queuing up because there isn&rsquo;t enough memory to go around. Click for trend.</p>
+            <p><strong>Lazy Writes/sec</strong> &mdash; How fast SQL Server is flushing pages to disk because it needs the memory. Lower is better. Occasional lazy writes are normal; sustained high values indicate pressure.</p>
+            <p>Each card changes color based on configurable thresholds &mdash; green when healthy, yellow for warning, orange for critical, red for crisis.</p>
+        </div></div>
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Connections</h2>
+            <p>Four metric cards tracking who and what is connected to the server.</p>
+            <p><strong>Active Connections</strong> &mdash; Every active session connected to the instance. Click for trend chart showing connection patterns over time.</p>
+            <p><strong>JDBC Connections</strong> &mdash; Connections specifically from Debt Manager (identified by the JDBC driver). This is the primary application workload. Click for trend.</p>
+            <p><strong>Zombie Connections</strong> &mdash; JDBC sessions sitting idle beyond threshold with no open transaction. Using connection slots but doing nothing useful. Clicking opens a confirmation dialog to kill them all at once. Yes, the button says &ldquo;Double Tap Them.&rdquo; Yes, there are zombie emojis.</p>
+            <div class="callout warning"><p>Zombie killing terminates actual database sessions. The threshold is conservative enough that false positives are rare, but only use this when you&rsquo;re confident the idle connections are genuinely abandoned. Click marker 10 on the mockup to see the confirmation dialog.</p></div>
+            <p><strong>Open Transactions</strong> &mdash; Sessions with uncommitted transactions idle beyond threshold. Potentially dangerous because they hold locks that can block other processes. Click to open a slide panel with session details and a button to copy a KILL script.</p>
+        </div></div>
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Current Activity</h2>
+            <p>Four metric cards showing what&rsquo;s happening on the server right now.</p>
+            <p><strong>Blocked Sessions</strong> &mdash; Sessions currently waiting on another session to release a lock. When non-zero, someone is blocking someone else. Click to open a panel showing the blocking chain &mdash; who&rsquo;s blocking whom, what query they&rsquo;re running, and how long. Includes a copy-to-clipboard KILL script for the lead blocker.</p>
+            <p><strong>Lead Blocker</strong> &mdash; If blocking is occurring, this identifies the SPID at the head of the chain &mdash; the session everyone else is waiting on. Shows &ldquo;None&rdquo; when there&rsquo;s no blocking. When blocking is active, the card shows the SPID and how many sessions it&rsquo;s holding up.</p>
+            <p><strong>Longest Wait</strong> &mdash; The duration of the longest currently active wait. Displayed in seconds or minutes depending on the value. When this is zero, nobody is waiting for anything &mdash; the server is moving freely.</p>
+            <p><strong>Active Requests</strong> &mdash; Sessions actively executing a query right now. The subtitle breaks these down by status: running (green), runnable (yellow), and suspended (red). Click for a detail panel showing what each session is running, how long, and resource consumption. Includes a manual refresh button since this is a point-in-time snapshot.</p>
+        </div></div>
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>Extended Events Activity</h2>
+            <p>Counts of events captured by SQL Server&rsquo;s Extended Events sessions within a configurable time window. The default is 15 minutes &mdash; change it with the gear icon next to the section header (5m, 15m, 30m, 60m).</p>
+            <p>This section refreshes when the XE collector completes (lightning bolt badge), not on the live page interval.</p>
+            <p><strong>Long Running Queries</strong> &mdash; Queries exceeding the duration threshold. Click for query text, database, duration, and resource stats.</p>
+            <p><strong>Blocking</strong> &mdash; Sessions that blocked another long enough to trigger the threshold. Click for blocker and victim query details.</p>
+            <p><strong>Deadlocks</strong> &mdash; Mutual blocking that SQL Server resolved by killing a session. Click for deadlock details.</p>
+            <p><strong>Linked Server Inbound / Outbound</strong> &mdash; Cross-server query traffic. Useful for understanding integration patterns.</p>
+            <p><strong>AG Events</strong> &mdash; Availability Group state and role changes from the AlwaysOn health session.</p>
+            <p><strong>System Health</strong> &mdash; SQL Server&rsquo;s built-in diagnostics &mdash; memory pressure, non-yielding schedulers, severe errors.</p>
+            <div class="callout info"><p>Non-zero counts aren&rsquo;t necessarily problems. Long running queries happen during legitimate operations. The value is in the <em>trend</em> &mdash; a sudden spike in blocking events when nothing special is scheduled is worth investigating.</p></div>
+        </div></div>
+        <div class="guide-section" id="section-7"><div class="section">
+            <h2><span class="section-number">7</span>Server Info</h2>
+            <p>A summary panel in the right column showing the selected server&rsquo;s configuration: SQL Server version, edition, total memory, CPU count, uptime, and AG replica role (Primary or Secondary). Refreshes when you select a different server (swap arrows badge).</p>
+        </div></div>
+        <div class="guide-section" id="section-8"><div class="section">
+            <h2><span class="section-number">8</span>Disk Space</h2>
+            <p>Visual bars showing used space on each drive of the selected server. Color-coded against per-drive thresholds &mdash; green when healthy, yellow when approaching, red when below.</p>
+            <p>Refreshes when the disk collector process completes (lightning bolt badge), not on the live interval.</p>
+        </div></div>
+        <div class="guide-section" id="section-9"><div class="section">
+            <h2><span class="section-number">9</span>DMPRODAG Health</h2>
+            <p>The Availability Group panel shows the current primary and secondary replicas and overall synchronization health. Click a replica name to switch the dashboard to that server and open a detail slideout with queue sizes, redo rates, and last hardened LSN timestamps.</p>
+            <p>Refreshes on the live page interval (pulsing dot badge).</p>
+        </div></div>
+        <div class="guide-section" id="section-10"><div class="section">
+            <h2><span class="section-number">10</span>Zombie Eradication</h2>
+            <p>When the Zombie Connections metric card in the Connections section shows a non-zero count, clicking it opens a confirmation dialog offering to kill all zombie sessions at once.</p>
+            <p>The dialog shows the zombie count, the idle threshold (configurable in GlobalConfig), and the target server. Two buttons: &ldquo;Never Mind&rdquo; to back out, and &ldquo;Double Tap Them&rdquo; to execute the kill. Yes, there are zombie emojis. No, we will not apologize for them.</p>
+            <p>Behind the scenes, the kill operation runs <code>KILL</code> commands against each identified zombie SPID. Results are logged. The Connections section refreshes automatically after execution to confirm the zombies are gone.</p>
+            <div class="callout warning"><p>This terminates actual database sessions. The idle threshold is conservative enough that false positives are rare, but verify the zombie count looks reasonable before clicking. If a session appears idle but is actually waiting on a long-running distributed transaction, killing it could cause a rollback.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../serverhealth.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Server Health</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/serverhealth-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/serverhealth-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>

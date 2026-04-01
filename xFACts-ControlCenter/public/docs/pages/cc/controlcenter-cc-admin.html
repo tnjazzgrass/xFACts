@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administration &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Administration &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-live"><span class="dot"></span></span></span><span class="key-flip-label">Live Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Pulsing green dot indicates the page is receiving real-time updates via WebSocket. Data is always current.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;gap:2px;"><span style="font-size:8px;color:#569cd6;background:rgba(86,156,214,0.12);border:1px solid rgba(86,156,214,0.35);border-radius:3px;padding:1px 6px;font-weight:600;">All</span><span style="font-size:8px;color:#888;background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:1px 6px;">Failed</span></span></span><span class="key-flip-label">Filter Pill</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Filters the timeline view. All shows everything. Running or Failed isolates those statuses.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;gap:2px;"><span style="font-size:8px;color:#888;background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:1px 6px;">10m</span><span style="font-size:8px;color:#569cd6;background:rgba(86,156,214,0.12);border:1px solid rgba(86,156,214,0.35);border-radius:3px;padding:1px 6px;font-weight:600;">30m</span><span style="font-size:8px;color:#888;background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:1px 6px;">60m</span></span></span><span class="key-flip-label">Window Selector</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Controls how much time the timeline canvas displays. Wider windows show more history; narrower windows show more detail.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;align-items:center;gap:3px;"><span style="display:inline-block;width:36px;height:6px;border-radius:2px;background:linear-gradient(90deg,#2563eb,#60a5fa);"></span><span style="display:inline-block;width:18px;height:6px;border-radius:2px;background:linear-gradient(90deg,#7c3aed,#a78bfa);"></span></span></span><span class="key-flip-label">Timeline Bar</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Each bar is one process execution. Color = module. Length = duration. Blue glow = running. Red = failed. Hover for details.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;align-items:center;gap:6px;background:#252526;border:1px solid #404040;border-radius:5px;padding:4px 8px;"><span style="font-size:13px;">&#9881;</span><span style="font-size:9px;color:#d4d4d4;font-weight:500;">Engine</span></span></span><span class="key-flip-label">Management Card</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Clickable card in the Platform Management row. Opens a slideout panel for that feature area.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,0.4);"></span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,0.4);"></span></span></span><span class="key-flip-label">Status Pip</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Small dot on the Engine Controls card. Left = engine (green/red). Right = Windows service (green/yellow/red).</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+            <div class="mock-container mock-wide">
+
+                    <!-- Header Bar -->
+                    <div class="mock-header">
+                        <div class="mock-header-left">
+                            <div class="mock-page-title">Administration</div>
+                            <div class="mock-page-subtitle">Process timeline and platform management</div>
+                        </div>
+                        <div class="mock-header-right">
+                            <div class="mock-live-row">
+                                <span class="mock-live-dot"></span>
+                                <span>Live</span> | Updated: <span style="color:#4ec9b0;">2:34:07 PM</span>
+                                <span style="font-size:13px;color:#888;cursor:pointer;margin-left:4px;">&#8635;</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ======================================================== -->
+                    <!-- PROCESS TIMELINE SECTION -->
+                    <!-- ======================================================== -->
+                    <div class="mock-section" data-section="1" style="position:relative; padding:0; overflow:hidden;">
+                        <a href="#section-1" class="callout-marker" style="position:absolute; top:6px; left:28%; transform:translateX(-50%); z-index:11;">1</a>
+
+                        <!-- Timeline Toolbar -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #333;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span style="font-size:9px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:#888;">Process Timeline</span>
+                                <div style="display:flex; gap:3px;">
+                                    <span style="font-size:8px;color:#569cd6;background:rgba(86,156,214,0.12);border:1px solid rgba(86,156,214,0.35);border-radius:3px;padding:1px 7px;font-weight:500;">All</span>
+                                    <span style="font-size:8px;color:#888;background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:1px 7px;">Running</span>
+                                    <span style="font-size:8px;color:#888;background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:1px 7px;">Failed</span>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <!-- Module legend -->
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <span style="display:flex;align-items:center;gap:3px;font-size:7px;color:#888;"><span style="width:6px;height:6px;border-radius:1px;background:#2563eb;flex-shrink:0;"></span>ServerOps</span>
+                                    <span style="display:flex;align-items:center;gap:3px;font-size:7px;color:#888;"><span style="width:6px;height:6px;border-radius:1px;background:#7c3aed;flex-shrink:0;"></span>JobFlow</span>
+                                    <span style="display:flex;align-items:center;gap:3px;font-size:7px;color:#888;"><span style="width:6px;height:6px;border-radius:1px;background:#d97706;flex-shrink:0;"></span>BatchOps</span>
+                                    <span style="display:flex;align-items:center;gap:3px;font-size:7px;color:#888;"><span style="width:6px;height:6px;border-radius:1px;background:#059669;flex-shrink:0;"></span>FileOps</span>
+                                    <span style="display:flex;align-items:center;gap:3px;font-size:7px;color:#888;"><span style="width:6px;height:6px;border-radius:1px;background:#0ea5e9;flex-shrink:0;"></span>Teams</span>
+                                </div>
+                                <!-- Window buttons -->
+                                <div style="display:flex; gap:2px;">
+                                    <span style="font-size:8px;color:#888;background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:1px 7px;">10m</span>
+                                    <span style="font-size:8px;color:#569cd6;background:rgba(86,156,214,0.12);border:1px solid rgba(86,156,214,0.35);border-radius:3px;padding:1px 7px;font-weight:600;">30m</span>
+                                    <span style="font-size:8px;color:#888;background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:1px 7px;">60m</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Timeline Body: Sidebar + Canvas -->
+                        <div style="display:flex; height:180px;">
+                            <!-- Process Sidebar -->
+                            <div style="width:240px; flex-shrink:0; border-right:1px solid #333; overflow:hidden; font-size:8px;">
+                                <!-- Group: Collectors -->
+                                <div style="display:flex;align-items:center;padding:2px 8px;height:16px;font-size:7px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#555;background:#1e1e1e;border-bottom:1px solid #2a2a2a;">COLLECTORS</div>
+                                <!-- Process rows -->
+                                <div style="display:flex;align-items:center;gap:4px;padding:0 8px;height:22px;border-bottom:1px solid rgba(255,255,255,0.02);">
+                                    <span style="color:#4ade80;font-size:9px;">&#9679;</span>
+                                    <span style="font-size:9px;color:#e0f5e0;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.35);border-radius:3px;padding:0 6px;width:120px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Collect-ServerHealth</span>
+                                    <span style="margin-left:auto;display:flex;gap:4px;"><span style="color:#4ade80;">142</span><span style="color:#333;">0</span></span>
+                                    <span style="font-size:8px;color:#4ec9b0;min-width:28px;text-align:right;font-family:Consolas,monospace;">47s</span>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:4px;padding:0 8px;height:22px;border-bottom:1px solid rgba(255,255,255,0.02);">
+                                    <span style="color:#4ade80;font-size:9px;">&#9679;</span>
+                                    <span style="font-size:9px;color:#dce8f5;background:rgba(86,156,214,0.15);border:1px solid rgba(86,156,214,0.35);border-radius:3px;padding:0 6px;width:120px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Collect-DMVMetrics</span>
+                                    <span style="margin-left:auto;display:flex;gap:4px;"><span style="color:#4ade80;">140</span><span style="color:#ef4444;">2</span></span>
+                                    <span style="font-size:8px;color:#4ec9b0;min-width:28px;text-align:right;font-family:Consolas,monospace;">12s</span>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:4px;padding:0 8px;height:22px;border-bottom:1px solid rgba(255,255,255,0.02);">
+                                    <span style="color:#4ade80;font-size:9px;">&#9679;</span>
+                                    <span style="font-size:9px;color:#e0f5e0;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.35);border-radius:3px;padding:0 6px;width:120px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Collect-XEEvents</span>
+                                    <span style="margin-left:auto;display:flex;gap:4px;"><span style="color:#4ade80;">48</span><span style="color:#333;">0</span></span>
+                                    <span style="font-size:8px;color:#4ec9b0;min-width:28px;text-align:right;font-family:Consolas,monospace;">3m</span>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:4px;padding:0 8px;height:22px;border-bottom:1px solid rgba(255,255,255,0.02);">
+                                    <span style="color:#4ade80;font-size:9px;">&#9679;</span>
+                                    <span style="font-size:9px;color:#e0f5e0;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.35);border-radius:3px;padding:0 6px;width:120px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Monitor-JobFlow</span>
+                                    <span style="margin-left:auto;display:flex;gap:4px;"><span style="color:#4ade80;">96</span><span style="color:#333;">0</span></span>
+                                    <span style="font-size:8px;color:#4ec9b0;min-width:28px;text-align:right;font-family:Consolas,monospace;">1m</span>
+                                </div>
+                                <!-- Group: Processors -->
+                                <div style="display:flex;align-items:center;padding:2px 8px;height:16px;font-size:7px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#555;background:#1e1e1e;border-bottom:1px solid #2a2a2a;">PROCESSORS</div>
+                                <div style="display:flex;align-items:center;gap:4px;padding:0 8px;height:22px;border-bottom:1px solid rgba(255,255,255,0.02);">
+                                    <span style="color:#4ade80;font-size:9px;">&#9679;</span>
+                                    <span style="font-size:9px;color:#e0f5e0;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.35);border-radius:3px;padding:0 6px;width:120px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Send-DiskHealthSummary</span>
+                                    <span style="margin-left:auto;display:flex;gap:4px;"><span style="color:#4ade80;">6</span><span style="color:#333;">0</span></span>
+                                    <span style="font-size:8px;color:#4ec9b0;min-width:28px;text-align:right;font-family:Consolas,monospace;">14m</span>
+                                </div>
+                                <!-- Group: Queue Processors -->
+                                <div style="display:flex;align-items:center;padding:2px 8px;height:16px;font-size:7px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#555;background:#1e1e1e;border-bottom:1px solid #2a2a2a;">QUEUE PROCESSORS</div>
+                                <div style="display:flex;align-items:center;gap:4px;padding:0 8px;height:22px;border-bottom:1px solid rgba(255,255,255,0.02);">
+                                    <span style="color:#4ade80;font-size:9px;">&#9679;</span>
+                                    <span style="font-size:9px;color:#e0f5e0;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.35);border-radius:3px;padding:0 6px;width:120px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Process-TeamsAlertQueue</span>
+                                    <span style="margin-left:auto;display:flex;gap:4px;"><span style="color:#4ade80;">71</span><span style="color:#333;">0</span></span>
+                                    <span style="font-size:8px;color:#569cd6;min-width:28px;text-align:right;font-style:italic;font-size:7px;">queued</span>
+                                </div>
+                            </div>
+
+                            <!-- Canvas Area (simulated) -->
+                            <div style="flex:1; position:relative; overflow:hidden; background:#252526;">
+                                <!-- Time axis labels at top -->
+                                <div style="display:flex; justify-content:space-between; padding:2px 8px; font-size:7px; color:#444; border-bottom:1px solid #2a2a2a;">
+                                    <span>2:04 PM</span><span>2:10 PM</span><span>2:16 PM</span><span>2:22 PM</span><span>2:28 PM</span><span>2:34 PM</span>
+                                </div>
+                                <!-- Simulated execution bars -->
+                                <div style="position:relative; height:calc(100% - 18px);">
+                                    <!-- Row backgrounds (alternate subtle stripes) -->
+                                    <!-- Collector group header spacer -->
+                                    <div style="height:16px;"></div>
+                                    <!-- ServerHealth bars -->
+                                    <div style="height:22px;position:relative;">
+                                        <div style="position:absolute;left:5%;top:7px;width:3%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:22%;top:7px;width:2.5%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:38%;top:7px;width:3%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:55%;top:7px;width:2.5%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:72%;top:7px;width:3%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:88%;top:7px;width:3%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                    </div>
+                                    <!-- DMV bars -->
+                                    <div style="height:22px;position:relative;">
+                                        <div style="position:absolute;left:4%;top:7px;width:4%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:20%;top:7px;width:3.5%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:37%;top:7px;width:4%;height:8px;border-radius:2px;background:#ef4444;opacity:0.9;"></div>
+                                        <div style="position:absolute;left:54%;top:7px;width:3.5%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:70%;top:7px;width:4%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:87%;top:7px;width:4%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                    </div>
+                                    <!-- XE bars (wider, less frequent) -->
+                                    <div style="height:22px;position:relative;">
+                                        <div style="position:absolute;left:8%;top:7px;width:6%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:42%;top:7px;width:7%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:78%;top:7px;width:6%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                    </div>
+                                    <!-- JobFlow bars -->
+                                    <div style="height:22px;position:relative;">
+                                        <div style="position:absolute;left:3%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:14%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:25%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:36%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:47%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:58%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:69%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:80%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:91%;top:7px;width:2%;height:8px;border-radius:2px;background:#7c3aed;opacity:0.8;"></div>
+                                    </div>
+                                    <!-- Processor group header spacer -->
+                                    <div style="height:16px;"></div>
+                                    <!-- DiskHealthSummary bars (infrequent) -->
+                                    <div style="height:22px;position:relative;">
+                                        <div style="position:absolute;left:15%;top:7px;width:2%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:65%;top:7px;width:2%;height:8px;border-radius:2px;background:#2563eb;opacity:0.8;"></div>
+                                    </div>
+                                    <!-- Queue group header spacer -->
+                                    <div style="height:16px;"></div>
+                                    <!-- Teams queue bars -->
+                                    <div style="height:22px;position:relative;">
+                                        <div style="position:absolute;left:10%;top:7px;width:1%;height:8px;border-radius:2px;background:#0ea5e9;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:28%;top:7px;width:1%;height:8px;border-radius:2px;background:#0ea5e9;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:53%;top:7px;width:1%;height:8px;border-radius:2px;background:#0ea5e9;opacity:0.8;"></div>
+                                        <div style="position:absolute;left:75%;top:7px;width:1%;height:8px;border-radius:2px;background:#0ea5e9;opacity:0.8;"></div>
+                                    </div>
+                                    <!-- NOW line -->
+                                    <div style="position:absolute;right:4%;top:0;bottom:0;width:1px;background:#4ec9b0;opacity:0.6;"></div>
+                                    <div style="position:absolute;right:3%;top:-1px;font-size:6px;color:#4ec9b0;font-weight:600;">NOW</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section Divider -->
+                    <div style="height:1px; background:#404040; margin:10px 0 6px;"></div>
+
+                    <!-- ======================================================== -->
+                    <!-- PLATFORM MANAGEMENT ROW -->
+                    <!-- ======================================================== -->
+                    <div class="mock-section" style="position:relative; background:transparent; border-color:transparent; padding:6px 8px;" data-section="2">
+                        <a href="#section-2" class="callout-marker" style="position:absolute; top:-6px; left:16%; transform:translateX(-50%); z-index:11;">2</a>
+                        <div style="font-size:8px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:#888; margin-bottom:6px;">Platform Management</div>
+                        <div style="display:flex; gap:6px;">
+                            <!-- Engine Controls -->
+                            <div style="flex:1;background:#252526;border:1px solid #404040;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;position:relative;cursor:pointer;" data-section="3">
+                                <a href="#section-3" class="callout-marker" style="position:absolute; top:15px; right:0px; z-index:11;">3</a>
+                                <span style="font-size:12px;">&#9881;</span>
+                                <span style="font-size:9px;color:#d4d4d4;font-weight:500;">Engine Controls</span>
+                                <span style="position:absolute;top:5px;right:5px;display:flex;gap:3px;">
+                                    <span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 4px rgba(74,222,128,0.3);"></span>
+                                    <span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 4px rgba(74,222,128,0.3);"></span>
+                                </span>
+                            </div>
+                            <!-- System Metadata -->
+                            <div style="flex:1;background:#252526;border:1px solid #404040;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;position:relative;cursor:pointer;" data-section="4">
+                                <a href="#section-4" class="callout-marker" style="position:absolute; top:15px; right:0px; z-index:11;">4</a>
+                                <span style="font-size:12px;">&#128203;</span>
+                                <span style="font-size:9px;color:#d4d4d4;font-weight:500;">System Metadata</span>
+                            </div>
+                            <!-- Global Configuration -->
+                            <div style="flex:1;background:#252526;border:1px solid #404040;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;position:relative;cursor:pointer;" data-section="5">
+                                <a href="#section-5" class="callout-marker" style="position:absolute; top:15px; right:0px; z-index:11;">5</a>
+                                <span style="font-size:12px;">&#9889;</span>
+                                <span style="font-size:9px;color:#d4d4d4;font-weight:500;">Global Configuration</span>
+                            </div>
+                            <!-- Process Scheduler -->
+                            <div style="flex:1;background:#252526;border:1px solid #404040;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;position:relative;cursor:pointer;" data-section="6">
+                                <a href="#section-6" class="callout-marker" style="position:absolute; top:15px; right:0px; z-index:11;">6</a>
+                                <span style="font-size:12px;">&#128339;</span>
+                                <span style="font-size:9px;color:#d4d4d4;font-weight:500;">Process Scheduler</span>
+                            </div>
+                            <!-- Platform Monitoring -->
+                            <div style="flex:1;background:#252526;border:1px solid #404040;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;position:relative;cursor:pointer;" data-section="7">
+                                <a href="#section-7" class="callout-marker" style="position:absolute; top:15px; right:0px; z-index:11;">7</a>
+                                <span style="font-size:12px;">&#128200;</span>
+                                <span style="font-size:9px;color:#d4d4d4;font-weight:500;">Platform Monitoring</span>
+                            </div>
+                            <!-- Documentation -->
+                            <div style="flex:1;background:#252526;border:1px solid #404040;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;position:relative;cursor:pointer;" data-section="8">
+                                <a href="#section-8" class="callout-marker" style="position:absolute; top:15px; right:0px; z-index:11;">8</a>
+                                <span style="font-size:12px;">&#128218;</span>
+                                <span style="font-size:9px;color:#d4d4d4;font-weight:500;">Documentation</span>
+                            </div>
+                            <!-- Alert Failures -->
+                            <div style="flex:1;background:#252526;border:1px solid #404040;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;position:relative;cursor:pointer;" data-section="9">
+                                <a href="#section-9" class="callout-marker" style="position:absolute; top:15px; right:0px; z-index:11;">9</a>
+                                <span style="font-size:12px;">&#9888;</span>
+                                <span style="font-size:9px;color:#d4d4d4;font-weight:500;">Alert Failures</span>
+                                <span style="position:absolute;top:3px;right:5px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:0 4px;font-size:7px;color:#ef4444;font-weight:700;">2</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ======================================================== -->
+                    <!-- MODAL PREVIEWS (hidden, shown on marker click) -->
+                    <!-- ======================================================== -->
+
+                    <!-- Modal 3: Engine Controls -->
+                    <div class="mock-modal-preview" data-section="3" style="position:absolute; top:45%; left:50%; transform:translate(-50%,-50%); width:260px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:16px 20px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6); text-align:center;">
+                        <div style="font-size:8px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#888;margin-bottom:12px;">Engine</div>
+                        <!-- Breaker switch mini -->
+                        <div style="width:60px;height:90px;border-radius:6px;background:linear-gradient(165deg,#3a3a40,#28282e 40%,#222228);border:1px solid #3f3f45;margin:0 auto;position:relative;box-shadow:0 4px 12px rgba(0,0,0,0.4);">
+                            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:52px;background:#111114;border-radius:10px;">
+                                <div style="position:absolute;top:3px;left:50%;transform:translateX(-50%);width:16px;height:24px;border-radius:8px;background:linear-gradient(180deg,#4ade80,#22c55e 50%,#16a34a);box-shadow:0 3px 8px rgba(74,222,128,0.3);"></div>
+                            </div>
+                            <span style="position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:6px;font-weight:700;color:#555;letter-spacing:1px;">ON</span>
+                            <span style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-size:6px;font-weight:700;color:#555;letter-spacing:1px;">OFF</span>
+                        </div>
+                        <div style="width:5px;height:5px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;margin:8px auto 4px;"></div>
+                        <div style="font-size:9px;font-weight:600;letter-spacing:1px;color:#4ade80;">ONLINE</div>
+                        <!-- Divider -->
+                        <div style="width:80%;height:1px;margin:12px auto;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.1) 30%,rgba(255,255,255,0.1) 70%,transparent);"></div>
+                        <div style="font-size:8px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#888;margin-bottom:8px;">Service</div>
+                        <div style="font-size:7px;padding:2px 8px;border-radius:2px;display:inline-block;background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25);font-weight:700;letter-spacing:0.5px;">SERVICE RUNNING</div>
+                        <div style="display:flex;gap:4px;justify-content:center;margin-top:8px;">
+                            <span style="font-size:7px;color:#ef4444;border:1px solid rgba(239,68,68,0.25);border-radius:3px;padding:2px 8px;background:rgba(239,68,68,0.08);">Stop</span>
+                            <span style="font-size:7px;color:#4ade80;border:1px solid rgba(74,222,128,0.2);border-radius:3px;padding:2px 8px;opacity:0.3;">Start</span>
+                            <span style="font-size:7px;color:#dcdcaa;border:1px solid rgba(220,220,170,0.2);border-radius:3px;padding:2px 8px;background:rgba(220,220,170,0.08);">Restart</span>
+                        </div>
+                    </div>
+
+                    <!-- Modal 4: System Metadata -->
+                    <div class="mock-modal-preview" data-section="4" style="position:absolute; top:45%; left:50%; transform:translate(-50%,-50%); width:320px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:14px 16px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #404040;padding-bottom:6px;">
+                            <span style="font-size:11px;color:#d4d4d4;font-weight:600;">System Metadata</span>
+                            <span style="font-size:8px;color:#888;">42 components</span>
+                        </div>
+                        <!-- Root row -->
+                        <div style="background:#1e1e1e;border:1px solid #333;border-radius:4px;padding:5px 8px;margin-bottom:4px;font-size:9px;">
+                            <span style="color:#888;">&#9660;</span> <span style="font-size:10px;">&#128450;</span> <span style="color:#d4d4d4;font-weight:500;">xFACts</span> <span style="color:#555;font-size:8px;">42 components &middot; 298 objects</span>
+                        </div>
+                        <!-- Module row (expanded) -->
+                        <div style="margin-left:12px;">
+                            <div style="background:rgba(86,156,214,0.06);border:1px solid rgba(86,156,214,0.15);border-radius:4px;padding:5px 8px;margin-bottom:3px;font-size:9px;">
+                                <span style="color:#888;">&#9660;</span> <span style="color:#569cd6;font-weight:500;">ServerOps</span> <span style="color:#555;font-size:8px;">5 components &middot; 47 objects</span>
+                            </div>
+                            <!-- Component card (expanded with version bumper) -->
+                            <div style="margin-left:12px;background:#2d2d2d;border:1px solid #404040;border-radius:4px;padding:6px 8px;margin-bottom:3px;">
+                                <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:4px;">
+                                    <span style="color:#d4d4d4;font-weight:500;">ServerOps.ServerHealth</span>
+                                    <span style="color:#4ec9b0;font-size:8px;">2.4.1</span>
+                                </div>
+                                <div style="font-size:8px;color:#888;margin-bottom:6px;">12 obj</div>
+                                <!-- Version bumper -->
+                                <div style="background:#1e1e1e;border-radius:3px;padding:6px 8px;">
+                                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                                        <span style="font-size:7px;color:#888;">Version</span>
+                                        <span style="font-size:12px;color:#4ec9b0;font-weight:600;">2</span><span style="color:#555;">.</span>
+                                        <span style="font-size:12px;color:#4ec9b0;font-weight:600;">4</span><span style="color:#555;">.</span>
+                                        <span style="font-size:12px;color:#4ec9b0;font-weight:600;">2</span>
+                                        <span style="margin-left:auto;display:flex;gap:3px;">
+                                            <span style="font-size:7px;color:#888;border:1px solid #404040;border-radius:2px;padding:1px 6px;">Cancel</span>
+                                            <span style="font-size:7px;color:#fff;background:#569cd6;border-radius:2px;padding:1px 6px;opacity:0.4;">Insert</span>
+                                        </span>
+                                    </div>
+                                    <div style="font-size:7px;color:#555;margin-bottom:4px;">Next version. Current: 2.4.1</div>
+                                    <div style="background:#333;border:1px solid #404040;border-radius:2px;padding:4px 6px;font-size:8px;color:#555;font-style:italic;">Description of changes&hellip;</div>
+                                </div>
+                                <div style="display:flex;gap:6px;margin-top:6px;">
+                                    <span style="font-size:7px;color:#569cd6;cursor:pointer;">Version history</span>
+                                    <span style="font-size:7px;color:#569cd6;cursor:pointer;">Object catalog (12)</span>
+                                </div>
+                            </div>
+                            <!-- Collapsed component -->
+                            <div style="margin-left:12px;background:#2d2d2d;border:1px solid #404040;border-radius:4px;padding:5px 8px;margin-bottom:3px;display:flex;justify-content:space-between;font-size:9px;">
+                                <span style="color:#d4d4d4;">ServerOps.Backup</span>
+                                <span style="color:#4ec9b0;font-size:8px;">1.8.0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Modal 5: Global Configuration -->
+                    <div class="mock-modal-preview" data-section="5" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:320px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:14px 16px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #404040;padding-bottom:6px;">
+                            <span style="font-size:11px;color:#d4d4d4;font-weight:600;">GlobalConfig</span>
+                            <span style="font-size:8px;color:#888;">86 keys</span>
+                        </div>
+                        <!-- Module group (expanded) -->
+                        <div style="background:rgba(86,156,214,0.06);border:1px solid rgba(86,156,214,0.15);border-radius:4px;padding:5px 8px;margin-bottom:4px;font-size:9px;">
+                            <span style="color:#888;">&#9660;</span> <span style="color:#569cd6;font-weight:500;">ServerOps</span> <span style="color:#555;font-size:8px;">18 keys</span>
+                        </div>
+                        <!-- Config rows -->
+                        <div style="margin-left:12px;">
+                            <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:4px 8px;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;font-size:8px;">
+                                <span style="color:#d4d4d4;">zombie_idle_threshold</span>
+                                <span style="color:#4ec9b0;">60</span>
+                            </div>
+                            <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:4px 8px;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;font-size:8px;">
+                                <span style="color:#d4d4d4;">dmv_polling_enabled</span>
+                                <!-- Toggle switch -->
+                                <div style="display:flex;align-items:center;gap:4px;">
+                                    <div style="width:28px;height:14px;border-radius:7px;background:#4ade80;position:relative;">
+                                        <div style="width:10px;height:10px;border-radius:50%;background:#fff;position:absolute;top:2px;right:2px;"></div>
+                                    </div>
+                                    <span style="color:#4ade80;font-size:7px;">ON</span>
+                                </div>
+                            </div>
+                            <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:4px 8px;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;font-size:8px;">
+                                <span style="color:#d4d4d4;">xe_collection_interval</span>
+                                <span style="color:#4ec9b0;">300</span>
+                            </div>
+                        </div>
+                        <!-- Collapsed module -->
+                        <div style="background:#1e1e1e;border:1px solid #333;border-radius:4px;padding:5px 8px;margin-top:4px;font-size:9px;">
+                            <span style="color:#888;">&#9654;</span> <span style="color:#d4d4d4;">BatchOps</span> <span style="color:#555;font-size:8px;">12 keys</span>
+                        </div>
+                    </div>
+
+                    <!-- Modal 6: Process Scheduler -->
+                    <div class="mock-modal-preview" data-section="6" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:320px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:14px 16px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #404040;padding-bottom:6px;">
+                            <span style="font-size:11px;color:#d4d4d4;font-weight:600;">Process Schedules</span>
+                            <span style="font-size:8px;color:#888;">21 processes</span>
+                        </div>
+                        <!-- Module group (expanded) -->
+                        <div style="display:flex;align-items:center;background:rgba(86,156,214,0.06);border:1px solid rgba(86,156,214,0.15);border-radius:4px;padding:5px 8px;margin-bottom:4px;font-size:9px;">
+                            <span style="color:#888;">&#9660;</span> <span style="color:#569cd6;font-weight:500;margin-left:4px;">ServerOps</span> <span style="color:#555;font-size:8px;margin-left:auto;">8</span>
+                            <span style="color:#569cd6;font-size:11px;font-weight:700;margin-left:6px;cursor:pointer;" title="Add new process">+</span>
+                        </div>
+                        <!-- Process cards -->
+                        <div style="margin-left:12px;">
+                            <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:5px 8px;margin-bottom:2px;">
+                                <div style="display:flex;align-items:center;gap:4px;font-size:8px;">
+                                    <span style="font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25);font-weight:600;">ON</span>
+                                    <span style="color:#d4d4d4;font-weight:500;">Collect-ServerHealth</span>
+                                    <span style="margin-left:auto;font-size:7px;padding:1px 4px;border-radius:2px;background:rgba(86,156,214,0.1);color:#569cd6;border:1px solid rgba(86,156,214,0.2);">F&amp;F</span>
+                                    <span style="font-size:7px;color:#555;">G10</span>
+                                </div>
+                            </div>
+                            <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:5px 8px;margin-bottom:2px;">
+                                <div style="display:flex;align-items:center;gap:4px;font-size:8px;">
+                                    <span style="font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25);font-weight:600;">ON</span>
+                                    <span style="color:#d4d4d4;font-weight:500;">Collect-DMVMetrics</span>
+                                    <span style="margin-left:auto;font-size:7px;padding:1px 4px;border-radius:2px;background:rgba(86,156,214,0.1);color:#569cd6;border:1px solid rgba(86,156,214,0.2);">F&amp;F</span>
+                                    <span style="font-size:7px;color:#555;">G10</span>
+                                </div>
+                            </div>
+                            <div style="background:#2d2d2d;border:1px solid #404040;border-radius:3px;padding:5px 8px;margin-bottom:2px;">
+                                <div style="display:flex;align-items:center;gap:4px;font-size:8px;">
+                                    <span style="font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(100,100,120,0.12);color:#777;border:1px solid rgba(100,100,120,0.25);font-weight:600;">OFF</span>
+                                    <span style="color:#777;font-weight:500;">Scan-IndexFragmentation</span>
+                                    <span style="margin-left:auto;font-size:7px;padding:1px 4px;border-radius:2px;background:rgba(220,220,170,0.1);color:#dcdcaa;border:1px solid rgba(220,220,170,0.2);">WAIT</span>
+                                    <span style="font-size:7px;color:#555;">G30</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Modal 7: Platform Monitoring (link card) -->
+                    <div class="mock-modal-preview" data-section="7" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:220px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:16px 20px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6); text-align:center;">
+                        <div style="font-size:24px; margin-bottom:6px;">&#128200;</div>
+                        <div style="font-size:10px; color:#d4d4d4; font-weight:600; margin-bottom:6px;">Platform Monitoring</div>
+                        <div style="font-size:8px; color:#888; line-height:1.5; margin-bottom:10px;">This card navigates to a dedicated page with its own layout, server selectors, and analysis tools.</div>
+                        <div style="display:inline-flex; align-items:center; gap:4px; font-size:8px; color:#569cd6; background:rgba(86,156,214,0.08); border:1px solid rgba(86,156,214,0.2); border-radius:3px; padding:3px 10px;">&#8594; Opens separate page</div>
+                    </div>
+
+                    <!-- Modal 8: Documentation Pipeline -->
+                    <div class="mock-modal-preview" data-section="8" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:300px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:14px 16px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #404040;padding-bottom:6px;">
+                            <span style="font-size:11px;color:#d4d4d4;font-weight:600;">Documentation</span>
+                        </div>
+                        <!-- Step checkboxes -->
+                        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+                            <div style="display:flex;align-items:center;gap:6px;font-size:9px;">
+                                <span style="width:12px;height:12px;border:1px solid #4ec9b0;border-radius:2px;background:rgba(78,201,176,0.15);display:flex;align-items:center;justify-content:center;font-size:8px;color:#4ec9b0;">&#10003;</span>
+                                <span style="color:#d4d4d4;">Generate DDL Reference</span>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:6px;font-size:9px;">
+                                <span style="width:12px;height:12px;border:1px solid #4ec9b0;border-radius:2px;background:rgba(78,201,176,0.15);display:flex;align-items:center;justify-content:center;font-size:8px;color:#4ec9b0;">&#10003;</span>
+                                <span style="color:#d4d4d4;">Publish to Confluence</span>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:6px;font-size:9px;">
+                                <span style="width:12px;height:12px;border:1px solid #4ec9b0;border-radius:2px;background:rgba(78,201,176,0.15);display:flex;align-items:center;justify-content:center;font-size:8px;color:#4ec9b0;">&#10003;</span>
+                                <span style="color:#d4d4d4;">Consolidate Upload Files</span>
+                            </div>
+                        </div>
+                        <!-- Options -->
+                        <div style="font-size:8px;font-weight:600;color:#888;margin-bottom:4px;">Options</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:8px;margin-bottom:10px;">
+                            <span style="color:#4ec9b0;">&#10003; Publish to Confluence</span>
+                            <span style="color:#4ec9b0;">&#10003; Export Markdown</span>
+                            <span style="color:#4ec9b0;">&#10003; Include SQL Objects</span>
+                            <span style="color:#555;">&#9744; Include JSON</span>
+                        </div>
+                        <!-- Run button -->
+                        <div style="text-align:center;">
+                            <span style="font-size:9px;color:#fff;background:#569cd6;border-radius:4px;padding:4px 16px;font-weight:600;">Run Selected</span>
+                        </div>
+                    </div>
+
+                    <!-- Modal 9: Alert Failures -->
+                    <div class="mock-modal-preview" data-section="9" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:300px; background:#252526; border:2px solid var(--accent-blue); border-radius:8px; padding:14px 16px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #404040;padding-bottom:6px;">
+                            <span style="font-size:11px;color:#d4d4d4;font-weight:600;">Alert Failures</span>
+                            <span style="font-size:8px;color:#ef4444;">2 failures</span>
+                        </div>
+                        <!-- Failure card 1 -->
+                        <div style="background:#2d2d2d;border:1px solid #404040;border-radius:4px;padding:8px;margin-bottom:6px;">
+                            <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                                <span style="font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(86,156,214,0.12);color:#569cd6;font-weight:600;">ServerOps</span>
+                                <span style="font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(239,68,68,0.12);color:#ef4444;font-weight:600;">CRITICAL</span>
+                                <span style="font-size:8px;color:#d4d4d4;margin-left:2px;">Disk Space Warning</span>
+                            </div>
+                            <div style="font-size:7px;color:#f48771;margin-bottom:6px;">Connection timeout after 30 seconds</div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <div style="font-size:7px;color:#555;">Retries: 3 &middot; 3/15 10:42a</div>
+                                <span style="font-size:7px;color:#569cd6;background:rgba(86,156,214,0.08);border:1px solid rgba(86,156,214,0.2);border-radius:2px;padding:1px 8px;">Resend</span>
+                            </div>
+                        </div>
+                        <!-- Failure card 2 -->
+                        <div style="background:#2d2d2d;border:1px solid #404040;border-radius:4px;padding:8px;">
+                            <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                                <span style="font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(217,119,6,0.12);color:#d97706;font-weight:600;">BatchOps</span>
+                                <span style="font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(220,220,170,0.12);color:#dcdcaa;font-weight:600;">WARNING</span>
+                                <span style="font-size:8px;color:#d4d4d4;margin-left:2px;">Stall Detected</span>
+                            </div>
+                            <div style="font-size:7px;color:#f48771;margin-bottom:6px;">Webhook delivery failed (HTTP 503)</div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <div style="font-size:7px;color:#555;">Retries: 1 &middot; 3/15 11:18a</div>
+                                <span style="font-size:7px;color:#569cd6;background:rgba(86,156,214,0.08);border:1px solid rgba(86,156,214,0.2);border-radius:2px;padding:1px 8px;">Resend</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The Administration page is the command center for the xFACts platform. It&rsquo;s restricted to the Applications Team and provides direct control over the orchestrator engine, process scheduling, version tracking, and runtime configuration.</p>
+                    <p>The top half is a real-time process timeline &mdash; a visual canvas showing every orchestrator execution as it happens. The bottom half is a row of management cards, each opening a dedicated tool.</p>
+                    <p>This guide walks through each section and every panel that opens from it.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Process Timeline</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Platform Management</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Engine Controls</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> System Metadata</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Global Configuration</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> Process Scheduler</div>
+                    <div class="sidebar-item" data-marker="7"><span class="sidebar-num">7</span> Platform Monitoring</div>
+                    <div class="sidebar-item" data-marker="8"><span class="sidebar-num">8</span> Documentation Pipeline</div>
+                    <div class="sidebar-item" data-marker="9"><span class="sidebar-num">9</span> Alert Failures</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Process Timeline</h2>
+            <p>The full-width canvas visualization that dominates the top of the page. Every orchestrator-managed process gets a swim lane, and every execution paints a colored bar in real time.</p>
+            <p><strong>Toolbar</strong> &mdash; The bar across the top offers three controls. Filter pills on the left (All, Running, Failed) let you isolate what&rsquo;s visible. The module color legend in the center tells you which color belongs to which module &mdash; ServerOps is blue, JobFlow is purple, BatchOps is amber, and so on. The window selector on the right (10m, 30m, 60m) controls how much history the canvas shows.</p>
+            <p><strong>Process Sidebar</strong> &mdash; The left column lists every registered process, grouped by dependency group (Collectors, Processors, Scanners, Queue Processors). Each row shows:</p>
+            <p><strong>Power button</strong> &mdash; a small green dot (&#9679;) when enabled. Click it to toggle the process&rsquo;s <code>run_mode</code> between ON (normal), OFF (disabled), and QUEUE (completes current run then stops). This is the quick way to disable a single process without opening the Process Scheduler.</p>
+            <p><strong>Process badge</strong> &mdash; the name, color-coded by current status. Green = last run succeeded. Blue with a pulse = currently running. Red with a pulse = last run failed.</p>
+            <p><strong>Daily counts</strong> &mdash; success and failure counts since midnight. Green number = successes. Red number = failures. Zero counts are dimmed.</p>
+            <p><strong>Countdown</strong> &mdash; time until the next scheduled execution. Teal countdown ticks down in real time. Yellow &ldquo;overdue&rdquo; means the next run is past due. Blue italic &ldquo;queued&rdquo; means the process is waiting for its dependency group to clear.</p>
+            <p><strong>Canvas Area</strong> &mdash; The right side renders execution bars on a time axis. Each bar&rsquo;s horizontal position and width correspond to start time and duration. A vertical teal &ldquo;NOW&rdquo; line scrolls steadily to the right. Bars for currently running processes grow in real time and glow blue. Failed executions are red. Hover over any bar for a tooltip with process name, status, start/end times, and duration. Click a bar to open a log modal with the full output and error text.</p>
+            <div class="callout tip"><p>The timeline updates via WebSocket &mdash; you&rsquo;ll see bars appear and grow without refreshing. A 60-second safety-net poll fills in anything the WebSocket missed (reconnects, brief disconnections).</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Platform Management</h2>
+            <p>The row of seven cards below the timeline. Each card opens a different management tool as a slide-up panel &mdash; except Platform Monitoring, which navigates to its own full page.</p>
+            <p><strong>Engine Controls</strong> (&#9881;) &mdash; Orchestrator drain mode and Windows service management. Two status pips in the corner show engine and service health at a glance. See section 3.</p>
+            <p><strong>System Metadata</strong> (&#128203;) &mdash; Version tracking tree with a version bumper for recording deployments. See section 4.</p>
+            <p><strong>Global Configuration</strong> (&#9889;) &mdash; Runtime settings editor for every configurable value in the platform. See section 5.</p>
+            <p><strong>Process Scheduler</strong> (&#128339;) &mdash; Schedule editor for all orchestrator-managed processes. See section 6.</p>
+            <p><strong>Platform Monitoring</strong> (&#128200;) &mdash; The only card that doesn&rsquo;t open a panel. It navigates to the Platform Monitoring page, which has its own separate guide. See section 7.</p>
+            <p><strong>Documentation</strong> (&#128218;) &mdash; DDL reference generation, Confluence publishing, and file consolidation pipeline. See section 8.</p>
+            <p><strong>Alert Failures</strong> (&#9888;) &mdash; Unresolved alert delivery failures with resend capability. A red badge on the card shows the count when failures exist. See section 9.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Engine Controls</h2>
+            <p>A slide-up panel with two sections: the orchestrator engine and the Windows service.</p>
+            <p><strong>Engine Breaker Switch</strong> &mdash; A physical-style ON/OFF toggle that controls the orchestrator&rsquo;s drain mode. When ON (green handle, green status light, &ldquo;ONLINE&rdquo;), the orchestrator runs processes normally. Flipping it OFF (red handle, red light, &ldquo;DRAINING&rdquo;) tells the orchestrator to stop launching new processes and let currently running ones finish. It doesn&rsquo;t kill anything &mdash; it just drains gracefully.</p>
+            <p>While draining, the breaker plate pulses with an amber glow if the Windows service is still running &mdash; a visual cue that you&rsquo;ve stopped the brain but not the body.</p>
+            <p><strong>Service Controls</strong> &mdash; Below the divider line, the service section shows the current state of the xFACtsOrchestrator Windows service (Running, Stopped, or transitional states like StartPending/StopPending). Three buttons &mdash; Stop, Start, Restart &mdash; are enabled or disabled based on a state machine: you can&rsquo;t stop something that&rsquo;s already stopped, can&rsquo;t start something that&rsquo;s running, etc. Transitional states disable all buttons until the operation completes.</p>
+            <p>A guidance message below the buttons provides contextual next-step instructions based on the current combination of engine and service state.</p>
+            <div class="callout warning"><p>Stopping the service terminates the orchestrator process entirely. All running process executions are interrupted. Use drain mode first to gracefully clear the pipeline, then stop the service when the timeline shows no active bars.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>System Metadata</h2>
+            <p>A slide-up panel with a collapsible tree showing every module and component in the platform, their current version, and a built-in version bumper.</p>
+            <p><strong>Root level</strong> &mdash; The top &ldquo;xFACts&rdquo; row shows total component and object counts across the entire platform, plus the date of the most recent version entry.</p>
+            <p><strong>Module level</strong> &mdash; Click a module name to expand it. Each module shows its component count and total registered objects.</p>
+            <p><strong>Component level</strong> &mdash; Each component card shows the name, current version number, and object count. Click a component to expand the version bumper.</p>
+            <p><strong>Version Bumper</strong> &mdash; The expanded component view shows the next auto-incremented version number (patch level auto-advances; minor rolls over at .9; major rolls over at .9.9). Enter a description of what changed and click Insert to record the deployment. The Insert button stays disabled until you type a description &mdash; no empty version entries.</p>
+            <p><strong>Version History</strong> &mdash; A button below the bumper opens a detail panel showing every previous version of that component: version number, description, and deployment date.</p>
+            <p><strong>Object Catalog</strong> &mdash; Another button opens a detail panel listing every registered database object, script, route, CSS, and JS file belonging to that component, grouped by category with type badges (TABLE, PROC, SCRIPT, ROUTE, etc.).</p>
+            <div class="callout info"><p>Version bumps are the standard way to record deployments. One bump per session per component, with a consolidated description of everything that changed. The version number auto-increments &mdash; you only need the module, component, and description.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Global Configuration</h2>
+            <p>A slide-up panel with a module-grouped tree of every runtime configuration key in the platform.</p>
+            <p><strong>Module groups</strong> &mdash; Click a module name to expand its configuration keys. Each module shows its key count.</p>
+            <p><strong>Configuration rows</strong> &mdash; Each row shows the key name and current value. Click any value to enter inline edit mode &mdash; a text input replaces the display value with save/cancel buttons. Changes are applied immediately via API with a confirmation dialog.</p>
+            <p><strong>Boolean toggles</strong> &mdash; Keys with BIT data type render as toggle switches instead of text values. Click to flip between ON and OFF. The toggle updates immediately after confirmation.</p>
+            <p><strong>Alert mode toggles</strong> &mdash; Keys ending in &ldquo;_alert_mode&rdquo; get a special three-state toggle: OFF (0), Teams only (1), Jira only (2), or Both (3). This controls where alerts for that feature are routed.</p>
+            <p><strong>Adding new keys</strong> &mdash; Each module group has a &ldquo;+&rdquo; button to add new configuration keys. Specify the key name, value, and data type (varchar, int, bit, decimal, time, date, datetime).</p>
+            <p><strong>Active/Inactive filtering</strong> &mdash; Toggle buttons at the top filter between active keys and soft-deleted inactive keys. Inactive keys can be reactivated.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>Process Scheduler</h2>
+            <p>A slide-up panel with a module-grouped tree of every orchestrator-managed process and its schedule configuration.</p>
+            <p><strong>Process cards</strong> &mdash; Each process shows its run status (ON/OFF/QUEUE badge), name, execution mode (F&amp;F or WAIT badge), and dependency group number. Click to expand the full configuration view.</p>
+            <p><strong>Expanded view</strong> &mdash; Shows the process description, script filename, and an editable configuration card. Editable fields include dependency group, interval in seconds, scheduled time, and timeout. Click any value to edit inline.</p>
+            <p><strong>Execution Mode toggle</strong> &mdash; Switches between Fire &amp; Forget (engine launches the process and moves on) and Wait (engine waits for the process to finish before continuing). Changes take effect on the next execution cycle.</p>
+            <p><strong>Allow Concurrent toggle</strong> &mdash; Controls whether the process can have multiple instances running simultaneously. Most processes are single-instance &mdash; enabling concurrent execution is rare and intentional.</p>
+            <p><strong>Adding new processes</strong> &mdash; Each module group has a &ldquo;+&rdquo; button. Select a script from the file browser dropdown (auto-populates process name and suggested description), configure the execution mode, dependency group, interval, and timeout, then submit. New processes are always created in the OFF state &mdash; enable manually when ready.</p>
+            <div class="callout tip"><p>The run_mode toggle in the Process Timeline sidebar (section 1) and the ON/OFF badge here are the same setting viewed two different ways. Changing one updates the other.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-7"><div class="section">
+            <h2><span class="section-number">7</span>Platform Monitoring</h2>
+            <p>The only card in the Platform Management row that doesn&rsquo;t open a slide-up panel. Clicking it navigates to the Platform Monitoring page &mdash; a dedicated full-page dashboard for measuring the resource impact of xFACts on the server environment.</p>
+            <p>That page has its own server selectors, time range controls, CPU impact gauge, process breakdown tables, API analytics, and trend charts. It&rsquo;s an analysis tool rather than a management tool, which is why it lives on its own page rather than in a panel.</p>
+            <p>See the <strong>Platform Monitoring Guide</strong> for a full walkthrough of that page&rsquo;s layout and features.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-8"><div class="section">
+            <h2><span class="section-number">8</span>Documentation Pipeline</h2>
+            <p>A slide-up panel that runs the platform&rsquo;s documentation generation and publishing pipeline from the Control Center UI.</p>
+            <p><strong>Pipeline steps</strong> &mdash; Three checkboxes control which steps run: Generate DDL Reference (regenerates the JSON data files from Object_Metadata), Publish to Confluence (converts HTML pages and publishes via REST API), and Consolidate Upload Files (collects all platform files into the upload folder for Claude project knowledge sync).</p>
+            <p><strong>Options</strong> &mdash; A grid of toggles for Publish to Confluence, Export Markdown, Include SQL Objects, and Include JSON. These fine-tune what the pipeline produces.</p>
+            <p><strong>Execution</strong> &mdash; Click &ldquo;Run Selected&rdquo; to launch. The pipeline runs server-side with status polling. Each step shows a progress indicator (hourglass while running, checkmark on success, X on failure). The overall status bar shows &ldquo;Pipeline running&hellip;&rdquo; during execution and a final summary when complete.</p>
+            <p><strong>Output</strong> &mdash; After completion, each step&rsquo;s results are shown with exit codes and expandable output/error text. This is the same information you&rsquo;d see in the PowerShell console, rendered in the browser.</p>
+            <div class="callout info"><p>The panel can&rsquo;t be closed while the pipeline is running &mdash; the close button and backdrop click are disabled to prevent accidentally navigating away from an active run.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-9"><div class="section">
+            <h2><span class="section-number">9</span>Alert Failures</h2>
+            <p>A slide-up panel showing Teams and Jira alerts that failed to deliver. When alerts exist, a red badge on the Platform Management card shows the count.</p>
+            <p><strong>Failure cards</strong> &mdash; Each failed alert displays as a card with a module badge (color-coded by source module), a category badge (CRITICAL, WARNING, or INFO), the alert title, the error message explaining why delivery failed, and metadata showing retry count and timestamp.</p>
+            <p><strong>Resend</strong> &mdash; Each card has a Resend button. Clicking it opens a confirmation dialog, then queues a fresh copy of the alert for delivery. The button shows &ldquo;Pending&hellip;&rdquo; while the resend processes, and the card is removed from the list once it succeeds.</p>
+            <p>When all failures are resolved, the panel shows a green checkmark with &ldquo;No unresolved alert failures&rdquo; and the badge on the Platform Management card disappears.</p>
+            <div class="callout tip"><p>Alert failures typically indicate a transient issue &mdash; a Teams webhook timeout, a Jira API blip. Resending usually works. If the same alert keeps failing, the underlying integration may need attention.</p></div>
+        </div></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../controlcenter.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to The Control Center</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/controlcenter-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>
