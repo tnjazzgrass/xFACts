@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     xFACts - DMV Metrics Collection
     
