@@ -261,7 +261,7 @@ function Push-GitHubFile {
         $body.sha = $ExistingSha
     }
 
-    $jsonBody = $body | ConvertTo-Json -Compress
+    $jsonBody = $body | ConvertTo-Json -Compress -Depth 5
 
     try {
         $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Put `
