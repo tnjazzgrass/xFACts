@@ -1,0 +1,714 @@
+/* ============================================================================
+   xFACts Control Center - Backup Monitoring Styles
+   Location: E:\xFACts-ControlCenter\public\css\backup.css
+   Version: Tracked in dbo.System_Metadata (component: ServerOps.Backup)
+   ============================================================================ */
+
+/* Base Layout */
+* { box-sizing: border-box; }
+body { 
+    font-family: 'Segoe UI', Arial, sans-serif; 
+    margin: 0;
+    padding: 20px 40px;
+    padding-top: 60px;
+    background: #1e1e1e; 
+    color: #d4d4d4; 
+}
+h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
+.page-subtitle { color: #888; font-size: 14px; margin: 0; }
+a { color: #9cdcfe; }
+.back-link { margin-bottom: 15px; display: inline-block; font-size: 14px; }
+
+/* Navigation Bar */
+.nav-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #252526;
+    border-bottom: 1px solid #404040;
+    padding: 0 20px;
+    display: flex;
+    gap: 0;
+    z-index: 1000;
+    height: 40px;
+    align-items: center;
+}
+
+.nav-link {
+    color: #888;
+    text-decoration: none;
+    padding: 10px 16px;
+    font-size: 13px;
+    transition: all 0.2s;
+    border-bottom: 2px solid transparent;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.nav-link:hover {
+    color: #d4d4d4;
+    background: #2d2d2d;
+}
+
+.nav-link.active {
+    color: #4ec9b0;
+    border-bottom-color: #4ec9b0;
+}
+
+.nav-spacer { flex: 1; }
+.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
+.nav-admin:hover { opacity: 1; }
+
+/* Header */
+.header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    gap: 10px;
+}
+
+.header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.refresh-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #888;
+    font-size: 13px;
+}
+.last-updated { color: #4ec9b0; }
+
+.live-indicator {
+    width: 8px;
+    height: 8px;
+    background: #4ec9b0;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Connection Error */
+.connection-error {
+    background: #5a1d1d;
+    border: 1px solid #ff6b6b;
+    color: #ff9999;
+    padding: 10px 15px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    display: none;
+}
+.connection-error.visible { display: block; }
+
+/* Two Column Layout */
+.two-column-layout {
+    display: flex;
+    gap: 20px;
+}
+.left-column {
+    flex: 1;
+    min-width: 0;
+}
+.right-column {
+    flex: 1;
+    min-width: 0;
+}
+
+@media (max-width: 1200px) {
+    .two-column-layout { flex-direction: column; }
+}
+
+/* Sections */
+.section {
+    background: #252526;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #404040;
+    padding-bottom: 8px;
+}
+.section-title {
+    color: #4ec9b0;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+/* Refresh mode badge styles (⚡ Event, ● Live, 📌 Static) are in shared engine-events.css */
+
+/* Section header with multiple right-side elements */
+.section-header-right { display: flex; align-items: center; gap: 8px; }
+
+/* Loading & Messages */
+.loading {
+    color: #888;
+    font-style: italic;
+    padding: 15px;
+    text-align: center;
+}
+.no-activity {
+    color: #666;
+    padding: 12px;
+    text-align: center;
+    font-size: 12px;
+    font-style: italic;
+}
+.no-data {
+    color: #666;
+    font-style: italic;
+    font-size: 12px;
+    padding: 8px 0;
+}
+
+/* ============================================================================
+   Engine Indicator Cards - Orchestrator process health in header bar
+   ============================================================================ */
+.engine-row {
+    display: flex;
+    gap: 5px;
+}
+
+.engine-card {
+    width: 68px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    border: 1px solid #383838;
+    border-radius: 3px;
+    background: #252526;
+}
+
+.engine-label {
+    font-size: 9px;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+}
+
+.engine-bar {
+    width: 100%;
+    height: 10px;
+    border-radius: 2px;
+    transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+.engine-bar.idle {
+    background: #22c55e;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+}
+
+.engine-bar.running {
+    background: #569cd6;
+    box-shadow: 0 0 6px rgba(86, 156, 214, 0.4);
+}
+
+.engine-bar.overdue {
+    background: #dcdcaa;
+    box-shadow: 0 0 6px rgba(220, 220, 170, 0.4);
+}
+
+.engine-bar.critical {
+    background: #f48771;
+    box-shadow: 0 0 6px rgba(244, 135, 113, 0.4);
+}
+
+.engine-bar.disabled {
+    background: #444;
+    box-shadow: none;
+}
+
+.engine-countdown {
+    font-size: 8px;
+    color: #d4d4d4;
+    font-variant-numeric: tabular-nums;
+    height: 10px;
+    line-height: 10px;
+}
+
+.engine-card.card-warning {
+    border-color: #dcdcaa;
+    background: rgba(220, 220, 170, 0.08);
+}
+
+.engine-card.card-critical {
+    border-color: #f48771;
+    background: rgba(244, 135, 113, 0.08);
+}
+
+/* ============================================================================
+   Pipeline Status - Cards with Badge Pills
+   ============================================================================ */
+.pipeline-grid {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.pipeline-card {
+    background: #2d2d2d;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 12px 15px;
+    min-width: 140px;
+    flex: 1;
+}
+.pipeline-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.pipeline-card .pipeline-name { 
+    font-size: 11px;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.pipeline-card-body {
+    font-size: 11px;
+}
+.pipeline-card .pipeline-time {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+.pipeline-card .pipeline-detail {
+    color: #666;
+    line-height: 1.4;
+}
+
+/* Pipeline Status Badge Pills */
+.pipeline-status-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+.pipeline-status-badge.success {
+    background: rgba(78, 201, 176, 0.2);
+    color: #4ec9b0;
+}
+.pipeline-status-badge.running {
+    background: rgba(86, 156, 214, 0.2);
+    color: #569cd6;
+}
+.pipeline-status-badge.warning {
+    background: rgba(220, 220, 170, 0.2);
+    color: #dcdcaa;
+}
+.pipeline-status-badge.failed {
+    background: rgba(244, 135, 113, 0.2);
+    color: #f48771;
+}
+.pipeline-status-badge.unknown {
+    background: rgba(85, 85, 85, 0.2);
+    color: #555;
+}
+
+/* Pipeline card frame coloring — neutral when healthy */
+.pipeline-card.status-warning { 
+    border-color: #dcdcaa; 
+    background: rgba(220, 220, 170, 0.1);
+}
+.pipeline-card.status-warning .pipeline-time { color: #dcdcaa; }
+
+.pipeline-card.status-critical { 
+    border-color: #f48771; 
+    background: rgba(244, 135, 113, 0.1);
+}
+.pipeline-card.status-critical .pipeline-time { color: #f48771; }
+
+.pipeline-card.status-running { 
+    border-color: #569cd6; 
+    background: rgba(86, 156, 214, 0.1);
+}
+.pipeline-card.status-running .pipeline-time { color: #569cd6; }
+
+.pipeline-card.status-unknown { 
+    border-color: #666; 
+}
+.pipeline-card.status-unknown .pipeline-time { color: #666; }
+
+/* ============================================================================
+   Queue & Retention - Side by Side Sections
+   ============================================================================ */
+.side-by-side-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+.half-section {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.card-pair {
+    display: flex;
+    gap: 10px;
+}
+.status-card {
+    background: #2d2d2d;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 12px 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+}
+.status-card .card-icon {
+    font-size: 24px;
+    opacity: 0.6;
+}
+.status-card .card-content {
+    flex: 1;
+}
+.status-card .card-label {
+    font-size: 11px;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.status-card .card-value {
+    font-size: 24px;
+    font-weight: 400;
+    color: #4ec9b0;
+    line-height: 1.2;
+}
+.status-card .card-detail {
+    font-size: 11px;
+    color: #666;
+}
+.status-card.clickable {
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.status-card.clickable:hover {
+    border-color: #569cd6;
+    background: #333;
+}
+
+.retention-schedule-note {
+    text-align: center;
+    font-size: 11px;
+    color: #666;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #404040;
+}
+
+/* ============================================================================
+   Active Operations - Combined Section with Sub-groups
+   ============================================================================ */
+.active-operations-content {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.operation-group {
+    margin-bottom: 15px;
+}
+.operation-group:last-child { margin-bottom: 0; }
+
+.operation-group-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9cdcfe;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.op-icon { font-size: 14px; }
+
+.operation-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.operation-table th {
+    text-align: left;
+    padding: 6px 8px;
+    background: #2d2d2d;
+    color: #888;
+    font-weight: 500;
+    font-size: 11px;
+    border-bottom: 1px solid #404040;
+}
+.operation-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #333;
+}
+.operation-table tr:hover { background: #2a2a2a; }
+.operation-table .file-name {
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    color: #ce9178;
+}
+
+/* Progress Bar */
+.progress-bar-container {
+    position: relative;
+    background: #333;
+    border-radius: 3px;
+    height: 16px;
+    min-width: 80px;
+    overflow: hidden;
+}
+.progress-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, #2d6b5e, #266053);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+.progress-text {
+    position: relative;
+    z-index: 1;
+    display: block;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    color: #d4d4d4;
+    text-shadow: 0 0 2px #000;
+}
+
+/* ============================================================================
+   Storage Status - Row Layout with 80-Segment Gauges
+   ============================================================================ */
+.storage-group {
+    margin-bottom: 15px;
+}
+.storage-group:last-child { margin-bottom: 0; }
+
+.storage-group-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.storage-drive {
+    background: #2d2d2d;
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+}
+.storage-drive:last-child { margin-bottom: 0; }
+
+.drive-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.drive-label {
+    font-size: 12px;
+    color: #d4d4d4;
+    font-weight: 500;
+}
+.drive-stats {
+    font-size: 11px;
+    color: #888;
+}
+
+.storage-drive.storage-warning .drive-label { color: #dcdcaa; }
+.storage-drive.storage-critical .drive-label { color: #f48771; }
+
+.storage-error {
+    color: #f48771;
+    font-size: 11px;
+    font-style: italic;
+    padding: 4px 0;
+}
+
+/* 80-Segment Gauge Bar - Taller */
+.segment-bar {
+    display: flex;
+    gap: 2px;
+}
+.segment {
+    flex: 1;
+    height: 18px;
+    background: #404040;
+    border-radius: 2px;
+    transition: background 0.3s ease;
+}
+.segment.active-healthy { background: #4ec9b0; }
+.segment.active-warning { background: #dcdcaa; }
+.segment.active-critical { background: #f48771; }
+
+/* Scrollbar styling */
+.active-operations-content::-webkit-scrollbar {
+    width: 8px;
+}
+.active-operations-content::-webkit-scrollbar-track {
+    background: #1e1e1e;
+    border-radius: 4px;
+}
+.active-operations-content::-webkit-scrollbar-thumb {
+    background: #404040;
+    border-radius: 4px;
+}
+.active-operations-content::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* ── Backup Type Badges ── */
+.backup-type-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.backup-type-badge.type-full {
+    background: rgba(78, 201, 176, 0.15);
+    color: #4ec9b0;
+    border: 1px solid rgba(78, 201, 176, 0.3);
+}
+.backup-type-badge.type-diff {
+    background: rgba(86, 156, 214, 0.15);
+    color: #569cd6;
+    border: 1px solid rgba(86, 156, 214, 0.3);
+}
+.backup-type-badge.type-log {
+    background: rgba(220, 220, 170, 0.12);
+    color: #b5b07a;
+    border: 1px solid rgba(220, 220, 170, 0.25);
+}
+
+/* ── Detail Modal ── */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal.hidden { display: none; }
+
+.modal-content {
+    background: #252526;
+    border: 1px solid #404040;
+    border-radius: 8px;
+    min-width: 500px;
+    max-width: 800px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #404040;
+}
+.modal-header h3 { margin: 0; color: #4ec9b0; font-size: 16px; }
+
+.modal-body { padding: 20px; overflow-y: auto; color: #d4d4d4; }
+
+/* ── Modal Summary Bar ── */
+.modal-summary {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    padding: 10px 14px;
+    background: #2d2d2d;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: #888;
+}
+.modal-summary .summary-item { white-space: nowrap; }
+.modal-summary .summary-value { color: #d4d4d4; font-weight: 500; }
+.modal-summary .summary-status-success { color: #4ec9b0; font-weight: 600; }
+.modal-summary .summary-status-partial { color: #dcdcaa; font-weight: 600; }
+.modal-summary .summary-status-failed { color: #f48771; font-weight: 600; }
+
+/* ── Modal Table ── */
+.modal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.modal-table th {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid #404040;
+    color: #888;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.modal-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+    color: #d4d4d4;
+    white-space: nowrap;
+}
+.modal-table tr:hover td { background: #2d2d2d; }
+.modal-table .align-right { text-align: right; }
+.modal-table .error-detail {
+    font-size: 11px;
+    color: #f48771;
+    font-style: italic;
+    padding: 2px 10px 6px;
+    border-bottom: 1px solid #333;
+}
+.modal-table .status-success { color: #4ec9b0; }
+.modal-table .status-failed { color: #f48771; }
+.modal-empty {
+    color: #888;
+    font-size: 13px;
+    padding: 20px;
+    text-align: center;
+}
+
+/* ── Pipeline Card Clickable ── */
+.pipeline-card.clickable {
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+.pipeline-card.clickable:hover {
+    border-color: #569cd6;
+}

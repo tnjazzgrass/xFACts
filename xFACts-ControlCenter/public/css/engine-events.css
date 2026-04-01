@@ -1,0 +1,494 @@
+/* ============================================================================
+   xFACts Control Center - Engine Events (Shared Styles)
+   Location: E:\xFACts-ControlCenter\public\css\engine-events.css
+   Version: Tracked in dbo.System_Metadata (component: ControlCenter.Shared)
+
+   Shared styles for real-time engine indicators: card/bar base styles,
+   popup display, WebSocket disconnect indicator, refresh mode badges,
+   and page-level refresh button.
+   ============================================================================ */
+
+/* ── Engine Card Base Styles ── */
+/* Shared across all pages with engine indicator cards in the header.       */
+
+.engine-row { display: flex; gap: 5px; }
+
+.engine-card {
+    width: 68px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    border: 1px solid #383838;
+    border-radius: 3px;
+    background: #252526;
+}
+
+.engine-label {
+    font-size: 9px;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+}
+
+.engine-bar {
+    width: 100%;
+    height: 10px;
+    border-radius: 2px;
+    transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+.engine-bar.idle { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
+.engine-bar.running { background: #569cd6; box-shadow: 0 0 6px rgba(86, 156, 214, 0.4); }
+.engine-bar.overdue { background: #dcdcaa; box-shadow: 0 0 6px rgba(220, 220, 170, 0.4); }
+.engine-bar.critical { background: #f48771; box-shadow: 0 0 6px rgba(244, 135, 113, 0.4); }
+.engine-bar.disabled { background: #444; box-shadow: none; }
+
+.engine-countdown {
+    font-size: 8px;
+    color: #d4d4d4;
+    font-variant-numeric: tabular-nums;
+    height: 10px;
+    line-height: 10px;
+}
+.engine-countdown.cd-overdue { color: #f48771; }
+
+.engine-card.card-warning { border-color: #dcdcaa; background: rgba(220, 220, 170, 0.08); }
+.engine-card.card-critical { border-color: #f48771; background: rgba(244, 135, 113, 0.08); }
+
+/* ── WebSocket Disconnect Indicator ── */
+/* Subtle border change on engine-row when WebSocket is disconnected */
+.engine-row.ws-disconnected {
+    border: 1px dashed #666;
+    border-radius: 4px;
+    padding: 3px;
+}
+
+/* ── Last Execution Popup ── */
+.engine-popup {
+    background: #252526;
+    border: 1px solid #569cd6;
+    border-radius: 6px;
+    min-width: 280px;
+    max-width: 400px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 13px;
+    color: #d4d4d4;
+}
+
+.engine-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid #404040;
+}
+
+.engine-popup-title {
+    font-weight: 600;
+    color: #569cd6;
+    font-size: 13px;
+}
+
+.engine-popup-close {
+    cursor: pointer;
+    color: #888;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+}
+
+.engine-popup-close:hover {
+    color: #d4d4d4;
+}
+
+.engine-popup-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 14px;
+    border-bottom: 1px solid #333;
+}
+
+.engine-popup-row:last-of-type {
+    border-bottom: none;
+}
+
+.engine-popup-label {
+    color: #888;
+    font-size: 12px;
+}
+
+.engine-popup-value {
+    color: #d4d4d4;
+    font-size: 12px;
+    text-align: right;
+}
+
+.engine-popup-output {
+    padding: 8px 14px;
+    border-top: 1px solid #404040;
+}
+
+.engine-popup-output .engine-popup-label {
+    margin-bottom: 4px;
+}
+
+.engine-popup-pre {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 3px;
+    padding: 8px 10px;
+    margin: 4px 0 0 0;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11px;
+    color: #ce9178;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.engine-popup-footer {
+    padding: 6px 14px;
+    border-top: 1px solid #333;
+    color: #666;
+    font-size: 11px;
+    text-align: right;
+}
+
+/* ── Connection Status Banners ── */
+/* Replaces the old red-only connection-error with state-aware banners      */
+/* for reconnecting (blue), disconnected (red), and session expired (amber) */
+
+.connection-banner {
+    display: none;
+    padding: 8px 20px;
+    font-size: 12px;
+    text-align: center;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+.connection-banner.reconnecting {
+    display: block;
+    background: rgba(86,156,214,0.15);
+    border: 1px solid rgba(86,156,214,0.3);
+    color: #569cd6;
+}
+.connection-banner.disconnected {
+    display: block;
+    background: rgba(244,135,113,0.15);
+    border: 1px solid rgba(244,135,113,0.3);
+    color: #f48771;
+}
+.connection-banner.session-expired {
+    display: block;
+    background: rgba(220,220,170,0.15);
+    border: 1px solid rgba(220,220,170,0.3);
+    color: #dcdcaa;
+}
+.connection-banner.reloading {
+    display: block;
+    background: rgba(78,201,176,0.15);
+    border: 1px solid rgba(78,201,176,0.3);
+    color: #4ec9b0;
+}
+.banner-link {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+}
+.banner-link:hover {
+    color: #fff;
+}
+
+/* ── Idle Overlay ── */
+/* Shown when user is inactive beyond the idle timeout threshold.           */
+/* Subtle dimming with centered message — disappears on any interaction.    */
+
+.idle-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.idle-message {
+    background: #252526;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 20px 32px;
+    color: #888;
+    font-size: 14px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    letter-spacing: 0.5px;
+}
+
+/* ── Dark Scrollbars ── */
+/* Keeps scrollbars subtle on the dark theme. Applied globally so all       */
+/* scrollable sections (queue-content, history-content, etc.) inherit.      */
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* Firefox */
+* { scrollbar-width: thin; scrollbar-color: #444 transparent; }
+
+/* ── Refresh Mode Badges ── */
+/* Shared badge styles for section-level refresh indicators.                */
+/* Four modes: event-driven (⚡), live polling (●), static (📌),          */
+/*             action (🔄) — refreshes on user interaction                 */
+/* Used by all pages — each section header gets exactly one badge type.     */
+/* See: Refresh Architecture doc, Section 4.1                              */
+
+/* Section header helpers — ensures badges align right in flex headers     */
+.section-header-right { display: flex; align-items: center; gap: 8px; }
+
+.refresh-badge-event { font-size: 10px; padding: 1px 4px; border-radius: 3px; vertical-align: middle; cursor: default; color: #dcdcaa; background: transparent; }
+.refresh-badge-live { font-size: 10px; padding: 1px 4px; border-radius: 3px; vertical-align: middle; cursor: default; color: #4ec9b0; display: inline-flex; align-items: center; gap: 3px; background: transparent; }
+.refresh-badge-live .badge-dot { width: 8px; height: 8px; background: #4ec9b0; border-radius: 50%; animation: pulse 2s infinite; }
+.refresh-badge-live.idle .badge-dot { animation: none; opacity: 0.4; }
+.refresh-badge-static { font-size: 10px; padding: 1px 4px; border-radius: 3px; vertical-align: middle; cursor: default; color: #666; background: transparent; }
+.refresh-badge-action { font-size: 10px; padding: 1px 4px; border-radius: 3px; vertical-align: middle; cursor: default; color: #569cd6; background: transparent; }
+
+/* ── Page Refresh Button ── */
+/* Shared refresh button for page-level manual refresh. Placed in the         */
+/* header-right refresh-info area on all pages. Spins on click with teal      */
+/* border highlight to confirm the action.                                    */
+
+.page-refresh-btn {
+    background: transparent;
+    border: 1px solid #555;
+    color: #888;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    margin-left: 10px;
+    transition: all 0.2s;
+    vertical-align: middle;
+}
+.page-refresh-btn:hover {
+    background: #333;
+    color: #d4d4d4;
+    border-color: #666;
+}
+.page-refresh-btn.spinning {
+    animation: page-refresh-spin 0.8s ease-in-out;
+    border-color: #4ec9b0;
+    color: #4ec9b0;
+    pointer-events: none;
+}
+@keyframes page-refresh-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+/* ── Page Title Help Link ── */
+/* h1 titles link to docs pages; opens in new window via target=_blank  */
+h1 a { color: inherit; text-decoration: none; transition: color 0.2s ease; }
+h1 a:hover { color: #9cdcfe; }
+
+/* ============================================================================
+   Shared Slideout Panel
+   Reusable slide-from-right panel with overlay, header, and scrollable body.
+   Used by: Backup (retention detail), Index Maintenance (process detail).
+   ============================================================================ */
+
+/* ── Overlay ── */
+.slide-panel-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+}
+.slide-panel-overlay.open { display: block; }
+
+/* ── Panel ── */
+.slide-panel {
+    position: fixed;
+    top: 0;
+    right: -500px;
+    width: 480px;
+    height: 100%;
+    background: #252526;
+    border-left: 1px solid #404040;
+    z-index: 1001;
+    display: flex;
+    flex-direction: column;
+    transition: right 0.3s ease;
+}
+.slide-panel.wide { width: 700px; right: -720px; }
+.slide-panel.open { right: 0; }
+
+/* ── Auto-Height Variant ── */
+/* Vertically-centered panel that sizes to content instead of full-height.   */
+/* Used for compact panels (e.g., schedule editors) where full-height is     */
+/* excessive. Combine with .wide as needed: class="slide-panel wide auto-height" */
+.slide-panel.auto-height {
+    height: auto;
+    max-height: 90vh;
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 8px;
+    border: 1px solid #404040;
+}
+.slide-panel.auto-height.open { right: 20px; }
+
+/* ── Header ── */
+.slide-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #404040;
+    background: #2d2d2d;
+}
+.slide-panel-header h3 {
+    margin: 0;
+    color: #4ec9b0;
+    font-size: 16px;
+    font-weight: 600;
+}
+.slide-panel-header .modal-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+.slide-panel-header .modal-close:hover { color: #d4d4d4; }
+
+/* ── Body ── */
+.slide-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+}
+
+/* ── Summary Stats ── */
+.slideout-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.slideout-stat {
+    background: #2d2d2d;
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+}
+.slideout-stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: #4ec9b0;
+}
+.slideout-stat-label {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+}
+
+/* ── Tables ── */
+.slideout-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.slideout-table th {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid #404040;
+    color: #888;
+    font-weight: 500;
+    position: sticky;
+    top: 0;
+    background: #252526;
+    white-space: nowrap;
+}
+.slideout-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+    color: #d4d4d4;
+    white-space: nowrap;
+}
+.slideout-table tr:hover td { background: #2d2d2d; }
+.slideout-table .align-right { text-align: right; }
+
+/* ── Sections ── */
+.slideout-section { margin-bottom: 20px; }
+.slideout-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #569cd6;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #404040;
+}
+
+/* ── Accordion ── */
+.slideout-accordion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #2d2d2d;
+    border: 1px solid #383838;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    transition: background 0.15s ease;
+}
+.slideout-accordion-header:hover { background: #333; }
+.slideout-accordion-header .accordion-label {
+    font-size: 13px;
+    color: #d4d4d4;
+    font-weight: 500;
+}
+.slideout-accordion-header .accordion-chevron {
+    font-size: 11px;
+    color: #888;
+    transition: transform 0.2s ease;
+}
+.slideout-accordion-header.expanded .accordion-chevron { transform: rotate(90deg); }
+.slideout-accordion-header .accordion-stats {
+    font-size: 12px;
+    color: #888;
+    margin-left: auto;
+    margin-right: 12px;
+}
+.slideout-accordion-body {
+    display: none;
+    padding: 8px 0 8px 16px;
+}
+.slideout-accordion-body.expanded { display: block; }
+.slideout-accordion-cutoff {
+    font-size: 11px;
+    color: #888;
+    padding: 4px 12px 8px;
+    font-style: italic;
+}
+
+/* ── Empty State ── */
+.slideout-empty {
+    color: #888;
+    font-size: 13px;
+    padding: 20px;
+    text-align: center;
+}

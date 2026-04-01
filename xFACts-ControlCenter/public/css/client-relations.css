@@ -1,0 +1,473 @@
+/* ============================================================================
+   xFACts Control Center - Client Relations Styles
+   Location: E:\xFACts-ControlCenter\public\css\client-relations.css
+   Version: Tracked in dbo.System_Metadata (component: DeptOps.ClientRelations)
+   ============================================================================ */
+
+/* Base Layout */
+* { box-sizing: border-box; }
+body { 
+    font-family: 'Segoe UI', Arial, sans-serif; 
+    margin: 0;
+    padding: 20px 40px 30px 40px;
+    padding-top: 60px;
+    background: #1e1e1e; 
+    color: #d4d4d4; 
+}
+h1 { color: #dcdcaa; margin-bottom: 2px; font-size: 24px; }
+.page-subtitle { font-size: 14px; color: #888; margin: 0; }
+
+/* Navigation Bar */
+.nav-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #252526;
+    border-bottom: 1px solid #404040;
+    padding: 0 20px;
+    display: flex;
+    gap: 0;
+    z-index: 1000;
+    height: 40px;
+    align-items: center;
+}
+
+.nav-link {
+    color: #888;
+    text-decoration: none;
+    padding: 10px 16px;
+    font-size: 13px;
+    transition: all 0.2s;
+    border-bottom: 2px solid transparent;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.nav-link:hover { color: #d4d4d4; background: #2d2d2d; }
+.nav-link.active { color: #4ec9b0; border-bottom-color: #4ec9b0; }
+
+.nav-spacer { flex: 1; }
+.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
+.nav-admin:hover { opacity: 1; }
+
+.nav-separator {
+    color: #404040;
+    padding: 0 8px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+}
+
+/* Header */
+.header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+}
+.refresh-info { display: flex; align-items: center; gap: 8px; color: #888; font-size: 13px; }
+.last-updated { color: #4ec9b0; }
+
+/* Cache Indicator */
+.cache-indicator {
+    font-size: 10px;
+    color: #569cd6;
+    margin-right: 4px;
+}
+
+/* Refresh Button */
+.btn { 
+    border: none; 
+    cursor: pointer; 
+    border-radius: 4px; 
+}
+.btn-sm { 
+    padding: 2px 8px; 
+    font-size: 14px; 
+}
+.btn-refresh {
+    background: #333;
+    color: #888;
+    border: 1px solid #404040;
+    padding: 4px 10px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 8px;
+}
+.btn-refresh:hover { 
+    color: #4ec9b0; 
+    border-color: #4ec9b0; 
+}
+.btn-refresh.spinning { animation: spin 1s linear; }
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Connection Error */
+.connection-error {
+    background: #5a1d1d;
+    border: 1px solid #f14c4c;
+    color: #f14c4c;
+    padding: 10px 15px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    display: none;
+    font-size: 13px;
+}
+.connection-error.visible { display: block; }
+
+/* Loading & Visibility */
+.loading { 
+    color: #888; 
+    padding: 20px; 
+    text-align: center; 
+    font-size: 13px; 
+}
+.hidden { display: none !important; }
+.no-data { 
+    color: #888; 
+    padding: 20px; 
+    text-align: center; 
+    font-size: 13px; 
+    font-style: italic; 
+}
+
+/* ============================================================================
+   SECTIONS
+   ============================================================================ */
+
+.section {
+    background: #252526;
+    border: 1px solid #404040;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 15px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: #2d2d2d;
+    border-bottom: 1px solid #404040;
+}
+
+.section-header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #4ec9b0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.section-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.section-body {
+    padding: 12px;
+}
+
+.section-body-table {
+    padding: 0;
+}
+
+/* ============================================================================
+   SUMMARY CARDS
+   ============================================================================ */
+
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+.summary-card {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 14px 12px;
+    text-align: center;
+    transition: border-color 0.2s;
+}
+
+.summary-card:hover {
+    border-color: #4ec9b0;
+}
+
+.summary-card.card-warning {
+    border-color: #cca700;
+    background: rgba(204, 167, 0, 0.05);
+}
+
+.summary-card.card-critical {
+    border-color: #f14c4c;
+    background: rgba(241, 76, 76, 0.05);
+}
+
+.summary-card-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #d4d4d4;
+    line-height: 1.2;
+}
+
+.summary-card-label {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+/* ============================================================================
+   SEARCH & FILTER
+   ============================================================================ */
+
+.search-input {
+    background: #1e1e1e;
+    border: 1px solid #404040;
+    color: #d4d4d4;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    width: 180px;
+    outline: none;
+}
+.search-input:focus {
+    border-color: #569cd6;
+}
+.search-input::placeholder {
+    color: #666;
+}
+
+.reason-filters {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.filter-badge {
+    background: #1e1e1e;
+    border: 1px solid #404040;
+    color: #888;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.filter-badge:hover {
+    border-color: #569cd6;
+    color: #d4d4d4;
+}
+.filter-badge.active {
+    background: #264f78;
+    border-color: #569cd6;
+    color: #d4d4d4;
+}
+
+/* ============================================================================
+   QUEUE TABLE - Consumer/Account Tree
+   ============================================================================ */
+
+/* Scrollable container */
+.queue-scroll-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.queue-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.queue-table thead th {
+    background: #2d2d2d;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #404040;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.col-expand {
+    width: 32px;
+    text-align: center;
+}
+
+.col-count {
+    width: 70px;
+    text-align: center;
+}
+
+/* Consumer Parent Row */
+.consumer-row {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.consumer-row td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #333;
+}
+
+.consumer-row:hover {
+    background: #2a2d2e;
+}
+
+.consumer-row.expanded {
+    background: #264f78;
+}
+
+.consumer-row.expanded:hover {
+    background: #2d5a8a;
+}
+
+.expand-icon {
+    color: #888;
+    font-size: 10px;
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+}
+
+.consumer-row:hover .expand-icon {
+    color: #4ec9b0;
+}
+
+.account-count-badge {
+    background: #333;
+    color: #d4d4d4;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Text alignment */
+.text-right { text-align: right; }
+
+/* ============================================================================
+   REASON BADGES
+   ============================================================================ */
+
+.reason-badge {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Queue-level reasons (consumer row) */
+.reason-letter {
+    background: #264f78;
+    color: #6cb6ff;
+}
+.reason-other {
+    background: #4d3800;
+    color: #cca700;
+}
+
+/* Account-level rejection reasons */
+.reason-zero-dollar {
+    background: #4d3800;
+    color: #cca700;
+}
+.reason-no-data {
+    background: #5a1d1d;
+    color: #f48771;
+}
+.reason-discrepancy {
+    background: #4d2800;
+    color: #e8925c;
+}
+
+/* ============================================================================
+   ACCOUNT DETAIL SUB-TABLE
+   ============================================================================ */
+
+.account-row > td {
+    padding: 0 12px 0 0;
+    border-bottom: 1px solid #2a2a2a;
+    background: #1e1e1e;
+}
+
+.account-detail-container {
+    padding: 8px 8px 8px 28px;
+    border-left: 2px solid #404040;
+    margin: 4px 0;
+    overflow-x: auto;
+}
+
+.account-sub-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.account-sub-table thead th {
+    background: #2a2a2a;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    padding: 5px 8px;
+    text-align: left;
+    border-bottom: 1px solid #404040;
+    white-space: nowrap;
+    position: static;
+}
+
+.account-sub-table tbody td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #2a2a2a;
+    color: #c0c0c0;
+    white-space: nowrap;
+}
+
+.account-sub-table tbody tr:hover {
+    background: #2a2d2e;
+}
+
+.account-sub-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ============================================================================
+   RESPONSIVE
+   ============================================================================ */
+
+@media (max-width: 900px) {
+    body { padding: 60px 15px 20px 15px; }
+    .search-input { width: 140px; }
+    .reason-filters { display: none; }
+}
