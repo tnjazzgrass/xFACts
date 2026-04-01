@@ -272,10 +272,20 @@ function Push-GitHubFile {
     }
     catch {
         $statusCode = $null
+        $responseBody = ""
         if ($_.Exception.Response) {
             $statusCode = [int]$_.Exception.Response.StatusCode
+            try {
+                $stream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($stream)
+                $responseBody = $reader.ReadToEnd()
+                $reader.Close()
+            } catch {}
         }
         Write-Log "  FAILED  $RepoPath (HTTP $statusCode): $($_.Exception.Message)" "ERROR"
+        if ($responseBody) {
+            Write-Log "  Response: $responseBody" "ERROR"
+        }
         return $null
     }
 }
