@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Replication Monitoring API Endpoints
 # Location: E:\xFACts-ControlCenter\scripts\routes\ReplicationMonitoring-API.ps1
 # Version: Tracked in dbo.System_Metadata (component: ServerOps.Replication)
