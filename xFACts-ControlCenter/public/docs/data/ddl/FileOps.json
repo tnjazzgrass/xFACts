@@ -1,0 +1,972 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "MonitorConfig",
+                       "description":  "Configuration table defining files to monitor, including SFTP paths, file patterns, check schedules, and escalation settings.",
+                       "module":  "FileOps",
+                       "category":  "FileOps",
+                       "dataFlow":  "Rows are created via sp_AddNewMonitorConfig or the Control Center UI. Scan-SFTPFiles.ps1 queries active configurations each cycle, filtering by is_enabled, current day-of-week flags, and whether the current time falls within the check_start_time to check_end_time window. MonitorConfig is read-only during monitoring — the script never modifies configuration rows. The Control Center FileOps page reads this table for configuration display and management.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for the monitor configuration"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "server_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to [FileOps - ServerConfig] for SFTP connection details"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "config_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Friendly name for this monitor (e.g., Instream Daily)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "sftp_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Directory path on SFTP server (e.g., /Instream/)"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "file_pattern",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Wildcard pattern to match files (e.g., instream.CRSFrostArnet*txt*)"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "check_start_time",
+                                           "dataType":  "time",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "When to begin checking for the file"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "check_end_time",
+                                           "dataType":  "time",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "When to stop checking entirely (hard stop)"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "escalation_time",
+                                           "dataType":  "time",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "When to escalate if file not found (Teams + Jira)"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "check_sunday",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Check on Sunday"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "check_monday",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Check on Monday"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "check_tuesday",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Check on Tuesday"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "check_wednesday",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Check on Wednesday"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "check_thursday",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Check on Thursday"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "check_friday",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Check on Friday"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "check_saturday",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Check on Saturday"
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "check_holidays",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Check on holidays (future enhancement)"
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "is_enabled",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this monitor is active"
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "notify_on_detection",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Send Teams alert when file is detected"
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "notify_on_escalation",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Send Teams alert when escalation time is reached without file"
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "create_jira_on_escalation",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Create Jira ticket when escalation time is reached without file"
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "default_priority",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027High\u0027)",
+                                           "description":  "Jira ticket priority: Highest, High, Medium, Low"
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the record was created"
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the record was last modified"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_MonitorConfig",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "config_id"
+                                       },
+                                       {
+                                           "name":  "UQ_MonitorConfig_config_name",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "config_name"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_MonitorConfig_ServerConfig",
+                                               "column":  "server_id",
+                                               "referencedTable":  "FileOps.ServerConfig",
+                                               "referencedColumn":  "server_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Three Time Points",
+                                               "note":  "Each config defines check_start_time, escalation_time, and check_end_time as separate values. This allows monitoring to continue after escalation to catch late-arriving files rather than giving up at the escalation threshold.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Individual Day Columns",
+                                               "note":  "Seven separate BIT columns (check_sunday through check_saturday) replace a single weekday/weekend flag. This supports any schedule pattern — weekdays only, daily, specific days, or weekly — without requiring a separate schedule table or bitmask logic.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Wildcard Pattern Matching",
+                                               "note":  "The file_pattern field uses * and ? wildcards rather than regex. Scan-SFTPFiles.ps1 converts these to regex at runtime. Wildcards are easier for non-developers to write when adding new monitors and less error-prone than raw regex patterns.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Active configurations with schedule",
+                                           "description":  "Shows all enabled monitors with their time windows and day-of-week schedule.",
+                                           "sql":  "SELECT\r\n    mc.config_name,\r\n    sc.server_name,\r\n    mc.sftp_path,\r\n    mc.file_pattern,\r\n    mc.check_start_time,\r\n    mc.escalation_time,\r\n    mc.check_end_time,\r\n    CASE WHEN mc.check_monday = 1 THEN \u0027M\u0027 ELSE \u0027-\u0027 END +\r\n    CASE WHEN mc.check_tuesday = 1 THEN \u0027T\u0027 ELSE \u0027-\u0027 END +\r\n    CASE WHEN mc.check_wednesday = 1 THEN \u0027W\u0027 ELSE \u0027-\u0027 END +\r\n    CASE WHEN mc.check_thursday = 1 THEN \u0027R\u0027 ELSE \u0027-\u0027 END +\r\n    CASE WHEN mc.check_friday = 1 THEN \u0027F\u0027 ELSE \u0027-\u0027 END +\r\n    CASE WHEN mc.check_saturday = 1 THEN \u0027S\u0027 ELSE \u0027-\u0027 END +\r\n    CASE WHEN mc.check_sunday = 1 THEN \u0027U\u0027 ELSE \u0027-\u0027 END AS schedule_days,\r\n    mc.default_priority\r\nFROM FileOps.MonitorConfig mc\r\nJOIN FileOps.ServerConfig sc ON mc.server_id = sc.server_id\r\nWHERE mc.is_enabled = 1\r\nORDER BY mc.check_start_time, mc.config_name;",
+                                           "sortOrder":  1
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "ServerConfig",
+                                                     "note":  "Each config references exactly one SFTP server via server_id. The server provides connection details while the config defines what to look for and when.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "MonitorStatus",
+                                                     "note":  "Each enabled config has exactly one corresponding MonitorStatus row showing current-day state. The status row is reset daily and deleted when the config is disabled.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "MonitorLog",
+                                                     "note":  "Each config generates MonitorLog entries over time — one per detection or escalation event. The log provides the historical view while MonitorStatus provides the real-time view.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "MonitorLog",
+                       "description":  "Historical log of file detection and escalation events. Records only meaningful outcomes (Detected, Escalated, LateDetected) without the noise of routine monitoring checks.",
+                       "module":  "FileOps",
+                       "category":  "FileOps",
+                       "dataFlow":  "Scan-SFTPFiles.ps1 inserts a row whenever a meaningful event occurs: file detection, escalation, or late detection. Each row captures the event context including config details, detected filename, timestamp, and whether Teams and Jira integrations were triggered. This is an append-only audit trail — rows are never updated or deleted. Used for historical analysis of on-time rates, escalation frequency, and late arrival patterns.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "log_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this log entry"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to [FileOps - MonitorConfig]"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "config_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Denormalized from MonitorConfig"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "sftp_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Denormalized from MonitorConfig"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "log_date",
+                                           "dataType":  "date",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Calendar date of the event"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "event_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Type of event: Detected, Escalated, or LateDetected"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "file_detected_name",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Filename that was detected (if applicable)"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "event_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Exact timestamp of the event"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "teams_alert_queued",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether a Teams alert was queued for this event"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "jira_ticket_queued",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether a Jira ticket was queued for this event"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the log entry was created"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_MonitorLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "log_id"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_MonitorLog_event_type",
+                                                    "definition":  "([event_type]=\u0027LateDetected\u0027 OR [event_type]=\u0027Escalated\u0027 OR [event_type]=\u0027Detected\u0027)"
+                                                }
+                                            ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_MonitorLog_MonitorConfig",
+                                               "column":  "config_id",
+                                               "referencedTable":  "FileOps.MonitorConfig",
+                                               "referencedColumn":  "config_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Events Only",
+                                               "note":  "Only meaningful outcomes are logged — Detected, Escalated, and LateDetected. Routine monitoring checks that find nothing are not recorded. This keeps the table focused and queryable for operational analysis without filling it with noise.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Denormalized Context",
+                                               "note":  "config_name and sftp_path are copied from MonitorConfig at event time. This allows standalone querying without joins and preserves the values as they were when the event occurred, even if the config is later modified.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "event_type",
+                                                "value":  "Detected",
+                                                "meaning":  "File matching the configured pattern was found during the normal monitoring window before escalation time.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "event_type",
+                                                "value":  "Escalated",
+                                                "meaning":  "Escalation time passed without file detection. Teams WARNING alert queued and Jira ticket created if configured.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "event_type",
+                                                "value":  "LateDetected",
+                                                "meaning":  "File arrived after escalation had already occurred. Logged as a separate event to record the late arrival without undoing the escalation record.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Recent events",
+                                           "description":  "Shows the last 7 days of file monitoring events with integration status.",
+                                           "sql":  "SELECT\r\n    config_name,\r\n    log_date,\r\n    event_type,\r\n    file_detected_name,\r\n    event_dttm,\r\n    teams_alert_queued,\r\n    jira_ticket_queued\r\nFROM FileOps.MonitorLog\r\nWHERE log_date \u003e= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))\r\nORDER BY event_dttm DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Escalation frequency by config",
+                                           "description":  "Shows how often each monitor escalates over the last 30 days for identifying chronic late files.",
+                                           "sql":  "SELECT\r\n    config_name,\r\n    COUNT(*) AS escalation_count,\r\n    MIN(event_dttm) AS first_escalation,\r\n    MAX(event_dttm) AS last_escalation\r\nFROM FileOps.MonitorLog\r\nWHERE event_type = \u0027Escalated\u0027\r\n    AND log_date \u003e= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))\r\nGROUP BY config_name\r\nORDER BY escalation_count DESC;",
+                                           "sortOrder":  2
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "MonitorConfig",
+                                                     "note":  "Each log entry references its source config via config_id. Denormalized config_name and sftp_path allow standalone querying without requiring the config to still exist.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Teams.AlertQueue",
+                                                     "note":  "When teams_alert_queued = 1, a corresponding row was inserted into Teams.AlertQueue via sp_QueueAlert at the same time as the log entry. The Teams integration processes the alert asynchronously.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Jira.TicketQueue",
+                                                     "note":  "When jira_ticket_queued = 1, a corresponding row was inserted into Jira.TicketQueue via sp_QueueTicket at the same time as the log entry. The Jira integration processes the ticket asynchronously.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "MonitorStatus",
+                       "description":  "Dashboard table showing current monitoring state for each active file configuration. Displays the last known status and scan time, with automatic daily reset at the start of each monitoring window.",
+                       "module":  "FileOps",
+                       "category":  "FileOps",
+                       "dataFlow":  "Scan-SFTPFiles.ps1 creates or resets one row per active config at the start of each monitoring window, setting last_status to Monitoring. During each scan cycle the script updates last_scanned_dttm, and transitions last_status to Detected or Escalated based on file presence and escalation time. Late-arriving files populate file_detected_dttm while last_status remains Escalated. Rows for disabled configs are automatically deleted during cleanup. The Control Center FileOps dashboard reads this table for real-time status display.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "status_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this status record"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to [FileOps - MonitorConfig]"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "config_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Denormalized from MonitorConfig for easy querying"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "sftp_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Denormalized from MonitorConfig for easy querying"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "last_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027Monitoring\u0027)",
+                                           "description":  "Status as of last scan: Monitoring, Detected, Escalated"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "last_scanned_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When this config was last scanned by the monitor script"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "file_detected_name",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Actual filename that matched the pattern"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "file_detected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the file was detected"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "escalated_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When escalation occurred (if applicable)"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_MonitorStatus",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "status_id"
+                                       },
+                                       {
+                                           "name":  "UQ_MonitorStatus_config_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "config_id"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_MonitorStatus_last_status",
+                                                    "definition":  "([last_status]=\u0027Escalated\u0027 OR [last_status]=\u0027Detected\u0027 OR [last_status]=\u0027LateDetected\u0027 OR [last_status]=\u0027Monitoring\u0027)"
+                                                }
+                                            ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_MonitorStatus_MonitorConfig",
+                                               "column":  "config_id",
+                                               "referencedTable":  "FileOps.MonitorConfig",
+                                               "referencedColumn":  "config_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Dashboard Model",
+                                               "note":  "One row per config via the unique constraint on config_id. This is a real-time dashboard, not a historical record. The row is reset at the start of each monitoring window rather than creating new rows per day.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Escalation Persistence",
+                                               "note":  "Once last_status transitions to Escalated, it remains Escalated even if the file arrives late. The late arrival is recorded in file_detected_dttm to provide the full picture without masking the fact that an escalation occurred.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Naming Convention: last_status",
+                                               "note":  "The column is named last_status rather than status to reflect that it shows the state as of the most recent scan. After the monitoring window closes, the value persists as a historical snapshot until the next window resets it.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "last_status",
+                                                "value":  "Monitoring",
+                                                "meaning":  "Active monitoring in progress. Set when the monitoring window opens each day and on every scan cycle where the file has not yet been detected or escalated.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "last_status",
+                                                "value":  "Detected",
+                                                "meaning":  "File matching the configured pattern was found. Terminal state for the day — scanning continues but status will not change.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "last_status",
+                                                "value":  "Escalated",
+                                                "meaning":  "Escalation time passed without detection. Transitions to LateDetected if the file arrives after escalation. The escalated_dttm is recorded when this status is first set.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "last_status",
+                                                "value":  "LateDetected",
+                                                "meaning":  "File arrived after escalation had already occurred. Transitions from Escalated to prevent re-detection alerts on subsequent scan cycles. The escalated_dttm is preserved to retain the full timeline.",
+                                                "sortOrder":  4
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Current monitoring dashboard",
+                                           "description":  "Shows the real-time status of all active file monitors with timing details.",
+                                           "sql":  "SELECT\r\n    ms.config_name,\r\n    ms.sftp_path,\r\n    ms.last_status,\r\n    ms.last_scanned_dttm,\r\n    ms.file_detected_name,\r\n    ms.file_detected_dttm,\r\n    ms.escalated_dttm,\r\n    mc.check_start_time,\r\n    mc.escalation_time,\r\n    mc.check_end_time\r\nFROM FileOps.MonitorStatus ms\r\nJOIN FileOps.MonitorConfig mc ON ms.config_id = mc.config_id\r\nORDER BY ms.last_status DESC, ms.config_name;",
+                                           "sortOrder":  1
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "MonitorConfig",
+                                                     "note":  "One status row per enabled config via the unique constraint on config_id. The config defines the monitoring rules; the status row tracks execution against those rules for the current day.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "MonitorLog",
+                                                     "note":  "Status and Log serve complementary roles. MonitorStatus is the real-time dashboard (one row, constantly updated). MonitorLog is the audit trail (many rows, append-only). A single escalation event updates MonitorStatus and inserts into MonitorLog simultaneously.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "ServerConfig",
+                       "description":  "Configuration table defining SFTP servers and their credential references for file monitoring operations.",
+                       "module":  "FileOps",
+                       "category":  "FileOps",
+                       "dataFlow":  "Rows are created manually or via sp_AddNewMonitorConfig when establishing a new SFTP server connection. Scan-SFTPFiles.ps1 reads ServerConfig joined to MonitorConfig to resolve SFTP connection details and credential references for each monitoring cycle. The credential_service_name links to dbo.Credentials for encrypted username/password retrieval at runtime.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "server_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for the server configuration"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "server_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Friendly name for the server (e.g., Joker)"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "sftp_host",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Hostname or IP address of the SFTP server"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "sftp_port",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((22))",
+                                           "description":  "SFTP port number"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "credential_service_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "ServiceName in [Core - Credentials] for authentication"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "is_enabled",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this server is active for monitoring"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the record was created"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the record was last modified"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_ServerConfig",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "server_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Credential Separation",
+                                               "note":  "ServerConfig stores connection metadata (host, port) but references credentials indirectly via credential_service_name linking to dbo.Credentials. This keeps sensitive authentication data in a single secure location with encryption rather than duplicating secrets across tables.",
+                                               "sortOrder":  1
+                                           }
+                                       ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "MonitorConfig",
+                                                     "note":  "One server supports many monitor configurations. All configs referencing the same server share a single SFTP connection during each scan cycle.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "dbo.Credentials",
+                                                     "note":  "The credential_service_name column references a ServiceName in dbo.Credentials, not a direct foreign key. Scan-SFTPFiles.ps1 decrypts credentials at runtime using the master passphrase from dbo.GlobalConfig.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+                       {
+                           "name":  "sp_AddNewMonitorConfig",
+                           "description":  "Stored procedure for adding new file monitor configurations with built-in validation and preview mode.",
+                           "module":  "FileOps",
+                           "category":  "FileOps",
+                           "dataFlow":  "Accepts configuration parameters, validates against ServerConfig for server existence, checks for duplicate config names and file patterns in MonitorConfig, validates time window logic and priority values, then inserts a new row into MonitorConfig. Preview mode (default) shows what would be created without committing. Returns the new config_id on success.",
+                           "parameters":  [
+                                              {
+                                                  "ordinal":  1,
+                                                  "name":  "@ServerID",
+                                                  "dataType":  "int",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  2,
+                                                  "name":  "@ConfigName",
+                                                  "dataType":  "varchar",
+                                                  "length":  "100",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  3,
+                                                  "name":  "@SftpPath",
+                                                  "dataType":  "varchar",
+                                                  "length":  "500",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  4,
+                                                  "name":  "@FilePattern",
+                                                  "dataType":  "varchar",
+                                                  "length":  "255",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  5,
+                                                  "name":  "@CheckStartTime",
+                                                  "dataType":  "time",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  6,
+                                                  "name":  "@CheckEndTime",
+                                                  "dataType":  "time",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  7,
+                                                  "name":  "@EscalationTime",
+                                                  "dataType":  "time",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  8,
+                                                  "name":  "@CheckWeekdays",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  9,
+                                                  "name":  "@CheckWeekends",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  10,
+                                                  "name":  "@CheckHolidays",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  11,
+                                                  "name":  "@NotifyOnDetection",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  12,
+                                                  "name":  "@NotifyOnEscalation",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  13,
+                                                  "name":  "@CreateJiraOnEscalation",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  14,
+                                                  "name":  "@DefaultPriority",
+                                                  "dataType":  "varchar",
+                                                  "length":  "20",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  15,
+                                                  "name":  "@IsEnabled",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  16,
+                                                  "name":  "@PreviewOnly",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              }
+                                          ],
+                           "designNotes":  [
+                                               {
+                                                   "topic":  "Preview Mode Default",
+                                                   "note":  "The @PreviewOnly parameter defaults to true (1), requiring an explicit opt-in to commit changes. This prevents accidental configuration creation and lets operators review exactly what will be inserted before committing.",
+                                                   "sortOrder":  1
+                                               },
+                                               {
+                                                   "topic":  "Legacy Convenience Procedure",
+                                                   "note":  "This procedure predates the Control Center UI. The Control Center now provides the primary interface for adding file monitors, making this procedure a backup option for direct SQL-based configuration when needed.",
+                                                   "sortOrder":  2
+                                               }
+                                           ],
+                           "relationshipNotes":  [
+                                                     {
+                                                         "relatedObject":  "ServerConfig",
+                                                         "note":  "Validates that the specified @ServerID exists and is enabled in ServerConfig before allowing configuration creation. A disabled or missing server rejects the insert.",
+                                                         "sortOrder":  1
+                                                     },
+                                                     {
+                                                         "relatedObject":  "MonitorConfig",
+                                                         "note":  "Target table for the insert. The procedure validates against existing rows for duplicate config names and overlapping file patterns before creating the new configuration.",
+                                                         "sortOrder":  2
+                                                     }
+                                                 ]
+                       }
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Scan-SFTPFiles.ps1",
+                        "description":  "Execution engine for FileOps. Scans configured SFTP locations for expected files on a scheduled interval, manages detection and escalation state in MonitorStatus, logs events to MonitorLog, and queues Teams alerts and Jira tickets through the integration modules.",
+                        "module":  "FileOps",
+                        "category":  "FileOps",
+                        "dataFlow":  "Reads MonitorConfig joined to ServerConfig for active configurations within the current check window. Retrieves encrypted SFTP credentials from dbo.Credentials via the master passphrase in dbo.GlobalConfig. Connects to SFTP servers using WinSCP .NET assembly, scans directories for pattern-matched files, then writes results to MonitorStatus (upsert) and MonitorLog (insert). Queues Teams alerts via Teams.sp_QueueAlert and Jira tickets via Jira.sp_QueueTicket based on per-config notification settings.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "All Logic in PowerShell",
+                                                "note":  "Unlike other xFACts modules that split logic between stored procedures and scripts, FileOps puts all business logic in the PowerShell script. This simplifies the architecture for a module whose primary operation is external I/O (SFTP scanning) rather than data processing.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Grouped SFTP Connections",
+                                                "note":  "Configurations are grouped by server before scanning. All configs sharing a server use a single credential retrieval and SFTP session, minimizing connection overhead and credential lookups when multiple file monitors target the same server.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Daily Window Reset",
+                                                "note":  "The script detects a new monitoring window by comparing last_scanned_dttm to the current date. When the dates differ, MonitorStatus is reset to Monitoring with cleared detection and escalation fields. This eliminates the need for a separate scheduled reset job.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "MonitorConfig + ServerConfig",
+                                                      "note":  "The script joins these two tables to build its work list each cycle. MonitorConfig provides monitoring rules and day/time filters. ServerConfig provides SFTP connection details and credential references.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "MonitorStatus + MonitorLog",
+                                                      "note":  "Both are written by the script during each cycle. MonitorStatus is upserted for real-time dashboard state. MonitorLog receives insert-only event records for audit trail. Both writes happen in the same logical operation.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Teams + Jira Integration",
+                                                      "note":  "Alert and ticket creation is delegated to Teams.sp_QueueAlert and Jira.sp_QueueTicket. The script queues requests based on per-config notification flags (notify_on_detection, notify_on_escalation, create_jira_on_escalation) and never calls the APIs directly.",
+                                                      "sortOrder":  3
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
