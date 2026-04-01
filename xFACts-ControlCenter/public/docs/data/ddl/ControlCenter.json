@@ -1,0 +1,164 @@
+﻿{
+    "tables":  [
+
+               ],
+    "procedures":  [
+
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Consolidate-UploadFiles.ps1",
+                        "description":  "Collects all xFACts platform files from their various server locations into a single flat folder for uploading to Claude as project context. Scans orchestrator scripts, Control Center routes, APIs, modules, CSS, JS, documentation pages, and markdown exports. Optionally extracts stored procedure, trigger, and function definitions from the database and includes JSON data files. Generates a manifest file with source path mappings, collection summary, and per-file origin tracking.",
+                        "module":  "ControlCenter",
+                        "category":  "AdminTools",
+                        "dataFlow":  "Scans configured source directories across the xFACts server (orchestrator scripts, Control Center routes, APIs, modules, CSS, JS, documentation pages, planning documents). Copies all discovered files into a single flat output folder at E:\\xFACts-Upload and generates a _manifest.txt with the server directory structure map, collection summary, and per-file origin listing.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Optional Inclusions",
+                                                "note":  "Two optional switches expand the collection scope: -IncludeSQLObjects extracts stored procedure, trigger, and function definitions from the database via sys.sql_modules and writes each as a separate .sql file. -IncludeJSON adds the DDL data files from the documentation data directory. Both default to off when run manually; the Admin page Documentation card provides toggle checkboxes for each.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Collision Detection",
+                                                "note":  "Because files from multiple source directories are flattened into a single folder, filename collisions are possible. The script detects and reports collisions rather than silently overwriting, skipping the duplicate file and logging the conflict.",
+                                                "sortOrder":  2
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "Markdown Exports",
+                                                      "note":  "Collects the markdown files produced by Publish-ConfluenceDocumentation.ps1 from the data\\md directory. When run as part of the full pipeline, these reflect the most current documentation state.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Documentation Pipeline",
+                                                      "note":  "Third and final step in the documentation pipeline. Collects all platform files including freshly generated JSON (from step 1) and markdown exports (from step 2) into a single folder ready for Claude project context upload.",
+                                                      "sortOrder":  2
+                                                  }
+                                              ]
+                    },
+                    {
+                        "name":  "Generate-DDLReference.ps1",
+                        "description":  "Generates comprehensive JSON reference documents containing all database object metadata across the xFACts platform. Inline SQL discovers active schemas dynamically, extracts complete catalog metadata, enriches it with Object_Metadata content (descriptions, design notes, queries, status values, relationship notes), and returns multiple result sets (one per schema plus a metadata set). Uses SqlDataReader to process the result sets and writes individual JSON files per schema to the documentation data directory. These JSON files are consumed by ddl-loader.js on the reference pages to dynamically render field tables, indexes, constraints, and descriptions. Supports preview mode (default) and execute mode.",
+                        "module":  "ControlCenter",
+                        "category":  "AdminTools",
+                        "dataFlow":  "Executes inline SQL that queries the system catalog (sys.tables, sys.columns, sys.indexes, sys.check_constraints, sys.foreign_keys, sys.procedures, sys.parameters, sys.triggers, sys.objects, sys.views) and joins with dbo.Object_Metadata to produce enriched JSON. Scripts, XE Sessions, and DDL Triggers are sourced entirely from Object_Metadata. Returns one result set per schema via SqlDataReader, each written as an individual JSON file (e.g., ServerOps.json, JobFlow.json) to the documentation data directory, plus a _metadata.json with generation timestamp. These JSON files are consumed by ddl-loader.js on the reference pages.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Preview Mode",
+                                                "note":  "Runs in preview mode by default, showing what files would be generated without writing anything. The -Execute switch is required to actually write files. When launched from the Admin page Documentation card, -Execute is always passed.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Dynamic Schema Discovery",
+                                                "note":  "Schemas are not hardcoded. The SQL queries sys.schemas filtered to schemas that contain at least one user object or Object_Metadata row, excluding system schemas (sys, INFORMATION_SCHEMA, guest) and the Legacy schema. New schemas appear automatically when objects are created.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Object_Metadata as Documentation Source",
+                                                "note":  "All documentation content (descriptions, design notes, queries, status values, relationship notes, data flow) comes from dbo.Object_Metadata. Extended properties (MS_Description) are no longer read. Scripts, XE Sessions, and DDL Triggers are non-database objects documented solely through Object_Metadata rows.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "Multi-Result-Set Output",
+                                                "note":  "The inline SQL returns one result set per schema, each containing SchemaName and SchemaJson columns. The script reads each with SqlDataReader.NextResult() and writes individual JSON files per schema. The final result set is a _metadata row with generation timestamp, database name, and server name.",
+                                                "sortOrder":  4
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "Object_Metadata",
+                                                      "note":  "Primary enrichment source. The inline SQL reads all property types (description, module, category, data_flow, design_note, query, status_value, relationship_note) for every object in each schema. Object_Metadata content is the sole source for all documentation text rendered on reference pages.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Documentation Pipeline",
+                                                      "note":  "First step in the documentation pipeline. Runs before Publish-ConfluenceDocumentation.ps1 to ensure the JSON data files are current before Confluence publishing and markdown export consume them.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "ddl-loader.js",
+                                                      "note":  "Client-side consumer. Fetches the JSON files produced by the pipeline and renders documentation pages dynamically. The JSON structure produced by the inline SQL defines the contract that ddl-loader.js expects.",
+                                                      "sortOrder":  3
+                                                  }
+                                              ]
+                    },
+                    {
+                        "name":  "Invoke-DocPipeline.ps1",
+                        "description":  "Documentation pipeline wrapper script. Runs selected documentation steps (Generate DDL Reference, Publish to Confluence, Consolidate Upload Files) in sequence. Writes real-time status to a JSON file after each step completes, enabling the Admin page to poll for per-step progress updates. Launched fire-and-forget by the /api/admin/doc-pipeline endpoint.",
+                        "module":  "ControlCenter",
+                        "category":  "AdminTools",
+                        "dataFlow":  "Receives step selections and option flags from the Admin API endpoint. Launches each selected documentation script sequentially, capturing stdout and stderr per step. Writes real-time progress to E:\\xFACts-PowerShell\\Logs\\doc-pipeline-status.json, which the Admin page polls every 2 seconds to display per-step status updates.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Sequential Execution",
+                                                "note":  "Scripts always execute in fixed order (Generate DDL, Publish Confluence, Consolidate Upload) regardless of which steps are selected. If any step returns a non-zero exit code, the pipeline halts immediately and remaining steps are not attempted. The status JSON file is updated after each step completes, enabling the Admin page to show real-time progress.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Option Flags",
+                                                "note":  "Accepts switch parameters that are passed through to the worker scripts: -PublishToConfluence and -ExportMarkdown control the Publish step behavior, -IncludeSQLObjects and -IncludeJSON control the Consolidate step. The wrapper does not interpret these flags — it passes them as command-line arguments to the appropriate child script.",
+                                                "sortOrder":  2
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "Admin Page",
+                                                      "note":  "Launched fire-and-forget by POST /api/admin/doc-pipeline when a user clicks \"Run Selected\" on the Documentation card. The Admin page polls GET /api/admin/doc-pipeline/status to read the status JSON and update step indicators in real time.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Worker Scripts",
+                                                      "note":  "Orchestrates up to three worker scripts in fixed order: Generate-DDLReference.ps1, Publish-ConfluenceDocumentation.ps1, and Consolidate-UploadFiles.ps1. Only scripts selected by the user are executed, but ordering is always preserved.",
+                                                      "sortOrder":  2
+                                                  }
+                                              ]
+                    },
+                    {
+                        "name":  "Publish-ConfluenceDocumentation.ps1",
+                        "description":  "Publishes xFACts documentation to Confluence Server via REST API and exports markdown files for Claude context upload. Reads HTML narrative pages, architecture pages, and JSON DDL reference files, converts to Confluence Storage Format, and creates or updates pages in the target space. Authenticates via dbo.Credentials two-tier decryption with fallback to manual prompt. Also generates PlantUML ERD diagrams from JSON data for architecture pages. Supports module filtering, preview mode, and export-only mode.",
+                        "module":  "ControlCenter",
+                        "category":  "AdminTools",
+                        "dataFlow":  "Reads HTML narrative pages, architecture pages, and JSON DDL reference files from the documentation directory structure. Authenticates to Confluence Server using credentials from dbo.Credentials via two-tier decryption. Converts HTML to Confluence Storage Format and creates or updates pages in the target space via REST API, maintaining the page hierarchy. Also exports combined markdown files per module to the data\\md directory for Claude project context uploads.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Execution Modes",
+                                                "note":  "Three modes of operation: preview mode (default) shows what would be published without making changes, -Execute publishes to Confluence and exports markdown, -ExportOnly skips Confluence publishing and only generates markdown files. Markdown export runs in all modes. Supports -Module to filter to a single module.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Headless Execution",
+                                                "note":  "All Invoke-WebRequest and Invoke-RestMethod calls use -UseBasicParsing to avoid the Internet Explorer engine dependency, which causes silent hangs in hidden/headless execution contexts. Credential retrieval falls back to interactive Get-Credential if dbo.Credentials lookup fails — this fallback will hang when launched headless from the Admin page.",
+                                                "sortOrder":  2
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "dbo.Credentials",
+                                                      "note":  "Authenticates to Confluence using the standard two-tier decryption pattern: master passphrase from dbo.GlobalConfig, service credentials from dbo.Credentials.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Documentation Pipeline",
+                                                      "note":  "Second step in the documentation pipeline. Depends on Generate-DDLReference.ps1 having produced current JSON files. Output markdown files are collected by Consolidate-UploadFiles.ps1 in the third step.",
+                                                      "sortOrder":  2
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
