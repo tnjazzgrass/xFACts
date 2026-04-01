@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     xFACts - Shared Orchestrator & Script Infrastructure Functions
 
