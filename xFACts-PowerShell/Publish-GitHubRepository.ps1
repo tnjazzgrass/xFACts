@@ -20,7 +20,7 @@
     2. Extract SQL object definitions from the database
     3. Generate Platform Registry markdown from registry tables
     4. Fetch current repo state (file listing with SHAs)
-    5. Compare local vs remote â€” identify creates, updates, deletes
+    5. Compare local vs remote � identify creates, updates, deletes
     6. Push changes to GitHub via Contents API
     7. Generate and push manifest.json
     8. Report summary
@@ -53,7 +53,7 @@
 
 .EXAMPLE
     .\Publish-GitHubRepository.ps1
-    Preview mode â€” shows what would be pushed without making changes.
+    Preview mode � shows what would be pushed without making changes.
 
 .EXAMPLE
     .\Publish-GitHubRepository.ps1 -Execute
@@ -78,7 +78,7 @@ param(
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
 $script:Config = Initialize-XFActsScript -ScriptName 'Publish-GitHubRepository' -Execute:$Execute
 if (-not $script:Config -and -not $Execute) {
-    # Preview mode â€” Initialize-XFActsScript displays the warning but returns $null
+    # Preview mode � Initialize-XFActsScript displays the warning but returns $null
     # We still want to continue in preview mode, so don't exit
 }
 
@@ -86,7 +86,7 @@ if (-not $script:Config -and -not $Execute) {
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # ============================================================================
-# CONFIGURATION â€” Source Mappings
+# CONFIGURATION � Source Mappings
 # ============================================================================
 # Each entry maps a server directory to a repository path.
 # Filter controls which files are collected from that directory.
@@ -261,31 +261,19 @@ function Push-GitHubFile {
         $body.sha = $ExistingSha
     }
 
-    Write-Log "  DEBUG body keys: $($body.Keys -join ', '), content length: $($body.content.Length)" "DEBUG"
-
-    $jsonBody = $body | ConvertTo-Json -Compress -Depth 5
+    $jsonBody = $body | ConvertTo-Json -Compress
 
     try {
         $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Put `
-            -Body $jsonBody -ContentType "application/json" -TimeoutSec 30
+            -Body $jsonBody -ContentType "application/json; charset=utf-8" -TimeoutSec 30
         return $response
     }
     catch {
         $statusCode = $null
-        $responseBody = ""
         if ($_.Exception.Response) {
             $statusCode = [int]$_.Exception.Response.StatusCode
-            try {
-                $stream = $_.Exception.Response.GetResponseStream()
-                $reader = New-Object System.IO.StreamReader($stream)
-                $responseBody = $reader.ReadToEnd()
-                $reader.Close()
-            } catch {}
         }
         Write-Log "  FAILED  $RepoPath (HTTP $statusCode): $($_.Exception.Message)" "ERROR"
-        if ($responseBody) {
-            Write-Log "  Response: $responseBody" "ERROR"
-        }
         return $null
     }
 }
@@ -316,7 +304,7 @@ function Remove-GitHubFile {
 
     try {
         $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Delete `
-            -Body $body -ContentType "application/json" -TimeoutSec 30
+            -Body $body -ContentType "application/json; charset=utf-8" -TimeoutSec 30
         return $true
     }
     catch {
@@ -401,7 +389,7 @@ foreach ($source in $FileSources) {
     $serverPath = $source.ServerPath
 
     if (-not (Test-Path $serverPath)) {
-        Write-Log "  SKIP  $($source.Description) â€” path not found: $serverPath" "WARN"
+        Write-Log "  SKIP  $($source.Description) � path not found: $serverPath" "WARN"
         continue
     }
 
@@ -439,7 +427,7 @@ foreach ($source in $FileSources) {
         }
     }
 
-    Write-Log "  OK    $($source.Description) â€” $fileCount files" "SUCCESS"
+    Write-Log "  OK    $($source.Description) � $fileCount files" "SUCCESS"
 }
 
 Write-Log "  Total files from disk: $($localFiles.Count)"
@@ -482,7 +470,7 @@ if ($sqlObjects) {
         $GeneratedRepoPaths.Add($repoPath)
         $sqlCount++
     }
-    Write-Log "  OK    SQL object definitions â€” $sqlCount extracted" "SUCCESS"
+    Write-Log "  OK    SQL object definitions � $sqlCount extracted" "SUCCESS"
 }
 else {
     Write-Log "  WARN  No SQL objects extracted" "WARN"
@@ -527,7 +515,7 @@ foreach ($export in $TableExports) {
 
         $rowCount = @($rows).Count
         if ($rowCount -eq 0) {
-            Write-Log "  SKIP  $($export.Title) â€” no rows"
+            Write-Log "  SKIP  $($export.Title) � no rows"
             continue
         }
 
@@ -555,10 +543,10 @@ foreach ($export in $TableExports) {
 
         $registryContent += ""
         $exportedTables++
-        Write-Log "  OK    $($export.Title) â€” $rowCount rows" "SUCCESS"
+        Write-Log "  OK    $($export.Title) � $rowCount rows" "SUCCESS"
     }
     catch {
-        Write-Log "  ERROR  $($export.Title) â€” $($_.Exception.Message)" "ERROR"
+        Write-Log "  ERROR  $($export.Title) � $($_.Exception.Message)" "ERROR"
     }
 }
 
@@ -572,7 +560,7 @@ if ($exportedTables -gt 0) {
         Source       = "Generated:PlatformRegistry"
     }
     $GeneratedRepoPaths.Add($registryRepoPath)
-    Write-Log "  OK    Platform Registry â€” $exportedTables tables exported" "SUCCESS"
+    Write-Log "  OK    Platform Registry � $exportedTables tables exported" "SUCCESS"
 }
 
 # ============================================================================
@@ -674,7 +662,7 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
 
     if (-not $Execute) {
         Write-Log ""
-        Write-Log "  PREVIEW â€” Changes that would be made:" "WARN"
+        Write-Log "  PREVIEW � Changes that would be made:" "WARN"
         foreach ($item in $toCreate) {
             Write-Log "    CREATE  $($item.RepoPath)"
         }
@@ -797,13 +785,10 @@ if ($Execute) {
     $manifestLocalSha = Get-GitBlobSha -ContentBytes $manifestBytes
     $manifestChanged = ($null -eq $manifestSha) -or ($manifestLocalSha -ne $manifestSha)
 
-Write-Log "  Manifest size: $($manifestBytes.Length) bytes, Base64: $([Convert]::ToBase64String($manifestBytes).Length) chars" "DEBUG"
-        Write-Log "  ExistingSha: '$manifestSha'" "DEBUG"
-
     if ($manifestChanged) {
         $result = Push-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
             -RepoPath "manifest.json" -ContentBytes $manifestBytes `
-            -CommitMessage "Update manifest.json â€” $($manifestFiles.Count) files" `
+            -CommitMessage "Update manifest.json � $($manifestFiles.Count) files" `
             -ExistingSha $manifestSha
 
         if ($result) {
@@ -814,11 +799,11 @@ Write-Log "  Manifest size: $($manifestBytes.Length) bytes, Base64: $([Convert]:
         }
     }
     else {
-        Write-Log "  Manifest unchanged â€” skipped"
+        Write-Log "  Manifest unchanged � skipped"
     }
 }
 else {
-    Write-Log "  PREVIEW â€” Manifest would be pushed with $($manifestFiles.Count) entries" "WARN"
+    Write-Log "  PREVIEW � Manifest would be pushed with $($manifestFiles.Count) entries" "WARN"
 }
 
 # ============================================================================
@@ -839,7 +824,7 @@ Write-Log "  Unchanged:      $unchanged"
 
 if (-not $Execute) {
     Write-Log ""
-    Write-Log "PREVIEW MODE â€” No changes were made. Run with -Execute to push." "WARN"
+    Write-Log "PREVIEW MODE � No changes were made. Run with -Execute to push." "WARN"
 }
 else {
     Write-Log ""
