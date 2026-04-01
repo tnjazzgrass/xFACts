@@ -1,0 +1,529 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "BuildExecution",
+                       "description":  "Primary tracking table for BIDATA Daily Build job executions with timing, status, and notification tracking.",
+                       "module":  "BIDATA",
+                       "category":  "BIDATA",
+                       "dataFlow":  "Monitor-BIDATABuild.ps1 polls DM-PROD-REP.msdb.dbo.sysjobhistory every 5 minutes via direct PowerShell connection and creates one row per execution attempt, identified by instance_id. The script sets status to IN_PROGRESS on first detection, updates to COMPLETED or FAILED when the job outcome row appears, and creates NOT_STARTED records when the build fails to start within the configured grace period. The notified_dttm column is set after Teams.sp_QueueAlert delivers the completion or failure notification. The Control Center BIDATA Monitoring page reads this table for build status display and duration metrics.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "build_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this build execution"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "build_date",
+                                           "dataType":  "date",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Date of the build"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "job_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SQL Agent job name (supports multiple job name versions)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "instance_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SQL Agent instance_id from sysjobhistory. NULL for NOT_STARTED records"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "start_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the build started"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "end_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the build completed"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "total_duration_seconds",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total runtime in seconds"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "total_duration_formatted",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Runtime as HH:MM:SS string"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "step_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of steps in the build"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Build status: COMPLETED, FAILED, IN_PROGRESS, NOT_STARTED, SUPERSEDED"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "run_status",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SQL Agent run_status code (1=Success, 0=Failed)"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "failed_step_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Step ID that failed (if status = FAILED)"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "failed_step_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Name of the failed step"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "notified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When Teams notification was sent. NULL = not yet notified"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "is_backfill",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "1 = Historically backfilled, 0 = Real-time captured"
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this record was created"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_BIDATA_BuildExecution",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "build_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "One Row Per Execution Attempt",
+                                               "note":  "Each SQL Agent execution attempt gets its own row identified by instance_id. Multiple attempts on the same day (due to failures and restarts) result in multiple rows, preserving full attempt history.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "NOT_STARTED Detection",
+                                               "note":  "When no job history exists within the configured grace period after the scheduled start time, a record is created with status NOT_STARTED to trigger alerting. If the build later starts, the NOT_STARTED record is marked SUPERSEDED.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Instance-Based Deduplication",
+                                               "note":  "Notification TriggerValue includes the instance_id (e.g., COMPLETED-12345) so each execution attempt can only trigger one alert regardless of how many monitoring cycles observe the completed state.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Historical Backfill Flag",
+                                               "note":  "The is_backfill flag distinguishes between real-time captured builds and historically backfilled data from sysjobhistory, allowing queries to filter for live-captured data only.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "status",
+                                                "value":  "IN_PROGRESS",
+                                                "meaning":  "Build is currently running. Set when first step is detected in sysjobhistory but job outcome row (step_id=0) has not appeared.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "0",
+                                                "meaning":  "Failed. The SQL Agent job outcome indicates the build did not complete successfully.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "1",
+                                                "meaning":  "Succeeded. The SQL Agent job outcome indicates the build completed successfully.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "COMPLETED",
+                                                "meaning":  "Build finished successfully. Set when job outcome row shows run_status=1.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Build encountered an error. Set when job outcome row shows run_status=0. The failed_step_id and failed_step_name columns identify the failing step.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "2",
+                                                "meaning":  "Retry. The SQL Agent job is being retried.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "3",
+                                                "meaning":  "Canceled. The SQL Agent job was canceled.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "NOT_STARTED",
+                                                "meaning":  "Build did not start within the grace period after the scheduled start time. Created by NOT_STARTED detection logic when no sysjobhistory records exist for the target date.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "SUPERSEDED",
+                                                "meaning":  "A NOT_STARTED record that was replaced when the build eventually started. The original NOT_STARTED alert was already sent.",
+                                                "sortOrder":  5
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Today\u0027s Build Status",
+                                           "description":  "Daily check — shows all build records for today including status and notification state.",
+                                           "sql":  "SELECT build_id, build_date, instance_id, start_dttm, end_dttm, \r\n       total_duration_formatted, status, notified_dttm\r\nFROM BIDATA.BuildExecution\r\nWHERE build_date = CAST(GETDATE() AS DATE)\r\nORDER BY build_id;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Recent Builds",
+                                           "description":  "Shows the last 20 completed or failed builds, excluding NOT_STARTED and SUPERSEDED noise.",
+                                           "sql":  "SELECT TOP 20 \r\n    build_id, build_date, job_name, instance_id, start_dttm, end_dttm,\r\n    total_duration_formatted, step_count, status\r\nFROM BIDATA.BuildExecution\r\nWHERE status NOT IN (\u0027NOT_STARTED\u0027, \u0027SUPERSEDED\u0027)\r\nORDER BY build_date DESC, start_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Days with Multiple Attempts",
+                                           "description":  "Identifies dates with more than one execution attempt — indicates failures and restarts.",
+                                           "sql":  "SELECT build_date, COUNT(*) AS attempts\r\nFROM BIDATA.BuildExecution\r\nWHERE status IN (\u0027COMPLETED\u0027, \u0027FAILED\u0027)\r\nGROUP BY build_date\r\nHAVING COUNT(*) \u003e 1\r\nORDER BY build_date DESC;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Failed Builds Summary",
+                                           "description":  "Lists all failed builds with the step that caused the failure.",
+                                           "sql":  "SELECT \r\n    build_date, start_dttm, total_duration_formatted,\r\n    failed_step_id, failed_step_name\r\nFROM BIDATA.BuildExecution\r\nWHERE status = \u0027FAILED\u0027\r\nORDER BY build_date DESC;",
+                                           "sortOrder":  4
+                                       },
+                                       {
+                                           "name":  "Build Duration Trend",
+                                           "description":  "Monthly aggregation of build duration for trending analysis.",
+                                           "sql":  "SELECT \r\n    CONVERT(VARCHAR(7), build_date, 120) AS month,\r\n    COUNT(*) AS builds,\r\n    AVG(total_duration_seconds) / 3600.0 AS avg_hours,\r\n    MIN(total_duration_seconds) / 3600.0 AS min_hours,\r\n    MAX(total_duration_seconds) / 3600.0 AS max_hours\r\nFROM BIDATA.BuildExecution\r\nWHERE status = \u0027COMPLETED\u0027\r\nGROUP BY CONVERT(VARCHAR(7), build_date, 120)\r\nORDER BY month;",
+                                           "sortOrder":  5
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "StepExecution",
+                                                     "note":  "Each BuildExecution record is the parent for zero to many StepExecution rows containing step-level timing. Steps are captured incrementally as they complete during the build, enabling real-time progress display on the Control Center BIDATA Monitoring page.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "StepExecution",
+                       "description":  "Step-level execution details for each BIDATA Daily Build, enabling performance analysis and bottleneck identification.",
+                       "module":  "BIDATA",
+                       "category":  "BIDATA",
+                       "dataFlow":  "Monitor-BIDATABuild.ps1 captures step completions incrementally from DM-PROD-REP.msdb.dbo.sysjobhistory as each step finishes during the build. Each row records the step name, duration, and run_status for one step of one build attempt. The Control Center BIDATA Monitoring page joins this table to BuildExecution for step-level progress display and historical step duration analysis.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "step_execution_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this step execution"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "build_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Foreign key to BuildExecution"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "step_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Step number within the job (1-based)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "step_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Name of the step from SQL Agent"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "run_status",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "SQL Agent run_status: 1=Success, 0=Failed"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "run_time",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Raw run_time value from sysjobhistory (HHMMSS format)"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "duration_seconds",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Step duration in seconds"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "duration_formatted",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Duration as HH:MM:SS string"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_BIDATA_StepExecution",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "step_execution_id"
+                                       },
+                                       {
+                                           "name":  "IX_BIDATA_StepExecution_BuildId",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "build_id"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_BIDATA_StepExecution_Build",
+                                               "column":  "build_id",
+                                               "referencedTable":  "BIDATA.BuildExecution",
+                                               "referencedColumn":  "build_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Complete Step Capture",
+                                               "note":  "All SQL Agent job steps are captured including infrastructure steps (disable users, enable replication) and legacy notification steps, even though some are excluded from the Teams notification message. This preserves full execution history for analysis.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Incremental Capture",
+                                               "note":  "Steps are inserted as they complete during the build rather than batch-inserted at the end. This enables real-time progress tracking on the Control Center BIDATA Monitoring dashboard.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "0",
+                                                "meaning":  "Failed. The step encountered an error during execution.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "1",
+                                                "meaning":  "Succeeded. The step completed normally.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "2",
+                                                "meaning":  "Retry. The step is being retried by SQL Agent.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "run_status",
+                                                "value":  "3",
+                                                "meaning":  "Canceled. The step was canceled.",
+                                                "sortOrder":  4
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Steps for Today\u0027s Build",
+                                           "description":  "Shows step-level progress for today\u0027s completed build.",
+                                           "sql":  "SELECT \r\n    s.step_id,\r\n    s.step_name,\r\n    s.run_status,\r\n    s.duration_formatted\r\nFROM BIDATA.StepExecution s\r\nINNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id\r\nWHERE b.build_date = CAST(GETDATE() AS DATE)\r\n  AND b.status = \u0027COMPLETED\u0027\r\nORDER BY s.step_id;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Average Step Duration (30 Days)",
+                                           "description":  "Identifies bottleneck steps by average duration over the last 30 days.",
+                                           "sql":  "SELECT \r\n    s.step_name,\r\n    COUNT(*) AS executions,\r\n    AVG(s.duration_seconds) AS avg_seconds,\r\n    MIN(s.duration_seconds) AS min_seconds,\r\n    MAX(s.duration_seconds) AS max_seconds\r\nFROM BIDATA.StepExecution s\r\nINNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id\r\nWHERE b.build_date \u003e= DATEADD(DAY, -30, GETDATE())\r\n  AND b.status = \u0027COMPLETED\u0027\r\n  AND s.run_status = 1\r\nGROUP BY s.step_name\r\nORDER BY AVG(s.duration_seconds) DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Slowest Steps (All Time)",
+                                           "description":  "Top 10 longest individual step executions across all builds.",
+                                           "sql":  "SELECT TOP 10\r\n    b.build_date,\r\n    s.step_name,\r\n    s.duration_formatted,\r\n    s.duration_seconds\r\nFROM BIDATA.StepExecution s\r\nINNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id\r\nWHERE s.run_status = 1\r\nORDER BY s.duration_seconds DESC;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Failed Steps",
+                                           "description":  "Lists all step-level failures with build date context.",
+                                           "sql":  "SELECT \r\n    b.build_date,\r\n    s.step_id,\r\n    s.step_name,\r\n    s.duration_formatted\r\nFROM BIDATA.StepExecution s\r\nINNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id\r\nWHERE s.run_status = 0\r\nORDER BY b.build_date DESC;",
+                                           "sortOrder":  4
+                                       },
+                                       {
+                                           "name":  "Step Duration Trend",
+                                           "description":  "Tracks a specific step\u0027s duration over time for performance trending. Replace the step_name filter with the target step.",
+                                           "sql":  "SELECT \r\n    b.build_date,\r\n    s.duration_seconds,\r\n    s.duration_formatted\r\nFROM BIDATA.StepExecution s\r\nINNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id\r\nWHERE s.step_name = \u0027Build Table X\u0027  -- Replace with actual step name\r\n  AND s.run_status = 1\r\nORDER BY b.build_date;",
+                                           "sortOrder":  5
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "BuildExecution",
+                                                     "note":  "Each StepExecution row belongs to one BuildExecution record via the build_id foreign key. Step data only has meaning in the context of its parent build — the build_date, status, and instance_id come from the parent row.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Monitor-BIDATABuild.ps1",
+                        "description":  "Monitors the BIDATA Daily Build SQL Agent job via direct PowerShell connection to the source server. Captures build start, step completions incrementally, and final status. Creates NOT_STARTED records when the build fails to start within the configured grace period. Sends Teams notifications on completion, failure, or not-started conditions.",
+                        "module":  "BIDATA",
+                        "category":  "BIDATA",
+                        "dataFlow":  "Runs as a queue-driven process in the orchestrator, executing every 5 minutes. Reads configuration from dbo.GlobalConfig (job name, source server, grace period). Queries DM-PROD-REP.msdb.dbo.sysjobhistory and related system tables via direct PowerShell connection for job execution data and schedule information. Creates and updates rows in BIDATA.BuildExecution for build-level tracking, inserts rows into BIDATA.StepExecution as steps complete incrementally. Calls Teams.sp_QueueAlert to send completion, failure, or NOT_STARTED notifications. Uses instance_id-based TriggerValue for notification deduplication.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Direct Connection vs Linked Server",
+                                                "note":  "Uses direct PowerShell connection to the source server via Invoke-Sqlcmd instead of linked server queries. This eliminates the linked server dependency, enables real-time step capture during build execution, and aligns with the platform direction of unified PowerShell orchestration.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Incremental Step Capture",
+                                                "note":  "Steps are captured as they complete during the build rather than batch-queried after the build finishes. Each monitoring cycle picks up newly completed steps and inserts them into StepExecution, enabling real-time progress display on the Control Center dashboard.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "NOT_STARTED Detection",
+                                                "note":  "Queries the job schedule from msdb.dbo.sysschedules to determine the expected start time. If no job history exists for the target date and the current time exceeds the scheduled start plus the configured grace period, creates a NOT_STARTED record and fires an alert. If the build later starts, the NOT_STARTED record is marked SUPERSEDED.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "Instance-Based Deduplication",
+                                                "note":  "Notification TriggerValue includes the instance_id or date (e.g., COMPLETED-12345, NOT_STARTED-2026-01-29) so each build attempt or not-started condition can only trigger one alert regardless of how many monitoring cycles observe the same state.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "topic":  "Notification Step Filtering",
+                                                "note":  "Infrastructure steps (disable users, enable replication) and legacy notification steps are excluded from the Teams message body to keep notifications focused on actual data processing steps. These steps are still captured in StepExecution for historical completeness.",
+                                                "sortOrder":  5
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "BIDATA.BuildExecution",
+                                                      "note":  "Primary write target. Creates new rows on first detection of a build attempt, updates status and timing as the build progresses, and sets notified_dttm after Teams notification is sent.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "BIDATA.StepExecution",
+                                                      "note":  "Write target for step-level data. Inserts rows incrementally as each step completes during the build, capturing step name, duration, and run_status.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.GlobalConfig",
+                                                      "note":  "Read source for configuration. Retrieves bidata_build_job_name, bidata_build_source_server, and bidata_build_start_grace_minutes at script startup.",
+                                                      "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Teams.sp_QueueAlert",
+                                                      "note":  "Called to send notifications on build completion (INFO), failure (ERROR), and not-started conditions (ERROR). Uses BuildStatus as TriggerType with instance_id or date in TriggerValue for deduplication.",
+                                                      "sortOrder":  4
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
