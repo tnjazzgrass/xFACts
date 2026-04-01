@@ -1,0 +1,869 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "ConfigHistory",
+                       "description":  "Change detection log for JBoss configuration settings on DM application servers. Each collection cycle reads current configuration values from the Management API and compares against the most recent recorded value per server per setting. A row is written only when a value differs from the previously recorded value, or on first capture when no prior record exists. Provides historical context for interpreting performance metrics — configuration at any point in time can be determined by finding the most recent row per setting before that timestamp.",
+                       "module":  "DmOps",
+                       "category":  "App",
+                       "dataFlow":  "Collect-JBossMetrics.ps1 reads JBoss configuration values via the Management API each collection cycle and compares them against the most recent recorded values in this table. Rows are only written when a value changes or on first capture. Settings tracked include IO worker pool sizing, datasource pool min/max, JVM heap max, transaction timeout, and messaging pool configuration. The Control Center JBoss Monitoring page can reference this table to provide configuration context alongside performance metrics.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "config_history_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Auto-incrementing primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "server_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to dbo.ServerRegistry. Identifies which DM application server this configuration observation is from."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "server_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Server hostname denormalized from ServerRegistry for direct querying without joins."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "setting_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Configuration setting identifier using a descriptive key name (e.g., worker_max_threads, datasource_max_pool, jvm_heap_max_mb, transaction_timeout_seconds). Consistent naming across servers enables cross-server comparison."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "setting_value",
+                                           "dataType":  "varchar",
+                                           "length":  "256",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Observed value of the setting stored as a string for flexibility across different data types (integers, booleans, strings). The collector reads the current value from the JBoss Management API each cycle."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "previous_value",
+                                           "dataType":  "varchar",
+                                           "length":  "256",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The previously recorded value for this server and setting. NULL on the first capture when no prior record exists. Populated on subsequent rows so that each change record is self-contained — the old and new values are visible in a single row without needing to look at the prior record."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "collected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the change was detected. This is the detection time, not necessarily the exact time the configuration was modified — the actual change could have occurred at any point since the previous collection cycle. Defaults to GETDATE() at insert time."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_ConfigHistory",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "config_history_id"
+                                       },
+                                       {
+                                           "name":  "IX_ConfigHistory_ServerSetting",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "server_id, setting_name, collected_dttm",
+                                           "includedColumns":  "setting_value"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_ConfigHistory_ServerRegistry",
+                                               "column":  "server_id",
+                                               "referencedTable":  "dbo.ServerRegistry",
+                                               "referencedColumn":  "server_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Write on Change Only",
+                                               "note":  "The collector reads configuration values every cycle but only writes to this table when a value differs from the most recently recorded value for that server and setting. This keeps the table extremely small — typically one initial baseline row per setting per server, with additional rows only when someone changes a JBoss configuration. The comparison is done in the script against cached values, so no database write occurs on the vast majority of cycles.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Point-in-Time Config Lookup",
+                                               "note":  "To determine what configuration was in effect at a specific time, query the most recent row per server per setting where collected_dttm is less than or equal to the target timestamp. This enables correlation between metric anomalies and configuration changes — if a pool size was changed Tuesday and performance degraded Wednesday, the timeline is visible in the data.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Current Configuration Per Server",
+                                           "description":  "Most recent value for each tracked setting on each server. Shows the configuration currently in effect.",
+                                           "sql":  "SELECT\r\n    server_name,\r\n    setting_name,\r\n    setting_value,\r\n    collected_dttm               AS effective_since\r\nFROM (\r\n    SELECT server_name, setting_name, setting_value, collected_dttm,\r\n           ROW_NUMBER() OVER (\r\n               PARTITION BY server_id, setting_name\r\n               ORDER BY collected_dttm DESC\r\n           ) AS rn\r\n    FROM JBoss.ConfigHistory\r\n) ranked\r\nWHERE rn = 1\r\nORDER BY server_name, setting_name;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Configuration Differences Across Servers",
+                                           "description":  "Compares current settings between servers to identify configuration drift. Settings with identical values across all servers are excluded.",
+                                           "sql":  "WITH CurrentConfig AS (\r\n    SELECT server_name, setting_name, setting_value,\r\n           ROW_NUMBER() OVER (\r\n               PARTITION BY server_id, setting_name\r\n               ORDER BY collected_dttm DESC\r\n           ) AS rn\r\n    FROM JBoss.ConfigHistory\r\n)\r\nSELECT setting_name,\r\n       MAX(CASE WHEN server_name = \u0027DM-PROD-APP\u0027  THEN setting_value END) AS APP,\r\n       MAX(CASE WHEN server_name = \u0027DM-PROD-APP2\u0027 THEN setting_value END) AS APP2,\r\n       MAX(CASE WHEN server_name = \u0027DM-PROD-APP3\u0027 THEN setting_value END) AS APP3\r\nFROM CurrentConfig\r\nWHERE rn = 1\r\nGROUP BY setting_name\r\nHAVING COUNT(DISTINCT setting_value) \u003e 1\r\nORDER BY setting_name;",
+                                           "sortOrder":  2
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Snapshot",
+                                                     "note":  "Configuration changes recorded here provide context for Snapshot metric trends. A change in datasource pool sizing, worker thread count, or transaction timeout may correlate with shifts in the health metrics captured in Snapshot.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "QueueSnapshot",
+                                                     "note":  "Messaging configuration changes (thread pool sizes, connection factory settings) tracked here may explain shifts in queue processing patterns observed in QueueSnapshot.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "QueueSnapshot",
+                       "description":  "Per-queue JMS metrics for DM application servers. Each collection cycle produces one row per active queue per monitored server, capturing pending message count, delivery state, consumer count, and cumulative throughput. Used for queue backlog detection, dead consumer alerting, and workload distribution analysis across servers.",
+                       "module":  "DmOps",
+                       "category":  "App",
+                       "dataFlow":  "Collect-JBossMetrics.ps1 reads JMS queue metrics via composite REST operations to the JBoss Management API domain controller. For each server, one composite call retrieves all active queue stats. Only queues with historical throughput (messages-added \u003e 0 at any point) are collected — approximately 12-15 queues per server out of 65 total. The Control Center JBoss Monitoring page reads this table for queue health display and backlog detection. Retention is managed alongside Snapshot by snapshot_retention_days in GlobalConfig.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "queue_snapshot_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Auto-incrementing primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "server_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to dbo.ServerRegistry. Identifies which DM application server this queue snapshot is from."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "server_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Server hostname denormalized from ServerRegistry for direct querying without joins."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "queue_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "JMS queue name as reported by the JBoss Management API (e.g., jobBatchQueue, requestQueue, fixedFeeEventQueue). Only active queues with historical message throughput are collected — idle queues with zero messages-added are excluded."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "message_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Pending messages in the queue waiting to be processed. Zero is healthy. A sustained non-zero value indicates the queue is backing up — consumers are not keeping pace with producers. This is the primary queue health indicator."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "delivering_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Messages currently being delivered to consumers. These are in-flight — picked up by a consumer but not yet acknowledged. High delivering_count with stable message_count indicates normal processing. High delivering_count with rising message_count indicates consumers are stuck."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "consumer_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Number of active consumers listening on this queue. Zero consumers on a queue that normally has throughput indicates a dead queue — no processing will occur regardless of message volume. Consumer counts vary by queue: requestQueue typically has 67-70, most others have 1-6."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "messages_added",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Cumulative messages added to the queue since JVM start. The delta between consecutive snapshots indicates queue throughput per interval. Resets on JBoss restart. Used for workload distribution analysis across servers."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "collected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this queue snapshot was collected. Defaults to GETDATE() at insert time. Aligns with the corresponding Snapshot.collected_dttm for the same collection cycle."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_QueueSnapshot",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "queue_snapshot_id"
+                                       },
+                                       {
+                                           "name":  "IX_QueueSnapshot_Retention",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "collected_dttm"
+                                       },
+                                       {
+                                           "name":  "IX_QueueSnapshot_ServerQueue",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "server_id, queue_name, collected_dttm",
+                                           "includedColumns":  "message_count, delivering_count, consumer_count, messages_added"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_QueueSnapshot_ServerRegistry",
+                                               "column":  "server_id",
+                                               "referencedTable":  "dbo.ServerRegistry",
+                                               "referencedColumn":  "server_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Active Queue Filtering",
+                                               "note":  "Each DM app server has 65 JMS queues configured, but only 12-15 have meaningful throughput. The collector maintains an active queue list based on observed messages-added \u003e 0 and only collects metrics for those queues. This keeps row volume manageable (~45 rows per cycle across 3 servers) while ensuring all operationally relevant queues are monitored.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Queues Are Independent Per Server",
+                                               "note":  "JMS queues operate independently on each server — they are not clustered despite cluster configuration existing. When a server freezes, all messages in its queues stop processing. Other servers cannot pick up the work. This means queue health must be monitored per-server, not in aggregate.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Workload Distribution Pattern",
+                                               "note":  "Queue activity correlates with server role: user-driven queues (fixedFeeEventQueue, documentOutputRequestQueue, consumerCacheRequestQueue) concentrate on APP2 where users connect via SharePoint. Batch job queues (jobBatchQueue, nbReleaseQueue, paymentsImportPartitionQueue) concentrate on APP and APP3 where Task Scheduler scripts direct work. Cross-server comparison of messages-added deltas reveals workload balance.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Sustained Queue Backlog",
+                                           "description":  "Queues with pending messages in consecutive snapshots — indicates consumers are not keeping pace. Uses a self-join to find queues that stayed backed up across two collection cycles.",
+                                           "sql":  "WITH Consecutive AS (\r\n    SELECT\r\n        q1.server_name,\r\n        q1.queue_name,\r\n        q1.collected_dttm            AS first_seen,\r\n        q2.collected_dttm            AS still_pending,\r\n        q1.message_count             AS first_pending,\r\n        q2.message_count             AS later_pending,\r\n        q1.consumer_count,\r\n        q1.delivering_count\r\n    FROM JBoss.QueueSnapshot q1\r\n    JOIN JBoss.QueueSnapshot q2\r\n        ON q2.server_id = q1.server_id\r\n       AND q2.queue_name = q1.queue_name\r\n       AND q2.collected_dttm = (\r\n            SELECT MIN(collected_dttm)\r\n            FROM JBoss.QueueSnapshot\r\n            WHERE server_id = q1.server_id\r\n              AND queue_name = q1.queue_name\r\n              AND collected_dttm \u003e q1.collected_dttm\r\n       )\r\n    WHERE q1.message_count \u003e 0\r\n      AND q2.message_count \u003e 0\r\n      AND q1.collected_dttm \u003e= DATEADD(HOUR, -24, GETDATE())\r\n)\r\nSELECT server_name, queue_name,\r\n       MIN(first_seen)               AS backlog_started,\r\n       MAX(still_pending)            AS last_observed,\r\n       MAX(later_pending)            AS peak_pending,\r\n       MIN(consumer_count)           AS min_consumers\r\nFROM Consecutive\r\nGROUP BY server_name, queue_name\r\nORDER BY peak_pending DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Hourly Queue Throughput by Server",
+                                           "description":  "Messages processed per queue per server per hour using messages_added deltas. Shows workload distribution patterns and identifies peak activity periods.",
+                                           "sql":  "WITH Hourly AS (\r\n    SELECT\r\n        server_name,\r\n        queue_name,\r\n        DATEADD(HOUR, DATEDIFF(HOUR, 0, collected_dttm), 0) AS hour_bucket,\r\n        MIN(messages_added)          AS start_added,\r\n        MAX(messages_added)          AS end_added\r\n    FROM JBoss.QueueSnapshot\r\n    WHERE collected_dttm \u003e= DATEADD(HOUR, -24, GETDATE())\r\n    GROUP BY server_name, queue_name,\r\n             DATEADD(HOUR, DATEDIFF(HOUR, 0, collected_dttm), 0)\r\n)\r\nSELECT server_name, queue_name, hour_bucket,\r\n       end_added - start_added       AS messages_this_hour\r\nFROM Hourly\r\nWHERE end_added - start_added \u003e 0\r\nORDER BY server_name, queue_name, hour_bucket;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Dead Consumer Detection",
+                                           "description":  "Queues where messages are being added but no consumers are listening. Work is being queued with nobody to process it.",
+                                           "sql":  "SELECT\r\n    server_name,\r\n    queue_name,\r\n    collected_dttm,\r\n    message_count,\r\n    delivering_count,\r\n    consumer_count,\r\n    messages_added\r\nFROM JBoss.QueueSnapshot\r\nWHERE consumer_count = 0\r\n  AND messages_added \u003e 0\r\n  AND collected_dttm \u003e= DATEADD(HOUR, -24, GETDATE())\r\nORDER BY collected_dttm DESC, server_name, queue_name;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Busiest Queues (Last Hour)",
+                                           "description":  "Top queues ranked by throughput in the last hour. Identifies which queues are carrying the heaviest workload and which servers they run on.",
+                                           "sql":  "WITH Recent AS (\r\n    SELECT\r\n        server_name,\r\n        queue_name,\r\n        MIN(messages_added)          AS start_added,\r\n        MAX(messages_added)          AS end_added\r\n    FROM JBoss.QueueSnapshot\r\n    WHERE collected_dttm \u003e= DATEADD(HOUR, -1, GETDATE())\r\n    GROUP BY server_name, queue_name\r\n)\r\nSELECT server_name, queue_name,\r\n       end_added - start_added       AS messages_last_hour\r\nFROM Recent\r\nWHERE end_added - start_added \u003e 0\r\nORDER BY messages_last_hour DESC;",
+                                           "sortOrder":  4
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Snapshot",
+                                                     "note":  "Queue snapshots are collected in the same cycle as the parent Snapshot row. The server_id and collected_dttm values align between the two tables, enabling correlated analysis of server health and queue state at the same point in time.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "ConfigHistory",
+                                                     "note":  "ConfigHistory tracks messaging pool configuration (thread pool sizes, connection pool sizes) that affects queue processing capacity. Changes to these settings may explain shifts in queue throughput or backlog patterns.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Snapshot",
+                       "description":  "Append-only point-in-time snapshots for DM application servers. Each collection cycle produces one row per monitored server capturing HTTP responsiveness, CIM service state, JBoss process metrics, server uptime, and JBoss Management API metrics including JVM memory, threading, Undertow HTTP statistics, transaction health, IO worker pool state, and main datasource connection pool utilization. Used for freeze detection, response time trending, performance diagnosis, and service availability history.",
+                       "module":  "DmOps",
+                       "category":  "App",
+                       "dataFlow":  "Collect-JBossMetrics.ps1 inserts one row per JBoss-enabled APP_SERVER in ServerRegistry per collection cycle. Five data sources feed each row: (1) HTTP responsiveness via Invoke-WebRequest to the DM splash page, (2) CIM service state via Win32_Service for DebtManager-Host, (3) CIM process metrics via Win32_Process for the main JBoss java.exe, (4) CIM server uptime via Win32_OperatingSystem, and (5) JBoss Management API via composite REST operations to the domain controller for JVM memory, threading, Undertow HTTP stats, transactions, IO worker pool, and main datasource pool metrics. The Control Center JBoss Monitoring page reads this table for current status display, health indicators, and performance trending. Retention is managed by snapshot_retention_days in GlobalConfig.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "snapshot_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Auto-incrementing primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "server_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to dbo.ServerRegistry. Identifies which DM application server this snapshot is for."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "server_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Server hostname denormalized from ServerRegistry for direct querying without joins."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "collected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this snapshot was collected. Defaults to GETDATE() at insert time."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "http_status_code",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HTTP response status code from the responsiveness request. 200 indicates a responding server. NULL if the request timed out or failed to connect."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "http_response_ms",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HTTP response time in milliseconds. Measures total round-trip time for the responsiveness request."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "http_error_message",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Error message captured when the HTTP request fails (timeout, connection refused, DNS failure, etc.). NULL on successful requests."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "service_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Windows service name queried via CIM (DebtManager-Controller on APP, DebtManager-Host on all three servers)."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "service_state",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Windows service state from CIM: Running, Stopped, StartPending, StopPending, etc."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "service_start_mode",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Service startup configuration: Auto, Manual, Disabled."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "jboss_process_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Windows process ID of the main JBoss java.exe process (the large grandchild in the process tree)."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "jboss_working_set_mb",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "JBoss java.exe working set memory in megabytes."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "jboss_thread_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Thread count of the main JBoss java.exe process."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "jboss_handle_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Handle count of the main JBoss java.exe process."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "server_uptime_hours",
+                                           "dataType":  "decimal",
+                                           "length":  "10,1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Server uptime in hours calculated from Win32_OperatingSystem.LastBootUpTime."
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "api_server_state",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "JBoss server state from the Management API. Values: running, stopped, reload-required, restart-required. NULL when Management API is unreachable."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "jvm_heap_used_mb",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Current JVM heap memory usage in megabytes from the Management API. Compare against jvm_heap_max_mb to calculate utilization percentage. Rising toward max indicates GC pressure."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "jvm_heap_max_mb",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Maximum JVM heap size in megabytes from the Management API. Configured via JVM -Xmx parameter (typically 8192 MB). Provides the denominator for heap utilization percentage."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "jvm_nonheap_used_mb",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "JVM non-heap memory usage in megabytes from the Management API. Includes metaspace and code cache. Gradual growth without stabilization may indicate a classloader leak."
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "jvm_thread_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Current JVM thread count from the Management API. Baseline is approximately 800-830 at idle. Sustained increase well above peak indicates potential thread exhaustion."
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "jvm_thread_peak",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Peak JVM thread count since JVM start from the Management API. Provides the high-water mark for thread usage. Resets on JBoss restart."
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "undertow_request_count",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative HTTP request count since JVM start from the Undertow HTTP listener. The delta between consecutive snapshots indicates request throughput per interval."
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "undertow_error_count",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative HTTP error count since JVM start from the Undertow HTTP listener. The delta between consecutive snapshots indicates error rate per interval. Should normally be zero."
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "undertow_bytes_sent",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative bytes sent since JVM start from the Undertow HTTP listener. The delta between consecutive snapshots indicates outbound throughput per interval."
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "undertow_processing_ms",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative request processing time in milliseconds since JVM start. Requires record-request-start-time enabled on the HTTP listener. The delta divided by request count delta gives average response time per interval."
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "undertow_max_proc_ms",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Maximum single request processing time in milliseconds since JVM start. Identifies the slowest individual request the server has handled. Resets on JBoss restart."
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "io_worker_queue_size",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of requests waiting for an IO worker thread from the Undertow worker pool. Zero is healthy. Any sustained non-zero value indicates request processing is falling behind incoming request rate."
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "tx_committed",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative committed transaction count since JVM start. The delta between consecutive snapshots indicates transaction throughput per interval."
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "tx_inflight",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Currently active (in-flight) transaction count. A sustained high value may indicate long-running transactions or transaction leaks."
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "tx_timed_out",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative timed-out transaction count since JVM start. Transaction timeout is configured at 900 seconds (15 minutes). Any increase indicates a transaction was stuck for at least 15 minutes."
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "tx_rollbacks",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative application-initiated rollback count since JVM start. Rollbacks can be normal business logic (validation failures, duplicate checks). The delta and ratio to committed transactions indicates health."
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "tx_aborted",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative aborted transaction count since JVM start. Typically matches rollback count. Divergence from rollbacks may indicate system-level transaction failures."
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "tx_heuristics",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative heuristic decision count since JVM start. Heuristic decisions occur when the transaction manager cannot determine the outcome of a two-phase commit and makes a unilateral decision. Non-zero values warrant investigation."
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "ds_active_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total connections in the main datasource pool (active = in-use + idle). The pool prefills to min-pool-size (300) at startup and can grow to max-pool-size (1000)."
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "ds_in_use_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Connections currently checked out by application code from the main datasource pool. This is the primary database load indicator. Compare against ds_active_count for utilization."
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "ds_idle_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Connections available in the main datasource pool not currently in use. Low idle count with high in-use count indicates heavy database demand."
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "ds_wait_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Threads currently waiting for a connection from the main datasource pool. Should always be zero. Any non-zero value indicates the pool is exhausted and application threads are blocked."
+                                       },
+                                       {
+                                           "ordinal":  39,
+                                           "name":  "ds_max_used_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Peak concurrent in-use connections since JVM start from the main datasource pool. Indicates the high-water mark for database connection demand. Resets on JBoss restart."
+                                       },
+                                       {
+                                           "ordinal":  40,
+                                           "name":  "ds_timed_out",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Cumulative connections destroyed by the pool idle timeout housekeeping since JVM start. This is normal pool maintenance, not connection failures. The pool prefills 300 but usage is typically much lower, so idle connections are periodically recycled."
+                                       },
+                                       {
+                                           "ordinal":  41,
+                                           "name":  "ds_avg_get_time_ms",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Average time in milliseconds to acquire a connection from the main datasource pool. Low values (1-5ms) are normal. Increasing values indicate pool contention or connection creation overhead."
+                                       },
+                                       {
+                                           "ordinal":  42,
+                                           "name":  "ds_max_wait_time_ms",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Longest wait time in milliseconds for a connection from the main datasource pool since JVM start. High values indicate a period of pool contention occurred. Resets on JBoss restart."
+                                       },
+                                       {
+                                           "ordinal":  43,
+                                           "name":  "ds_alert_fired",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this snapshot is part of an active DS pool alert episode. Set to 1 by Collect-JBossMetrics.ps1 on the triggering snapshot (second consecutive reading above threshold) and on all subsequent snapshots while the episode remains open. Returns to 0 (default) when recovery is confirmed: two consecutive snapshots with HTTP 200, ds_in_use_count below threshold, and positive undertow_processing_ms delta."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Snapshot",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "snapshot_id"
+                                       },
+                                       {
+                                           "name":  "IX_Snapshot_collected",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "collected_dttm"
+                                       },
+                                       {
+                                           "name":  "IX_Snapshot_server_collected",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "server_name, collected_dttm",
+                                           "includedColumns":  "http_response_ms, http_status_code"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_Snapshot_ServerRegistry",
+                                               "column":  "server_id",
+                                               "referencedTable":  "dbo.ServerRegistry",
+                                               "referencedColumn":  "server_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "JBoss Process Identification",
+                                               "note":  "Each DM app server runs multiple java.exe processes in a tiered tree: service wrapper, JBoss bootstrap, management layer, and the main application server. The collector identifies the main JBoss process by selecting the java.exe with the largest WorkingSetSize (~9-10 GB), which reliably distinguishes it from the smaller bootstrap and management processes.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Partial Snapshot on Failure",
+                                               "note":  "If one data source fails (e.g., CIM timeout but HTTP succeeds), the snapshot is still inserted with NULL values for the failed source. This preserves whatever data was successfully collected rather than discarding an entire cycle. Every collection cycle produces exactly one row per server regardless of partial failures.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Composite API Collection",
+                                               "note":  "Management API metrics are collected via composite REST operations to the JBoss domain controller on APP. One composite call per server retrieves server state, JVM memory, JVM threads, datasource pool stats, Undertow HTTP stats, transaction stats, and IO worker pool state in a single round trip (~65ms per server). This minimizes API call count to 3 per collection cycle for all health metrics. The domain controller fans out queries to APP2 and APP3 internally. All API columns are nullable — they remain NULL when the Management API is unreachable, preserving HTTP and CIM data collection independently.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "DS Pool Alert Episode Tracking",
+                                               "note":  "Alert detection uses two consecutive snapshots with ds_in_use_count at or above the per-server threshold from ServerRegistry.jboss_ds_alert_threshold. A single spike is ignored to avoid false positives from normal batch workload variations. Episode tracking via ds_alert_fired prevents duplicate alerts during an ongoing event. Recovery requires two consecutive snapshots where all three conditions are met simultaneously: HTTP status 200 (server reachable), ds_in_use_count below threshold (pool healthy), and positive undertow_processing_ms delta (application processing work). NULL undertow delta does not count as recovery — this handles the JVM restart scenario where cumulative counters reset and no prior value exists for comparison. The three-metric recovery condition prevents premature episode closure during the death spiral phase where connections bleed off via transaction timeouts but the server remains unresponsive.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Response Time Trend (Last 24 Hours)",
+                                           "description":  "Hourly average and maximum HTTP response times per server. Identifies slow periods and response time degradation patterns.",
+                                           "sql":  "SELECT\r\n    server_name,\r\n    DATEADD(HOUR, DATEDIFF(HOUR, 0, collected_dttm), 0) AS hour_bucket,\r\n    COUNT(*)                     AS samples,\r\n    AVG(http_response_ms)        AS avg_response_ms,\r\n    MAX(http_response_ms)        AS max_response_ms,\r\n    MIN(http_response_ms)        AS min_response_ms\r\nFROM JBoss.Snapshot\r\nWHERE collected_dttm \u003e= DATEADD(HOUR, -24, GETDATE())\r\n  AND http_status_code = 200\r\nGROUP BY server_name,\r\n         DATEADD(HOUR, DATEDIFF(HOUR, 0, collected_dttm), 0)\r\nORDER BY server_name, hour_bucket;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "HTTP Failure History",
+                                           "description":  "Snapshots where the HTTP health check failed — non-200 status or error message. Each row represents a potential freeze or outage event.",
+                                           "sql":  "SELECT\r\n    server_name,\r\n    collected_dttm,\r\n    http_status_code,\r\n    http_response_ms,\r\n    http_error_message,\r\n    service_state,\r\n    api_server_state\r\nFROM JBoss.Snapshot\r\nWHERE http_status_code \u003c\u003e 200\r\n   OR http_error_message IS NOT NULL\r\nORDER BY collected_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "JVM Heap Trend (Last 24 Hours)",
+                                           "description":  "Hourly average and peak heap utilization percentage per server. Rising averages over time may indicate a memory leak or increasing workload.",
+                                           "sql":  "SELECT\r\n    server_name,\r\n    DATEADD(HOUR, DATEDIFF(HOUR, 0, collected_dttm), 0) AS hour_bucket,\r\n    AVG(CAST(jvm_heap_used_mb AS FLOAT) / NULLIF(jvm_heap_max_mb, 0) * 100)\r\n                                 AS avg_heap_pct,\r\n    MAX(CAST(jvm_heap_used_mb AS FLOAT) / NULLIF(jvm_heap_max_mb, 0) * 100)\r\n                                 AS max_heap_pct,\r\n    AVG(jvm_heap_used_mb)        AS avg_heap_used_mb,\r\n    MAX(jvm_heap_max_mb)         AS heap_max_mb\r\nFROM JBoss.Snapshot\r\nWHERE collected_dttm \u003e= DATEADD(HOUR, -24, GETDATE())\r\n  AND jvm_heap_used_mb IS NOT NULL\r\nGROUP BY server_name,\r\n         DATEADD(HOUR, DATEDIFF(HOUR, 0, collected_dttm), 0)\r\nORDER BY server_name, hour_bucket;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Connection Pool Pressure Events",
+                                           "description":  "Snapshots where threads were waiting for database connections (ds_wait_count \u003e 0). Any occurrence means the pool was exhausted and application threads were blocked.",
+                                           "sql":  "SELECT\r\n    server_name,\r\n    collected_dttm,\r\n    ds_wait_count,\r\n    ds_in_use_count,\r\n    ds_active_count,\r\n    ds_idle_count,\r\n    ds_max_used_count,\r\n    ds_avg_get_time_ms,\r\n    ds_max_wait_time_ms,\r\n    jvm_heap_used_mb,\r\n    tx_inflight\r\nFROM JBoss.Snapshot\r\nWHERE ds_wait_count \u003e 0\r\nORDER BY collected_dttm DESC;",
+                                           "sortOrder":  4
+                                       },
+                                       {
+                                           "name":  "Transaction Anomalies",
+                                           "description":  "Snapshots with transaction timeouts or elevated in-flight counts. Timed-out transactions exceeded the 15-minute timeout. High in-flight counts may indicate long-running operations or transaction leaks.",
+                                           "sql":  "SELECT\r\n    server_name,\r\n    collected_dttm,\r\n    tx_inflight,\r\n    tx_committed,\r\n    tx_timed_out,\r\n    tx_rollbacks,\r\n    tx_aborted,\r\n    tx_heuristics,\r\n    http_response_ms,\r\n    ds_in_use_count,\r\n    jvm_heap_used_mb\r\nFROM JBoss.Snapshot\r\nWHERE tx_timed_out \u003e 0\r\n   OR tx_inflight \u003e= 10\r\nORDER BY collected_dttm DESC;",
+                                           "sortOrder":  5
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "ServerRegistry",
+                                                     "note":  "server_id references dbo.ServerRegistry. Only servers with server_type = \u0027APP_SERVER\u0027 and jboss_enabled = 1 produce snapshot rows. server_name is denormalized from ServerRegistry for direct querying without joins.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "QueueSnapshot",
+                                                     "note":  "Each Snapshot collection cycle produces a corresponding set of QueueSnapshot rows for the same server and collected_dttm. Snapshot captures the server-level health summary; QueueSnapshot provides per-queue detail for the same point in time. Joined on server_id and collected_dttm for correlated analysis.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "ConfigHistory",
+                                                     "note":  "ConfigHistory provides the configuration context for interpreting Snapshot metrics. To determine what configuration was in effect for a given snapshot, find the most recent ConfigHistory row per setting where collected_dttm is less than or equal to the snapshot timestamp.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Collect-JBossMetrics.ps1",
+                        "description":  "Collects health metrics from all JBoss-enabled application servers in ServerRegistry using five independent data sources per server: HTTP responsiveness (Invoke-WebRequest), CIM service state and JBoss process metrics (Win32_Service, Win32_Process, Win32_OperatingSystem), and JBoss Management API metrics via composite REST operations to the domain controller. Writes to three tables per cycle: one Snapshot row per server (35 metric columns covering HTTP, CIM, JVM memory/threads, Undertow HTTP stats, transactions, IO worker pool, and datasource connection pool), ~18 QueueSnapshot rows per server (per-queue JMS stats for all active queues), and ConfigHistory rows only on detected configuration changes. Nine API calls per cycle total (3 health composites + 3 queue composites + 3 config composites). First script to use Initialize-XFActsScript shared infrastructure and shared Get-ServiceCredentials for JBoss Management API authentication.",
+                        "module":  "DmOps",
+                        "category":  "App",
+                        "dataFlow":  "Reads server list from dbo.ServerRegistry filtered by jboss_enabled = 1 and server_type = \u0027APP_SERVER\u0027. Reads http_base_path, http_timeout_seconds, and api_timeout_seconds from dbo.GlobalConfig (module JBoss, category App). Reads management_api_url from GlobalConfig (module JBoss, category Admin) with dynamic fallback to ServerRegistry is_domain_controller lookup. Retrieves JBoss Management API credentials via shared Get-ServiceCredentials (ServiceName: JBossManagement) from dbo.Credentials using two-tier decryption. Loads config change detection cache from JBoss.ConfigHistory (most recent value per server per setting). For each server: (1) HTTP GET via Invoke-WebRequest for responsiveness, (2) CIM session for service state, process metrics, and uptime, (3) composite REST call to JBoss domain controller for server state, JVM memory, JVM threads, datasource pool stats, Undertow HTTP stats, transaction stats, and IO worker pool, (4) composite REST call for 18 active JMS queue stats, (5) composite REST call for 9 config settings compared against cached values. Writes one row per server to JBoss.Snapshot, ~18 rows per server to JBoss.QueueSnapshot, and 0-N rows to JBoss.ConfigHistory (only on change or first capture). Reports completion to the orchestrator via Complete-OrchestratorTask.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Five Independent Collection Layers",
+                                                "summary":  "Each data source is isolated in its own try/catch block",
+                                                "note":  "HTTP, CIM, health composite, queue composite, and config composite are all independent. If the Management API is unreachable, HTTP and CIM data still gets written with API columns as NULL. If the queue composite fails, the health snapshot is still inserted. If the config check fails, health and queue data are preserved. Every cycle produces exactly one Snapshot row per server regardless of partial failures.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Composite API Design",
+                                                "summary":  "Nine API calls per cycle using JBoss composite operations",
+                                                "note":  "All Management API metrics are collected via composite REST operations — multiple reads batched into single HTTP POSTs. Three composites per server: health (7 steps: server state, JVM memory, JVM threads, datasource pool, Undertow, transactions, IO worker), queue (18 steps: one per active queue), and config (9 steps: mix of server-instance-level and profile-level settings). Total: 9 API calls per cycle across 3 servers, completing in ~1-2 seconds. Hand-built JSON strings are used because PowerShell 5.1 ConvertTo-Json does not reliably serialize the nested array-of-objects address format JBoss requires.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Config Change Detection",
+                                                "summary":  "Write-on-change pattern with in-memory cache",
+                                                "note":  "At script start, the most recent config value per server per setting is loaded from ConfigHistory into a hashtable cache. Each cycle reads current values via the config composite and compares against the cache. Rows are only written when a value differs or on first capture (NULL previous). Profile-level settings (datasource pool sizes, messaging config) are read from the full-ha profile and recorded per server. Server-level settings (worker threads, IO threads, heap max, transaction timeout) are read from the runtime server instance. Typically produces 0 rows per cycle after the initial 27-row baseline (9 settings x 3 servers).",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "JBoss Address Path Case Sensitivity",
+                                                "summary":  "Server names must be lowercased for Management API calls",
+                                                "note":  "JBoss domain controller uses lowercase hostnames in its address paths (dm-prod-app, dm-prod-app2-inst1) while ServerRegistry stores uppercase (DM-PROD-APP). The script applies ToLower() when building API address paths. The original server name is preserved for database INSERTs and logging. Server instance naming follows the pattern {hostname}-inst1.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "topic":  "Shared Infrastructure Adoption",
+                                                "summary":  "First script to use Initialize-XFActsScript and shared Get-ServiceCredentials",
+                                                "note":  "Uses Initialize-XFActsScript from xFACts-OrchestratorFunctions.ps1 for standardized startup (SQL module loading, logging, execute guard, application identity). Uses shared Get-SqlData, Invoke-SqlNonQuery, and Write-Log functions instead of script-local copies. Uses shared Get-ServiceCredentials for JBoss Management API credential retrieval via the two-tier decryption pattern. No script-local function definitions required beyond Get-ConfigValue (convenience wrapper) and Invoke-JBossAPI (Management API call wrapper).",
+                                                "sortOrder":  5
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "JBoss.Snapshot",
+                                                      "note":  "Sole writer. Inserts one row per server per collection cycle containing all 35 metric columns from five data sources (HTTP, CIM service, CIM process, CIM uptime, Management API health composite). API columns remain NULL when the Management API is unreachable.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "JBoss.QueueSnapshot",
+                                                      "note":  "Sole writer. Inserts one row per active JMS queue per server per cycle (~18 queues x 3 servers = ~54 rows). Queue list is hardcoded based on discovery session — queues with observed throughput (messages-added \u003e 0). Only written when the Management API health composite succeeds.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "JBoss.ConfigHistory",
+                                                      "note":  "Sole writer. Write-on-change only — inserts rows when a JBoss config value differs from the previously recorded value or on first capture. Tracks 9 settings per server: worker/IO thread counts, datasource pool min/max, JVM heap max, transaction timeout, messaging pool min/max/threads.",
+                                                      "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.ServerRegistry",
+                                                      "note":  "Reads server list filtered by is_active = 1, jboss_enabled = 1, server_type = \u0027APP_SERVER\u0027. Uses server_id, server_name, and server_role. Falls back to is_domain_controller lookup for Management API URL if GlobalConfig entry is missing.",
+                                                      "sortOrder":  4
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.GlobalConfig",
+                                                      "note":  "Reads JBoss/App settings: http_base_path, http_timeout_seconds, api_timeout_seconds. Reads JBoss/Admin setting: management_api_url. Falls back to script defaults if unavailable.",
+                                                      "sortOrder":  5
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.Credentials",
+                                                      "note":  "Reads JBossManagement service credentials (JBossUser, JBossPassword) via shared Get-ServiceCredentials function using two-tier decryption. Credentials authenticate all Management API REST calls to the JBoss domain controller.",
+                                                      "sortOrder":  6
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Orchestrator.ProcessRegistry",
+                                                      "note":  "Receives TaskId and ProcessId parameters from the orchestrator engine for completion callback via Complete-OrchestratorTask. Reports server count, queue row count, and config change count in the output message.",
+                                                      "sortOrder":  7
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
