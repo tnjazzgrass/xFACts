@@ -750,6 +750,8 @@ Write-Log "---------------------------------"
 
 $baseRawUrl = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch"
 
+$cacheBuster = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
+
 $manifestFiles = @()
 foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
     $category = if ($repoPath.StartsWith("xFACts-PowerShell/")) { "PowerShell" }
@@ -760,7 +762,7 @@ foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
 
     $manifestFiles += [ordered]@{
         path     = $repoPath
-        raw_url  = "$baseRawUrl/$repoPath"
+        raw_url  = "$baseRawUrl/${repoPath}?v=$cacheBuster"
         category = $category
     }
 }
