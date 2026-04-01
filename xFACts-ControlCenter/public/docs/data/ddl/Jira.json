@@ -1,0 +1,1001 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "RequestLog",
+                       "description":  "Permanent audit log of all Jira API interactions including successful ticket creations, failures, and queue insert errors.",
+                       "module":  "Jira",
+                       "category":  "Jira",
+                       "dataFlow":  "Process-JiraTicketQueue.ps1 inserts one row per Jira API interaction (both successes and failures). sp_QueueTicket also writes directly to RequestLog when a queue INSERT fails (RequestType = \u0027QueueInsertFailed\u0027, StatusCode = -99). Calling modules query this table for deduplication before queuing new tickets, checking Trigger_Type and Trigger_Value with a successful StatusCode to avoid creating duplicate Jira tickets for the same condition.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "LogID",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this log entry"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "SourceModule",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Module that originated the request (e.g., JobFlow, NoticeRecon)"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "ServiceName",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Service name (typically \u0027Jira\u0027)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "RequestType",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Type of request: CreateTicket, QueueInsertFailed, etc"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "ProjectKey",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Jira project key (e.g., SD)"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "Summary",
+                                           "dataType":  "nvarchar",
+                                           "length":  "1000",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Ticket summary/title"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "TicketKey",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Created ticket key (e.g., SD-12345). NULL if failed. \u0027Email\u0027 if fallback used"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "StatusCode",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HTTP status code: 201=success, 400/401/500=errors, -99=queue failure"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "ResponseMessage",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Full API response or error message"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "CreatedDate",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this log entry was created"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "CreatedBy",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Process or user that created this log entry"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "Trigger_Type",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Category for deduplication lookup (e.g., JobFlow_Stall, DM_Template)"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "Trigger_Value",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Specific identifier (e.g., 2025-12-19, BNEW001)"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "Jira_Assignee",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Assigned user if specified"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Jira_RequestLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "LogID"
+                                       },
+                                       {
+                                           "name":  "IX_Jira_RequestLog_CreatedDate",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "CreatedDate",
+                                           "includedColumns":  "ServiceName, TicketKey, StatusCode"
+                                       },
+                                       {
+                                           "name":  "IX_Jira_RequestLog_SourceModule",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "SourceModule, CreatedDate",
+                                           "includedColumns":  "TicketKey, StatusCode"
+                                       },
+                                       {
+                                           "name":  "IX_Jira_RequestLog_TriggerType_TriggerValue",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "Trigger_Type, Trigger_Value",
+                                           "includedColumns":  "StatusCode, TicketKey"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Append-Only Audit Trail",
+                                               "note":  "Rows are never updated or deleted. Each API interaction generates a separate entry for complete ticket creation history.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Queue Failure Logging",
+                                               "note":  "sp_QueueTicket catches INSERT failures and logs them directly to RequestLog with StatusCode = -99 and RequestType = \u0027QueueInsertFailed\u0027. This ensures visibility even when the queue INSERT itself fails.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Deduplication Source",
+                                               "note":  "Same pattern as Teams: calling modules query RequestLog before queuing tickets to check if a successful creation already exists for the same Trigger_Type and Trigger_Value combination. Prevents duplicate Jira tickets across orchestrator cycles.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "201",
+                                                "meaning":  "Created — ticket exists in Jira",
+                                                "sortOrder":  10
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "400",
+                                                "meaning":  "Bad Request — check custom field IDs and required fields",
+                                                "sortOrder":  11
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "401",
+                                                "meaning":  "Unauthorized — verify credentials in dbo.Credentials",
+                                                "sortOrder":  12
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "403",
+                                                "meaning":  "Forbidden — check user permissions in Jira project",
+                                                "sortOrder":  13
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "404",
+                                                "meaning":  "Not Found — verify ProjectKey and IssueType exist in Jira",
+                                                "sortOrder":  14
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "500+",
+                                                "meaning":  "Server Error — Jira-side issue, retry later",
+                                                "sortOrder":  15
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "-99",
+                                                "meaning":  "Queue insert failed — check sp_QueueTicket error in ResponseMessage",
+                                                "sortOrder":  16
+                                            },
+                                            {
+                                                "column":  "TicketKey",
+                                                "value":  "SD-12345 (example)",
+                                                "meaning":  "Ticket created successfully in Jira — value is the actual Jira ticket key",
+                                                "sortOrder":  20
+                                            },
+                                            {
+                                                "column":  "TicketKey",
+                                                "value":  "Email",
+                                                "meaning":  "Fallback email sent instead of ticket — max retries exhausted",
+                                                "sortOrder":  21
+                                            },
+                                            {
+                                                "column":  "TicketKey",
+                                                "value":  "NULL",
+                                                "meaning":  "API call failed — no ticket or email created",
+                                                "sortOrder":  22
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Recent activity",
+                                           "description":  "Last 20 API interactions showing source module, ticket key, status code, and timestamp.",
+                                           "sql":  "SELECT TOP 20\r\n    SourceModule,\r\n    RequestType,\r\n    ProjectKey,\r\n    Summary,\r\n    TicketKey,\r\n    StatusCode,\r\n    CreatedDate\r\nFROM Jira.RequestLog\r\nORDER BY CreatedDate DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Failed API calls",
+                                           "description":  "All entries with non-success status codes for troubleshooting.",
+                                           "sql":  "SELECT \r\n    LogID,\r\n    SourceModule,\r\n    RequestType,\r\n    ProjectKey,\r\n    Summary,\r\n    StatusCode,\r\n    ResponseMessage,\r\n    CreatedDate\r\nFROM Jira.RequestLog\r\nWHERE StatusCode NOT IN (200, 201) OR StatusCode IS NULL\r\nORDER BY CreatedDate DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Volume by module",
+                                           "description":  "Thirty-day ticket creation counts with success/failure breakdown per source module.",
+                                           "sql":  "SELECT \r\n    SourceModule,\r\n    COUNT(*) AS total_requests,\r\n    SUM(CASE WHEN StatusCode IN (200, 201) THEN 1 ELSE 0 END) AS successful,\r\n    SUM(CASE WHEN StatusCode NOT IN (200, 201) OR StatusCode IS NULL THEN 1 ELSE 0 END) AS failed\r\nFROM Jira.RequestLog\r\nWHERE CreatedDate \u003e= DATEADD(DAY, -30, GETDATE())\r\nGROUP BY SourceModule\r\nORDER BY total_requests DESC;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Standard deduplication pattern",
+                                           "description":  "Calling modules should check this table before queuing to prevent duplicate tickets",
+                                           "sql":  "IF NOT EXISTS (\r\n    SELECT 1 FROM Jira.RequestLog\r\n    WHERE Trigger_Type = @TriggerType\r\n      AND Trigger_Value = @TriggerValue\r\n      AND StatusCode = 201\r\n      AND TicketKey IS NOT NULL\r\n      AND TicketKey != \u0027Email\u0027\r\n)\r\nBEGIN\r\n    EXEC Jira.sp_QueueTicket ...\r\nEND",
+                                           "sortOrder":  10
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Jira.TicketQueue",
+                                                     "note":  "QueueID links log entries back to the original queue row. No FK constraint exists but the column is present for tracing. Multiple RequestLog rows may reference the same QueueID when retries generate additional API calls.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "TicketQueue",
+                       "description":  "Queue table for pending ticket requests awaiting PowerShell processing. Records remain after processing for audit and troubleshooting.",
+                       "module":  "Jira",
+                       "category":  "Jira",
+                       "dataFlow":  "Tickets enter via Jira.sp_QueueTicket (from T-SQL callers) or direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = \u0027Pending\u0027 AND RetryCount \u003c MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "QueueID",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for this queue entry"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "SourceModule",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Module that queued the ticket (e.g., JobFlow, NoticeRecon)"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "ProjectKey",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Jira project key (e.g., SD, DEV)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "Summary",
+                                           "dataType":  "nvarchar",
+                                           "length":  "1000",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Ticket title/summary"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "TicketDescription",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Full ticket description body"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "IssueType",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(\u0027Task\u0027)",
+                                           "description":  "Jira issue type: Task, Issue, Bug, etc"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "TicketPriority",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(\u0027High\u0027)",
+                                           "description":  "Priority: Highest, High, Medium, Low, Lowest"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "Assignee",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Jira username to assign ticket to"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "CascadingField_ID",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Field ID for cascading select (e.g., customfield_18401)"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "CascadingField_ParentValue",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Parent value for cascading select"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "CascadingField_ChildValue",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Child value for cascading select"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "CustomField_ID",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "First generic custom field ID"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "CustomField_Value",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "First generic custom field value"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "CustomField2_ID",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Second generic custom field ID"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "CustomField2_Value",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Second generic custom field value"
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "CustomField3_ID",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Third generic custom field ID"
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "CustomField3_Value",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Third generic custom field value"
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "DueDate",
+                                           "dataType":  "date",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Ticket due date"
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "TriggerType",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Category for deduplication (e.g., JobFlow_Stall, DM_Template)"
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "TriggerValue",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Specific value for deduplication (e.g., date, template code)"
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "EmailRecipients",
+                                           "dataType":  "varchar",
+                                           "length":  "4000",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Semicolon-separated email addresses for fallback if API fails"
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "RequestedDate",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When ticket was queued"
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "ProcessedDate",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When PowerShell processed this entry"
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "TicketKey",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Jira ticket key if created (e.g., SD-12345)"
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "StatusCode",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HTTP status code from Jira API (201 = success)"
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "ResponseMessage",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "API response or error message"
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "TicketStatus",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "(\u0027Pending\u0027)",
+                                           "description":  "Current status: Pending, Success, Failed"
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "RetryCount",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of retry attempts"
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "LastRetryDate",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When last retry was attempted"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Jira_TicketQueue",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "QueueID"
+                                       },
+                                       {
+                                           "name":  "IX_Jira_TicketQueue_SourceModule",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "SourceModule, RequestedDate",
+                                           "includedColumns":  "TicketStatus, TicketKey"
+                                       },
+                                       {
+                                           "name":  "IX_Jira_TicketQueue_Status_RequestedDate",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "TicketStatus, RequestedDate"
+                                       },
+                                       {
+                                           "name":  "IX_Jira_TicketQueue_TriggerType_TriggerValue",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "TriggerType, TriggerValue",
+                                           "includedColumns":  "TicketStatus, TicketKey"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Queue-Based Decoupling",
+                                               "note":  "Same pattern as Teams: calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Email Fallback",
+                                               "note":  "When Jira API calls fail after all retry attempts, the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Generic Custom Field Support",
+                                               "note":  "Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs (e.g., customfield_18401) and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Assignee Retrieval",
+                                               "note":  "After successful ticket creation, the script performs a separate GET request to retrieve the assignee display name from Jira. This captures the actual assignee (which may differ from the requested assignee due to Jira automation rules) and logs it to RequestLog.",
+                                               "sortOrder":  4
+                                           },
+                                           {
+                                               "topic":  "HttpWebRequest for Auth Bypass",
+                                               "note":  "Uses System.Net.HttpWebRequest instead of Invoke-RestMethod because Jira returns WWW-Authenticate: Negotiate, causing PowerShell to attempt Windows integrated auth instead of honoring the Basic auth header.",
+                                               "sortOrder":  5
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "Pending",
+                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "TicketPriority",
+                                                "value":  "Highest",
+                                                "meaning":  "Most urgent tickets requiring immediate attention.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "TicketPriority",
+                                                "value":  "High",
+                                                "meaning":  "Default priority set by sp_QueueTicket. Used for most automated ticket creation.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "Success",
+                                                "meaning":  "Jira ticket created successfully. TicketKey populated with the Jira issue key (e.g., SD-12345).",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "Failed",
+                                                "meaning":  "Jira API call failed. RetryCount incremented, ResponseMessage contains error details. Failed rows are not automatically re-picked up since the pending query filters on TicketStatus = \u0027Pending\u0027.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "TicketPriority",
+                                                "value":  "Medium",
+                                                "meaning":  "Standard priority.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "TicketPriority",
+                                                "value":  "Low",
+                                                "meaning":  "Lower priority items.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "EmailSent",
+                                                "meaning":  "Max retries exhausted and fallback email sent via Database Mail. Terminal status indicating the ticket must be created manually from the email.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "TicketPriority",
+                                                "value":  "Lowest",
+                                                "meaning":  "Least urgent tickets.",
+                                                "sortOrder":  5
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Pending tickets",
+                                           "description":  "Shows tickets awaiting processing with wait time, source module, and retry count.",
+                                           "sql":  "SELECT \r\n    QueueID,\r\n    SourceModule,\r\n    ProjectKey,\r\n    Summary,\r\n    TicketPriority,\r\n    RetryCount,\r\n    RequestedDate,\r\n    DATEDIFF(MINUTE, RequestedDate, GETDATE()) AS minutes_waiting\r\nFROM Jira.TicketQueue\r\nWHERE TicketStatus = \u0027Pending\u0027\r\nORDER BY RequestedDate;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Failed tickets",
+                                           "description":  "Shows failed tickets with error details and retry counts for troubleshooting.",
+                                           "sql":  "SELECT \r\n    QueueID,\r\n    SourceModule,\r\n    ProjectKey,\r\n    Summary,\r\n    TicketStatus,\r\n    RetryCount,\r\n    StatusCode,\r\n    ResponseMessage,\r\n    RequestedDate,\r\n    ProcessedDate\r\nFROM Jira.TicketQueue\r\nWHERE TicketStatus IN (\u0027Failed\u0027, \u0027EmailSent\u0027)\r\nORDER BY ProcessedDate DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Recent processing results",
+                                           "description":  "Last 20 processed tickets showing source, status, ticket key, and timing.",
+                                           "sql":  "SELECT TOP 20\r\n    QueueID,\r\n    SourceModule,\r\n    Summary,\r\n    TicketStatus,\r\n    TicketKey,\r\n    RequestedDate,\r\n    ProcessedDate\r\nFROM Jira.TicketQueue\r\nWHERE ProcessedDate IS NOT NULL\r\nORDER BY ProcessedDate DESC;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Jira.RequestLog",
+                                                     "note":  "Each API interaction (success or failure) creates a RequestLog entry. No FK constraint but QueueID is stored in RequestLog for tracing back to the original queue row.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Orchestrator.ProcessRegistry",
+                                                     "note":  "TR_Jira_TicketQueue_QueueDepth increments running_count on INSERT, signaling the orchestrator engine to launch Process-JiraTicketQueue.ps1 on its next heartbeat.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "dbo.Credentials",
+                                                     "note":  "The processor retrieves Jira API credentials (URL, username, password) from dbo.Credentials using two-tier passphrase decryption. The master passphrase is stored in dbo.GlobalConfig.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+                       {
+                           "name":  "sp_QueueTicket",
+                           "description":  "Queue procedure that inserts Jira ticket requests into TicketQueue for asynchronous processing by the PowerShell processor.",
+                           "module":  "Jira",
+                           "category":  "Jira",
+                           "dataFlow":  "Called by T-SQL modules to queue Jira ticket requests. Inserts one row into Jira.TicketQueue with Pending status. The INSERT triggers TR_Jira_TicketQueue_QueueDepth which signals the orchestrator to launch the processor. On INSERT failure, catches the error and logs directly to Jira.RequestLog with StatusCode = -99 and RequestType = \u0027QueueInsertFailed\u0027.",
+                           "parameters":  [
+                                              {
+                                                  "ordinal":  1,
+                                                  "name":  "@SourceModule",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  2,
+                                                  "name":  "@ProjectKey",
+                                                  "dataType":  "varchar",
+                                                  "length":  "20",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  3,
+                                                  "name":  "@Summary",
+                                                  "dataType":  "nvarchar",
+                                                  "length":  "1000",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  4,
+                                                  "name":  "@Description",
+                                                  "dataType":  "nvarchar",
+                                                  "length":  "MAX",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  5,
+                                                  "name":  "@IssueType",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  6,
+                                                  "name":  "@Priority",
+                                                  "dataType":  "varchar",
+                                                  "length":  "20",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  7,
+                                                  "name":  "@Assignee",
+                                                  "dataType":  "varchar",
+                                                  "length":  "100",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  8,
+                                                  "name":  "@EmailRecipients",
+                                                  "dataType":  "varchar",
+                                                  "length":  "4000",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  9,
+                                                  "name":  "@CascadingField_ID",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  10,
+                                                  "name":  "@CascadingField_ParentValue",
+                                                  "dataType":  "varchar",
+                                                  "length":  "500",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  11,
+                                                  "name":  "@CascadingField_ChildValue",
+                                                  "dataType":  "varchar",
+                                                  "length":  "500",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  12,
+                                                  "name":  "@CustomField_ID",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  13,
+                                                  "name":  "@CustomField_Value",
+                                                  "dataType":  "varchar",
+                                                  "length":  "500",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  14,
+                                                  "name":  "@CustomField2_ID",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  15,
+                                                  "name":  "@CustomField2_Value",
+                                                  "dataType":  "varchar",
+                                                  "length":  "500",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  16,
+                                                  "name":  "@CustomField3_ID",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  17,
+                                                  "name":  "@CustomField3_Value",
+                                                  "dataType":  "varchar",
+                                                  "length":  "500",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  18,
+                                                  "name":  "@DueDate",
+                                                  "dataType":  "date",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  19,
+                                                  "name":  "@TriggerType",
+                                                  "dataType":  "varchar",
+                                                  "length":  "50",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  20,
+                                                  "name":  "@TriggerValue",
+                                                  "dataType":  "varchar",
+                                                  "length":  "200",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              }
+                                          ],
+                           "designNotes":  [
+                                               {
+                                                   "topic":  "Error-Resilient Queuing",
+                                                   "note":  "Wraps the queue INSERT in TRY/CATCH. On failure, logs the error to Jira.RequestLog so there is always a trace of the attempt even when the queue INSERT itself fails. The CATCH block has its own nested TRY/CATCH to handle the unlikely case where the RequestLog INSERT also fails.",
+                                                   "sortOrder":  1
+                                               },
+                                               {
+                                                   "topic":  "Generic Custom Field Mapping",
+                                                   "note":  "Accepts up to three custom fields and one cascading select field via ID/value parameter pairs. This enables callers to target any Jira custom field by ID without requiring schema changes to the queue table when new Jira fields are introduced.",
+                                                   "sortOrder":  2
+                                               }
+                                           ],
+                           "relationshipNotes":  [
+                                                     {
+                                                         "relatedObject":  "Jira.TicketQueue",
+                                                         "note":  "Primary INSERT target. This is the main T-SQL entry point for queuing Jira tickets.",
+                                                         "sortOrder":  1
+                                                     },
+                                                     {
+                                                         "relatedObject":  "Jira.RequestLog",
+                                                         "note":  "Fallback write target on INSERT failure. Logs queue failures directly with StatusCode = -99 so failed attempts are always visible.",
+                                                         "sortOrder":  2
+                                                     }
+                                                 ]
+                       }
+                   ],
+    "triggers":  [
+                     {
+                         "name":  "TR_Jira_TicketQueue_QueueDepth",
+                         "parentTable":  "TicketQueue",
+                         "description":  "INSERT trigger on Jira.TicketQueue that signals the Orchestrator v2 engine when tickets are ready for processing. Enables queue-driven execution of Process-JiraTicketQueue.",
+                         "module":  "Jira",
+                         "category":  "Jira",
+                         "firesOnInsert":  1,
+                         "firesOnUpdate":  0,
+                         "firesOnDelete":  0,
+                         "isEnabled":  1,
+                         "designNotes":  [
+                                             {
+                                                 "topic":  "Queue-Driven Orchestrator Signal",
+                                                 "note":  "INSERT trigger that increments running_count in Orchestrator.ProcessRegistry for Process-JiraTicketQueue. Only updates rows where run_mode = 2 (queue-driven), enabling the orchestrator to launch the processor on-demand rather than on a fixed polling schedule. Counts the number of inserted rows to accurately track queue depth across multi-row inserts.",
+                                                 "sortOrder":  1
+                                             }
+                                         ],
+                         "relationshipNotes":  [
+                                                   {
+                                                       "relatedObject":  "Orchestrator.ProcessRegistry",
+                                                       "note":  "Directly updates ProcessRegistry.running_count to signal queue depth. The orchestrator engine checks running_count on each heartbeat and launches the processor when count \u003e 0.",
+                                                       "sortOrder":  1
+                                                   }
+                                               ]
+                     }
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Process-JiraTicketQueue.ps1",
+                        "description":  "Queue processor that creates Jira tickets via REST API. Claims Pending tickets from TicketQueue, authenticates using encrypted credentials from dbo.Credentials, creates tickets in Jira, retrieves assignee information, updates queue status, and logs results to RequestLog. Sends email fallback via Database Mail when API calls fail after all retry attempts.",
+                        "module":  "Jira Integration",
+                        "category":  "Jira",
+                        "dataFlow":  "Launched by the orchestrator when TR_Jira_TicketQueue_QueueDepth signals queue depth \u003e 0. Retrieves master passphrase from dbo.GlobalConfig, uses two-tier decryption against dbo.Credentials to obtain Jira URL, username, and password. Reads Pending tickets from Jira.TicketQueue (TicketStatus = \u0027Pending\u0027 AND RetryCount \u003c MaxRetries), builds JSON payload mapping queue columns to Jira REST API fields (including custom fields and cascading selects), and creates tickets via POST to /rest/api/2/issue. On success, performs a GET to retrieve the actual assignee, updates TicketQueue with TicketKey and Success status, and logs to Jira.RequestLog. On failure, increments RetryCount and sets TicketStatus to Failed. When max retries are exhausted and EmailRecipients is populated, sends a fallback email via Database Mail and sets TicketStatus to EmailSent.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Queue-Driven Execution",
+                                                "note":  "Runs as a queue-driven process (run_mode = 2) in the orchestrator. Only launched when tickets are waiting, not on a fixed polling schedule.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "HttpWebRequest for Auth Bypass",
+                                                "note":  "Uses System.Net.HttpWebRequest instead of Invoke-RestMethod because Jira returns WWW-Authenticate: Negotiate in the response headers. PowerShell Invoke-RestMethod interprets this as a request for Windows integrated auth and attempts Negotiate authentication instead of using the explicitly provided Basic auth header. HttpWebRequest with PreAuthenticate = true forces Basic auth on the first request.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Two-Tier Credential Decryption",
+                                                "note":  "Credentials are stored encrypted in dbo.Credentials. The master passphrase (from GlobalConfig) decrypts a service-specific passphrase, which in turn decrypts the actual Jira URL, username, and password. No secrets are stored in the script or on disk.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "Email Fallback on API Failure",
+                                                "note":  "When Jira API calls fail after all retry attempts, the script can send a fallback email via Database Mail containing the ticket summary, description, and error details. This ensures the request is not silently lost even when the Jira API is unreachable. Requires EmailRecipients to be populated on the queue row.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "topic":  "Orchestrator v2 Integration",
+                                                "note":  "Accepts TaskId and ProcessId parameters from the orchestrator engine. Calls Complete-OrchestratorTask on completion with status, duration, and a summary of processed/created/failed/email counts. Supports -Execute safeguard (preview mode by default).",
+                                                "sortOrder":  5
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "Jira.TicketQueue",
+                                                      "note":  "Primary data source. Reads Pending rows, updates TicketStatus, TicketKey, StatusCode, ResponseMessage, RetryCount, ProcessedDate, and LastRetryDate after each API interaction.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Jira.RequestLog",
+                                                      "note":  "Write target. Inserts one row per API interaction (success or failure) for complete audit trail.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.Credentials",
+                                                      "note":  "Reads encrypted Jira API credentials (URL, username, password) using two-tier passphrase decryption.",
+                                                      "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.GlobalConfig",
+                                                      "note":  "Reads master passphrase for credential decryption. Also used for retry configuration.",
+                                                      "sortOrder":  4
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
