@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-hub.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>x<span class="fac">FAC</span>ts Secrets Revealed</h1>
+        <div class="subtitle">Everything you wanted to know about xFACts but were afraid to query</div>
+    </div>
+
+    <!-- Navigation -->
+	<!-- Navigation (populated by nav.js) -->
+	<div class="doc-nav"></div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: What Is This Thing? -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>What Is This Thing?</h2>
+
+        <p>xFACts is an enterprise IT operations platform that watches over the systems and processes that keep Frost Arnett running. It monitors servers, tracks jobs, catches problems, and tells people about them &mdash; usually before those people notice something is wrong.</p>
+
+        <p>That's the corporate answer. Here's the real one.</p>
+
+        <p>xFACts is the thing that pings you 25 times in rapid succession at 1:45 AM, causing your dog to scowl at you from the foot of the bed where you were sound asleep moments before. It's the dashboard that shows you exactly which index rebuild is running right now and how long it's been going. It's the reason you found out about the disk space problem <em>before</em> the server ran out. And it's the webpage that lets you see all of this without opening SQL Server Management Studio or writing a single query.</p>
+
+        <p>If you've ever used the Control Center &mdash; the website at <code>http://fa-sqldbb:8085</code> &mdash; you've used xFACts. The Control Center is the front door. Behind it is a SQL Server database, an orchestration engine, a collection of PowerShell scripts, and a whole lot of configuration that makes all of it work together.</p>
+
+        <p>This documentation explains how.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How We Got Here -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How We Got Here</h2>
+
+        <p>The name xFACts &mdash; with the company initials right there in the middle if you look closely &mdash; originally belonged to a Microsoft Access database that Matt built years ago. The "Apps Toolkit" automated common IT tasks like test data generation, API calls, and job monitoring. It was clever, it was useful, and it lived on a single desktop. Extending it to anyone else was... not straightforward.</p>
+
+        <p>The idea of rebuilding it as something everyone could access had been floating around for years. It showed up on annual reviews. It came up in conversations. It sat comfortably on the list of "things we really should get around to doing someday."</p>
+
+        <p>Then in November 2025, a call about tagging anomalies in notice strategies uncovered something more interesting: three Debt Manager job flows hadn't run that day. Not one of them. And nobody had noticed.</p>
+
+        <div class="callout story">
+            <p>That shouldn't happen. Technically there was a daily email that reported everything that ran overnight. But if you've ever seen that email, you understand how a few missing flows could get lost in a wall of green and a few red lines. It's the kind of thing where you give it a quick glance, see mostly good news, and move on with your morning.</p>
+        </div>
+
+        <p>That meeting ended with a simple goal: we need a way to know when our flows don't fire. Something that doesn't rely on reading a massive email. Something that just <em>tells</em> you.</p>
+
+        <p>So it started with one question: "Did our jobs run last night?" Our good friend Claude helped us build out a SQL database that could track overnight activity. That first conversation turned into a table, then a monitoring script, then an alert, then a dashboard, then... well, then it kind of kept going.</p>
+
+        <p>Server health monitoring showed up because "while we're here, let's track disk space too." Backup tracking came next because finding out your backup failed shouldn't require digging through SQL Agent history. Extended Events capture happened because someone asked "can we track blocking?" and the answer was yes. Index maintenance happened because doing it manually during off-hours was getting old.</p>
+
+        <p>Somewhere in there, the original Access database's name got borrowed &mdash; with its creator's blessing &mdash; and applied to a platform that had outgrown the original vision by a fair margin. The x, the FAC, the ts. Same name, same spirit, very different scale.</p>
+
+        <div class="callout tip">
+            <p><strong>The philosophy:</strong> Build exactly what you need. If a tool solves your problem, great. If it gives you 200 features and none of them quite solve your problem, build the one that does. xFACts exists because the specific questions we needed answered weren't being answered by the tools we had.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Big Picture -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Big Picture</h2>
+
+        <p>At the highest level, xFACts has four layers. Everything the platform does flows through them:</p>
+
+        <div class="diagram-container">
+            <div class="arch-flow">
+                <div class="arch-box engine">
+                    The Engine<br>
+                    <span style="font-weight: 400; font-size: 0.85em;">Orchestrator</span>
+                </div>
+                <span class="arch-arrow">→</span>
+                <div class="arch-box modules">
+                    The Modules<br>
+                    <span style="font-weight: 400; font-size: 0.85em;">Collectors &amp; Monitors</span>
+                </div>
+                <span class="arch-arrow">→</span>
+                <div class="arch-box alerts">
+                    The Megaphones<br>
+                    <span style="font-weight: 400; font-size: 0.85em;">Teams &amp; Jira</span>
+                </div>
+            </div>
+            <div style="margin-top: 12px;">
+                <span class="arch-arrow" style="font-size: 1.1em;">↕</span>
+            </div>
+            <div style="margin-top: 8px;">
+                <div class="arch-box ui" style="display: inline-block;">
+                    The Window<br>
+                    <span style="font-weight: 400; font-size: 0.85em;">Control Center</span>
+                </div>
+            </div>
+            <div class="diagram-title">Everything xFACts does flows through these four layers</div>
+        </div>
+
+        <p><strong>The Engine</strong> is the <b>M</b>aster <b>O</b>rchestrator &mdash; a continuously running service that wakes up every few seconds, checks what needs to run, runs it, logs what happened, and goes back to sleep. It doesn't know or care what the individual modules do. It just makes sure they run on time. His friends just call him <b>Mo</b>.</p>
+
+        <p><strong>The Modules</strong> are where the actual work happens. Each module is responsible for one area: server health, backup tracking, job flow monitoring, batch processing, file arrivals, index maintenance. Modules collect data, store it, evaluate it against thresholds, and decide if someone needs to know about something.</p>
+
+        <p><strong>The Megaphones</strong> are Teams and Jira. When a module decides something needs attention, it queues a message for delivery. Dedicated queue processors pick up those messages and send them out. Teams for real-time notifications. Jira for issues that need a ticket and a follow-up.</p>
+
+        <p><strong>The Window</strong> is the Control Center &mdash; the web interface where all of this becomes visible. Every module has a corresponding dashboard page. You can see what's running, what's broken, what happened yesterday, and what's coming up next. No SQL required.</p>
+
+        <p>The database sits in the middle of all of it. Every module writes to it. The Control Center reads from it. The orchestrator coordinates through it. Configuration lives in it. History is preserved in it. It's the single source of truth for everything xFACts knows.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Repeating Pattern -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Pattern That Repeats Everywhere</h2>
+
+        <p>Once you see it, you can't unsee it. Almost every module in xFACts follows the same four-step cycle:</p>
+
+        <div class="pattern-flow">
+            <span class="pattern-step collect">Collect</span>
+            <span class="pattern-arrow">→</span>
+            <span class="pattern-step store">Store</span>
+            <span class="pattern-arrow">→</span>
+            <span class="pattern-step evaluate">Evaluate</span>
+            <span class="pattern-arrow">→</span>
+            <span class="pattern-step alert">Alert</span>
+        </div>
+
+        <p><strong>Collect</strong> &mdash; A PowerShell script reaches out to a server, a database, an SFTP location, or an API. It gathers the current state of whatever it's responsible for monitoring.</p>
+
+        <p><strong>Store</strong> &mdash; That data gets written into xFACts tables. Not a summary, not an aggregate &mdash; the actual data. When did this backup complete? What was the disk free space at 2:47 PM? Which jobs ran and which didn't? It's all captured.</p>
+
+        <p><strong>Evaluate</strong> &mdash; The data gets compared against configured thresholds. Is that disk below 15%? Has that batch been running for more than two hours? Did that file fail to arrive by its escalation time? These aren't hardcoded values &mdash; they're stored in configuration tables, adjustable at runtime without touching any code.</p>
+
+        <p><strong>Alert</strong> &mdash; If evaluation finds something worth reporting, a message gets queued for Teams, a ticket gets queued for Jira, or both. The alerts include the context: what happened, when, and where to look.</p>
+
+        <p>This cycle runs continuously. Every few seconds, the orchestrator checks if any module is due for its next cycle. When it is, the pattern repeats. All day. All night. Weekends. Holidays. Mo doesn't take vacations.</p>
+
+        <div class="callout info">
+            <p><strong>Why this matters:</strong> If you understand this pattern, you understand every module in xFACts. The specifics change &mdash; what's being collected, what the thresholds are, who gets the alert &mdash; but the structure is always the same. Learn it once, apply it everywhere.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Cast of Characters -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Cast of Characters</h2>
+
+        <p>xFACts is organized into modules. Each one owns a piece of the monitoring landscape and minds its own business. They share the same database, the same orchestrator, and the same alert delivery system, but otherwise they're independent. You can add a new module without touching the existing ones. You can disable a module without breaking anything else. That's the whole point.</p>
+
+        <div class="module-grid">
+            <!-- Populated dynamically by nav.js from doc-registry.json -->
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It All Connects -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It All Connects</h2>
+
+        <h3>The Orchestrator</h3>
+        <p>Every process in xFACts is registered in a single table called ProcessRegistry. Each row defines what to run, how often to run it, and what order to run it in relative to everything else. The orchestrator &mdash; a PowerShell service running on FA-SQLDBB &mdash; reads this table on a continuous heartbeat, launches whatever is due, and logs the results.</p>
+
+        <p>This is important because it means <em>nothing is hardcoded</em>. Want to temporarily disable backup monitoring during a maintenance window? Change a flag in the registry. Want to adjust how often disk space gets checked? Update the interval. Want to add an entirely new monitoring process? Insert a row. No code changes. No service restarts. The orchestrator adapts.</p>
+
+        <h3>The Database</h3>
+        <p>The xFACts database lives on the DMPRODAG Availability Group, with DM-PROD-DB as the primary and DM-PROD-REP as the secondary. It's organized into schemas that map to modules: <code>Orchestrator</code>, <code>ServerOps</code>, <code>JobFlow</code>, <code>BatchOps</code>, <code>BIDATA</code>, <code>FileOps</code>, <code>Teams</code>, <code>Jira</code>, <code>DeptOps</code>, and <code>dbo</code> for the shared infrastructure that ties them all together.</p>
+
+        <p>The schemas aren't just organizational &mdash; they're boundaries. A module's tables, procedures, and triggers live in its schema. Cross-schema references exist where they need to (every module talks to Teams, most talk to Jira), but modules don't reach into each other's business tables. If JobFlow needs to send an alert, it queues it for Teams delivery. The integration modules handle the rest.</p>
+
+        <h3>GlobalConfig</h3>
+        <p>Almost everything that can be adjusted lives in one table: <code>dbo.GlobalConfig</code>. Alert thresholds, feature toggles, timing windows, display settings &mdash; if a value might ever need to change without a code deployment, it's in GlobalConfig. Both the backend scripts and the Control Center read from it, which means a single configuration change can affect monitoring behavior and dashboard display simultaneously.</p>
+
+        <h3>The Split Deployment</h3>
+        <p>The database lives on the Availability Group. The orchestrator and Control Center run on FA-SQLDBB. This is deliberate. Collection scripts, web serving, and orchestration overhead happen on a separate server from the production database workload. The only thing that touches the AG is the data itself &mdash; reads and writes. All the processing happens elsewhere.</p>
+
+        <p>This matters because one of the first questions anyone asks about a monitoring platform is "how much overhead does it add to the servers it's monitoring?" The answer for xFACts is: very little, because the heavy lifting happens somewhere else.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Technology Stack -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Technology Stack</h2>
+
+        <p>Nothing exotic. Nothing that requires a separate license. Just tools that were already available, applied with some determination and a lot of help from an AI that only says "you can't do that" about twice a year.</p>
+
+        <table class="tech-table">
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Technology</th>
+                    <th>What It Does</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Database</td>
+                    <td>SQL Server 2017 Enterprise</td>
+                    <td>The brain. All data, configuration, and history lives here on the DMPRODAG Availability Group.</td>
+                </tr>
+                <tr>
+                    <td>Orchestrator</td>
+                    <td>PowerShell + NSSM</td>
+                    <td>The heartbeat. A PowerShell script running as a Windows service, continuously scheduling and executing all monitoring processes.</td>
+                </tr>
+                <tr>
+                    <td>Collection Scripts</td>
+                    <td>PowerShell 5.1</td>
+                    <td>The hands. Scripts that reach out via WinRM, SFTP, REST APIs, and SQL queries to gather data from across the environment.</td>
+                </tr>
+                <tr>
+                    <td>Control Center</td>
+                    <td>Pode (PowerShell Web Framework)</td>
+                    <td>The face. A lightweight web server that turns database queries into dashboards. Also runs as an NSSM service on FA-SQLDBB.</td>
+                </tr>
+                <tr>
+                    <td>Monitoring</td>
+                    <td>Extended Events + DMVs</td>
+                    <td>The eyes and ears. SQL Server's built-in lightweight instrumentation, centrally collected and stored.</td>
+                </tr>
+                <tr>
+                    <td>Alerting</td>
+                    <td>Teams Webhooks + Jira REST API</td>
+                    <td>The megaphones. Adaptive Cards for real-time notifications, automated tickets for follow-up items.</td>
+                </tr>
+                <tr>
+                    <td>Visualization</td>
+                    <td>Chart.js</td>
+                    <td>The charts. Client-side rendering for trend lines, utilization gauges, and historical graphs.</td>
+                </tr>
+                <tr>
+                    <td>Authentication</td>
+                    <td>Windows AD (fac.local)</td>
+                    <td>The bouncer. Same credentials you use to log into your computer.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p class="muted">The entire xFACts platform &mdash; every script, every page, every configuration file &mdash; lives in three folders on FA-SQLDBB plus one database on the AG. That's it. No application servers, no containers, no build pipelines. Just PowerShell, SQL, and stubbornness.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Philosophy -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Philosophy</h2>
+
+        <p>xFACts was not built by a team of developers following an agile methodology with sprint planning and daily standups. It was built by people who got tired of finding out about problems after everyone else already knew.</p>
+
+        <p>That origin shapes everything about how the platform works:</p>
+
+        <p><strong>Build what you need, not what a vendor sells you.</strong> Commercial monitoring tools give you 200 dashboards and none of them answer your specific question. xFACts has fewer dashboards, and every single one was built because someone needed that exact view of that exact data.</p>
+
+        <p><strong>Capture everything, display what matters.</strong> The database stores detailed history &mdash; every backup file, every Extended Events session, every index rebuild. The Control Center shows you the summary. When you need the details, they're there. When you don't, they're not in the way.</p>
+
+        <p><strong>Configuration over code.</strong> Thresholds, schedules, feature flags, alert routing &mdash; all stored in database tables. Changing behavior should never require editing a script and redeploying. Change a value, and the next cycle picks it up.</p>
+
+        <p><strong>Alerts should be actionable.</strong> If an alert doesn't tell you what happened and where to look, it's noise. Every xFACts alert includes context. "Disk space is low" isn't helpful. "E: drive on DM-PROD-DB is at 12% (31 GB free)" is.</p>
+
+        <p><strong>The best documentation is the system itself.</strong> Which is why you're reading this inside the Control Center, the same place you go to actually use the platform. No context-switching. No hunting through a wiki. Everything in one place.</p>
+
+        <div class="callout info">
+            <p>If you can dream it, we can probably build it here. That's not marketing &mdash; it's an invitation. If you have a manual process, a monitoring gap, or a report that would be easier as a dashboard, talk to the Applications Team. The modular architecture means adding new functionality doesn't require touching anything that already works.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Where to Start -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Where to Start</h2>
+
+        <p>If you're reading this for the first time, here are some suggested paths depending on what you're after:</p>
+
+        <p><strong>I just want to understand the big picture.</strong> You're basically done. The sections above cover what xFACts is, how it's organized, and the pattern everything follows. Scroll back up to <em>The Cast of Characters</em> and click on anything that sounds interesting.</p>
+
+        <p><strong>I want to understand how a specific module works.</strong> Click on it in the grid above. Each module page tells the full story: what problem it solves, how it works, what you see in the Control Center, and how to troubleshoot it.</p>
+
+        <p><strong>I need to maintain or modify something.</strong> Start with the relevant module page for context, then follow the link to its Reference page for technical details &mdash; table schemas, script documentation, and complete DDL.</p>
+
+        <p><strong>I want to understand the infrastructure that ties everything together.</strong> Start with <a href="engine-room.html">The Engine Room</a>. That covers the orchestrator, version tracking, credential management, and protection mechanisms.</p>
+
+        <p><strong>I want to know how the website works.</strong> Head to <a href="controlcenter.html">The Control Center</a> page for architecture, setup, and technical reference.</p>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>	
+	
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p>xFACts Secrets Revealed &mdash; Applications Team, Frost Arnett</p>
+        <p style="margin-top: 4px;">Built with determination, PowerShell, and an AI that rarely says no.</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

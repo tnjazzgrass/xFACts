@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Engine Room — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>The Engine Room</h1>
+        <div class="subtitle">The plumbing, the wiring, the permissions, and the guy who keeps it all running on time</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        The Engine Room doesn't monitor anything itself. It's the shared infrastructure that every module in xFACts depends on &mdash; the scheduler that runs everything on time, the configuration system that makes things adjustable without code changes, the version tracking that knows what's deployed, the safety net that prevents accidental destruction, and the permission system that controls who can see what and do what.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>When you build a monitoring platform, the first thing you build is a monitoring script. Then another one. Then a third. Pretty soon you've got a dozen scripts that all need to run on different schedules, and you're using SQL Agent jobs to coordinate them, and it takes three and a half minutes of overhead just to figure out what's due to run.</p>
+
+        <p>Then someone asks "what version of that procedure is in production?" and you realize you don't actually know.</p> 
+		
+		<p>Then someone asks "where are the passwords stored?" and you hope the answer isn't "in plain text in the script." <br>
+		<i>(Except that it is - just go ask a developer where the passwords for the python scripts are...)</i></p> 
+		
+		<p>Then someone almost drops a table in production by accident and you realize there's nothing stopping them except luck.</p>
+
+        <p>Then someone says "can my team use this?" and you realize that "everyone can do everything" is a great policy right up until someone moves a production job to the wrong server during lunch.</p>
+
+        <p>The Engine Room exists because every one of those things happened. These are the problems you solve after the monitoring works but before you can sleep at night.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Meet Mo -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Meet Mo</h2>
+
+        <div class="callout story">
+            <p>The word "orchestrator" can be a bit triggering for certain individuals around here. So when it came time to name the thing that coordinates all of xFACts' processes, we went with "Mo" instead. Short for Master Orchestrator. Matt's blood pressure stays normal. Everyone wins.</p>
+        </div>
+
+        <p>Mo is a service that runs continuously on its own server. On a configurable heartbeat, he wakes up, checks what needs to run, runs it, logs what happened, and goes back to sleep. He doesn't know or care what the individual modules do. JobFlow monitors job flows. ServerOps watches disk space. BIDATA checks the data warehouse. Mo just calls each one when it's time and writes down what happened. Very zen. Very reliable.</p>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Wake Up</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Check What's<br>Due</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Run It</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Log What<br>Happened</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">Sleep</div>
+            </div>
+            <div class="flow-caption">Mo's heartbeat cycle &mdash; continuously, forever</div>
+        </div>
+
+        <p>The beauty of it is that nothing is hardcoded. Want to temporarily disable a process during maintenance? Change a flag. Want to adjust how often something runs? Update the interval. Want to add an entirely new monitoring process? Add a row. No code changes. No service restarts. Mo adapts on the next heartbeat.</p>
+
+        <div class="callout info">
+            <p><strong>Historical note:</strong> Mo had a predecessor &mdash; a stored procedure running inside a SQL Agent job. Same concept, far less capable. Fixed five-minute cycle for everything, no output capture, and over three minutes of overhead per run. The current Mo runs as a dedicated service with per-process scheduling, full output capture, and sub-second overhead. Mo Sr. served well. Mo Jr. just has a better r&eacute;sum&eacute;.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Toolkit -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Toolkit</h2>
+
+        <p>Beyond Mo, the Engine Room provides the shared tools that every module relies on. Think of it as the building's infrastructure &mdash; you don't notice the electrical panel, the security desk, or the HVAC system until one of them stops working.</p>
+
+        <p><strong>Configuration.</strong> Almost everything in xFACts that can be adjusted lives in one table. Alert thresholds, feature toggles, timing windows, display settings. Change a value, and within minutes every script and every dashboard page is using it. Nobody edits code to change a threshold. That's the whole point.</p>
+
+        <p><strong>Version tracking.</strong> Every table, procedure, trigger, and script in xFACts is cataloged and versioned at the component level. When something changes, a version entry is recorded with what changed, when, and by whom. The history accumulates naturally &mdash; no more archaeology expeditions through source control to answer "what was running last Tuesday?"</p>
+
+        <p><strong>Credentials.</strong> External integrations need API keys, webhook URLs, and passwords. Those are stored encrypted in the database with a two-tier encryption model. Scripts retrieve what they need at runtime. Nothing sensitive lives on disk. Nothing sensitive lives in a script file.</p>
+
+        <p><strong>Holidays.</strong> Several modules need to know whether today is a business day. File monitoring schedules, index maintenance windows, and batch processing expectations all change on holidays. One shared calendar, consumed by any module that needs it.</p>
+
+        <p><strong>Audit trails.</strong> Who changed that configuration setting? Did that Teams alert actually get delivered? When did that script last run, and what happened? The Engine Room maintains multiple audit trails so that when someone asks "what happened?" at 9 AM, the evidence is already there.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Safety Net -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Safety Net</h2>
+
+        <p>Accidents happen. Someone runs a script in the wrong database. Someone tries to drop a table they thought was temporary. Someone gets a little too comfortable with the DELETE key at 4:45 PM on a Friday.</p>
+
+        <p>A protection system intercepts destructive commands and checks if the target is a critical xFACts object. If it is? Blocked. Rolled back. Logged. This isn't security &mdash; database permissions handle that. This is a safety net against <em>mistakes</em>. The kind that happen when you're in a hurry and the wrong query window is active.</p>
+
+        <p><em>"I'm sorry, Dave. I'm afraid I can't do that."</em></p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Who Gets In -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Who Gets In</h2>
+
+        <p>Once you build a dashboard with buttons that do things &mdash; useful things, dangerous things, <em>fun</em> things &mdash; someone's going to ask "can my team use this?" And now you have questions that keep you up at night. Can they see everything? Should they? What about that button that moves production jobs between servers?</p>
+
+        <p>The permission system answers three questions for every user on every page:</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Question</th><th>Short Answer</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Are you who you say you are?</td><td>Active Directory handles this &mdash; same login as your computer</td></tr>
+                <tr><td>Are you allowed to be here?</td><td>Your AD group maps to a role, and roles determine which pages you can access</td></tr>
+                <tr><td>Are you allowed to do <em>that</em>?</td><td>Each button and action has its own permission check &mdash; looking doesn't mean touching</td></tr>
+            </tbody>
+        </table>
+
+        <p>Adding a new team is entirely configuration &mdash; create the AD groups, add the role mappings, and they're in. No code changes. No deployment. IT manages <em>who you are</em>. The Applications Team manages <em>what that means</em>. Neither team needs to coordinate with the other for routine access changes.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>The Engine Room is the foundation that makes xFACts work. Mo keeps the trains running on time. The configuration system makes changes painless. The version tracking maintains history. The protection prevents disasters. The credentials keep secrets safe. The permissions make sure the right people see the right things.</p>
+
+        <p>None of it is exciting. All of it is necessary.</p>
+
+        <p>When you're troubleshooting at 2 AM and you can see exactly what ran, when, and what failed &mdash; that's the Engine Room. When someone almost drops a critical table and gets stopped &mdash; that's the Engine Room. When a new department gets access to their own dashboard without anyone writing a single line of code &mdash; still the Engine Room.</p>
+
+        <p>It's infrastructure. It's supposed to be invisible. But it's nice to know it's there, quietly making sure everything else can shine.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/engine-room-arch.html" class="ref-link">&#x1F527; Engine Room Architecture &mdash; How the plumbing works under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/engine-room-ref.html" class="ref-link">&#x1F4CB; Engine Room Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

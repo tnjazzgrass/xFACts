@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBCC Operations — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>DBCC Operations</h1>
+        <div class="subtitle">Trust, but verify &mdash; because "the data looks fine" isn't an integrity strategy</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        DBCC Operations runs scheduled integrity checks against every enrolled database, confirming that the data on disk is physically sound, the allocation structures are consistent, and the constraints your application depends on are actually being enforced. It doesn't fix problems &mdash; it finds them before they find you.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Databases don't just break with a bang. They break quietly. A bit flips on a storage subsystem. A page gets corrupted during a firmware update nobody noticed. A foreign key that was supposed to protect referential integrity has been silently violated for months because something bypassed the application layer.</p>
+
+        <p>The insidious part? Everything keeps working. Queries return results. Reports generate on schedule. Users don't notice. And then one day, a backup restore fails, or a critical report returns garbage data, or someone discovers that 200,000 account records point to a client that doesn't exist anymore.</p>
+
+        <p>SQL Server has built-in tools to detect these problems. But they have to actually be <em>run</em>. On a schedule. Against every database. With someone paying attention to the results. That's what DBCC Operations does.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: What Gets Checked -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>What Gets Checked</h2>
+
+        <p>Not all integrity checks are created equal. Some take seconds. One takes nine hours. Mixing them together on the same schedule would be like scheduling a dental cleaning and open-heart surgery in the same appointment slot because they're both "medical procedures."</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Check</th><th>What It Verifies</th><th>How Long It Takes</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Full Integrity Check</strong></td>
+                    <td>Everything &mdash; physical page structure, allocation consistency, logical relationships between objects. The gold standard.</td>
+                    <td>Hours for large databases</td>
+                </tr>
+                <tr>
+                    <td><strong>Allocation Check</strong></td>
+                    <td>Page and extent allocation structures. Makes sure the storage bookkeeping is consistent.</td>
+                    <td>Seconds to minutes</td>
+                </tr>
+                <tr>
+                    <td><strong>Catalog Check</strong></td>
+                    <td>System catalog consistency. Verifies the database's internal table relationships are intact.</td>
+                    <td>Seconds</td>
+                </tr>
+                <tr>
+                    <td><strong>Constraint Check</strong></td>
+                    <td>Foreign key and check constraint validation. Finds data that violates the rules your application assumes are being enforced.</td>
+                    <td>Minutes to hours</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Each check type runs independently, on its own schedule, at the database level. The lightweight checks can run on weekday evenings without anyone noticing. The heavy integrity check runs on weekends when nobody's around to complain about the I/O.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Schedule<br>Says Go</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Claim<br>the Work</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Run the<br>Check</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Log the<br>Result</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step red-step">Alert if<br>Not Clean</div>
+            </div>
+            <div class="flow-caption">From schedule trigger to result &mdash; lightweight checks finish in seconds, the big one takes hours</div>
+        </div>
+
+        <p>Each database has its own schedule &mdash; which checks to run, which day, what time. On each cycle, the system looks at what's due, claims all the pending work up front, then works through it from lightest to heaviest. Catalog checks go first (seconds), then allocation checks (minutes), then constraint checks (longer), and finally the big integrity check (hours).</p>
+
+        <p>The claim-first approach means multiple runs can overlap safely. If one run is still grinding through a nine-hour integrity check when the next cycle fires, the new run sees the work is already claimed and moves on. No duplicates, no conflicts, no wasted effort.</p>
+
+        <p>For databases in an Always On Availability Group, the checks run on the secondary replica rather than the primary. Same data, zero production impact. The system figures out which server is the secondary automatically &mdash; no manual reconfiguration needed when a failover happens.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: When Things Go Wrong -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>When Things Go Wrong</h2>
+
+        <p>A clean check produces a quiet log entry and moves on. A problem produces noise &mdash; deliberately.</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Situation</th><th>Response</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Physical corruption detected</strong></td>
+                    <td>Teams alert and Jira ticket with recommended actions. This is the "stop what you're doing" scenario.</td>
+                </tr>
+                <tr>
+                    <td><strong>Constraint violations found</strong></td>
+                    <td>Teams alert with a count of affected constraints. Details available in the Control Center for investigation.</td>
+                </tr>
+                <tr>
+                    <td><strong>Check failed to run</strong></td>
+                    <td>Teams alert. Usually means a connectivity issue or the database wasn't available. Will be retried on the next scheduled cycle.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Constraint violations are a different animal from physical corruption. Corruption means the storage layer has a problem. Constraint violations mean the <em>data</em> has a problem &mdash; rows that shouldn't exist, references that point nowhere. The Control Center page lets you drill into the specifics so you can figure out what happened and how to fix it.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Control Center View</h2>
+
+        <p>The DBCC Operations page in the Control Center provides a live view of integrity check activity. You can see what's running right now (with progress for long-running checks), what's waiting in the queue, what ran recently, and how long things are taking over time. For constraint checks, you can drill into the violations and investigate the actual offending data.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>Databases are not self-policing. Data corruption and constraint violations happen silently, and they compound over time. The longer you go without checking, the bigger the surprise when you finally do.</p>
+
+        <p>DBCC Operations makes integrity verification automatic, scheduled, and visible. Every check is logged. Every problem generates an alert. And the heavy lifting happens on the secondary replica so production never feels it.</p>
+
+        <p>It's the database equivalent of a smoke detector. Boring when everything's fine. Invaluable the one time it isn't.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/dbcc-arch.html" class="ref-link">&#x1F527; DBCC Operations Architecture &mdash; How integrity checks are scheduled, claimed, and executed</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/dbcc-ref.html" class="ref-link">&#x1F4CB; DBCC Operations Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

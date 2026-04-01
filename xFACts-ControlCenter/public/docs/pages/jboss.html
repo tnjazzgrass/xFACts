@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JBoss Monitoring &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>JBoss Monitoring</h1>
+        <div class="subtitle">Cracking open the JBoss black box &mdash; because &ldquo;have you tried restarting it?&rdquo; is not a monitoring strategy</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Debt Manager runs on JBoss. JBoss runs on three application servers. When one of those servers decides to take an unscheduled nap, nobody knows until users start complaining and the database starts screaming. This module watches the application servers directly &mdash; not the database symptoms, but the actual engines that run DM.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Black Box -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Black Box</h2>
+
+        <p>Here&rsquo;s a fun fact: the team responsible for keeping Debt Manager running has never had any real visibility into the application servers that host it.</p>
+
+        <p>We know SQL Server inside and out. We can diagnose blocking chains and trace wait statistics in our sleep. But when the problem isn&rsquo;t the database &mdash; when the <em>application layer</em> freezes and the database is just the innocent bystander &mdash; we&rsquo;ve historically had one diagnostic tool: someone says &ldquo;DM is slow&rdquo; and someone else says &ldquo;let me restart JBoss.&rdquo;</p>
+
+        <p>JBoss has a management interface. It was clearly designed by people who enjoy reading XML recreationally. It has hundreds of metrics organized in a tree structure that makes perfect sense if you already know exactly what you&rsquo;re looking for, and is completely impenetrable if you don&rsquo;t. Think of it as a filing cabinet where every drawer is labeled in a language you almost speak.</p>
+
+        <p>This module translates all of that into something a human being would actually want to look at.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: What We're Watching -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>What We&rsquo;re Watching</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Is It<br>Alive?</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Is the Engine<br>Running?</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">How Is It<br>Feeling?</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Are the Queues<br>Flowing?</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">Did Anything<br>Change?</div>
+            </div>
+            <div class="flow-caption">Five questions, three servers, every 60 seconds</div>
+        </div>
+
+        <p>On each scheduled execution the script reaches out to all three DM application servers and asks a series of increasingly nosy questions.</p>
+
+        <p><strong>Are you alive?</strong> A simple web request to the DM splash page. If the server responds, the front door is open. If it doesn&rsquo;t, the server may be frozen, crashed, or just ignoring us. This is the fastest, most direct freeze detection possible &mdash; no waiting for database-side symptoms to build up.</p>
+
+        <p><strong>Is the engine running?</strong> A check on the Windows service that hosts JBoss. Here&rsquo;s the insidious thing about JBoss freezes: the Windows service happily reports &ldquo;Running&rdquo; even when the application inside is completely locked up. The process is alive but nobody&rsquo;s home. It&rsquo;s the IT equivalent of the lights being on with nobody answering the door.</p>
+
+        <p><strong>How is it feeling?</strong> This is where it gets interesting. Through the JBoss Management API, we pull metrics that were previously invisible: how much memory JBoss is chewing through, how many threads are active, how fast the database connection pool is being consumed, how many transactions are committing versus timing out.</p>
+
+        <p><strong>Are the queues flowing?</strong> JBoss processes work through internal message queues. When queues back up, it&rsquo;s like a traffic jam that hasn&rsquo;t reached the highway yet &mdash; users haven&rsquo;t noticed, but they&rsquo;re about to.</p>
+
+        <p><strong>Did anything change?</strong> Configuration values like pool sizes and thread counts are tracked. If someone changed a setting on Tuesday, and performance tanks on Wednesday, we can connect those dots instead of staring at each other in a meeting.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Three Servers, Three Personalities -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Three Servers, Three Personalities</h2>
+
+        <p>The DM environment runs across three application servers, and they are not created equal.</p>
+
+        <p><strong>APP</strong> is essentially the internal operations manager. It houses the Debt Manager domain controller that coordinates the other two, handles scheduled DM system processes, and generally keeps the trains running. It also handles the mail, because apparently the operations manager always gets stuck with the mail.</p>
+
+        <p><strong>APP2</strong> is where the end users live. The link everyone clicks to open Debt Manager in Sharepoint points here. It handles the heaviest interactive load and is historically the server most likely to have a bad day. If JBoss is going to freeze somewhere, the smart money is on APP2.</p>
+
+        <p><strong>APP3</strong> handles the heavy lifting &mdash; file uploads, rules engine processing, data loading. The stuff that would make APP2 even more miserable if it had to do it alongside serving users.</p>
+
+        <p>Each server runs its own independent JBoss instance. They don&rsquo;t share memory, threads, or connection pools. When one server freezes, the other two keep going, blissfully unaware. That&rsquo;s why we monitor each one separately &mdash; the health of one tells you absolutely nothing about the others.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Control Center View</h2>
+
+        <p>The monitoring page shows all three servers side by side. Each server card is a self-contained health dashboard: status badges across the top for quick pass/fail, then a stack of metric cards showing what&rsquo;s happening inside the engine.</p>
+
+        <p>Every metric card has a <strong>?</strong> button that explains what you&rsquo;re looking at in plain English. We built this for ourselves as much as anyone &mdash; because half of understanding JBoss is learning what &ldquo;heuristic transaction&rdquo; means and then realizing you didn&rsquo;t need to know.</p>
+
+        <p>Admins can also redirect which server the DM SharePoint link points to, right from the dashboard. When a server needs a restart, redirecting users is one click instead of a manual SharePoint edit.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>For years, the application servers were the one part of the Debt Manager stack we couldn&rsquo;t see into. The database? Monitored to the millisecond. The batch pipeline? Tracked through every status change. The app servers? &ldquo;Restart them and hope for the best.&rdquo;</p>
+
+        <p>This module opens the hood. Memory, threads, connections, transactions, work queues &mdash; all the things JBoss knows about itself but never bothered to tell us in a useful format. Now it tells us every 60 seconds, in a language that doesn&rsquo;t require a JBoss certification to understand.</p>
+
+        <p>We&rsquo;re still learning what &ldquo;normal&rdquo; looks like for these servers. The patterns will get clearer over time. But we can already see things we&rsquo;ve never seen before &mdash; and the first time we catch a freeze forming before users notice, the entire module will have paid for itself.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/jboss-arch.html" class="ref-link">&#x1F527; JBoss Monitoring Architecture &mdash; How we cracked JBoss open</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/jboss-ref.html" class="ref-link">&#x1F4CB; JBoss Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

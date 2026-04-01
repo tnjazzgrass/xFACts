@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Control Center &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>The Control Center</h1>
+        <div class="subtitle">The website you&rsquo;re probably already using &mdash; now with an explanation</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        The Control Center is the web interface that turns xFACts data into something you can actually look at without writing SQL. If you&rsquo;ve ever checked a server&rsquo;s memory, watched a batch process, or wondered why your Teams channel just exploded at 1:45 AM, you&rsquo;ve used this. It lives at <code>http://fa-sqldbb:8085</code> and it&rsquo;s always on.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: What It Does -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>What It Does</h2>
+
+        <p>Every module in xFACts collects data, evaluates it, and stores it in the database. That&rsquo;s useful, but only if someone can <em>see</em> it. The Control Center is the seeing part.</p>
+
+        <p>Each monitoring module has its own dedicated page. Server Health has a page. Backup Monitoring has a page. Job/Flow has a page. They don&rsquo;t share screens or step on each other. You go to the page for the thing you care about, and everything about that thing is right there.</p>
+
+        <p>The pages are live. Most of them refresh automatically on a regular interval &mdash; some every five seconds, some every thirty, depending on how fast the underlying data changes. You don&rsquo;t need to hit F5. You don&rsquo;t need to click a refresh button. Open the page, and it stays current.</p>
+
+        <div class="callout info">
+            <p>There are also departmental pages for teams outside of IT. Business Services, Client Relations, and Business Intelligence each have their own space with tools specific to their workflows. Same technology, different audience.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Getting Around -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Getting Around</h2>
+
+        <p>When you first visit the Control Center, you&rsquo;ll be asked to sign in with your normal Windows credentials. Same username and password you use to log into your computer. Once you&rsquo;re in, you land on the home page &mdash; a grid of cards, one per feature.</p>
+
+        <p>Click a card, and you&rsquo;re on that feature&rsquo;s page. That&rsquo;s it. There&rsquo;s no menu hierarchy to navigate, no breadcrumb trail to follow. Each page is self-contained. When you want something else, go back to the home page and click a different card.</p>
+
+        <p>The home page groups cards into sections. Monitoring pages are at the top. Departmental pages are below them. If you only have access to specific department pages, you&rsquo;ll be redirected straight to yours &mdash; the home page stays out of the way.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Things Every Page Shares -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Things Every Page Shares</h2>
+
+        <p>Even though each page does its own thing, they all share a few common elements.</p>
+
+        <h3>Engine Indicators</h3>
+
+        <p>Every monitoring page has small indicator cards near the top that represent the orchestrator processes feeding that page with data. These update in real time over a persistent connection to the server, independently of the page&rsquo;s own refresh cycle.</p>
+
+        <p>When a process fires, its indicator changes to a blue color and displays a running message. When it finishes it displays changes color and then starts a countdown to the next run. If the last run was successful, the indicator turns green, If a process fails, the indicator turns red. If the orchestrator itself goes quiet for too long, the indicators let you know something might be wrong with the engine &mdash; not just the data.</p>
+
+        <div class="callout tip">
+            <p>Engine indicators are your early warning system. If the data on a page looks stale but the engine indicators are happily counting down, the data is probably just between cycles. If the engine indicators are red or frozen, something upstream may need attention.</p>
+        </div>
+
+        <h3>Idle Detection</h3>
+
+        <p>The Control Center knows when you&rsquo;ve walked away. If a page detects no mouse movement or keyboard activity for a few minutes, it pauses its refresh cycle to conserve resources. When you come back, it picks right back up. There&rsquo;s an overlay that lets you know it paused, so you&rsquo;re never looking at stale data thinking it&rsquo;s current.</p>
+
+        <h3>Connection Awareness</h3>
+
+        <p>If the connection to the server is interrupted &mdash; network hiccup, server restart, someone tripping over a cable &mdash; the page shows a reconnecting banner rather than just silently going stale. If the server comes back quickly, the page reconnects on its own. If it doesn&rsquo;t, the banner tells you something more serious might be going on.</p>
+
+        <h3>The Dark Theme</h3>
+
+        <p>Yes, it&rsquo;s dark mode. No, there isn&rsquo;t a light mode. The decision was made early, it was made deliberately, and it will not be revisited. You&rsquo;re welcome.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: What the Colors Mean -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>What the Colors Mean</h2>
+
+        <p>Color is used consistently across every page to communicate status at a glance:</p>
+
+        <table>
+            <thead>
+                <tr><th>Color</th><th>What It Means</th></tr>
+            </thead>
+            <tbody>
+                <tr><td style="color: #4ec9b0;"><strong>Green</strong></td><td>Healthy, successful, good throughput. Things are working as expected.</td></tr>
+                <tr><td style="color: #dcdcaa;"><strong>Yellow</strong></td><td>Warning. Worth a look, not yet a problem. Approaching a threshold.</td></tr>
+                <tr><td style="color: #ce9178;"><strong>Orange</strong></td><td>Critical. Action recommended. A threshold has been crossed.</td></tr>
+                <tr><td style="color: #f44747;"><strong>Red</strong></td><td>Errors, failures, crisis. Something needs attention now.</td></tr>
+                <tr><td style="color: #569cd6;"><strong>Blue</strong></td><td>In progress. Something is actively running or processing.</td></tr>
+                <tr><td style="color: #d4d4d4;"><strong>White/Gray</strong></td><td>Informational. Neutral data with no status implication.</td></tr>
+            </tbody>
+        </table>
+
+        <p>These aren&rsquo;t arbitrary. If something is green, it&rsquo;s fine. If it&rsquo;s red, go look. You don&rsquo;t need to memorize a legend for every page &mdash; the language is the same everywhere.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Interactive Elements -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Interactive Elements</h2>
+
+        <p>The Control Center isn&rsquo;t just a wall of numbers. Most pages have interactive elements that let you dig deeper.</p>
+
+        <p><strong>Metric cards</strong> are the primary display unit. A number, a label, and usually a color. Many of them are clickable &mdash; click a metric and a chart slides out showing the trend over time. Want to know if today&rsquo;s memory pressure is unusual? Click the PLE card and see the last 24 hours, 7 days, or 30 days.</p>
+
+        <p><strong>Slideouts</strong> are panels that slide in from the side of the page to show detail without leaving the current view. Click an item to open its slideout, click elsewhere to close it. They&rsquo;re used for execution history, file details, batch timelines &mdash; anywhere the summary needs a deeper story.</p>
+
+        <p><strong>Charts</strong> appear inside slideouts and dedicated sections. They&rsquo;re rendered client-side using Chart.js, which means they&rsquo;re responsive and update in real time. Hover for exact values. Some charts support multiple time ranges.</p>
+
+        <p><strong>Tables</strong> show up where structured data makes more sense than cards. Filter bars let you narrow down by status, type, or date range. Some tables support live filtering as new data arrives.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Administration Page -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Administration Page</h2>
+
+        <p>If you see a small gear icon (&#9881;) in the top-right corner of the home page, you have access to the Administration page. If you don&rsquo;t see it, you don&rsquo;t &mdash; and that&rsquo;s by design.</p>
+
+        <p>The Administration page is where the platform itself is managed. It&rsquo;s the dashboard for the people who keep xFACts running, as opposed to the people who use it to keep everything <em>else</em> running.</p>
+
+        <h3>Process Grid</h3>
+
+        <p>Every automated process in xFACts appears as a card in the Process Grid. Each card shows the process name, its last execution status, a countdown to the next run, and daily success/failure counts. Cards are color-coded &mdash; green for success, red for failure, blue for running, gray for disabled. Click a card to see its recent execution history.</p>
+
+        <h3>Engine Controls</h3>
+
+        <p>The center column has controls for the orchestrator engine itself. A drain mode switch lets you gracefully wind down all processes before a server restart &mdash; no new launches while currently running processes finish up. Service controls let you stop, start, or restart the orchestrator once it&rsquo;s drained. These controls are deliberately restrictive. You can&rsquo;t restart a running engine without draining it first.</p>
+
+        <h3>Execution Timeline</h3>
+
+        <p>A visual canvas showing every process execution across time. Each process gets a row, and each execution is a colored bar. It&rsquo;s the quickest way to answer &ldquo;what happened in the last 30 minutes?&rdquo; without reading a single log entry. Hover a bar for details, click it for the full story.</p>
+
+        <h3>Platform Management</h3>
+
+        <p>Below the timeline, a row of management tools provides access to the inner workings:</p>
+
+        <p><strong>System Metadata</strong> &mdash; the version tracking system. Every component in xFACts has a version history, and this tool lets you browse it, add new entries, and see the full changelog. It&rsquo;s how we know what changed and when.</p>
+
+        <p><strong>Global Configuration</strong> &mdash; the settings that control everything. Alert thresholds, polling intervals, feature flags, display preferences. Change a value here, and the next cycle picks it up. No code changes, no restarts.</p>
+
+        <p><strong>Process Scheduler</strong> &mdash; the process registry editor. Add new processes, adjust intervals, change execution modes, configure dependency groups. Every orchestrated process can be managed here without touching a script or a database table directly.</p>
+
+        <p><strong>Documentation Pipeline</strong> &mdash; generates and publishes the documentation you&rsquo;re reading right now. Extracts DDL reference data, builds JSON files, publishes to Confluence, and exports markdown. All from a set of checkboxes and a button.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It's Built -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It&rsquo;s Built</h2>
+
+        <p>The Control Center runs on Pode, a web framework written in PowerShell. That means the same language that collects the data, processes the alerts, and runs the orchestrator is also the language that serves the web pages. One language, one team, no translation layer.</p>
+
+        <p>It runs as a Windows service on FA-SQLDBB via NSSM. When the server boots, the service starts. When you browse to port 8085, Pode handles the request, authenticates you against Active Directory, and serves the page. Each monitoring page has its own set of four files &mdash; a route script that builds the HTML, an API script that serves the data, a JavaScript file that handles the client-side behavior, and a CSS file for styling.</p>
+
+        <p>The separation is deliberate. Changing how something looks doesn&rsquo;t require touching how it works. Adding a new metric to an API doesn&rsquo;t require rebuilding the page layout. Each piece has one job and does it independently.</p>
+
+        <div class="callout info">
+            <p>The entire Control Center &mdash; every page, every API, every stylesheet &mdash; lives in one folder on one server. There&rsquo;s no build process, no deployment pipeline, no container orchestration. Update a file, restart the service, and the change is live. It&rsquo;s the kind of simplicity you can only get when you&rsquo;re not trying to impress anyone with your infrastructure.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Finding Help -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Finding Help</h2>
+
+        <p>Each monitoring module has its own documentation page right here in xFACts Secrets Revealed. Those pages explain what the module monitors, why it exists, and how it works. They&rsquo;re written for a general audience &mdash; you don&rsquo;t need to be technical to follow along.</p>
+
+        <p>For deeper technical detail &mdash; database schemas, script architecture, process flows &mdash; each module also has an Architecture page. And for the truly curious, Reference pages provide complete field definitions, DDL, and operational queries.</p>
+
+        <p>If something on a Control Center page doesn&rsquo;t make sense or isn&rsquo;t working the way you&rsquo;d expect, the Applications Team is always happy to hear about it. Sometimes the answer is &ldquo;it&rsquo;s a known issue, we&rsquo;re working on it.&rdquo; Sometimes the answer is &ldquo;huh, that&rsquo;s a new one.&rdquo; Either way, we want to know.</p>
+    </div>
+
+    <!-- Architecture Link -->
+    <div style="text-align: center;">
+        <a href="arch/controlcenter-arch.html" class="ref-link">&#x1F527; The Control Center Architecture &mdash; Pode, routing, authentication, and the four-file pattern</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

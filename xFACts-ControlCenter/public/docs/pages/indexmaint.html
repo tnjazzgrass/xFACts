@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Index Maintenance — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Index Maintenance</h1>
+        <div class="subtitle">Rebuilding indexes without stepping on production &mdash; the database equivalent of changing a tire at 60 mph</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Databases have indexes &mdash; think of them as the table of contents that makes looking things up fast instead of slow. Over time they get messy. Index Maintenance finds the messy ones, figures out which ones matter most, and fixes them overnight while nobody's using the system.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Imagine a phone book. When it's new, everything's in order and finding a name takes seconds. Now imagine someone shuffles 30% of the pages. You can still find what you need, but it takes a lot longer. That's what happens to database indexes over time &mdash; normal daily activity gradually scrambles the internal structure until queries that used to be fast start getting slow.</p>
+
+        <p>The traditional fix is a maintenance plan: "rebuild everything Sunday night." Which works great until you have dozens of databases and the maintenance window isn't long enough. Or until a rebuild runs into Monday morning and suddenly the applications are competing with maintenance for resources. Or until someone forgets to add the new database to the maintenance plan and it goes six months without any attention at all.</p>
+
+        <p>Index Maintenance replaces the "rebuild everything and hope for the best" approach with something smarter. It figures out which indexes actually need work, puts them in order of importance, and only does the work during hours when nobody's using the system. If it runs out of time on Tuesday night, the big ones wait for the weekend. Nothing gets lost, nothing gets forgotten, and nothing runs into production.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Find All<br>Indexes</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Check Which<br>Need Work</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Prioritize<br>&amp; Queue</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Rebuild During<br>Safe Hours</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">Refresh<br>Statistics</div>
+            </div>
+            <div class="flow-caption">A pipeline that builds on itself &mdash; you can't fix what you haven't checked, and you can't check what you haven't found</div>
+        </div>
+
+        <p>First, every index across every enrolled database gets cataloged &mdash; a quick pass that finds new ones and notes any that have been removed. Then the deeper check: actually measuring how disorganized each index has gotten, which takes longer but gives the real picture.</p>
+
+        <p>The ones that need attention get queued up, ranked by how important the database is and how badly the index needs fixing. Then the rebuild phase works through the queue during safe hours, checking the clock before every single operation. If the maintenance window closes mid-batch, it stops immediately rather than running into business hours.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Smart Scheduling -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Smart Scheduling</h2>
+
+        <p>The trickiest part isn't the rebuilding &mdash; it's knowing <em>when</em> you're allowed to rebuild. The answer depends on which database, which day, and whether anything unusual is happening.</p>
+
+        <p>If there's a deployment freeze, a month-end close, or a server maintenance window, those take priority and maintenance stands down. If it's a holiday and the office is empty, the system takes advantage of the extra time. Otherwise, the normal per-database schedule applies. All of this gets checked in real time, so you can freeze a single database without affecting anything else.</p>
+
+        <p>Weekdays are the tight windows. When time is limited, the system fits in as much useful work as possible &mdash; skipping the big jobs to squeeze in smaller ones, like packing a suitcase. Weekends and holidays are when the big ones finally get their turn. They've been waiting patiently all week, and now there's room.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Nothing Gets Forgotten -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Nothing Gets Forgotten</h2>
+
+        <p>The priority system makes sure every index eventually gets its turn. Important databases go first, but indexes that keep getting passed over get an automatic boost each time. Eventually they rise high enough in the queue to get selected. No index is permanently ignored.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Control Center View</h2>
+
+        <p>The Index Maintenance page in the Control Center shows the state of the entire pipeline at a glance &mdash; what's queued, what's in progress, and what finished recently.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>The best index maintenance is the kind nobody notices. Queries stay fast. The system handles the messy work overnight. The weekend run finishes the big jobs that accumulated during the week. And nobody gets paged at 7 AM because a maintenance job ran into production hours.</p>
+
+        <p>That's the goal. Let the system worry about it so you don't have to.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/indexmaint-arch.html" class="ref-link">&#x1F527; Index Maintenance Architecture &mdash; How the pipeline works under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/indexmaint-ref.html" class="ref-link">&#x1F4CB; Index Maintenance Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

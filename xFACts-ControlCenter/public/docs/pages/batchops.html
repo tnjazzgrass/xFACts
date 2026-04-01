@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Monitoring — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Batch Monitoring</h1>
+        <div class="subtitle">Watching the pipeline so you don't have to stare at it</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Batch Monitoring watches the Debt Manager batch pipeline &mdash; New Business file uploads, Payment posting, and the nightly maintenance window. It doesn't process batches. It doesn't fix batches. It watches them, and when something goes sideways, it tells you about it before anyone else notices. Think of it as the person in the control room who actually pays attention to the monitors.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Clients send us data. That data arrives as files. Those files become batches. Those batches go through a series of processing stages &mdash; uploading, releasing, merging, posting &mdash; until eventually the accounts land in the system and everyone's happy.</p>
+
+        <p><em>Eventually.</em></p>
+
+        <p>Because somewhere in that chain, things can go wrong. An upload fails. A batch gets stuck in RELEASED and never starts merging. A payment file sits in INPROCESS for three hours while everyone assumes someone else is watching it. And nobody finds out until the next morning when the reports look wrong and a client asks why their data isn't in the system.</p>
+
+        <p>That's a domino effect. Accounts that didn't load. Reports that show the wrong numbers. Someone in Operations having a very long day because nobody noticed the failure until it was too late.</p>
+
+        <p>BatchOps catches failures early &mdash; before they become <em>situations</em>.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Collector<br>Polls DM</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step green">Tracking Table<br>Updated</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step orange">Alert Conditions<br>Evaluated</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step purple">Teams / Jira<br>Notified</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step muted-step">Someone<br>Investigates</div>
+            </div>
+            <div class="flow-caption">Collect → Track → Evaluate → Alert — every 5 minutes</div>
+        </div>
+
+        <p>BatchOps runs two independent collectors, each watching a different batch type. Every 5 minutes, each collector reads the Debt Manager source system through the AG secondary replica, updates its tracking table with the latest state, evaluates alert conditions, and fires notifications when something needs attention.</p>
+
+        <p><strong>The New Business collector</strong> (<code>Collect-NBBatchStatus.ps1</code>) watches file uploads through the merge pipeline. It tracks 8 distinct alert conditions &mdash; upload failures, release failures, stalled merges, queue waits, and more. Each condition has its own deduplication strategy and configurable routing to Teams, Jira, or both.</p>
+
+        <p><strong>The Payment collector</strong> (<code>Collect-PMTBatchStatus.ps1</code>) watches payment batch posting across all batch types &mdash; IMPORT, MANUAL, REVERSAL, and REAPPLY. It tracks journal-level progress during processing and alerts on terminal failures. PARTIAL batches get special handling because they can be re-fired in DM and shouldn't be treated as permanently failed.</p>
+
+        <p><strong>The pre-maintenance summary</strong> (<code>Send-OpenBatchSummary.ps1</code>) runs once daily before the maintenance window. It queries DM directly for anything still in flight and sends a color-coded Adaptive Card to Teams. Green means safe to proceed. Yellow means batches are still processing &mdash; maybe hold off on that reboot.</p>
+
+        <p>It's the automated equivalent of yelling "IS ANYONE STILL IN THE BUILDING?" before locking the doors.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Two Pipelines, One Pattern -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Two Pipelines, One Pattern</h2>
+
+        <p>New Business and Payments are fundamentally different batch types in Debt Manager, but BatchOps monitors them with the same architectural pattern: collect from DM, track in xFACts, evaluate conditions, alert when needed.</p>
+
+        <div class="side-by-side">
+            <div>
+                <h3>New Business</h3>
+                <p>File uploads that go through upload → release → merge. The interesting part is the dual state machine &mdash; a batch has both a <em>batch status</em> (tracking the upload/release lifecycle) and a <em>merge status</em> (tracking what happens after release). Most of the action is in the merge status, because nearly all batches reach RELEASED just fine. It's the merge that gets complicated.</p>
+                <p>Stall detection uses merge log activity &mdash; if the log stops updating but the merge isn't done, something's stuck. Eight alert conditions cover everything from upload failures to queue waits to that awkward state where a batch was released but nothing happened for six hours.</p>
+            </div>
+            <div>
+                <h3>Payments</h3>
+                <p>Payment batches that go through import → processing → posting. The interesting part here is journal-level progress tracking. While a batch is INPROCESS, xFACts counts how many payment journals have posted vs. how many are still pending. This gives real-time visibility into posting progress that DM's batch header status alone doesn't provide.</p>
+                <p>Alert conditions focus on terminal failures &mdash; IMPORTFAILED, FAILED, REVERSALFAILED. PARTIAL gets a WARNING because it's non-terminal; the batch can be re-fired in DM, and the collector watches for that recovery automatically.</p>
+            </div>
+        </div>
+
+        <p>Both collectors run independently under the orchestrator on 5-minute cycles. They don't know about each other and they don't need to. Each one owns its tracking table, its alert evaluation, and its own set of GlobalConfig settings.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Alert System -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Alert System</h2>
+
+        <p>Not all problems are created equal. An upload failure needs a Jira ticket right now. A batch sitting in a queue for 5 hours needs a Teams heads-up. A batch that's been in RELEASED for 8 hours without any merge activity needs someone to notice.</p>
+
+        <p>Each alert condition has three configurable dimensions:</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Dimension</th><th>What It Controls</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Routing</strong></td>
+                    <td>Where the alert goes: Teams only (1), Jira only (2), both (3), or disabled (0). Uses bitwise flags so each condition is independently configurable.</td>
+                </tr>
+                <tr>
+                    <td><strong>Thresholds</strong></td>
+                    <td>How long to wait before alerting. A merge stall after 1 hour of inactivity (12 polling cycles). A queue wait after 5 hours. Each threshold is tuned to the real-world behavior of that condition.</td>
+                </tr>
+                <tr>
+                    <td><strong>Deduplication</strong></td>
+                    <td>How to avoid flooding. Three strategies: one alert per episode (batch_id only), one alert per stall point (batch_id + log position), or daily re-alerting for ongoing conditions (batch_id + date).</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>A master switch (<code>nb_alerting_enabled</code> / <code>pmt_alerting_enabled</code>) controls whether any alerts fire at all. Individual routing settings are only evaluated if the master switch is on. This makes it easy to silence everything during planned maintenance without touching individual settings.</p>
+
+        <div class="callout tip">
+            <p><strong>Why bitwise routing?</strong> A single integer per condition controls two independent outputs. <code>3</code> means both Teams and Jira. <code>1</code> means Teams only. The script checks <code>routing -band 1</code> for Teams and <code>routing -band 2</code> for Jira. Clean, compact, and no need for separate "enable_teams" and "enable_jira" settings per condition.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Pre-Maintenance Summary -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Pre-Maintenance Summary</h2>
+
+        <p>Every evening before the maintenance window, a color-coded Adaptive Card shows up in Teams. It's the batch pipeline's status report &mdash; a quick visual answer to "is anything still running?"</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Section Color</th><th>Meaning</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span class="color-sample" style="background: #4caf50;"></span><strong>Green</strong></td>
+                    <td>All clear. No batches in flight for this type. Safe to proceed.</td>
+                </tr>
+                <tr>
+                    <td><span class="color-sample" style="background: #ffa726;"></span><strong>Yellow</strong></td>
+                    <td>Batches still processing. Details listed with batch IDs, types, statuses, and timestamps.</td>
+                </tr>
+                <tr>
+                    <td><span class="color-sample" style="background: #888888;"></span><strong>Gray</strong></td>
+                    <td>Not monitored yet. BDL and Notice Processing sections appear as placeholders for future expansion.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>The card is built modularly &mdash; each batch type has its own check function that returns a standardized result. Adding a new batch type means writing one function, calling it in the main flow, and the card builder picks it up automatically. The architecture is ready for expansion even though only NB and PMT are active today.</p>
+
+        <p>Unlike the collectors, the summary script queries DM directly rather than reading the tracking tables. This means it reflects the live state at query time, not the last polling snapshot. A subtle distinction that matters when you're making a "safe to reboot?" decision.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Source System Decoupling -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Source System Decoupling</h2>
+
+        <p>BatchOps monitors Debt Manager, but it doesn't <em>depend</em> on Debt Manager's internal logic. The collectors read DM's tables and status codes, but all tracking, stall detection, and alerting logic lives in xFACts. If DM changes how it processes batches, BatchOps keeps working as long as the status codes still mean what they mean.</p>
+
+        <p>This is deliberate. DM is the system of record for batch data. xFACts is the system of record for monitoring that data. The two systems share a read-only boundary &mdash; xFACts reads from DM's secondary replica and never writes back. If the replica is offline, the collectors log the failure and try again next cycle. No data corruption. No interference with production.</p>
+
+        <div class="callout info">
+            <p><strong>AG replica awareness:</strong> Both collectors read from the Availability Group secondary replica by default. The AG configuration (which replica to target) comes from GlobalConfig, and a <code>ForceSourceServer</code> parameter can override it for testing. If the secondary is unavailable, the script fails gracefully and retries on the next orchestrator cycle.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Control Center View</h2>
+
+        <p>The BatchOps page in the Control Center shows the current state of the batch pipeline at a glance. Active batches with their current status, stall indicators, and completion tracking. The data comes directly from the tracking tables that the collectors maintain.</p>
+
+        <p><strong>Collector health</strong> is visible through the <code>BatchOps.Status</code> dashboard &mdash; each collector and the summary script have their own row showing last run time, processing status, and whether the last execution succeeded or failed. If a collector shows IDLE with a <code>last_run_dttm</code> that's more than 10 minutes old, something's wrong with the orchestrator schedule.</p>
+
+        <p><strong>Historical analysis</strong> is available through the tracking tables. Monthly batch volumes, average completion times, failure rates by batch type &mdash; all queryable from the data the collectors maintain as part of their normal operation. No extra collection step needed.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Under the Hood -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Under the Hood</h2>
+
+        <table class="info-table">
+            <thead><tr><th>Object</th><th>Type</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><a href="ref/batchops-ref.html#nb-batch-tracking" class="ref-inline"><code>NB_BatchTracking</code></a></td><td>Table</td><td>New Business batch lifecycle tracking with dual state machine</td></tr>
+                <tr><td><a href="ref/batchops-ref.html#pmt-batch-tracking" class="ref-inline"><code>PMT_BatchTracking</code></a></td><td>Table</td><td>Payment batch tracking with journal-level progress</td></tr>
+                <tr><td><a href="ref/batchops-ref.html#status" class="ref-inline"><code>Status</code></a></td><td>Table</td><td>Collector execution health dashboard</td></tr>
+                <tr><td><a href="ref/batchops-ref.html#collect-nb" class="ref-inline"><code>Collect-NBBatchStatus.ps1</code></a></td><td>Script</td><td>NB collector &mdash; 8 alert conditions, stall detection, dedup</td></tr>
+                <tr><td><a href="ref/batchops-ref.html#collect-pmt" class="ref-inline"><code>Collect-PMTBatchStatus.ps1</code></a></td><td>Script</td><td>PMT collector &mdash; terminal failure alerting, PARTIAL recovery</td></tr>
+                <tr><td><a href="ref/batchops-ref.html#open-batch-summary" class="ref-inline"><code>Send-OpenBatchSummary.ps1</code></a></td><td>Script</td><td>Pre-maintenance summary card to Teams</td></tr>
+            </tbody>
+        </table>
+
+        <p class="muted">For complete field-level details, DDL, and operational queries, see the <a href="ref/batchops-ref.html" style="color: var(--accent-blue); text-decoration: none;">Batch Monitoring Reference</a> page.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>"A batch failed but I didn't get an alert."</strong></p>
+        <p>Start with the master switch: is <code>nb_alerting_enabled</code> (or <code>pmt_alerting_enabled</code>) set to 1 in GlobalConfig? Then check the individual condition's routing value &mdash; 0 means disabled. Then check the deduplication trail: has an alert for this batch already been delivered? Check <code>Teams.RequestLog</code> and <code>Jira.RequestLog</code> for the trigger_type and trigger_value combination.</p>
+
+        <p><strong>"I'm getting duplicate alerts for the same batch."</strong></p>
+        <p>Check the orchestrator schedule. If the collector runs more frequently than expected (overlapping cycles), deduplication checks may not catch the duplicate in time. The orchestrator's fire-and-forget model prevents overlapping execution, but if someone is running the script manually alongside the scheduled cycle, that's two instances evaluating the same conditions.</p>
+
+        <p><strong>"The pre-maintenance card didn't send."</strong></p>
+        <p>Check <code>BatchOps.Status</code> for the Send-OpenBatchSummary row &mdash; did the script run? Check <code>Teams.AlertQueue</code> for a row with trigger_type = 'OpenBatchSummary'. If it's there but stuck in Pending, the Teams processor may not be running. If it's not there, the script didn't get far enough to insert it.</p>
+
+        <p><strong>"A PARTIAL payment batch shows as complete."</strong></p>
+        <p>If you're on a version before the PARTIAL recovery fix, the batch may have been marked complete and then re-fired in DM. The collector now detects this and resets the completion fields automatically. For historical data, manually clear <code>is_complete</code>, <code>completed_status</code>, <code>completed_dttm</code>, and <code>alert_count</code> on the affected row.</p>
+
+        <p><strong>"Stall detection is firing false positives."</strong></p>
+        <p>The stall thresholds are tuned to typical processing times, but large batches or slow DM periods can legitimately exceed them. Increase the relevant threshold in GlobalConfig &mdash; <code>nb_stall_poll_threshold</code> for merge stalls, <code>nb_upload_stall_minutes</code> for upload stalls, etc. The defaults are conservative intentionally.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>Batch processing is one of those things where small problems become big problems if nobody's watching. A failed upload at 2 AM turns into a missing report at 8 AM turns into an unhappy client by noon.</p>
+
+        <p>BatchOps watches so you don't have to. Upload failures get Jira tickets. Stalled merges get Teams alerts. Terminal payment failures get flagged immediately. And every evening, a simple card tells you whether it's safe to start maintenance or whether you should wait five more minutes.</p>
+
+        <p>Two collectors. Three tables. One pre-maintenance card. And the confidence that if something goes wrong in the batch pipeline, you'll know about it before anyone asks.</p>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="ref/batchops-ref.html" class="ref-link">📋 Batch Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>		
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">← Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

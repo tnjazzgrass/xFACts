@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Replication Monitoring &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Replication Monitoring</h1>
+        <div class="subtitle">Because &ldquo;is the data getting there?&rdquo; shouldn&rsquo;t require a PhD in distribution database archaeology</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        SQL Server replication is the invisible plumbing that keeps data warehouses, reports, and downstream systems fed with current data. When it works, nobody notices. When it breaks, everyone notices. This module makes the invisible visible &mdash; continuously, automatically, and without requiring anyone to sit and stare at a monitor.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Replication is one of those things that works beautifully until it doesn&rsquo;t. And when it doesn&rsquo;t, the first sign is usually someone asking why their numbers look wrong. Or a report showing yesterday&rsquo;s data. Or an awkward silence in a meeting when someone says &ldquo;according to the latest figures&hellip;&rdquo;</p>
+
+        <p>The tools SQL Server provides for watching replication require you to be at your desk, actively looking at them, at the exact moment something goes wrong. That&rsquo;s not monitoring. That&rsquo;s hoping.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Collector<br>Runs</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Agent Health<br>Captured</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Changes<br>Detected</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Latency<br>Measured</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">Complete<br>Picture</div>
+            </div>
+            <div class="flow-caption">One script, three monitoring layers, every 60 seconds</div>
+        </div>
+
+        <p>One script runs on a configurable schedule via the Orchestrator and captures everything in a single pass. No coordination headaches, no timing gaps, no &ldquo;well, the second script should have run by now&hellip;&rdquo;</p>
+
+        <p>It checks three things every cycle. First: <strong>are the replication agents alive and working?</strong> An agent can claim to be &ldquo;Running&rdquo; while thousands of changes pile up behind it, so we also check how fast data is actually flowing and how much is waiting in line. Second: <strong>did anything change since last time?</strong> If an agent was running and now it&rsquo;s not, that&rsquo;s noteworthy. Third: <strong>how long does it actually take for a change to get from point A to point B?</strong> Every five minutes, a tiny test marker is sent through the entire pipeline and timed.</p>
+
+        <p>Think of it like monitoring a highway. Agent health tells you if the road is open. The queue tells you how many cars are waiting. Speed tells you how fast traffic is moving. And the test marker tells you how long it actually takes to drive from one end to the other. Any single metric can be misleading. Together, they tell the whole story.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Nightly Pause -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Nightly Pause</h2>
+
+        <p>Every night, the data warehouse build job needs a consistent snapshot of the data. To get that, it briefly stops the replication agents &mdash; like hitting pause on a conveyor belt so you can count what&rsquo;s on it.</p>
+
+        <p>During this window, changes keep accumulating in the queue. When the agents start back up, everything drains through quickly. The monitoring system knows about this nightly routine and tags those agent stops as expected, so nobody gets a panicked alert at 1 AM about something that&rsquo;s completely normal.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: When Things Go Wrong -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>When Things Go Wrong</h2>
+
+        <p>The value isn&rsquo;t in watching replication work. It&rsquo;s in catching the moment it stops working.</p>
+
+        <p>An agent that stops during the nightly build window? Expected. An agent that stops at noon with no explanation? That gets flagged. A queue that&rsquo;s growing while the delivery speed drops to zero? Something is throttling the pipeline and it&rsquo;s going to get worse before it gets better.</p>
+
+        <p>Every significant event is captured in an event log with timestamps, state transitions, and &mdash; when relevant &mdash; a note about what else was happening at the time. When someone asks &ldquo;what happened to replication last Tuesday?&rdquo; the answer is already there, waiting.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>No more checking replication tools in SSMS. No more discovering at 9 AM that replication stopped at midnight. No more guessing whether a stopped agent is planned maintenance or an actual problem.</p>
+
+        <p>The data pipeline keeps doing its thing. We finally have a window into what that thing is.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/replication-arch.html" class="ref-link">&#x1F527; Replication Monitoring Architecture &mdash; How the monitoring works under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/replication-ref.html" class="ref-link">&#x1F4CB; Replication Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

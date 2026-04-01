@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Monitoring — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>File Monitoring</h1>
+        <div class="subtitle">Because &ldquo;has anyone checked if the file showed up?&rdquo; is not a monitoring strategy</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        FileOps is xFACts' early warning system for incoming files. It watches SFTP directories on a schedule, sends a friendly heads-up when files arrive, and raises the alarm when they don't. It's the difference between "we caught it with two hours to spare" and "so, about yesterday's payments&hellip;"
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem With Files</h2>
+
+        <p>Files are like pizza delivery. When they show up on time, nobody thinks twice. When they don't show up, suddenly everyone's hangry and looking for someone to blame.</p>
+
+        <p>We receive files from clients every day. Some of them are mildly important. Others feed directly into payment processing, batch jobs, and operations with hard deadlines and zero sense of humor about tardiness. Miss the file, miss the deadline. Miss the deadline, and suddenly there's frantic scrambling, apologetic emails, and that particular kind of stress that makes people forget they ever liked their jobs.</p>
+
+        <p>The old way of handling this? Someone would notice. Eventually. Maybe at 3pm when processing was supposed to start at noon. Maybe the next morning. Maybe when a client called asking why their payments didn't go through.</p>
+
+        <p>Not ideal.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Enter FileOps -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Enter FileOps</h2>
+
+        <p>FileOps is the very attentive receptionist who's been told exactly which packages to expect and when. Package arrives? <em>"Your delivery is here!"</em> Package late? <em>"Um, that thing you were waiting for? It's not here and you said it was important, so I'm letting everyone know."</em></p>
+
+        <p>It watches the SFTP server like a hawk with a clipboard, checking for expected files on a configurable schedule. When a file arrives, FileOps logs it and sends a Teams notification. When a file <em>doesn&rsquo;t</em> arrive by deadline, FileOps sounds the alarm &mdash; Teams alert, Jira ticket, all hands on deck.</p>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Wake Up</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step green">Check Configs</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step orange">Scan SFTP</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step purple">Log &amp; Alert</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step muted-step">Sleep</div>
+            </div>
+            <div class="flow-caption">On a configurable schedule, forever. FileOps doesn&rsquo;t take days off.</div>
+        </div>
+
+        <p>The whole thing is configuration-driven. Want to monitor a new file? Add a row. Want to change the escalation time? Update a value. Want to stop monitoring something? Flip a bit. No code changes, no deployments, no bothering anyone on the Applications team (well, maybe a thank-you email).</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: A Day in the Life -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>A Day in the Life</h2>
+
+        <p>Let's follow the Instream Daily file through a typical day.</p>
+
+        <p><strong>8:00 AM</strong> &mdash; FileOps wakes up. Well, it was already awake &mdash; it never sleeps. It checks the config: <em>"Instream Daily, check /Instream/ folder, look for files matching the pattern, weekdays only."</em> Today's Monday, so we're on. Status: <strong>Monitoring</strong>.</p>
+
+        <p><strong>8:05 AM</strong> &mdash; First scan. No file yet. FileOps shrugs (metaphorically) and waits.</p>
+
+        <p><strong>8:10, 8:15, 8:20&hellip;</strong> &mdash; Same story. Scan, no file, wait. FileOps is patient. FileOps has nowhere else to be.</p>
+
+        <p><strong>9:47 AM</strong> &mdash; Wait, what's this? A file! It matches the pattern! FileOps updates the status to <strong>Detected</strong>, logs the event, and fires off a Teams message: <em>"File Detected &mdash; Instream Daily."</em> Someone in the channel sees it, nods approvingly, goes back to their coffee.</p>
+
+        <p><strong>For the rest of the day</strong> &mdash; FileOps moves on. That config is handled for today. Tomorrow, we do it all again.</p>
+
+        <div class="callout story">
+            <p>This is the happy path. Most days look like this. File arrives, we note it, everyone's happy, life goes on. But the reason FileOps exists isn't for the good days. It's for the other kind.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: When Things Go Wrong -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>When Things Go Wrong</h2>
+
+        <p>Same file. Different day. This time the universe has other plans.</p>
+
+        <p><strong>8:00 AM</strong> &mdash; FileOps starts monitoring. Status: <strong>Monitoring</strong>.</p>
+
+        <p><strong>9:00, 10:00, 11:00, 12:00&hellip;</strong> &mdash; No file. FileOps keeps checking. If FileOps had feelings, it would be getting concerned. But it doesn't. Because it's code.</p>
+
+        <p><strong>1:00 PM</strong> &mdash; Escalation time. The config says if there's no file by 1pm, we have a problem. FileOps springs into action:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Action</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr><td>Status update</td><td><strong>Escalated</strong></td></tr>
+                <tr><td>Teams alert</td><td>WARNING &mdash; "File Not Detected &mdash; Instream Daily"</td></tr>
+                <tr><td>Jira ticket</td><td>"Critical Payment Process Check &mdash; Instream Daily"</td></tr>
+            </tbody>
+        </table>
+
+        <p>Now humans are involved. The ticket gets assigned, someone investigates, hopefully the file gets retrieved manually before the 3pm deadline.</p>
+
+        <p><strong>1:23 PM</strong> &mdash; Plot twist! The file finally shows up. FileOps notices on its next scan. It can't undo the escalation &mdash; the ticket's already out there &mdash; but it updates the status to <strong>LateDetected</strong> and sends an INFO alert: <em>"File Detected (Late) &mdash; Instream Daily."</em> Now the dashboard shows the complete story: yes, we escalated, and yes, the file eventually made it.</p>
+
+        <div class="callout tip">
+            <p><strong>Why a separate status?</strong> LateDetected is its own state, not a return to Detected. It tells you two things at a glance: escalation happened, <em>and</em> the file arrived. It also prevents FileOps from re-alerting on every subsequent scan cycle &mdash; once you're LateDetected, you're done for the day.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Night Shift -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Night Shift</h2>
+
+        <p>Not all files keep business hours. The PnS files (Pay-n-Seconds, for the curious) arrive in the wee hours:</p>
+
+        <p><strong>2:30 AM</strong> &mdash; FileOps starts watching the /paynseconds/ folder for two files: ACH and CC.</p>
+
+        <p><strong>2:45 AM</strong> &mdash; An automated process tries to pull these files from the client. If they're there, great. If not, nothing gets pulled.</p>
+
+        <p><strong>3:30 AM</strong> &mdash; Escalation time. If either file is missing, Teams alert and Jira ticket. This gives someone about 25 minutes to manually retrieve the files before processing kicks off at 3:55 AM.</p>
+
+        <p><strong>4:00 AM</strong> &mdash; FileOps stops checking. What's done is done. Either the files made it or they didn't.</p>
+
+        <p>And yes, this runs 7 days a week. Files don't take weekends off, and neither does FileOps.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Cast of Characters -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Cast of Characters</h2>
+
+        <div class="side-by-side">
+            <div>
+                <h3>Joker</h3>
+                <p>No, not that Joker. This is our internal SFTP server where client files land. Joker holds the files; FileOps watches for them. They have a good working relationship. Joker doesn&rsquo;t say much (being a server and all), but FileOps checks in regularly to see what&rsquo;s new.</p>
+            </div>
+            <div>
+                <h3>The Configs</h3>
+                <p>Each file we monitor gets its own configuration entry. The config says what server to check, what folder to look in, what the file looks like, when to start looking, when to panic if it's not there, and when to stop looking entirely. It's a complete description of the anxiety cycle, in database form.</p>
+            </div>
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Object</th><th>Type</th><th>What It Does</th></tr></thead>
+            <tbody>
+                <tr><td><code>ServerConfig</code></td><td>Table</td><td>SFTP servers and their credential references (currently just Joker)</td></tr>
+                <tr><td><code>MonitorConfig</code></td><td>Table</td><td>What files to watch, when to watch, when to panic</td></tr>
+                <tr><td><code>MonitorStatus</code></td><td>Table</td><td>Today's real-time status &mdash; Monitoring, Detected, Escalated, or LateDetected</td></tr>
+                <tr><td><code>MonitorLog</code></td><td>Table</td><td>Historical record of detections and escalations</td></tr>
+                <tr><td><code>sp_AddNewMonitorConfig</code></td><td>Procedure</td><td>Validated way to add new monitors (backup to Control Center UI)</td></tr>
+                <tr><td><code>Scan-SFTPFiles.ps1</code></td><td>Script</td><td>The execution engine &mdash; connects, scans, evaluates, alerts</td></tr>
+            </tbody>
+        </table>
+
+        <p class="muted">For the end-to-end data flows, process lifecycle, and technical details, see the <a href="arch/fileops-arch.html" class="ref-link" style="display: inline; padding: 0; background: none; border: none;">File Monitoring Architecture</a> page.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Why This Matters -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Why This Matters</h2>
+
+        <p>Before FileOps, discovering a missing file was reactive. Someone would notice, usually too late, usually in a panic. The process to recover involved frantic emails, phone calls, and hoping there was still time.</p>
+
+        <p>Now? FileOps gives a 25-minute to 2-hour warning window depending on the file. That's the difference between <em>"we can fix this"</em> and <em>"we're explaining to a client why their payments didn't process."</em></p>
+
+        <p>It's not glamorous work. Watching folders, matching patterns, sending alerts. But it's the kind of work that, when done well, means other people don't have to have bad days.</p>
+
+        <p>And that's worth waking up at 2:30 AM for. Even if you're code.</p>
+    </div>
+
+    <!-- Architecture + Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/fileops-arch.html" class="ref-link">🏗️ File Monitoring Architecture &mdash; Data flows, process lifecycle, and ERD</a>
+        <br><br>
+        <a href="ref/fileops-ref.html" class="ref-link">📋 File Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>		
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">← Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

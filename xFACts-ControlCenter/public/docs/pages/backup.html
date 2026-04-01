@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Monitoring — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Backup Monitoring</h1>
+        <div class="subtitle">Because backups that only exist on the server they're protecting aren't really protecting anything</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Backup Monitoring tracks every backup file from the moment it's created through network copy, cloud upload, and eventual cleanup. It doesn't <em>make</em> backups &mdash; SQL Server handles that. It makes sure those backups actually <em>went somewhere useful</em> and raises the alarm when they didn't.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Every database gets backed up. That's table stakes. But knowing that backups <em>exist</em> isn't the same as knowing they're <em>safe</em>.</p>
+
+        <p>A backup sitting only on the production server isn't protecting you. If that server dies, the backups die with it. Congratulations, you've achieved nothing. A backup copied to a second server is better. A backup uploaded to AWS S3 and stored offsite? Now we're talking real disaster recovery.</p>
+
+        <p>But here's the thing nobody wants to talk about: backup pipelines break <em>silently</em>. The network share fills up. The AWS credentials expire. A server reboots at the wrong time and the copy job never catches up. Everything looks fine until the day you actually need a restore, and then it's a very, very bad day.</p>
+
+        <p>Backup Monitoring exists to catch those silent failures before they become loud ones. It watches the whole pipeline and yells when something stalls.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">SQL Server<br>Makes Backup</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">xFACts<br>Discovers It</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-fork">
+                    <div class="flow-branches">
+                        <div class="flow-branch orange">Copied to<br>Second Server</div>
+                        <div class="flow-branch purple">Uploaded<br>to AWS S3</div>
+                    </div>
+                </div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">Eventually<br>Cleaned Up</div>
+            </div>
+            <div class="flow-caption">From backup creation to offsite storage &mdash; network copy and cloud upload happen in parallel</div>
+        </div>
+
+        <p>Think of it as an assembly line. SQL Server creates backup files on a schedule. xFACts notices those new files and starts tracking them. From there, each file moves through a pipeline: copied to a second server for local redundancy, uploaded to AWS for offsite disaster recovery, and eventually cleaned up when it's old enough that newer backups have taken its place.</p>
+
+        <p>The network copy and cloud upload happen independently &mdash; neither waits for the other. If the network is having a moment, cloud uploads keep going. If AWS is slow, network copies keep going. Each file is tracked through every stage, so at any point you can see exactly where every backup stands.</p>
+
+        <p>The whole process runs automatically, every few minutes, across all enrolled databases on every monitored server &mdash; including databases in Always On Availability Groups, where backups can happen on either node. No manual intervention required. No configuration changes when a failover happens.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Retention -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Retention: The Cleanup Crew</h2>
+
+        <p>Backups are like leftovers in the office fridge. If nobody cleans them up, they accumulate until something breaks. Except instead of a biohazard, you get a full drive at 2 AM.</p>
+
+        <p>Retention keeps things tidy across two storage tiers. Each database is configured with how many recent backups to keep on the local server and on the network copy. When older backups age out of that window, they're cleaned up automatically. Cloud backups in S3 are managed by AWS's own lifecycle rules, independent of xFACts.</p>
+
+        <p>The critical safety rule: <strong>a local backup is never deleted until the network copy is confirmed.</strong> This means even if something goes wrong with the pipeline, you won't accidentally lose your only copy of a backup file.</p>
+
+        <p>When retention does clean up a file, the physical file is removed but the tracking record is preserved permanently. Every backup that ever passed through the system leaves a complete audit trail &mdash; when it was created, when it was copied, when it was uploaded, and when it was cleaned up.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: When Things Go Wrong -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>When Things Go Wrong</h2>
+
+        <p>The whole point of monitoring is catching problems before they become disasters. A dedicated health check evaluates three conditions on a regular cycle:</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Condition</th><th>Severity</th><th>What It Means</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Missing backup</strong></td>
+                    <td><span class="color-sample" style="background: #ef5350;"></span>CRITICAL</td>
+                    <td>No backup detected within the expected window. Something is wrong with the backup job itself.</td>
+                </tr>
+                <tr>
+                    <td><strong>Stale pipeline</strong></td>
+                    <td><span class="color-sample" style="background: #ffa726;"></span>WARNING</td>
+                    <td>A file has been stuck too long waiting to be copied or uploaded. The pipeline is clogged.</td>
+                </tr>
+                <tr>
+                    <td><strong>Failed stage</strong></td>
+                    <td><span class="color-sample" style="background: #ef5350;"></span>CRITICAL</td>
+                    <td>A copy or upload explicitly failed. Investigate immediately.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Alerts are delivered as color-coded cards in Microsoft Teams. The same problem only generates one alert per day &mdash; nobody needs 48 messages about the same broken network share.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Control Center View</h2>
+
+        <p>The Backup Monitoring page in the Control Center provides a live dashboard showing the current state of every enrolled database's backup pipeline. At a glance, you can see which databases have recent successful backups, which files are mid-pipeline, and which ones need attention.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>SQL Server makes the backups. Backup Monitoring makes sure they actually go somewhere useful.</p>
+
+        <p>Every file is tracked from discovery through network copy, cloud upload, and retention. Every failure generates an alert. Every cleanup respects the safety rule. And every file that passes through the system leaves a permanent audit trail.</p>
+
+        <p>It's not the most exciting module in xFACts. But when an auditor asks "can you prove you have offsite backups for the last 90 days?" and the answer takes less than a second &mdash; that's this module earning its keep.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/backup-arch.html" class="ref-link">&#x1F527; Backup Monitoring Architecture &mdash; How the pipeline works under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/backup-ref.html" class="ref-link">&#x1F4CB; Backup Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

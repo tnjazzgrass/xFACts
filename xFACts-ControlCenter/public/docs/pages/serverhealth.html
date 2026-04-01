@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Health &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+<div class="page-wrapper">
+
+    <div class="page-header">
+        <h1>Server Health</h1>
+        <div class="subtitle">Because SQL Server has the memory of a goldfish and your disk drives won&rsquo;t monitor themselves</div>
+    </div>
+
+    <div class="doc-nav"></div>
+
+    <div class="context-bar">
+        Server Health is the always-on surveillance system for your SQL Server fleet. Activity Monitoring captures what&rsquo;s happening inside the database engine &mdash; long-running queries, blocking, deadlocks, memory pressure, connection health. Disk Monitoring watches the drives underneath. Together, they answer the question everyone eventually asks: &ldquo;What happened to the server yesterday afternoon?&rdquo;
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>It&rsquo;s 9 AM. Someone walks over to your desk. &ldquo;The system was slow yesterday afternoon.&rdquo;</p>
+
+        <p>You nod professionally while internally screaming. Because here&rsquo;s the thing about SQL Server &mdash; it&rsquo;s perfectly happy to tell you what&rsquo;s happening <em>right now</em>, but ask about yesterday? Gone. The diagnostic data resets. Logs roll over. By the time someone reports a problem, the evidence has packed its bags and moved to Tahiti.</p>
+
+        <p>And then there&rsquo;s disk space. Running out of it is completely preventable but somehow still catches people off guard. Every. Single. Time. A database grows faster than expected. Log files accumulate. Someone copies a massive backup to the wrong location. And suddenly production is down because the error message says &ldquo;could not allocate space.&rdquo;</p>
+
+        <p>Server Health fixes both problems. Activity Monitoring is the security camera system &mdash; constantly recording so you can answer with data instead of interpretive dance. Disk Monitoring is the early warning system &mdash; catching capacity problems before they become outages.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Activity Monitoring -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Activity Monitoring: The Security Cameras</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">SQL Server<br>Events &amp; DMVs</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Two<br>Collectors</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Stored &amp;<br>Correlated</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Answers<br>When Asked</div>
+            </div>
+            <div class="flow-caption">Extended Events + DMV Polling &mdash; two approaches, one complete picture</div>
+        </div>
+
+        <p>SQL Server provides two fundamentally different kinds of diagnostic data, so we use two collectors.</p>
+
+        <p>The first captures the <strong>drama</strong> &mdash; the database equivalent of car chases and fender benders. Long-running queries that hog resources like your coworker hogs the good conference room. Blocking chains where one slow process creates a traffic jam. Deadlocks where SQL Server coldly picks a victim and terminates them. Server traffic between linked servers that was previously invisible. All captured as discrete events with timestamps you can go back to.</p>
+
+        <p>The second captures the <strong>vital signs</strong> &mdash; continuous snapshots of how the server is feeling. Memory health (imagine a nightclub where the bouncer starts throwing people out every few seconds &mdash; that&rsquo;s what low memory pressure looks like). Connection pool health, including zombie sessions that forgot to leave. Wait statistics, which tell you <em>why</em> the database is slow instead of just <em>that</em> it&rsquo;s slow. Workload indicators that correlate with user reports.</p>
+
+        <p>Together, they&rsquo;re like having a witness AND a medical examiner. Morbid? Maybe. Effective? Absolutely.</p>
+
+        <p>The smart part: when a metric crosses a threshold, the system automatically looks for concurrent events that might explain why. &ldquo;Memory crashed at 2:47 PM&rdquo; is useful. &ldquo;Memory crashed at 2:47 PM and here are the three massive queries that were running&rdquo; is actionable. There&rsquo;s even a diagnostic tool that reads across all the data and produces a plain-English report with recommendations and pre-written text for communicating to users. No more translating database metrics into human.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Disk Monitoring -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Disk Monitoring: The Space Watcher</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Collect<br>Disk Space</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Check<br>Thresholds</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Alert<br>If Needed</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Auto-Resolve<br>On Recovery</div>
+            </div>
+            <div class="flow-caption">Collect, evaluate, alert, resolve &mdash; all automatic</div>
+        </div>
+
+        <p>Disk monitoring is simpler, and it should be. Collect disk space from every server on a regular schedule. Check against thresholds. Alert if something&rsquo;s low. Auto-resolve when it recovers. Send a color-coded summary card every morning. Done.</p>
+
+        <p>Each drive can have its own threshold because context matters. A 10TB data drive at 15% free still has 1.5TB available &mdash; probably fine. A 100GB system drive at 15% only has 15GB left &mdash; that&rsquo;s getting uncomfortable.</p>
+
+        <p>You get <strong>one alert per problem</strong>, not a flood of repeated notifications. The system knows you&rsquo;re already aware. It&rsquo;s polite like that. And the daily summary card is color-coded for instant recognition. Green header means don&rsquo;t even read the details. Yellow means at least one drive is approaching its threshold. Red means action needed. Servers sorted worst-first because when something&rsquo;s on fire, you want to see the fire first.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>SQL Server monitoring is like dental hygiene &mdash; not exciting, but skip it and you&rsquo;ll regret it later. The diagnostic data is powerful but forgetful. Disk drives fill up in slow motion until they don&rsquo;t.</p>
+
+        <p>Server Health does the boring work so you don&rsquo;t have to. Events captured and stored. Metrics building history. Threshold crossings automatically correlated with likely causes. Disk space watched and reported before anyone has to ask.</p>
+
+        <p>When someone asks &ldquo;what happened?&rdquo; you can answer with data. And when a drive starts filling up, you&rsquo;ll know about it before it becomes an outage. That&rsquo;s the whole pitch.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/serverhealth-arch.html" class="ref-link">&#x1F527; Server Health Architecture &mdash; How the collectors, correlation, and alerting work under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/serverhealth-ref.html" class="ref-link">&#x1F4CB; Server Health Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+<script src="../js/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Integration &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Jira Integration</h1>
+        <div class="subtitle">Turning &ldquo;something happened&rdquo; into &ldquo;SD-12345 is assigned to you, due Friday&rdquo;</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Jira Integration is the sibling to <a href="teams.html">Teams Integration</a>. Where Teams tells you something happened, Jira makes sure someone <em>owns</em> it. Same queue-driven architecture, same open-door policy &mdash; any process that can call a stored procedure can create a Jira ticket. Teams is the megaphone. Jira is the clipboard with your name on it.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Notifications are great. You saw the alert. You acknowledged it mentally. You maybe even said &ldquo;I should look into that&rdquo; out loud, which as we all know is the professional equivalent of &ldquo;this will never get done.&rdquo;</p>
+
+        <p>The gap between <em>knowing</em> about an issue and <em>tracking</em> it is where things disappear. Alerts don&rsquo;t have due dates. They don&rsquo;t have assignees. They don&rsquo;t show up in sprint reviews. They exist for about three seconds in your consciousness before getting buried under the next message about someone&rsquo;s lunch plans.</p>
+
+        <p>Jira Integration closes that gap. When something needs human intervention <em>and</em> a paper trail, it creates an actual ticket &mdash; assigned, prioritized, tracked, and impossible to pretend you didn&rsquo;t see.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Module Detects<br>an Issue</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Ticket Gets<br>Queued</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Processor<br>Wakes Up</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Jira Ticket<br>Created</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">Someone<br>Owns It Now</div>
+            </div>
+            <div class="flow-caption">From detection to ticket assignment &mdash; queue-driven, same pattern as Teams</div>
+        </div>
+
+        <p>If you&rsquo;ve read the <a href="teams.html" style="color: var(--accent-blue);">Teams Integration</a> page, this should feel familiar. The pattern is identical: a module detects an issue, drops a ticket request into a queue, and moves on. A dedicated processor picks it up, creates the ticket in Jira via the REST API, and writes the resulting ticket key back for tracking. The calling process never waits for API calls or worries about whether Jira is feeling responsive today.</p>
+
+        <p>The ticket comes out the other end fully formed &mdash; project, summary, description, priority, assignee. It shows up in sprint boards and standup reports. There&rsquo;s no pretending it doesn&rsquo;t exist.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Who Uses It -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Who Uses It</h2>
+
+        <p>Like Teams, the Jira service is an open door. Any process that can execute a stored procedure can create a ticket. The common thread: automation can&rsquo;t fix it, someone needs to own it, and there needs to be proof that someone did.</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Source</th><th>What Gets Ticketed</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>JobFlow</strong></td>
+                    <td>Persistent stalls that need investigation, certain job failures requiring manual intervention</td>
+                </tr>
+                <tr>
+                    <td><strong>FileOps</strong></td>
+                    <td>File delivery issues that need follow-up, escalation scenarios</td>
+                </tr>
+                <tr>
+                    <td><strong>BatchOps</strong></td>
+                    <td>Upload failures that need investigation</td>
+                </tr>
+                <tr>
+                    <td><strong>Notice Recon</strong></td>
+                    <td>New notice templates detected that need configuration &mdash; an external process using the same service</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Teams vs Jira -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Teams vs. Jira: When to Use Which</h2>
+
+        <p>Both are shared services. Both use the same queue-driven pattern. Both accept requests from any process. So when do you use one versus the other?</p>
+
+        <div class="side-by-side">
+            <div>
+                <h3>Teams Is For...</h3>
+                <p>Awareness. Something happened and people should know about it. Status updates, health summaries, early warnings. The audience glances at it, acknowledges the situation, and decides whether to act. Most of the time, no action is needed.</p>
+            </div>
+            <div>
+                <h3>Jira Is For...</h3>
+                <p>Accountability. Something happened and someone needs to <em>do something about it</em>. The ticket has an assignee, a priority, a due date. It shows up in sprint boards. It doesn&rsquo;t go away until someone closes it.</p>
+            </div>
+        </div>
+
+        <p>Some events trigger both. A critical failure might send a Teams alert for immediate awareness <em>and</em> create a Jira ticket for tracking the resolution. The alert says &ldquo;this is happening right now.&rdquo; The ticket says &ldquo;and someone needs to fix it by Friday.&rdquo;</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Safety Nets -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Safety Nets</h2>
+
+        <p>Because a missed ticket means work that doesn&rsquo;t get tracked, which means work that might not get done, the system has layers of protection.</p>
+
+        <p><strong>Deduplication</strong> prevents the same issue from creating five tickets across five monitoring cycles. The condition was reported. One ticket is enough.</p>
+
+        <p><strong>Retry logic</strong> handles transient API failures. If Jira is briefly unreachable, the ticket request stays in the queue and gets tried again on subsequent cycles.</p>
+
+        <p><strong>Email fallback</strong> is the backup parachute. If all retry attempts are exhausted and the ticket still can&rsquo;t be created, an email goes out with the full ticket details. The ticket might not exist in Jira, but someone knows about the underlying problem. Work doesn&rsquo;t vanish just because an API had a bad day.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>Jira Integration turns detection into accountability. The monitoring modules find the problems. Teams tells people about them. Jira makes sure someone <em>owns</em> them.</p>
+
+        <p>The queue keeps calling processes fast. The deduplication keeps ticket counts sane. The retry logic handles API hiccups. The email fallback makes sure nothing important disappears. And the whole thing is an open service &mdash; if your process can call a stored procedure, it can create a tracked, assigned, prioritized ticket without knowing anything about REST APIs or Jira authentication.</p>
+
+        <p>Work that gets tracked gets done. Work that doesn&rsquo;t&hellip; well, that&rsquo;s how things fall through cracks. This module keeps the cracks closed.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/jira-arch.html" class="ref-link">&#x1F527; Jira Integration Architecture &mdash; How tickets get built, retried, and delivered</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/jira-ref.html" class="ref-link">&#x1F4CB; Jira Integration Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

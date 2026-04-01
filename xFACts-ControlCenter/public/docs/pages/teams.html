@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teams Integration &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Teams Integration</h1>
+        <div class="subtitle">The part that actually tells you when something happens</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Teams Integration is a shared service used by every module in xFACts that needs to tell someone about something. It&rsquo;s not a monitoring module itself &mdash; it&rsquo;s the delivery system. Modules detect problems; Teams delivers the news. Whether you mute the channel is between you and your dog.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>SQL Server is <em>amazing</em> at noticing things. Jobs failing. Disks filling up. Processes stalling at 1:30 AM while you&rsquo;re blissfully asleep dreaming about being literally anywhere else.</p>
+
+        <p>What SQL Server is <em>terrible</em> at? Telling anyone about it. It&rsquo;s like having a smoke detector that just&hellip; takes notes. &ldquo;Yep, definitely fire. Very hot. Anyway.&rdquo;</p>
+
+        <p>That&rsquo;s where Teams Integration comes in. It delivers notifications through Microsoft Teams, which everyone already has open. The notification shows up right where you&rsquo;re already looking. Or where you&rsquo;re ignoring messages. Either way, the platform did its job.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Something<br>Happens</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Alert Gets<br>Queued</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Processor<br>Wakes Up</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Card Gets<br>Delivered</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">Everyone Pretends<br>They Saw It</div>
+            </div>
+            <div class="flow-caption">From detection to notification &mdash; queue-driven, no polling, no waiting</div>
+        </div>
+
+        <p>A monitoring module detects an issue and drops a row into a queue table. That&rsquo;s it. No waiting for HTTP calls, no worrying about whether Teams is having a good day. Just a quick &ldquo;hey, someone should know about this&rdquo; and back to work.</p>
+
+        <p>A dedicated processor picks up the queued alert, figures out which Teams channels should receive it based on subscription rules, formats it as a color-coded card, and delivers it. The whole thing is queue-driven &mdash; if nothing is queued, nothing runs. If ten alerts arrive at once, they&rsquo;re all handled in a single batch.</p>
+
+        <p>And it&rsquo;s not exclusive to xFACts modules. Any process that can call a stored procedure can queue an alert. We don&rsquo;t discriminate against outsiders.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Color Code -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Color Code</h2>
+
+        <p>Every alert has a category that determines how it looks in Teams. Think of it as the alert&rsquo;s way of saying &ldquo;how much should you care about this?&rdquo;</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Category</th><th>Color</th><th>Translation</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>CRITICAL</strong></td>
+                    <td><span class="color-sample" style="background: #ef5350;"></span>Red</td>
+                    <td>Stop what you&rsquo;re doing. Yes, even that.</td>
+                </tr>
+                <tr>
+                    <td><strong>WARNING</strong></td>
+                    <td><span class="color-sample" style="background: #ffa726;"></span>Orange</td>
+                    <td>Not an emergency, but maybe don&rsquo;t ignore me?</td>
+                </tr>
+                <tr>
+                    <td><strong>INFO</strong></td>
+                    <td><span class="color-sample" style="background: #4caf50;"></span>Green</td>
+                    <td>Just keeping you posted. No action needed. Probably.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>These categories aren&rsquo;t just cosmetic &mdash; they drive routing. You can configure critical alerts to go to an on-call channel while info alerts go to a general channel. The color-coding makes it possible to glance at your Teams feed and instantly know if you need to care.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Smart Delivery -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Smart Delivery</h2>
+
+        <p>Not every alert needs to go everywhere, and nobody needs the same alert 47 times. The system handles both.</p>
+
+        <p><strong>Routing</strong> controls which alerts end up in which channels. You can send all alerts from one module to one team&rsquo;s channel, only critical alerts to another channel, or mix and match however you need. A single alert can go to multiple channels. Which is how Matt ends up getting 25 notifications at 1:45 AM. The system is working exactly as designed. Muting your general IT channel at bedtime is a life skill.</p>
+
+        <p><strong>Deduplication</strong> prevents alert storms. When a condition persists across multiple monitoring cycles, only the first alert gets delivered. The problem was reported. Once is enough. The dedup resets daily, so a recurring issue still gets flagged each day &mdash; just not each cycle.</p>
+
+        <p><strong>Retry logic</strong> handles the inevitable. When Teams has a moment, the processor retries delivery automatically. If it still can&rsquo;t get through, the alert is marked as failed for investigation rather than silently lost.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>Teams Integration is the megaphone. Every module in xFACts that detects something worth reporting funnels through this service to get the word out. The queue keeps modules fast. The routing keeps channels focused. The deduplication keeps noise down. The retry logic keeps alerts from getting lost.</p>
+
+        <p>It&rsquo;s not glamorous work. But when your phone buzzes with a clear, color-coded card that says exactly what went wrong and where to look &mdash; that&rsquo;s this module doing its job.</p>
+
+        <p>The smoke detector that actually tells you about the fire. That&rsquo;s Teams Integration.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/teams-arch.html" class="ref-link">&#x1F527; Teams Integration Architecture &mdash; How the queue, routing, and delivery work under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/teams-ref.html" class="ref-link">&#x1F4CB; Teams Integration Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

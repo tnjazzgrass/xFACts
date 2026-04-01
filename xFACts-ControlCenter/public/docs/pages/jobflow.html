@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job/Flow Monitoring — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Job/Flow Monitoring</h1>
+        <div class="subtitle">Catching overnight problems at 2:30 AM instead of 9 AM</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Every job that runs through Debt Manager's processing engine &mdash; whether it's part of the nightly flows or an ad-hoc execution during the day &mdash; is tracked by JobFlow. Several hundred jobs run overnight alone. Before JobFlow, a failure at 2 AM meant nobody found out until 9 AM. Now the detection window is minutes instead of hours. That's the difference between "minor inconvenience" and "all-hands emergency meeting with people who haven't had coffee yet."
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Every night, Debt Manager processes several hundred automated jobs organized into specific flows. These flows handle everything from requesting notices to updating account statuses to applying tags. Some finish in a few hours. Others can take considerably longer. (<em>JFDINT01</em>, I see you hiding back there. We need to talk.)</p>
+
+        <p>Before JobFlow existed, if something went wrong at 2 AM, nobody knew until morning. A stalled processing queue at midnight turns into a delayed inventory at 6 AM turns into an unhappy Operations department at 8 AM turns into an executive asking "so... did anyone notice the jobs didn't run?" by 9 AM. Nobody wants to be in that meeting.</p>
+
+        <p>JobFlow closes that gap. Instead of finding out about problems half a day later, we detect issues within minutes. That's enough time to investigate, intervene, and usually fix the problem before anyone with a corner office needs to know it happened.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Config<br>Syncs</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Flows<br>Detected</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Jobs<br>Tracked</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">States<br>Managed</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step red">Problems<br>Flagged</div>
+            </div>
+            <div class="flow-caption">A continuous cycle, all night long, every night</div>
+        </div>
+
+        <p>Think of it as a very attentive night shift worker who checks on everything every few minutes. One monitoring script runs the entire show: it keeps its configuration in sync with Debt Manager, detects when flows start, tracks each job as it progresses, watches for things that stop moving, and flags anything that doesn't look right.</p>
+
+        <p>When something goes wrong, you get notified. Teams message. Jira ticket. While you're still asleep maybe, but at least someone knows.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Flows vs Jobs -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Flows and Jobs</h2>
+
+        <p>Debt Manager's processing runs on two levels. A <strong>job</strong> is a single execution of one or more processing steps &mdash; "Assign Blue Strategy Tag," "Auto Return 365 Day." A <strong>flow</strong> is a container that groups related jobs into a scheduled sequence. The nightly overnight process is organized into about a dozen flows, each containing multiple jobs. Additional jobs run individually throughout the day as ad-hoc executions for reprocessing, cleanup, or one-off tasks.</p>
+
+        <p>JobFlow watches both levels, because problems at either one can have real business impact. A flow that doesn't trigger on schedule could mean sixty jobs that didn't execute &mdash; and some of those jobs are date-sensitive. If a job that says "send a letter on day 5" doesn't run that day, those consumers never get that letter. Tomorrow's run picks up the next batch, and yesterday's are lost. That's the kind of thing that can't be made up after the fact.</p>
+
+        <p>So whether it's a scheduled nightly flow or a one-off ad-hoc job, if it runs through Debt Manager's job engine, JobFlow is tracking it. Nothing escapes.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: What It Catches -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>What It Catches</h2>
+
+        <p>JobFlow watches for three categories of problems, each requiring a different kind of attention:</p>
+
+        <table class="info-table">
+            <thead>
+                <tr><th>Problem</th><th>What It Means</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Processing stalls</strong></td>
+                    <td>Nothing is progressing anywhere in the system. The queue is frozen. This is the fire alarm &mdash; something fundamental has stopped working.</td>
+                </tr>
+                <tr>
+                    <td><strong>Missing flows</strong></td>
+                    <td>A flow that was scheduled to run hasn't started. Maybe someone disabled a trigger. Maybe a prerequisite failed. Maybe Mercury is in retrograde. Either way, we need to know.</td>
+                </tr>
+                <tr>
+                    <td><strong>Hidden failures</strong></td>
+                    <td>A flow "completed" but something went wrong underneath. Jobs that didn't run, jobs that failed silently, jobs where every record was rejected. The system looks green. Everything is <em>not</em> fine.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Not all failures deserve a 2 AM wake-up call. If a notice request job rejected some accounts because they don't meet mailing criteria, that's expected business behavior &mdash; not a system problem. JobFlow distinguishes between genuine failures and business-as-usual rejections, so when you get paged, it's because something actually needs attention.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Control Center View</h2>
+
+        <p>The JobFlow page in the Control Center shows the pulse of overnight processing &mdash; which flows are currently active, how far along they are, and whether anything needs attention. Historical trend data shows processing patterns over time, so you can spot the nights that consistently run long before they become a problem.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>JobFlow exists so that when something goes wrong at 2 AM, we find out at 2:30 AM instead of 9 AM. It watches everything happening in Debt Manager's job processing, flags when things aren't progressing, and alerts when scheduled work doesn't start.</p>
+
+        <p>The data it collects isn't just for alerting &mdash; it's valuable for understanding processing patterns over time. Which flows are consistently slow? Which jobs fail most often? Are there nights when processing takes longer? JobFlow has the receipts.</p>
+
+        <p>Because "I didn't know" is never a good answer when someone asks why the jobs didn't run.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/jobflow-arch.html" class="ref-link">&#x1F527; Job/Flow Monitoring Architecture &mdash; How the monitoring works under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/jobflow-ref.html" class="ref-link">&#x1F4CB; Job/Flow Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>		
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">← Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

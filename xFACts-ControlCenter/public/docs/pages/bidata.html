@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIDATA Monitoring &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>BIDATA Monitoring</h1>
+        <div class="subtitle">Watching the warehouse rebuild so you don&rsquo;t have to</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Every night, a SQL Agent job rebuilds the reporting data warehouse. This module tracks its progress in real-time and tells you when it&rsquo;s done. Not &ldquo;check every 10 minutes and send an email saying it&rsquo;s still not done.&rdquo; Real-time. As each step completes, we know. One Teams message when it finishes. That&rsquo;s it.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: A Brief History of Pain -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>A Brief History of Pain</h2>
+
+        <p>The BIDATA warehouse has been the reporting backbone for nearly 20 years. It started life as flat file extracts from a non-SQL database, dropped into a SQL 2008 R2 instance. Ten tables, 2-3 hours to load, simple.</p>
+
+        <p>Then came a platform migration. Then came organic growth. Then came a developer who enthusiastically implemented every optimization and cool &ldquo;time-saver&rdquo; he learned along the way &mdash; massive views meant to be &ldquo;one-stop shops&rdquo; for developers, nested views calling other views, assemblies, functions everywhere.</p>
+
+        <p>The result: 60 million records, views joining 30 million and 60 million row tables, with secondary views and functions nested throughout. It was never meant to scale.</p>
+
+        <p>By 2020, the nightly build took 8 hours. Then 10. Then there were days it couldn&rsquo;t finish at all. A heroic rearchitecting effort got it back to 7-8 hours. Then it crept. And crept. 9-10 hours became normal.</p>
+
+        <p>A recent rebuild effort brought it down to a consistent 5-5.5 hours.</p>
+
+        <p>The scars remain. There&rsquo;s a &ldquo;BIDATA build time&rdquo; item permanently on the weekly operations meeting agenda. Nobody discusses it. Nobody dares remove it. We leave it there to appease the angry gods.</p>
+
+        <p>This module exists partly to monitor the build, and partly to help everyone gradually accept that yes, it really does finish reliably now.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How It Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How It Works</h2>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Build Starts<br>Overnight</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Monitor<br>Detects It</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Steps Captured<br>in Real-Time</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Build<br>Completes</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted-step">One Clean<br>Notification</div>
+            </div>
+            <div class="flow-caption">From first step to final notification &mdash; every step tracked as it happens</div>
+        </div>
+
+        <p>A monitor runs every few minutes during the overnight window. When it detects that the build has started, it begins capturing each step as it completes &mdash; step name, duration, status. The Control Center dashboard shows this live, so you can see exactly which step is running and how long each completed step took.</p>
+
+        <p>When the build finishes, a single Teams message goes out with the completion time, total duration, and a breakdown of step timings. One glance tells you everything you need to know.</p>
+
+        <p>It also watches for things going wrong. If the build doesn&rsquo;t start when it should, you&rsquo;ll hear about it. If it fails partway through and someone restarts it, both attempts are tracked separately so you can see the full picture. And every build&rsquo;s timing data is preserved for historical trending &mdash; so when someone asks &ldquo;has it always taken this long?&rdquo; the answer is right there.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Legacy Email Situation -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Legacy Email Situation</h2>
+
+        <p>There are still emails. Lots of emails. Every 10 minutes in the morning from 6 AM onward, telling people the build isn&rsquo;t done yet. Then finally one that says it is &mdash; but thanks to valiant efforts, those emails no longer ring out into the 9 and 10 AM hours (or god forbid into the early afternoon).</p>
+
+        <p>This module was designed to replace all of that with a single, clean notification.</p>
+
+        <p>Nobody has turned the emails off.</p>
+
+        <p>It&rsquo;s fine. We&rsquo;re not here to judge. Change is hard. The emails can stay until everyone&rsquo;s comfortable. The Teams notification will be there either way, providing a calmer alternative for those ready to embrace it.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>This module answers one question: &ldquo;Is BIDATA done?&rdquo;</p>
+
+        <p>No more checking SQL Agent manually. No more parsing through dozens of emails. No more wondering. Just a Teams message when it&rsquo;s ready, and real-time progress in Control Center while you wait.</p>
+
+        <p>The data warehouse may be a 20-year-old architectural marvel held together by views, functions, and sheer determination. But at least now we know exactly when it finishes, how long it took, and which steps contributed to that duration.</p>
+
+        <p>The weekly meeting agenda item can stay. We don&rsquo;t anger the gods unnecessarily.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/bidata-arch.html" class="ref-link">&#x1F527; BIDATA Monitoring Architecture &mdash; How the monitoring works under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/bidata-ref.html" class="ref-link">&#x1F4CB; BIDATA Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>

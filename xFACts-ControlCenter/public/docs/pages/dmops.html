@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DM Operations &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>DM Operations</h1>
+        <div class="subtitle">Direct operations on Debt Manager production data &mdash; because sometimes you have to reach in and clean house</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Where This Fits -->
+    <div class="context-bar">
+        Debt Manager has been collecting data for years. Some of it is still actively worked. A lot of it isn't &mdash; accounts that were returned, paid, or closed long ago, and the orphaned consumer records left behind after those accounts were removed. DM Operations is the systematic process of cleaning out the data that's no longer needed while preserving the financial reporting that depends on it.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Problem</h2>
+
+        <p>Debt Manager's production database is around 10 terabytes. That's a lot of data, and a significant portion of it belongs to accounts that are no longer active &mdash; returned to the client, paid in full, settled, or otherwise closed. These records have been accumulating for years because there was never a reliable process to remove them.</p>
+
+        <p>It's not as simple as "just delete the old stuff." Every account touches dozens of related tables &mdash; transactions, payment journals, credit bureau transmissions, balance snapshots, encounter records, tags, notes, and more. Delete things in the wrong order and the database throws errors. Delete the wrong things and financial reports break. Don't delete anything and the database keeps growing, backups keep getting bigger, and queries keep getting slower.</p>
+
+        <p>To make things more interesting, all of this financial data feeds into a reporting warehouse that hundreds of people use every day. The archived accounts need to disappear from the production system but their financial history has to survive in the reports. It's like removing a chapter from a book while making sure the table of contents still works.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Two Processes, One Goal -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Two Processes, One Goal</h2>
+
+        <p>DM Operations has two complementary processes that work together to clean up the database. They're related but they solve different problems.</p>
+
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step blue">Identify<br>Candidates</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">Delete Account<br>Data</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step orange">Preserve<br>Financials</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step purple">Clean Up<br>Shells</div>
+            </div>
+            <div class="flow-caption">Archiving removes the account data. Shell purging cleans up the empty consumer records left behind.</div>
+        </div>
+
+        <p><strong>Account Archiving</strong> is the main event. Accounts that have been tagged for archiving get their data systematically removed from over 100 related tables in the correct order. Before any data is deleted from the production system, the financial snapshots are preserved in the reporting warehouse so that reports remain accurate. Once everything is safely migrated, the production data is removed.</p>
+
+        <p><strong>Shell Purging</strong> handles the aftermath. When all of a consumer's accounts have been archived, the consumer record itself becomes a "shell" &mdash; it exists in the system but has nothing attached to it. Shells also accumulate from other operations like consumer merges. The shell purge process identifies these empty records and removes them, cleaning up roughly 60 related tables per consumer.</p>
+
+        <p>Together, these two processes are working through approximately 19 million tagged accounts and 6 million shell consumers &mdash; years of accumulated data that's been taking up space and slowing things down.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Smart Scheduling -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Smart Scheduling</h2>
+
+        <p>Both processes are schedule-aware. Every hour of every day has a designated mode: full speed, reduced speed, or blocked. During business hours the processes run at a reduced pace to minimize any impact on the people using the system. Evenings and weekends are full speed. Certain hours are blocked entirely &mdash; particularly the window around the nightly reporting warehouse rebuild, which must complete undisturbed.</p>
+
+        <p>The schedules are visual grids that administrators can adjust in the Control Center. Need to pause archiving for a deployment? Block those hours. Want to push harder on a weekend? Open up the reduced hours to full. The processes check the schedule after every batch and adjust automatically.</p>
+
+        <p>There's also an emergency stop button. If something unexpected happens &mdash; a report looks wrong, performance dips, or anything seems off &mdash; one click sets the abort flag and the process stops after completing its current batch. No data is left in a half-finished state.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Protecting the Reports -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>Protecting the Reports</h2>
+
+        <p>This is the part that keeps everyone honest. The reporting warehouse is rebuilt every night from whatever's in the production database. If we just deleted accounts from production, they'd vanish from the reports the next morning &mdash; and with them, the financial history that clients and internal teams depend on.</p>
+
+        <p>The solution is a handoff. Before an account's data is removed from production, its financial snapshot is copied to a permanent archive within the reporting warehouse. The reports are built from a view that combines both the live data and the archived data, so from the report's perspective nothing changes. The account's numbers are still there, still accurate, still in the right client's totals. They're just being served from a different place.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Control Center View</h2>
+
+        <p>The DM Operations page in the Control Center provides a real-time window into both processes. At a glance you can see how many accounts have been archived, how many shells have been purged, and how many remain. Today's activity shows what's happening right now. The execution history tracks daily totals over time, so you can see the steady progress as millions of records are processed.</p>
+
+        <p>Both schedules are accessible from the page, and the abort buttons are right where you need them. If something needs to stop, it stops. If the numbers look good, you let it run.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>The Bottom Line</h2>
+
+        <p>DM Operations is doing something that should have been done years ago but never had a safe, reliable way to happen. It's removing millions of records that serve no active purpose while making sure the financial data those records represent is preserved exactly where it needs to be. The database gets smaller, queries get faster, backups get shorter, and the reports don't skip a beat.</p>
+
+        <p>It's the kind of cleanup that you only notice when it's not being done.</p>
+    </div>
+
+    <!-- Architecture & Reference Links -->
+    <div style="text-align: center;">
+        <a href="arch/dmops-arch.html" class="ref-link">&#x1F527; DM Operations Architecture &mdash; How archiving and shell purging work under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="ref/dmops-ref.html" class="ref-link">&#x1F4CB; DM Operations Reference &mdash; Full technical details, DDL, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>
