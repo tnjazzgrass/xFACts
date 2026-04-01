@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Helper Functions Module
 # Version: Tracked in dbo.System_Metadata (component: ServerOps.ServerHealth)
 # Location: E:\xFACts-ControlCenter\scripts\modules\xFACts-Helpers.psm1
