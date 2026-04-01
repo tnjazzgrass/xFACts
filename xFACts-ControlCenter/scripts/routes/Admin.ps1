@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Administration Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\Admin.ps1
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.Admin)
