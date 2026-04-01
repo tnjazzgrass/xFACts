@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Replication Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\ReplicationMonitoring.ps1
 # 
