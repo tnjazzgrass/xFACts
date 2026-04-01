@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - BDL Import Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1
 # 
