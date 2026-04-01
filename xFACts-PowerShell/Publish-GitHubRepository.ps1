@@ -20,7 +20,7 @@
     2. Extract SQL object definitions from the database
     3. Generate Platform Registry markdown from registry tables
     4. Fetch current repo state (file listing with SHAs)
-    5. Compare local vs remote — identify creates, updates, deletes
+    5. Compare local vs remote - identify creates, updates, deletes
     6. Push changes to GitHub via Contents API
     7. Generate and push manifest.json
     8. Report summary
@@ -53,7 +53,7 @@
 
 .EXAMPLE
     .\Publish-GitHubRepository.ps1
-    Preview mode — shows what would be pushed without making changes.
+    Preview mode - shows what would be pushed without making changes.
 
 .EXAMPLE
     .\Publish-GitHubRepository.ps1 -Execute
@@ -78,7 +78,7 @@ param(
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
 $script:Config = Initialize-XFActsScript -ScriptName 'Publish-GitHubRepository' -Execute:$Execute
 if (-not $script:Config -and -not $Execute) {
-    # Preview mode — Initialize-XFActsScript displays the warning but returns $null
+    # Preview mode - Initialize-XFActsScript displays the warning but returns $null
     # We still want to continue in preview mode, so don't exit
 }
 
@@ -86,7 +86,7 @@ if (-not $script:Config -and -not $Execute) {
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # ============================================================================
-# CONFIGURATION — Source Mappings
+# CONFIGURATION - Source Mappings
 # ============================================================================
 # Each entry maps a server directory to a repository path.
 # Filter controls which files are collected from that directory.
@@ -389,7 +389,7 @@ foreach ($source in $FileSources) {
     $serverPath = $source.ServerPath
 
     if (-not (Test-Path $serverPath)) {
-        Write-Log "  SKIP  $($source.Description) — path not found: $serverPath" "WARN"
+        Write-Log "  SKIP  $($source.Description) - path not found: $serverPath" "WARN"
         continue
     }
 
@@ -431,7 +431,7 @@ foreach ($source in $FileSources) {
         }
     }
 
-    Write-Log "  OK    $($source.Description) — $fileCount files" "SUCCESS"
+    Write-Log "  OK    $($source.Description) - $fileCount files" "SUCCESS"
 }
 
 Write-Log "  Total files from disk: $($localFiles.Count)"
@@ -474,7 +474,7 @@ if ($sqlObjects) {
         $GeneratedRepoPaths.Add($repoPath)
         $sqlCount++
     }
-    Write-Log "  OK    SQL object definitions — $sqlCount extracted" "SUCCESS"
+    Write-Log "  OK    SQL object definitions - $sqlCount extracted" "SUCCESS"
 }
 else {
     Write-Log "  WARN  No SQL objects extracted" "WARN"
@@ -519,7 +519,7 @@ foreach ($export in $TableExports) {
 
         $rowCount = @($rows).Count
         if ($rowCount -eq 0) {
-            Write-Log "  SKIP  $($export.Title) — no rows"
+            Write-Log "  SKIP  $($export.Title) - no rows"
             continue
         }
 
@@ -547,10 +547,10 @@ foreach ($export in $TableExports) {
 
         $registryContent += ""
         $exportedTables++
-        Write-Log "  OK    $($export.Title) — $rowCount rows" "SUCCESS"
+        Write-Log "  OK    $($export.Title) - $rowCount rows" "SUCCESS"
     }
     catch {
-        Write-Log "  ERROR  $($export.Title) — $($_.Exception.Message)" "ERROR"
+        Write-Log "  ERROR  $($export.Title) - $($_.Exception.Message)" "ERROR"
     }
 }
 
@@ -564,7 +564,7 @@ if ($exportedTables -gt 0) {
         Source       = "Generated:PlatformRegistry"
     }
     $GeneratedRepoPaths.Add($registryRepoPath)
-    Write-Log "  OK    Platform Registry — $exportedTables tables exported" "SUCCESS"
+    Write-Log "  OK    Platform Registry - $exportedTables tables exported" "SUCCESS"
 }
 
 # ============================================================================
@@ -666,7 +666,7 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
 
     if (-not $Execute) {
         Write-Log ""
-        Write-Log "  PREVIEW — Changes that would be made:" "WARN"
+        Write-Log "  PREVIEW - Changes that would be made:" "WARN"
         foreach ($item in $toCreate) {
             Write-Log "    CREATE  $($item.RepoPath)"
         }
@@ -794,7 +794,7 @@ if ($Execute) {
     if ($manifestChanged) {
         $result = Push-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
             -RepoPath "manifest.json" -ContentBytes $manifestBytes `
-            -CommitMessage "Update manifest.json — $($manifestFiles.Count) files" `
+            -CommitMessage "Update manifest.json - $($manifestFiles.Count) files" `
             -ExistingSha $manifestSha
 
         if ($result) {
@@ -805,11 +805,11 @@ if ($Execute) {
         }
     }
     else {
-        Write-Log "  Manifest unchanged — skipped"
+        Write-Log "  Manifest unchanged - skipped"
     }
 }
 else {
-    Write-Log "  PREVIEW — Manifest would be pushed with $($manifestFiles.Count) entries" "WARN"
+    Write-Log "  PREVIEW - Manifest would be pushed with $($manifestFiles.Count) entries" "WARN"
 }
 
 # ============================================================================
@@ -830,7 +830,7 @@ Write-Log "  Unchanged:      $unchanged"
 
 if (-not $Execute) {
     Write-Log ""
-    Write-Log "PREVIEW MODE — No changes were made. Run with -Execute to push." "WARN"
+    Write-Log "PREVIEW MODE - No changes were made. Run with -Execute to push." "WARN"
 }
 else {
     Write-Log ""
