@@ -64,6 +64,12 @@ $pipeline = @(
         Args   = @('-Execute') +
                  $(if ($IncludeSQLObjects) { '-IncludeSQLObjects' } else { @() }) +
                  $(if ($IncludeJSON) { '-IncludeJSON' } else { @() }) -join ' '
+    },
+    @{
+        Key    = 'publish_github'
+        Label  = 'Publish to GitHub'
+        Script = 'Publish-GitHubRepository.ps1'
+        Args   = '-Execute'
     }
 )
 
