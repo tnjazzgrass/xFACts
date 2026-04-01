@@ -1,0 +1,1266 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "NB_BatchTracking",
+                       "description":  "New Business batch lifecycle tracking table. Captures each NB batch from creation through terminal state with dual state machine timing, log-based stall detection, and event counters for resets and alerts.",
+                       "module":  "BatchOps",
+                       "category":  "BatchOps",
+                       "dataFlow":  "Collect-NBBatchStatus.ps1 queries the DM secondary replica for new_bsnss_btch rows within the configured lookback window and inserts one tracking row per new batch with initial state, metrics, and terminal detection. Each subsequent polling cycle updates all incomplete rows with current DM status codes, merge status, batch metrics, and log-based stall detection counters from new_bsnss_log. Terminal states (DELETED, FAILED, or merge statuses 3/5/6/8/10) set is_complete = 1 and record completed_status. The alert evaluation step reads incomplete rows to detect 8 alert conditions and increments alert_count after firing. Send-OpenBatchSummary.ps1 queries DM directly for its pre-maintenance card rather than reading this table. The Control Center BatchOps page reads this table for active batch status display and historical analysis.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "tracking_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique xFACts identifier for each tracked batch"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "batch_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "DM source batch ID (new_bsnss_btch_id). Unique constraint ensures one row per batch"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "batch_name",
+                                           "dataType":  "varchar",
+                                           "length":  "8",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "DM batch short name (new_bsnss_btch_shrt_nm)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "file_registry_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM File_Registry reference for the uploaded file"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "upload_filename",
+                                           "dataType":  "varchar",
+                                           "length":  "512",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Source filename from File_Registry or batch upload text"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "is_manual_upload",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether the batch was manually uploaded (vs automated)"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "is_auto_release",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether the batch is configured for automatic release"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "batch_status_code",
+                                           "dataType":  "smallint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Current DM batch status code (Ref_new_bsnss_btch_stts_cd)"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "batch_status",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable batch status text"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "batch_created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the batch was created in DM"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "release_started_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the release process began (new_bsnss_btch_rls_strt_dttm)"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "release_completed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the batch was fully released (new_bsnss_btch_rlsd_dt)"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "merge_status_code",
+                                           "dataType":  "smallint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Current DM merge status code (ref_cnsmr_mrg_lnk_stts_cd)"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "merge_status",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable merge status text"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "merge_started_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When merge activity began (derived from first log entry)"
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "merge_completed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When merge reached terminal state"
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "consumer_count",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total consumers in batch"
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "account_count",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total accounts in batch"
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "total_balance_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total account balance amount"
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "posted_account_count",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Accounts successfully posted"
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "posted_balance_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Posted account balance amount"
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "excluded_consumer_count",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Consumers excluded during processing"
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "excluded_balance_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Excluded consumer balance amount"
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "original_principal_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Original principal amount"
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "original_interest_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Original interest amount"
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "original_collection_charges_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Original collection charges amount"
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "original_cost_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Original cost amount"
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "original_other_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Original other charges amount"
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "is_complete",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether the batch has reached a terminal state. Incomplete batches are updated each polling cycle"
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "completed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the batch reached terminal state"
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "completed_status",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "How the batch completed. Values are set from the DM merge status text for merge completions, or from the batch status for pre-merge terminals. See the completed_status values table in the Batch Status Reference section"
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "last_log_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Max new_bsnss_log_id from DM for this batch. Compared across polls to detect activity"
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "last_log_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Timestamp of the most recent log entry"
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "stall_poll_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Consecutive polls with no new log activity. Increments when last_log_id unchanged, resets to 0 on new activity. Only active when last_log_id is not NULL (merge has started)"
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "reset_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of times the batch was reset back to RELEASED during merge processing"
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "last_reset_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the most recent reset occurred"
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "alert_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of alerts fired for this batch. Used to prevent duplicate alerting. Resets to 0 when log activity resumes, enabling re-alerting on subsequent stall episodes"
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "collected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this row was first inserted by the collector"
+                                       },
+                                       {
+                                           "ordinal":  39,
+                                           "name":  "last_polled_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "When this row was last updated by the collector"
+                                       },
+                                       {
+                                           "ordinal":  40,
+                                           "name":  "is_auto_merge",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether the batch is configured for automatic merge after release. Batches with auto-merge disabled are intentionally held in RELEASED status and use a longer queue wait threshold"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_NB_BatchTracking",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "tracking_id"
+                                       },
+                                       {
+                                           "name":  "IX_NB_BatchTracking_Created",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "batch_created_dttm",
+                                           "includedColumns":  "batch_id, batch_name, is_complete, batch_status_code, merge_status_code"
+                                       },
+                                       {
+                                           "name":  "IX_NB_BatchTracking_Incomplete",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "is_complete, last_polled_dttm",
+                                           "includedColumns":  "batch_id, batch_status_code, merge_status_code, last_log_id, stall_poll_count"
+                                       },
+                                       {
+                                           "name":  "UQ_NB_BatchTracking_BatchID",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "batch_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Dual State Machine",
+                                               "note":  "NB batches have two independent status progressions. batch_status_code tracks upload through release (UPLOADING to RELEASED). merge_status_code tracks post-release processing (POST_RELEASE_MERGING to POST_RELEASE_MERGE_COMPLETE). In practice, nearly all batches reach RELEASED (code 8) and remain there while the merge status drives the remaining lifecycle. The collector detects terminal states from both machines independently.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Log-Based Stall Detection",
+                                               "note":  "Stall detection monitors the new_bsnss_log table for activity rather than using static time thresholds. Each poll compares the current max log ID against the stored last_log_id. Unchanged means stall_poll_count increments. New activity resets both stall_poll_count and alert_count to zero, enabling re-alerting if the batch stalls again. This approach detects genuine stalls without false positives from large batches that process slowly.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Auto-Merge Aware Queue Waits",
+                                               "note":  "Batches with is_auto_merge = 1 use the shorter nb_queue_wait_minutes threshold because they should be merging automatically. Batches with is_auto_merge = 0 are intentionally held in RELEASED status pending manual merge initiation and use the longer nb_queue_wait_no_merge_minutes threshold to avoid false positive alerts. The no-auto-merge alerts generate INFO-level notifications rather than WARNING.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Source System Decoupling",
+                                               "note":  "All DM data is captured at collection time. Once a batch is in this table, monitoring queries never need to hit DM again for that batch\u0027s current state — only for detecting new log entries on incomplete batches. Completed batches are retained permanently for historical analysis, trend reporting, and duration benchmarking even if deleted from DM.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "POST_RELEASE_MERGE_COMPLETE",
+                                                "meaning":  "Merge processing complete. Primary successful terminal state — represents the vast majority of completions.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "POST_RELEASE_PRTL_MRGD_WTH_ERS",
+                                                "meaning":  "Merge completed with partial errors. Terminal — manual resolution required for error accounts.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "POST_RELEASE_MERGE_CMPLT_WTH_ERS",
+                                                "meaning":  "Merge completed with errors. Terminal — manual resolution required.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "POST_RELEASE_PARTIAL_MERGED",
+                                                "meaning":  "Partial merge — processing stopped before completion. Terminal — manual resolution required.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "POST_RELEASE_LINK_COMPLETE",
+                                                "meaning":  "Link processing complete. Included in terminal detection for completeness but linking is not enabled in this environment — zero occurrences in historical data.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "DELETED",
+                                                "meaning":  "Batch deleted from DM (batch_status_code 5). Detected as terminal from the batch status state machine.",
+                                                "sortOrder":  6
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "General failure (batch_status_code 13). Detected as terminal from the batch status state machine.",
+                                                "sortOrder":  7
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "INVESTIGATE",
+                                                "meaning":  "Historical batches marked for review during initial deployment. Internal value only.",
+                                                "sortOrder":  8
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Active batches with stall status",
+                                           "description":  "All incomplete NB batches with time since release and stall detection state.",
+                                           "sql":  "SELECT batch_id, batch_name, batch_status, merge_status, is_auto_merge,\r\n       batch_created_dttm, stall_poll_count, last_log_dttm,\r\n       DATEDIFF(MINUTE, release_completed_dttm, GETDATE()) AS minutes_since_release\r\nFROM BatchOps.NB_BatchTracking\r\nWHERE is_complete = 0\r\nORDER BY batch_created_dttm DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Recent completions with duration",
+                                           "description":  "Completed batches from the last 7 days with total and merge duration metrics.",
+                                           "sql":  "SELECT batch_id, batch_name, completed_status, batch_created_dttm, completed_dttm,\r\n       DATEDIFF(MINUTE, batch_created_dttm, completed_dttm) AS total_minutes,\r\n       DATEDIFF(MINUTE, merge_started_dttm, merge_completed_dttm) AS merge_minutes,\r\n       account_count, total_balance_amt\r\nFROM BatchOps.NB_BatchTracking\r\nWHERE is_complete = 1\r\n  AND completed_dttm \u003e= DATEADD(DAY, -7, GETDATE())\r\nORDER BY completed_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Stalled batches only",
+                                           "description":  "Incomplete batches with active stall counters — merge has started but log activity has stopped.",
+                                           "sql":  "SELECT batch_id, batch_name, stall_poll_count, last_log_id, last_log_dttm,\r\n       last_polled_dttm,\r\n       DATEDIFF(MINUTE, last_log_dttm, GETDATE()) AS minutes_since_activity\r\nFROM BatchOps.NB_BatchTracking\r\nWHERE is_complete = 0\r\n  AND last_log_id IS NOT NULL\r\n  AND stall_poll_count \u003e 0\r\nORDER BY stall_poll_count DESC;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Monthly batch volume summary",
+                                           "description":  "Six-month trend of batch volume, completion outcomes, and average account counts.",
+                                           "sql":  "SELECT FORMAT(batch_created_dttm, \u0027yyyy-MM\u0027) AS month,\r\n       COUNT(*) AS total_batches,\r\n       SUM(CASE WHEN completed_status = \u0027POST_RELEASE_MERGE_COMPLETE\u0027 THEN 1 ELSE 0 END) AS merge_complete,\r\n       SUM(CASE WHEN completed_status IN (\u0027POST_RELEASE_PRTL_MRGD_WTH_ERS\u0027, \u0027POST_RELEASE_MERGE_CMPLT_WTH_ERS\u0027, \u0027POST_RELEASE_PARTIAL_MERGED\u0027) THEN 1 ELSE 0 END) AS merge_with_errors,\r\n       SUM(CASE WHEN completed_status IN (\u0027FAILED\u0027, \u0027DELETED\u0027) THEN 1 ELSE 0 END) AS failed_or_deleted,\r\n       SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS still_active,\r\n       AVG(account_count) AS avg_accounts\r\nFROM BatchOps.NB_BatchTracking\r\nWHERE batch_created_dttm \u003e= DATEADD(MONTH, -6, GETDATE())\r\nGROUP BY FORMAT(batch_created_dttm, \u0027yyyy-MM\u0027)\r\nORDER BY month DESC;",
+                                           "sortOrder":  4
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Collect-NBBatchStatus.ps1",
+                                                     "note":  "The collector script creates, updates, and completes rows in this table. It also reads incomplete rows during alert evaluation to detect 8 alert conditions. The stall_poll_count, alert_count, and reset_count columns are maintained exclusively by the collector.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Status",
+                                                     "note":  "The collector updates its own row in BatchOps.Status at the start (RUNNING) and end (IDLE + SUCCESS/FAILED) of each execution cycle. Status provides the proof-of-life signal for the Control Center dashboard.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Teams.AlertQueue / Jira.TicketQueue",
+                                                     "note":  "Alert evaluation inserts directly into Teams.AlertQueue and calls Jira.sp_QueueTicket for detected conditions. Deduplication checks Teams.RequestLog and Jira.RequestLog before firing to prevent duplicate alerts.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "PMT_BatchTracking",
+                       "description":  "Payment batch lifecycle tracking table. Captures all payment batch types (Import, Manual, Reversal, Reapply, etc.) from creation through terminal state with log-based and journal-based stall detection, real-time posting progress via the consumer payment journal, and event counters for alerts.",
+                       "module":  "BatchOps",
+                       "category":  "BatchOps",
+                       "dataFlow":  "Collect-PMTBatchStatus.ps1 queries the DM secondary replica for cnsmr_pymnt_btch rows within the configured lookback window and inserts one tracking row per new batch with initial state, metrics, and terminal detection. Each subsequent polling cycle updates all incomplete rows with current DM status, log activity from cnsmr_pymnt_btch_log, and journal-based progress from cnsmr_pymnt_jrnl (posted/failed counts and last posted timestamp). Terminal states (POSTED, FAILED, IMPORTFAILED, REVERSALFAILED) and hard deletes set is_complete = 1. PARTIAL batches remain incomplete and continue polling since they can be re-fired in DM. Alert evaluation reads incomplete terminal batches and routes notifications to Jira and/or Teams via per-condition GlobalConfig routing. The Control Center BatchOps page reads this table for active batch status display and historical analysis.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "tracking_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique xFACts identifier for each tracked batch"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "batch_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "DM source batch ID (cnsmr_pymnt_btch_id). Unique constraint ensures one row per batch"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "batch_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM batch name (cnsmr_pymnt_btch_nm)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "external_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "External batch name for file-based imports (cnsmr_pymnt_btch_extrnl_nm)"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "file_registry_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM File_Registry reference for the source file"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "batch_type_code",
+                                           "dataType":  "smallint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM batch type code (cnsmr_pymnt_btch_typ_cd)"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "batch_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable batch type (e.g., IMPORT, MANUAL, REVERSAL, REAPPLY)"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "is_auto_post",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether the batch is configured for automatic posting (cnsmr_pymnt_btch_auto_post_flg)"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "original_batch_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Source batch ID for REAPPLY batches (cnsmr_pymnt_btch_orgnl_id)"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "created_by_userid",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM user who created the batch (cnsmr_pymnt_btch_crt_usrid)"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "assigned_userid",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM user assigned to the batch (cnsmr_pymnt_btch_assgnd_usrid)"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "batch_status_code",
+                                           "dataType":  "smallint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Current DM batch status code (ref_pymnt_btch_stts_cd)"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "batch_status",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable batch status text"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "batch_created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the batch was created in DM"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "released_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the batch was released for processing (cnsmr_pymnt_btch_rlsd_dttm)"
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "processed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When batch processing completed (cnsmr_pymnt_btch_prcssd_dttm)"
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "reversal_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When a reversal was processed (cnsmr_pymnt_btch_rvrsl_dt)"
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "payment_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total payments in batch (cnsmr_pymnt_btch_pymnt_cnt_nmbr)"
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "imported_count",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records successfully imported (cnsmr_pymnt_btch_imprtd_rec_cnt)"
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "active_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records sent to posting pipeline (cnsmr_pymnt_btch_actv_rec_cnt)"
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "posted_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records posted per batch header (cnsmr_pymnt_btch_pstd_rec_cnt). Only updates at terminal state, not during INPROCESS"
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "suspense_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records routed to suspense (cnsmr_pymnt_btch_sspns_rec_cnt)"
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "payment_total_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total payment amount"
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "active_total_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Active payment amount"
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "posted_total_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Posted payment amount (batch header)"
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "suspense_total_amt",
+                                           "dataType":  "decimal",
+                                           "length":  "18,2",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Suspense payment amount"
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "is_complete",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether the batch has reached a terminal state. Incomplete batches are updated each polling cycle"
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "completed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the batch reached terminal state"
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "completed_status",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "How the batch completed. Currently set by the collector for: POSTED, FAILED, IMPORTFAILED, REVERSALFAILED, DELETED. PARTIAL may appear temporarily for batches that reached PARTIAL before being re-fired — the value is cleared if the batch recovers. See the completed_status values table in the Batch Status Reference section"
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "last_log_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Max cnsmr_pymnt_btch_log_id from DM for this batch. Used for stall detection during pre-INPROCESS phases"
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "last_log_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Timestamp of the most recent batch log entry"
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "stall_poll_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Consecutive polls with no new activity. Uses log_id during early phases, journal_posted_count during INPROCESS. Only tracks IMPORT batches (type_code = 3); non-IMPORT batches stay at 0"
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "alert_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of alerts fired for this batch. Used to prevent duplicate alerting"
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "collected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this row was first inserted by the collector"
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "last_polled_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "When this row was last updated by the collector"
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "journal_posted_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Real-time posted count from cnsmr_pymnt_jrnl (status 5). Includes resolved suspense payments. NULL for batch types that do not use the payment journal"
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "journal_failed_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Failed count from cnsmr_pymnt_jrnl (status 4). Extremely rare in practice. NULL for batch types that do not use the payment journal"
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "last_posted_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Timestamp of the most recent posted payment in the journal. Provides real-time recency of posting activity"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_PMT_BatchTracking",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "tracking_id"
+                                       },
+                                       {
+                                           "name":  "IX_PMT_BatchTracking_Created",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "batch_created_dttm",
+                                           "includedColumns":  "batch_id, batch_name, is_complete, batch_status_code, batch_type_code"
+                                       },
+                                       {
+                                           "name":  "IX_PMT_BatchTracking_Incomplete",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "is_complete, last_polled_dttm",
+                                           "includedColumns":  "batch_id, batch_status_code, batch_type_code, last_log_id, stall_poll_count"
+                                       },
+                                       {
+                                           "name":  "UQ_PMT_BatchTracking_BatchID",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "batch_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Track All Alert Selectively",
+                                               "note":  "All payment batch types (Import, Manual, Reversal, Reapply, Balance Adjustment, Virtual) are tracked for visibility, but stall detection and alerting only apply to IMPORT batches (batch_type_code = 3). Manual, Reversal, Reapply, and other batch types have unpredictable lifecycles that would generate false positives.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Dual Activity Indicators",
+                                               "note":  "IMPORT batches use different activity sources depending on lifecycle phase. During IMPORTING through RELEASED, the batch log table (cnsmr_pymnt_btch_log) tracks status transitions. During INPROCESS, the log goes quiet and real-time progress comes from the consumer payment journal (cnsmr_pymnt_jrnl) where individual payments transition from BATCHED to POSTED. The collector switches stall detection source accordingly.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Journal vs Header Counts",
+                                               "note":  "The table stores both the batch header posted_count (frozen snapshot from automated processing, only updates at terminal state) and journal_posted_count (real-time total from cnsmr_pymnt_jrnl including resolved suspense payments). Header counts match what DM displays for reconciliation. Journal counts provide the true operational picture for the Control Center. journal_posted_count is typically \u003e= posted_count for batches with resolved suspense.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "PARTIAL Non-Terminal Recovery",
+                                               "note":  "PARTIAL (batch_status_code 5) is not treated as terminal because batches can be re-fired in DM back to INPROCESS. When the collector detects a batch that was previously PARTIAL but now shows a non-PARTIAL status, it clears completed_status, completed_dttm, and resets alert_count to 0. This enables fresh alerting if the batch fails again after recovery.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "POSTED",
+                                                "meaning":  "All payments posted successfully (batch_status_code 4). Primary success terminal state — represents the vast majority of completions.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "batch_type",
+                                                "value":  "IMPORT",
+                                                "meaning":  "File-based payment import (batch_type_code 3). Primary batch type for automated processing. Stall detection and alerting apply to this type only.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "batch_type",
+                                                "value":  "MANUAL",
+                                                "meaning":  "Manually entered payment batch. Tracked for visibility but no stall detection or alerting.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Batch processing failed (batch_status_code 6). Terminal failure requiring investigation.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "IMPORTFAILED",
+                                                "meaning":  "File import failed (batch_status_code 11). Terminal failure — source file could not be imported.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "batch_type",
+                                                "value":  "REVERSAL",
+                                                "meaning":  "Payment reversal batch. Tracked for visibility but no stall detection.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "batch_type",
+                                                "value":  "REAPPLY",
+                                                "meaning":  "Reapplied payment batch referencing an original_batch_id. Tracked for visibility but no stall detection.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "REVERSALFAILED",
+                                                "meaning":  "Reversal processing failed (batch_status_code 27). Terminal failure requiring manual intervention.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "DELETED",
+                                                "meaning":  "Batch removed from DM. Detected via hard delete detection when the batch no longer exists in the source table.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "PARTIAL",
+                                                "meaning":  "Some payments posted, some failed (batch_status_code 5). Transitional only — not a true terminal state. Cleared if the batch is re-fired and recovers. May exist on historical batches from before the PARTIAL non-terminal fix.",
+                                                "sortOrder":  6
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Active batches with journal progress",
+                                           "description":  "All incomplete PMT batches with real-time posting progress and stall detection state.",
+                                           "sql":  "SELECT batch_id, batch_name, batch_type, batch_status, active_count,\r\n       journal_posted_count, journal_failed_count, stall_poll_count,\r\n       last_posted_dttm,\r\n       DATEDIFF(MINUTE, batch_created_dttm, GETDATE()) AS minutes_since_created\r\nFROM BatchOps.PMT_BatchTracking\r\nWHERE is_complete = 0\r\nORDER BY batch_created_dttm DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Journal vs header count comparison",
+                                           "description":  "Batches where journal posted count differs from header posted count — indicates resolved suspense payments.",
+                                           "sql":  "SELECT batch_id, batch_name, batch_status, active_count,\r\n       posted_count AS header_posted,\r\n       journal_posted_count AS journal_posted,\r\n       journal_posted_count - ISNULL(posted_count, 0) AS resolved_suspense_posted,\r\n       suspense_count\r\nFROM BatchOps.PMT_BatchTracking\r\nWHERE journal_posted_count IS NOT NULL\r\n  AND journal_posted_count \u003c\u003e ISNULL(posted_count, 0)\r\nORDER BY batch_id DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "IMPORT batch stall status",
+                                           "description":  "Incomplete IMPORT batches with active stall counters showing minutes since last activity.",
+                                           "sql":  "SELECT batch_id, batch_name, batch_status, stall_poll_count,\r\n       journal_posted_count, last_posted_dttm, last_log_dttm, last_polled_dttm,\r\n       DATEDIFF(MINUTE, COALESCE(last_posted_dttm, last_log_dttm), GETDATE()) AS minutes_since_activity\r\nFROM BatchOps.PMT_BatchTracking\r\nWHERE is_complete = 0\r\n  AND batch_type_code = 3\r\n  AND stall_poll_count \u003e 0\r\nORDER BY stall_poll_count DESC;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Collect-PMTBatchStatus.ps1",
+                                                     "note":  "The collector script creates, updates, and completes rows in this table. It also handles PARTIAL recovery detection (clearing completed fields and resetting alert_count when a re-fired batch leaves PARTIAL status). Stall detection counters and journal metrics are maintained exclusively by the collector.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Status",
+                                                     "note":  "The collector updates its own row in BatchOps.Status at the start (RUNNING) and end (IDLE + SUCCESS/FAILED) of each execution cycle.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Teams.AlertQueue / Jira.TicketQueue",
+                                                     "note":  "Terminal failure alert evaluation inserts directly into Teams.AlertQueue and calls Jira.sp_QueueTicket for IMPORTFAILED, FAILED, PARTIAL, and REVERSALFAILED conditions. Deduplication checks RequestLog tables before firing.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Status",
+                       "description":  "Multi-row collector execution dashboard. One row per BatchOps process, tracking execution state and timing for Control Center summary cards and operational health checks.",
+                       "module":  "BatchOps",
+                       "category":  "BatchOps",
+                       "dataFlow":  "Each BatchOps collector script updates its own row at execution start (processing_status = RUNNING, started_dttm) and at execution end (processing_status = IDLE, completed_dttm, last_duration_ms, last_status). Rows are pre-seeded with one entry per registered process. The Control Center BatchOps page reads this table for process health dashboard cards showing last run time, duration, and success/failure status.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "status_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique row identifier"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "collector_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Name of the collector or reporting script (e.g., Collect-NBBatchStatus, Send-OpenBatchSummary)"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "batch_type",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Which batch type this process monitors: NB, PMT, BDL, or ALL"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "processing_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Current state: RUNNING, IDLE"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "started_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the current or most recent execution started"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "completed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the most recent execution completed"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "last_duration_ms",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Duration of the most recent execution in milliseconds"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "last_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Result of the most recent execution: SUCCESS, FAILED"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_BatchOps_Status",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "status_id"
+                                       },
+                                       {
+                                           "name":  "UQ_BatchOps_Status_CollectorName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "collector_name"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Proof-of-Life Only",
+                                               "note":  "The table tracks execution metadata (timing, status) rather than business metrics. Batch counts, alert counts, and error details live in their respective tracking tables and the Orchestrator TaskLog. This avoids maintaining duplicate counters that drift out of sync.",
+                                               "sortOrder":  1
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "processing_status",
+                                                "value":  "RUNNING",
+                                                "meaning":  "Collector is currently executing. Set at the start of each execution cycle.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "last_status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "Most recent execution completed without errors.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "last_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Most recent execution encountered errors. Check Orchestrator TaskLog for details.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "processing_status",
+                                                "value":  "IDLE",
+                                                "meaning":  "Collector is between execution cycles. Set at the end of each execution cycle.",
+                                                "sortOrder":  2
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Process health check",
+                                           "description":  "All BatchOps processes with health classification based on last status and recency.",
+                                           "sql":  "SELECT collector_name,\r\n       CASE\r\n           WHEN last_status = \u0027SUCCESS\u0027 AND DATEDIFF(MINUTE, completed_dttm, GETDATE()) \u003c= 15\r\n               THEN \u0027HEALTHY\u0027\r\n           WHEN last_status = \u0027FAILED\u0027 THEN \u0027FAILED\u0027\r\n           WHEN DATEDIFF(MINUTE, completed_dttm, GETDATE()) \u003e 15 THEN \u0027STALE\u0027\r\n           ELSE \u0027UNKNOWN\u0027\r\n       END AS health_status,\r\n       last_status, completed_dttm, last_duration_ms\r\nFROM BatchOps.Status;",
+                                           "sortOrder":  1
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Collect-NBBatchStatus.ps1",
+                                                     "note":  "Updates the row where collector_name = \u0027Collect-NBBatchStatus\u0027 at execution start and end.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Collect-PMTBatchStatus.ps1",
+                                                     "note":  "Updates the row where collector_name = \u0027Collect-PMTBatchStatus\u0027 at execution start and end.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Send-OpenBatchSummary.ps1",
+                                                     "note":  "Updates the row where collector_name = \u0027Send-OpenBatchSummary\u0027 at execution start and end.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Collect-NBBatchStatus.ps1",
+                        "description":  "PowerShell script that monitors Debt Manager New Business batch lifecycle from creation through terminal state. Collects new batches, updates status for in-flight batches, tracks merge log activity for stall detection, and evaluates 8 alert conditions with configurable Jira/Teams routing.",
+                        "module":  "BatchOps",
+                        "category":  "BatchOps",
+                        "dataFlow":  "Reads GlobalConfig for AG replica settings, alert thresholds, and routing configuration. Reads new_bsnss_btch, Ref_new_bsnss_btch_stts_cd, ref_cnsmr_mrg_lnk_stts_cd, File_Registry, and new_bsnss_log from the DM secondary replica. Writes to BatchOps.NB_BatchTracking (inserts and updates), BatchOps.Status (execution state). Alert evaluation writes to Teams.AlertQueue (direct INSERT) and Jira.TicketQueue (via sp_QueueTicket). Reads Teams.RequestLog and Jira.RequestLog for deduplication checks. Calls Complete-OrchestratorTask for orchestrator callback.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Bitwise Alert Routing",
+                                                "note":  "Each of the 8 alert conditions has an independent GlobalConfig routing value using bitwise flags: 0 = disabled, 1 = Teams only, 2 = Jira only, 3 = Both. The script checks routing -band 2 for Jira and routing -band 1 for Teams. A master switch (nb_alerting_enabled) must be 1 for any alerts to fire regardless of individual routing.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Deduplication Strategy",
+                                                "note":  "Three deduplication patterns by alert type: batch_id only (checks 1, 2, 7) for one alert per stall episode; batch_id + last_log_id (check 3) for one alert per stall episode with re-alerting on new stall points; batch_id + date (checks 4, 5a, 5b, 6) for daily re-alerting on ongoing conditions.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Error Extraction for Upload Failures",
+                                                "note":  "Upload failure alerts (Check 1) include error details extracted from new_bsnss_log via CTE with STRING_AGG, showing up to 5 distinct errors with noise filtering. Messages matching known non-actionable patterns are excluded to keep alerts focused on actual problems.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "NB_BatchTracking",
+                                                      "note":  "Primary data store. The script inserts new tracking rows, updates all incomplete rows each cycle, and sets terminal state when reached. Stall counters, alert counters, and reset counters are maintained exclusively by this script.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Collect-PMTBatchStatus.ps1",
+                                                      "note":  "Sibling collector following the same architectural pattern for Payment batches. Both run independently under the orchestrator.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Send-OpenBatchSummary.ps1",
+                                                      "note":  "Complementary script with a different purpose — daily summary rather than continuous monitoring. Queries DM directly rather than reading tracking tables.",
+                                                      "sortOrder":  3
+                                                  }
+                                              ]
+                    },
+                    {
+                        "name":  "Collect-PMTBatchStatus.ps1",
+                        "description":  "PowerShell script that monitors Debt Manager Payment batch lifecycle from creation through terminal state. Tracks all batch types, updates status with log and journal-based progress, and evaluates terminal failure alert conditions with configurable Jira/Teams routing.",
+                        "module":  "BatchOps",
+                        "category":  "BatchOps",
+                        "dataFlow":  "Reads GlobalConfig for AG replica settings, lookback window, and alert routing configuration. Reads cnsmr_pymnt_btch, ref_pymnt_btch_stts_cd, ref_pymnt_btch_typ_cd, cnsmr_pymnt_btch_log, and cnsmr_pymnt_jrnl from the DM secondary replica. Writes to BatchOps.PMT_BatchTracking (inserts and updates), BatchOps.Status (execution state). Terminal failure alerts write to Teams.AlertQueue and Jira.TicketQueue. Reads RequestLog tables for deduplication. Calls Complete-OrchestratorTask for orchestrator callback.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Config Source Tracking",
+                                                "note":  "The script logs whether each configuration setting loaded from GlobalConfig or fell back to the script default. Log entries tagged with \"(GlobalConfig)\" or \"(default)\" provide diagnostic visibility into which settings are active and whether any are missing from the database.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "IMPORTFAILED Insert-Path Limitation",
+                                                "note":  "The insert-path terminal detection does not include IMPORTFAILED (status 11). Batches already in IMPORTFAILED when first discovered are inserted as incomplete and detected as terminal on the next polling cycle. This causes a one-cycle delay before the alert fires. The update path correctly handles all terminal failure states.",
+                                                "sortOrder":  2
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "PMT_BatchTracking",
+                                                      "note":  "Primary data store. The script inserts new tracking rows, updates all incomplete rows each cycle with status, metrics, journal progress, and stall detection. Handles PARTIAL recovery by clearing completion fields and resetting alert_count.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Collect-NBBatchStatus.ps1",
+                                                      "note":  "Sibling collector following the same architectural pattern for New Business batches. Both run independently under the orchestrator.",
+                                                      "sortOrder":  2
+                                                  }
+                                              ]
+                    },
+                    {
+                        "name":  "Send-OpenBatchSummary.ps1",
+                        "description":  "PowerShell script that generates a daily pre-maintenance processing summary across all Debt Manager batch types and sends a color-coded Adaptive Card notification to Teams before the nightly maintenance window.",
+                        "module":  "BatchOps",
+                        "category":  "BatchOps",
+                        "dataFlow":  "Reads GlobalConfig for AG replica settings. Queries new_bsnss_btch and cnsmr_pymnt_btch on the DM secondary replica for in-flight batches, filtering out terminal and idle states. Builds a complete Adaptive Card JSON with sectioned layout and inserts directly into Teams.AlertQueue with the card_json field populated. Process-TeamsAlertQueue.ps1 delivers the card to Teams. Updates BatchOps.Status at execution start and end.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Direct Card JSON Insert",
+                                                "note":  "Inserts directly into Teams.AlertQueue with the card_json field rather than calling sp_QueueAlert, because the pre-built Adaptive Card requires the card_json field for rich formatting. The TR_Teams_AlertQueue_QueueDepth trigger fires on INSERT, signaling the processor to deliver the card.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Modular Batch Check Functions",
+                                                "note":  "Each batch type has its own function (Get-OpenNBBatches, Get-OpenPMTBatches, etc.) returning a standardized result object. Adding a new batch type requires writing one function and calling it in the main flow. BDL and Notice Processing sections exist as placeholders returning not-monitored status.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "State-Driven Card Colors",
+                                                "note":  "Card color is determined by overall severity: yellow (warning) if any batch type has active open batches, green (good) if all monitored sections are clear. Individual sections use matching colors. The goal is to keep the card green before maintenance begins.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "Teams.AlertQueue",
+                                                      "note":  "Inserts one row per execution with the pre-built Adaptive Card JSON. Uses trigger_type = OpenBatchSummary and trigger_value = current date. No deduplication needed since this runs once daily on a schedule.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Collect-NBBatchStatus.ps1 / Collect-PMTBatchStatus.ps1",
+                                                      "note":  "Complementary but independent — the summary queries DM directly for current state rather than reading the tracking tables. This means it reflects the live DM state at query time, which may differ slightly from the tracking table state depending on polling timing.",
+                                                      "sortOrder":  2
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
