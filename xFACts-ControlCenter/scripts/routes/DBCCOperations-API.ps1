@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - DBCC Operations API Endpoints
 # Location: E:\xFACts-ControlCenter\scripts\routes\DBCCOperations-API.ps1
 # 
