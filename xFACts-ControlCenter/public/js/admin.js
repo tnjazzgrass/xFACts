@@ -78,6 +78,8 @@ const Admin = (function () {
         cv.addEventListener('mousemove',onCanvasMouseMove);cv.addEventListener('mouseleave',onCanvasMouseLeave);cv.addEventListener('click',onCanvasClick);
         connectEngineEvents();
         initEngineCardClicks();
+        // Wire up doc pipeline sub-option visibility toggles
+        initDocStepToggles();
     }
 
     function pageRefresh(){
@@ -410,7 +412,6 @@ const Admin = (function () {
             if(data.Error){metaShowStatus(data.Error,true);return;}
             metaComponents=Array.isArray(data.components)?data.components:[];
             metaTotals=data.totals||null;
-            // Build module description lookup
             metaModules={};
             (Array.isArray(data.modules)?data.modules:[]).forEach(function(m){metaModules[m.module_name]=m.description||'';});
             var objCount=metaTotals?metaTotals.object_count:0;
@@ -519,12 +520,10 @@ const Admin = (function () {
         return html;
     }
 
-    // --- Interaction handlers ---
     function metaToggleRoot(){metaExpandedComp=null;metaExpandedMod=metaExpandedMod==='__root__'?null:'__root__';renderMetaTree();}
     function metaToggleMod(mod){metaExpandedComp=null;metaExpandedMod=metaExpandedMod===mod?null:mod;renderMetaTree();if(metaExpandedMod&&metaExpandedMod!=='__root__'){var el=document.querySelector('.meta-parent-row.expanded');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}}
     function metaToggleComp(cn){metaExpandedComp=metaExpandedComp===cn?null:cn;renderMetaTree();if(metaExpandedComp){var el=document.querySelector('.meta-child-card[data-comp="'+cn+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});}}
 
-    // --- Description input enables Insert ---
     function metaDescInput(cn){
         var desc=(document.getElementById('desc_'+cn).value||'').trim();
         var btn=document.getElementById('ins_'+cn);
@@ -563,7 +562,6 @@ const Admin = (function () {
 
     function metaBumpStatus(cn,msg,isErr){var el=document.getElementById('bst_'+cn);if(el){el.textContent=msg;el.className='meta-bump-status '+(isErr?'error':'success');}}
 
-    // --- Shared detail panel (version history + object catalog) ---
     var detailTypeBadge={
         'Table':      {cls:'cat-table',     label:'TABLE'},
         'Procedure':  {cls:'cat-proc',      label:'PROC'},
@@ -669,11 +667,6 @@ const Admin = (function () {
         panel._mode=null;
     }
 
-    // --- Helpers ---
-    function metaFindComp(cn){for(var i=0;i<metaComponents.length;i++){if(metaComponents[i].component_name===cn)return metaComponents[i];}return null;}
-    function metaShowStatus(msg,isErr){var el=document.getElementById('meta-status');if(el){el.textContent=msg;el.className='meta-status '+(isErr?'error':'success');}}
-
-    // --- Helpers ---
     function metaFindComp(cn){for(var i=0;i<metaComponents.length;i++){if(metaComponents[i].component_name===cn)return metaComponents[i];}return null;}
     function metaShowStatus(msg,isErr){var el=document.getElementById('meta-status');if(el){el.textContent=msg;el.className='meta-status '+(isErr?'error':'success');}}
 
@@ -743,15 +736,11 @@ const Admin = (function () {
 
     function formatSchedTime(val){
         if(!val)return null;
-        // String: "/Date(12345678)/" format
         if(typeof val==='string'&&val.indexOf('/Date(')===0){var ms=parseInt(val.replace(/\/Date\((-?\d+)\)\//,'$1'));if(!isNaN(ms)){var td=new Date(ms);return(td.getHours()<10?'0':'')+td.getHours()+':'+(td.getMinutes()<10?'0':'')+td.getMinutes()+':'+(td.getSeconds()<10?'0':'')+td.getSeconds();}}
-        // String: already "HH:mm:ss" or similar
         if(typeof val==='string')return val;
-        // Object: {Hours:N, Minutes:N, Seconds:N, ...} (Pode TimeSpan serialization)
         if(typeof val==='object'&&val!==null){
             var h=val.Hours||val.hours||0,m=val.Minutes||val.minutes||0,s=val.Seconds||val.seconds||0;
             if(typeof h==='number')return(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
-            // TotalMilliseconds fallback
             if(val.TotalMilliseconds!==undefined){var tot=Math.floor(val.TotalMilliseconds/1000);h=Math.floor(tot/3600);m=Math.floor((tot%3600)/60);s=tot%60;return(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
         }
         return String(val);
@@ -759,16 +748,13 @@ const Admin = (function () {
 
     function renderSchedDetail(p){
         var html='<div class="sched-detail">';
-        // Info card — read-only context
         html+='<div class="sched-info-card">';
         html+='<div class="sched-desc">'+esc(p.description||'No description')+'</div>';
         html+='<div class="sched-script"><span class="sched-script-label">Script</span><span class="sched-script-path">'+esc(p.script_path||'-')+'</span></div>';
         html+='</div>';
-        // Settings card — editable fields
         html+='<div class="sched-settings-card">';
         html+='<div class="sched-settings-title">Configuration</div>';
         html+='<div class="sched-settings-grid">';
-        // Execution Mode toggle
         var isFF=p.execution_mode==='FIRE_AND_FORGET';
         html+='<div class="sched-setting-item sched-setting-wide">';
         html+='<span class="sched-setting-label">Execution Mode</span>';
@@ -776,13 +762,11 @@ const Admin = (function () {
         html+='<span class="sched-toggle-wrap" onclick="Admin.schedToggleMode('+p.process_id+')" title="WAIT: Engine waits for process to finish before continuing.&#10;FIRE_AND_FORGET: Engine launches and moves on.">';
         html+='<span class="gc-toggle-track '+(isFF?'on':'off')+'"><span class="gc-toggle-knob"></span></span>';
         html+='<span class="gc-toggle-label">'+(isFF?'Fire & Forget':'Wait for Exit')+'</span></span></span></div>';
-        // Grid fields
         html+=schedEditableField(p,'dependency_group','Dep. Group',p.dependency_group);
         html+=schedEditableField(p,'interval_seconds','Interval (sec)',p.interval_seconds);
         var schedTime=formatSchedTime(p.scheduled_time);
         html+=schedEditableField(p,'scheduled_time','Sched. Time',schedTime||'(none)');
         html+=schedEditableField(p,'timeout_seconds','Timeout (sec)',p.timeout_seconds!==null&&p.timeout_seconds!==undefined?p.timeout_seconds:'(none)');
-        // Allow Concurrent toggle
         var isCon=p.allow_concurrent===true||p.allow_concurrent===1;
         html+='<div class="sched-setting-item sched-setting-wide">';
         html+='<span class="sched-setting-label">Allow Concurrent</span>';
@@ -790,8 +774,8 @@ const Admin = (function () {
         html+='<span class="sched-toggle-wrap" onclick="Admin.schedToggleConcurrent('+p.process_id+')">';
         html+='<span class="gc-toggle-track '+(isCon?'on':'off')+'"><span class="gc-toggle-knob"></span></span>';
         html+='<span class="gc-toggle-label">'+(isCon?'Yes':'No')+'</span></span></span></div>';
-        html+='</div>'; // sched-settings-grid
-        html+='</div>'; // sched-settings-card
+        html+='</div>';
+        html+='</div>';
         html+='<div class="sched-card-status" id="sched-card-status-'+p.process_id+'"></div>';
         html+='</div>';
         return html;
@@ -881,13 +865,11 @@ const Admin = (function () {
         html+='<input type="text" class="meta-add-input" id="sched-new-name" placeholder="(auto-populated from script)" readonly></div>';
         html+='<div class="meta-add-row"><label class="sched-add-label">Description</label>';
         html+='<input type="text" class="meta-desc-input" id="sched-new-desc" placeholder="Description (required)" maxlength="500" style="flex:1;"></div>';
-        // Execution Mode as toggle (default F&F = on)
         html+='<div class="meta-add-row"><label class="sched-add-label">Execution Mode</label>';
         html+='<span class="sched-toggle-wrap" onclick="Admin.schedAddToggleMode()">';
         html+='<span class="gc-toggle-track on" id="sched-new-mode-track"><span class="gc-toggle-knob"></span></span>';
         html+='<span class="gc-toggle-label" id="sched-new-mode-label">Fire & Forget</span></span>';
         html+='<input type="hidden" id="sched-new-mode" value="FIRE_AND_FORGET"></div>';
-        // 2x2 grid for numeric config fields
         html+='<div class="sched-add-grid">';
         html+='<div class="sched-add-cell"><label class="sched-add-cell-label">Dependency Group</label><input type="number" class="sched-add-cell-input" id="sched-new-group" placeholder="Group #" min="1"></div>';
         html+='<div class="sched-add-cell"><label class="sched-add-cell-label">Interval (seconds)</label><input type="number" class="sched-add-cell-input" id="sched-new-interval" placeholder="Seconds" min="0" value="300"></div>';
@@ -968,9 +950,36 @@ const Admin = (function () {
     var docPollTimer = null;
     var docSelectedSteps = [];
 
+    // Step-to-options mapping: which sub-option div belongs to which step checkbox
+    var docStepOptionMap = [
+        { step: 'doc-step-publish',      options: 'doc-step-publish-options' },
+        { step: 'doc-step-consolidate',   options: 'doc-step-consolidate-options' }
+    ];
+
+    function initDocStepToggles() {
+        docStepOptionMap.forEach(function(pair) {
+            var cb = document.getElementById(pair.step);
+            if (cb) {
+                cb.addEventListener('change', docUpdateStepOptions);
+            }
+        });
+        // Set initial visibility
+        docUpdateStepOptions();
+    }
+
+    function docUpdateStepOptions() {
+        docStepOptionMap.forEach(function(pair) {
+            var cb = document.getElementById(pair.step);
+            var opts = document.getElementById(pair.options);
+            if (cb && opts) {
+                opts.style.display = cb.checked ? '' : 'none';
+            }
+        });
+    }
+
     function openDocPipeline() {
-        // Reset status indicators
-        ['generate_ddl', 'publish_confluence', 'consolidate_upload'].forEach(function(k) {
+        // Reset status indicators for all 4 steps
+        ['generate_ddl', 'publish_confluence', 'publish_github', 'consolidate_upload'].forEach(function(k) {
             var el = document.getElementById('doc-status-' + k);
             if (el) { el.textContent = ''; el.className = 'doc-step-status'; }
         });
@@ -983,6 +992,9 @@ const Admin = (function () {
 
         document.getElementById('doc-backdrop').classList.add('visible');
         document.getElementById('doc-panel').classList.add('visible');
+
+        // Refresh sub-option visibility based on current checkbox state
+        docUpdateStepOptions();
     }
 
     function closeDocPipeline() {
@@ -999,6 +1011,7 @@ const Admin = (function () {
         var steps = [];
         if (document.getElementById('doc-step-ddl').checked) steps.push('generate_ddl');
         if (document.getElementById('doc-step-publish').checked) steps.push('publish_confluence');
+        if (document.getElementById('doc-step-github').checked) steps.push('publish_github');
         if (document.getElementById('doc-step-consolidate').checked) steps.push('consolidate_upload');
 
         if (steps.length === 0) {
