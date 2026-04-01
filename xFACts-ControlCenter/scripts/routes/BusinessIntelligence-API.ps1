@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Business Intelligence API Routes
 # Location: E:\xFACts-ControlCenter\scripts\routes\BusinessIntelligence-API.ps1
 # 
