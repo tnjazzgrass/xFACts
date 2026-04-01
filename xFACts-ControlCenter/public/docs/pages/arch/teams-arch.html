@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teams Integration Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Teams Integration Architecture</h1>
+        <div class="subtitle">How alerts get queued, routed, and delivered &mdash; and why the queue is the smartest thing in the room</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#queue-lifecycle">Queue Lifecycle</a>
+            <a href="#routing">Routing &amp; Subscriptions</a>
+            <a href="#deduplication">Deduplication</a>
+            <a href="#retry">Retry &amp; Failure Handling</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> Teams Integration does and <em>why</em>. This page tells you <em>how</em>. Four tables, one stored procedure, one trigger, and one PowerShell script that turns "something happened" into a color-coded card in your channel &mdash; usually within seconds.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>The Teams schema is built around a routing pattern. Alerts don't go directly to a webhook &mdash; they pass through a subscription layer that decides which webhooks should receive which alerts. This indirection is what makes the whole system flexible.</p>
+
+        <div class="erd-root" data-schema="Teams"></div>
+
+        <p>The data model has a clean flow from left to right. <code>WebhookConfig</code> defines where messages can go. <code>WebhookSubscription</code> defines rules for which alerts go where. <code>AlertQueue</code> holds the pending and processed alerts. <code>RequestLog</code> records every delivery attempt.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>WebhookConfig</code></td><td>Webhook URL registry</td><td>One per Teams channel webhook</td></tr>
+                <tr><td><code>WebhookSubscription</code></td><td>Alert routing rules</td><td>Many per webhook (module + category combos)</td></tr>
+                <tr><td><code>AlertQueue</code></td><td>Alert processing queue</td><td>Many per subscription over time</td></tr>
+                <tr><td><code>RequestLog</code></td><td>HTTP delivery audit trail</td><td>One per delivery attempt</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why separate WebhookConfig and WebhookSubscription?</strong> A single webhook URL can serve many routing rules. The Apps team channel might receive all JobFlow alerts, all BIDATA alerts, and only CRITICAL ServerOps alerts. That's three subscription rows pointing at one webhook. If the webhook URL changes (Teams rotates them periodically), you update one row in WebhookConfig instead of every subscription.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Queue Lifecycle -->
+    <!-- ============================================ -->
+    <div class="section" id="queue-lifecycle">
+        <h2>The Queue Lifecycle</h2>
+
+        <p>Every alert passes through the same lifecycle, regardless of which module generated it or how urgent it is. The queue is the great equalizer.</p>
+
+        <!-- Queue lifecycle flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">sp_QueueAlert</div>
+                    <div class="arch-flow-step-detail">INSERT into<br>AlertQueue (Pending)</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Trigger Fires</div>
+                    <div class="arch-flow-step-detail">running_count++<br>in ProcessRegistry</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Match Subs</div>
+                    <div class="arch-flow-step-detail">Module + category<br>&rarr; webhook(s)</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">POST Card</div>
+                    <div class="arch-flow-step-detail">Adaptive Card<br>to Teams webhook</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Log &amp; Update</div>
+                    <div class="arch-flow-step-detail">RequestLog entry<br>Queue &rarr; Success/Failed</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Queue-driven execution &mdash; no wasted cycles polling an empty queue. One alert can route to multiple channels.</div>
+        </div>
+
+        <h3>Step 1: Alert Enters the Queue</h3>
+
+        <p>A module calls <code>Teams.sp_QueueAlert</code> with a source module, alert category (CRITICAL/WARNING/INFO), title, message body, and optional deduplication trigger. The stored procedure INSERTs a row into <code>AlertQueue</code> with status <strong>Pending</strong> and returns immediately. The calling module never waits for delivery.</p>
+
+        <p>Some scripts bypass the stored procedure and INSERT directly into AlertQueue, providing pre-built Adaptive Card JSON in the <code>card_json</code> column. <code>Send-DiskHealthSummary.ps1</code> does this because its card layout is too complex for the standard template. The queue doesn't care how the row got there.</p>
+
+        <h3>Step 2: The Trigger Signals Demand</h3>
+
+        <p><code>TR_Teams_AlertQueue_QueueDepth</code> fires on every INSERT. It increments <code>running_count</code> on the queue processor's <code>Orchestrator.ProcessRegistry</code> entry. This is the signal that work is waiting. The orchestrator sees the positive count on its next heartbeat and launches the processor.</p>
+
+        <div class="tech-tip">
+            <strong>Queue-driven, not timer-driven.</strong> The processor is <code>run_mode = 2</code> in ProcessRegistry, meaning it only runs when signaled. No polling an empty queue on a timer. If nothing is queued, nothing runs. If 10 alerts arrive between heartbeats, the trigger increments the count 10 times, but the processor handles them all in a single batch.
+        </div>
+
+        <h3>Step 3: Claim, Match, Deliver</h3>
+
+        <p><code>Process-TeamsAlertQueue.ps1</code> picks up all Pending rows and processes them in order. For each alert:</p>
+
+        <p>The script joins through <code>WebhookSubscription</code> to find which webhooks should receive this alert, matching on <code>source_module</code> and <code>alert_category</code>. An alert can match multiple subscriptions &mdash; one alert, many channels.</p>
+
+        <p>For each matched webhook, the script either uses the pre-built <code>card_json</code> (if provided) or constructs a standard Adaptive Card with the alert's title, message, category color coding, and timestamp. The card is POSTed to the webhook URL from <code>WebhookConfig</code>.</p>
+
+        <p>Each delivery attempt is logged to <code>RequestLog</code> with the HTTP status code, response body, and timing. The AlertQueue row is then updated to <strong>Success</strong> or <strong>Failed</strong> with a <code>processed_dttm</code> timestamp.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Routing & Subscriptions -->
+    <!-- ============================================ -->
+    <div class="section" id="routing">
+        <h2>Routing &amp; Subscriptions</h2>
+
+        <p>The subscription model is deliberately simple: a subscription says "alerts from this module with this category should go to this webhook." The power comes from combining multiple subscriptions.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Subscription Pattern</th><th>Example</th><th>Effect</th></tr></thead>
+            <tbody>
+                <tr><td>Module + Category</td><td>JobFlow + CRITICAL</td><td>Only critical JobFlow alerts to this channel</td></tr>
+                <tr><td>Module + wildcard</td><td>BIDATA + all categories</td><td>All BIDATA alerts to this channel</td></tr>
+                <tr><td>Multiple subscriptions</td><td>JobFlow CRITICAL + ServerOps CRITICAL</td><td>All critical alerts from two modules to same channel</td></tr>
+            </tbody>
+        </table>
+
+        <p>The key insight is that routing decisions are made at delivery time, not at queue time. The alert sits in the queue with its module and category. The processor evaluates subscriptions when it picks up the alert. This means you can change routing rules without touching anything in the queue &mdash; the next alert will follow the new rules automatically.</p>
+
+        <div class="tech-tip">
+            <strong>Active flags at every level.</strong> <code>WebhookConfig.is_active</code> disables a webhook entirely (maybe it expired). <code>WebhookSubscription.is_active</code> disables a specific routing rule. Both are checked at delivery time. You can surgically disable one subscription without affecting any other routing to that same webhook.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Deduplication -->
+    <!-- ============================================ -->
+    <div class="section" id="deduplication">
+        <h2>Deduplication</h2>
+
+        <p>Without deduplication, a persistent problem generates a new alert every monitoring cycle. A stalled job detected on every cycle means hundreds of alerts per day. That&rsquo;s not alerting, that&rsquo;s harassment.</p>
+
+        <p>The deduplication mechanism uses two fields: <code>dedup_type</code> and <code>dedup_value</code>. Together they form a composite key that uniquely identifies a condition. Before queueing a new alert, the calling module (or <code>sp_QueueAlert</code>) checks: has an alert with this exact type+value combination already been successfully delivered?</p>
+
+        <table class="info-table">
+            <thead><tr><th>Example</th><th>dedup_type</th><th>dedup_value</th></tr></thead>
+            <tbody>
+                <tr><td>JobFlow stall on Jan 18</td><td>JOBFLOW_STALL</td><td>2026-01-18</td></tr>
+                <tr><td>Disk D low space</td><td>DISK_LOW</td><td>DM-PROD-DB_D</td></tr>
+                <tr><td>File not detected</td><td>FILE_ESCALATION</td><td>PaymentFile_2026-01-18</td></tr>
+            </tbody>
+        </table>
+
+        <p>The date component in most dedup values means the alert resets daily. Monday's stall alert won't suppress Tuesday's. This is the right behavior &mdash; a recurring problem deserves a daily notification, not just the first one.</p>
+
+        <div class="tech-tip">
+            <strong>Deduplication is optional.</strong> Not all alerts need it. A build completion notification is a one-time event &mdash; there's no risk of it repeating. INFO-level alerts often skip deduplication entirely. The calling module decides whether to provide dedup fields based on the nature of the alert.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Retry & Failure Handling -->
+    <!-- ============================================ -->
+    <div class="section" id="retry">
+        <h2>Retry &amp; Failure Handling</h2>
+
+        <p>Teams webhooks are generally reliable, but they're an external dependency. Network blips, service outages, and webhook URL rotations all happen. The retry logic is simple and inline.</p>
+
+        <p>When a POST fails, the script retries immediately with a short delay between attempts. The maximum retry count is configured in <code>dbo.GlobalConfig</code>. Each attempt is logged to <code>RequestLog</code> with its status code and response.</p>
+
+        <p>If all retries are exhausted, the AlertQueue row is marked <strong>Failed</strong>. Failed alerts remain in the queue for troubleshooting but are not automatically retried on subsequent processor runs. The assumption is that if it failed after multiple retries, the problem is structural (expired webhook, wrong URL) and needs human attention.</p>
+
+        <div class="tech-tip">
+            <strong>Inline retries, not requeue.</strong> The script retries within a single execution rather than putting the alert back in the queue for the next cycle. This keeps retry behavior predictable and prevents retry storms. A failed alert is a known state that can be investigated, not a perpetually bouncing message.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>&ldquo;An alert isn&rsquo;t showing up in Teams.&rdquo;</strong></p>
+        <p>Check <code>Teams.AlertQueue</code> for the alert. Is the status Pending (not yet processed), Failed (delivery failed), or Success (delivered but maybe to a different channel than expected)? If Failed, the <code>error_message</code> column tells you why.</p>
+
+        <p><strong>&ldquo;Alerts are stuck in Pending.&rdquo;</strong></p>
+        <p>The processor might not be running. Check that <code>TR_Teams_AlertQueue_QueueDepth</code> is enabled &mdash; it&rsquo;s what wakes the processor. Also check <code>running_count</code> in ProcessRegistry for the Teams processor. If it&rsquo;s 0 despite pending alerts, the trigger may be disabled.</p>
+
+        <p><strong>&ldquo;The same alert went to the wrong channel.&rdquo;</strong></p>
+        <p>Check subscriptions: <code>Teams.WebhookSubscription</code> joined to <code>Teams.WebhookConfig</code>. The routing is driven by source_module, alert_category, and trigger_type matching. NULL fields act as wildcards &mdash; a subscription with NULL alert_category matches everything.</p>
+
+        <p><strong>&ldquo;Emoji are showing up as question marks.&rdquo;</strong></p>
+        <p>The script is probably putting emoji directly in the hashtable before ConvertTo-Json. Use the placeholder pattern (<code>{{FIRE}}</code>, <code>{{CHECK}}</code>, <code>{{WARN}}</code>) instead. The processor resolves them at send time.</p>
+
+        <p><strong>&ldquo;I need to retry a failed alert.&rdquo;</strong></p>
+        <p>Reset the queue row&rsquo;s status to Pending, clear the error_message and processed_dttm, then bump the processor&rsquo;s <code>running_count</code> in ProcessRegistry. The processor will pick it up on the next heartbeat.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>Teams Integration is a pure service module &mdash; it doesn't detect anything or make any decisions. It just delivers what other modules tell it to deliver. This isolation is what makes it reliable.</p>
+
+        <h3>Internal Flow</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>WebhookConfig</code></td><td><code>WebhookSubscription</code></td><td>One webhook &rarr; many subscriptions (FK on <code>webhook_id</code>)</td></tr>
+                <tr><td><code>WebhookSubscription</code></td><td><code>AlertQueue</code></td><td>Subscription matches alerts at delivery time (joined by module + category)</td></tr>
+                <tr><td><code>AlertQueue</code></td><td><code>RequestLog</code></td><td>One alert &rarr; one or more delivery attempts (FK on <code>queue_id</code>)</td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules Process-TeamsAlertQueue.ps1 (run_mode = 2, queue-driven)</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>Retry settings, feature toggles</td></tr>
+                <tr><td>Microsoft Teams</td><td>External</td><td>Webhook POST delivery target</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Who Calls Teams Integration</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Caller</th><th>Method</th><th>Alert Types</th></tr></thead>
+            <tbody>
+                <tr><td>JobFlow (Monitor-JobFlow.ps1)</td><td><code>sp_QueueAlert</code></td><td>Stalls, failures, recoveries</td></tr>
+                <tr><td>ServerOps (Process-BackupNetworkCopy.ps1 / Process-BackupAWSUpload.ps1)</td><td><code>Send-TeamsAlert</code></td><td>Retry exhaustion alerts for failed copies/uploads</td></tr>
+                <tr><td>FileOps (Scan-SFTPFiles.ps1)</td><td><code>sp_QueueAlert</code></td><td>File detected, escalation</td></tr>
+                <tr><td>BIDATA (Monitor-BIDATABuild.ps1)</td><td><code>sp_QueueAlert</code></td><td>Build complete, not started</td></tr>
+                <tr><td>ServerOps (Send-DiskHealthSummary.ps1)</td><td>Direct INSERT</td><td>Pre-built disk summary card</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/teams-ref.html" class="ref-link">📋 Teams Integration Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>		
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../teams.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Teams Integration</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

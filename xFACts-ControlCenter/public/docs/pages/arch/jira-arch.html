@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Integration Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Jira Integration Architecture</h1>
+        <div class="subtitle">How problems become tickets without anyone filling out a form &mdash; and why the retry logic sleeps better than you do</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#queue-lifecycle">Queue Lifecycle</a>
+            <a href="#ticket-payload">Ticket Construction</a>
+            <a href="#retry">Retry &amp; Fallback</a>
+            <a href="#credentials">Credential Flow</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> Jira Integration does and <em>why</em>. This page tells you <em>how</em>. Two tables, one stored procedure, one trigger, and a PowerShell script that wrestles Jira's REST API so your monitoring code doesn't have to.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>Jira Integration is the leanest schema in xFACts. Two tables do all the work &mdash; one for the queue, one for the audit trail. The simplicity is deliberate. Jira's API is complex enough; the plumbing on our side doesn't need to be.</p>
+
+        <div class="erd-root" data-schema="Jira"></div>
+
+        <p>The data model is a straight pipeline. <code>TicketQueue</code> holds pending and processed ticket requests. <code>RequestLog</code> records every API call attempt. Unlike Teams (which has a routing layer), Jira tickets go to one place: the configured Jira project. No routing decisions needed.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>TicketQueue</code></td><td>Ticket request queue</td><td>One per ticket request</td></tr>
+                <tr><td><code>RequestLog</code></td><td>API call audit trail</td><td>One per API attempt (retries create additional rows)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why no routing layer like Teams?</strong> Teams alerts go to potentially many channels based on module and category. Jira tickets go to one project with one set of fields. The routing decision was already made when the module chose to queue a ticket instead of (or in addition to) a Teams alert. There's nothing to route &mdash; just build and send.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Queue Lifecycle -->
+    <!-- ============================================ -->
+    <div class="section" id="queue-lifecycle">
+        <h2>The Queue Lifecycle</h2>
+
+        <p>The queue lifecycle mirrors Teams Integration almost exactly. Same pattern, same trigger mechanism, same separation of concerns. The module that detects a problem queues the ticket and walks away. PowerShell handles the API paperwork.</p>
+
+        <!-- Queue lifecycle flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">sp_QueueTicket</div>
+                    <div class="arch-flow-step-detail">INSERT into<br>TicketQueue (Pending)</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Trigger Fires</div>
+                    <div class="arch-flow-step-detail">running_count++<br>in ProcessRegistry</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Build Payload</div>
+                    <div class="arch-flow-step-detail">Queue fields &rarr;<br>Jira JSON structure</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">POST to Jira</div>
+                    <div class="arch-flow-step-detail">REST API create<br>Ticket key returned</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Log &amp; Update</div>
+                    <div class="arch-flow-step-detail">RequestLog entry<br>Queue &rarr; Success/Failed</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Queue-driven execution. On failure, retries span subsequent processor cycles. After max retries, email fallback fires if configured.</div>
+        </div>
+
+        <h3>Step 1: Ticket Enters the Queue</h3>
+
+        <p>A module calls <code>Jira.sp_QueueTicket</code> with the project key, issue type, priority, summary, description, and optional fields like assignee and custom field values. The procedure INSERTs into <code>TicketQueue</code> with status <strong>Pending</strong> and returns immediately.</p>
+
+        <p>The stored procedure handles field validation and default population. If no project is specified, it defaults to the configured project in GlobalConfig. If no priority is specified, it uses the module's default. The calling code provides the minimum required &mdash; the proc fills in the rest.</p>
+
+        <h3>Step 2: The Trigger Signals Demand</h3>
+
+        <p><code>TR_Jira_TicketQueue_QueueDepth</code> fires on INSERT and increments <code>running_count</code> on the Jira processor's <code>Orchestrator.ProcessRegistry</code> entry. Identical mechanism to Teams &mdash; queue-driven processing with no wasted polling cycles.</p>
+
+        <h3>Step 3: Build, Send, Record</h3>
+
+        <p><code>Process-JiraTicketQueue.ps1</code> picks up Pending rows and constructs a Jira-compliant JSON payload for each one. This is where most of the complexity lives &mdash; Jira's REST API has specific expectations about field formats, custom field IDs, and cascading select values.</p>
+
+        <p>The script POSTs to the Jira issue creation endpoint. On success, the response includes the new ticket key (e.g., SD-12345), which is written back to the <code>jira_ticket_key</code> column in TicketQueue. The row status updates to <strong>Success</strong>.</p>
+
+        <p>Every API call &mdash; successful or not &mdash; is logged to <code>RequestLog</code> with the full request payload, response payload, HTTP status code, and timing.</p>
+
+        <div class="tech-tip">
+            <strong>The ticket key is the receipt.</strong> Once <code>jira_ticket_key</code> is populated, there's a traceable link from the monitoring event through the queue to a real Jira ticket. Other modules can check this field to know whether a ticket was actually created, not just requested.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Ticket Construction -->
+    <!-- ============================================ -->
+    <div class="section" id="ticket-payload">
+        <h2>Ticket Construction</h2>
+
+        <p>Jira's API is particular about its JSON format. The PowerShell script translates the flat fields in TicketQueue into the nested JSON structure that Jira expects.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Queue Field</th><th>Jira JSON Path</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr><td><code>project_key</code></td><td><code>fields.project.key</code></td><td>e.g., "SD"</td></tr>
+                <tr><td><code>issue_type</code></td><td><code>fields.issuetype.name</code></td><td>e.g., "Issue", "Task"</td></tr>
+                <tr><td><code>ticket_priority</code></td><td><code>fields.priority.name</code></td><td>e.g., "High", "Medium"</td></tr>
+                <tr><td><code>summary</code></td><td><code>fields.summary</code></td><td>Ticket title</td></tr>
+                <tr><td><code>ticket_description</code></td><td><code>fields.description</code></td><td>Body text</td></tr>
+                <tr><td><code>cascading_field_*</code></td><td><code>fields.customfield_*</code></td><td>Cascading select: parent + child values</td></tr>
+            </tbody>
+        </table>
+
+        <p>The cascading select field is the most complex piece. Jira requires a specific nested structure with <code>value</code> and <code>child.value</code> properties. The queue stores parent and child values separately; the script assembles the correct nesting at build time.</p>
+
+        <div class="tech-tip">
+            <strong>Custom field IDs are environment-specific.</strong> The custom field ID for the cascading select (e.g., <code>customfield_10500</code>) is stored in <code>dbo.GlobalConfig</code>, not hardcoded in the script. If Jira's field configuration changes &mdash; which happens during upgrades or project reconfigurations &mdash; you update one config row instead of editing code.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Retry & Fallback -->
+    <!-- ============================================ -->
+    <div class="section" id="retry">
+        <h2>Retry &amp; Fallback</h2>
+
+        <p>A missed Teams alert is annoying. A missed Jira ticket means work doesn't get tracked, which means it might not get done. The retry logic reflects this difference.</p>
+
+        <p>When the API call fails, the script increments <code>retry_count</code> and updates <code>last_error</code> with the failure details. The row stays in <strong>Pending</strong> status for the next processor run. This is different from Teams (which retries inline) &mdash; Jira retries span multiple processor executions, giving the Jira server time to recover from transient issues.</p>
+
+        <p>After the configured maximum retries (<code>jira_retry_max_attempts</code> in GlobalConfig) are exhausted, the row is marked <strong>Failed</strong>. But that's not the end of the safety net.</p>
+
+        <h3>Email Fallback</h3>
+
+        <p>When all retries fail and email recipients are configured, the script sends a fallback email with the ticket details. The ticket doesn't exist in Jira, but someone knows about the underlying problem. The work doesn't vanish just because an API had a bad day.</p>
+
+        <div class="tech-tip">
+            <strong>Retry across cycles, not inline.</strong> Teams alerts retry immediately within one execution (seconds between attempts). Jira retries wait for the next orchestrator cycle (minutes between attempts). The reasoning: Teams failures are usually transient network blips that resolve in seconds. Jira failures are often service-level issues (maintenance, restarts) that need minutes to resolve. The retry cadence matches the failure pattern.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Credential Flow -->
+    <!-- ============================================ -->
+    <div class="section" id="credentials">
+        <h2>Credential Flow</h2>
+
+        <p>Jira requires authenticated API access. The script retrieves credentials at startup using the same two-tier encryption pattern as every other xFACts integration.</p>
+
+        <!-- Credential decryption flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">GlobalConfig</div>
+                    <div class="arch-flow-step-detail">Read master<br>passphrase</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Credentials</div>
+                    <div class="arch-flow-step-detail">Decrypt service<br>passphrase</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Decrypt Secrets</div>
+                    <div class="arch-flow-step-detail">URL + username<br>+ API token</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">API Calls</div>
+                    <div class="arch-flow-step-detail">Basic auth header<br>for all requests</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Dispose</div>
+                    <div class="arch-flow-step-detail">Credentials fall<br>out of scope</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Two-tier decryption. Nothing cached to disk. Credentials exist in memory only for the duration of the processing batch.</div>
+        </div>
+
+        <p>Decrypted credentials exist only in memory for the duration of the processing run. The script retrieves them once at startup, uses them for all API calls in that batch, and lets them fall out of scope when execution completes. Nothing is cached to disk.</p>
+
+        <div class="tech-tip">
+            <strong>Authentication method: HTTP Basic.</strong> The Jira Server REST API uses Basic authentication with a username and password (or API token). The credentials are base64-encoded in the Authorization header for each request. This is standard for Jira Server and doesn't require OAuth setup.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>&ldquo;Tickets aren&rsquo;t being created.&rdquo;</strong></p>
+        <p>Check <code>Jira.TicketQueue</code>. Is the request even there? If not, the module never queued it. If it&rsquo;s stuck in Pending, the processor might not be running &mdash; check that <code>TR_Jira_TicketQueue_QueueDepth</code> is enabled and verify the processor&rsquo;s <code>running_count</code> in ProcessRegistry.</p>
+
+        <p><strong>&ldquo;Getting 400 errors.&rdquo;</strong></p>
+        <p>Jira is rejecting the payload. Usually means a custom field ID is wrong, a required field is missing, or a dropdown value doesn&rsquo;t exist in the allowed list. Jira is very particular. Check the <code>ResponseMessage</code> column in RequestLog &mdash; Jira&rsquo;s error messages are actually helpful once you get past the JSON formatting.</p>
+
+        <p><strong>&ldquo;Getting 401/403 errors.&rdquo;</strong></p>
+        <p>Authentication failed. The API token probably expired. Check <code>dbo.Credentials</code> and verify the Jira credentials are still valid. API tokens are like milk, not honey &mdash; they expire.</p>
+
+        <p><strong>&ldquo;Email fallback fired unexpectedly.&rdquo;</strong></p>
+        <p>That means all retry attempts failed across multiple processor runs. The good news: someone got notified. The bad news: the ticket doesn&rsquo;t exist in Jira. Check the TicketQueue row for error details, fix the underlying issue, and create the ticket manually if it still needs tracking.</p>
+
+        <p><strong>&ldquo;A ticket was created but has no assignee.&rdquo;</strong></p>
+        <p>The processor does a follow-up GET to Jira to retrieve the assignee after creation. If that call failed, the ticket exists but the assignee field in RequestLog will be NULL. The ticket in Jira may still have an assignee via project auto-assignment rules &mdash; xFACts just doesn&rsquo;t know about it.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>Like Teams Integration, Jira Integration is a pure service module. It doesn't detect or decide &mdash; it creates tickets when asked and reports whether it succeeded.</p>
+
+        <h3>Internal Flow</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>TicketQueue</code></td><td><code>RequestLog</code></td><td>One ticket request &rarr; one or more API attempts (FK on <code>queue_id</code>)</td></tr>
+                <tr><td><code>sp_QueueTicket</code></td><td><code>TicketQueue</code></td><td>Stored procedure validates and INSERTs requests</td></tr>
+                <tr><td><code>TR_Jira_TicketQueue_QueueDepth</code></td><td><code>Orchestrator.ProcessRegistry</code></td><td>Trigger signals the orchestrator on INSERT</td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules Process-JiraTicketQueue.ps1 (run_mode = 2, queue-driven)</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>Retry settings, custom field IDs, project defaults</td></tr>
+                <tr><td><code>dbo.Credentials</code></td><td>Shared Infrastructure</td><td>Encrypted Jira API credentials</td></tr>
+                <tr><td>Jira Server</td><td>External</td><td>REST API ticket creation target</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Who Calls Jira Integration</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Caller</th><th>What Gets Ticketed</th></tr></thead>
+            <tbody>
+                <tr><td>FileOps (Scan-SFTPFiles.ps1)</td><td>File escalations when <code>create_jira_on_escalation = 1</code></td></tr>
+                <tr><td>BatchOps</td><td>Upload failures needing investigation</td></tr>
+                <tr><td>JobFlow</td><td>Persistent stalls, missing flows</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/jira-ref.html" class="ref-link">📋 Jira Integration Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>		
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../jira.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Jira Integration</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

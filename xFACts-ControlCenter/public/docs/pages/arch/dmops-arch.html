@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DM Operations Architecture &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>DM Operations Architecture</h1>
+        <div class="subtitle">How millions of records get surgically removed from a 10TB production database without breaking anything</div>
+    </div>
+
+    <!-- Navigation (populated by nav.js) -->
+    <div class="doc-nav"></div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#archive-process">Account Archive Process</a>
+            <a href="#delete-sequence">The Delete Sequence</a>
+            <a href="#non-blocking">Non-Blocking Design</a>
+            <a href="#bidata-migration">BIDATA Migration</a>
+            <a href="#shell-purge">Shell Purge Process</a>
+            <a href="#exclusion-log">The Exclusion Log</a>
+            <a href="#scheduling">Schedule System</a>
+            <a href="#performance">Performance &amp; Optimization</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> DM Operations does and <em>why</em>. This page tells you <em>how</em>. Two PowerShell scripts, eleven tables, and a carefully ordered sequence of DELETE operations that navigate the foreign key maze of a 1,500-table OLTP database &mdash; all while keeping the reporting warehouse intact.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>DM Operations has two components under the DmOps schema: Archive (account-level archiving with BIDATA migration) and ShellPurge (orphaned consumer cleanup). Each has its own set of operational tables, but they share the same schedule grid pattern and GlobalConfig structure.</p>
+
+        <div class="erd-root" data-schema="DmOps" data-category="Archive"></div>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>Archive_BatchLog</code></td><td>One row per archive batch execution &mdash; the primary audit table</td><td>Many (one per batch)</td></tr>
+                <tr><td><code>Archive_BatchDetail</code></td><td>Per-table operation detail within each batch</td><td>~109 per batch (one per delete order)</td></tr>
+                <tr><td><code>Archive_ConsumerLog</code></td><td>Per-account audit trail with BIDATA migration status</td><td>Many (one per account archived)</td></tr>
+                <tr><td><code>Archive_Schedule</code></td><td>7&times;24 weekly schedule grid (blocked/full/reduced)</td><td>Fixed: 7 rows</td></tr>
+                <tr><td><code>Archive_TableRegistry</code></td><td>Analysis catalog of all crs5_oltp tables with FK ordering</td><td>~1,500 rows (reference only, not used at runtime)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="erd-root" data-schema="DmOps" data-category="ShellPurge"></div>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>ShellPurge_BatchLog</code></td><td>One row per shell purge batch execution</td><td>Many (one per batch)</td></tr>
+                <tr><td><code>ShellPurge_BatchDetail</code></td><td>Per-table operation detail within each batch</td><td>~58 per batch</td></tr>
+                <tr><td><code>ShellPurge_ConsumerLog</code></td><td>Per-consumer audit trail</td><td>Many (one per consumer purged)</td></tr>
+                <tr><td><code>ShellPurge_Schedule</code></td><td>7&times;24 weekly schedule grid</td><td>Fixed: 7 rows</td></tr>
+                <tr><td><code>ShellPurge_ExclusionLog</code></td><td>Consumers excluded from purge with reason codes</td><td>~116K rows (grows with discoveries)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Account Archive Process -->
+    <!-- ============================================ -->
+    <div class="section" id="archive-process">
+        <h2>Account Archive Process</h2>
+
+        <p>The archive script (<code>Execute-DmArchive.ps1</code>) runs as a continuous batch loop. Each iteration selects a batch of consumers whose accounts carry the <code>TA_ARCH</code> tag, loads their data into temp tables, executes a 109-step delete sequence, migrates financial snapshots to the reporting warehouse, and logs everything before checking the schedule and starting the next batch.</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Pre-Flight</div>
+                    <div class="arch-flow-step-detail">Config, BIDATA check,<br>schedule, abort flag</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Select &amp; Load</div>
+                    <div class="arch-flow-step-detail">Batch consumers,<br>materialize temp IDs</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Delete Sequence</div>
+                    <div class="arch-flow-step-detail">109 ordered steps,<br>SNAPSHOT isolation</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">BIDATA Migration</div>
+                    <div class="arch-flow-step-detail">P &rarr; C atomic<br>for 4 table pairs</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Log &amp; Loop</div>
+                    <div class="arch-flow-step-detail">Audit trail, schedule<br>re-check, next batch</div>
+                </div>
+            </div>
+        </div>
+
+        <p>The script opens a single persistent connection to crs5_oltp at session start and keeps it open for the entire run. This is critical &mdash; the temp tables created during batch loading survive across all operations within the session. A separate connection opens and closes per batch for the BIDATA migration, since that targets a different database on a potentially different server.</p>
+
+        <div class="tech-tip">
+            <strong>Batch selection is deliberately unordered.</strong> The query that selects consumers for each batch has no ORDER BY clause. This was a performance decision &mdash; adding ORDER BY to the selection query took 49 seconds; without it, 2 milliseconds. The tradeoff is that consumers aren't processed in any predictable sequence, but since they all need to be processed eventually, the order doesn't matter.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Delete Sequence -->
+    <!-- ============================================ -->
+    <div class="section" id="delete-sequence">
+        <h2>The Delete Sequence</h2>
+
+        <p>This is the heart of the archive process. Debt Manager's schema has deep foreign key chains &mdash; deleting an account record requires first deleting from every table that references it, and every table that references those tables, and so on. The delete sequence is a hardcoded, FK-validated order of operations that navigates this dependency tree.</p>
+
+        <p>The sequence has three phases:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Phase</th><th>Scope</th><th>Tables</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Phase 1: UDEFs</strong></td><td>User-defined extension tables discovered dynamically at runtime</td><td>~11 (varies)</td></tr>
+                <tr><td><strong>Phase 2: Account tables</strong></td><td>All standard tables with FK relationships to the account record</td><td>~98</td></tr>
+                <tr><td><strong>Terminal delete</strong></td><td>The account record itself, after all children are clear</td><td>1</td></tr>
+            </tbody>
+        </table>
+
+        <p>Every DELETE operation uses SNAPSHOT isolation to avoid blocking production queries, chunked deletes (default 5,000 rows per chunk) to manage transaction log volume, and automatic deadlock retry with exponential backoff. If any table operation fails, the entire batch stops &mdash; no further tables are processed, because the FK chain means later deletes could produce inconsistent results.</p>
+
+        <div class="tech-tip">
+            <strong>Pre-materialized intermediate ID sets.</strong> Several tables in the delete sequence don't have a direct foreign key to the account record &mdash; they're two or three joins away. Rather than embedding complex subqueries in every DELETE, the script pre-materializes the intermediate ID sets into temp tables at batch start. This turned a single-consumer delete from 120 seconds down to 0.065 seconds at scale &mdash; an 1,846x improvement.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Non-Blocking Design -->
+    <!-- ============================================ -->
+    <div class="section" id="non-blocking">
+        <h2>Non-Blocking Design</h2>
+
+        <p>Both the archive and shell purge processes operate on a live production database that over 200 people use during business hours. The single most important design requirement is that these processes must never block a user from doing their job. Every DELETE could potentially interfere with someone running a query, pulling a report, or working an account &mdash; so the scripts use a layered strategy to ensure that never happens.</p>
+
+        <p><strong>SNAPSHOT isolation.</strong> Every DELETE statement executes under <code>SET TRANSACTION ISOLATION LEVEL SNAPSHOT</code>. Under normal database operation, a DELETE takes locks on the rows it's modifying, and any SELECT trying to read those same rows has to wait. SNAPSHOT isolation changes this equation. When SNAPSHOT is active, readers don't take shared locks at all &mdash; they read from a point-in-time version of the data maintained in the version store. The result: our DELETEs and user queries can operate on the same tables simultaneously without either one waiting for the other. Users see a consistent view of the data as of when their query started, completely unaware that rows are being deleted underneath them.</p>
+
+        <p><strong>DEADLOCK_PRIORITY LOW.</strong> Even with SNAPSHOT isolation, deadlocks can still occur when two operations try to modify the same rows &mdash; for example, if a DM process updates a record that our script is also trying to delete. When a deadlock happens, SQL Server has to pick a victim. <code>SET DEADLOCK_PRIORITY LOW</code> tells SQL Server to always sacrifice our session, not the user's. The user's operation completes successfully without interruption. Our script catches the deadlock error (SQL Server error 1205), waits 5 seconds, and retries. It will retry up to 10 times before giving up on that chunk. In practice, deadlocks at SNAPSHOT isolation are rare &mdash; the retry exists as a safety net.</p>
+
+        <p><strong>Chunked deletes.</strong> Rather than issuing a single <code>DELETE</code> that removes tens of thousands of rows in one statement (which would hold exclusive locks for the duration and generate a massive transaction log entry), every DELETE is automatically wrapped with <code>DELETE TOP (5000)</code>. The script loops, deleting 5,000 rows at a time, until no more qualifying rows exist. Between each chunk, a 100-millisecond pause gives other operations a window to acquire any locks they need. The chunk size is configurable via GlobalConfig.</p>
+
+        <p><strong>Version store consideration.</strong> SNAPSHOT isolation relies on the version store in tempdb to maintain row versions for concurrent readers. At production batch sizes (25,000 consumers, ~3.5 million rows per batch), the version store will grow during each batch and release after the transaction completes. Production tempdb is sized to accommodate this, but it's worth monitoring during the initial production runs.</p>
+
+        <div class="tech-tip">
+            <strong>The retry error codes.</strong> The script recognizes four retryable SQL Server errors: 1204 (lock resource limit exceeded), 1205 (deadlock victim), 1222 (lock timeout), and 3960 (snapshot update conflict). Any other error is treated as a hard failure that stops the batch. After a retry, the isolation level is explicitly reset to READ COMMITTED to prevent a stuck session state on the persistent connection.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: BIDATA Migration -->
+    <!-- ============================================ -->
+    <div class="section" id="bidata-migration">
+        <h2>BIDATA Migration</h2>
+
+        <p>The reporting warehouse (BIDATA) is rebuilt every night from production data. Four tables form the financial reporting core: account demographics, payment details, combined account-payment records, and aggregated payment summaries. Each exists as a pair &mdash; a "P" (production/live) table and a "C" (completed/archived) table &mdash; fronted by a UNION view that the reports read from.</p>
+
+        <p>When accounts are archived, their P-table rows must be migrated to the corresponding C tables before the next nightly rebuild. Otherwise, the rebuild would regenerate P rows from whatever degraded data remains in the production OLTP &mdash; producing incorrect financial snapshots.</p>
+
+        <p>The migration for each table pair is atomic: INSERT into C, DELETE from P, wrapped in a single transaction with count validation. If the INSERT count doesn't match the expected source count, the entire transaction rolls back. All four table pairs must succeed or the batch is flagged for review.</p>
+
+        <div class="tech-tip">
+            <strong>The timing constraint.</strong> BIDATA rebuilds at 1:00 AM. The archive schedule blocks processing in the hours before the rebuild to ensure no accounts are left in a partially-processed state when the rebuild runs. A future enhancement will add PII anonymization to this step &mdash; scrubbing personal data in the C tables after migration while preserving the financial figures.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Shell Purge Process -->
+    <!-- ============================================ -->
+    <div class="section" id="shell-purge">
+        <h2>Shell Purge Process</h2>
+
+        <p>The shell purge script (<code>Execute-DmShellPurge.ps1</code>) follows the same batch loop pattern as the archive script but targets a different problem. A "shell" is a consumer record with no remaining accounts &mdash; the consumer exists in the system but has nothing attached to it. Shells accumulate from two sources: account archiving (which removes all accounts but leaves the consumer) and consumer merge operations within Debt Manager.</p>
+
+        <p>Eligible shells are identified by their placement in the WFAPURGE workgroup &mdash; a Debt Manager nightly job moves qualifying consumers there automatically. The purge script selects from this workgroup, validates candidates against the exclusion log, and executes a 58-step consumer-level delete sequence derived from the vendor's own shell deletion procedure.</p>
+
+        <div class="tech-tip">
+            <strong>Why not just delete from the vendor proc?</strong> The vendor's stored procedure processes one consumer at a time with no parallelism, no batch control, no scheduling, and no audit trail. The xFACts implementation processes batches of hundreds or thousands, runs within a schedule, logs every operation, and handles exclusions that the vendor proc doesn't account for.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Exclusion Log -->
+    <!-- ============================================ -->
+    <div class="section" id="exclusion-log">
+        <h2>The Exclusion Log</h2>
+
+        <p>Not every shell can be safely deleted. Some consumers have data in tables that aren't covered by the delete sequence &mdash; either because those tables have no foreign key relationship to the consumer record (making orphaned rows acceptable) or because the data has business significance that warrants preservation.</p>
+
+        <p>The exclusion log tracks these consumers with reason codes. It was seeded with an initial scan of production data (~116,000 consumers across 7 exclusion categories) and grows incrementally as the purge process discovers new exclusions during batch validation. Excluded consumers are never retried &mdash; once logged, they're filtered out of all future batch selections via a session-cached temp table for performance.</p>
+
+        <p>Suspense transactions receive special handling. Consumers with records in the suspense tracking tables can be optionally included or excluded via a GlobalConfig toggle, allowing the team to make a policy decision about disposition without changing the code.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schedule System -->
+    <!-- ============================================ -->
+    <div class="section" id="scheduling">
+        <h2>Schedule System</h2>
+
+        <p>Both processes share the same scheduling model: a 7-day &times; 24-hour grid where each cell has one of three values. "Full" means the process runs at full batch size. "Reduced" means it runs at a smaller batch size to minimize system impact. "Blocked" means it stops and doesn't restart until the next allowed window.</p>
+
+        <p>The scripts check the schedule after every batch. If the mode changes from Full to Reduced, the batch size adjusts immediately for the next batch. If the mode changes to Blocked, the script exits its batch loop and terminates. The next launch (via the Orchestrator or manual trigger) picks up where it left off.</p>
+
+        <p>The three-state model was chosen over a simple allow/block because the database serves over 200 users during business hours. Running at full speed (10,000-record batches) during the day would create noticeable contention. Reduced mode (100-record batches) keeps the process moving without impacting users. Full mode is reserved for evenings and weekends when the system is quiet.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Performance & Optimization -->
+    <!-- ============================================ -->
+    <div class="section" id="performance">
+        <h2>Performance &amp; Optimization</h2>
+
+        <p>The archive process went through extensive optimization during development. The original approach &mdash; processing one consumer at a time with individual queries per table &mdash; took 120 seconds per consumer. The current implementation processes 10,000 consumers in 649 seconds (0.065 seconds each), a 1,846x improvement achieved through four key changes:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Optimization</th><th>Impact</th></tr></thead>
+            <tbody>
+                <tr><td>Persistent SQL connection with session-scoped temp tables</td><td>Eliminated per-query connection overhead; enabled temp table reuse</td></tr>
+                <tr><td>64 FK supporting indexes on crs5_oltp</td><td>Eliminated full table scans during FK validation on DELETE</td></tr>
+                <tr><td>Pre-materialized intermediate ID temp tables</td><td>Replaced deep subqueries with single-join lookups</td></tr>
+                <tr><td>ORDER BY removal from batch selection</td><td>Batch selection from 49 seconds to 2 milliseconds</td></tr>
+            </tbody>
+        </table>
+
+        <p>The shell purge process followed a similar path. Batch selection went from 92 seconds (NOT EXISTS against millions of rows) to under 1 second using the exclusion log pattern. The terminal consumer DELETE went from 121 seconds to 2.2 seconds after 25 FK supporting indexes were added. An overnight test run processed 2.3 million consumers in 9 hours with zero failures.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <div class="expand-card">
+            <div class="expand-card-title">GlobalConfig</div>
+            <div class="expand-card-body">
+                <p>Both processes read their configuration from GlobalConfig entries under module <code>DmOps</code> with category <code>Archive</code> or <code>ShellPurge</code>. Settings include target instance, batch sizes (full and reduced), chunk size for delete operations, alerting toggle, and the abort flag used for emergency stops from the Control Center.</p>
+            </div>
+        </div>
+
+        <div class="expand-card">
+            <div class="expand-card-title">ServerRegistry</div>
+            <div class="expand-card-body">
+                <p>Each process has an enable flag on the ServerRegistry row for its target server (<code>dmops_archive_enabled</code>, <code>dmops_shell_purge_enabled</code>). The scripts check this on startup and exit immediately if the flag is off. This provides a server-level kill switch independent of the schedule and abort mechanisms.</p>
+            </div>
+        </div>
+
+        <div class="expand-card">
+            <div class="expand-card-title">Teams Integration</div>
+            <div class="expand-card-body">
+                <p>Both processes use the shared <code>Send-TeamsAlert</code> function to queue alerts on batch failures. Alerting is controlled by a per-process GlobalConfig flag (<code>alerting_enabled</code>) so it can be suppressed during testing without removing the alert logic.</p>
+            </div>
+        </div>
+
+        <div class="expand-card">
+            <div class="expand-card-title">BIDATA Dependency</div>
+            <div class="expand-card-body">
+                <p>The archive process depends on BIDATA for the P-to-C financial migration. The BIDATA nightly build status is tracked in <code>BIDATA.BuildExecution</code>. The archive schedule is designed to avoid running during or immediately before the build window. Shell purging has no BIDATA dependency.</p>
+            </div>
+        </div>
+
+        <div class="expand-card">
+            <div class="expand-card-title">crs5_oltp (Debt Manager OLTP)</div>
+            <div class="expand-card-body">
+                <p>Both scripts target crs5_oltp via the AG-aware connection system in xFACts-Helpers.psm1. Read operations (batch selection, ID materialization) use the secondary replica. Write operations (DELETEs) target the primary. When targeting a standalone test instance, both read and write go to the same server via direct connection.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../dmops.html" style="color: var(--accent-blue); text-decoration: none;">&larr; DM Operations</a>
+           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

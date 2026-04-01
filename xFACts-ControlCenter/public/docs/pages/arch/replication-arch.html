@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Replication Monitoring Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Replication Monitoring Architecture</h1>
+        <div class="subtitle">Four tables, one script, and the distribution database finally gives up its secrets</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#collection-cycle">Collection Cycle</a>
+            <a href="#registry-sync">Registry Discovery</a>
+            <a href="#agent-health">Agent Health &amp; Queue</a>
+            <a href="#event-detection">Event Detection</a>
+            <a href="#tracer-tokens">Tracer Tokens</a>
+            <a href="#landscape">Current Landscape</a>
+            <a href="#configuration">Configuration</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> Replication Monitoring does and <em>why</em>. This page tells you <em>how</em>. One collector script runs four monitoring layers in a single pass: registry discovery, agent health snapshots, event detection, and tracer token latency measurement. All source data comes from the distribution database on DM-PROD-DB.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>The Replication component is compact and focused. Four tables, one script, no procedures, no triggers. The <code>PublicationRegistry</code> is the hub &mdash; every other table references it via FK. The three history tables are append-only stores capturing different dimensions of the same pipeline.</p>
+
+        <div class="erd-root" data-schema="ServerOps" data-category="Replication"></div>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>Replication_PublicationRegistry</code></td><td>Agent/publication catalog (hub)</td><td>One row per publication/subscriber/agent combination</td></tr>
+                <tr><td><code>Replication_AgentHistory</code></td><td>Health + queue + throughput snapshots</td><td>~5,760 rows/day (4 agents &times; 60-sec cycles)</td></tr>
+                <tr><td><code>Replication_EventLog</code></td><td>State changes and errors</td><td>Change-driven &mdash; zero rows on quiet days</td></tr>
+                <tr><td><code>Replication_LatencyHistory</code></td><td>Tracer token latency measurements</td><td>~864 rows/day (3 subscribers &times; 5-min intervals)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>No triggers, no stored procedures.</strong> Unlike Teams and Jira (which use triggers to signal the orchestrator), Replication runs on a standard 60-second schedule. The collector handles everything &mdash; discovery, snapshots, event detection, and tracer tokens &mdash; in a single script with conditional logic for the tracer token interval.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Collection Cycle -->
+    <!-- ============================================ -->
+    <div class="section" id="collection-cycle">
+        <h2>The Collection Cycle</h2>
+
+        <p><code>Collect-ReplicationHealth.ps1</code> runs on a configurable schedule via the orchestrator. All four monitoring layers execute in a single pass, in a deliberate order where each step depends on the results of the previous one.</p>
+
+        <!-- Collection flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Registry Sync</div>
+                    <div class="arch-flow-step-detail">Discover agents from<br>distribution DB</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Load Active</div>
+                    <div class="arch-flow-step-detail">Filter to monitored,<br>non-dropped agents</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Health Snapshot</div>
+                    <div class="arch-flow-step-detail">Status + queue +<br>throughput per agent</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Event Detection</div>
+                    <div class="arch-flow-step-detail">Compare to previous<br>+ BIDATA correlation</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Tracer Tokens</div>
+                    <div class="arch-flow-step-detail">Post + measure<br>(every ~5 min)</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Steps 1&ndash;4 run every cycle (~1 second). Step 5 runs every ~5 minutes and adds 15&ndash;45 seconds for token propagation.</div>
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Step</th><th>Action</th><th>Target Table</th><th>Frequency</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td>Registry Discovery</td><td><code>Replication_PublicationRegistry</code></td><td>Every cycle</td></tr>
+                <tr><td>2</td><td>Load Active Registry</td><td><em>In-memory filter</em></td><td>Every cycle</td></tr>
+                <tr><td>3</td><td>Agent Health + Queue + Throughput</td><td><code>Replication_AgentHistory</code></td><td>Every cycle</td></tr>
+                <tr><td>4</td><td>Event Detection</td><td><code>Replication_EventLog</code></td><td>Every cycle (change-driven)</td></tr>
+                <tr><td>5</td><td>Tracer Tokens</td><td><code>Replication_LatencyHistory</code></td><td>Every ~5 min (configurable)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Two cycle profiles.</strong> Most cycles complete in under 1 second (Steps 1&ndash;4 only). Tracer token cycles take 15&ndash;45 seconds, dominated by the propagation wait time. The script checks <code>MAX(collected_dttm)</code> from <code>Replication_LatencyHistory</code> to decide whether to run Step 5.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Registry Discovery -->
+    <!-- ============================================ -->
+    <div class="section" id="registry-sync">
+        <h2>Registry Discovery</h2>
+
+        <p>Before monitoring can happen, the collector needs to know what to monitor. Rather than maintaining a manual list, it discovers this automatically each cycle by querying the distribution database.</p>
+
+        <h3>Distribution Agent Discovery</h3>
+
+        <p>The collector queries <code>distribution.dbo.MSdistribution_agents</code> joined with <code>MSsubscriber_info</code> (for registered subscriber names) and <code>MSpublications</code> (for publication metadata). Subscriber name resolution uses prefix matching against the agent name string because <code>subscriber_id</code> maps to linked server aliases in <code>master.sys.servers</code>, which can differ from the actual registered subscriber name.</p>
+
+        <h3>Log Reader Discovery</h3>
+
+        <p>Log Reader agents are discovered separately from <code>distribution.dbo.MSlogreader_agents</code>. They&rsquo;re stored in the registry with <code>agent_type = 'LogReader'</code> and subscriber fields set to the publisher database name (the Log Reader has no subscriber &mdash; it reads the transaction log for all publications).</p>
+
+        <h3>Sync Logic</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Scenario</th><th>Action</th></tr></thead>
+            <tbody>
+                <tr><td>New agent not in registry</td><td>INSERT new row</td></tr>
+                <tr><td>Existing agent with changed metadata</td><td>UPDATE subscriber name, IDs, etc.</td></tr>
+                <tr><td>Previously dropped agent recreated</td><td>Reactivate: <code>is_dropped = 0</code>, clear <code>dropped_detected_dttm</code></td></tr>
+                <tr><td>Agent in registry but not in distribution DB</td><td>Soft-delete: <code>is_dropped = 1</code>, set <code>dropped_detected_dttm</code></td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Soft delete preserves history.</strong> Dropping a registry row would orphan all FK references in AgentHistory, LatencyHistory, and EventLog. Soft-deleting with <code>is_dropped = 1</code> keeps historical data queryable. If the same publication is recreated later, the original row is reused rather than creating a duplicate.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Agent Health & Queue -->
+    <!-- ============================================ -->
+    <div class="section" id="agent-health">
+        <h2>Agent Health, Queue Depth &amp; Throughput</h2>
+
+        <p>For each active registry entry, the collector captures a combined snapshot every cycle. Three data sources feed one row in <code>Replication_AgentHistory</code>:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Data</th><th>Source</th><th>What It Tells You</th></tr></thead>
+            <tbody>
+                <tr><td>Agent health (run_status, message)</td><td><code>MSdistribution_history</code> / <code>MSlogreader_history</code></td><td>Is the agent running? What&rsquo;s it doing?</td></tr>
+                <tr><td>Queue depth (pending commands)</td><td><code>sp_replmonitorsubscriptionpendingcmds</code></td><td>How much work is waiting?</td></tr>
+                <tr><td>Throughput (delivery rate, cumulative counts)</td><td><code>MSdistribution_history</code> / <code>MSlogreader_history</code></td><td>How fast is data flowing?</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Why the System Procedure for Queue Depth</h3>
+
+        <p>Queue depth comes from <code>sp_replmonitorsubscriptionpendingcmds</code> rather than aggregating <code>MSdistribution_status</code> directly. The system procedure returns instantly. The direct table join takes 90+ seconds on large distribution databases. Not a close call.</p>
+
+        <h3>Log Reader: NULL Queue Depth</h3>
+
+        <p>The Log Reader Agent reads the publisher&rsquo;s transaction log and writes to the distribution database. Pending command count is a Distribution Agent concept &mdash; the Log Reader doesn&rsquo;t deliver to subscribers. Queue depth columns are NULL for Log Reader entries by design.</p>
+
+        <h3>The Stopped Detection Edge Case</h3>
+
+        <p>SQL Server sometimes reports <code>run_status = 2</code> (Running) with a &ldquo;The process was successfully stopped&rdquo; agent message when an agent is stopped externally. The collector detects this pattern by checking both the status code and the message content, treating it as a Stopped state rather than Running.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Event Detection -->
+    <!-- ============================================ -->
+    <div class="section" id="event-detection">
+        <h2>Event Detection</h2>
+
+        <p>Events are logged only when state changes. The collector compares each agent&rsquo;s current <code>run_status</code> to the most recent <code>AgentHistory</code> snapshot from the previous cycle. If nothing changed, nothing is logged.</p>
+
+        <h3>Event Types</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Event Type</th><th>Trigger</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><strong>STATE_CHANGE</strong></td><td><code>run_status</code> changed</td><td>Generic transition event for any status change</td></tr>
+                <tr><td><strong>AGENT_START</strong></td><td>Transitioned to Running/Idle from Stopped/Failed</td><td>Agent began running (subset of STATE_CHANGE)</td></tr>
+                <tr><td><strong>AGENT_STOP</strong></td><td>Transitioned to Stopped, or &ldquo;successfully stopped&rdquo; message</td><td>Agent was stopped (subset of STATE_CHANGE)</td></tr>
+                <tr><td><strong>ERROR</strong></td><td><code>error_id > 0</code></td><td>Agent reported an error &mdash; can occur with or without state change</td></tr>
+                <tr><td><strong>RETRY</strong></td><td>Transitioned to Retrying</td><td>Agent hit an error and is attempting recovery</td></tr>
+                <tr><td><strong>INFO</strong></td><td>Collector discretion</td><td>Registry changes, configuration updates</td></tr>
+            </tbody>
+        </table>
+
+        <h3>BIDATA Build Correlation</h3>
+
+        <p>When an AGENT_STOP event is detected, the collector queries <code>BIDATA.BuildExecution</code> for an active or recently completed build. If one is found, <code>correlation_source</code> is set to <code>'BIDATA_BUILD'</code> &mdash; the stop was expected.</p>
+
+        <p>Events with <code>NULL</code> correlation are the interesting ones. An agent stop at noon with no known correlating process? That warrants investigation.</p>
+
+        <h3>Errors Without State Change</h3>
+
+        <p>ERROR events can be logged independently. If an agent reports <code>error_id > 0</code> but its <code>run_status</code> hasn&rsquo;t changed, the error is still captured. This catches transient errors the agent recovers from without ever transitioning to Failed.</p>
+
+        <div class="tech-tip">
+            <strong>Cross-module dependency.</strong> The BIDATA build correlation is the only cross-module reference in the Replication component. It reads <code>BIDATA.BuildExecution</code> to determine if a build is active. This single JOIN eliminates the majority of false-positive agent stop alerts.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Tracer Tokens -->
+    <!-- ============================================ -->
+    <div class="section" id="tracer-tokens">
+        <h2>Tracer Tokens</h2>
+
+        <p>Agent health tells you the machinery is running. Queue depth tells you work isn&rsquo;t piling up. But neither tells you the most important thing: <em>how long does it actually take for a change to arrive at the subscriber?</em></p>
+
+        <h3>How They Work</h3>
+
+        <p>Every 5 minutes, the collector posts a tracer token via <code>sp_posttracertoken</code> on the publisher database (<code>crs5_oltp</code>). A tiny marker is inserted into the transaction log. It flows through the entire replication pipeline &mdash; picked up by the Log Reader, written to the distribution database, delivered by the Distribution Agent, applied at the subscriber. Timestamps are recorded at each hop.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Hop</th><th>Measurement</th><th>What Affects It</th></tr></thead>
+            <tbody>
+                <tr><td>Publisher &rarr; Distributor</td><td><code>publisher_to_distributor_ms</code></td><td>Log Reader Agent performance, transaction log size</td></tr>
+                <tr><td>Distributor &rarr; Subscriber</td><td><code>distributor_to_subscriber_ms</code></td><td>Distribution Agent throughput, network speed, subscriber load</td></tr>
+            </tbody>
+        </table>
+
+        <p>After waiting a configurable period (default 15 seconds), the collector retrieves results via <code>sp_helptracertokenhistory</code> and stores them in <code>Replication_LatencyHistory</code> &mdash; one row per subscriber. Tokens are cleaned up via <code>sp_deletetracertokenhistory</code> to prevent accumulation in the distribution database.</p>
+
+        <h3>During Agent Downtime</h3>
+
+        <p>Tracer tokens are posted regardless of agent state. When Distribution agents are stopped during the BIDATA build window, the Log Reader still picks up the token (<code>publisher_commit_dttm</code> and <code>distributor_commit_dttm</code> populate normally). But <code>subscriber_commit_dttm</code> stays NULL &mdash; the Distribution Agent isn&rsquo;t running to deliver it. This is meaningful data: NULL confirms agents are stopped as expected.</p>
+
+        <div class="tech-tip">
+            <strong>Zero impact on the database.</strong> Tracer tokens are a single tiny transaction in the log. No user tables are touched. The replication pipeline doesn&rsquo;t even notice them among the thousands of real transactions it&rsquo;s already processing.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Current Landscape -->
+    <!-- ============================================ -->
+    <div class="section" id="landscape">
+        <h2>Current Landscape</h2>
+
+        <p>Three publications, all transactional, all from <code>crs5_oltp</code> on DM-PROD-DB, plus one Log Reader agent feeding all three:</p>
+
+        <table class="info-table" style="max-width: 720px;">
+            <thead><tr><th>Publication</th><th>Subscriber</th><th>Type</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td>Azure_BIDATA_Load</td><td>Azure SQL (fa-bidata)</td><td>Push</td><td>Independent Azure data warehouse build</td></tr>
+                <tr><td>BIDATA_Load_POC</td><td>DM-PROD-REP (FA-BI-DATA)</td><td>Pull</td><td>POC: testing BIDATA build off production secondary</td></tr>
+                <tr><td>BIDATALoad</td><td>DM-STAGE-DB (FA-BI-DATA)</td><td>Pull</td><td>Primary BIDATA data warehouse build</td></tr>
+            </tbody>
+        </table>
+
+        <p>The two pull subscriptions pause nightly during the BIDATA build (~1 AM &ndash; 5 AM). The Azure push runs continuously.</p>
+
+        <div class="tech-tip">
+            <strong>Log Reader is a single point of failure.</strong> One Log Reader Agent serves all three publications. If it stops, nothing gets fed to the distribution database, and all three subscribers go stale simultaneously. That&rsquo;s why it gets its own entry in the monitoring registry and its own health snapshots every cycle.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Configuration -->
+    <!-- ============================================ -->
+    <div class="section" id="configuration">
+        <h2>Configuration</h2>
+
+        <p>All thresholds and settings live in <code>dbo.GlobalConfig</code> under <code>module_name = 'ServerOps'</code>, <code>category = 'Replication'</code>. Everything is tunable without touching code.</p>
+
+        <table class="info-table" style="max-width: 640px;">
+            <thead><tr><th>Setting</th><th>Default</th><th>What It Controls</th></tr></thead>
+            <tbody>
+                <tr><td>tracer_interval_minutes</td><td>5</td><td>How often tracer tokens are posted</td></tr>
+                <tr><td>tracer_wait_seconds</td><td>15</td><td>How long to wait for token results</td></tr>
+                <tr><td>queue_warning_threshold</td><td>5,000</td><td>Pending commands for warning</td></tr>
+                <tr><td>queue_critical_threshold</td><td>50,000</td><td>Pending commands for critical</td></tr>
+                <tr><td>latency_warning_ms</td><td>30,000</td><td>Latency warning (30 seconds)</td></tr>
+                <tr><td>latency_critical_ms</td><td>120,000</td><td>Latency critical (2 minutes)</td></tr>
+                <tr><td>alerting_enabled</td><td>0 (off)</td><td>Master switch &mdash; off during baselining</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Alerting starts disabled on purpose.</strong> The monitor collects data from day one, but alerting waits until normal behavior has been baselined and thresholds tuned. You don&rsquo;t want your first week of monitoring to be 47 false alarms about things that turn out to be perfectly normal.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>Replication Monitoring is self-contained. One script reads from an external source (the distribution database on DM-PROD-DB), writes to four tables in the ServerOps schema, and crosses modules only once &mdash; to check BIDATA build status for event correlation.</p>
+
+        <h3>Internal Flow</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>PublicationRegistry</code></td><td><code>AgentHistory</code></td><td>FK parent &mdash; every snapshot references a registry entry</td></tr>
+                <tr><td><code>PublicationRegistry</code></td><td><code>LatencyHistory</code></td><td>FK parent &mdash; every latency measurement references a registry entry</td></tr>
+                <tr><td><code>PublicationRegistry</code></td><td><code>EventLog</code></td><td>FK parent &mdash; every event references a registry entry</td></tr>
+                <tr><td><code>Collect-ReplicationHealth.ps1</code></td><td>All four tables</td><td>Single script creates and updates all rows</td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules collector (FIRE_AND_FORGET, 60-sec interval, group 10)</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>Tracer intervals, thresholds, alerting master switch</td></tr>
+                <tr><td><code>BIDATA.BuildExecution</code></td><td>BIDATA Monitoring</td><td>Correlation check for agent stop events</td></tr>
+                <tr><td>distribution database (DM-PROD-DB)</td><td>External</td><td>All source data: agent catalog, health, queue, tracer tokens</td></tr>
+                <tr><td><code>crs5_oltp</code> (DM-PROD-DB)</td><td>External</td><td>Tracer token posting and result collection</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/replication-ref.html" class="ref-link">&#x1F4CB; Replication Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>	
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../replication.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Replication Monitoring</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

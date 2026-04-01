@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBCC Operations Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>DBCC Operations Architecture</h1>
+        <div class="subtitle">How integrity checks get scheduled, claimed, executed, and reported &mdash; without stepping on each other</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#scheduling">Scheduling Model</a>
+            <a href="#execution">Execution Flow</a>
+            <a href="#claim-pattern">Batch Claim Pattern</a>
+            <a href="#operations">Operation Types</a>
+            <a href="#ag-execution">AG Secondary Execution</a>
+            <a href="#alerting">Alerting &amp; Escalation</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> DBCC Operations does and <em>why</em> it matters. This page tells you <em>how</em>. One PowerShell script, two tables, and a configurable schedule that handles everything from a two-second catalog check to a nine-hour full integrity scan &mdash; with concurrent execution safety and AG-aware server resolution.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>The DBCC component uses two tables: one for scheduling configuration, one for execution history. Configuration describes what <em>should</em> happen. The execution log records what <em>did</em> happen.</p>
+
+        <div class="erd-root" data-schema="ServerOps" data-category="DBCC"></div>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>DBCC_ScheduleConfig</code></td><td>Per-database scheduling configuration &mdash; which operations run on which day at what time</td><td>One per enrolled database</td></tr>
+                <tr><td><code>DBCC_ExecutionLog</code></td><td>Execution history &mdash; one row per database per operation per run</td><td>Many per database over time</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Scheduling Model -->
+    <!-- ============================================ -->
+    <div class="section" id="scheduling">
+        <h2>Scheduling Model</h2>
+
+        <p>Scheduling is per-database and per-operation. Each database enrolled in <code>DBCC_ScheduleConfig</code> has independent settings for four operation types: full integrity check, allocation check, catalog check, and constraint check. Each operation has its own enabled flag, day of week, and time of day.</p>
+
+        <p>This granularity exists because the operations have wildly different resource profiles. A catalog check takes seconds and can run any evening. A full integrity check on a large database takes hours and needs a weekend window. Forcing them onto the same schedule would either under-check or over-burden.</p>
+
+        <h3>Three-Tier Enable Control</h3>
+
+        <p>Three levels must all be active for an operation to execute:</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Server Level</div>
+                    <div class="arch-flow-step-detail"><code>serverops_dbcc_enabled</code><br>on ServerRegistry</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Database Level</div>
+                    <div class="arch-flow-step-detail"><code>is_enabled</code><br>on DBCC_ScheduleConfig</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Operation Level</div>
+                    <div class="arch-flow-step-detail"><code>checkdb_enabled</code><br><code>checkalloc_enabled</code><br>etc.</div>
+                </div>
+            </div>
+            <div class="flow-caption">All three tiers must be enabled &mdash; disable at any level to stop operations at that scope</div>
+        </div>
+
+        <p>This provides quick kill switches at every scope without losing schedule configuration. Disable the server-level flag to pause all DBCC across all databases on that server. Disable the database-level flag to pause one database. Disable a specific operation flag to stop just that check type.</p>
+
+        <h3>Hour-Based Matching</h3>
+
+        <p>The script matches the hour component of each operation's <code>run_time</code> against the current hour. A <code>run_time</code> of <code>20:00</code> triggers during the 8 PM hour (20:00&ndash;20:59). The script uses a <em>less-than-or-equal</em> comparison, so operations from earlier hours that weren't picked up (because a prior invocation was still running) are caught by the next available invocation.</p>
+
+        <div class="tech-tip">
+            <strong>No operations are silently skipped.</strong> If a long-running integrity check blocks an invocation from starting, the next invocation picks up any past-due operations from earlier hours. The already-claimed-today check on <code>DBCC_ExecutionLog</code> prevents duplicates while ensuring nothing falls through the cracks.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Execution Flow -->
+    <!-- ============================================ -->
+    <div class="section" id="execution">
+        <h2>Execution Flow</h2>
+
+        <p><code>Execute-DBCC.ps1</code> runs on a configurable interval via <code>ProcessRegistry</code>. Each invocation follows a fixed sequence:</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">1. Config</div>
+                    <div class="arch-flow-step-detail">Load GlobalConfig<br>settings</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">2. Discover</div>
+                    <div class="arch-flow-step-detail">Query schedule for<br>operations due today</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">3. Claim</div>
+                    <div class="arch-flow-step-detail">Insert PENDING rows<br>for unclaimed work</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">4. Execute</div>
+                    <div class="arch-flow-step-detail">Process items<br>lightest to heaviest</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">5. Report</div>
+                    <div class="arch-flow-step-detail">Update log, alert,<br>orchestrator callback</div>
+                </div>
+            </div>
+        </div>
+
+        <h3>Status Lifecycle</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Status</th><th>Meaning</th><th>Timestamps</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><strong>PENDING</strong></td>
+                    <td>Claimed by an invocation, waiting in queue for its turn</td>
+                    <td><code>queued_dttm</code> set, <code>started_dttm</code> NULL</td>
+                </tr>
+                <tr>
+                    <td><strong>IN_PROGRESS</strong></td>
+                    <td>DBCC command is actively executing</td>
+                    <td><code>started_dttm</code> set, <code>executed_on_server</code> resolved</td>
+                </tr>
+                <tr>
+                    <td><strong>SUCCESS</strong></td>
+                    <td>Completed with no errors</td>
+                    <td><code>completed_dttm</code> and <code>duration_seconds</code> set</td>
+                </tr>
+                <tr>
+                    <td><strong>FAILED</strong></td>
+                    <td>Script or connection error prevented completion</td>
+                    <td><code>error_details</code> contains the error message</td>
+                </tr>
+                <tr>
+                    <td><strong>ERRORS_FOUND</strong></td>
+                    <td>DBCC completed but reported integrity or constraint violations</td>
+                    <td><code>error_count</code> and <code>error_details</code> populated</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>The difference between <code>queued_dttm</code> and <code>started_dttm</code> represents time spent waiting in queue behind other operations. This metric is visible on the Control Center page and is useful for evaluating whether schedule windows need adjustment.</p>
+
+        <h3>Execution Priority</h3>
+
+        <p>When multiple operations are due in the same invocation, they execute in fixed priority order from lightest to heaviest:</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">CHECKCATALOG</div>
+                    <div class="arch-flow-step-detail">Seconds</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">CHECKALLOC</div>
+                    <div class="arch-flow-step-detail">Seconds to minutes</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">CHECKCONSTRAINTS</div>
+                    <div class="arch-flow-step-detail">Minutes to hours</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step red-step">
+                    <div class="arch-flow-step-title">CHECKDB</div>
+                    <div class="arch-flow-step-detail">Hours</div>
+                </div>
+            </div>
+            <div class="flow-caption">Lightweight operations complete quickly even when a long-running CHECKDB is in the same batch</div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Batch Claim Pattern -->
+    <!-- ============================================ -->
+    <div class="section" id="claim-pattern">
+        <h2>Batch Claim Pattern</h2>
+
+        <p>The batch claim pattern is the concurrency safeguard. Before executing anything, the script inserts a PENDING row into <code>DBCC_ExecutionLog</code> for every operation it intends to process. This serves two purposes:</p>
+
+        <p>First, it prevents duplicate execution. When a concurrent invocation fires (because the orchestrator allows concurrent runs), it queries the ExecutionLog for existing rows today. Any operation that already has a row &mdash; whether PENDING, IN_PROGRESS, or completed &mdash; is skipped.</p>
+
+        <p>Second, it provides queue visibility. The Control Center page can show PENDING items as "waiting in queue" with elapsed wait time, giving operators a clear picture of what's running, what's waiting, and how long each item has been queued.</p>
+
+        <div class="tech-tip">
+            <strong>Claim time vs. execution time.</strong> <code>queued_dttm</code> records when the row was inserted (claim time). <code>started_dttm</code> records when the DBCC command actually began executing. For the first item in a batch, these are nearly identical. For the last item &mdash; which might wait hours behind a CHECKDB &mdash; the gap can be significant. <code>duration_seconds</code> measures actual execution time (from <code>started_dttm</code>), not time-in-queue.
+        </div>
+
+        <h3>Manual Override Mode</h3>
+
+        <p>The <code>-TargetServer</code>, <code>-TargetDatabase</code>, and <code>-Operation</code> parameters bypass the schedule table entirely. Manual mode does not check for existing rows today, allowing re-execution of operations for diagnostic purposes. Connection details are still resolved from <code>ServerRegistry</code>, and results still log to <code>DBCC_ExecutionLog</code>.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Operation Types -->
+    <!-- ============================================ -->
+    <div class="section" id="operations">
+        <h2>Operation Types</h2>
+
+        <h3>CHECKDB</h3>
+
+        <p>Full database integrity check. Verifies physical page structure, allocation consistency, and logical relationships between all objects. Supports two modes configured via GlobalConfig: <code>PHYSICAL_ONLY</code> (storage corruption, significantly faster) and <code>FULL</code> (complete logical and physical). MAXDOP is configurable. Extended logical checks for indexed views, XML indexes, and spatial indexes are available in FULL mode.</p>
+
+        <p>Output parsing looks for the standard error count pattern in the DBCC message stream. A clean check with <code>NO_INFOMSGS</code> produces no output. Any output indicates errors.</p>
+
+        <h3>CHECKALLOC</h3>
+
+        <p>Allocation structure consistency check. Verifies page and extent allocation bookkeeping. Lightweight &mdash; typically completes in seconds to minutes even on large databases. Output parsing follows the same error count pattern as CHECKDB.</p>
+
+        <h3>CHECKCATALOG</h3>
+
+        <p>System catalog consistency check. Verifies relationships between system tables. Very fast &mdash; seconds. With <code>NO_INFOMSGS</code>, any output at all indicates errors.</p>
+
+        <h3>CHECKCONSTRAINTS</h3>
+
+        <p>Foreign key and CHECK constraint validation. Unlike the other operations, CHECKCONSTRAINTS returns a <em>result set</em> rather than messages. Each row in the result set identifies a specific constraint violation with the table, constraint name, and a WHERE clause for the offending rows.</p>
+
+        <p>The script aggregates violations by table and constraint name, storing a summary in <code>error_details</code> with violation counts per constraint. <code>error_count</code> reflects distinct constraints with violations, not total violating rows. Detailed row-level investigation is handled by live queries from the Control Center page.</p>
+
+        <h3>CHECKTABLE (On-Demand Only)</h3>
+
+        <p>Single-table integrity check. Not scheduled &mdash; executed on demand through the Control Center modal. The user selects a server, database, and table from system catalog lookups, then initiates the check. Results log to <code>DBCC_ExecutionLog</code> with the table name in <code>target_object</code>.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: AG Secondary Execution -->
+    <!-- ============================================ -->
+    <div class="section" id="ag-execution">
+        <h2>AG Secondary Execution</h2>
+
+        <p>For servers registered as AG listeners in <code>ServerRegistry</code>, the script resolves the current secondary replica using <code>sys.dm_hadr_availability_replica_states</code> and runs DBCC operations via a direct connection to the physical secondary. This eliminates production I/O impact entirely &mdash; the secondary has identical data (minus redo lag, typically seconds) and supports all DBCC operations.</p>
+
+        <p>The AG name and preferred replica role are configured via GlobalConfig. Connection resolution results are cached per server within an invocation to avoid repeated AG topology queries. The physical server name is recorded in <code>executed_on_server</code> on the ExecutionLog row, preserving accurate history even if the AG topology changes between runs.</p>
+
+        <div class="tech-tip">
+            <strong>AG resolution failure is not silent.</strong> If the secondary replica cannot be determined, all operations for that server are skipped with a FAILED status and a Teams alert. The next invocation will retry AG resolution fresh.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Alerting & Escalation -->
+    <!-- ============================================ -->
+    <div class="section" id="alerting">
+        <h2>Alerting &amp; Escalation</h2>
+
+        <p>Alerting is controlled by the <code>dbcc_alerting_enabled</code> GlobalConfig setting. When enabled, any non-SUCCESS result generates a Teams alert. The severity and content vary by situation:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Situation</th><th>Alert Level</th><th>Additional Action</th></tr></thead>
+            <tbody>
+                <tr><td>CHECKDB finds corruption</td><td>CRITICAL</td><td>Jira ticket with recommended remediation steps</td></tr>
+                <tr><td>CHECKCONSTRAINTS finds violations</td><td>CRITICAL</td><td>Teams alert with constraint count</td></tr>
+                <tr><td>Other ERRORS_FOUND</td><td>CRITICAL</td><td>Teams alert with error count</td></tr>
+                <tr><td>FAILED (script/connection error)</td><td>WARNING</td><td>Teams alert with error preview</td></tr>
+                <tr><td>AG resolution failed</td><td>WARNING</td><td>Teams alert, all operations for that server skipped</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>"An operation shows PENDING but never progresses to IN_PROGRESS."</strong></p>
+        <p>The invocation that claimed it may have failed or timed out before reaching that item in the queue. Check the script log file for errors. The orchestrator timeout on <code>ProcessRegistry</code> will eventually mark the task as timed out. A subsequent invocation will not pick up the stale PENDING row because it already exists for today &mdash; manual cleanup of the row may be needed, or wait until tomorrow when the date filter resets.</p>
+
+        <p><strong>"Operations aren't being scheduled."</strong></p>
+        <p>Verify all three enable tiers: <code>serverops_dbcc_enabled</code> on <code>ServerRegistry</code>, <code>is_enabled</code> on <code>DBCC_ScheduleConfig</code>, and the specific operation's <code>_enabled</code> flag. Check that <code>run_day</code> matches today's day of week (1=Sunday through 7=Saturday) and <code>run_time</code> hour has passed.</p>
+
+        <p><strong>"CHECKDB is taking longer than expected."</strong></p>
+        <p>Query the execution history for duration trending. Significant increases usually indicate database growth, increased fragmentation, or I/O contention on the secondary. Consider adjusting MAXDOP via GlobalConfig. For the main production database, durations of 8&ndash;10 hours are expected at current data volumes.</p>
+
+        <p><strong>"CHECKCONSTRAINTS found violations &mdash; now what?"</strong></p>
+        <p>The <code>error_details</code> field contains an aggregated summary listing each violated constraint and the violation count. Use the Control Center page to run a live diagnostic query that shows sample violating rows. The remedy depends on the constraint type: orphaned FK references may need data cleanup, and CHECK violations may need application-level investigation.</p>
+
+        <p><strong>"The script exited NO_WORK but operations should be due."</strong></p>
+        <p>Check the script log for the reported day and hour values. Verify the schedule config has matching <code>run_day</code> and <code>run_time</code> values. The hour comparison uses less-than-or-equal, so a <code>run_time</code> of <code>20:00</code> won't trigger during hour 19. Also confirm the <code>ProcessRegistry</code> entry has <code>run_mode = 1</code> (enabled) and verify <code>allow_concurrent = 1</code>.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <h3>Internal Flow</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>DBCC_ScheduleConfig</code></td><td><code>DBCC_ExecutionLog</code></td><td>Schedule determines what operations to run; ExecutionLog records results and prevents duplicate claims</td></tr>
+                <tr><td><code>Execute-DBCC.ps1</code></td><td><code>Teams.AlertQueue</code></td><td>Non-SUCCESS results queued via shared <code>Send-TeamsAlert</code> function</td></tr>
+                <tr><td><code>Execute-DBCC.ps1</code></td><td><code>Jira.sp_QueueTicket</code></td><td>CHECKDB ERRORS_FOUND generates a Jira ticket with remediation steps</td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>dbo.ServerRegistry</code></td><td>Engine Room</td><td>Server-level enable flag (<code>serverops_dbcc_enabled</code>), server type, AG cluster name, instance name</td></tr>
+                <tr><td><code>dbo.DatabaseRegistry</code></td><td>Engine Room</td><td>Database enrollment &mdash; <code>DBCC_ScheduleConfig</code> has a FK to <code>DatabaseRegistry</code></td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Engine Room</td><td>CHECKDB mode, MAXDOP, extended logical checks, alerting enabled, AG name, source replica preference</td></tr>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Interval-based scheduling with concurrent execution enabled; <code>TaskLog</code> provides task-level tracking</td></tr>
+                <tr><td><code>sys.dm_hadr_availability_replica_states</code></td><td>SQL Server</td><td>AG topology resolution for secondary replica targeting</td></tr>
+                <tr><td><code>sys.databases</code></td><td>SQL Server</td><td>Online state verification before executing DBCC on target server</td></tr>
+                <tr><td><code>sys.dm_exec_requests</code></td><td>SQL Server</td><td>Live progress monitoring (<code>percent_complete</code>) for CHECKDB, CHECKALLOC, CHECKTABLE from the Control Center page</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/dbcc-ref.html" class="ref-link">&#x1F4CB; DBCC Operations Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../dbcc.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to DBCC Operations</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

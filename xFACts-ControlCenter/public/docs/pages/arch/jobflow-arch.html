@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job/Flow Monitoring Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Job/Flow Monitoring Architecture</h1>
+        <div class="subtitle">Eight steps (sometimes less), eleven tables, one script, and a whole lot of XML snapshots</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#state-machine">State Machine</a>
+            <a href="#processing-pipeline">Processing Pipeline</a>
+            <a href="#stall-detection">Stall Detection</a>
+            <a href="#validation">Validation Pipeline</a>
+            <a href="#missing-flows">Missing Flow Detection</a>
+            <a href="#config-sync">ConfigSync</a>
+            <a href="#status-translation">Status Translation</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> JobFlow does and <em>why</em>. This page tells you <em>how</em>. Eleven tables, one PowerShell script with eight processing steps, a state machine, snapshot-based stall detection, and a validation pipeline that distinguishes real failures from business-as-usual rejections.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>The JobFlow schema is organized around three functional groups: configuration (what to monitor), tracking (what's happening), and analysis (what happened). All processing logic lives in <code>Monitor-JobFlow.ps1</code> &mdash; there are no stored procedures or triggers in this schema.</p>
+
+        <div class="erd-root" data-schema="JobFlow"></div>
+
+        <table class="info-table">
+            <thead><tr><th>Group</th><th>Table</th><th>Role</th></tr></thead>
+            <tbody>
+                <tr><td rowspan="4"><strong>Configuration</strong></td><td><code>FlowConfig</code></td><td>Per-flow monitoring settings and DM sync</td></tr>
+                <tr><td><code>JobConfig</code></td><td>Job-level criticality classification</td></tr>
+                <tr><td><code>Schedule</code></td><td>Expected execution windows</td></tr>
+                <tr><td><code>ErrorCategory</code></td><td>Error pattern classification rules</td></tr>
+                <tr><td rowspan="3"><strong>Tracking</strong></td><td><code>FlowExecutionTracking</code></td><td>Core state machine &mdash; one row per execution</td></tr>
+                <tr><td><code>JobExecutionLog</code></td><td>Individual job completion history</td></tr>
+                <tr><td><code>Status</code></td><td>Step execution health and stall state</td></tr>
+                <tr><td rowspan="4"><strong>Analysis</strong></td><td><code>StallDetectionLog</code></td><td>Stall detection event audit trail</td></tr>
+                <tr><td><code>ValidationLog</code></td><td>Post-completion validation results</td></tr>
+                <tr><td><code>ValidationException</code></td><td>Individual exception details</td></tr>
+                <tr><td><code>JobStatus</code></td><td>DM status code reference lookup</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>No stored procedures or triggers.</strong> Unlike most xFACts modules, JobFlow has no server-side logic. All processing, state management, alerting, and validation runs in Monitor-JobFlow.ps1. This was a deliberate choice to eliminate cross-database dependencies and support future AG migration scenarios where the script can point at any replica.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: State Machine -->
+    <!-- ============================================ -->
+    <div class="section" id="state-machine">
+        <h2>The State Machine</h2>
+
+        <p><code>FlowExecutionTracking</code> is a state machine table. Each row represents a single flow execution instance, identified by <code>job_sqnc_log_id</code> from the DM source system. The <code>execution_state</code> column drives all processing logic.</p>
+
+        <!-- State Machine Diagram -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps" style="flex-direction: column; gap: 12px;">
+                <!-- Happy path row -->
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="arch-flow-step muted">
+                        <div class="arch-flow-step-title">(new)</div>
+                        <div class="arch-flow-step-detail">Flow found in<br>source system</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step blue">
+                        <div class="arch-flow-step-title">DETECTED</div>
+                        <div class="arch-flow-step-detail">Execution registered<br>No jobs yet</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step green">
+                        <div class="arch-flow-step-title">EXECUTING</div>
+                        <div class="arch-flow-step-detail">Jobs in progress<br>Counts updating</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step orange">
+                        <div class="arch-flow-step-title">COMPLETE</div>
+                        <div class="arch-flow-step-detail">All jobs finished<br>Awaiting validation</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step purple">
+                        <div class="arch-flow-step-title">VALIDATED</div>
+                        <div class="arch-flow-step-detail">Analysis complete<br>Terminal state</div>
+                    </div>
+                </div>
+                <!-- Stall/Abandon branching -->
+                <div style="display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="arch-flow-step red" style="min-width: 130px;">
+                            <div class="arch-flow-step-title">STALLED</div>
+                            <div class="arch-flow-step-detail">No system-wide progress<br>&#x2194; returns to EXECUTING<br>on recovery</div>
+                        </div>
+                        <span style="color: var(--text-muted); font-size: 0.82em;">&larr; bidirectional with EXECUTING</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="arch-flow-step muted" style="min-width: 130px;">
+                            <div class="arch-flow-step-title">ABANDONED</div>
+                            <div class="arch-flow-step-detail">Manual terminal state<br>No automatic path here</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Happy path: DETECTED &rarr; EXECUTING &rarr; COMPLETE &rarr; VALIDATED. Stalls are bidirectional &mdash; recovery returns to EXECUTING. ABANDONED is manual only.</div>
+        </div>
+
+        <h3>State Transitions</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Trigger</th><th>Step</th></tr></thead>
+            <tbody>
+                <tr><td>(new)</td><td>DETECTED</td><td>Flow execution found in job_sqnc_log</td><td>Step 1: DetectFlows</td></tr>
+                <tr><td>DETECTED</td><td>EXECUTING</td><td>executing_job_count &gt; 0 OR completed_job_count &gt; 0</td><td>Step 4: TransitionStates</td></tr>
+                <tr><td>EXECUTING</td><td>COMPLETE</td><td>executing = 0 AND pending = 0 AND (completed + failed + cancelled) &gt; 0</td><td>Step 4: TransitionStates</td></tr>
+                <tr><td>EXECUTING</td><td>STALLED</td><td>System-wide no-progress counter reaches threshold</td><td>Step 5: DetectStalls</td></tr>
+                <tr><td>STALLED</td><td>EXECUTING</td><td>System-wide progress resumes</td><td>Step 5: DetectStalls</td></tr>
+                <tr><td>COMPLETE</td><td>VALIDATED</td><td>Step-ValidateCompletedFlows processes the flow</td><td>Step 6: ValidateFlows</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why job_sqnc_log_id?</strong> A flow can execute multiple times per day. Tracking by job_sqnc_id alone (the flow definition) would incorrectly merge separate daily runs into one record. The job_sqnc_log_id from <code>crs5_oltp.dbo.job_sqnc_log</code> uniquely identifies each execution instance. The <code>execution_sequence</code> column provides a human-friendly numbering (1st run, 2nd run, etc.) for each flow on a given date.
+        </div>
+
+        <h3>Job Counts</h3>
+
+        <p>Each tracking row maintains real-time job counts updated every polling cycle:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Column</th><th>Source</th><th>Drives</th></tr></thead>
+            <tbody>
+                <tr><td><code>expected_job_count</code></td><td>Flow definition at detection time</td><td>Validation: expected vs actual comparison</td></tr>
+                <tr><td><code>executing_job_count</code></td><td>Jobs with DM status 1 (Started)</td><td>State transition: 0 + pending = 0 triggers COMPLETE</td></tr>
+                <tr><td><code>pending_job_count</code></td><td>Jobs with DM status 6 (Pending)</td><td>State transition: part of COMPLETE condition</td></tr>
+                <tr><td><code>completed_job_count</code></td><td>Jobs with terminal success status</td><td>State transition: part of COMPLETE condition</td></tr>
+                <tr><td><code>failed_job_count</code></td><td>Jobs with DM status 2, zero records</td><td>Validation: failure classification</td></tr>
+                <tr><td><code>cancelled_job_count</code></td><td>Jobs with DM status 4 (Cancelled)</td><td>State transition: counted toward completion</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Processing Pipeline -->
+    <!-- ============================================ -->
+    <div class="section" id="processing-pipeline">
+        <h2>The Processing Pipeline</h2>
+
+        <p><code>Monitor-JobFlow.ps1</code> runs on a configurable orchestrator cycle but does not always execute all eight steps. After Step 0 (ConfigSync), the script queries <code>crs5_oltp.dbo.job_log</code> for any jobs in an active (status 1) or pending (status 6) state. If none are found, only Step 7 (DetectMissing) runs before the script exits. This early exit eliminates the heavy <code>job_entty_log</code> joins in Steps 2 and 3 during the majority of cycles when no flows are executing.</p>
+
+        <p>When job activity is detected, all eight steps run in sequence. Each step updates its own row in the <code>Status</code> table with timing, result count, and success/failure status.</p>
+
+        <!-- Processing Pipeline Flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps" style="flex-direction: column; gap: 12px;">
+                <!-- Always-run steps -->
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="arch-flow-step blue">
+                        <div class="arch-flow-step-title">Step 0</div>
+                        <div class="arch-flow-step-detail">ConfigSync<br>Sync with DM</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step muted">
+                        <div class="arch-flow-step-title">Early Exit?</div>
+                        <div class="arch-flow-step-detail">Any active or<br>pending jobs?</div>
+                    </div>
+                </div>
+                <!-- Active path -->
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="arch-flow-step green">
+                        <div class="arch-flow-step-title">Step 1</div>
+                        <div class="arch-flow-step-detail">DetectFlows</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step green">
+                        <div class="arch-flow-step-title">Step 2</div>
+                        <div class="arch-flow-step-detail">CaptureJobs</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step green">
+                        <div class="arch-flow-step-title">Step 3</div>
+                        <div class="arch-flow-step-detail">UpdateProgress</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step orange">
+                        <div class="arch-flow-step-title">Step 4</div>
+                        <div class="arch-flow-step-detail">TransitionStates</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step red">
+                        <div class="arch-flow-step-title">Step 5</div>
+                        <div class="arch-flow-step-detail">DetectStalls</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step purple">
+                        <div class="arch-flow-step-title">Step 6</div>
+                        <div class="arch-flow-step-detail">ValidateFlows</div>
+                    </div>
+                </div>
+                <!-- Always-run closing step -->
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="arch-flow-step blue">
+                        <div class="arch-flow-step-title">Step 7</div>
+                        <div class="arch-flow-step-detail">DetectMissing<br>Always runs</div>
+                    </div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Step 0 and Step 7 always run. Steps 1&ndash;6 only run when active or pending jobs exist in DM.</div>
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Step</th><th>Name</th><th>Reads</th><th>Writes</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td>0</td><td>ConfigSync</td><td>DM: job_sqnc</td><td>FlowConfig, Jira queue</td><td>Sync flow definitions with DM</td></tr>
+                <tr><td>1</td><td>DetectFlows</td><td>DM: job_sqnc_log</td><td>FlowExecutionTracking</td><td>Find new flow executions</td></tr>
+                <tr><td>2</td><td>CaptureJobs</td><td>DM: job_log, job_entty_log</td><td>JobExecutionLog</td><td>Record completed jobs with metrics</td></tr>
+                <tr><td>3</td><td>UpdateProgress</td><td>DM: job status counts</td><td>FlowExecutionTracking</td><td>Update flow job counts</td></tr>
+                <tr><td>4</td><td>TransitionStates</td><td>FlowExecutionTracking</td><td>FlowExecutionTracking</td><td>Manage state machine transitions</td></tr>
+                <tr><td>5</td><td>DetectStalls</td><td>DM: executing jobs, Status</td><td>Status, StallDetectionLog, alert queues</td><td>Snapshot comparison stall detection</td></tr>
+                <tr><td>6</td><td>ValidateFlows</td><td>FlowExecutionTracking, JobExecutionLog, ErrorCategory, JobConfig</td><td>ValidationLog, ValidationException, FlowExecutionTracking, alert queues</td><td>Post-completion flow analysis</td></tr>
+                <tr><td>7</td><td>DetectMissing</td><td>Schedule, FlowExecutionTracking</td><td>Jira queue, Teams queue</td><td>Check for no-show flows</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Step ordering matters.</strong> ConfigSync runs first to ensure FlowConfig is current before detection. DetectFlows runs before CaptureJobs because you need tracking records before you can attach job completions. UpdateProgress runs before TransitionStates because state decisions depend on current counts. DetectStalls runs after state transitions because it needs accurate executing/pending lists. Validation runs after everything else because it needs final state.
+        </div>
+        <div class="tech-tip">
+            <strong>Why the early exit skips Steps 1&ndash;6 but always runs Step 7.</strong> Steps 1&ndash;6 are only meaningful when flows are executing &mdash; there is nothing to detect, capture, update, transition, stall-check, or validate if no jobs are running. Step 7 (DetectMissing) is the opposite: it specifically looks for flows that <em>should</em> have started but haven&apos;t, so it must run regardless of whether anything is currently active. ConfigSync (Step 0) also always runs because drift between DM and FlowConfig is independent of whether any jobs are executing at the moment.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Stall Detection -->
+    <!-- ============================================ -->
+    <div class="section" id="stall-detection">
+        <h2>Stall Detection</h2>
+
+        <p>Stall detection operates at the system level. Individual flows may legitimately show no progress while other flows are processing &mdash; the JBoss JMS queue is non-FIFO and batch-oriented. A stall is only flagged when NO jobs across ALL flows show progress.</p>
+
+        <h3>Snapshot Comparison Algorithm</h3>
+
+        <!-- Stall Detection Flow Diagram -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps" style="flex-direction: column; gap: 12px;">
+                <!-- Capture and compare -->
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="arch-flow-step blue">
+                        <div class="arch-flow-step-title">Capture</div>
+                        <div class="arch-flow-step-detail">XML snapshot of all<br>executing &amp; pending<br>jobs with status +<br>record counts</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step blue">
+                        <div class="arch-flow-step-title">Compare</div>
+                        <div class="arch-flow-step-detail">Diff against previous<br>snapshot stored in<br>Status.stall_snapshot_xml</div>
+                    </div>
+                    <span class="arch-flow-arrow">&rarr;</span>
+                    <div class="arch-flow-step muted">
+                        <div class="arch-flow-step-title">Changed?</div>
+                    </div>
+                </div>
+                <!-- Branch: changed vs unchanged -->
+                <div style="display: flex; align-items: flex-start; justify-content: center; gap: 40px; flex-wrap: wrap;">
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                        <span style="color: var(--accent-green); font-size: 0.82em; font-weight: 600;">Yes &mdash; progress detected</span>
+                        <div class="arch-flow-step green">
+                            <div class="arch-flow-step-title">RESET</div>
+                            <div class="arch-flow-step-detail">Counter &rarr; 0<br>Log to StallDetectionLog</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                        <span style="color: var(--accent-red); font-size: 0.82em; font-weight: 600;">No &mdash; nothing moved</span>
+                        <div class="arch-flow-step orange">
+                            <div class="arch-flow-step-title">INCREMENT</div>
+                            <div class="arch-flow-step-detail">Counter + 1<br>Log to StallDetectionLog</div>
+                        </div>
+                        <span class="arch-flow-arrow" style="transform: rotate(90deg);">&rarr;</span>
+                        <div class="arch-flow-step muted">
+                            <div class="arch-flow-step-title">At threshold?</div>
+                        </div>
+                        <span class="arch-flow-arrow" style="transform: rotate(90deg);">&rarr;</span>
+                        <div class="arch-flow-step red">
+                            <div class="arch-flow-step-title">ALERT</div>
+                            <div class="arch-flow-step-detail">Jira ticket + Teams<br>Stall confirmed</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Each poll captures and compares. Progress resets the counter. No progress increments it. Threshold triggers the alert.</div>
+        </div>
+
+        <h3>Event Lifecycle</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Counter</th><th>Event Type</th><th>Action</th></tr></thead>
+            <tbody>
+                <tr><td>0 &rarr; 1, 1 &rarr; 2, ... (n-1) &rarr; n</td><td>INCREMENT</td><td>Log to StallDetectionLog. Building toward threshold.</td></tr>
+                <tr><td>Reaches threshold</td><td>ALERT</td><td>Log + queue Jira ticket + queue Teams alert. Stall confirmed.</td></tr>
+                <tr><td>Above threshold</td><td>STALLED</td><td>Log only. Already alerted, no repeat notifications.</td></tr>
+                <tr><td>Any &rarr; 0</td><td>RESET</td><td>Log. Progress detected, stall episode ended.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Deduplication</h3>
+
+        <p>Stall alerts are suppressed if there's an existing ALERT event today with no subsequent RESET. This means a stall-recovery-stall cycle generates two separate alerts (correct behavior), while a continuous stall generates only one alert at threshold (also correct).</p>
+
+        <div class="tech-tip">
+            <strong>XML snapshot format.</strong> The snapshot stores each job's <code>job_log_id</code>, <code>job_stts_cd</code>, and processed record count. Both "cross-poll progress" (job list changed between polls) and "within-poll progress" (record counts changed during snapshot capture) are tracked. This diagnostic data is preserved in StallDetectionLog for post-incident analysis.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Validation Pipeline -->
+    <!-- ============================================ -->
+    <div class="section" id="validation">
+        <h2>Validation Pipeline</h2>
+
+        <p>Step-ValidateCompletedFlows runs against flows in COMPLETE state with <code>is_validated</code> still NULL. It performs a multi-stage analysis:</p>
+
+        <h3>Stage 1: Expected vs Actual</h3>
+
+        <p>Compares <code>expected_jobs_json</code> (captured at flow detection time) against actual jobs in <code>JobExecutionLog</code> for this tracking_id. Identifies missing jobs, unexpected jobs, and order mismatches.</p>
+
+        <h3>Stage 2: Failure Classification</h3>
+
+        <p>For jobs with total failure (all records failed, none succeeded), the error message is extracted and matched against <code>ErrorCategory</code>. The <code>classification</code> determines whether the failure is alertable:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Classification</th><th>alert_on_total_failure</th><th>Action</th></tr></thead>
+            <tbody>
+                <tr><td>TRUE_FAILURE</td><td>1</td><td>Generate Jira ticket if failure count &ge; min_failure_threshold</td></tr>
+                <tr><td>BUSINESS_REJECTION</td><td>0</td><td>Log in ValidationException, no alert</td></tr>
+                <tr><td>UNCLASSIFIED</td><td>1</td><td>Alert &mdash; new patterns need investigation</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Stage 3: Criticality Check</h3>
+
+        <p>Missing or failed jobs are checked against <code>JobConfig.is_critical</code>. Critical jobs fall into two categories:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Flag</th><th>Why It's Critical</th><th>Impact of Missing</th></tr></thead>
+            <tbody>
+                <tr><td><code>has_fixed_date_logic</code></td><td>Job uses date-specific criteria (e.g., "send letter on day 5")</td><td>Records are permanently missed &mdash; tomorrow's run picks up the next batch, not yesterday's</td></tr>
+                <tr><td><code>is_business_critical</code></td><td>Job is essential for daily operations</td><td>Downstream processes or departments are affected</td></tr>
+            </tbody>
+        </table>
+
+        <p>If any critical job is missing or failed, the validation status escalates to CRITICAL_FAILURE and the Jira ticket includes the <code>criticality_reason</code> from JobConfig.</p>
+
+        <h3>Stage 4: Record Results</h3>
+
+        <p><code>ValidationLog</code> gets a summary row with counts and status. <code>ValidationException</code> gets one row per discrepant job. <code>FlowExecutionTracking</code> transitions to VALIDATED with <code>is_validated = 1</code> to prevent reprocessing.</p>
+
+        <div class="tech-tip">
+            <strong>Error pattern extraction.</strong> DM error messages follow two patterns. Action-based: "Failed to execute action: ActionName (ENTITY)..." where the action name is extracted (e.g., CallRuleSet, SendNotice). Non-action: matched by prefix (e.g., "Data is stale" &rarr; StaleData). Currently 16 error types are classified: 2 TRUE_FAILURE, 13 BUSINESS_REJECTION, 1 UNCLASSIFIED (OTHER).
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Missing Flow Detection -->
+    <!-- ============================================ -->
+    <div class="section" id="missing-flows">
+        <h2>Missing Flow Detection</h2>
+
+        <p>Step 7 (DetectMissing) runs on every cycle regardless of whether any jobs are currently active. It compares the <code>Schedule</code> table against today's entries in <code>FlowExecutionTracking</code> to identify flows that should have started but haven't.</p>
+
+        <p>Each schedule entry defines an expected start time and a tolerance window &mdash; the buffer after the expected start before an alert fires. Tolerance is configurable per schedule: tighter for critical nightly flows, looser for weekly or maintenance-oriented flows.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Scenario</th><th>Behavior</th></tr></thead>
+            <tbody>
+                <tr><td>Flow started within tolerance</td><td>No action &mdash; normal operation</td></tr>
+                <tr><td>Flow not started, past tolerance</td><td>Jira ticket + Teams alert for the missing flow</td></tr>
+                <tr><td>Schedule inactive</td><td>Skipped &mdash; no evaluation</td></tr>
+                <tr><td>Flow marked UNCONFIGURED</td><td>Excluded &mdash; new flows from ConfigSync aren't evaluated until configured</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Schedule types.</strong> The <code>schedule_type</code> column supports different scheduling models: DAILY for every-night flows, WEEKLY for specific days, and DAY_OF_MONTH for monthly schedules. Each type is evaluated differently &mdash; a WEEKLY schedule only checks on its configured days, avoiding false alerts on off-days.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: ConfigSync -->
+    <!-- ============================================ -->
+    <div class="section" id="config-sync">
+        <h2>ConfigSync</h2>
+
+        <p>Step 0 runs on every cycle to keep <code>FlowConfig</code> in sync with Debt Manager's flow definitions. It compares DM's current flow list against xFACts and handles three scenarios:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Scenario</th><th>Action</th><th>Jira Ticket?</th></tr></thead>
+            <tbody>
+                <tr><td><strong>New flow in DM</strong></td><td>Insert config row with <code>is_monitored = 0</code>, <code>expected_schedule = UNCONFIGURED</code></td><td>Yes &mdash; prompts configuration</td></tr>
+                <tr><td><strong>Flow deactivated</strong></td><td>Set <code>dm_is_active = 0</code></td><td>Yes &mdash; awareness notification</td></tr>
+                <tr><td><strong>Flow reactivated</strong></td><td>Set <code>dm_is_active = 1</code></td><td>No &mdash; back to normal, silent</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why ConfigSync runs every cycle.</strong> Drift between DM and FlowConfig is independent of whether any jobs are executing. A flow could be added to DM while nothing is running overnight. ConfigSync ensures the configuration is always current before any other step evaluates it.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Status Translation -->
+    <!-- ============================================ -->
+    <div class="section" id="status-translation">
+        <h2>Status Translation</h2>
+
+        <p>xFACts interprets DM job status codes differently than DM itself. The key insight: a job with failed records isn't necessarily a "failure" in the operational sense.</p>
+
+        <table class="info-table">
+            <thead><tr><th>DM Code</th><th>DM Status</th><th>xFACts Status</th><th>Condition</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td>Started</td><td>EXECUTING</td><td>Job currently running</td></tr>
+                <tr><td>2</td><td>Failed</td><td><strong>PARTIAL</strong></td><td>succeeded_count &gt; 0 (work was done)</td></tr>
+                <tr><td>2</td><td>Failed</td><td><strong>FAILED</strong></td><td>succeeded_count = 0 (true failure)</td></tr>
+                <tr><td>3</td><td>Complete</td><td>COMPLETED</td><td>Normal completion</td></tr>
+                <tr><td>3</td><td>Complete</td><td><strong>PARTIAL</strong></td><td>succeeded_count &gt; 0 AND failed_count &gt; 0</td></tr>
+                <tr><td>4</td><td>Cancelled</td><td>CANCELLED</td><td>User-initiated cancellation</td></tr>
+                <tr><td>5</td><td>Pending Cancel</td><td>EXECUTING</td><td>Still in-progress (cancel pending)</td></tr>
+                <tr><td>6</td><td>Pending</td><td>PENDING</td><td>Queued, waiting to start</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why this matters.</strong> A job that processes 9,999 records successfully and rejects 1 for a business rule shows DM status 2 (Failed). xFACts calls it PARTIAL &mdash; work was accomplished. This prevents false alarms on jobs that are working correctly but have expected rejections. Only jobs with zero successful records are TRUE failures.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>"The overnight jobs didn't complete."</strong></p>
+        <p>Start with <code>FlowExecutionTracking</code> &mdash; find the flow and check its <code>execution_state</code>. EXECUTING means it's still running (check DM for current progress). STALLED means processing froze (check <code>StallDetectionLog</code> for when and the diagnostic snapshots for why). COMPLETE means it finished but maybe with issues (check <code>ValidationLog</code>).</p>
+
+        <p><strong>"Jobs are failing."</strong></p>
+        <p>Check <code>JobExecutionLog</code> filtered by date. Look at <code>job_status</code>: FAILED means true technical failure. PARTIAL means some records succeeded but some were rejected. COMPLETED means the job is fine &mdash; look elsewhere. Check <code>total_records</code>, <code>succeeded_count</code>, and <code>failed_count</code> to understand the scope.</p>
+
+        <p><strong>"A scheduled flow didn't run."</strong></p>
+        <p>Verify the schedule in <code>Schedule</code> &mdash; is it active? Is the tolerance window reasonable? Then check <code>FlowExecutionTracking</code> for today's executions. If no execution exists and no alert was raised, the schedule might be inactive or the flow's <code>alert_on_missing</code> flag might be off.</p>
+
+        <p><strong>"The system was 'stalled' but nothing looks wrong."</strong></p>
+        <p>Review <code>StallDetectionLog</code> &mdash; the diagnostic XML snapshots show exactly what jobs were in flight during each poll. Sometimes a "stall" is actually just very slow processing of a massive job where the record count isn't changing visibly between polls. The snapshots help distinguish "truly frozen" from "legitimately slow but please be patient."</p>
+
+        <p><strong>"A new flow was detected but isn't being monitored."</strong></p>
+        <p>Expected behavior. ConfigSync inserts new flows with <code>is_monitored = 0</code> and <code>expected_schedule = UNCONFIGURED</code>. A Jira ticket was created to prompt configuration. Set the schedule, enable monitoring, and the flow enters the pipeline on the next cycle.</p>
+
+        <p><strong>"Monitor-JobFlow.ps1 isn't running."</strong></p>
+        <p>Check <code>Status</code> &mdash; if <code>completed_dttm</code> for any step is stale, the script may have stopped. Check the orchestrator logs and ProcessRegistry. Common causes: AG replica unavailable, credential issues, network connectivity.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>JobFlow reads from one external system and writes to three xFACts subsystems. The data flow is strictly one-directional: read from DM, write to xFACts. No feedback loops, no write-backs.</p>
+
+        <h3>Internal Relationships</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>FlowConfig</code></td><td><code>FlowExecutionTracking</code></td><td>FK on job_sqnc_id &mdash; one config &rarr; many executions</td></tr>
+                <tr><td><code>FlowConfig</code></td><td><code>Schedule</code></td><td>FK on job_sqnc_id &mdash; one config &rarr; many schedules</td></tr>
+                <tr><td><code>FlowExecutionTracking</code></td><td><code>JobExecutionLog</code></td><td>FK on tracking_id &mdash; one execution &rarr; many jobs</td></tr>
+                <tr><td><code>FlowExecutionTracking</code></td><td><code>ValidationLog</code></td><td>FK on tracking_id &mdash; one execution &rarr; one validation</td></tr>
+                <tr><td><code>ValidationLog</code></td><td><code>ValidationException</code></td><td>FK on validation_id &mdash; one validation &rarr; many exceptions</td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules Monitor-JobFlow.ps1 on a configurable interval</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>AG config (AGName, SourceReplica), StallThreshold</td></tr>
+                <tr><td>Debt Manager (crs5_oltp)</td><td>External</td><td>Source system &mdash; read-only via AG secondary replica</td></tr>
+                <tr><td><code>Teams.AlertQueue</code></td><td>Teams Integration</td><td>Stall alerts, missing flow alerts</td></tr>
+                <tr><td><code>Jira.TicketQueue</code></td><td>Jira Integration</td><td>Stall tickets, validation failures, missing flows, ConfigSync changes</td></tr>
+            </tbody>
+        </table>
+
+        <h3>DM Source Tables</h3>
+
+        <table class="info-table">
+            <thead><tr><th>DM Table</th><th>Used By Step</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>job_sqnc</code></td><td>ConfigSync (0)</td><td>Flow definitions and active status</td></tr>
+                <tr><td><code>job_sqnc_log</code></td><td>DetectFlows (1)</td><td>Flow execution instances</td></tr>
+                <tr><td><code>job_sqnc_exctn_log</code></td><td>CaptureJobs (2)</td><td>Flow-to-job execution linkage</td></tr>
+                <tr><td><code>job_log</code></td><td>Early Exit Check, CaptureJobs (2), DetectStalls (5)</td><td>Individual job execution records; active/pending count drives early exit</td></tr>
+                <tr><td><code>job_entty_log</code></td><td>CaptureJobs (2)</td><td>Record-level results (success/failure counts)</td></tr>
+                <tr><td><code>job</code></td><td>ConfigSync (0)</td><td>Job definitions</td></tr>
+                <tr><td><code>usr</code></td><td>CaptureJobs (2)</td><td>User identification for executed_by</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/jobflow-ref.html" class="ref-link">&#x1F4CB; JobFlow Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../jobflow.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to JobFlow Monitoring</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

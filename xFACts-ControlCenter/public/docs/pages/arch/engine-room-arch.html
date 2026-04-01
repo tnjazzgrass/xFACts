@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engine Room Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Engine Room Architecture</h1>
+        <div class="subtitle">How the pieces connect, why they're shaped that way, and what happens when you press the button</div>
+    </div>
+
+    <!-- Sticky Section Nav (breadcrumb populated by nav.js + jump links) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#orchestrator">Orchestrator</a>
+            <a href="#shared-infrastructure">Shared Infrastructure</a>
+            <a href="#rbac">RBAC</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The Engine Room narrative tells you <em>what</em> lives here and <em>why</em>. This page tells you <em>how</em>. Three systems &mdash; the orchestrator, shared infrastructure, and RBAC &mdash; each with their own tables, their own lifecycle, and their own opinions about how things should work. Here's how the data actually moves.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Orchestrator Data Lifecycle -->
+    <!-- ============================================ -->
+    <div class="section" id="orchestrator">
+        <h2>The Orchestrator &mdash; Data Lifecycle</h2>
+
+        <p>Three tables. That's all the orchestrator needs to manage every automated process in xFACts. One for configuration, two for history. They're deceptively simple, and understanding how data flows between them explains everything about how Mo works.</p>
+
+        <div class="erd-root" data-schema="Orchestrator"></div>
+
+        <h3>ProcessRegistry &mdash; The Living Schedule</h3>
+
+        <p><code>Orchestrator.ProcessRegistry</code> is both configuration and runtime state in one table. Each row defines a process &mdash; what to run, how often, what dependency group it belongs to &mdash; but it also tracks the current execution state. Fields like <code>last_execution_dttm</code>, <code>last_execution_status</code>, and <code>running_count</code> are updated by Mo on every heartbeat. The schedule is the state.</p>
+
+        <p>This dual nature is what makes configuration changes instant. Update <code>interval_seconds</code> and Mo uses the new value on the very next heartbeat. Set <code>run_mode</code> to 0 and the process stops running. No restarts, no deployments, no waiting for a config file to get picked up. The schedule is always live because it's always being read.</p>
+
+        <div class="tech-tip">
+            <strong>The three run modes:</strong> <code>run_mode = 0</code> means disabled &mdash; Mo skips it entirely. <code>run_mode = 1</code> is standard scheduled execution &mdash; every data collector, every monitoring script, every daily summary runs in this mode. It's the workhorse. <code>run_mode = 2</code> is queue-driven &mdash; the process only runs when something signals demand. Teams and Jira queue processors use this.
+        </div>
+
+        <h3>The Heartbeat Cycle</h3>
+
+        <p>When Mo wakes up and finds work to do, the first thing he creates is a <code>CycleLog</code> entry. This is the parent record &mdash; one row per heartbeat that actually executed something. It starts with a timestamp and a status of RUNNING.</p>
+
+        <p>Then Mo works through the due processes, one at a time within each dependency group. For each process, he creates a <code>TaskLog</code> entry linked back to the CycleLog via <code>cycle_id</code>. The TaskLog captures everything: the process name, the actual script or procedure that ran, the execution mode, timing, exit codes, and the full stdout/stderr output.</p>
+
+        <p>When the cycle finishes, Mo goes back and updates the CycleLog with the final counts &mdash; tasks due, executed, succeeded, failed, skipped &mdash; and marks it SUCCESS or PARTIAL depending on the results.</p>
+
+        <!-- Heartbeat Cycle Flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Wake</div>
+                    <div class="arch-flow-step-detail">Heartbeat fires<br>(configurable interval)</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Query Due</div>
+                    <div class="arch-flow-step-detail">Check ProcessRegistry<br>for due processes</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Create CycleLog</div>
+                    <div class="arch-flow-step-detail">Parent record<br>status = RUNNING</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Execute</div>
+                    <div class="arch-flow-step-detail">Each process by<br>dependency group<br>Create TaskLog per task</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Finalize</div>
+                    <div class="arch-flow-step-detail">Update CycleLog<br>with final counts</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Sleep</div>
+                    <div class="arch-flow-step-detail">Wait for next<br>heartbeat</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">If no processes are due, Mo skips the cycle entirely &mdash; no CycleLog entry, no wasted effort.</div>
+        </div>
+
+        <div class="tech-tip">
+            <strong>Denormalized by design:</strong> TaskLog stores the module name, process name, dependency group, and execution target directly in each row, even though it has a foreign key back to ProcessRegistry. This is intentional. If a process gets renamed, reconfigured, or removed, the historical log entries remain accurate. The TaskLog record is a snapshot of what actually happened, not a pointer to what the configuration looks like <em>now</em>.
+        </div>
+
+        <h3>WAIT vs. FIRE_AND_FORGET</h3>
+
+        <p>In WAIT mode, Mo launches the script, captures the output, updates the TaskLog with the result, and moves on. The whole thing takes seconds. Simple.</p>
+
+        <p>FIRE_AND_FORGET is for the heavy lifters &mdash; backup network copies, large data transfers, anything that would block the pipeline for minutes. The lifecycle looks different:</p>
+
+        <p>Mo creates the TaskLog entry and marks it RUNNING. He launches the script in the background, immediately updates the TaskLog to LAUNCHED, resets the <code>running_count</code> in ProcessRegistry, and moves on to the next process. He's done with it.</p>
+
+        <p>The launched script is now on its own. When it finishes, it dot-sources <code>xFACts-OrchestratorFunctions.ps1</code> and calls <code>Complete-OrchestratorTask</code>, passing back its task ID, process ID, status, duration, and any output. That callback function updates the TaskLog entry with the final result and decrements <code>running_count</code> in ProcessRegistry. It also fires a <code>Send-EngineEvent</code> to push the completion notification to the Control Center in real time.</p>
+
+        <p>Two different execution patterns, same final state in the database. The CycleLog and TaskLog don't care how the result got there.</p>
+
+        <h3>Queue-Driven Processing</h3>
+
+        <p>The Teams and Jira queue processors add a third pattern. These are the <code>run_mode = 2</code> processes &mdash; they don't run on a timer, they respond to demand.</p>
+
+        <p>When a module queues an alert (say, a Teams notification), the queue table's depth trigger fires and increments <code>running_count</code> on the queue processor's ProcessRegistry entry. On the next heartbeat, Mo sees a positive <code>running_count</code> for a <code>run_mode = 2</code> process and launches it. The processor drains the queue, and Mo resets the count to zero.</p>
+
+        <p>If more alerts arrive while the processor is running, the trigger increments the count again. Mo picks it up on the next heartbeat. No polling interval to tune, no wasted cycles checking an empty queue. Items get processed within seconds of being queued.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Shared Infrastructure -->
+    <!-- ============================================ -->
+    <div class="section" id="shared-infrastructure">
+        <h2>Shared Infrastructure &mdash; The Connective Tissue</h2>
+
+        <p>The shared infrastructure tables in the <code>dbo</code> schema don't form a single interconnected system the way the orchestrator tables do. They're more like utilities &mdash; each one serving a specific purpose, consumed by whatever module needs it. But they have relationships worth understanding, and a few of them are more clever than they look.</p>
+
+        <div class="erd-root" data-schema="dbo" data-category="Shared Infrastructure"></div>
+
+        <h3>GlobalConfig &mdash; How It Gets Read</h3>
+
+        <p>Every module in xFACts reads from <code>dbo.GlobalConfig</code>, but the way they read it differs. Backend PowerShell scripts query GlobalConfig at the start of each execution, pulling the settings they need for that run. The Control Center reads it differently &mdash; settings are cached in memory at startup and refreshed periodically, so a setting change takes effect within minutes across all dashboards.</p>
+
+        <p>The table itself is straightforward: module name, component, setting name, value, data type, and a description. But the organizational convention matters. Settings are namespaced by module and component, which means you can pull everything the Backup module needs with a single <code>WHERE module_name = 'ServerOps' AND category = 'Backup'</code> filter. Every script does exactly that.</p>
+
+        <div class="tech-tip">
+            <strong>No foreign keys, by design:</strong> GlobalConfig has no foreign key relationships to anything. It's a pure key-value store with metadata. Modules reference it by convention (matching on module/category/setting name), not by constraint. This keeps it flexible &mdash; any module can add settings without schema changes, and removing a module's settings is just a DELETE statement.
+        </div>
+
+        <h3>The Version Tracking System</h3>
+
+        <p>Version tracking is built on a four-table hierarchy that separates <em>what exists</em> from <em>what changed</em>:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Granularity</th></tr></thead>
+            <tbody>
+                <tr><td><code>dbo.Module_Registry</code></td><td>Top-level functional domains</td><td>ServerOps, JobFlow, BatchOps, etc.</td></tr>
+                <tr><td><code>dbo.Component_Registry</code></td><td>Logical groupings within a module</td><td>ServerOps.Backup, ServerOps.Index, etc.</td></tr>
+                <tr><td><code>dbo.Object_Registry</code></td><td>Individual objects linked to their parent component</td><td>Tables, scripts, CC files, docs</td></tr>
+                <tr><td><code>dbo.System_Metadata</code></td><td>Append-only version changelog</td><td>One row per version bump per component</td></tr>
+            </tbody>
+        </table>
+
+        <p>Versioning happens at the <strong>component level</strong>, not per-object. A single version bump covers all objects touched within a component during a development session. The description field carries the detail about what changed. Version numbers follow a sequential counter pattern with no semantic meaning &mdash; each bump is just the next number.</p>
+
+        <p>The current version for any component is simply the most recent row in <code>System_Metadata</code> for that component. The table is append-only &mdash; no status columns, no triggers, no supersession logic. History is preserved by the natural accumulation of rows.</p>
+
+        <div class="tech-tip">
+            <strong>Legacy data preserved.</strong> The previous per-object System_Metadata table (which used ACTIVE/SUPERSEDED statuses and an auto-supersede trigger) is preserved as <code>Legacy.System_Metadata</code>. All historical version data remains accessible there. The current table started fresh at version 3.0.0 per component to maintain continuity with legacy version numbering.
+        </div>
+
+        <h3>The Credential Vault</h3>
+
+        <p>Two tables work in tandem for credential management. <code>dbo.CredentialServices</code> defines what external services exist &mdash; JiraAPI, TeamsWebhook, SFTP &mdash; essentially a registry of integration points. <code>dbo.Credentials</code> stores the actual encrypted values for each service, organized by environment.</p>
+
+        <p>The encryption uses a two-tier model. A master passphrase lives in GlobalConfig. That master passphrase decrypts a per-service passphrase stored in the Credentials table. That per-service passphrase then decrypts the actual username and password. Two layers of decryption, all happening in a SQL query at runtime. The decrypted values exist only in memory, only for the duration of the script execution, and never touch the filesystem.</p>
+
+        <p>Adding a new integration is two INSERTs: one row in CredentialServices to define the service, one row in Credentials with the encrypted values. Every script that needs credentials uses the same retrieval pattern &mdash; pass in the service name, get back the decrypted username and password. The scripts don't know or care about the encryption mechanics.</p>
+
+        <div class="tech-tip">
+            <strong>Exception: AWS CLI credentials.</strong> The AWS S3 upload process uses the AWS CLI, which reads credentials from the service account's user profile on FA-SQLDBB rather than from the Credentials table. This is the one integration that doesn't follow the standard credential retrieval pattern.
+        </div>
+
+        <h3>Server and Database Registries</h3>
+
+        <p><code>dbo.ServerRegistry</code> and <code>dbo.DatabaseRegistry</code> are the enrollment tables. ServerRegistry defines which SQL Server instances xFACts monitors, with flags controlling which monitoring features are enabled for each server (activity monitoring, backup monitoring, index maintenance, etc.). DatabaseRegistry extends this to the database level, linking each database to its parent server.</p>
+
+        <p>Multiple modules consume these registries. The server health collector reads ServerRegistry to know which servers to poll. The backup monitor reads it to know which servers have backup tracking enabled. The index maintenance engine reads DatabaseRegistry to know which databases participate in automated index operations. One set of enrollment tables, consumed by many scripts.</p>
+
+        <h3>The Protection Chain</h3>
+
+        <p>Three objects form the DDL protection system: the trigger, the logging procedure, and the violation log.</p>
+
+        <p><code>TR_xFACts_ProtectCriticalObjects</code> fires on DDL events (DROP, ALTER) and checks the target object against a hardcoded list. If the object is protected, the trigger needs to log the attempt <em>before</em> rolling back the transaction. That's the problem &mdash; a ROLLBACK inside a trigger undoes everything in the transaction, including any INSERT you just did.</p>
+
+        <p>The solution is <code>sp_LogProtectionViolation</code>, which uses a loopback linked server to execute the INSERT in a separate, autonomous transaction. The trigger calls this procedure, the procedure logs to <code>Protection_ViolationLog</code> through the linked server, and then the trigger rolls back the DDL. The violation log entry survives because it was committed in its own transaction. Clever, slightly terrifying, and completely necessary.</p>
+
+        <div class="tech-tip">
+            <strong>Why a loopback linked server?</strong> SQL Server doesn't support autonomous transactions natively. The loopback linked server (configured as <code>xFACts_Loopback</code>) connects back to the same instance, but from the trigger's perspective it's a remote call. The INSERT through the linked server commits independently of the trigger's transaction. This pattern exists on every AG node.
+        </div>
+
+        <h3>The Audit Trail</h3>
+
+        <p>Two tables capture different kinds of platform activity. <code>dbo.ActionAuditLog</code> records deliberate human actions through the Control Center &mdash; configuration changes, manual triggers, administrative operations. Each entry captures who did it, what they did, and the before/after values. This is the "who changed that setting?" table.</p>
+
+        <p><code>dbo.API_RequestLog</code> records outbound integration activity &mdash; every REST API call to Jira, Teams, or other services. Status codes, response times, request/response payloads. This is the "did that Teams alert actually get delivered?" table.</p>
+
+        <p>Together with the CycleLog/TaskLog (automated execution), RBAC_AuditLog (access decisions), and Protection_ViolationLog (blocked DDL), xFACts maintains five distinct audit trails covering every category of platform activity.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: RBAC Data Flow -->
+    <!-- ============================================ -->
+    <div class="section" id="rbac">
+        <h2>RBAC &mdash; The Permission Pipeline</h2>
+
+        <p>Seven tables, one question: "Can this person do this thing?" The answer takes about a millisecond, but the path through the data is worth walking through because every table has a specific job and they chain together in a specific order.</p>
+
+        <div class="erd-root" data-schema="dbo" data-category="RBAC"></div>
+
+        <h3>The Lookup Chain</h3>
+
+        <p>When a user hits a Control Center page, here's the data path:</p>
+
+        <p><strong>Step 1: Identity.</strong> Active Directory authenticates the user and provides their group memberships. This happens at the Pode framework level before any xFACts code runs.</p>
+
+        <p><strong>Step 2: Role resolution.</strong> The middleware takes those AD group names and looks them up in <code>RBAC_RoleMapping</code>. Each matching row maps an AD group to a <code>role_id</code>, optionally scoped to a department. A user in multiple AD groups can end up with multiple roles. That's fine &mdash; more roles means more potential access, and the system takes the best case.</p>
+
+        <p><strong>Step 3: Page access.</strong> With the user's roles resolved, the middleware checks <code>RBAC_PermissionMapping</code> for any row matching one of those role IDs and the current page route. Each matching row specifies a permission tier (admin, operate, or view). If multiple roles grant access to the same page, the highest tier wins. The Admin role has a wildcard <code>page_route = '*'</code> that matches everything.</p>
+
+        <p><strong>Step 4: Rendering.</strong> The page renders at the user's resolved tier. Admin sees everything. Operate sees action buttons but not dangerous operations. View sees data displays only. The tier value flows down to every UI component on the page.</p>
+
+        <div class="tech-tip">
+            <strong>All from cache:</strong> None of these lookups hit the database in real time. All RBAC tables are loaded into a PowerShell hashtable on Control Center startup and refreshed on a configurable interval. The permission check is a series of in-memory hashtable lookups, which is why it takes about a millisecond. The trade-off is that AD group changes take a few minutes to take effect.
+        </div>
+
+        <h3>Action Permission &mdash; The Override Layer</h3>
+
+        <p>Page-level tiers handle most access decisions. But when a user clicks a button that triggers an API call, a second evaluation runs.</p>
+
+        <p><code>RBAC_ActionRegistry</code> is the master catalog of protected endpoints. Each row defines an action: its name, the API endpoint path, the HTTP method, which page it belongs to, and what tier is normally required. A route handler checks this by calling <code>Test-ActionEndpoint</code> at the top of its scriptblock &mdash; one line of code.</p>
+
+        <p>Before falling back to the tier check, the system looks for overrides in <code>RBAC_ActionGrant</code>. This is where the five-step evaluation order matters:</p>
+
+        <p>First, check for a user-level DENY. If this specific user has a DENY grant for this specific action, stop immediately. Blocked.</p>
+
+        <p>Second, check for a role-level DENY. If any of the user's roles have a DENY grant for this action, stop. Blocked.</p>
+
+        <p>Third, check for a user-level ALLOW. If this specific user has an ALLOW grant, permit it regardless of their tier.</p>
+
+        <p>Fourth, check for a role-level ALLOW. Same logic, but for any of the user's roles.</p>
+
+        <p>Fifth, fall back to the tier check. Does the user's page tier meet or exceed the action's <code>required_tier</code>? If yes, permitted. If no, blocked.</p>
+
+        <p>DENY always wins over ALLOW at the same scope level. User-level grants override role-level grants within the same grant type. The system is designed so that it's easier to accidentally over-restrict than over-permit.</p>
+
+        <h3>Department Scoping</h3>
+
+        <p><code>RBAC_DepartmentRegistry</code> links department identifiers to their page routes and display names. It doesn't have foreign key relationships to the other RBAC tables &mdash; the connection is through the <code>department_scope</code> string value in RoleMapping.</p>
+
+        <p>When a role mapping has a <code>department_scope</code> value (like <code>business-services</code>), that role only grants access to pages registered under that department. The same <code>DeptStaff</code> role can be reused across departments &mdash; scope it to <code>business-services</code> for one AD group and <code>client-relations</code> for another. Same role definition, different access. Adding a new department is entirely configuration: register the department, create the AD groups, add the role mappings. Zero code changes.</p>
+
+        <h3>The Enforcement Lifecycle</h3>
+
+        <p>RBAC doesn't jump straight from "off" to "enforced." The <code>rbac_enforcement_mode</code> GlobalConfig setting controls a three-stage progression.</p>
+
+        <p>In <code>disabled</code> mode, the middleware skips all permission checks. Everyone sees everything. This is where you start while IT Ops creates the AD groups and the Applications Team builds the role mappings.</p>
+
+        <p>In <code>audit</code> mode, every permission check runs but nothing gets blocked. When a check <em>would</em> deny access, it logs a <code>WOULD_DENY</code> entry to <code>RBAC_AuditLog</code> instead of returning a 403. The user gets in, but the audit trail shows exactly who would be affected by enforcement. Run this for a week. Check the log. Fix the mappings that need fixing. When the only WOULD_DENY entries are for people who genuinely shouldn't have access, you're ready.</p>
+
+        <p>In <code>enforce</code> mode, denials are real. No access means a 403 response and a <code>DENIED</code> entry in the audit log. The transition from audit to enforce should be boring. If you did the audit phase right, nothing surprising happens.</p>
+
+        <div class="tech-tip">
+            <strong>Audit verbosity:</strong> A second GlobalConfig setting (<code>rbac_audit_verbosity</code>) controls how much gets logged during enforcement. Set to <code>denials_only</code> (the default), only DENIED and WOULD_DENY events are recorded. Set to <code>all</code>, every permission check &mdash; including successful ones &mdash; gets an audit entry. Use <code>all</code> temporarily for compliance audits or when debugging access issues, then switch back to avoid filling the table unnecessarily.
+        </div>
+
+        <h3>The Audit Log Structure</h3>
+
+        <p><code>RBAC_AuditLog</code> is deliberately denormalized. When a permission event is logged, the entry captures the user's AD groups and resolved roles as comma-separated strings rather than foreign key references. This is the right call &mdash; the audit log needs to reflect the state at the <em>time of the event</em>, not the current state of the RBAC tables. If someone's roles change next week, the audit record for today's denial still shows exactly what roles they had when they were denied.</p>
+
+        <p>The table is append-only. No updates, no deletes (outside of periodic retention cleanup). Every event type &mdash; LOGIN_SUCCESS, LOGIN_FAILURE, PAGE_DENIED, ACTION_DENIED, ACTION_ALLOWED, CONFIG_CHANGE &mdash; captures the relevant context for that event type. Page and action fields are NULL for login events. Action fields are NULL for page-level checks. The schema adapts to what each event type needs.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>"Is the orchestrator running?"</strong></p>
+        <p>Check the NSSM service: <code>nssm status xFACtsOrchestrator</code> on FA-SQLDBB. Or look at the engine health indicators on any Control Center page &mdash; if the countdown is ticking, Mo is alive.</p>
+
+        <p><strong>"A process isn't executing."</strong></p>
+        <p>Check <code>Orchestrator.ProcessRegistry</code>: is the process enabled (<code>run_mode = 1</code> or <code>2</code>)? Is it stuck in a running state (<code>running_count &gt; 0</code> from a previous timeout)? Is the interval longer than you think? For time-based processes, has the scheduled time passed today?</p>
+
+        <p><strong>"Something failed &mdash; what happened?"</strong></p>
+        <p>Check <code>Orchestrator.TaskLog</code> for that process. The <code>error_output</code> column has the full stderr from the script. This is the #1 advantage of Mo Jr. over Mo Sr. &mdash; you actually get to see what went wrong.</p>
+
+        <p><strong>"Who changed a GlobalConfig setting?"</strong></p>
+        <p>Check <code>dbo.ActionAuditLog</code>. Every Control Center config change is logged with the before and after values.</p>
+
+        <p><strong>"Someone tried to drop a table &mdash; was it blocked?"</strong></p>
+        <p>Check <code>dbo.Protection_ViolationLog</code>. If it was a protected object, the full details are there including the SQL text of the command.</p>
+
+        <p><strong>"A user says they can't access a page."</strong></p>
+        <p>Check <code>dbo.RBAC_AuditLog</code> for DENIED entries with their username. The log shows their resolved roles, tier, and what tier was required. If RBAC is in audit mode, look for WOULD_DENY entries instead.</p>
+
+        <p><strong>"I added someone to an AD group but they still can't get in."</strong></p>
+        <p>RBAC data is cached and refreshes on a configurable interval. Wait for the cache to refresh, or restart the Control Center to force an immediate reload.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>The three systems in the Engine Room don't have foreign key relationships between them, but they interact through shared patterns and data.</p>
+
+        <p><strong>GlobalConfig is the universal settings layer.</strong> The orchestrator reads its heartbeat interval from GlobalConfig. RBAC reads its enforcement mode and audit verbosity from GlobalConfig. Every module reads its alert thresholds, feature toggles, and timing windows from GlobalConfig. It's the one table that every component in xFACts depends on, and it has no idea any of them exist.</p>
+
+        <p><strong>The orchestrator drives everything else.</strong> Every monitoring script, every queue processor, every data collector runs because Mo launched it. The RBAC tables aren't populated by the orchestrator (they're configuration), but the Control Center that <em>reads</em> those tables is being served by the same infrastructure that Mo coordinates. If Mo stops, the monitoring stops. If the monitoring stops, there's nothing for RBAC to protect access to.</p>
+
+        <p><strong>System_Metadata tracks all three.</strong> Orchestrator tables, shared infrastructure tables, and RBAC tables all have version entries in System_Metadata. It's the one place that knows about everything, even though it doesn't interact with anything.</p>
+
+        <p><strong>The protection trigger guards all three.</strong> Orchestrator tables, shared infrastructure tables, and RBAC tables are all in the protected object list. The trigger doesn't know what a "module" is &mdash; it just knows the name of every table, procedure, and trigger that matters, and it blocks anyone who tries to drop one.</p>
+
+        <p><strong>Five audit trails, one platform.</strong> CycleLog and TaskLog track automated execution. ActionAuditLog tracks human actions. API_RequestLog tracks outbound integrations. RBAC_AuditLog tracks access decisions. Protection_ViolationLog tracks blocked DDL. No single table tells the whole story, but together they cover everything.</p>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/engine-room-ref.html" class="ref-link">📋 Engine Room Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../engine-room.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to The Engine Room</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

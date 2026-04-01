@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Control Center Architecture &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+</head>
+<body>
+<div class="page-wrapper">
+
+    <div class="page-header">
+        <h1>The Control Center Architecture</h1>
+        <div class="subtitle">Pode, PowerShell, four files per page, and the machinery behind the dark theme</div>
+    </div>
+
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#pode">Pode &amp; NSSM</a>
+            <a href="#folder-structure">Folder Structure</a>
+            <a href="#startup">Startup Sequence</a>
+            <a href="#authentication">Authentication</a>
+            <a href="#rbac">RBAC</a>
+            <a href="#four-file">The Four-File Pattern</a>
+            <a href="#helpers">Helpers Module</a>
+            <a href="#refresh">Refresh Architecture</a>
+            <a href="#engine-events">Engine Events</a>
+            <a href="#api-patterns">API Patterns</a>
+            <a href="#api-cache">API Caching</a>
+            <a href="#request-logging">Request Logging</a>
+            <a href="#shared-behaviors">Shared Behaviors</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> the Control Center is and <em>how to use it</em>. This page tells you <em>how it&rsquo;s built</em> &mdash; the framework, the patterns, the infrastructure that makes every page work. If you&rsquo;re maintaining or extending the Control Center, start here.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Pode & NSSM -->
+    <!-- ============================================ -->
+    <div class="section" id="pode">
+        <h2>Pode &amp; NSSM</h2>
+
+        <p>The Control Center is a <a href="https://badgerati.github.io/Pode/" style="color: var(--accent-blue);">Pode</a> web application &mdash; a web framework written entirely in PowerShell. Pode handles HTTP routing, WebSocket connections, session management, static file serving, and middleware. The same language that collects data, runs the orchestrator, and processes alerts also serves the web pages. One language, one team, no translation layer.</p>
+
+        <p>Pode runs as a Windows service managed by NSSM (the Non-Sucking Service Manager). When the server boots, NSSM starts PowerShell with the entry point script. When you browse to port 8085, Pode handles the request. When the service needs to restart, NSSM manages the process lifecycle.</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">NSSM</div>
+                    <div class="arch-flow-step-detail">Windows service wrapper<br>Starts PowerShell on boot</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">PowerShell</div>
+                    <div class="arch-flow-step-detail">Start-ControlCenter.ps1<br>Entry point script</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Pode Server</div>
+                    <div class="arch-flow-step-detail">HTTP + WebSocket<br>Port 8085</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Browsers</div>
+                    <div class="arch-flow-step-detail">AD-authenticated<br>Dark theme dashboards</div>
+                </div>
+            </div>
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Component</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr><td>Host Server</td><td>FA-SQLDBB</td></tr>
+                <tr><td>Service Name</td><td><code>xFACtsControlCenter</code></td></tr>
+                <tr><td>Service Account</td><td><code>FAC\sqlmon</code></td></tr>
+                <tr><td>Port</td><td>8085 (HTTP + WebSocket on same port)</td></tr>
+                <tr><td>Pode Endpoints</td><td>Two: <code>Http</code> for pages/APIs, <code>Ws</code> for engine event WebSocket</td></tr>
+                <tr><td>Database Connection</td><td><code>AVG-PROD-LSNR</code> (AG listener) via Integrated Security</td></tr>
+                <tr><td>NSSM Arguments</td><td><code>-NoProfile -ExecutionPolicy Bypass -File "...\Start-ControlCenter.ps1"</code></td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why Pode?</strong> The team already maintains the entire xFACts backend in PowerShell. Using a PowerShell web framework means every developer who can write a collector script can also build a dashboard page. There&rsquo;s no second language to learn, no separate build toolchain, and no runtime dependency beyond what Windows Server already provides.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Folder Structure -->
+    <!-- ============================================ -->
+    <div class="section" id="folder-structure">
+        <h2>Folder Structure</h2>
+
+        <p>The entire Control Center lives in a single directory tree on FA-SQLDBB. No build process, no artifact repository, no deployment pipeline. Edit a file, restart the service, and the change is live.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>E:\xFACts-ControlCenter\</code></td><td>Root directory</td></tr>
+                <tr><td><code>scripts\Start-ControlCenter.ps1</code></td><td>Entry point &mdash; server config, auth, middleware, shared routes</td></tr>
+                <tr><td><code>scripts\modules\xFACts-Helpers.psm1</code></td><td>Shared PowerShell module &mdash; DB access, RBAC, API cache, credentials</td></tr>
+                <tr><td><code>scripts\routes\</code></td><td>Route files &mdash; one <code>{Feature}.ps1</code> and one <code>{Feature}-API.ps1</code> per page</td></tr>
+                <tr><td><code>public\css\</code></td><td>Stylesheets &mdash; one <code>{feature}.css</code> per page, plus shared CSS</td></tr>
+                <tr><td><code>public\js\</code></td><td>JavaScript &mdash; one <code>{feature}.js</code> per page, plus shared JS</td></tr>
+                <tr><td><code>public\images\</code></td><td>Image assets</td></tr>
+                <tr><td><code>public\docs\</code></td><td>Documentation site (xFACts Secrets Revealed) &mdash; static HTML served by Pode</td></tr>
+                <tr><td><code>logs\</code></td><td>Pode request and error logs (auto-generated, file-per-day)</td></tr>
+                <tr><td><code>install\</code></td><td>Installation packages (Pode module, NSSM) &mdash; backup copies</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Static file serving.</strong> Four static routes are registered at startup: <code>/css</code>, <code>/js</code>, <code>/images</code>, and <code>/docs</code>. These map directly to subdirectories under <code>public\</code>. Pode serves them without authentication, so CSS and JavaScript load regardless of session state. The documentation site at <code>/docs</code> is the same static HTML that gets published to Confluence &mdash; one source, two delivery channels.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Startup Sequence -->
+    <!-- ============================================ -->
+    <div class="section" id="startup">
+        <h2>Startup Sequence</h2>
+
+        <p><code>Start-ControlCenter.ps1</code> is the single entry point. Everything the Control Center needs to run is initialized here, in a specific order that matters. The sequence inside the <code>Start-PodeServer</code> block:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Order</th><th>Step</th><th>Why This Order</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td>Endpoints (HTTP + WebSocket)</td><td>Pode requires at least one endpoint before anything else</td></tr>
+                <tr><td>2</td><td>Static routes (<code>/css</code>, <code>/js</code>, <code>/images</code>, <code>/docs</code>)</td><td>Must exist before any page tries to load assets</td></tr>
+                <tr><td>3</td><td>File logging (requests + errors)</td><td>Logging should be active before any requests are handled</td></tr>
+                <tr><td>4</td><td>Session middleware</td><td>Required before authentication is configured</td></tr>
+                <tr><td>5</td><td>Helpers module (<code>xFACts-Helpers.psm1</code>)</td><td>Must load before auth setup &mdash; RBAC functions and <code>Invoke-XFActsQuery</code> are used in the auth scriptblock</td></tr>
+                <tr><td>6</td><td>AD authentication scheme</td><td>Depends on session middleware and helpers module</td></tr>
+                <tr><td>7</td><td>Request logging middleware + endware</td><td>After auth so user context is available in log entries</td></tr>
+                <tr><td>8</td><td>Login/logout routes</td><td>After auth scheme is registered</td></tr>
+                <tr><td>9</td><td>API cache initialization</td><td>Shared state must exist before route files try to use it</td></tr>
+                <tr><td>10</td><td>Engine events shared state + routes</td><td>WebSocket infrastructure before pages that depend on it</td></tr>
+                <tr><td>11</td><td>Shared configuration routes</td><td>The refresh interval API that every page calls on init</td></tr>
+                <tr><td>12</td><td>Route file loading (dot-source all <code>*.ps1</code> in <code>routes\</code>)</td><td>Last &mdash; all infrastructure must be ready before routes register</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Fatal guard.</strong> If <code>xFACts-Helpers.psm1</code> is missing, the startup script throws immediately. There is no graceful degradation &mdash; every route depends on the module for database access and RBAC. If the module isn&rsquo;t there, nothing works, and failing fast with a clear error is better than silently serving broken pages.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Authentication -->
+    <!-- ============================================ -->
+    <div class="section" id="authentication">
+        <h2>Authentication</h2>
+
+        <p>Every page and API endpoint requires Windows Active Directory authentication. Pode handles this natively through its form-based auth scheme, validating credentials against the <code>fac.local</code> domain.</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Browser</div>
+                    <div class="arch-flow-step-detail">Requests any page</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-fork-label">Session?</div>
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch red">No &rarr; Redirect to /login</div>
+                        <div class="arch-flow-branch green">Yes &rarr; Serve page</div>
+                    </div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">AD Validation</div>
+                    <div class="arch-flow-step-detail">fac.local<br>-DirectGroups</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Session Created</div>
+                    <div class="arch-flow-step-detail">Extends on activity</div>
+                </div>
+            </div>
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Aspect</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr><td>Auth Scheme</td><td>Pode <code>Add-PodeAuthWindowsAd</code> with form login</td></tr>
+                <tr><td>Domain</td><td><code>fac.local</code></td></tr>
+                <tr><td>Session Duration</td><td>Configurable (currently 1 hour), extends on activity</td></tr>
+                <tr><td>Group Capture</td><td><code>-DirectGroups</code> flag captures AD group membership at login</td></tr>
+                <tr><td>Login Audit</td><td>Successful logins logged to <code>dbo.RBAC_AuditLog</code> with username, groups, and client IP</td></tr>
+                <tr><td>Failed Login Detection</td><td>Endware detects POST to <code>/auth/login</code> with no authenticated user; logs as <code>LOGIN_FAILURE</code></td></tr>
+                <tr><td>Prerequisite</td><td>RSAT-AD-PowerShell feature must be installed on the host server</td></tr>
+            </tbody>
+        </table>
+
+        <p>After successful authentication, user context is available in every route via <code>$WebEvent.Auth.User</code>: <code>Username</code> (AD username), <code>Name</code> (display name), and <code>Groups</code> (array of AD group names). This context feeds both the RBAC system and the request logging pipeline.</p>
+
+        <div class="tech-tip">
+            <strong>Login logging never prevents access.</strong> The auth scriptblock wraps the audit INSERT in a try/catch that silently swallows errors. If the database is unreachable at the exact moment someone logs in, they still get in &mdash; the audit record is the only thing lost.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: RBAC -->
+    <!-- ============================================ -->
+    <div class="section" id="rbac">
+        <h2>Role-Based Access Control</h2>
+
+        <p>The RBAC system maps Active Directory groups to platform roles, roles to page permissions, and page permissions to action grants. The entire evaluation chain runs from an in-memory cache that refreshes from the database every five minutes.</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">AD Groups</div>
+                    <div class="arch-flow-step-detail">From login session</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Roles</div>
+                    <div class="arch-flow-step-detail">RBAC_RoleMapping<br>Group &rarr; Role</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Page Tier</div>
+                    <div class="arch-flow-step-detail">RBAC_PermissionMapping<br>view / operate / admin</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Action Grants</div>
+                    <div class="arch-flow-step-detail">RBAC_ActionGrant<br>Fine-grained ALLOW/DENY</div>
+                </div>
+            </div>
+        </div>
+
+        <h3>Tier Hierarchy</h3>
+
+        <p>Every page permission is assigned a tier. Higher tiers inherit all lower-tier capabilities.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Tier</th><th>Level</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>view</code></td><td>1</td><td>Read-only access to the page and its data</td></tr>
+                <tr><td><code>operate</code></td><td>2</td><td>View + ability to perform actions (kill zombies, toggle processes, etc.)</td></tr>
+                <tr><td><code>admin</code></td><td>3</td><td>Operate + configuration changes, destructive actions</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Enforcement Modes</h3>
+
+        <p>The RBAC system supports three enforcement modes, controlled by a GlobalConfig setting. This allows gradual rollout without risking lockouts.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Mode</th><th>Behavior</th></tr></thead>
+            <tbody>
+                <tr><td><code>disabled</code></td><td>All users get full access. No permission checks run. RBAC tables are loaded but ignored.</td></tr>
+                <tr><td><code>audit</code></td><td>Permission checks run and log results, but denials are overridden &mdash; everyone still gets in. Used for testing RBAC configuration before enforcement.</td></tr>
+                <tr><td><code>enforce</code></td><td>Real enforcement. Denied users see a styled 403 page; denied API actions return structured JSON errors.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Action Permission Evaluation</h3>
+
+        <p>For fine-grained control over specific actions (not just page access), the system evaluates grants in a strict priority order: User DENY &rarr; Role DENY &rarr; User ALLOW &rarr; Role ALLOW &rarr; Tier fallback. An explicit deny always wins, and user-level grants always override role-level grants.</p>
+
+        <h3>Department Pages</h3>
+
+        <p>Department-scoped roles restrict access to specific departmental pages. Users with only department roles are automatically redirected past the home page to their department&rsquo;s page. The RBAC system tracks this via <code>department_scope</code> on role mappings and <code>RBAC_DepartmentRegistry</code> for route resolution.</p>
+
+        <h3>Usage in Routes</h3>
+
+        <p>Every page route calls <code>Get-UserAccess</code> at the top of its scriptblock. Every action API calls <code>Test-ActionEndpoint</code> (which auto-resolves the endpoint from <code>RBAC_ActionRegistry</code>) or <code>Test-ActionPermission</code> for explicit checks. UI rendering uses <code>Get-UserContext</code> to conditionally show admin controls like the gear icon.</p>
+
+        <div class="tech-tip">
+            <strong>Cache-first, fail-safe.</strong> All RBAC tables are loaded into a memory cache at startup and refreshed every five minutes. No per-request database queries. If the cache refresh fails (database briefly unreachable), stale cache data is used rather than denying everyone access. RBAC issues should never take down the Control Center.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Four-File Pattern -->
+    <!-- ============================================ -->
+    <div class="section" id="four-file">
+        <h2>The Four-File Pattern</h2>
+
+        <p>Every monitoring page in the Control Center is built from exactly four files, each with one responsibility. This separation means changing how something looks never requires touching how it works, and adding a new API endpoint never requires rebuilding the page layout.</p>
+
+        <table class="info-table">
+            <thead><tr><th>File</th><th>Location</th><th>Responsibility</th></tr></thead>
+            <tbody>
+                <tr><td><code>{Feature}.ps1</code></td><td><code>scripts\routes\</code></td><td>Page route &mdash; builds HTML, sets up structure, links CSS/JS. Contains the RBAC access check and renders the page skeleton as a here-string.</td></tr>
+                <tr><td><code>{Feature}-API.ps1</code></td><td><code>scripts\routes\</code></td><td>API routes &mdash; all <code>/api/{feature}/*</code> endpoints that serve JSON data. Queries the database, processes results, returns structured responses.</td></tr>
+                <tr><td><code>{feature}.js</code></td><td><code>public\js\</code></td><td>Client-side behavior &mdash; data loading, DOM updates, chart rendering, timers, slideout interactions. Uses an IIFE module pattern exposing a <code>pageRefresh()</code> function.</td></tr>
+                <tr><td><code>{feature}.css</code></td><td><code>public\css\</code></td><td>Visual styling &mdash; layout, colors, typography, responsive breakpoints. Page-specific only; shared styles live in shared CSS files.</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Naming convention.</strong> Route files use PascalCase (<code>ServerHealth.ps1</code>), matching Pode&rsquo;s script-loading convention. Client-side files use kebab-case (<code>server-health.js</code>), matching web conventions. The mapping is implicit by feature name, documented in each route file&rsquo;s header comment.
+        </div>
+
+        <h3>Route File Structure</h3>
+
+        <p>Every route file follows the same pattern: register a GET route with <code>-Authentication 'ADLogin'</code>, perform an RBAC check via <code>Get-UserAccess</code>, resolve admin context via <code>Get-UserContext</code> for the gear icon, then write the complete HTML page as a PowerShell here-string via <code>Write-PodeHtmlResponse</code>.</p>
+
+        <p>The HTML includes a fixed navigation bar (identical across all pages, with the current page highlighted), a header bar with title and engine indicators, section containers for data, and script tags loading the page JS followed by the shared <code>engine-events.js</code>.</p>
+
+        <h3>API File Structure</h3>
+
+        <p>API files register multiple GET (and sometimes POST) routes under the <code>/api/{feature}/</code> namespace. Each endpoint authenticates via <code>ADLogin</code>, reads query parameters from <code>$WebEvent.Query</code>, executes SQL via <code>Invoke-XFActsQuery</code>, and returns JSON via <code>Write-PodeJsonResponse</code>. Error handling follows a consistent try/catch pattern that returns <code>{ error: "message" }</code> with a 500 status.</p>
+
+        <h3>JavaScript Module Pattern</h3>
+
+        <p>Each page&rsquo;s JavaScript uses an IIFE (Immediately Invoked Function Expression) to avoid global namespace pollution. The module exposes a <code>pageRefresh()</code> function (for the manual refresh button) and registers a <code>DOMContentLoaded</code> handler that calls the page&rsquo;s <code>init()</code> function. Within <code>init()</code>, the page connects to engine events, loads its GlobalConfig refresh interval, performs the initial data load, and starts auto-refresh timers.</p>
+
+        <h3>The Home Page Exception</h3>
+
+        <p>The Home page (<code>Home.ps1</code>) is the one departure from the four-file pattern. It&rsquo;s a single route file that generates its own CSS inline &mdash; no separate JS, CSS, or API files. The home page is a static grid of navigation cards with no data loading, no refresh cycle, and no engine indicators. It doesn&rsquo;t need the four-file separation because there&rsquo;s nothing to separate.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Helpers Module -->
+    <!-- ============================================ -->
+    <div class="section" id="helpers">
+        <h2>The Helpers Module</h2>
+
+        <p><code>xFACts-Helpers.psm1</code> is the shared PowerShell module loaded at startup and available to every Pode runspace. It provides the foundation that every route file depends on.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Function Group</th><th>Functions</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td>Database</td><td><code>Invoke-XFActsQuery</code>, <code>Invoke-XFActsProc</code></td><td>Parameterized SQL execution against xFACts (via AG listener). Query returns hashtable arrays; Proc captures PRINT/RAISERROR messages.</td></tr>
+                <tr><td>RBAC Core</td><td><code>Get-UserAccess</code>, <code>Test-ActionPermission</code>, <code>Test-ActionEndpoint</code>, <code>Get-UserContext</code></td><td>Page access checks, action permission evaluation, UI rendering context</td></tr>
+                <tr><td>RBAC Internal</td><td><code>Resolve-UserRoles</code>, <code>Get-UserPageTier</code>, <code>Initialize-RBACCache</code>, <code>Confirm-RBACCache</code>, <code>Write-RBACAuditLog</code></td><td>Role resolution, tier comparison, cache management, audit logging</td></tr>
+                <tr><td>RBAC Response</td><td><code>Get-AccessDeniedHtml</code>, <code>Get-ActionDeniedResponse</code></td><td>Themed 403 pages and standardized JSON denial responses</td></tr>
+                <tr><td>API Cache</td><td><code>Initialize-ApiCacheConfig</code>, <code>Get-CachedResult</code></td><td>Thread-safe caching with GlobalConfig-driven TTLs via Pode shared state</td></tr>
+                <tr><td>Credentials</td><td><code>Get-ServiceCredentials</code></td><td>Two-tier encrypted credential retrieval from <code>dbo.Credentials</code></td></tr>
+                <tr><td>CRS5 (Debt Manager)</td><td><code>Get-CRS5Connection</code>, <code>Invoke-CRS5ReadQuery</code>, <code>Invoke-CRS5WriteQuery</code></td><td>AG-aware connection strings for read (secondary) and write (primary) against <code>crs5_oltp</code></td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why a module, not a dot-sourced file?</strong> Automation scripts that run standalone use dot-sourced <code>.ps1</code> shared files. The Control Center uses a <code>.psm1</code> module because Pode needs <code>Import-Module</code> to make functions available across all runspaces (each incoming request runs in its own runspace). A dot-sourced file would only be available in the startup runspace.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Refresh Architecture -->
+    <!-- ============================================ -->
+    <div class="section" id="refresh">
+        <h2>Refresh Architecture</h2>
+
+        <p>The Refresh Architecture defines how every Control Center page keeps its data current. Every data section on every page falls into one of four categories, communicated to users via badges in section headers.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Badge</th><th>Mode</th><th>What Triggers It</th></tr></thead>
+            <tbody>
+                <tr><td>&#9889;</td><td>Event</td><td>Data refreshes when an engine process completes (WebSocket <code>PROCESS_COMPLETED</code> event)</td></tr>
+                <tr><td>&#9679;</td><td>Live</td><td>Data refreshes on a recurring timer (GlobalConfig-driven interval)</td></tr>
+                <tr><td>&#128260;</td><td>Action</td><td>Data refreshes on user interaction (button click, filter change, server selection)</td></tr>
+                <tr><td>&#128204;</td><td>Static</td><td>Data loads once on page load and does not refresh</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Standard Page Plumbing</h3>
+
+        <p>Every page includes the following infrastructure, even if some parts aren&rsquo;t currently used. This ensures consistency and makes future additions trivial rather than requiring architectural work.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Component</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>ENGINE_PROCESSES</code> map</td><td>Defined as a <code>var</code> before the page IIFE. Maps orchestrator process names to engine card slugs. Set to <code>{}</code> if the page has no engine cards.</td></tr>
+                <tr><td><code>engine-events.css</code> + <code>engine-events.js</code></td><td>Shared engine indicator files, linked after page-specific CSS/JS</td></tr>
+                <tr><td><code>connectEngineEvents()</code></td><td>Called in <code>init()</code> to establish the WebSocket connection</td></tr>
+                <tr><td><code>onEngineProcessCompleted()</code></td><td>Global callback for event-driven section refreshes when a process completes</td></tr>
+                <tr><td>Midnight rollover</td><td>A 60-second <code>setInterval</code> that reloads the page if the date has changed, preventing stale overnight sessions</td></tr>
+                <tr><td>GlobalConfig interval</td><td>Loaded via <code>/api/config/refresh-interval?page={pagename}</code> on init; drives the live polling timer</td></tr>
+                <tr><td>Page refresh button</td><td>Manual refresh in the header using the &#8635; character with a CSS spin animation</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Function Pattern</h3>
+
+        <p>Pages with both event-driven and live-polling sections implement a standard set of functions: <code>refreshAll()</code> calls all load functions, <code>refreshEventSections()</code> reloads only event-driven sections, <code>refreshLiveSections()</code> reloads only timer-driven sections, <code>pageRefresh()</code> handles the manual button, and <code>startAutoRefresh()</code> starts the timer from the GlobalConfig interval.</p>
+
+        <div class="tech-tip">
+            <strong>Reference implementation.</strong> File Monitoring is the cleanest implementation of the full Refresh Architecture &mdash; all standard plumbing, a GlobalConfig interval, both event and live sections, and no exceptions. Use it as the reference when building or auditing a new page.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Engine Events (WebSocket) -->
+    <!-- ============================================ -->
+    <div class="section" id="engine-events">
+        <h2>Engine Events (WebSocket)</h2>
+
+        <p>Engine indicators are the real-time link between the orchestrator engine and every browser tab. They answer the question &ldquo;is the data on this page current?&rdquo; without requiring the user to check anything.</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Orchestrator</div>
+                    <div class="arch-flow-step-detail">NSSM service<br>Fires events on start/complete</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">POST /api/internal</div>
+                    <div class="arch-flow-step-detail">localhost-only<br>No authentication</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Pode State</div>
+                    <div class="arch-flow-step-detail">Latest event per process<br>Thread-safe lockable</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">WebSocket</div>
+                    <div class="arch-flow-step-detail">/engine-events<br>Broadcast to all tabs</div>
+                </div>
+            </div>
+        </div>
+
+        <h3>Event Flow</h3>
+
+        <p>The orchestrator sends two event types: <code>PROCESS_STARTED</code> and <code>PROCESS_COMPLETED</code>. Events arrive as JSON payloads via HTTP POST to <code>/api/internal/engine-event</code> &mdash; a route that only accepts connections from localhost (no authentication required, since only the orchestrator on the same server should be calling it). The Control Center stores the latest event per process in Pode shared state, then broadcasts to all connected WebSocket clients.</p>
+
+        <h3>Client Bootstrap</h3>
+
+        <p>When a browser tab opens, it calls <code>GET /api/engine/state</code> to get the current state of all processes. This REST endpoint first checks in-memory state (populated by WebSocket push events), then falls back to <code>ProcessRegistry + TaskLog</code> for processes that haven&rsquo;t pushed an event since the last Control Center restart. This ensures engine indicators populate immediately rather than staying dark until the next execution.</p>
+
+        <h3>Bar States</h3>
+
+        <table class="info-table">
+            <thead><tr><th>State</th><th>Color</th><th>Meaning</th></tr></thead>
+            <tbody>
+                <tr><td>Idle (healthy)</td><td style="color: #22c55e;">Green</td><td>Completed successfully, counting down to next run</td></tr>
+                <tr><td>Running</td><td style="color: #569cd6;">Blue</td><td>Currently executing</td></tr>
+                <tr><td>Overdue</td><td style="color: #dcdcaa;">Yellow</td><td>Past expected interval plus 30-second grace period</td></tr>
+                <tr><td>Critical</td><td style="color: #f48771;">Red</td><td>Failed, timed out, or overdue beyond twice the expected interval</td></tr>
+                <tr><td>Disabled</td><td style="color: #666;">Gray</td><td>Process <code>run_mode = 0</code></td></tr>
+            </tbody>
+        </table>
+
+        <h3>Countdown and Escalation</h3>
+
+        <p>After a successful completion, the engine card counts down <code>M:SS</code> to the next expected run. At zero, it counts up with a <code>+</code> prefix in red text. The bar stays green for a 30-second grace period, then transitions to yellow (overdue). The card frame border escalates to match &mdash; yellow border for overdue, red for critical. Each card is clickable, showing a popup with last execution details (process name, time, duration, status, output summary) without an additional API call.</p>
+
+        <h3>Graceful Degradation</h3>
+
+        <p>On WebSocket disconnect, the shared module auto-reconnects every three seconds and shows a subtle disconnect indicator. A configurable grace period (loaded from GlobalConfig) determines how long the reconnecting state persists before escalating to a disconnected indicator. There is no polling fallback &mdash; the connection either works or visually indicates it doesn&rsquo;t.</p>
+
+        <h3>Idle and Visibility</h3>
+
+        <p>The engine events system respects browser tab visibility &mdash; when a tab is hidden, WebSocket processing pauses to conserve resources. Separately, an idle detection system pauses all page refresh activity after a configurable period of no user interaction, displaying an overlay when the user returns so they know the data may be stale.</p>
+
+        <div class="tech-tip">
+            <strong>All engine indicator functionality lives in two shared files.</strong> <code>engine-events.js</code> and <code>engine-events.css</code> handle everything: WebSocket connection, auto-reconnect, initial state hydration, card rendering, countdown timer, overdue escalation, click-to-popup, disconnect indicator, and idle detection. Never duplicate engine card code into page-specific files. If behavior needs to change, change it in the shared files &mdash; the fix propagates to every page automatically.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: API Patterns -->
+    <!-- ============================================ -->
+    <div class="section" id="api-patterns">
+        <h2>API Patterns</h2>
+
+        <p>Every API endpoint follows consistent conventions that make the behavior predictable across the entire Control Center.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Convention</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr><td>Route namespace</td><td><code>/api/{feature}/{endpoint}</code> &mdash; each feature owns its namespace</td></tr>
+                <tr><td>Authentication</td><td>All endpoints require <code>-Authentication 'ADLogin'</code> (except the internal engine event route)</td></tr>
+                <tr><td>Parameters</td><td>Query string for GET: <code>/api/endpoint?server=DM-PROD-DB</code>. JSON body for POST.</td></tr>
+                <tr><td>Response format</td><td>JSON always. Success returns data directly. Errors return <code>{ error: "message" }</code> with HTTP 500.</td></tr>
+                <tr><td>Database access</td><td><code>Invoke-XFActsQuery</code> for xFACts data, <code>Invoke-CRS5ReadQuery</code>/<code>WriteQuery</code> for Debt Manager data</td></tr>
+                <tr><td>RBAC for actions</td><td>POST/PUT/DELETE endpoints call <code>Test-ActionEndpoint</code> at the top of the scriptblock. Unregistered endpoints pass through; registered ones get the full permission check.</td></tr>
+                <tr><td>Error handling</td><td>Consistent try/catch wrapping the entire scriptblock, returning structured error JSON</td></tr>
+            </tbody>
+        </table>
+
+        <h3>The Refresh Interval Route</h3>
+
+        <p>One shared route deserves special mention: <code>GET /api/config/refresh-interval?page={pagename}</code>. Every page calls this on init to load its live polling interval from GlobalConfig. The route looks up <code>refresh_{page}_seconds</code> in the <code>ControlCenter</code> module of GlobalConfig. If no setting exists, it returns a default of 30 seconds with a <code>default: true</code> flag so the page knows it&rsquo;s using a fallback.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: API Caching -->
+    <!-- ============================================ -->
+    <div class="section" id="api-cache">
+        <h2>API Caching</h2>
+
+        <p>Some API endpoints query external systems (like <code>crs5_oltp</code>) where data changes slowly and queries are expensive. The API cache provides a thread-safe, GlobalConfig-driven caching layer using Pode shared state.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Aspect</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr><td>Storage</td><td>Pode shared state (<code>ApiCache</code>) with a named lockable for thread safety across runspaces</td></tr>
+                <tr><td>TTL Resolution</td><td>Endpoint-specific setting &rarr; default setting &rarr; hardcoded fallback (600 seconds)</td></tr>
+                <tr><td>Configuration</td><td>GlobalConfig category <code>ApiCache.*</code> with settings named <code>cache_ttl_{cachekey}_seconds</code></td></tr>
+                <tr><td>Config Refresh</td><td>TTL settings reload from GlobalConfig every 5 minutes via Pode timer</td></tr>
+                <tr><td>Force Refresh</td><td><code>-ForceRefresh</code> switch bypasses cache; used by manual refresh buttons via <code>?refresh=true</code></td></tr>
+                <tr><td>Thread Safety</td><td>Query execution happens <em>outside</em> the lock to avoid blocking other threads during long-running queries. Only the cache read/write is locked.</td></tr>
+            </tbody>
+        </table>
+
+        <p>Usage in API routes is a single function call wrapping the query: <code>Get-CachedResult -CacheKey 'regf_queue' -ScriptBlock { Invoke-CRS5ReadQuery -Query "SELECT ..." }</code>. The cache handles expiration, refresh, and thread coordination transparently.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Request Logging -->
+    <!-- ============================================ -->
+    <div class="section" id="request-logging">
+        <h2>Request Logging</h2>
+
+        <p>Every non-static HTTP request to the Control Center is logged to <code>dbo.API_RequestLog</code> for volume analysis, performance monitoring, and capacity planning. The logging is implemented as a two-part middleware/endware pipeline.</p>
+
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Middleware</div>
+                    <div class="arch-flow-step-detail">Captures request<br>start timestamp</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Route Handler</div>
+                    <div class="arch-flow-step-detail">Normal request<br>processing</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Endware</div>
+                    <div class="arch-flow-step-detail">Calculates duration<br>Logs to API_RequestLog</div>
+                </div>
+            </div>
+        </div>
+
+        <p>The middleware fires before every request, capturing the start time in <code>$WebEvent.Metadata</code>. The endware fires after every response, calculating the duration and inserting the full request record &mdash; endpoint, HTTP method, authenticated user, client IP, user agent, timestamp, duration in milliseconds, status code, response bytes, and source application.</p>
+
+        <p>Static asset requests (<code>/css/</code>, <code>/js/</code>, <code>/images/</code>, <code>/favicon.ico</code>) are excluded from logging &mdash; they add volume without analytical value. The endware also detects failed login attempts by checking for POST requests to <code>/auth/login</code> with no authenticated user, logging these to <code>RBAC_AuditLog</code> as <code>LOGIN_FAILURE</code> events.</p>
+
+        <div class="tech-tip">
+            <strong>Logging never breaks requests.</strong> The entire endware block is wrapped in a try/catch that silently swallows errors. If the database INSERT fails for any reason &mdash; the log entry is simply lost. The request the user was making completes normally.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Shared Client-Side Behaviors -->
+    <!-- ============================================ -->
+    <div class="section" id="shared-behaviors">
+        <h2>Shared Client-Side Behaviors</h2>
+
+        <p>Beyond the engine events system, several behavioral patterns are shared across all pages through convention rather than shared files. These are implemented independently in each page&rsquo;s JavaScript but follow identical patterns.</p>
+
+        <h3>Navigation Bar</h3>
+
+        <p>Every page includes an identical horizontal navigation bar fixed at the top. Links to all pages, with the current page highlighted via an <code>.active</code> class. The admin gear icon (&#9881;) appears conditionally based on the user&rsquo;s RBAC role, injected server-side in the route file. The nav bar is rendered inline in each route file&rsquo;s HTML &mdash; there is no shared template system in Pode, so the nav markup is duplicated.</p>
+
+        <h3>Idle Detection</h3>
+
+        <p>When a page detects no mouse movement or keyboard activity for a configurable period (loaded from GlobalConfig), it pauses its refresh cycle. An overlay informs the user that data loading has been paused and invites them to click or press a key to resume. This conserves server resources and prevents unnecessary API traffic from abandoned browser tabs.</p>
+
+        <h3>Connection Awareness</h3>
+
+        <p>If API fetch calls fail, pages display reconnecting banners rather than silently going stale. The WebSocket system handles its own reconnection independently. Together, these provide layered connection awareness &mdash; both the data layer (API) and the event layer (WebSocket) communicate their state to the user.</p>
+
+        <h3>Midnight Rollover</h3>
+
+        <p>A 60-second <code>setInterval</code> on every page checks if the date has changed and reloads the page if so. This prevents stale overnight sessions where someone left a tab open and returns the next morning to yesterday&rsquo;s data displayed as if it were current.</p>
+
+        <h3>Metric Card Charts</h3>
+
+        <p>Many metric cards are clickable, revealing trend charts rendered client-side using Chart.js. The charts support configurable time ranges (24 hours, 7 days, 30 days) and update in real time during refresh cycles. Chart instances are cached to avoid recreation on every update &mdash; data updates go through the existing chart instance.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <h3>Service Won&rsquo;t Start</h3>
+        <p>Check NSSM status (<code>nssm.exe status xFACtsControlCenter</code>), then the Pode error logs at <code>E:\xFACts-ControlCenter\logs\errors_*.log</code>. The most common startup failure is a missing module &mdash; if <code>xFACts-Helpers.psm1</code> isn&rsquo;t at the expected path, the script throws immediately. For port conflicts, verify nothing else is using 8085. Test interactively by running <code>Start-ControlCenter.ps1</code> directly and watching the console output.</p>
+
+        <h3>Authentication Errors</h3>
+        <p>Verify the RSAT-AD-PowerShell feature is installed (<code>Get-WindowsFeature RSAT-AD-PowerShell</code>) and test AD connectivity directly (<code>Get-ADUser -Identity "testuser" -Server "fac.local"</code>). If AD validation works from PowerShell but the login page fails, check the domain FQDN in the startup script configuration.</p>
+
+        <h3>Script Changes Not Taking Effect</h3>
+        <p>Route files and the helpers module are loaded at startup and cached in memory. Changes to <code>.ps1</code> or <code>.psm1</code> files require a service restart to take effect. CSS and JavaScript changes take effect immediately but may require a browser cache clear (<code>Ctrl+Shift+R</code>) to be visible.</p>
+
+        <h3>Engine Indicators Stuck or Dark</h3>
+        <p>If engine cards never populate, check the WebSocket connection in the browser&rsquo;s developer tools Network tab (look for a <code>/engine-events</code> WebSocket). If the connection is healthy but cards stay dark, the orchestrator may not be sending events &mdash; verify the orchestrator service is running and that the POST to <code>/api/internal/engine-event</code> is succeeding from localhost. If cards populated once but are now frozen, the WebSocket may have disconnected &mdash; look for the disconnect indicator in the header area.</p>
+
+        <h3>Stale or Missing Data</h3>
+        <p>Check the engine indicators first &mdash; they tell you whether the data pipeline is healthy. If indicators are green and counting down normally, the data is probably between collection cycles. If indicators are red or frozen, the issue is upstream in the orchestrator or collector scripts. For cached departmental page data, try the manual refresh button (which passes <code>?refresh=true</code> to bypass the API cache).</p>
+
+        <h3>Static Route Errors on Startup</h3>
+        <p>If Pode logs &ldquo;Source path does not exist for Static Route,&rdquo; ensure all directories under <code>public\</code> exist, even if empty. Pode validates static route source directories at registration time and fails if they&rsquo;re missing.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>The Control Center sits at the intersection of every other piece of the xFACts platform. Understanding the connections explains why the architecture is the way it is.</p>
+
+        <h3>The Database</h3>
+
+        <p>Every API endpoint ultimately reads from the xFACts database via the <code>AVG-PROD-LSNR</code> AG listener. The helpers module provides <code>Invoke-XFActsQuery</code> for parameterized queries and <code>Invoke-XFActsProc</code> for stored procedure execution. For Debt Manager data, separate CRS5 helper functions route reads to the secondary replica and writes to the primary, keeping heavy read queries off the production write path.</p>
+
+        <h3>The Orchestrator</h3>
+
+        <p>The orchestrator pushes execution events to the Control Center via the internal engine event route. This is a one-way data flow &mdash; the orchestrator tells the Control Center what happened, and the Control Center broadcasts it to browsers. The Administration page reverses this for engine controls: drain mode, service stop/start, and process enable/disable are POST requests from the browser through the Control Center to orchestrator configuration tables.</p>
+
+        <h3>GlobalConfig</h3>
+
+        <p>GlobalConfig drives behavior across both the backend and the frontend. Refresh intervals, idle timeouts, WebSocket grace periods, API cache TTLs, feature flags, RBAC enforcement mode, and display thresholds are all stored in GlobalConfig. The Control Center reads these via API routes and pushes them to the browser on page init. Changing a value in GlobalConfig takes effect on the next page load or the next config cache refresh &mdash; no service restart required.</p>
+
+        <h3>The Documentation Site</h3>
+
+        <p>The documentation you&rsquo;re reading right now is served as static HTML from the Control Center&rsquo;s <code>/docs</code> static route. The same HTML files are also published to Confluence via the documentation pipeline. The Control Center&rsquo;s title on the Home page links directly to the documentation hub, providing a seamless bridge from &ldquo;I&rsquo;m using this tool&rdquo; to &ldquo;I want to understand this tool.&rdquo;</p>
+
+        <h3>The Module Pages</h3>
+
+        <p>Each monitoring module builds its own complete page following the four-file pattern, but they all share the same infrastructure: the helpers module for database access, the engine events system for real-time indicators, the RBAC system for access control, and the GlobalConfig-driven refresh architecture for keeping data current. The architecture described on this page is the common foundation that every module page inherits.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Direction</th><th>What Flows</th></tr></thead>
+            <tbody>
+                <tr><td>xFACts Database</td><td>CC reads/writes</td><td>All monitoring data, configuration, RBAC tables, audit logs, version tracking</td></tr>
+                <tr><td>crs5_oltp Database</td><td>CC reads (secondary) / writes (primary)</td><td>Debt Manager data for batch, job flow, and departmental pages</td></tr>
+                <tr><td>Orchestrator Engine</td><td>Engine &rarr; CC</td><td>Process execution events via internal POST route</td></tr>
+                <tr><td>Active Directory</td><td>CC validates against AD</td><td>User credentials and group membership at login</td></tr>
+                <tr><td>Browser Tabs</td><td>CC &rarr; Browsers</td><td>Pages, API data, and WebSocket events</td></tr>
+                <tr><td>Documentation Pipeline</td><td>Pipeline &rarr; CC static files</td><td>Generated HTML published to <code>/docs</code> for serving</td></tr>
+            </tbody>
+        </table>
+
+        <p class="muted">For the complete technical reference of every monitoring module&rsquo;s database schema, scripts, and DDL, see the individual module Reference pages accessible from the documentation hub.</p>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <div class="doc-footer">
+        <p><a href="../controlcenter.html" style="color: var(--accent-blue); text-decoration: none;">&#8592; Back to The Control Center</a>
+           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+<script src="../../js/nav.js"></script>
+</body>
+</html>

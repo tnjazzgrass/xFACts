@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIDATA Monitoring Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>BIDATA Monitoring Architecture</h1>
+        <div class="subtitle">How a 20-year-old data warehouse gets real-time monitoring &mdash; without anyone asking it to change</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#monitoring-lifecycle">Monitoring Lifecycle</a>
+            <a href="#status-machine">Status Machine</a>
+            <a href="#step-capture">Step Capture</a>
+            <a href="#notification">Notification</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> BIDATA Monitoring does and <em>why</em> (and shares some war stories). This page tells you <em>how</em>. Two tables, one script, zero modifications to the data warehouse itself. The monitoring is entirely external &mdash; it reads <code>msdb</code> job history and records what it finds.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>BIDATA is the simplest schema in xFACts. Two tables, no procedures, no triggers. One script does all the work. This isn't laziness &mdash; it's a reflection of the fact that monitoring a SQL Agent job doesn't require much infrastructure when you design the data model right.</p>
+
+        <div class="erd-root" data-schema="BIDATA"></div>
+
+        <p><code>BuildExecution</code> is the parent record &mdash; one row per nightly build. <code>StepExecution</code> captures the individual job steps as they complete. The relationship is simple: one build has many steps, and the steps are recorded in real-time as the job progresses.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>BuildExecution</code></td><td>Build-level tracking</td><td>One per nightly build</td></tr>
+                <tr><td><code>StepExecution</code></td><td>Step-level timing details</td><td>Many per build (one per completed job step)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>No triggers, no stored procedures.</strong> Unlike Teams and Jira (which use triggers to signal the orchestrator), BIDATA monitoring runs on a scheduled interval via ProcessRegistry. There's nothing to signal demand &mdash; the monitor polls every cycle during the overnight window and does nothing if the build hasn't started.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Monitoring Lifecycle -->
+    <!-- ============================================ -->
+    <div class="section" id="monitoring-lifecycle">
+        <h2>The Monitoring Lifecycle</h2>
+
+        <p><code>Monitor-BIDATABuild.ps1</code> runs on a configurable schedule via the orchestrator. Its job is to observe the SQL Agent job without interfering with it. The script never modifies anything in the data warehouse or in <code>msdb</code> &mdash; it reads job history and records its observations in the BIDATA schema.</p>
+
+        <!-- Monitoring lifecycle flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Check Today</div>
+                    <div class="arch-flow-step-detail">BuildExecution<br>row for today?</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Query msdb</div>
+                    <div class="arch-flow-step-detail">Remote job history<br>on reporting server</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Track Build</div>
+                    <div class="arch-flow-step-detail">Create IN_PROGRESS<br>Capture new steps</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Detect Finish</div>
+                    <div class="arch-flow-step-detail">Job outcome row<br>in sysjobhistory</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Notify</div>
+                    <div class="arch-flow-step-detail">Teams alert with<br>step breakdown</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Runs on a configurable schedule. If the build hasn&rsquo;t started and the grace period has passed, a NOT_STARTED alert fires instead.</div>
+        </div>
+
+        <h3>Step 1: Check Current State</h3>
+
+        <p>The script first queries <code>BuildExecution</code> for today's date. Three outcomes are possible: no row exists (no build detected yet), a row exists with status IN_PROGRESS (build is being tracked), or a row exists with COMPLETED/FAILED (build finished, nothing to do).</p>
+
+        <h3>Step 2: Detect Build Start</h3>
+
+        <p>If no row exists for today, the script queries <code>msdb.dbo.sysjobhistory</code> on the target server via PowerShell's <code>Invoke-Sqlcmd</code>. It looks for any job step completions for the BIDATA rebuild job with a run date matching today. If it finds activity, the build has started &mdash; create a <code>BuildExecution</code> row with status <strong>IN_PROGRESS</strong> and start capturing steps.</p>
+
+        <h3>Step 3: Capture Steps</h3>
+
+        <p>On each subsequent cycle, the script queries <code>msdb</code> again for any step completions newer than the last captured step. New steps get INSERTed into <code>StepExecution</code> with their step name, duration, and completion time. The <code>BuildExecution</code> row gets updated with the latest step count.</p>
+
+        <h3>Step 4: Detect Completion</h3>
+
+        <p>The build is complete when <code>msdb</code> shows the overall job outcome (step 0 in <code>sysjobhistory</code>). The script updates <code>BuildExecution</code> with status <strong>COMPLETED</strong> (or <strong>FAILED</strong>), calculates total duration, formats a summary, and queues a Teams notification.</p>
+
+        <div class="tech-tip">
+            <strong>Remote query, local storage.</strong> The BIDATA job runs on the reporting server, not on the xFACts server. The script uses <code>Invoke-Sqlcmd</code> to query <code>msdb</code> remotely. This means xFACts monitors the build without requiring any changes to the reporting server &mdash; no linked servers, no stored procedures, no agent jobs. The monitoring is completely non-invasive.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Status Machine -->
+    <!-- ============================================ -->
+    <div class="section" id="status-machine">
+        <h2>The Status Machine</h2>
+
+        <p><code>BuildExecution.build_status</code> has four valid values. The transitions tell the full story of a build's lifecycle.</p>
+
+        <!-- Status state machine -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">No Row</div>
+                    <div class="arch-flow-step-detail">Build not yet<br>detected today</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-fork-label">Detected?</div>
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">IN_PROGRESS</div>
+                        <div class="arch-flow-branch orange">NOT_STARTED</div>
+                    </div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-fork-label">Outcome</div>
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">COMPLETED</div>
+                        <div class="arch-flow-branch red">FAILED</div>
+                    </div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">NOT_STARTED transitions to SUPERSEDED if the build eventually starts. COMPLETED and FAILED are terminal for the day.</div>
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Status</th><th>Meaning</th><th>Transitions To</th></tr></thead>
+            <tbody>
+                <tr><td><strong>NOT_STARTED</strong></td><td>Grace period passed without build activity</td><td>SUPERSEDED (if build eventually starts)</td></tr>
+                <tr><td><strong>IN_PROGRESS</strong></td><td>Build running, steps being captured</td><td>COMPLETED <em>or</em> FAILED</td></tr>
+                <tr><td><strong>COMPLETED</strong></td><td>Build finished successfully</td><td>Terminal for the day</td></tr>
+                <tr><td><strong>FAILED</strong></td><td>Build encountered an error</td><td>Terminal for the day</td></tr>
+            </tbody>
+        </table>
+
+        <h3>The NOT_STARTED Edge Case</h3>
+
+        <p>The build is scheduled to start overnight. A configurable grace period (from GlobalConfig) says &ldquo;if the build hasn&rsquo;t started by X, something&rsquo;s wrong.&rdquo; When the grace period expires with no activity, the script creates a <code>BuildExecution</code> row with status <strong>NOT_STARTED</strong> and queues a Teams alert.</p>
+
+        <p>If the build later starts (maybe it was delayed, not missing), the NOT_STARTED record gets marked <strong>SUPERSEDED</strong> and a new IN_PROGRESS record takes over tracking. This prevents false alarms from blocking real monitoring.</p>
+
+        <div class="tech-tip">
+            <strong>SUPERSEDED vs. overwritten.</strong> The NOT_STARTED row isn't deleted or updated to IN_PROGRESS. It stays as a historical record that the build started late, with its own <code>superseded_dttm</code> timestamp. A new row handles the actual build tracking. This preserves the timeline: "At 4:00 AM we noticed the build hadn't started. At 4:15 AM it started. It completed at 9:30 AM."
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Step Capture -->
+    <!-- ============================================ -->
+    <div class="section" id="step-capture">
+        <h2>Step Capture</h2>
+
+        <p>The BIDATA rebuild job has dozens of steps. Not all of them are interesting. The monitor captures all completed steps from <code>msdb</code> but the Teams notification filters out infrastructure steps to keep the summary focused.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Step Type</th><th>Captured</th><th>In Notification</th><th>Examples</th></tr></thead>
+            <tbody>
+                <tr><td>Data processing</td><td>Yes</td><td>Yes</td><td>Import Accounts, Build Balances, Process Letters</td></tr>
+                <tr><td>Infrastructure</td><td>Yes</td><td>No</td><td>Disable users, Enable replication, Legacy email steps</td></tr>
+            </tbody>
+        </table>
+
+        <p>Each <code>StepExecution</code> row records the step name, step number, duration in seconds, a formatted duration string, and the run status from <code>msdb</code>. The duration data is what makes historical analysis possible &mdash; you can spot when a specific step starts taking longer, often weeks before the overall build time crosses a threshold anyone notices.</p>
+
+        <div class="tech-tip">
+            <strong>Step timing comes from msdb, not from xFACts.</strong> The script reads <code>run_duration</code> from <code>sysjobhistory</code> and converts it from <code>msdb</code>'s HHMMSS integer format to seconds. xFACts doesn't time the steps itself &mdash; it trusts SQL Agent's own accounting. This means the step durations are always accurate to what SQL Agent recorded, with no clock skew between servers.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Notification -->
+    <!-- ============================================ -->
+    <div class="section" id="notification">
+        <h2>Notification</h2>
+
+        <p>One build, one notification. When the build completes, the script builds an Adaptive Card with the completion time, total duration, and a step-by-step breakdown. It queues this through <code>Teams.sp_QueueAlert</code> and updates <code>BuildExecution.notified_dttm</code> to record that notification was sent.</p>
+
+        <p>The <code>notified_dttm</code> field serves double duty: it prevents duplicate notifications (if the next monitoring cycle runs before the Teams queue processes), and it provides an audit trail of exactly when the team was informed.</p>
+
+        <p>NOT_STARTED alerts also go through Teams, but as WARNING category rather than INFO. The build not starting is a more urgent problem than the build finishing successfully.</p>
+
+        <div class="tech-tip">
+            <strong>No Jira integration.</strong> BIDATA builds don't create Jira tickets on failure. The reasoning: a failed build needs immediate DBA attention, not a ticket that sits in a backlog. The Teams alert goes to the right channel; the response is expected to be immediate. If a build failure needs longer-term tracking, a ticket can be created manually with the build details.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>BIDATA Monitoring is the most independent module in xFACts. It reads from an external source (<code>msdb</code> on the reporting server), writes to its own two tables, and pushes notifications through Teams. No other module reads BIDATA data, and BIDATA reads nothing from other xFACts modules except shared infrastructure.</p>
+
+        <h3>Internal Flow</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>BuildExecution</code></td><td><code>StepExecution</code></td><td>One build &rarr; many steps (FK on <code>build_id</code>)</td></tr>
+                <tr><td><code>Monitor-BIDATABuild.ps1</code></td><td>Both tables</td><td>Script creates and updates all rows</td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules Monitor-BIDATABuild.ps1 on a configurable interval</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>Scheduled start time, grace period, notification settings</td></tr>
+                <tr><td><code>Teams.sp_QueueAlert</code></td><td>Teams Integration</td><td>Completion and NOT_STARTED notifications</td></tr>
+                <tr><td><code>msdb.dbo.sysjobhistory</code></td><td>Reporting Server</td><td>Source of job step data (read-only, remote query)</td></tr>
+            </tbody>
+        </table>
+    </div>
+	
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/bidata-ref.html" class="ref-link">📋 BIDATA Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>	
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../bidata.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to BIDATA Monitoring</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Monitoring Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>File Monitoring Architecture</h1>
+        <div class="subtitle">How files get watched, statuses get tracked, and alerts get sent &mdash; without anyone losing sleep (except the script)</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#scan-lifecycle">Scan Lifecycle</a>
+            <a href="#status-machine">Status Machine</a>
+            <a href="#alert-integration">Alert Integration</a>
+            <a href="#credentials">Credential Flow</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> FileOps does and <em>why</em>. This page tells you <em>how</em>. One script, four tables, one stored procedure, and a surprisingly elegant state machine that turns "is the file here yet?" into a fully automated monitoring pipeline.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>FileOps is one of the smallest schemas in xFACts, which is part of its charm. Four tables, one procedure, one script. Everything has a clear job and nothing is trying to be clever.</p>
+
+        <div class="erd-root" data-schema="FileOps"></div>
+
+        <p>The data model follows a clean hierarchy. <code>ServerConfig</code> defines where to connect. <code>MonitorConfig</code> defines what to look for and when. <code>MonitorStatus</code> tracks today's state. <code>MonitorLog</code> records history. The separation between real-time state and historical events is the most important design decision in the schema &mdash; it keeps the dashboard fast and the audit trail complete.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>ServerConfig</code></td><td>SFTP server definitions</td><td>One per server (currently 1)</td></tr>
+                <tr><td><code>MonitorConfig</code></td><td>Monitoring rules</td><td>Many per server</td></tr>
+                <tr><td><code>MonitorStatus</code></td><td>Real-time dashboard state</td><td>One per enabled config (unique on config_id)</td></tr>
+                <tr><td><code>MonitorLog</code></td><td>Event audit trail</td><td>Many per config over time</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Why two output tables?</strong> MonitorStatus is a dashboard &mdash; one row per config, constantly overwritten, answers "what's happening right now?" MonitorLog is a ledger &mdash; append-only, never modified, answers "what happened and when?" Trying to serve both purposes with one table would mean either a noisy dashboard or a lossy audit trail. Neither is acceptable.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Scan Lifecycle -->
+    <!-- ============================================ -->
+    <div class="section" id="scan-lifecycle">
+        <h2>The Scan Lifecycle</h2>
+
+        <p><code>Scan-SFTPFiles.ps1</code> is the only moving part. Everything else is data. Here's what happens every time the orchestrator says "your turn."</p>
+
+        <!-- Scan lifecycle flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Build Work List</div>
+                    <div class="arch-flow-step-detail">Active configs<br>in today&rsquo;s window</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Get Credentials</div>
+                    <div class="arch-flow-step-detail">Group by server<br>One session per server</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Scan SFTP</div>
+                    <div class="arch-flow-step-detail">List directory<br>Match file pattern</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Evaluate</div>
+                    <div class="arch-flow-step-detail">Found? Escalation due?<br>Already detected?</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Update &amp; Alert</div>
+                    <div class="arch-flow-step-detail">Status + Log<br>+ Teams/Jira</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Per server group, per cycle. Daily window reset happens automatically on the first scan of each new day.</div>
+        </div>
+
+        <h3>Step 1: Build the Work List</h3>
+
+        <p>The script queries <code>MonitorConfig</code> joined to <code>ServerConfig</code>, filtering for configs that are enabled, scheduled for today's day of the week, and within the current check window (between <code>check_start_time</code> and <code>check_end_time</code>). Outside the window? Nothing to do.</p>
+
+        <h3>Step 2: Group by Server</h3>
+
+        <p>Configs are grouped by <code>credential_service_name</code> so that all monitors targeting the same SFTP server share a single credential retrieval and connection. If you've got six files on Joker, that's one SFTP session, not six.</p>
+
+        <h3>Step 3: Daily Window Reset</h3>
+
+        <p>For each config, the script checks whether <code>MonitorStatus.last_scanned_dttm</code> is from a previous date. If so, it's a new monitoring day &mdash; the status row gets reset to <strong>Monitoring</strong> with cleared detection and escalation fields. This eliminates the need for a separate scheduled reset job.</p>
+
+        <h3>Step 4: Scan and Evaluate</h3>
+
+        <p>The script connects via WinSCP, lists the directory, and matches files against the configured pattern (wildcards converted to regex at runtime). The result falls into exactly one of four cases:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Condition</th><th>Action</th><th>Status</th></tr></thead>
+            <tbody>
+                <tr><td>Already Detected or LateDetected today</td><td>Update <code>last_scanned_dttm</code> only</td><td>No change</td></tr>
+                <tr><td>File found, not yet escalated</td><td>Log Detected, queue Teams INFO</td><td>→ <strong>Detected</strong></td></tr>
+                <tr><td>File found, already escalated</td><td>Log LateDetected, queue Teams INFO</td><td>→ <strong>LateDetected</strong></td></tr>
+                <tr><td>No file, past escalation time</td><td>Log Escalated, queue Teams WARNING + Jira</td><td>→ <strong>Escalated</strong></td></tr>
+                <tr><td>No file, still within window</td><td>Update <code>last_scanned_dttm</code> only</td><td>Stays <strong>Monitoring</strong></td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Already Detected or LateDetected = skip scan.</strong> Once a file is detected (or detected late), the script doesn't bother connecting to SFTP again for that config. It just updates the timestamp and moves on. No wasted connections, no redundant alerts.
+        </div>
+
+        <div class="tech-tip">
+            <strong>Client Data Archive fallback.</strong> When the SFTP scan finds nothing, the script checks the Client Data Archive as a secondary source. This catches files that were consumed by another process between scan cycles &mdash; the file existed on SFTP briefly but was picked up before FileOps could see it. The CDA path is configured via <code>GlobalConfig</code> and gracefully disables when the setting is absent.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Status Machine -->
+    <!-- ============================================ -->
+    <div class="section" id="status-machine">
+        <h2>The Status Machine</h2>
+
+        <p><code>MonitorStatus.last_status</code> has exactly four valid values. The transitions between them tell the full story of a file's monitoring day.</p>
+
+        <!-- Status state machine -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Monitoring</div>
+                    <div class="arch-flow-step-detail">Window open<br>Scanning each cycle</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-fork-label">Found?</div>
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">Detected</div>
+                        <div class="arch-flow-branch orange">Escalated</div>
+                    </div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">LateDetected</div>
+                    <div class="arch-flow-step-detail">File arrives<br>after escalation</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Detected and LateDetected are both terminal for the day. Resets automatically on the first scan of the next monitoring window.</div>
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Status</th><th>Meaning</th><th>Transitions To</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Monitoring</strong></td><td>Window is open, actively scanning, file not yet found</td><td>Detected <em>or</em> Escalated</td></tr>
+                <tr><td><strong>Detected</strong></td><td>File found before escalation time</td><td>Terminal for the day</td></tr>
+                <tr><td><strong>Escalated</strong></td><td>Escalation time passed without detection</td><td>LateDetected (if file arrives)</td></tr>
+                <tr><td><strong>LateDetected</strong></td><td>File arrived after escalation occurred</td><td>Terminal for the day</td></tr>
+            </tbody>
+        </table>
+
+        <p>Key design point: Detected and LateDetected are both terminal states. Once you're there, you stay there until the next morning's window reset. This prevents alert storms, status flickering, and general confusion about what actually happened. LateDetected also serves a practical purpose &mdash; it stops the script from re-alerting on every subsequent scan cycle by marking the late arrival as handled.</p>
+
+        <div class="tech-tip">
+            <strong>Why "last_status" and not "status"?</strong> Because after the monitoring window closes, the value persists as a snapshot of the last known state. Calling it <code>last_status</code> makes it clear that you're looking at "the status as of the last scan" rather than "the current live status" &mdash; an important distinction when you're reading it at 5pm and the window closed at 3pm.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Alert Integration -->
+    <!-- ============================================ -->
+    <div class="section" id="alert-integration">
+        <h2>Alert Integration</h2>
+
+        <p>FileOps never talks to Teams or Jira directly. It queues requests through the platform's integration modules and lets them handle delivery. This is the same pattern used by every other module in xFACts &mdash; FileOps just decides <em>what</em> to say, not <em>how</em> to say it.</p>
+
+        <h3>Teams Alerts</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Event</th><th>Category</th><th>Title Pattern</th></tr></thead>
+            <tbody>
+                <tr><td>File detected</td><td>INFO</td><td>xFACts: File Detected &mdash; {ConfigName} &mdash; {Date}</td></tr>
+                <tr><td>File detected late</td><td>INFO</td><td>xFACTs: File Detected (Late) &mdash; {ConfigName} &mdash; {Date}</td></tr>
+                <tr><td>Escalation</td><td>WARNING</td><td>xFACTs: File Not Detected &mdash; {ConfigName} &mdash; {Date}</td></tr>
+            </tbody>
+        </table>
+
+        <p>Alerts are queued via <code>Teams.sp_QueueAlert</code> and picked up by <code>Process-TeamsAlertQueue.ps1</code> within seconds. The per-config <code>notify_on_detection</code> and <code>notify_on_escalation</code> flags control which events generate alerts.</p>
+
+        <div class="tech-tip">
+            <strong>Late detection notification logic:</strong> Late detections use a broader rule than normal detections. The script queues a Teams alert if <em>either</em> <code>notify_on_detection</code> or <code>notify_on_escalation</code> is enabled. The reasoning: if you cared enough to be notified about the escalation, you also want to know the file eventually showed up. This means teams subscribed only to escalation alerts (like Operations) will still receive the "File Detected (Late)" notification even though they wouldn't receive a normal detection alert. The category is INFO (not WARNING), so the card renders as informational rather than urgent.
+        </div>
+
+        <h3>Jira Tickets</h3>
+
+        <p>Escalations can optionally create Jira tickets. When <code>create_jira_on_escalation = 1</code>, the script queues a ticket via <code>Jira.sp_QueueTicket</code> with:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Field</th><th>Value</th></tr></thead>
+            <tbody>
+                <tr><td>Project</td><td>SD</td></tr>
+                <tr><td>Issue Type</td><td>Issue</td></tr>
+                <tr><td>Priority</td><td>From <code>MonitorConfig.default_priority</code></td></tr>
+                <tr><td>Summary</td><td>Critical Payment Process Check &mdash; {ConfigName} &mdash; {Date}</td></tr>
+                <tr><td>Cascading Field</td><td>File Processing → Payment File Issue</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Integration tracking:</strong> When a Teams alert or Jira ticket is queued, the corresponding <code>MonitorLog</code> entry records <code>teams_alert_queued = 1</code> or <code>jira_ticket_queued = 1</code>. This creates a traceable link between the monitoring event and the downstream notification, even though the actual delivery happens asynchronously.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- How To: Add a New Monitor -->
+    <!-- ============================================ -->
+    <div class="expand-card">
+        <div class="expand-card-title">How To: Add a New File Monitor</div>
+        <div class="expand-card-body">
+            <p>The Control Center&rsquo;s File Monitoring page provides a built-in interface for adding new monitors. This is the recommended approach &mdash; it validates inputs, handles the database writes, and lets you configure everything in a single view.</p>
+
+            <ol>
+                <li>
+                    <strong>Open the File Monitoring page</strong> in Control Center and click the add monitor button.
+                    <div class="step-note">The slide-up modal provides all configuration fields in one view.</div>
+                </li>
+                <li>
+                    <strong>Select the SFTP server</strong> from the available servers defined in <code>ServerConfig</code>.
+                    <div class="step-note">Currently only Joker is configured. New servers need a <code>ServerConfig</code> row and corresponding credentials in <code>dbo.Credentials</code>.</div>
+                </li>
+                <li>
+                    <strong>Set the monitor identity:</strong> config name (descriptive label), SFTP path (directory to scan), and file pattern (wildcard match like <code>instream.CRSFrostArnet*txt*</code>).
+                </li>
+                <li>
+                    <strong>Configure the schedule:</strong> which days of the week to monitor, the check window start and end times, and the escalation time (when to alert if the file hasn&rsquo;t arrived).
+                </li>
+                <li>
+                    <strong>Set alert preferences:</strong> toggle detection notifications, escalation notifications, and Jira ticket creation independently. Set the default Jira priority for escalation tickets.
+                </li>
+                <li>
+                    <strong>Save and verify.</strong> The new monitor will be picked up on the next scan cycle that falls within the configured window. Check <code>MonitorStatus</code> for a row with status <strong>Monitoring</strong> to confirm.
+                </li>
+            </ol>
+
+            <p><strong>Direct SQL alternative:</strong> <code>FileOps.sp_AddNewMonitorConfig</code> provides the same functionality via stored procedure for scripted or bulk configuration. It performs the same validation as the UI and creates both the <code>MonitorConfig</code> and initial <code>MonitorStatus</code> rows.</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Credential Flow -->
+    <!-- ============================================ -->
+    <div class="section" id="credentials">
+        <h2>Credential Flow</h2>
+
+        <p>FileOps never stores credentials directly. <code>ServerConfig</code> holds a <code>credential_service_name</code> that points to the encrypted credentials in <code>dbo.Credentials</code>. At runtime, the script decrypts them using a two-layer encryption hierarchy:</p>
+
+        <!-- Credential decryption flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">GlobalConfig</div>
+                    <div class="arch-flow-step-detail">Read master<br>passphrase</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Credentials</div>
+                    <div class="arch-flow-step-detail">Decrypt service<br>passphrase</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Decrypt Secrets</div>
+                    <div class="arch-flow-step-detail">SFTP username<br>+ password</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">SFTP Session</div>
+                    <div class="arch-flow-step-detail">WinSCP connection<br>per server group</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Dispose</div>
+                    <div class="arch-flow-step-detail">Session closed<br>Credentials released</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Two-tier decryption. Nothing cached to disk. WinSCP sessions explicitly disposed after each server group.</div>
+        </div>
+
+        <p>Decrypted credentials exist only in memory for the duration of the SFTP session. Nothing is written to disk, nothing is logged, and WinSCP sessions are explicitly disposed after each server group completes. If the master passphrase is wrong or missing, the script fails loudly rather than silently connecting to nothing.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>&ldquo;A file arrived but no notification was sent.&rdquo;</strong></p>
+        <p>Check <code>MonitorConfig</code> &mdash; is <code>notify_on_detection</code> enabled for that config? Also verify the file matched the configured pattern. Check <code>MonitorLog</code> for a Detected entry &mdash; if it&rsquo;s there, the detection worked but notification may have been suppressed by the flag.</p>
+
+        <p><strong>&ldquo;The monitor didn&rsquo;t scan today.&rdquo;</strong></p>
+        <p>Check three things: is the config enabled (<code>is_active = 1</code>)? Is today in the schedule (<code>check_days_of_week</code>)? Is the current time within the check window? Also verify the orchestrator is running and the FileOps process is active in ProcessRegistry.</p>
+
+        <p><strong>&ldquo;SFTP connection failures.&rdquo;</strong></p>
+        <p>Check <code>dbo.Credentials</code> for the service referenced by <code>ServerConfig.credential_service_name</code>. Verify the master passphrase in GlobalConfig is correct. WinSCP connection failures are logged in the orchestrator TaskLog with error details.</p>
+
+        <p><strong>&ldquo;Escalation fired but the file was there.&rdquo;</strong></p>
+        <p>The file may have arrived after the escalation time but before the next scan. Also check the file pattern &mdash; a slight naming variation (date format, extra suffix) can cause a mismatch. The CDA fallback can catch files consumed between cycles, but only if the GlobalConfig path is configured.</p>
+
+        <p><strong>&ldquo;A config shows Monitoring but the window has passed.&rdquo;</strong></p>
+        <p>If the file never arrived and the escalation time wasn&rsquo;t reached before the check window ended, the status stays at Monitoring. This is by design &mdash; no escalation is triggered if the window closes before the escalation deadline. Review whether the escalation time should be before the window end.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <p>FileOps is a self-contained module with three external dependencies: the orchestrator (for scheduling), the credential system (for SFTP authentication), and the Teams/Jira integration modules (for notifications). Everything else is internal to the FileOps schema.</p>
+
+        <h3>Internal Flow</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>ServerConfig</code></td><td><code>MonitorConfig</code></td><td>One server → many configs (FK on <code>server_id</code>)</td></tr>
+                <tr><td><code>MonitorConfig</code></td><td><code>MonitorStatus</code></td><td>One config → one status (unique constraint on <code>config_id</code>)</td></tr>
+                <tr><td><code>MonitorConfig</code></td><td><code>MonitorLog</code></td><td>One config → many events over time (FK on <code>config_id</code>)</td></tr>
+                <tr><td><code>Scan-SFTPFiles.ps1</code></td><td>All tables</td><td>Reads configs, writes status + log</td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules Scan-SFTPFiles.ps1 execution</td></tr>
+                <tr><td><code>dbo.Credentials</code></td><td>Shared Infrastructure</td><td>Encrypted SFTP credentials</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>Master passphrase for credential decryption; CDA base path for fallback file detection (gracefully disables when absent)</td></tr>
+                <tr><td><code>Teams.sp_QueueAlert</code></td><td>Teams Integration</td><td>Alert delivery</td></tr>
+                <tr><td><code>Jira.sp_QueueTicket</code></td><td>Jira Integration</td><td>Ticket creation</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/fileops-ref.html" class="ref-link">📋 File Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>		
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../fileops.html" style="color: var(--accent-blue); text-decoration: none;">← Back to File Monitoring</a>
+           &nbsp;&nbsp;•&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

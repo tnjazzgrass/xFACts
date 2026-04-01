@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Monitoring Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>Backup Monitoring Architecture</h1>
+        <div class="subtitle">How backups get tracked from SQL Server all the way to AWS &mdash; without anybody having to watch</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#pipeline">The Backup Pipeline</a>
+            <a href="#file-lifecycle">File Lifecycle</a>
+            <a href="#alerting">Alerting &amp; Escalation</a>
+            <a href="#retention">Retention &amp; Cleanup</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> Backup Monitoring does and <em>why</em> it matters. This page tells you <em>how</em>. Three tables and four PowerShell scripts that keep tabs on every backup file from creation through network copy, AWS upload, and eventual cleanup &mdash; across all registered SQL Server instances including Always On Availability Group listeners.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>The Backup component tracks two things: the configuration and health of each database's backup process, and the physical lifecycle of every backup file. These concerns are cleanly separated &mdash; configuration tables describe what <em>should</em> happen, while tracking tables record what <em>did</em> happen.</p>
+
+        <div class="erd-root" data-schema="ServerOps" data-category="Backup"></div>
+
+        <p><code>Backup_DatabaseConfig</code> is the enrollment table &mdash; one row per monitored database, controlling which backup stages are enabled and what retention policies apply. <code>Backup_FileTracking</code> is the workhorse &mdash; one row per backup file, tracking its journey through every stage of the pipeline. <code>Backup_ExecutionLog</code> records per-file results from each script run, providing the detail behind the pipeline status cards on the Control Center page.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>Backup_DatabaseConfig</code></td><td>Per-database backup configuration and enrollment</td><td>One per monitored database</td></tr>
+                <tr><td><code>Backup_FileTracking</code></td><td>Individual backup file lifecycle tracking</td><td>Many per database (one per backup file)</td></tr>
+                <tr><td><code>Backup_ExecutionLog</code></td><td>Per-file script execution history</td><td>Many per database over time</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Pipeline status comes from the Orchestrator.</strong> Timing, status, and duration for each pipeline stage are sourced from <code>Orchestrator.TaskLog</code> &mdash; the authoritative record of every script execution. File counts and bytes are aggregated from <code>Backup_ExecutionLog</code> for the corresponding run window. This eliminates the need for a dedicated status table and ensures the Control Center always reflects the orchestrator&rsquo;s view of reality.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Backup Pipeline -->
+    <!-- ============================================ -->
+    <div class="section" id="pipeline">
+        <h2>The Backup Pipeline</h2>
+
+        <p>Backups follow a pipeline with four stages, each handled by a dedicated script. Collection discovers new backups and sets the initial statuses. Network copy and AWS upload then run <strong>in parallel</strong> &mdash; both read from the source server's local path and operate independently. Retention runs last, cleaning up files that have aged out of their configured retention chain.</p>
+
+        <!-- Pipeline Overview -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">SQL Server</div>
+                    <div class="arch-flow-step-detail">Backup completes<br>on any registered server</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Collect</div>
+                    <div class="arch-flow-step-detail">Detect &amp; register<br>Set PENDING statuses</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-fork-label">Parallel</div>
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">Network Copy</div>
+                        <div class="arch-flow-branch orange">AWS Upload</div>
+                    </div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Retention</div>
+                    <div class="arch-flow-step-detail">Chain-count cleanup<br>local &rarr; network</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Network copy and AWS upload run independently &mdash; both read from the source server's local path. Neither waits for the other.</div>
+        </div>
+		
+        <div class="tech-tip">
+            <strong>Two potential backup sources.</strong> The <code>Backup_DatabaseConfig</code> table contains a flag called <code>backup_enabled</code> which drives whether or not the backup schedule itself is driven by xFACts or an external source. If this field is set to 0, xFACts does not create a backup, nor does the backup schedule in the table apply. At present, all backups are initiated by Redgate on an existing Redgate backup schedule. xFACts simply takes the handoff from Redgate once a backup is completed and available in msdb following the 4 stages outlined below.
+        </div>		
+
+        <h3>Stage 1: Collection</h3>
+
+        <p><code>Collect-BackupStatus.ps1</code> queries <code>ServerRegistry</code> for all servers with <code>serverops_backup_enabled = 1</code> and <code>server_type IN ('SQL_SERVER', 'AG_LISTENER')</code>. For each server, it connects to <code>msdb.dbo.backupset</code> and discovers backup completions since the last collection timestamp for that server.</p>
+
+        <!-- Collection detail flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Server List</div>
+                    <div class="arch-flow-step-detail">All backup-enabled<br>servers from Registry</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Query msdb</div>
+                    <div class="arch-flow-step-detail">Backups since last<br>collection per server</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Filter &amp; Enroll</div>
+                    <div class="arch-flow-step-detail">Match against<br>DatabaseRegistry +<br>DatabaseConfig</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Register</div>
+                    <div class="arch-flow-step-detail">INSERT FileTracking<br>Set network/AWS<br>to PENDING or SKIPPED</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Log</div>
+                    <div class="arch-flow-step-detail">Per-file detail row<br>to ExecutionLog</div>
+                </div>
+            </div>
+        </div>
+
+        <p>For each discovered backup, the script checks whether the database is enrolled in <code>DatabaseRegistry</code> and active in <code>Backup_DatabaseConfig</code>. Unenrolled or inactive databases are silently skipped. For enrolled databases, the initial <code>network_copy_status</code> and <code>aws_upload_status</code> are set based on configuration flags: <code>PENDING</code> if the stage is enabled, <code>SKIPPED</code> if not. This is how the parallel pipeline stages know which files they need to process.</p>
+		
+		<p>Each file is inserted individually using <code>OUTPUT INSERTED.tracking_id</code> to capture the new tracking ID, which is then written to <code>Backup_ExecutionLog</code> as a per-file detail row. This matches the pattern used by the other three pipeline scripts and provides the data for the Collection pipeline detail modal on the Control Center page.</p>
+
+		<p>The collector also detects backup source type from the file extension (<code>.sqb</code> = Redgate, all others = native) and captures compressed file size from the physical file via UNC path for ongoing collections. Only files with recognized backup extensions (<code>.sqb</code>, <code>.bak</code>, <code>.trn</code>) are collected &mdash; this extension whitelist prevents Redgate temporary filenames from entering the system.</p>
+
+        <div class="tech-tip">
+            <strong>AG Listener vs. physical server.</strong> When a server in the registry is an AG Listener, the collector connects through the listener and queries msdb on the current primary replica. For compressed file size collection, it parses the physical server name from the Redgate backup filename pattern (<code>TYPE_SERVER_DATABASE_TIMESTAMP.sqb</code>) to build the correct UNC admin share path, since admin shares don't resolve through listeners.
+        </div>
+
+        <h3>Stage 2: Network Copy</h3>
+
+        <p><code>Process-BackupNetworkCopy.ps1</code> queries <code>Backup_FileTracking</code> for files where <code>network_copy_status = 'PENDING'</code>, joined against the registry tables to confirm the server, database, and copy flag are still active. It processes up to <code>MaxFiles</code> (default 100) per run, ordered by backup finish time.</p>
+
+        <!-- Network Copy detail flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Find Candidates</div>
+                    <div class="arch-flow-step-detail">network_copy_status<br>= PENDING</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Claim Batch</div>
+                    <div class="arch-flow-step-detail">Mark IN_PROGRESS<br>(atomic claim)</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Copy-Item</div>
+                    <div class="arch-flow-step-detail">Source UNC &rarr;<br>network share</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Verify</div>
+                    <div class="arch-flow-step-detail">Destination file<br>exists on share</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">COMPLETED</div>
+                        <div class="arch-flow-branch red">FAILED</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p>The script uses an atomic batch claim pattern &mdash; it marks all candidate rows as <code>'IN_PROGRESS'</code> in a single UPDATE before starting any copies, preventing duplicate processing if two instances run concurrently. For AG databases (server_id 0), the source UNC path is built from the physical server name parsed from the backup filename, since admin shares don't work through AG listeners. The destination path follows a structured layout: <code>{network_root}\{server}\{database}\{type}\{filename}</code>.</p>
+
+        <p>After each copy, the script verifies the destination file exists. Successful copies update the status to <code>COMPLETED</code> and record the network path. Failures update to <code>FAILED</code> and log the error to <code>Backup_ExecutionLog</code>.</p>
+
+		<div class="tech-tip">
+            <strong>Automatic retry for failed copies.</strong> Before querying for PENDING files, the script checks for FAILED copies where the retry count is below the configurable maximum (<code>network_copy_max_retries</code> in GlobalConfig). Eligible files are reset to PENDING with an incremented retry count and picked up by the normal processing loop. Files that exhaust all retries remain FAILED permanently and generate a Teams alert via the shared <code>Send-TeamsAlert</code> function. The retry count is tracked per-file in <code>network_copy_retry_count</code> on <code>Backup_FileTracking</code>.
+        </div>
+
+        <h3>Stage 3: AWS Upload</h3>
+
+        <p><code>Process-BackupAWSUpload.ps1</code> queries <code>Backup_FileTracking</code> for files where <code>aws_upload_status = 'PENDING'</code>. It has <strong>no dependency on network copy status</strong> &mdash; it reads from the source server's local path via UNC, the same source as the network copy script. Both stages can process the same file simultaneously without conflict.</p>
+
+        <!-- AWS Upload detail flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Find Candidates</div>
+                    <div class="arch-flow-step-detail">aws_upload_status<br>= PENDING</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Claim Batch</div>
+                    <div class="arch-flow-step-detail">Mark IN_PROGRESS<br>(atomic claim)</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">AWS CLI Upload</div>
+                    <div class="arch-flow-step-detail">Source UNC &rarr;<br>S3 bucket</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Verify</div>
+                    <div class="arch-flow-step-detail">S3 object<br>exists</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">COMPLETED</div>
+                        <div class="arch-flow-branch red">FAILED</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p>The upload uses the AWS CLI with a configurable storage class (typically <code>GLACIER</code> for cost efficiency). The S3 path structure is built from GlobalConfig settings (<code>backup_s3_bucket</code>, <code>backup_s3_prefix</code>). After upload, the script verifies the S3 object exists before marking the file as <code>'COMPLETED'</code>. Like network copy, it uses the same atomic batch claim pattern and the same AG-aware UNC path resolution.</p>
+		
+		<div class="tech-tip">
+            <strong>Automatic retry for failed uploads.</strong> Same retry mechanism as network copy. The script checks for FAILED uploads where <code>aws_upload_retry_count</code> is below the configurable maximum (<code>aws_upload_max_retries</code> in GlobalConfig), resets eligible files to PENDING, and alerts via <code>Send-TeamsAlert</code> when retries are exhausted.
+        </div>
+
+        <div class="callout info">
+            <p><strong>S3 lifecycle management.</strong> S3 retention is handled by an AWS S3 lifecycle rule, not by xFACts. Once a file is uploaded, AWS manages its lifecycle independently &mdash; transitioning storage classes and expiring objects based on the configured rule. This is deliberate: S3 lifecycle rules are more reliable and cost-efficient than polling from an external script, and they continue working even if xFACts is offline.</p>
+        </div>
+
+        <h3>Stage 4: Retention</h3>
+
+        <p><code>Process-BackupRetention.ps1</code> handles cleanup of local and network copies. Retention is <strong>chain-count based</strong>, not days-based &mdash; it keeps the N most recent FULL backups per database per tier, and deletes everything older. The chain counts are configured per-database in <code>Backup_DatabaseConfig</code>.</p>
+
+        <!-- Retention detail flow -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Local Cleanup</div>
+                    <div class="arch-flow-step-detail">Older than Nth FULL?<br>Network copy confirmed?<br>&rarr; Delete local file</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Network Cleanup</div>
+                    <div class="arch-flow-step-detail">Older than Nth FULL?<br>&rarr; Delete network file</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Record</div>
+                    <div class="arch-flow-step-detail">Set deleted_dttm<br>Path columns preserved<br>Row never deleted</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Chain-count retention: keep the N most recent FULLs, delete everything older. Local cleanup requires network copy confirmation.</div>
+        </div>
+
+        <p>For local cleanup, the script ranks FULL backups per database by finish time and finds the Nth oldest (configured by <code>full_retention_chain_local_count</code>). All files with a finish time before that cutoff are candidates for deletion &mdash; but only if <code>network_copy_status</code> is <code>'COMPLETED'</code> or <code>'HISTORICAL'</code>. This safety check ensures a local file is never deleted until a network copy is confirmed.</p>
+
+        <p>Network cleanup follows the same chain-count pattern using <code>full_retention_chain_network_count</code>, but has no downstream prerequisite &mdash; network is the final xFACts-managed tier. When a file is deleted, the script records the deletion timestamp (<code>local_deleted_dttm</code> or <code>network_deleted_dttm</code>) but preserves the path columns and never removes the tracking row. Every file that ever existed has a permanent record.</p>
+
+        <div class="tech-tip">
+            <strong>Chain counts, not calendar days.</strong> Retention is expressed as "keep the last N FULL backups," not "keep files for N days." This ensures there are always a known number of restore points available regardless of backup frequency. A database with daily FULLs and a chain count of 3 keeps three days of FULLs; a database with weekly FULLs and the same chain count keeps three weeks.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: File Lifecycle -->
+    <!-- ============================================ -->
+    <div class="section" id="file-lifecycle">
+        <h2>File Lifecycle</h2>
+
+        <p>Each backup file tracked in <code>Backup_FileTracking</code> carries independent status columns for each pipeline stage. The collection stage sets the initial status for each downstream stage based on the database's configuration flags.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Stage</th><th>Status Column</th><th>Lifecycle</th></tr></thead>
+            <tbody>
+                <tr><td>Collection</td><td><code>collect_status</code></td><td>Always COMPLETED on insert (collection <em>is</em> the insert)</td></tr>
+                <tr><td>Network Copy</td><td><code>network_copy_status</code></td><td>PENDING &rarr; IN_PROGRESS &rarr; COMPLETED / FAILED<br>or SKIPPED (if not enabled) or HISTORICAL (initial load)</td></tr>
+                <tr><td>AWS Upload</td><td><code>aws_upload_status</code></td><td>PENDING &rarr; IN_PROGRESS &rarr; COMPLETED / FAILED<br>or SKIPPED (if not enabled) or HISTORICAL (initial load)</td></tr>
+            </tbody>
+        </table>
+
+        <p>Each pipeline stage also records timing (<code>*_started_dttm</code>, <code>*_completed_dttm</code>) and file paths. The physical file paths (<code>local_path</code>, <code>network_path</code>, <code>s3_path</code>) are populated as files move through the pipeline. Retention records deletion timestamps (<code>local_deleted_dttm</code>, <code>network_deleted_dttm</code>) but preserves the path values for historical reference.</p>
+
+        <div class="tech-tip">
+            <strong>PENDING vs SKIPPED.</strong> When a file is registered, the collector checks <code>Backup_DatabaseConfig</code> for each stage's enabled flag. If <code>backup_network_copy_enabled = 1</code>, the status starts as <code>PENDING</code> and the network copy script will pick it up. If <code>0</code>, it starts as <code>SKIPPED</code> and is permanently excluded from that stage. This per-database, per-stage control means some databases can get network copy but not AWS, or vice versa.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Alerting & Escalation -->
+    <!-- ============================================ -->
+    <div class="section" id="alerting">
+        <h2>Alerting &amp; Escalation</h2>
+
+        <p>Backup alerting is built into the pipeline scripts themselves rather than a separate monitoring process. Each pipeline stage handles its own failure detection and escalation through the retry mechanism.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Alert Source</th><th>Trigger</th><th>Delivery</th></tr></thead>
+            <tbody>
+                <tr><td>Network Copy script</td><td>File fails all retry attempts (<code>network_copy_retry_count</code> reaches <code>network_copy_max_retries</code>)</td><td><code>Send-TeamsAlert</code> with dedup</td></tr>
+                <tr><td>AWS Upload script</td><td>File fails all retry attempts (<code>aws_upload_retry_count</code> reaches <code>aws_upload_max_retries</code>)</td><td><code>Send-TeamsAlert</code> with dedup</td></tr>
+            </tbody>
+        </table>
+
+        <p>When a network copy or AWS upload fails, the file is marked <code>FAILED</code> in <code>Backup_FileTracking</code>. On the next cycle, the script&rsquo;s retry step checks for FAILED files below the max retry count, resets them to <code>PENDING</code> with an incremented retry count, and the normal processing loop picks them up. If a file exhausts all retries, it remains <code>FAILED</code> permanently and a Teams alert is queued via the shared <code>Send-TeamsAlert</code> function in <code>xFACts-OrchestratorFunctions.ps1</code>.</p>
+
+        <p><code>Send-TeamsAlert</code> inserts directly into <code>Teams.AlertQueue</code> with mandatory deduplication against <code>Teams.RequestLog</code>. This ensures the same failure only generates one alert &mdash; subsequent cycles see the existing alert in the request log and skip it.</p>
+
+        <div class="tech-tip">
+            <strong>Retry counts are incremented at reset time, not failure time.</strong> A freshly failed file has <code>retry_count = 0</code>. The count increments when the file is actually retried (reset from FAILED to PENDING). This means a file with <code>max_retries = 2</code> gets 3 total attempts: the original try (count 0), first retry (count 1), and second retry (count 2). After the third failure, the count equals max and the alert fires.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Retention & Cleanup -->
+    <!-- ============================================ -->
+    <div class="section" id="retention">
+        <h2>Retention &amp; Cleanup</h2>
+
+        <p>Retention is managed across two xFACts-controlled tiers (local and network) plus one externally managed tier (S3). Each tier has independent retention policies, and the local tier enforces a safety prerequisite before deletion.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Tier</th><th>Config Column</th><th>Retention Method</th><th>Deletion Prerequisite</th></tr></thead>
+            <tbody>
+                <tr><td>Local (source server)</td><td><code>full_retention_chain_local_count</code></td><td>Keep last N FULLs</td><td>Network copy COMPLETED or HISTORICAL</td></tr>
+                <tr><td>Network (secondary server)</td><td><code>full_retention_chain_network_count</code></td><td>Keep last N FULLs</td><td>None (final xFACts-managed tier)</td></tr>
+                <tr><td>AWS S3</td><td>S3 lifecycle rule</td><td>AWS-managed expiration</td><td>N/A (external to xFACts)</td></tr>
+            </tbody>
+        </table>
+
+        <p>The retention script never deletes a local file unless the network tier has a confirmed copy (<code>network_copy_status IN ('COMPLETED', 'HISTORICAL')</code>). This prevents the scenario where a network outage could leave no copy available for restore. Network cleanup has no downstream prerequisite because S3 lifecycle management is handled entirely by AWS.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Troubleshooting -->
+    <!-- ============================================ -->
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>"A backup file is stuck in PENDING."</strong></p>
+        <p>Check <code>Orchestrator.TaskLog</code> for the relevant process (Process-BackupNetworkCopy or Process-BackupAWSUpload). If the last run shows FAILED, check the <code>error_output</code> column. If it shows SUCCESS but files are still PENDING, the file may not have met the query criteria &mdash; verify the database still has the stage enabled in <code>Backup_DatabaseConfig</code> and the server is active with <code>serverops_backup_enabled = 1</code>. The retry mechanism will pick up FAILED files automatically on subsequent cycles up to the configured maximum retry count.</p>
+
+        <p><strong>"Backup files aren't being discovered."</strong></p>
+        <p>Verify the database has a row in <code>Backup_DatabaseConfig</code> linked through <code>DatabaseRegistry</code>. Check the server-level master switch in <code>ServerRegistry</code> (<code>serverops_backup_enabled</code>). For AG Listener-enrolled databases, make sure the listener is reachable and resolving to the current primary.</p>
+
+        <p><strong>"AWS uploads are failing."</strong></p>
+        <p>The most common cause is expired AWS CLI credentials. The upload script uses the AWS CLI profile configured on the xFACts server. Verify the credentials are current and that the S3 bucket (<code>aws_bucket_name</code> in GlobalConfig) is accessible from the server. Also confirm the bucket allows the GLACIER storage class.</p>
+
+        <p><strong>"Network copies are failing."</strong></p>
+        <p>The script copies via UNC admin shares (<code>\\server\drive$\path</code>). Verify the service account has write access to the network backup root (configured as <code>network_backup_root</code> in GlobalConfig). For AG databases, the source UNC path is built from the physical server parsed from the filename &mdash; if the filename pattern doesn't match the expected format, the path resolution will fail.</p>
+
+        <p><strong>"Retention isn't cleaning up files."</strong></p>
+        <p>Local retention requires <code>network_copy_status</code> to be COMPLETED or HISTORICAL before it will delete. If network copies are failing, local files will accumulate because the safety prerequisite isn't met. Fix the network copy issue first, then retention will catch up on the next run. Also verify <code>full_retention_chain_local_count</code> and <code>full_retention_chain_network_count</code> are set to non-zero values in <code>Backup_DatabaseConfig</code>.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <h3>Internal Flow</h3>
+
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>Backup_DatabaseConfig</code></td><td><code>Backup_FileTracking</code></td><td>Config determines which databases are monitored and which stages are enabled; FileTracking stores the results</td></tr>
+                <tr><td><code>Backup_FileTracking</code></td><td><code>Backup_ExecutionLog</code></td><td>Each script run logs per-file results with tracking_id linkage</td></tr>
+				<tr><td><code>Process-BackupNetworkCopy.ps1</code> / <code>Process-BackupAWSUpload.ps1</code></td><td><code>Teams.AlertQueue</code></td><td>Retry exhaustion alerts inserted directly via shared <code>Send-TeamsAlert</code> function with dedup against <code>Teams.RequestLog</code></td></tr>
+            </tbody>
+        </table>
+
+        <h3>External Dependencies</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td><code>dbo.ServerRegistry</code></td><td>Engine Room</td><td>Server-level enable flag (<code>serverops_backup_enabled</code>), server type (SQL_SERVER, AG_LISTENER), and instance name</td></tr>
+                <tr><td><code>dbo.DatabaseRegistry</code></td><td>Engine Room</td><td>Database enrollment and active status &mdash; only enrolled databases are tracked</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Engine Room</td><td>S3 bucket/prefix, network backup root path, storage class, alert thresholds, monitoring intervals, retry maximums (<code>network_copy_max_retries</code>, <code>aws_upload_max_retries</code>)</td></tr>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Scheduling for all four pipeline scripts; <code>TaskLog</code> provides authoritative run timing and status for the Control Center pipeline cards</td></tr>
+                <tr><td>msdb.dbo.backupset</td><td>SQL Server</td><td>Source data for backup detection &mdash; queried on each registered server via its connection string</td></tr>
+                <tr><td>AWS S3</td><td>External</td><td>Cloud storage tier (upload via AWS CLI, retention via S3 lifecycle rule)</td></tr>
+            </tbody>
+        </table>
+    </div>
+	
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/backup-ref.html" class="ref-link">&#x1F4CB; Backup Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../backup.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Backup Monitoring</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

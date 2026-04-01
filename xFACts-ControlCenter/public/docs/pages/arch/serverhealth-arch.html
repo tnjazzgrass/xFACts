@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Health Architecture - xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+<div class="page-wrapper">
+
+    <div class="page-header">
+        <h1>Server Health Architecture</h1>
+        <div class="subtitle">How two collectors, thirty objects, and eight XE sessions keep your SQL Servers under surveillance</div>
+    </div>
+
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd-activity">Activity Schema</a>
+            <a href="#dual-collection">Dual Collection</a>
+            <a href="#xe-sessions">XE Sessions</a>
+            <a href="#dmv-snapshots">DMV Snapshots</a>
+            <a href="#incidents">Incident Correlation</a>
+            <a href="#heartbeat">Heartbeat &amp; Diagnosis</a>
+            <a href="#erd-disk">Disk Schema</a>
+            <a href="#disk-flow">Disk Monitoring Flow</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <div class="context-bar">
+        The narrative page tells you <em>what</em> Server Health does and <em>why</em>. This page tells you <em>how</em>. Two collection approaches (Extended Events and DMV polling) for Activity, one WinRM-based collector for Disk, and the infrastructure that ties them together.
+    </div>
+
+    <div class="section" id="erd-activity">
+        <h2>Activity Monitoring Schema</h2>
+        <p>The Activity component is the largest in xFACts by object count. Eighteen tables organized into four categories: DMV snapshots (point-in-time server metrics), XE event storage (discrete captured events), infrastructure (collection state, heartbeat), and incident management (threshold crossings with automated correlation).</p>
+        <div class="erd-root" data-schema="ServerOps" data-category="Activity"></div>
+        <table class="info-table">
+            <thead><tr><th>Category</th><th>Tables</th><th>Purpose</th></tr></thead>
+            <tbody>
+                <tr><td>DMV Snapshots</td><td>6</td><td>Point-in-time server metrics: memory, workload, connections, waits, I/O, self-monitoring</td></tr>
+                <tr><td>XE Events</td><td>8</td><td>Discrete captured events: long queries, blocking, deadlocks, linked server traffic, AG health, system health</td></tr>
+                <tr><td>Infrastructure</td><td>2</td><td>Collection state tracking and heartbeat summaries</td></tr>
+                <tr><td>Incidents</td><td>2</td><td>Threshold crossings with automated root cause correlation</td></tr>
+            </tbody>
+        </table>
+        <div class="tech-tip">
+            <strong>All Activity tables share a common pattern:</strong> <code>server_id</code> FK to <code>dbo.ServerRegistry</code> plus a denormalized <code>server_name</code> for query convenience. The denormalization is deliberate &mdash; most queries filter by server name, and the join would add overhead to every investigative query.
+        </div>
+    </div>
+    <div class="section" id="dual-collection">
+        <h2>Dual Collection Architecture</h2>
+        <p>Activity Monitoring uses two complementary collection approaches because SQL Server provides two fundamentally different types of diagnostic data. Extended Events capture discrete happenings (a query finished, a deadlock occurred). DMVs expose continuous state (current memory pressure, cumulative wait times).</p>
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">SQL Server</div>
+                    <div class="arch-flow-step-detail">XE sessions write .xel<br>DMVs expose state</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-fork-label">Parallel</div>
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">Collect-XEEvents<br>8 sessions &rarr; 8 tables</div>
+                        <div class="arch-flow-branch orange">Collect-DMVMetrics<br>6 categories &rarr; 6 tables</div>
+                    </div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Correlate</div>
+                    <div class="arch-flow-step-detail">Threshold crossing<br>+ root cause matching</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Heartbeat</div>
+                    <div class="arch-flow-step-detail">Denormalized health<br>summary per cycle</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Both collectors run on a configurable schedule. Per-metric error isolation ensures partial collection on any individual failure.</div>
+        </div>
+        <table class="info-table">
+            <thead><tr><th>Collector</th><th>Approach</th><th>Data Type</th><th>Tables Fed</th></tr></thead>
+            <tbody>
+                <tr><td><code>Collect-XEEvents.ps1</code></td><td>File-based incremental read from .xel files</td><td>Discrete events</td><td>8 XE tables + CollectionState</td></tr>
+                <tr><td><code>Collect-DMVMetrics.ps1</code></td><td>Point-in-time DMV queries</td><td>Cumulative counters &amp; gauges</td><td>6 DMV tables + Heartbeat + IncidentLog</td></tr>
+            </tbody>
+        </table>
+        <div class="tech-tip">
+            <strong>Per-metric error isolation.</strong> Both collectors wrap each individual metric/session collection in its own try/catch. A failure collecting wait stats doesn't prevent memory metrics from being captured. Partial collection is better than no collection.
+        </div>
+    </div>
+
+    <div class="section" id="xe-sessions">
+        <h2>Extended Events Sessions</h2>
+        <p>Eight XE sessions run on each monitored server &mdash; six custom sessions deployed by xFACts and two built-in Microsoft sessions. Each writes to rolling .xel files which are collected incrementally by <code>Collect-XEEvents.ps1</code>.</p>
+        <h3>Custom Sessions (xFACts-Deployed)</h3>
+        <table class="info-table">
+            <thead><tr><th>Session</th><th>Captures</th><th>Threshold</th><th>Feeds</th></tr></thead>
+            <tbody>
+                <tr><td><code>xFACts_LongQueries</code></td><td>sql_statement_completed, rpc_completed</td><td>Duration predicate in microseconds (default 30s)</td><td>Activity_XE_LRQ</td></tr>
+                <tr><td><code>xFACts_BlockedProcess</code></td><td>blocked_process_report</td><td>sp_configure threshold (server-level, default 60s)</td><td>Activity_XE_BlockedProcess</td></tr>
+                <tr><td><code>xFACts_Deadlock</code></td><td>xml_deadlock_report</td><td>None &mdash; captures all deadlocks</td><td>Activity_XE_Deadlock</td></tr>
+                <tr><td><code>xFACts_LS_Inbound</code></td><td>sql_statement_completed, rpc_completed</td><td>Predicate: linked server connections only</td><td>Activity_XE_LinkedServerIn</td></tr>
+                <tr><td><code>xFACts_LS_Outbound</code></td><td>sql_statement_completed, rpc_completed</td><td>Predicate excludes Redgate and SQLServerCEIP</td><td>Activity_XE_LinkedServerOut</td></tr>
+                <tr><td><code>xFACts_Tracking</code></td><td>sql_batch_completed</td><td>xFACts processes only; excludes collector to prevent feedback loop</td><td>Activity_XE_xFACts</td></tr>
+            </tbody>
+        </table>
+        <h3>Built-In Sessions (Microsoft-Managed)</h3>
+        <table class="info-table">
+            <thead><tr><th>Session</th><th>Captures</th><th>Notes</th><th>Feeds</th></tr></thead>
+            <tbody>
+                <tr><td><code>system_health</code></td><td>Security errors, connectivity, diagnostics</td><td>Event list varies by SQL Server version; collected as-is</td><td>Activity_XE_SystemHealth</td></tr>
+                <tr><td><code>AlwaysOn_health</code></td><td>AG state changes, failovers, sync state</td><td>Only on AG servers; separate collection step</td><td>Activity_XE_AGHealth</td></tr>
+            </tbody>
+        </table>
+        <h3>Incremental Collection</h3>
+        <p><code>Activity_XE_CollectionState</code> tracks the read position (file name + byte offset) for each session on each server. On each cycle, the collector reads from the last known position forward. New sessions are auto-enrolled via MERGE when first encountered.</p>
+        <div class="tech-tip">
+            <strong>Session-driven architecture.</strong> The collector iterates over sessions found on each server, not a hardcoded list. When a new XE session is deployed, collection begins automatically on the next cycle.
+        </div>
+
+        <div class="tech-tip">
+            <strong>Deadlock pattern recognition.</strong> Common deadlock patterns to watch for: key-lookup deadlocks (missing covering indexes), page-lock escalation deadlocks (large scans competing with updates), and cascading FK deadlocks (parent-child operations in opposite order). The <code>deadlock_graph</code> XML in <code>Activity_XE_Deadlock</code> contains the complete resource and process details &mdash; if the same query pair keeps appearing, it&rsquo;s a design issue to fix, not bad luck to accept.
+        </div>
+    </div>
+    <div class="section" id="dmv-snapshots">
+        <h2>DMV Snapshot Architecture</h2>
+        <p>DMV tables store cumulative counters and point-in-time gauges. Most metrics are cumulative since SQL Server startup, meaning useful analysis requires calculating deltas between snapshots. A negative delta indicates a service restart (counters reset to zero).</p>
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Source DMVs</th><th>Key Metrics</th></tr></thead>
+            <tbody>
+                <tr><td><code>Activity_DMV_Memory</code></td><td>sys.dm_os_performance_counters</td><td>PLE, buffer cache hit ratio, memory grants pending, lazy writes</td></tr>
+                <tr><td><code>Activity_DMV_Workload</code></td><td>sys.dm_os_performance_counters, sys.dm_exec_requests</td><td>Connections, active requests, blocked sessions, batch requests/sec</td></tr>
+                <tr><td><code>Activity_DMV_ConnectionHealth</code></td><td>sys.dm_exec_sessions, sys.dm_exec_connections</td><td>Total sessions, zombie count, JDBC pool health, open transactions</td></tr>
+                <tr><td><code>Activity_DMV_WaitStats</code></td><td>sys.dm_os_wait_stats</td><td>Multiple rows per snapshot (one per wait type); cumulative counters</td></tr>
+                <tr><td><code>Activity_DMV_IO_Stats</code></td><td>sys.dm_io_virtual_file_stats</td><td>Read/write counts and stall times per database per file type</td></tr>
+                <tr><td><code>Activity_DMV_xFACts</code></td><td>sys.dm_exec_sessions (xFACts processes)</td><td>Per-session CPU, reads, writes for self-monitoring</td></tr>
+            </tbody>
+        </table>
+        <div class="tech-tip">
+            <strong>Cumulative counter pattern.</strong> Wait stats and I/O stats are cumulative since startup. To find activity in a time window, subtract the earlier snapshot from the later one. The common queries in the reference page demonstrate this delta calculation pattern.
+        </div>
+
+        <div class="tech-tip">
+            <strong>I/O latency interpretation.</strong> Read latency under 10ms is generally healthy. 10&ndash;20ms is acceptable for most workloads. Above 20ms suggests storage pressure, and above 50ms usually means users are noticing. Write latency is typically lower than read; values above 5ms warrant investigation. These are guidelines, not absolutes &mdash; context matters.
+        </div>
+
+        <div class="tech-tip">
+            <strong>Wait type quick reference.</strong> The most common actionable wait types: <code>PAGEIOLATCH_*</code> (disk I/O pressure), <code>LCK_M_*</code> (lock contention/blocking), <code>CXPACKET</code> (parallelism overhead), <code>WRITELOG</code> (transaction log throughput), <code>SOS_SCHEDULER_YIELD</code> (CPU pressure). Many wait types are benign &mdash; <code>WAITFOR</code>, <code>BROKER_RECEIVE_WAITFOR</code>, <code>LAZYWRITER_SLEEP</code>, and <code>SQLTRACE_BUFFER_FLUSH</code> are normal background activity and can be safely ignored when analyzing wait patterns.
+        </div>
+    </div>
+
+    <div class="section" id="incidents">
+        <h2>Incident Correlation</h2>
+        <p>When <code>Collect-DMVMetrics.ps1</code> detects a threshold crossing (e.g., PLE below minimum), it calls <code>sp_Activity_CorrelateIncidents</code> as a secondary operation. The procedure doesn't just log the crossing &mdash; it automatically queries <code>Activity_XE_LRQ</code> for concurrent long-running queries that might explain the symptom.</p>
+        <div class="flow-diagram">
+            <div class="flow-steps">
+                <div class="flow-step orange">Threshold<br>Crossed</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step blue">sp_Activity_<br>CorrelateIncidents</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step green">IncidentLog<br>+ Evidence</div>
+            </div>
+            <div class="flow-caption">Symptom + likely cause, together, without manual investigation</div>
+        </div>
+        <table class="info-table">
+            <thead><tr><th>Component</th><th>Role</th></tr></thead>
+            <tbody>
+                <tr><td><code>Activity_IncidentType</code></td><td>Reference table: incident types with code-based PKs, default severity, correlation target</td></tr>
+                <tr><td><code>Activity_IncidentLog</code></td><td>One row per threshold crossing with automated root cause evidence and optional HADR correlation</td></tr>
+                <tr><td><code>sp_Activity_CorrelateIncidents</code></td><td>Creates incident, queries correlation target for concurrent activity. Supports <code>@PreviewOnly = 1</code></td></tr>
+            </tbody>
+        </table>
+        <div class="tech-tip">
+            <strong>AG partner determination.</strong> For HADR incidents, the procedure automatically identifies the AG partner server and checks for correlated events on both sides of the AG.
+        </div>
+    </div>
+    <div class="section" id="heartbeat">
+        <h2>Heartbeat &amp; Diagnosis</h2>
+        <p><code>Activity_Heartbeat</code> receives a summary row from <code>Collect-DMVMetrics.ps1</code> on each cycle with denormalized key metrics (PLE, zombie count, blocked sessions) and an overall health status. <code>sp_DiagnoseServerHealth</code> is the interactive diagnostic &mdash; an eight-section plain-English report with three detail levels. Section 8 includes pre-written user communication text.</p>
+        <table class="info-table">
+            <thead><tr><th>Detail Level</th><th>Audience</th><th>Content</th></tr></thead>
+            <tbody>
+                <tr><td>0 (default)</td><td>Quick triage</td><td>Current state, obvious problems, recommendations</td></tr>
+                <tr><td>1</td><td>Investigation</td><td>Adds trending data, threshold history, correlation details</td></tr>
+                <tr><td>2</td><td>Deep dive</td><td>Full educational context with metric explanations</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section" id="erd-disk">
+        <h2>Disk Monitoring Schema</h2>
+        <p>The Disk component is compact by design. Four tables covering snapshots, thresholds, alerts, and health status. All logic lives in a stored procedure and two PowerShell scripts.</p>
+        <div class="erd-root" data-schema="ServerOps" data-category="Disk"></div>
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td><code>Disk_Snapshot</code></td><td>Hourly disk space snapshots</td><td>One row per server/drive per collection cycle</td></tr>
+                <tr><td><code>Disk_ThresholdConfig</code></td><td>Per-drive alerting thresholds</td><td>One row per server/drive (auto-created on discovery)</td></tr>
+                <tr><td><code>Disk_AlertHistory</code></td><td>Active and resolved disk alerts</td><td>One row per alert event (auto-resolves on recovery)</td></tr>
+                <tr><td><code>Disk_Status</code></td><td>Component execution health</td><td>One row per process</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section" id="disk-flow">
+        <h2>Disk Monitoring Flow</h2>
+        <p>Disk monitoring runs on a configurable schedule. Collection happens via WinRM (not SQL Server DMVs) which means it sees every fixed drive on the server, not just drives with database files.</p>
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">WinRM Collect</div>
+                    <div class="arch-flow-step-detail">All fixed drives<br>per enabled server</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Store Snapshot</div>
+                    <div class="arch-flow-step-detail">Disk_Snapshot<br>+ auto-create config</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Evaluate</div>
+                    <div class="arch-flow-step-detail">Per-drive threshold<br>from ThresholdConfig</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-fork">
+                    <div class="arch-flow-fork-label">Result</div>
+                    <div class="arch-flow-branches">
+                        <div class="arch-flow-branch green">OK / Resolve</div>
+                        <div class="arch-flow-branch red">Alert via Teams</div>
+                    </div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Runs on a configurable schedule. New drives auto-enrolled on first discovery. One alert per problem, auto-resolves on recovery.</div>
+        </div>
+        <h3>Alert Lifecycle</h3>
+        <p>Disk alerts have a clean lifecycle with automatic resolution. When a drive drops below its threshold, one alert is created and one Teams notification is sent. The alert stays active until the drive recovers, at which point it auto-resolves. No duplicate notifications.</p>
+        <h3>Daily Health Summary</h3>
+        <p><code>Send-DiskHealthSummary.ps1</code> sends a color-coded Adaptive Card to Teams each morning. Green means all clear. Yellow means drives are approaching thresholds. Red means drives are below. Servers sorted worst-first for quick scanning.</p>
+        <div class="tech-tip">
+            <strong>Approaching threshold detection.</strong> The summary card uses a configurable warning buffer (default 2%) above the threshold to flag drives heading for trouble before they trigger an alert.
+        </div>
+
+        <div class="tech-tip">
+            <strong>Snapshot retention.</strong> Disk snapshots accumulate over time and should be periodically trimmed. Retaining 90 days of snapshots provides sufficient trending data for capacity planning while keeping the table manageable. Snapshots older than the retention window can be safely archived or purged without affecting alerting or daily summaries, which only reference the most recent collection.
+        </div>
+    </div>
+    <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>&ldquo;It was slow yesterday.&rdquo;</strong></p>
+        <p>Check DMV Memory (PLE crashes) and Wait Stats (unusual patterns) for the time window. Then check XE tables for concurrent blocking or long-running queries. Or run <code>sp_DiagnoseServerHealth</code> with an appropriate lookback and let it do the work.</p>
+
+        <p><strong>&ldquo;I&rsquo;m getting timeouts.&rdquo;</strong></p>
+        <p>Check Blocking Events and Connection Health. Long blocks plus zombie accumulation usually explains timeouts.</p>
+
+        <p><strong>&ldquo;Transactions are failing randomly.&rdquo;</strong></p>
+        <p>Check Deadlocks. If the same queries keep appearing, it&rsquo;s a design issue, not bad luck.</p>
+
+        <p><strong>&ldquo;A disk alert keeps firing and resolving.&rdquo;</strong></p>
+        <p>The drive is hovering around its threshold. Either free up enough space for headroom, or adjust the threshold if the current level is acceptable. Investigate what&rsquo;s consuming space cyclically &mdash; temp files? Log files? Someone&rsquo;s &ldquo;temporary&rdquo; backup from 2019?</p>
+
+        <p><strong>&ldquo;The daily summary shows stale data.&rdquo;</strong></p>
+        <p>The summary checks data freshness before processing. If the collection script hasn&rsquo;t run (orchestrator stopped, WinRM issues), you&rsquo;ll see a warning. Check that the collectors are executing successfully in the Orchestrator TaskLog.</p>
+    </div>
+
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+        <h3>Activity &mdash; Internal Flow</h3>
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>Collect-XEEvents.ps1</code></td><td>8 XE tables</td><td>Parses .xel files, inserts events by session type</td></tr>
+                <tr><td><code>Collect-XEEvents.ps1</code></td><td><code>Activity_XE_CollectionState</code></td><td>Updates file offset after each collection</td></tr>
+                <tr><td><code>Collect-DMVMetrics.ps1</code></td><td>6 DMV tables</td><td>Snapshots cumulative counters and gauges</td></tr>
+                <tr><td><code>Collect-DMVMetrics.ps1</code></td><td><code>Activity_Heartbeat</code></td><td>Writes denormalized health summary per cycle</td></tr>
+                <tr><td><code>Collect-DMVMetrics.ps1</code></td><td><code>sp_Activity_CorrelateIncidents</code></td><td>Calls correlation on threshold crossing</td></tr>
+            </tbody>
+        </table>
+        <h3>Disk &mdash; Internal Flow</h3>
+        <table class="info-table">
+            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+            <tbody>
+                <tr><td><code>Collect-ServerHealth.ps1</code></td><td><code>Disk_Snapshot</code></td><td>Stores disk space data via WinRM on each collection cycle</td></tr>
+                <tr><td><code>Collect-ServerHealth.ps1</code></td><td><code>Disk_ThresholdConfig</code></td><td>Auto-creates config for newly discovered drives</td></tr>
+                <tr><td><code>Collect-ServerHealth.ps1</code></td><td><code>Disk_AlertHistory</code></td><td>Creates alerts on threshold crossing, auto-resolves on recovery</td></tr>
+                <tr><td><code>Send-DiskHealthSummary.ps1</code></td><td><code>Teams.AlertQueue</code></td><td>Direct INSERT with pre-built Adaptive Card JSON</td></tr>
+            </tbody>
+        </table>
+        <h3>Shared Dependencies</h3>
+        <table class="info-table">
+            <thead><tr><th>Dependency</th><th>Module</th><th>Used By</th></tr></thead>
+            <tbody>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules all scripts</td></tr>
+                <tr><td><code>dbo.ServerRegistry</code></td><td>Shared Infrastructure</td><td>Enrollment flags: <code>serverops_activity_enabled</code>, <code>serverops_disk_enabled</code></td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>Thresholds, feature toggles, AG configuration</td></tr>
+                <tr><td><code>Teams.AlertQueue</code></td><td>Teams Integration</td><td>Alert delivery for Disk and Activity incidents</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div style="text-align: center;">
+        <a href="../ref/serverhealth-ref.html" class="ref-link">&#128203; Server Health Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>		
+
+    <div class="doc-footer">
+        <p><a href="../serverhealth.html" style="color: var(--accent-blue); text-decoration: none;">&#8592; Back to Server Health</a>
+           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>

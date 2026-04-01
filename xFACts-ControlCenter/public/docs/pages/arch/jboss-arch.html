@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JBoss Monitoring Architecture — xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>JBoss Monitoring Architecture</h1>
+        <div class="subtitle">Five data sources, one script, sixty seconds &mdash; how we cracked JBoss open</div>
+    </div>
+
+    <!-- Sticky Section Nav -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+        <div class="section-nav-links">
+            <a href="#erd">Schema Overview</a>
+            <a href="#collection">Collection Sequence</a>
+            <a href="#five-layers">Five Data Source Layers</a>
+            <a href="#composite-api">Composite API Design</a>
+            <a href="#config-detection">Config Change Detection</a>
+            <a href="#queues">Queue Monitoring</a>
+            <a href="#connections">How Everything Connects</a>
+        </div>
+    </div>
+
+    <!-- Context Bar -->
+    <div class="context-bar">
+        The narrative page explains <em>what</em> DM Monitoring does and <em>why</em> the JBoss layer was a blind spot. This page explains <em>how</em> the collector works: the five independent data sources, the composite API calls to the JBoss domain controller, the config change detection pattern, and how it all fits together. One script, three tables, sixty seconds per cycle.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview / ERD -->
+    <!-- ============================================ -->
+    <div class="section" id="erd">
+        <h2>Schema Overview</h2>
+
+        <p>The JBoss schema has three tables, no stored procedures, and no triggers. All logic lives in <code>Collect-JBossMetrics.ps1</code>. The tables are append-only &mdash; the collector writes, the Control Center reads, nothing ever updates or deletes.</p>
+
+        <div class="erd-root" data-schema="JBoss"></div>
+
+        <table class="info-table">
+            <thead><tr><th>Table</th><th>Role</th><th>Rows Per Cycle</th></tr></thead>
+            <tbody>
+                <tr><td><code>Snapshot</code></td><td>Server health metrics &mdash; HTTP, CIM, JVM, transactions, connections, HTTP server</td><td>3 (one per server)</td></tr>
+                <tr><td><code>QueueSnapshot</code></td><td>Per-queue JMS stats &mdash; pending, delivering, consumers, throughput</td><td>~54 (18 queues &times; 3 servers)</td></tr>
+                <tr><td><code>ConfigHistory</code></td><td>JBoss configuration change detection &mdash; write-on-change only</td><td>0 (typically) or N (on change)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>No stored procedures, no triggers.</strong> This is deliberate. All collection logic runs in PowerShell on the xFACts server, reaching out to the app servers remotely. If the app servers are down or unreachable, the collector fails gracefully and tries again next cycle. There are no database-side dependencies on the monitored servers.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Collection Sequence -->
+    <!-- ============================================ -->
+    <div class="section" id="collection">
+        <h2>The Collection Sequence</h2>
+
+        <p>The collector runs on a configurable schedule via the orchestrator. Each cycle, it loops through all JBoss-enabled APP_SERVER entries in <code>ServerRegistry</code> and performs five independent collection steps per server.</p>
+
+        <!-- Collection flow per server -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">HTTP Check</div>
+                    <div class="arch-flow-step-detail">DM splash page<br>Status + response time</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">CIM Session</div>
+                    <div class="arch-flow-step-detail">Service state<br>Process memory/threads<br>Server uptime</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Health API</div>
+                    <div class="arch-flow-step-detail">JVM + pool + threads<br>+ transactions + HTTP<br>(7-step composite)</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Queue API</div>
+                    <div class="arch-flow-step-detail">18 queues per server<br>pending + delivering<br>+ consumers + throughput</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step muted">
+                    <div class="arch-flow-step-title">Config API</div>
+                    <div class="arch-flow-step-detail">9 settings per server<br>Write-on-change only</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Per server, per cycle. HTTP and CIM work even when JBoss is frozen. API steps fail gracefully to NULLs.</div>
+        </div>
+
+        <p>The key design principle: <strong>every step is independent.</strong> If the Management API is unreachable (firewall issue, JBoss down), the HTTP and CIM data still gets collected and written. If the queue composite fails, the health snapshot is still inserted. Each data source has its own try/catch block, and partial failures produce partial snapshots rather than losing an entire cycle.</p>
+
+        <p>Total time per cycle: roughly 1&ndash;2 seconds for all three servers, 9 API calls to JBoss, 3 HTTP checks, 3 CIM sessions, and approximately 60 database inserts.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Five Data Source Layers -->
+    <!-- ============================================ -->
+    <div class="section" id="five-layers">
+        <h2>Five Data Source Layers</h2>
+
+        <p>Each server is queried from five independent sources. They're listed in the order the collector executes them.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Layer</th><th>Method</th><th>What It Captures</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><strong>1. HTTP</strong></td>
+                    <td><code>Invoke-WebRequest</code> to DM splash page</td>
+                    <td>Responsiveness (status code + response time). Primary freeze detection &mdash; direct, fast, unambiguous.</td>
+                </tr>
+                <tr>
+                    <td><strong>2. CIM</strong></td>
+                    <td>Remote CIM session (Win32_Service, Win32_Process, Win32_OperatingSystem)</td>
+                    <td>Windows service state, JBoss process memory/threads/handles, server uptime. OS-level view independent of JBoss itself.</td>
+                </tr>
+                <tr>
+                    <td><strong>3. Health Composite</strong></td>
+                    <td>JBoss Management API (composite REST POST, 7 steps)</td>
+                    <td>Server state, JVM heap/non-heap, thread count/peak, datasource pool stats, Undertow HTTP stats, transaction counts, IO worker pool.</td>
+                </tr>
+                <tr>
+                    <td><strong>4. Queue Composite</strong></td>
+                    <td>JBoss Management API (composite REST POST, 18 steps)</td>
+                    <td>Per-queue JMS metrics: pending messages, delivering count, consumer count, cumulative messages added.</td>
+                </tr>
+                <tr>
+                    <td><strong>5. Config Composite</strong></td>
+                    <td>JBoss Management API (composite REST POST, 9 steps)</td>
+                    <td>Current JBoss configuration values: thread pools, connection pool sizing, heap max, transaction timeout, messaging config.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Layers 1 and 2 work even when JBoss is completely frozen &mdash; they operate at the OS level. Layers 3&ndash;5 require the JBoss Management API, which runs on a separate port from the application. In testing, the Management API has remained responsive even during application-level issues, but if it goes down, the collector gracefully records NULL for all API columns and keeps the HTTP and CIM data.</p>
+
+        <div class="tech-tip">
+            <strong>CIM process identification.</strong> Each DM app server runs multiple <code>java.exe</code> processes in a tiered tree: service wrapper, JBoss bootstrap, management layer, and the main application server. The collector identifies the main JBoss process by selecting the <code>java.exe</code> with the largest <code>WorkingSetSize</code> (~9&ndash;10 GB), which reliably distinguishes it from the smaller bootstrap and management processes.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Composite API Design -->
+    <!-- ============================================ -->
+    <div class="section" id="composite-api">
+        <h2>Composite API Design</h2>
+
+        <p>The JBoss Management API is a REST interface on port 9990. Rather than making individual calls for each metric (which would mean dozens of HTTP requests per cycle), the collector batches multiple reads into a single <code>"operation": "composite"</code> POST with a <code>"steps"</code> array. One round trip, all the data.</p>
+
+        <p>The domain controller on APP is the single entry point. Even though the three servers run independent JBoss instances, the domain controller can query any server by including the target host and server instance in the address path. One API endpoint on APP fans out to all three servers internally.</p>
+
+        <h3>Health Composite (7 steps per server)</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Step</th><th>Target Subsystem</th><th>Metrics</th></tr></thead>
+            <tbody>
+                <tr><td>Server State</td><td>Server root</td><td><code>server-state</code> (running, stopped, reload-required)</td></tr>
+                <tr><td>JVM Memory</td><td>platform-mbean / memory</td><td>Heap used/max, non-heap used</td></tr>
+                <tr><td>JVM Threads</td><td>platform-mbean / threading</td><td>Thread count, peak thread count</td></tr>
+                <tr><td>Datasource Pool</td><td>datasources / dataSource / pool</td><td>Active, in-use, idle, wait, max-used, timed-out, avg get time, max wait time</td></tr>
+                <tr><td>Undertow HTTP</td><td>undertow / default-server / http</td><td>Request count, error count, bytes sent, processing time, max processing time</td></tr>
+                <tr><td>Transactions</td><td>transactions</td><td>Committed, in-flight, timed out, rollbacks, aborted, heuristics</td></tr>
+                <tr><td>IO Worker</td><td>io / worker / default</td><td>Queue size (requests waiting for a worker thread)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Hand-built JSON.</strong> PowerShell 5.1's <code>ConvertTo-Json</code> doesn't reliably serialize the nested array-of-objects address format that JBoss requires. The collector builds the composite JSON strings directly using string concatenation. Not elegant, but it works every time &mdash; which is more than can be said for the alternative.
+        </div>
+
+        <h3>Server Instance Addressing</h3>
+
+        <p>Each composite step targets a specific server instance using an address path like:</p>
+
+        <p><code>{"host":"dm-prod-app2"},{"server":"dm-prod-app2-inst1"}</code></p>
+
+        <p>JBoss uses lowercase hostnames in its address paths while <code>ServerRegistry</code> stores uppercase. The script applies <code>ToLower()</code> when building API paths and preserves the original name for database writes. Server instances follow the pattern <code>{hostname}-inst1</code>.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Config Change Detection -->
+    <!-- ============================================ -->
+    <div class="section" id="config-detection">
+        <h2>Config Change Detection</h2>
+
+        <p>JBoss configuration values &mdash; pool sizes, thread counts, timeouts &mdash; don't change often, but when they do, you want to know. A pool size reduction on Tuesday could explain a performance dip on Wednesday. Without a record of what changed and when, those dots are impossible to connect.</p>
+
+        <p><code>ConfigHistory</code> is a write-on-change table. At script startup, the most recent recorded value per server per setting is loaded into a hashtable cache. Each cycle reads the current values via the config composite and compares against the cache. If a value differs, a row is written with both the old and new values. If nothing changed, nothing is written.</p>
+
+        <table class="info-table">
+            <thead><tr><th>Setting</th><th>Source Level</th><th>What It Controls</th></tr></thead>
+            <tbody>
+                <tr><td><code>worker_max_threads</code></td><td>Server instance</td><td>Maximum worker threads in the IO subsystem</td></tr>
+                <tr><td><code>io_thread_count</code></td><td>Server instance</td><td>IO thread count (typically matches CPU cores)</td></tr>
+                <tr><td><code>datasource_min_pool</code></td><td>Profile (full-ha)</td><td>Minimum connections in the main database pool</td></tr>
+                <tr><td><code>datasource_max_pool</code></td><td>Profile (full-ha)</td><td>Maximum connections in the main database pool</td></tr>
+                <tr><td><code>jvm_heap_max_mb</code></td><td>Server instance</td><td>JVM maximum heap size</td></tr>
+                <tr><td><code>transaction_timeout</code></td><td>Server instance</td><td>Transaction timeout in seconds (currently 900 / 15 min)</td></tr>
+                <tr><td><code>messaging_min_pool</code></td><td>Profile (full-ha)</td><td>Minimum connections for JMS messaging</td></tr>
+                <tr><td><code>messaging_max_pool</code></td><td>Profile (full-ha)</td><td>Maximum connections for JMS messaging</td></tr>
+                <tr><td><code>messaging_thread_pool</code></td><td>Profile (full-ha)</td><td>Thread pool size for JMS messaging</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>Profile-level vs. server-level.</strong> Some settings (like datasource pool sizes) are configured at the JBoss <em>profile</em> level and apply to all three servers equally. Others (like heap max and worker threads) are configured per server instance. The config composite reads both, but profile-level settings are recorded per server anyway so the data is self-contained &mdash; you can query a single server's configuration at any point in time without needing to know which settings came from the profile.
+        </div>
+
+        <p>The typical lifecycle: 27 baseline rows on first collection (9 settings &times; 3 servers), then silence until someone actually changes a configuration. The table stays small and every row is meaningful.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Queue Monitoring -->
+    <!-- ============================================ -->
+    <div class="section" id="queues">
+        <h2>Queue Monitoring</h2>
+
+        <p>Each DM app server has 65 JMS queues configured. Most are dormant. The collector monitors the 18 queues that have shown actual throughput (messages added &gt; 0 at any point). This keeps the data volume manageable while ensuring every operationally relevant queue is watched.</p>
+
+        <p>Key metrics per queue per server per cycle:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Metric</th><th>What It Means</th></tr></thead>
+            <tbody>
+                <tr><td><code>message_count</code></td><td>Pending messages waiting to be processed. Zero is healthy.</td></tr>
+                <tr><td><code>delivering_count</code></td><td>Messages currently being delivered to consumers. These are in flight.</td></tr>
+                <tr><td><code>consumer_count</code></td><td>Active listeners on this queue. Zero on an active queue = nobody processing work.</td></tr>
+                <tr><td><code>messages_added</code></td><td>Cumulative total since JBoss start. The delta between snapshots shows throughput.</td></tr>
+            </tbody>
+        </table>
+
+        <p>The queues are <strong>independent per server</strong>. They are not clustered or shared despite cluster configuration existing in JBoss. When APP2 freezes, all messages queued on APP2 stop processing. APP and APP3 cannot pick up that work. This is why the Control Center displays queues per server rather than in aggregate.</p>
+
+        <p>Queue activity correlates with server role. User-driven queues (cache requests, document generation) concentrate on APP2 where users connect via SharePoint. Batch job queues (NB release, payment posting) concentrate on APP and APP3 where Task Scheduler scripts direct work.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="section" id="connections">
+        <h2>How Everything Connects</h2>
+
+        <table class="info-table">
+            <thead><tr><th>Component</th><th>Role</th></tr></thead>
+            <tbody>
+                <tr><td><code>dbo.ServerRegistry</code></td><td>Server list &mdash; <code>jboss_enabled = 1</code> and <code>server_type = 'APP_SERVER'</code> controls which servers are monitored. <code>is_domain_controller</code> identifies the Management API endpoint.</td></tr>
+                <tr><td><code>dbo.GlobalConfig</code></td><td>Runtime settings &mdash; HTTP base path, timeout values, Management API URL. Module JBoss, categories App and Admin.</td></tr>
+                <tr><td><code>dbo.Credentials</code></td><td>JBoss Management API authentication &mdash; <code>JBossManagement</code> service with <code>JBossUser</code> and <code>JBossPassword</code> keys. Two-tier encrypted passphrase model.</td></tr>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Schedules the collector on a 60-second cycle in FIRE_AND_FORGET mode.</td></tr>
+                <tr><td>Control Center page</td><td>Reads <code>Snapshot</code> (latest per server) and <code>QueueSnapshot</code> (latest cycle per server) via API endpoints. Displays all three servers side by side with real-time metrics.</td></tr>
+            </tbody>
+        </table>
+    </div>
+	
+    <!-- Reference Page Link -->
+    <div style="text-align: center;">
+        <a href="../ref/jboss-ref.html" class="ref-link">&#x1F4CB; JBoss Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    </div>
+	
+    <!-- Contributing -->
+    <div class="callout tip">
+        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
+    </div>	
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../jboss.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to JBoss Monitoring</a>
+           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>
