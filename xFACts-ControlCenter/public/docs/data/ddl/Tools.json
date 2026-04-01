@@ -1,0 +1,2150 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "AccessConfig",
+                       "description":  "Controls which tools and entity types are available for use, and which departments can access each one. Admin tier users on the Tools page bypass department filtering and see all enabled items. Non-admin users see only items explicitly granted to their department.",
+                       "module":  "Tools",
+                       "category":  "Operations",
+                       "dataFlow":  "Rows are manually inserted to grant department-level access to specific tools and entity types. The BDL Import entity picker queries this table filtered by the logged-in user\u0027s department scope to determine which entity types to display. Admin tier users skip this check entirely and see all enabled entities from the catalog. Future tool types (CDL, Payment, API) use the same table with different tool_type values.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "tool_type",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Identifies the tool or pipeline this access grant applies to. Values include BDL, CDL, PAYMENT, NEWBUSINESS, API, and other tool identifiers as they are added. No check constraint — values are open to accommodate future tools."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "item_key",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Specific item within the tool type that access is being granted to. For BDL and CDL, this is the entity_type from the corresponding catalog table (e.g., PHONE, CONSUMER_TAG). NULL for tools that do not have sub-item granularity."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "department_scope",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Department key this access grant applies to. Matches RBAC_DepartmentRegistry.department_key. Rows should always have a department_scope populated — unrestricted access is handled by admin tier bypass, not by NULL scope rows."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this access grant is active. 0 = disabled, 1 = enabled (default)."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the access grant was created."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Who created the access grant."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the access grant was last modified."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "modified_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Who last modified the access grant."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_AccessConfig",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "config_id"
+                                       },
+                                       {
+                                           "name":  "UQ_AccessConfig_tool_item_dept",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "tool_type, item_key, department_scope"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Admin Tier Bypass",
+                                               "note":  "Users with admin tier on the Tools page see all enabled entities regardless of AccessConfig rows. This table only filters non-admin users. The Applications team receives admin tier on the BDL Import page, so no AccessConfig rows are needed for them. Only departments with restricted access (e.g., Business Intelligence) require rows.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Column NULL Semantics",
+                                               "note":  "A NULL item_key means access to the tool type itself without sub-item granularity — used for tools like Drools Refresh that have no entity picker. A NULL department_scope would mean unrestricted access to all departments, but this is not the expected pattern — admin tier handles unrestricted access. Rows should always have a department_scope populated.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Available BDL entities for a department",
+                                           "description":  "Returns the BDL entity types accessible to a specific department. Join to Catalog_BDLFormatRegistry for display names and field details.",
+                                           "sql":  "SELECT ac.item_key AS entity_type, f.type_name, f.folder, f.element_count\r\nFROM Tools.AccessConfig ac\r\nINNER JOIN Tools.Catalog_BDLFormatRegistry f\r\n    ON f.entity_type = ac.item_key\r\n    AND f.spec_version = \u002711.1.0.1.6\u0027\r\nWHERE ac.tool_type = \u0027BDL\u0027\r\n    AND ac.department_scope = \u0027business-intelligence\u0027\r\n    AND ac.is_active = 1\r\nORDER BY f.folder, f.entity_type;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "All access grants by tool type",
+                                           "description":  "Shows the complete access matrix across all departments and tool types.",
+                                           "sql":  "SELECT tool_type, item_key, department_scope, is_active\r\nFROM Tools.AccessConfig\r\nORDER BY tool_type, item_key, department_scope;",
+                                           "sortOrder":  2
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "dbo.RBAC_DepartmentRegistry",
+                                                     "note":  "Logical relationship. department_scope matches RBAC_DepartmentRegistry.department_key. No physical foreign key — validated at the application layer, consistent with the RBAC_RoleMapping pattern.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Tools.Catalog_BDLFormatRegistry",
+                                                     "note":  "Logical relationship. For BDL tool_type rows, item_key corresponds to Catalog_BDLFormatRegistry.entity_type. No physical foreign key since AccessConfig spans multiple tool types and catalogs.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "AccessFieldConfig",
+                                                     "note":  "Parent table. AccessFieldConfig rows provide a field-level whitelist for department-scoped entity grants. When AccessFieldConfig rows exist for a config_id, only those fields are accessible to the department. No AccessFieldConfig rows means zero field access (strict whitelist). Admin tier users bypass both tables entirely.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "AccessFieldConfig",
+                       "description":  "Whitelist of BDL element fields accessible to a department for a specific entity type. Child of AccessConfig — each row grants access to one field within the parent entity grant. Admin tier users bypass this table entirely. When an AccessConfig row exists but has no AccessFieldConfig children, the department has zero field access to that entity (strict whitelist). Fields not in this table are invisible to the department in the column mapping UI.",
+                       "module":  "Tools",
+                       "category":  "Operations",
+                       "dataFlow":  "Rows are manually inserted when granting a department access to specific fields within a BDL entity type. The BDL Import entity-fields API endpoint queries this table for non-admin users, returning only fields that have an active whitelist row for the user\u0027s department. Admin tier users skip this check and see all visible fields from the catalog. The config_id foreign key links to AccessConfig, which provides the entity type and department scope context.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "field_config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to Tools.AccessConfig. Identifies the parent entity-level access grant this field whitelist belongs to."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "element_name",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "BDL element name being granted. Matches Catalog_BDLElementRegistry.element_name."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this field grant is active. 0 = disabled, 1 = enabled (default)."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the field grant was created."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Who created the field grant."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the field grant was last modified."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "modified_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Who last modified the field grant."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_AccessFieldConfig",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "field_config_id"
+                                       },
+                                       {
+                                           "name":  "UQ_AccessFieldConfig_config_element",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "config_id, element_name"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_AccessFieldConfig_AccessConfig",
+                                               "column":  "config_id",
+                                               "referencedTable":  "Tools.AccessConfig",
+                                               "referencedColumn":  "config_id"
+                                           }
+                                       ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "AccessConfig",
+                                                     "note":  "Child table. config_id references AccessConfig.config_id. Each AccessFieldConfig row grants access to one element within the entity and department defined by the parent AccessConfig row. No child rows means zero field access (strict whitelist).",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Catalog_BDLElementRegistry",
+                                                     "note":  "element_name references element names from Catalog_BDLElementRegistry. No formal FK — the element catalog may be reloaded independently. Validation is enforced at the application layer during field access queries.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "BDL_ImportLog",
+                       "description":  "Audit trail for BDL import executions. One row per import capturing the full lifecycle from file upload and validation through XML construction, DM file registration, and import submission. Tracks who executed each import, against which environment, for which entity type, and what the outcome was.",
+                       "module":  "Tools",
+                       "category":  "Operations",
+                       "dataFlow":  "A row is inserted when a user initiates a BDL import from the Control Center, initially with VALIDATING status. The status column is updated as the import progresses through the lifecycle: VALIDATING (data checks running), BUILDING (XML file being constructed), REGISTERED (file registered with DM via POST /fileregistry), SUBMITTED (import triggered via POST /fileregistry/{id}/bdlimport), COMPLETED (DM confirmed successful processing), or FAILED (error at any stage). The column_mapping JSON is captured at validation time. The file_registry_id is populated after successful DM registration. Rows are append-only — status updates modify the existing row but no rows are ever deleted.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "log_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "server_config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to Tools.ServerConfig. Identifies the environment and server configuration used for this import."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "environment",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Denormalized environment from ServerConfig (PROD, STAGE, TEST). Avoids joins for common queries and history views."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "entity_type",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "BDL entity type imported (e.g., PHONE, CONSUMER_TAG). Matches Catalog_BDLFormatRegistry.entity_type."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "source_filename",
+                                           "dataType":  "varchar",
+                                           "length":  "260",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Original filename of the file uploaded by the user (CSV or Excel)."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "xml_filename",
+                                           "dataType":  "varchar",
+                                           "length":  "260",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Name of the BDL XML file written to the dmfs import folder. NULL until the BUILDING stage completes. Used for DM file registration."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "row_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of data rows in the uploaded file. NULL until file parsing completes. Excludes header rows."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "validation_errors",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Count of rows that failed validation. 0 indicates a clean validation pass. Populated during the VALIDATING stage."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "column_mapping",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "JSON representation of the field mapping used for this import. Captures which source file columns were mapped to which BDL element names. Provides a complete audit trail independent of whether a template was used."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "value_changes",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "JSON array of value replacements applied by the user during the validation step. Each entry captures the field name, original value, replacement value, affected row count, who made the change, and when. NULL when no replacements were applied. Provides full audit trail from source file content to final import data."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "template_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "FK to future template table. Identifies the saved column mapping template used for this import. NULL indicates an ad-hoc mapping was configured manually."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "file_registry_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "File registry ID returned by the DM REST API after successful file registration (POST /fileregistry). NULL until the REGISTERED stage. Used as the path parameter for the import trigger call."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027VALIDATING\u0027)",
+                                           "description":  "Current lifecycle status of the import. Progresses through VALIDATING, BUILDING, REGISTERED, SUBMITTED, COMPLETED, or FAILED. See status values for details."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "error_message",
+                                           "dataType":  "varchar",
+                                           "length":  "2000",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Error details captured on failure. NULL when status is not FAILED. May contain DM API error responses, validation summary, or file system errors depending on which stage failed."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "executed_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "AD username of the Control Center user who initiated the import. Captured from the authenticated session at import start."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "started_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the import process was initiated by the user."
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "completed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the import reached a terminal status (COMPLETED or FAILED). NULL while the import is in progress."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the log row was created."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Who created the log row."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_BDL_ImportLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "log_id"
+                                       },
+                                       {
+                                           "name":  "IX_BDL_ImportLog_entity",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "entity_type, environment",
+                                           "includedColumns":  "status, row_count, executed_by, started_dttm"
+                                       },
+                                       {
+                                           "name":  "IX_BDL_ImportLog_executed_by",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "executed_by, started_dttm",
+                                           "includedColumns":  "entity_type, environment, status"
+                                       },
+                                       {
+                                           "name":  "IX_BDL_ImportLog_status",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "status, started_dttm",
+                                           "includedColumns":  "entity_type, environment, executed_by"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_BDL_ImportLog_status",
+                                                    "definition":  "([status]=\u0027FAILED\u0027 OR [status]=\u0027COMPLETED\u0027 OR [status]=\u0027SUBMITTED\u0027 OR [status]=\u0027REGISTERED\u0027 OR [status]=\u0027BUILDING\u0027 OR [status]=\u0027VALIDATING\u0027)"
+                                                }
+                                            ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_BDL_ImportLog_ServerConfig",
+                                               "column":  "server_config_id",
+                                               "referencedTable":  "Tools.ServerConfig",
+                                               "referencedColumn":  "config_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Column Mapping Audit Trail",
+                                               "note":  "The column_mapping column stores a JSON representation of the field mapping used for the import — which source file columns were mapped to which BDL element names. This provides a complete audit trail of what was actually imported, regardless of whether a template was used. When a template is selected, the mapping is locked (read-only in the UI) and the template_id is also recorded.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Error Recovery Pattern",
+                                               "note":  "Failed imports require a new file with a new filename to be registered with DM — re-importing a previously registered file is not supported. A retry creates a new BDL_ImportLog row rather than updating the failed row. The failed row preserves the error context for diagnostics.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "DM Import Status Confirmation",
+                                               "note":  "The SUBMITTED to COMPLETED transition reflects DM confirming successful processing. DM updates the file registry status to complete when the import finishes. The mechanism for checking this status (polling, callback, or manual confirmation) is determined by the import workflow implementation.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "status",
+                                                "value":  "VALIDATING",
+                                                "meaning":  "Import initiated. Uploaded file is being parsed and data validation checks are running against the column mapping.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "BUILDING",
+                                                "meaning":  "Validation passed. The BDL XML file is being constructed from the mapped data.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "REGISTERED",
+                                                "meaning":  "XML file written to dmfs and registered with DM via POST /fileregistry. file_registry_id is now populated.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "SUBMITTED",
+                                                "meaning":  "BDL import triggered via POST /fileregistry/{id}/bdlimport. Awaiting DM processing confirmation.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "COMPLETED",
+                                                "meaning":  "DM confirmed successful import processing.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Import failed at any stage. error_message contains details. A retry requires a new import with a new filename.",
+                                                "sortOrder":  6
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Recent import history",
+                                           "description":  "Shows the most recent BDL imports across all environments with key details.",
+                                           "sql":  "SELECT TOP 50 log_id, environment, entity_type, source_filename,\r\n    row_count, validation_errors, status, error_message,\r\n    executed_by, started_dttm, completed_dttm\r\nFROM Tools.BDL_ImportLog\r\nORDER BY log_id DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Failed imports requiring attention",
+                                           "description":  "Shows failed imports that may need retry or investigation.",
+                                           "sql":  "SELECT log_id, environment, entity_type, source_filename,\r\n    row_count, status, error_message,\r\n    executed_by, started_dttm\r\nFROM Tools.BDL_ImportLog\r\nWHERE status = \u0027FAILED\u0027\r\nORDER BY started_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Import activity by user",
+                                           "description":  "Shows import counts and outcomes per user for auditing.",
+                                           "sql":  "SELECT executed_by, environment, entity_type,\r\n    COUNT(*) AS total_imports,\r\n    SUM(CASE WHEN status = \u0027COMPLETED\u0027 THEN 1 ELSE 0 END) AS completed,\r\n    SUM(CASE WHEN status = \u0027FAILED\u0027 THEN 1 ELSE 0 END) AS failed\r\nFROM Tools.BDL_ImportLog\r\nGROUP BY executed_by, environment, entity_type\r\nORDER BY executed_by, environment;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Tools.ServerConfig",
+                                                     "note":  "Parent table. server_config_id references ServerConfig.config_id. Identifies which environment and server configuration was used for the import. The environment column is denormalized from ServerConfig for convenience.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Future Template Table",
+                                                     "note":  "template_id is reserved for a future column mapping template table. When templates are implemented, this FK will link to the saved template used for the import. NULL indicates an ad-hoc mapping was used.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Catalog_ApiRegistry",
+                       "description":  "REST API endpoint catalog containing one row per path and HTTP method combination. Parsed from OpenAPI 3.0 YAML specification files. Supports multi-product cataloging via product_name column. Links to Catalog_ApiSchemaRegistry via request_schema and response_schema for field-level detail.",
+                       "module":  "dbo",
+                       "category":  "Catalog",
+                       "dataFlow":  "Populated by a Python parsing script that reads OpenAPI 3.0 YAML specification files and generates INSERT statements. Consumed by modules that need to discover available API endpoints for automation features.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "endpoint_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "spec_version",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "OpenAPI spec version identifier. No default constraint — every insert must explicitly specify."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "product_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Source product name. Enables future multi-product cataloging."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "resource_tag",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "OpenAPI tag identifying the resource group this endpoint belongs to."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "endpoint_path",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "URL path template with placeholders for path parameters."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "http_method",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "HTTP verb: GET, POST, PUT, or DELETE."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "operation_id",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "OpenAPI operationId. Not guaranteed unique — some operations share the same ID across different paths."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "summary",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Short one-line summary from the spec."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "description",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Full description from the spec. May contain HTML markup."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "operation_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Classified CRUD type derived from operationId patterns during import: CREATE, RETRIEVE, UPDATE, DELETE, SEARCH, or ACTION."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "request_content_type",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Request MIME type. NULL for endpoints with no request body."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "request_schema",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Schema name for the request body model object. Links to Catalog_ApiSchemaRegistry. NULL when no request body."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "response_content_type",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Response MIME type for successful responses. NULL for 204 No Content responses."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "response_schema",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Schema name for the successful response model object. Links to Catalog_ApiSchemaRegistry."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "response_is_array",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether the successful response returns an array of the schema type."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "path_params",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Comma-separated list of path parameter names."
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "query_params",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Comma-separated list of query parameter names."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "path_param_count",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of path parameters on this endpoint."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "query_param_count",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of query parameters on this endpoint."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "is_deprecated",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether the endpoint is marked deprecated in the spec."
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "api_version",
+                                           "dataType":  "smallint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "FICO API version number extracted from the content type. Values 1 through 4 observed in current spec."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Catalog_ApiRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "endpoint_id"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_ApiRegistry_Schema",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "request_schema, response_schema",
+                                           "includedColumns":  "endpoint_path, http_method, operation_id"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_ApiRegistry_Tag",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "resource_tag, spec_version",
+                                           "includedColumns":  "operation_id, http_method, summary"
+                                       },
+                                       {
+                                           "name":  "UQ_Catalog_ApiRegistry_Endpoint",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "spec_version, endpoint_path, http_method"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Operation ID Not Unique",
+                                               "note":  "The OpenAPI spec reuses the same operationId across different paths. For example, saveImage appears on four paths (accounts, consumers, creditors, receivers). The unique constraint is on spec_version + endpoint_path + http_method, not on operation_id. Queries filtering by operation_id should expect multiple rows.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Operation Type Classification",
+                                               "note":  "The operation_type column is derived during import by pattern-matching the operationId: create/add/save/assign/import map to CREATE, retrieve/get/list/find map to RETRIEVE, update/modify map to UPDATE, delete/remove/unassign map to DELETE, search maps to SEARCH, and everything else maps to ACTION. ACTION captures non-CRUD operations like status updates, batch triggers, and workflow actions.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Multi-Product Design",
+                                               "note":  "The product_name column enables cataloging APIs from multiple products in the same table. Queries should always filter on product_name and spec_version to scope results to a specific product release.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Schema Linkage Pattern",
+                                               "note":  "The request_schema and response_schema columns contain model object names that link to Catalog_ApiSchemaRegistry.schema_name. This is a string-based link, not a foreign key, because the relationship is many-to-many (multiple endpoints share schemas) and some endpoints reference schemas that have no properties (service infrastructure types). Join on spec_version + schema_name for correct results.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Endpoint count by resource group",
+                                           "description":  "Overview of the API surface area showing how many endpoints exist per resource tag with CRUD breakdown.",
+                                           "sql":  "SELECT resource_tag, COUNT(*) AS endpoints,\r\n    SUM(CASE WHEN operation_type = \u0027CREATE\u0027 THEN 1 ELSE 0 END) AS creates,\r\n    SUM(CASE WHEN operation_type = \u0027RETRIEVE\u0027 THEN 1 ELSE 0 END) AS retrieves,\r\n    SUM(CASE WHEN operation_type = \u0027UPDATE\u0027 THEN 1 ELSE 0 END) AS updates,\r\n    SUM(CASE WHEN operation_type = \u0027DELETE\u0027 THEN 1 ELSE 0 END) AS deletes,\r\n    SUM(CASE WHEN is_deprecated = 1 THEN 1 ELSE 0 END) AS deprecated\r\nFROM Tools.Catalog_ApiRegistry\r\nWHERE spec_version = \u002711.1.0.1.6\u0027\r\nGROUP BY resource_tag\r\nORDER BY endpoints DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Find endpoints for a resource with request/response detail",
+                                           "description":  "Shows all endpoints for a given resource tag with their schemas. Replace the tag value as needed.",
+                                           "sql":  "SELECT http_method, operation_id, summary, endpoint_path, \r\n    request_schema, response_schema, response_is_array\r\nFROM Tools.Catalog_ApiRegistry\r\nWHERE resource_tag = \u0027tags\u0027\r\n    AND spec_version = \u002711.1.0.1.6\u0027\r\n    AND is_deprecated = 0\r\nORDER BY endpoint_path, http_method;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Full endpoint detail with request body fields",
+                                           "description":  "Joins to the schema registry to show the complete request body structure for an endpoint. Replace the operation_id as needed.",
+                                           "sql":  "SELECT r.endpoint_path, r.http_method, r.summary,\r\n    s.property_name, s.property_type, s.ref_schema, \r\n    s.is_required, s.is_read_only,\r\n    LEFT(s.property_description, 120) AS description_preview\r\nFROM Tools.Catalog_ApiRegistry r\r\nINNER JOIN Tools.Catalog_ApiSchemaRegistry s\r\n    ON r.spec_version = s.spec_version\r\n    AND r.request_schema = s.schema_name\r\nWHERE r.operation_id = \u0027createConsumerAccountCase\u0027\r\n    AND r.spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY s.sort_order;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Catalog_ApiSchemaRegistry",
+                                                     "note":  "Links via request_schema and response_schema to schema_name. An endpoint\u0027s request body structure is defined by the schema matching request_schema. The response structure is defined by response_schema. When response_is_array is 1, the response returns a list of that schema type. Some endpoints have NULL for both (e.g., DELETE operations with no body and 204 responses).",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Catalog_ApiSchemaRegistry",
+                       "description":  "REST API schema property catalog containing one row per property within each model object. Parsed from the components/schemas section of OpenAPI 3.0 YAML specification files. Schema descriptions and property counts are denormalized onto each property row to avoid a third table. Links to Catalog_ApiRegistry via schema name.",
+                       "module":  "dbo",
+                       "category":  "Catalog",
+                       "dataFlow":  "Populated by the same Python parsing script that populates Catalog_ApiRegistry, reading model object definitions from the components/schemas section of the OpenAPI YAML. Consumed by modules that need field-level detail for API request construction and response parsing.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "schema_property_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "spec_version",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "OpenAPI spec version identifier. Must match values in Catalog_ApiRegistry."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "product_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Source product name. Must match values in Catalog_ApiRegistry."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "schema_name",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Model object name from the OpenAPI spec. This is the join key to Catalog_ApiRegistry request_schema and response_schema columns."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "schema_description",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Schema-level description. Denormalized — repeated on every property row for query convenience."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "schema_property_count",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Total number of properties in this schema. Denormalized — repeated on every property row."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "property_name",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "JSON property name as it appears in API request and response payloads."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "property_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Data type: string, integer, boolean, number, array, or object. NULL when the type is a schema reference."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "property_format",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "OpenAPI format qualifier such as date-time or int64. NULL when not specified."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "property_description",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Full property description from the spec. Often includes the underlying DM database column name in parentheses."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "ref_schema",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Referenced schema name when this property is a complex type or array of complex types. NULL for primitive types."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "is_array",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this property is an array type."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "is_required",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this property is listed in the schema required array."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "is_read_only",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether the property description indicates READ-ONLY. Derived during import by text matching."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "default_value",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Default value if specified in the spec."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "sort_order",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Ordinal position of this property within its parent schema. 1-based."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Catalog_ApiSchemaRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "schema_property_id"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_ApiSchemaRegistry_RefSchema",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "ref_schema",
+                                           "includedColumns":  "schema_name, property_name"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_ApiSchemaRegistry_Schema",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "schema_name, spec_version",
+                                           "includedColumns":  "property_name, property_type, ref_schema"
+                                       },
+                                       {
+                                           "name":  "UQ_Catalog_ApiSchemaRegistry_Property",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "spec_version, schema_name, property_name"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Denormalized Schema Metadata",
+                                               "note":  "Schema-level fields (schema_description, schema_property_count) are repeated on every property row rather than stored in a separate header table. This avoids a third table while keeping queries simple. The trade-off is repeated descriptions across all property rows for a given schema — minimal storage cost.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Schema Cross-References",
+                                               "note":  "When a property is a complex type rather than a primitive, property_type is NULL and ref_schema contains the referenced schema name. When a property is an array of complex types, is_array is 1 and ref_schema contains the item schema. This enables traversing the full object graph by following ref_schema links recursively.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Read-Only Detection",
+                                               "note":  "The is_read_only flag is derived by text-matching READ-ONLY in the property description during import. This identifies system-generated fields that should not be included in POST/PUT request bodies. Not all read-only fields are explicitly marked in the spec, so this is a best-effort flag.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Schema property detail",
+                                           "description":  "Shows all properties for a given schema with types and descriptions. Replace schema name as needed.",
+                                           "sql":  "SELECT property_name, property_type, ref_schema, \r\n    is_required, is_read_only, is_array,\r\n    LEFT(property_description, 150) AS description_preview\r\nFROM Tools.Catalog_ApiSchemaRegistry\r\nWHERE schema_name = \u0027ConsumerAccountCaseRequestRM\u0027\r\n    AND spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY sort_order;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Find schemas that reference a given schema",
+                                           "description":  "Discovers which model objects contain references to a specific schema — useful for understanding the object graph.",
+                                           "sql":  "SELECT schema_name, property_name, is_array\r\nFROM Tools.Catalog_ApiSchemaRegistry\r\nWHERE ref_schema = \u0027ReferenceRM\u0027\r\n    AND spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY schema_name, sort_order;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Properties containing DM column names",
+                                           "description":  "Many property descriptions include the underlying DM database column name in parentheses. This query finds them for cross-referencing with crs5_oltp schema.",
+                                           "sql":  "SELECT schema_name, property_name, \r\n    LEFT(property_description, 200) AS description_preview\r\nFROM Tools.Catalog_ApiSchemaRegistry\r\nWHERE property_description LIKE \u0027%(%_%)%\u0027\r\n    AND spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY schema_name, sort_order;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Catalog_ApiRegistry",
+                                                     "note":  "Referenced by Catalog_ApiRegistry.request_schema and response_schema. Multiple endpoints may share the same schema. Join on spec_version + schema_name.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Self-referencing via ref_schema",
+                                                     "note":  "Properties with ref_schema values reference other schemas in the same table. This creates a graph of schema relationships. For example, AREventRM has properties referencing ActionResultCodeRM, ConsumerAccountIdentifierRM, and Consumer_Contact_Log. Following these links recursively reveals the full data structure.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Catalog_BDLElementRegistry",
+                       "description":  "BDL element catalog containing one row per element within each entity type. Parsed from XSD schema definition files. Element names correspond directly to DM database column names in crs5_oltp. Excludes nullify_fields structural elements. Child table of Catalog_BDLFormatRegistry via foreign key on spec_version and type_name.",
+                       "module":  "dbo",
+                       "category":  "Catalog",
+                       "dataFlow":  "Base structure populated by the BDL XSD parsing script. Enrichment columns (table_column, lookup_table, is_not_nullifiable, is_primary_id, field_description) populated by a separate enrichment script that parses the BDL Import/Export Interface Definition Excel workbook and matches rows to XSD elements by element name overlap scoring. Consumed by modules that perform vendor file column-mapping and BDL XML construction.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "element_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "format_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to Catalog_BDLFormatRegistry.format_id. Integer-based link to the parent entity type, replacing the composite (spec_version, type_name) join. The spec_version and type_name columns are retained as informational context."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "spec_version",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD spec version identifier. Foreign key to Catalog_BDLFormatRegistry."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "type_name",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Parent entity complexType name. Foreign key to Catalog_BDLFormatRegistry."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "element_name",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD element name. For data entities, corresponds to the DM database column name. For container types, references child entity type names."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "display_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable field name for display in the column mapping UI. Shown alongside or in place of the technical element_name to help users identify fields without needing to know DM column names. NULL values fall back to element_name display."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "data_type",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Data type with xs: prefix stripped. Primitive types: string, long, decimal, dateTime, int, short, boolean, date. Non-primitive values reference other BDL complexType names for container/child entity relationships."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "is_required",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether the element is required per XSD minOccurs. Note: XSD requirements are structural minimums — practical import requirements are determined by DM business logic and may differ."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "is_collection",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether the element has maxOccurs=\"unbounded\", indicating it is a child entity reference that can appear multiple times in the XML. Primarily found on container types in bdl_import_export.xsd."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "max_length",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Maximum string length from XSD maxLength restriction. NULL for non-string types or when no restriction is specified."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "table_column",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM database column name from the Excel interface definition. NULL when not enriched or when the table column matches the element name. Only populated when the names differ."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "lookup_table",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Reference table containing valid values for this element. From the Excel interface definition Look Up Table column."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "is_not_nullifiable",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this element cannot be included in nullify_fields during BDL update operations. Sourced from the Excel Not Nullifiable Columns sheets. Elements marked not-nullifiable are typically identifiers or required business fields."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "is_primary_id",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this element is a system-generated primary key identifier. These are auto-assigned by DM and not user-supplied during import. Sourced from the Excel Not Nullifiable Columns Primary ID column."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "is_visible",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this element is shown to users in the BDL Import column mapping UI. 1 = visible (default), 0 = hidden. System-generated fields, unreliable identifiers, and internal DM fields should be hidden to prevent user errors. Does not affect the catalog\u0027s completeness — hidden elements remain in the spec but are excluded from the import picker."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "is_import_required",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this element must be mapped for a BDL import to succeed. 0 = optional (default), 1 = required. Reflects practical DM import requirements as determined by operational experience, distinct from is_required (XSD structural minimum) and is_not_nullifiable (cannot be cleared on update). Populated based on team review of each entity type."
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "field_description",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable field description from the Excel interface definition. Supplements the XSD structural data with business context."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "sort_order",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Ordinal position of this element within its parent entity. 1-based."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Catalog_BDLElementRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "element_id"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_BDLElementRegistry_ElementName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "element_name",
+                                           "includedColumns":  "type_name, data_type"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_BDLElementRegistry_FormatId",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "format_id",
+                                           "includedColumns":  "element_name, data_type, is_visible, is_import_required"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_BDLElementRegistry_TypeName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "type_name, spec_version",
+                                           "includedColumns":  "element_name, data_type, is_required, max_length"
+                                       },
+                                       {
+                                           "name":  "UQ_Catalog_BDLElementRegistry_Element",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "spec_version, type_name, element_name"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_Catalog_BDLElementRegistry_Format",
+                                               "column":  "format_id",
+                                               "referencedTable":  "Tools.Catalog_BDLFormatRegistry",
+                                               "referencedColumn":  "format_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Dual Data Sources",
+                                               "note":  "This table combines data from two sources: the XSD schema definitions (element_name, data_type, is_required, is_collection, max_length) and the Excel interface definition (table_column, lookup_table, is_not_nullifiable, is_primary_id, field_description). XSD data covers all elements. Excel enrichment covers the data entity fields but not wrapper/container references.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "XSD Required vs Import Required",
+                                               "note":  "The is_required column reflects XSD minOccurs and is almost always 0 (false) — the XSD is permissive by design. The is_not_nullifiable column from the Excel reflects practical import requirements: fields that must have values for the import to succeed, or that cannot be cleared via nullify_fields. These are the fields that matter for building import files.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Collection Elements",
+                                               "note":  "Elements with is_collection = 1 are child entity references in wrapper/container types. Their data_type values are BDL complexType names (e.g., bdl_cnsmr_phn_data_type) rather than primitive types. These elements define the BDL XML hierarchy — which entities can appear within each operational transaction. Query them to discover valid entity nesting.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Table Column vs Element Name",
+                                               "note":  "The table_column enrichment column is only populated when the DM database column name differs from the BDL XML element name. When NULL, the element_name is the column name. Common differences include reference code fields where the XML uses a _val_txt suffix but the database column uses a _cd suffix.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Entity fields with enrichment data",
+                                           "description":  "Shows all elements for a BDL entity including Excel enrichment. Replace entity_type value as needed.",
+                                           "sql":  "SELECT e.element_name, e.data_type, e.is_required, e.max_length,\r\n    e.table_column, e.lookup_table, e.is_not_nullifiable, e.is_primary_id,\r\n    LEFT(e.field_description, 120) AS description_preview\r\nFROM Tools.Catalog_BDLElementRegistry e\r\nINNER JOIN Tools.Catalog_BDLFormatRegistry f\r\n    ON e.spec_version = f.spec_version AND e.type_name = f.type_name\r\nWHERE f.entity_type = \u0027PHONE\u0027\r\n    AND f.spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY e.sort_order;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Required fields for BDL import",
+                                           "description":  "Shows fields that are practically required for import (not-nullifiable or primary IDs). This is the foundation for the column-mapping UI validation.",
+                                           "sql":  "SELECT f.entity_type, e.element_name, e.is_not_nullifiable, e.is_primary_id,\r\n    e.lookup_table, LEFT(e.field_description, 100) AS description_preview\r\nFROM Tools.Catalog_BDLElementRegistry e\r\nINNER JOIN Tools.Catalog_BDLFormatRegistry f\r\n    ON e.spec_version = f.spec_version AND e.type_name = f.type_name\r\nWHERE (e.is_not_nullifiable = 1 OR e.is_primary_id = 1)\r\n    AND f.spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY f.entity_type, e.sort_order;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Fields with lookup table references",
+                                           "description":  "Shows elements that reference DM lookup tables for valid values. Useful for building validation dropdowns in the import UI.",
+                                           "sql":  "SELECT f.entity_type, e.element_name, e.lookup_table,\r\n    LEFT(e.field_description, 100) AS description_preview\r\nFROM Tools.Catalog_BDLElementRegistry e\r\nINNER JOIN Tools.Catalog_BDLFormatRegistry f\r\n    ON e.spec_version = f.spec_version AND e.type_name = f.type_name\r\nWHERE e.lookup_table IS NOT NULL\r\n    AND f.spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY f.entity_type, e.sort_order;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Discover BDL XML structure for an entity",
+                                           "description":  "Shows the full path from operational transaction wrapper to data entity, then lists the entity fields. This is the query pattern for constructing BDL import XML.",
+                                           "sql":  "DECLARE @entity_type VARCHAR(60) = \u0027PHONE\u0027;\r\nDECLARE @spec VARCHAR(30) = \u002711.1.0.1.6\u0027;\r\n\r\n-- Step 1: Find which wrapper contains this entity\r\nSELECT \u0027Wrapper\u0027 AS step, w.type_name AS wrapper, we.element_name AS entity_ref, we.data_type\r\nFROM Tools.Catalog_BDLFormatRegistry w\r\nINNER JOIN Tools.Catalog_BDLElementRegistry we\r\n    ON w.spec_version = we.spec_version AND w.type_name = we.type_name\r\nINNER JOIN Tools.Catalog_BDLFormatRegistry f\r\n    ON we.data_type = f.type_name AND f.spec_version = we.spec_version\r\nWHERE f.entity_type = @entity_type AND w.spec_version = @spec;\r\n\r\n-- Step 2: List the entity fields\r\nSELECT \u0027Field\u0027 AS step, e.element_name, e.data_type, e.is_not_nullifiable, e.is_primary_id,\r\n    e.lookup_table, e.max_length\r\nFROM Tools.Catalog_BDLElementRegistry e\r\nINNER JOIN Tools.Catalog_BDLFormatRegistry f\r\n    ON e.spec_version = f.spec_version AND e.type_name = f.type_name\r\nWHERE f.entity_type = @entity_type AND f.spec_version = @spec\r\nORDER BY e.sort_order;",
+                                           "sortOrder":  4
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Catalog_BDLFormatRegistry",
+                                                     "note":  "Child table. Each element belongs to exactly one format entity via foreign key on spec_version + type_name.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Catalog_BDLFormatRegistry",
+                       "description":  "BDL bulk data load format catalog containing one row per entity type. Parsed from XSD schema definition files. Each entity type represents a DM data entity that can be imported via BDL. Parent table for Catalog_BDLElementRegistry.",
+                       "module":  "dbo",
+                       "category":  "Catalog",
+                       "dataFlow":  "Populated by a Python parsing script that reads BDL XSD schema definition files from DM release packages. Each row represents a BDL data entity that can be imported via bulk data load. Consumed by modules that perform BDL import automation — vendor file upload, column mapping, and XML construction.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "format_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "spec_version",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD spec version identifier. No default constraint — every insert must explicitly specify."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "entity_type",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Entity type name from the XSD fixed type attribute. NULL for wrapper, container, and utility types defined in bdl_import_export.xsd."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "type_name",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD complexType name. This is the join key to Catalog_BDLElementRegistry."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "xsd_filename",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Source XSD filename."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "folder",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Subdirectory path within the BDL XSD folder. Indicates the entity hierarchy: consumer, consumer/account, payment/settlement, etc. NULL for root-level files."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "element_count",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Number of data elements defined in this entity type. Excludes the nullify_fields structural element."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "has_parent_ref",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this entity has a bdl_parent_id attribute indicating a parent-child relationship."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "has_nullify_fields",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this entity supports field nullification via the nullify_fields element. A BDL-specific feature for clearing field values on update."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this entity type is active and available for use. 1 = active (default), 0 = deactivated. Deactivated entities do not appear in entity selection for any user including admin. Deactivation cascades naturally through query filtering — AccessConfig and AccessFieldConfig rows referencing a deactivated entity become unreachable without requiring updates to those tables."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Catalog_BDLFormatRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "format_id"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_BDLFormatRegistry_EntityType",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "entity_type, spec_version",
+                                           "includedColumns":  "type_name, element_count, has_parent_ref, has_nullify_fields"
+                                       },
+                                       {
+                                           "name":  "UQ_Catalog_BDLFormatRegistry_TypeName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "spec_version, type_name"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Folder Column as Hierarchy Indicator",
+                                               "note":  "The folder column captures the subdirectory path within the BDL XSD folder (consumer, consumer/account, payment/settlement, etc.). This provides an at-a-glance view of the entity hierarchy without needing to parse the wrapper types in bdl_import_export.xsd.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Wrapper and Container Types",
+                                               "note":  "The format registry includes wrapper types from bdl_import_export.xsd (e.g., consumer_operational_transaction_data_type, account_operational_transaction_data_type) that have NULL entity_type. These define which data entities belong to each BDL operational transaction. Their child elements in the element registry have is_collection = 1 and data_type values referencing the actual data entity type names.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Nullify Fields Support",
+                                               "note":  "Entities with has_nullify_fields = 1 support the BDL nullification mechanism — a way to explicitly clear field values during update operations. The nullify_fields structural element itself is excluded from the element registry since it is not a data element.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "All BDL data entities",
+                                           "description":  "Lists importable BDL entity types excluding wrapper/container types.",
+                                           "sql":  "SELECT entity_type, type_name, folder, element_count, has_parent_ref, has_nullify_fields\r\nFROM Tools.Catalog_BDLFormatRegistry\r\nWHERE spec_version = \u002711.1.0.1.6\u0027\r\n    AND entity_type IS NOT NULL\r\nORDER BY folder, entity_type;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "BDL operational transaction structure",
+                                           "description":  "Shows which data entities belong to each operational transaction type by querying the wrapper container elements.",
+                                           "sql":  "SELECT f.type_name AS container, e.element_name AS entity_ref, e.data_type AS entity_type_name\r\nFROM Tools.Catalog_BDLFormatRegistry f\r\nINNER JOIN Tools.Catalog_BDLElementRegistry e\r\n    ON f.spec_version = e.spec_version AND f.type_name = e.type_name\r\nWHERE f.entity_type IS NULL\r\n    AND f.folder IS NULL\r\n    AND e.is_collection = 1\r\n    AND f.spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY f.type_name, e.sort_order;",
+                                           "sortOrder":  2
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Catalog_BDLElementRegistry",
+                                                     "note":  "Parent table. Each format has zero or more elements in Catalog_BDLElementRegistry linked by foreign key on spec_version + type_name.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Catalog_CDLElementRegistry",
+                       "description":  "CDL element catalog containing one row per element within each entity type. Parsed from XSD schema definition files. Element names correspond directly to DM database column names in crs5_oltp. Child table of Catalog_CDLFormatRegistry via foreign key on spec_version and type_name.",
+                       "module":  "dbo",
+                       "category":  "Catalog",
+                       "dataFlow":  "Populated alongside Catalog_CDLFormatRegistry by the CDL XSD parsing script. Element names correspond directly to DM database column names in crs5_oltp. Consumed by modules that need to discover available fields for CDL import/export operations.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "element_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "format_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to Catalog_CDLFormatRegistry.format_id. Integer-based link to the parent entity type, replacing the composite (spec_version, type_name) join. The spec_version and type_name columns are retained as informational context."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "spec_version",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD spec version identifier. Foreign key to Catalog_CDLFormatRegistry."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "type_name",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Parent entity complexType name. Foreign key to Catalog_CDLFormatRegistry."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "element_name",
+                                           "dataType":  "varchar",
+                                           "length":  "80",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD element name. Corresponds to the DM database column name."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "display_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable field name for display in the column mapping UI. Shown alongside or in place of the technical element_name to help users identify fields without needing to know DM column names. NULL values fall back to element_name display."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "data_type",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "XSD data type with xs: prefix stripped. Common values: string, boolean, int, long, decimal, dateTime, short."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "is_required",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether the element is required per XSD minOccurs. Derived from minOccurs: 0 means optional, 1 or unspecified means required."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "is_visible",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this element is shown to users in import/export UIs. 1 = visible (default), 0 = hidden. Mirrors the Catalog_BDLElementRegistry pattern for consistency across catalog tables."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "is_import_required",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this element must be mapped for a CDL import to succeed. 0 = optional (default), 1 = required. Mirrors the Catalog_BDLElementRegistry pattern for consistency across catalog tables."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "max_length",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Maximum string length from XSD maxLength restriction. NULL for non-string types or when no restriction is specified."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "sort_order",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Ordinal position of this element within its parent entity. 1-based."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Catalog_CDLElementRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "element_id"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_CDLElementRegistry_ElementName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "element_name",
+                                           "includedColumns":  "type_name, data_type"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_CDLElementRegistry_FormatId",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "format_id",
+                                           "includedColumns":  "element_name, data_type, is_visible, is_import_required"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_CDLElementRegistry_TypeName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "type_name, spec_version",
+                                           "includedColumns":  "element_name, data_type, is_required, max_length"
+                                       },
+                                       {
+                                           "name":  "UQ_Catalog_CDLElementRegistry_Element",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "spec_version, type_name, element_name"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_Catalog_CDLElementRegistry_Format",
+                                               "column":  "format_id",
+                                               "referencedTable":  "Tools.Catalog_CDLFormatRegistry",
+                                               "referencedColumn":  "format_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Element Names Are Column Names",
+                                               "note":  "CDL element names map directly to crs5_oltp database column names. This is a key difference from BDL, where element names sometimes differ from table column names. CDL elements can be used directly for cross-referencing with the DM OLTP schema.",
+                                               "sortOrder":  1
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Entity fields with types",
+                                           "description":  "Shows all elements for a given CDL entity type. Replace entity_type value as needed.",
+                                           "sql":  "SELECT e.element_name, e.data_type, e.is_required, e.max_length\r\nFROM Tools.Catalog_CDLElementRegistry e\r\nINNER JOIN Tools.Catalog_CDLFormatRegistry f\r\n    ON e.spec_version = f.spec_version AND e.type_name = f.type_name\r\nWHERE f.entity_type = \u0027CREDITOR\u0027\r\n    AND f.spec_version = \u002711.1.0.1.6\u0027\r\nORDER BY e.sort_order;",
+                                           "sortOrder":  1
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Catalog_CDLFormatRegistry",
+                                                     "note":  "Child table. Each element belongs to exactly one format entity via foreign key on spec_version + type_name.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "Catalog_CDLFormatRegistry",
+                       "description":  "CDL configuration data format catalog containing one row per entity type. Parsed from XSD schema definition files. Each entity type represents a DM configuration object that can be imported or exported via CDL. Parent table for Catalog_CDLElementRegistry.",
+                       "module":  "dbo",
+                       "category":  "Catalog",
+                       "dataFlow":  "Populated by a Python parsing script that reads CDL XSD schema definition files from DM release packages. Each row represents a CDL configuration entity type that can be imported or exported. Consumed by modules that perform CDL import/export automation and configuration management.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "format_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "spec_version",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD spec version identifier. No default constraint — every insert must explicitly specify."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "entity_type",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Entity type name from the XSD fixed type attribute. NULL for sub-types and utility types that lack a type attribute."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "type_name",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "XSD complexType name. This is the join key to Catalog_CDLElementRegistry."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "xsd_filename",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Source XSD filename within the CDL entity folder."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "element_count",
+                                           "dataType":  "smallint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Number of data elements defined in this entity type."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "has_parent_ref",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Whether this entity has a cdl_item_stgng_prnt_id attribute indicating a parent-child relationship."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this entity type is active and available for use. 1 = active (default), 0 = deactivated. Deactivated entities do not appear in entity selection for any user including admin."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Catalog_CDLFormatRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "format_id"
+                                       },
+                                       {
+                                           "name":  "IX_Catalog_CDLFormatRegistry_EntityType",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "entity_type, spec_version",
+                                           "includedColumns":  "type_name, element_count, has_parent_ref"
+                                       },
+                                       {
+                                           "name":  "UQ_Catalog_CDLFormatRegistry_TypeName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "spec_version, type_name"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Entity Types vs Sub-Types",
+                                               "note":  "Most entities have an entity_type value from the XSD fixed type attribute (e.g., CREDITOR, ACTIONCODE). Some entries have NULL entity_type — these are sub-types, utility types, or abstract base types defined in shared XSD files like cdl_udp_field_type.xsd. The type_name column is always populated and serves as the primary identifier.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Parent-Child Relationships",
+                                               "note":  "Entities with has_parent_ref = 1 have a cdl_item_stgng_prnt_id attribute in the XSD, indicating they are child entities that reference a parent during import. For example, CREDITOR_CONFIGURATION is a child of CREDITOR. The parent relationship is not explicitly stored in this table — it is implied by the CDL import structure and documented in the DM interface definition.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "All CDL entity types",
+                                           "description":  "Lists all CDL configuration entity types with their element counts and parent reference status.",
+                                           "sql":  "SELECT entity_type, type_name, element_count, has_parent_ref, xsd_filename\r\nFROM Tools.Catalog_CDLFormatRegistry\r\nWHERE spec_version = \u002711.1.0.1.6\u0027\r\n    AND entity_type IS NOT NULL\r\nORDER BY entity_type;",
+                                           "sortOrder":  1
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Catalog_CDLElementRegistry",
+                                                     "note":  "Parent table. Each format has zero or more elements in Catalog_CDLElementRegistry linked by foreign key on spec_version + type_name.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "ServerConfig",
+                       "description":  "Per-server configuration for Tools module operations. One row per tools-enabled target server, providing DM API connection details and dmfs file import paths. Child of dbo.ServerRegistry via server_id foreign key.",
+                       "module":  "Tools",
+                       "category":  "Operations",
+                       "dataFlow":  "Rows are manually inserted when a server is designated as a Tools operations target (tools_enabled = 1 on ServerRegistry). The BDL Import workflow reads this table to resolve the target server\u0027s API URL and dmfs file path based on the user\u0027s environment selection. Future Tools pipelines (Payment, CDL, New Business) consume the same rows using their respective folder columns.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "config_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "server_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to dbo.ServerRegistry. Identifies the tools-enabled server that owns the dmfs file share for this environment."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "server_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Denormalized server hostname from ServerRegistry. Avoids joins for common queries."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "environment",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Denormalized environment from ServerRegistry (PROD, STAGE, TEST). Used as the primary lookup key when the UI environment selector resolves to a server configuration."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "db_instance",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "SQL Server instance name or AG listener for the crs5_oltp database in this environment. Used by validation and query operations that need to read DM reference tables. For standalone environments (TEST), this is the same as server_name. For AG environments (PROD, STAGE), this is the AG listener name."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "api_base_url",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Full base URL for the DM REST API. Includes protocol, hostname, port, and base path (e.g., http://dm-prod-app:8080/dm-rest-services/api). May point to a different server than the dmfs path in multi-node environments. API endpoint paths are appended to this value."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "dmfs_base_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Base UNC path for the DM file system import folder (e.g., \\\\\\\\dm-prod-app3\\\\e$\\\\dmfs\\\\import). Pipeline-specific subfolder columns are appended to construct full paths."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "dmfs_bdl_folder",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027bdl\u0027)",
+                                           "description":  "Subfolder name under dmfs_base_path for BDL import files. Default: bdl."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "dmfs_cdl_folder",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027cdl\u0027)",
+                                           "description":  "Subfolder name under dmfs_base_path for CDL import files. Default: cdl."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "dmfs_payment_folder",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027payments\u0027)",
+                                           "description":  "Subfolder name under dmfs_base_path for payment import files. Default: payments."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "dmfs_newbusiness_folder",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027newbusiness\u0027)",
+                                           "description":  "Subfolder name under dmfs_base_path for new business import files. Default: newbusiness."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Whether this server configuration is active. 0 = disabled, 1 = enabled (default)."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the configuration was created."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Who created the configuration."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the configuration was last modified."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "modified_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Who last modified the configuration."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_ServerConfig",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "config_id"
+                                       },
+                                       {
+                                           "name":  "UQ_ServerConfig_server_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "server_id"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_ServerConfig_ServerRegistry",
+                                               "column":  "server_id",
+                                               "referencedTable":  "dbo.ServerRegistry",
+                                               "referencedColumn":  "server_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Denormalized Convenience Columns",
+                                               "note":  "server_name and environment are stored directly alongside the server_id foreign key. This avoids joins to ServerRegistry for the most common query pattern: selecting configuration by environment.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Path Construction Pattern",
+                                               "note":  "Full file paths are constructed by combining dmfs_base_path with the pipeline-specific folder column and a trailing backslash. For example, a BDL import path is dmfs_base_path + backslash + dmfs_bdl_folder + backslash. The folder columns have sensible defaults but are stored explicitly so paths remain configurable without code changes.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Separate File and API Targets",
+                                               "note":  "In multi-node environments (Production, Staging), the dmfs file path and the API base URL may point to different servers. Files are written to the ETL/content server (APP3) via UNC share, while API calls to trigger imports are fired against the domain controller (APP). The executing server reads the file from APP3 via the shared dmfs mount.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "Configuration by environment",
+                                           "description":  "Returns the full server configuration for a given environment. Primary query pattern for all Tools operations.",
+                                           "sql":  "SELECT server_name, environment, api_base_url,\n    dmfs_base_path, dmfs_bdl_folder, dmfs_cdl_folder,\n    dmfs_payment_folder, dmfs_newbusiness_folder\nFROM Tools.ServerConfig\nWHERE environment = \u0027PROD\u0027\n    AND is_active = 1;",
+                                           "sortOrder":  1
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "dbo.ServerRegistry",
+                                                     "note":  "Child table. server_id references ServerRegistry.server_id. Only servers with tools_enabled = 1 should have rows in this table. The unique constraint on server_id enforces a 1:1 relationship.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+                       {
+                           "name":  "sp_SyncColumnOrdinals",
+                           "description":  "Aligns Object_Metadata column description sort_order values with actual sys.columns column_id ordinals. Compares active column description rows against the system catalog, updates misaligned sort_order values to match current column positions, and deactivates description rows for columns that no longer exist. Supports three scopes: single table (both parameters provided), all tables in a schema (@SchemaName only), or full database (no parameters). Returns a detail result set in single-table preview mode and a per-table summary in all other modes. Runs in preview mode by default.",
+                           "module":  "Tools",
+                           "category":  "Utilities",
+                           "parameters":  [
+                                              {
+                                                  "ordinal":  1,
+                                                  "name":  "@SchemaName",
+                                                  "dataType":  "varchar",
+                                                  "length":  "128",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  2,
+                                                  "name":  "@ObjectName",
+                                                  "dataType":  "varchar",
+                                                  "length":  "128",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              },
+                                              {
+                                                  "ordinal":  3,
+                                                  "name":  "@PreviewOnly",
+                                                  "dataType":  "bit",
+                                                  "isOutput":  false,
+                                                  "isOptional":  false
+                                              }
+                                          ],
+                           "designNotes":  [
+                                               {
+                                                   "topic":  "Preview-First Safety",
+                                                   "summary":  "Default behavior prevents accidental changes.",
+                                                   "note":  "@PreviewOnly defaults to 1, requiring an explicit opt-in to apply changes. The preview output shows every proposed action (UPDATE or DEACTIVATE) with before and after sort_order values, plus a summary of aligned, misaligned, orphaned, and missing columns. This makes it safe to run exploratively against any table without risk.",
+                                                   "sortOrder":  1
+                                               },
+                                               {
+                                                   "topic":  "Orphan Handling",
+                                                   "summary":  "Detects and deactivates metadata for dropped columns.",
+                                                   "note":  "When a column exists in Object_Metadata but not in sys.columns, the row is deactivated (is_active = 0) and sort_order is set to 0 rather than deleted. This preserves the documentation history while removing the orphan from active exports and reference pages.",
+                                                   "sortOrder":  2
+                                               },
+                                               {
+                                                   "topic":  "Missing Column Detection",
+                                                   "summary":  "Reports columns that lack documentation but does not create rows.",
+                                                   "note":  "Columns found in sys.columns with no matching active Object_Metadata description row are reported in the output as informational. The proc does not auto-generate description rows — that remains a manual enrichment task to ensure content quality.",
+                                                   "sortOrder":  3
+                                               }
+                                           ],
+                           "relationshipNotes":  [
+                                                     {
+                                                         "relatedObject":  "Object_Metadata",
+                                                         "note":  "Reads and updates dbo.Object_Metadata rows where property_type is description and column_name is populated. Only active rows (is_active = 1) are evaluated. Sort_order updates and deactivations set modified_dttm and modified_by via GETDATE() and SUSER_SNAME().",
+                                                         "sortOrder":  1
+                                                     }
+                                                 ]
+                       }
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
