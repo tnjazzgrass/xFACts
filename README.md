@@ -1,2 +1,0 @@
-# xFACts
-xFACts
