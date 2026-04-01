@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - JBoss Monitoring API Endpoints
 # Location: E:\xFACts-ControlCenter\scripts\routes\JBossMonitoring-API.ps1
 #
