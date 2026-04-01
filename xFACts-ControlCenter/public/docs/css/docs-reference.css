@@ -1,0 +1,480 @@
+/* ============================================================
+   docs-reference.css — Overrides for technical reference pages
+   
+   Loaded after docs-base.css on: ref/teams-ref.html, 
+   ref/jira-ref.html, and future module reference pages.
+   ============================================================ */
+
+/* ===== Scroll Behavior ===== */
+html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 132px; /* fallback, overridden dynamically by ddl-loader.js */
+}
+
+/* ===== Extra bottom padding so last section scrolls fully into position ===== */
+.page-wrapper {
+    padding-bottom: 400px;
+}
+
+/* ===== Sticky Navigation (two-tier: breadcrumb + object links) ===== */
+.sticky-nav {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 10px 20px 12px;
+    margin-bottom: 35px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+    background: rgba(var(--bg-secondary-rgb), 0.95);
+}
+
+.sticky-nav-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85em;
+    flex-wrap: wrap;
+}
+
+/* Only show spacing/border when sticky-nav-top has child elements */
+.sticky-nav-top:has(*) {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.sticky-nav-top a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.sticky-nav-top a:hover {
+    text-decoration: underline;
+}
+
+.sticky-nav-top .current {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.sticky-nav-top .sep {
+    color: var(--text-muted);
+}
+
+/* ===== Object Jump Links ===== */
+.obj-nav-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.obj-nav-links a {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 0.83em;
+    font-family: var(--font-mono);
+    transition: all 0.15s ease;
+}
+
+.obj-nav-links a:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-blue-dim);
+}
+
+/* ===== Object Type Labels (in nav and section headers) ===== */
+.obj-type-label {
+    font-size: 0.72em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 4px;
+    font-family: var(--font-main);
+}
+
+.obj-type-label.nav-table,
+.badge-table { background: rgba(var(--accent-blue-rgb), 0.15); color: var(--accent-blue); }
+
+.obj-type-label.nav-proc,
+.badge-proc { background: rgba(var(--accent-green-rgb), 0.15); color: var(--accent-green); }
+
+.obj-type-label.nav-trigger,
+.badge-trigger { background: rgba(var(--accent-orange-rgb), 0.15); color: var(--accent-orange); }
+
+.obj-type-label.nav-script,
+.badge-script { background: rgba(var(--accent-purple-rgb), 0.15); color: var(--accent-purple); }
+
+.obj-type-label.nav-xe,
+.badge-xe { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
+
+.obj-type-label.nav-ddltrigger,
+.badge-ddltrigger { background: rgba(244, 135, 113, 0.15); color: var(--accent-red); }
+
+/* ===== Object Section Headers ===== */
+.obj-badge {
+    display: inline-block;
+    font-size: 0.72em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+/* ===== Object Description ===== */
+p.obj-desc {
+    color: var(--text-secondary);
+    font-size: 0.95em;
+    margin-bottom: 18px;
+    border-left: 3px solid var(--accent-blue-dim);
+    padding-left: 14px;
+}
+
+p.obj-desc a {
+    color: var(--accent-blue);
+}
+
+/* ===== Object Separators ===== */
+.object-block {
+    margin-bottom: 45px;
+    padding-top: 30px;
+}
+
+.object-block:first-of-type {
+    padding-top: 0;
+}
+
+.object-separator {
+    border: none;
+    height: 1px;
+    background: var(--border-color);
+    margin: 50px 0 0;
+}
+
+/* ===== Field Tables (schema reference) ===== */
+.field-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 0.88em;
+}
+
+.field-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    font-size: 0.82em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.field-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: top;
+}
+
+.field-table tr:last-child td {
+    border-bottom: none;
+}
+
+.field-table td:first-child {
+    font-family: var(--font-mono);
+    color: var(--accent-blue);
+    font-size: 0.92em;
+    white-space: nowrap;
+}
+
+.field-table td:nth-child(2) {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-size: 0.88em;
+    white-space: nowrap;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 700px) {
+    .obj-nav-links {
+        flex-direction: column;
+    }
+}
+
+/* ===== Card Stack Layout ===== */
+
+.card-stack {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Card toggle button */
+.card-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    color: var(--text-primary);
+    padding: 10px 16px;
+    cursor: pointer;
+    font-family: var(--font-main);
+    font-size: 0.88em;
+    transition: all 0.15s ease;
+    text-align: left;
+}
+
+.card-toggle:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-blue-dim);
+}
+
+.card-toggle.open {
+    border-color: var(--accent-blue-dim);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.card-arrow {
+    color: var(--text-muted);
+    font-size: 0.75em;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.card-toggle.open .card-arrow {
+    transform: rotate(90deg);
+}
+
+.card-label {
+    flex: 1;
+    font-weight: 500;
+}
+
+.card-count {
+    background: rgba(var(--accent-blue-rgb), 0.15);
+    color: var(--accent-blue);
+    font-size: 0.8em;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+/* Card content panel */
+.card-content {
+    display: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent-blue-dim);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 16px 18px;
+}
+
+.card-content.open {
+    display: block;
+}
+
+/* Prevent content from overflowing card boundaries */
+.card-content {
+    overflow: hidden;
+}
+
+.card-content .field-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.card-content .field-table td,
+.card-content .field-table th {
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Keep short structural columns compact */
+.card-content .field-table td:first-child {
+    white-space: nowrap;
+}
+
+/* Field table adjustments inside cards */
+.card-content .field-table {
+    margin: 0 0 8px;
+}
+
+/* ===== Data Flow (always visible) ===== */
+.enrichment-data-flow {
+    margin-bottom: 8px;
+}
+
+.data-flow-text {
+    color: var(--text-secondary);
+    font-size: 0.93em;
+    line-height: 1.65;
+    border-left: 3px solid var(--accent-green-dim);
+    padding-left: 14px;
+    margin-bottom: 10px;
+}
+
+/* ===== Enrichment content inside cards ===== */
+
+/* Design Notes */
+.card-content .design-note {
+    margin-bottom: 14px;
+    padding-left: 12px;
+    border-left: 2px solid var(--border-subtle);
+}
+
+.card-content .design-note:last-child {
+    margin-bottom: 0;
+}
+
+.card-content .design-note h4 {
+    color: var(--accent-blue);
+    font-size: 0.9em;
+    margin-bottom: 4px;
+}
+
+.card-content .design-note p {
+    color: var(--text-secondary);
+    font-size: 0.88em;
+    line-height: 1.6;
+    margin-bottom: 4px;
+}
+
+.card-content .design-note-summary {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Status Values */
+.status-column-label {
+    font-size: 0.82em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.status-column-label code {
+    color: var(--accent-blue);
+    font-size: 0.95em;
+}
+
+.status-table td:first-child {
+    width: 120px;
+    min-width: 80px;
+    white-space: nowrap;
+}
+
+.status-table th:first-child {
+    width: 120px;
+}
+
+.status-table td:first-child code {
+    color: var(--accent-orange);
+    font-size: 0.9em;
+}
+
+/* Relationship Notes */
+.card-content .relationship-note {
+    margin-bottom: 14px;
+    padding-left: 12px;
+    border-left: 2px solid var(--border-subtle);
+}
+
+.card-content .relationship-note:last-child {
+    margin-bottom: 0;
+}
+
+.card-content .relationship-note h4 {
+    color: var(--accent-blue);
+    font-size: 0.9em;
+    font-family: var(--font-mono);
+    margin-bottom: 4px;
+}
+
+.card-content .relationship-note p {
+    color: var(--text-secondary);
+    font-size: 0.88em;
+    line-height: 1.6;
+}
+
+/* Common Queries */
+.query-block {
+    margin-bottom: 18px;
+}
+
+.query-block:last-child {
+    margin-bottom: 0;
+}
+
+.query-block h4 {
+    color: var(--text-primary);
+    font-size: 0.9em;
+    margin-bottom: 4px;
+}
+
+.query-desc {
+    color: var(--text-muted);
+    font-size: 0.82em;
+    margin-bottom: 6px;
+}
+
+.query-code-wrapper {
+    position: relative;
+}
+
+.query-code {
+    background: var(--bg-code);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-size: 0.82em;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.query-code code {
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    white-space: pre;
+}
+
+.copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    color: var(--text-muted);
+    font-size: 0.72em;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    z-index: 1;
+}
+
+.copy-btn:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    border-color: var(--accent-blue-dim);
+}
+
+.copy-btn.copy-success {
+    color: var(--accent-green);
+    border-color: var(--accent-green-dim);
+}
+
+/* Ensure last object section has enough scroll room for sticky nav targeting */
+.ddl-root .section:last-child {
+    min-height: 60vh;
+}

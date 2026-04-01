@@ -1,0 +1,118 @@
+/* ============================================================
+   docs-narrative.css — Overrides for narrative "Secrets Revealed" pages
+   
+   Loaded after docs-base.css on: teams.html, jira.html, 
+   engine-room.html, and future module narrative pages.
+   ============================================================ */
+
+/* ===== Flow Diagrams ===== */
+.flow-diagram {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.flow-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.flow-step {
+    padding: 10px 18px;
+    border-radius: var(--radius);
+    font-size: 0.85em;
+    font-weight: 600;
+    text-align: center;
+}
+
+.flow-step.blue    { background: rgba(var(--accent-blue-rgb), 0.2); border: 1px solid var(--accent-blue-dim); color: var(--accent-blue); }
+.flow-step.green   { background: rgba(var(--accent-green-rgb), 0.2); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
+.flow-step.orange  { background: rgba(var(--accent-orange-rgb), 0.2); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
+.flow-step.purple  { background: rgba(var(--accent-purple-rgb), 0.2); border: 1px solid var(--accent-purple-dim); color: var(--accent-purple); }
+.flow-step.red     { background: rgba(var(--accent-red-rgb), 0.2); border: 1px solid var(--accent-red-dim); color: var(--accent-red); }
+.flow-step.muted-step { background: rgba(var(--text-muted-rgb), 0.15); border: 1px solid var(--text-muted); color: var(--text-secondary); }
+
+.flow-arrow {
+    color: var(--text-muted);
+    font-size: 1.2em;
+}
+
+.flow-caption {
+    text-align: center;
+    font-size: 0.82em;
+    color: var(--text-muted);
+    margin-top: 12px;
+}
+
+/* ===== Flow Fork/Branch (parallel paths in flow diagrams) ===== */
+.flow-fork {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.flow-fork-label {
+    font-size: 0.75em;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+}
+
+.flow-branches {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.flow-branch {
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-size: 0.82em;
+    font-weight: 600;
+    text-align: center;
+}
+
+.flow-branch.green  { background: rgba(var(--accent-green-rgb), 0.2); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
+.flow-branch.orange { background: rgba(var(--accent-orange-rgb), 0.2); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
+.flow-branch.purple { background: rgba(var(--accent-purple-rgb), 0.2); border: 1px solid var(--accent-purple-dim); color: var(--accent-purple); }
+.flow-branch.red    { background: rgba(var(--accent-red-rgb), 0.2); border: 1px solid var(--accent-red-dim); color: var(--accent-red); }
+.flow-branch.muted  { background: rgba(var(--text-muted-rgb), 0.15); border: 1px solid var(--text-muted); color: var(--text-secondary); }
+
+/* ===== Side-by-Side Layouts ===== */
+.side-by-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin: 20px 0;
+}
+
+/* ===== Color Samples ===== */
+.color-sample {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 700px) {
+    .side-by-side {
+        grid-template-columns: 1fr;
+    }
+
+    .flow-steps {
+        flex-direction: column;
+    }
+
+    .flow-arrow {
+        transform: rotate(90deg);
+    }
+}

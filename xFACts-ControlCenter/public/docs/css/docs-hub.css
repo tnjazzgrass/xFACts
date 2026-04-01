@@ -1,0 +1,170 @@
+/* ============================================================
+   docs-hub.css — Styles specific to the Hub page (index.html)
+   
+   Module cards, architecture diagram, pattern flow, tech table.
+   Loaded after docs-base.css on index.html only.
+   ============================================================ */
+
+/* ===== xFACts Logo Accent ===== */
+.page-header h1 span.fac {
+    color: var(--accent-blue);
+}
+
+/* ===== Module Cards Grid ===== */
+.module-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+}
+
+.module-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.module-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-blue-dim);
+    transform: translateY(-1px);
+}
+
+.module-card .card-title {
+    font-size: 1.05em;
+    font-weight: 600;
+    color: var(--accent-blue);
+    margin-bottom: 6px;
+}
+
+.module-card .card-desc {
+    font-size: 0.88em;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.module-card .card-tag {
+    display: inline-block;
+    font-size: 0.72em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 8px;
+    font-weight: 500;
+}
+
+/* ===== Module Tag Colors ===== */
+.tag-serverops   { background: rgba(var(--accent-green-rgb), 0.15); color: var(--accent-green); }
+.tag-core        { background: rgba(var(--accent-blue-rgb), 0.15); color: var(--accent-blue); }
+.tag-monitoring  { background: rgba(var(--accent-orange-rgb), 0.15); color: var(--accent-orange); }
+.tag-integration { background: rgba(var(--accent-purple-rgb), 0.15); color: var(--accent-purple); }
+.tag-department  { background: rgba(var(--accent-red-rgb), 0.15); color: var(--accent-red); }
+
+/* ===== Architecture Diagram ===== */
+.diagram-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.diagram-container .diagram-title {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-top: 12px;
+}
+
+.arch-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 20px;
+}
+
+.arch-box {
+    padding: 12px 18px;
+    border-radius: var(--radius);
+    font-size: 0.85em;
+    font-weight: 600;
+    text-align: center;
+    min-width: 130px;
+}
+
+.arch-box.engine  { background: rgba(var(--accent-blue-rgb), 0.2); border: 1px solid var(--accent-blue-dim); color: var(--accent-blue); }
+.arch-box.modules { background: rgba(var(--accent-green-rgb), 0.2); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
+.arch-box.alerts  { background: rgba(var(--accent-orange-rgb), 0.2); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
+.arch-box.ui      { background: rgba(var(--accent-purple-rgb), 0.2); border: 1px solid var(--accent-purple-dim); color: var(--accent-purple); }
+
+.arch-arrow {
+    color: var(--text-muted);
+    font-size: 1.3em;
+}
+
+/* ===== Pattern Flow (Collect → Store → Evaluate → Alert) ===== */
+.pattern-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+}
+
+.pattern-step {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.pattern-step.collect  { background: rgba(var(--accent-blue-rgb), 0.2); color: var(--accent-blue); }
+.pattern-step.store    { background: rgba(var(--accent-green-rgb), 0.2); color: var(--accent-green); }
+.pattern-step.evaluate { background: rgba(var(--accent-orange-rgb), 0.2); color: var(--accent-orange); }
+.pattern-step.alert    { background: rgba(var(--accent-red-rgb), 0.2); color: var(--accent-red); }
+
+.pattern-arrow {
+    color: var(--text-muted);
+    font-size: 1.1em;
+}
+
+/* ===== Tech Stack Table ===== */
+.tech-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+}
+
+.tech-table th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.82em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tech-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.92em;
+}
+
+.tech-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 700px) {
+    .module-grid { grid-template-columns: 1fr; }
+    .arch-flow { flex-direction: column; }
+    .arch-arrow { transform: rotate(90deg); }
+}

@@ -1,0 +1,374 @@
+/* ============================================================
+   docs-base.css — Shared foundation for all xFACts Secrets Revealed pages
+   
+   Change a variable here, it changes everywhere.
+   ============================================================ */
+
+/* ===== Root Variables ===== */
+/* 
+   SINGLE SOURCE OF TRUTH for the docs color palette.
+   
+   Change a hex color here → it changes everywhere, including tinted backgrounds.
+   The -rgb companions enable rgba() tints: rgba(var(--accent-blue-rgb), 0.15)
+   The -dim companions provide darker border/accent variants.
+   
+   To adapt for user-selectable themes, override these variables via JavaScript:
+     document.documentElement.style.setProperty('--accent-blue', '#4ec9b0');
+     document.documentElement.style.setProperty('--accent-blue-rgb', '78, 201, 176');
+*/
+:root {
+    /* Backgrounds */
+    --bg-primary: #1e1e1e;
+    --bg-primary-rgb: 30, 30, 30;
+    --bg-secondary: #252526;
+    --bg-secondary-rgb: 37, 37, 38;
+    --bg-card: #2d2d2d;
+    --bg-card-hover: #333333;
+    --bg-code: #1a1a1a;
+
+    /* Text */
+    --text-primary: #d4d4d4;
+    --text-secondary: #888888;
+    --text-muted: #666666;
+    --text-muted-rgb: 102, 102, 102;
+
+    /* Accent: Blue */
+    --accent-blue: #569cd6;
+    --accent-blue-rgb: 86, 156, 214;
+    --accent-blue-dim: #264f78;
+
+    /* Accent: Green */
+    --accent-green: #4caf50;
+    --accent-green-rgb: 76, 175, 80;
+    --accent-green-dim: #2e7d32;
+
+    /* Accent: Orange */
+    --accent-orange: #ffa726;
+    --accent-orange-rgb: 255, 167, 38;
+    --accent-orange-dim: #e65100;
+
+    /* Accent: Purple (Purple) */
+	--accent-purple: #9c27b0;
+	--accent-purple-rgb: 156, 39, 176;
+	--accent-purple-dim: #6a1b9a;
+
+    /* Accent: Red */
+    --accent-red: #f48771;
+    --accent-red-rgb: 244, 135, 113;
+    --accent-red-dim: #c44030;
+
+    /* Borders */
+    --border-color: #404040;
+    --border-subtle: #333333;
+
+    /* Typography */
+    --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+
+    /* Layout */
+    --max-width: 1600px;
+    --radius: 8px;
+}
+
+/* ===== Reset & Base ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: var(--font-main);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.7;
+    font-size: 15px;
+}
+
+/* ===== Layout ===== */
+.page-wrapper {
+    max-width: var(--max-width);   /* the layout cap */
+    margin: 0 auto;                /* centers the wrapper horizontally */
+    padding: 40px 60px 80px;       /* top, left/right, bottom */
+}
+
+/* ===== Page Header ===== */
+.page-header {
+    margin-bottom: 40px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.page-header h1 {
+    font-size: 2.2em;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+}
+
+.page-header .subtitle {
+    font-size: 1.05em;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* ===== Navigation (injected by nav.js) ===== */
+.doc-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 30px;
+    padding: 10px 16px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-subtle);
+    font-size: 0.85em;
+    flex-wrap: wrap;
+}
+
+.doc-nav a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.doc-nav a:hover {
+    text-decoration: underline;
+}
+
+.doc-nav .current {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.doc-nav .sep {
+    color: var(--text-muted);
+}
+
+/* Active parent + child page group.
+   inline-block keeps it in the flex flow with siblings;
+   each child line uses display:block to stack beneath the parent label. */
+.nav-active-group {
+    display: inline-block;
+    vertical-align: top;
+}
+
+.nav-child-line,
+.nav-ref-line {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.95em;
+}
+
+.nav-child-arrow,
+.nav-ref-arrow {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+/* ===== Context Bar ===== */
+.context-bar {
+    background: rgba(var(--accent-blue-rgb), 0.06);
+    border: 1px solid var(--border-subtle);
+    border-left: 3px solid var(--accent-purple);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 35px;
+    font-size: 0.92em;
+    color: var(--text-secondary);
+}
+
+.context-bar a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.context-bar a:hover {
+    text-decoration: underline;
+}
+
+/* ===== Sections ===== */
+.section {
+    margin-bottom: 45px;
+}
+
+.section h2 {
+    font-size: 1.5em;
+    font-weight: 600;
+    color: #ffffff;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.section h3 {
+    font-size: 1.15em;
+    font-weight: 600;
+    color: var(--accent-blue);
+    margin-top: 24px;
+    margin-bottom: 10px;
+}
+
+.section h4 {
+    font-size: 0.95em;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 18px;
+    margin-bottom: 8px;
+}
+
+/* ===== Typography ===== */
+p {
+    margin-bottom: 14px;
+    color: var(--text-primary);
+}
+
+p.muted {
+    color: var(--text-secondary);
+    font-size: 0.92em;
+}
+
+/* ===== Code ===== */
+code {
+    font-family: var(--font-mono);
+    background: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.88em;
+    color: var(--accent-blue);
+}
+
+pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin: 12px 0 20px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+/* ===== Callouts ===== */
+.callout {
+    padding: 16px 20px;
+    border-radius: var(--radius);
+    margin: 18px 0;
+    border-left: 4px solid;
+}
+
+.callout.info {
+    background: rgba(var(--accent-blue-rgb), 0.08);
+    border-left-color: var(--accent-blue);
+}
+
+.callout.story {
+    background: rgba(var(--accent-purple-rgb), 0.08);
+    border-left-color: var(--accent-purple);
+    font-style: italic;
+}
+
+.callout.tip {
+    background: rgba(var(--accent-green-rgb), 0.08);
+    border-left-color: var(--accent-green);
+}
+
+.callout.warning {
+    background: rgba(var(--accent-red-rgb), 0.08);
+    border-left-color: var(--accent-red);
+}
+
+.callout p:last-child {
+    margin-bottom: 0;
+}
+
+/* ===== Tables (general info tables) ===== */
+.info-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+}
+
+.info-table th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.82em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.info-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.92em;
+}
+
+.info-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* ===== Cross-Reference Links ===== */
+.ref-link {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 10px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-size: 0.92em;
+    transition: all 0.2s ease;
+}
+
+.ref-link:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-blue-dim);
+}
+
+.ref-inline {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px dotted var(--accent-blue-dim);
+}
+
+.ref-inline:hover {
+    border-bottom-color: var(--accent-blue);
+    border-bottom-style: solid;
+}
+
+.ref-inline code {
+    color: var(--accent-blue);
+}
+
+/* ===== Footer ===== */
+.doc-footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.82em;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 700px) {
+    .page-wrapper {
+        padding: 20px 16px 60px;
+    }
+}
+
+/* ===== Link Colors ===== */
+.page-wrapper a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.page-wrapper a:hover {
+    text-decoration: underline;
+}
+
+.page-wrapper a:visited {
+    color: var(--accent-blue);
+}

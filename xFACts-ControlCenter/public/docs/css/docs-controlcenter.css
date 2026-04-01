@@ -1,0 +1,805 @@
+/* ============================================================
+   docs-controlcenter.css — Styles for Control Center guide pages
+
+   Loaded after docs-base.css on CC guide pages like:
+   cc/serverhealth-cc.html and future module CC guide pages.
+
+   Provides: sticky reference zone (mockup + flip key cards),
+   guided tour and show-all modes, smooth scrolling, annotated
+   mockup overlay with callout markers, and numbered section
+   headings.
+
+   Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
+   ============================================================ */
+
+/* ===== Scroll Behavior ===== */
+html {
+    scroll-behavior: smooth;
+}
+
+/* ===== Extra bottom padding so last section scrolls fully ===== */
+.page-wrapper {
+    padding: 40px 60px 0 !important;
+}
+
+/* ===== Sticky Section Navigation (breadcrumb only on CC guide pages) ===== */
+.section-nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+    background: rgba(var(--bg-secondary-rgb), 0.95);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 10px 20px 12px;
+    margin-bottom: 0;
+}
+
+/* ===== Breadcrumb row (populated by nav.js) ===== */
+.section-nav-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85em;
+    flex-wrap: wrap;
+}
+
+.section-nav-top:has(*) {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.section-nav-top a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.section-nav-top a:hover {
+    text-decoration: underline;
+}
+
+.section-nav-top .current {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.section-nav-top .sep {
+    color: var(--text-muted);
+}
+
+/* ============================================================
+   STICKY REFERENCE ZONE
+
+   Two-column sticky area below the nav bar containing the
+   page mockup (left) and Key to the Page flip cards (right).
+   Stays visible while user reads section content below.
+   ============================================================ */
+
+.sticky-ref-zone {
+    position: sticky;
+    z-index: 90;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    padding: 12px 16px 10px;
+    margin-bottom: 0;
+}
+
+/* --- Key to the Page section (horizontal row above mockup) --- */
+.key-section {
+    margin-bottom: 10px;
+}
+
+.key-section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.key-section-header h2 {
+    font-size: 1.1em;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.key-section-hint {
+    font-size: 0.78em;
+    color: var(--text-muted);
+}
+
+/* --- Overview section header --- */
+.overview-section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.overview-section-header h2 {
+    font-size: 1.1em;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.overview-section-header p {
+    font-size: 0.78em;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* Mockup takes its constrained width within primary column */
+.overview-section {
+    width: 100%;
+}
+
+/* --- Main layout: primary (keys + mockup) + sidebar --- */
+.sticky-ref-main-layout {
+    display: flex;
+    gap: 20px;
+}
+
+.sticky-ref-primary {
+    flex: 0 0 auto;
+    max-width: 1200px;
+}
+
+/* --- Sidebar: section summaries to fill right gap --- */
+.sticky-ref-sidebar {
+    flex: 1;
+    min-width: 160px;
+    padding-top: 4px;
+}
+
+.sticky-ref-sidebar h3 {
+    font-size: 0.95em;
+    color: var(--text-primary);
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82em;
+    color: var(--text-secondary);
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-item:hover {
+    background: rgba(var(--accent-blue-rgb), 0.1);
+    color: var(--text-primary);
+}
+
+.sidebar-item:hover .sidebar-num {
+    background: rgba(86, 156, 214, 0.3);
+}
+
+.sidebar-intro {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-intro h3 {
+    font-size: 0.95em;
+    color: var(--text-primary);
+    margin: 0 0 8px 0;
+}
+
+.sidebar-intro p {
+    font-size: 0.82em;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0 0 6px 0;
+}
+
+.sidebar-intro p:last-child {
+    margin-bottom: 0;
+}
+
+.sidebar-hint {
+    font-size: 0.75em;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.sidebar-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--accent-blue);
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+/* ============================================================
+   MODE TOGGLE — "Take The Tour" / "Show Me Everything"
+   ============================================================ */
+
+/* Mode buttons are in .sticky-ref-header-center */
+
+.mode-btn {
+    padding: 5px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.82em;
+    font-family: var(--font-main);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mode-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-blue-dim);
+    color: var(--text-primary);
+}
+
+.mode-btn.active {
+    background: var(--accent-blue-dim);
+    border-color: var(--accent-blue);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* ============================================================
+   FLIP KEY CARDS — Compact 2x3 grid with front/back
+   ============================================================ */
+
+.key-flip-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+}
+
+.key-flip-card {
+    perspective: 600px;
+    cursor: pointer;
+    height: 68px;
+}
+
+.key-flip-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.5s ease;
+    transform-style: preserve-3d;
+}
+
+.key-flip-card.flipped .key-flip-inner {
+    transform: rotateY(180deg);
+}
+
+.key-flip-front,
+.key-flip-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 5px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    padding: 4px 10px;
+}
+
+.key-flip-front {
+    background: var(--bg-card);
+    gap: 0;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 8px 6px 6px;
+}
+
+.key-flip-back {
+    background: var(--bg-secondary);
+    transform: rotateY(180deg);
+    padding: 8px 10px;
+    overflow: hidden;
+    justify-content: center;
+}
+
+.key-flip-front .key-flip-icon {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.key-flip-front .key-flip-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    line-height: 1.2;
+    white-space: nowrap;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.key-flip-back .key-flip-desc {
+    font-size: 10px;
+    color: #d4d4d4;
+    line-height: 1.4;
+    text-align: center;
+}
+
+/* ============================================================
+   CALLOUT MARKER STATES — idle, pulsing, visited
+   ============================================================ */
+
+.callout-marker {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(86, 156, 214, 0.9);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    cursor: pointer;
+    text-decoration: none;
+    z-index: 2;
+    transition: transform 0.15s ease, background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.callout-marker:hover {
+    transform: scale(1.15);
+    background: rgba(86, 156, 214, 1);
+}
+
+/* Pulsing state — "click me next" in tour mode */
+@keyframes marker-pulse {
+    0%, 100% {
+        box-shadow: 0 0 4px rgba(86, 156, 214, 0.3), 0 0 8px rgba(86, 156, 214, 0.1);
+    }
+    50% {
+        box-shadow: 0 0 16px rgba(86, 156, 214, 1), 0 0 32px rgba(86, 156, 214, 0.6), 0 0 48px rgba(86, 156, 214, 0.3);
+    }
+}
+
+.mock-container a.callout-marker.marker-pulsing,
+.mock-container a.callout-marker.marker-pulsing:visited {
+    animation: marker-pulse 1.2s ease-in-out infinite;
+}
+
+/* Visited state — green */
+.mock-container a.callout-marker.marker-visited,
+.mock-container a.callout-marker.marker-visited:visited,
+.mock-container a.callout-marker.marker-visited:hover {
+    background: rgba(76, 175, 80, 0.9);
+}
+
+.mock-container a.callout-marker.marker-visited:hover {
+    background: rgba(76, 175, 80, 1);
+}
+
+/* Flash on revisit */
+@keyframes marker-flash {
+    0% { box-shadow: 0 0 0 rgba(76, 175, 80, 0); }
+    30% { box-shadow: 0 0 14px rgba(76, 175, 80, 0.8), 0 0 28px rgba(76, 175, 80, 0.3); }
+    100% { box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+}
+
+.mock-container a.callout-marker.marker-flash {
+    animation: marker-flash 0.6s ease-out;
+}
+
+/* Mockup-scoped marker sizing */
+.mock-container a.callout-marker,
+.mock-container a.callout-marker:visited,
+.mock-container a.callout-marker:hover {
+    z-index: 10;
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #ffffff;
+    border-width: 1.5px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.6);
+}
+
+/* ===== Numbered Section Headings ===== */
+.section-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    margin-right: 8px;
+    vertical-align: middle;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+/* ============================================================
+   SECTION CONTENT — Hidden data source for slideout
+   ============================================================ */
+
+.cc-guide-content {
+    display: none;
+}
+
+/* ============================================================
+   GUIDE SLIDEOUT PANEL — Additive right-side panel
+   
+   Slides in from the right. Sections are added progressively
+   as callout markers are clicked. Each section occupies a fixed
+   slot in numerical order. Unvisited slots show a placeholder.
+   ============================================================ */
+
+.guide-slideout {
+    position: fixed;
+    top: 0;
+    right: -820px;
+    width: 800px;
+    height: 100vh;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    transition: right 0.3s ease;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.4);
+}
+
+.guide-slideout.open {
+    right: 0;
+}
+
+.guide-slideout-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.guide-slideout-header h3 {
+    margin: 0;
+    font-size: 1em;
+    color: var(--text-primary);
+    flex-shrink: 0;
+}
+
+.slideout-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.slideout-header-controls .mode-btn {
+    padding: 3px 10px;
+    font-size: 0.75em;
+}
+
+.guide-slideout-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    transition: color 0.15s;
+    margin-left: 4px;
+}
+
+.guide-slideout-close:hover {
+    color: var(--text-primary);
+}
+
+.guide-slideout-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+/* --- Individual section slot --- */
+.slideout-slot {
+    padding: 0 16px;
+    margin-bottom: 2px;
+    transition: background 0.3s ease;
+}
+
+/* Placeholder for unvisited slots */
+.slideout-slot-placeholder {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
+    opacity: 0.4;
+}
+
+.slideout-slot-placeholder .section-number {
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.slot-placeholder-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Revealed slot content */
+.slideout-slot.slot-revealed {
+    opacity: 1;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 10px;
+    margin-bottom: 4px;
+}
+
+/* Active/highlighted slot */
+.slideout-slot.slot-active {
+    background: rgba(var(--accent-blue-rgb), 0.08);
+}
+
+/* --- Content within revealed slots --- */
+.slideout-section-content h2 {
+    font-size: 0.95em;
+    margin: 8px 0 6px 0;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.slideout-section-content .section-number {
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
+}
+
+.slideout-section-content p {
+    font-size: 0.82em;
+    line-height: 1.55;
+    margin: 0 0 6px 0;
+    color: var(--text-secondary);
+}
+
+.slideout-section-content strong {
+    color: var(--text-primary);
+}
+
+.slideout-section-content .callout {
+    font-size: 0.78em;
+    padding: 8px 12px;
+    margin: 6px 0;
+    border-radius: 4px;
+}
+
+.slideout-section-content .callout p {
+    font-size: inherit;
+    margin: 0;
+}
+
+/* ============================================================
+   PAGE MOCKUP — Mini representation of actual CC page layout
+   ============================================================ */
+
+.mock-container {
+    position: relative;
+    background: #1e1e1e;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 14px;
+    font-family: var(--font-main);
+    overflow: hidden;
+}
+
+.mock-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #333;
+    gap: 10px;
+}
+
+.mock-header-left { flex: 0 0 auto; }
+.mock-header-left .mock-page-title { color: #569cd6; font-size: 15px; font-weight: 600; }
+.mock-header-left .mock-page-subtitle { color: #666; font-size: 10px; }
+
+.mock-header-center { flex: 1; display: flex; justify-content: center; gap: 6px; }
+
+.mock-header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+
+.mock-live-row { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #666; }
+.mock-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ec9b0; animation: key-pulse 2s ease-in-out infinite; }
+
+.mock-server-tab { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 3px 6px; text-align: center; min-width: 56px; }
+.mock-server-tab.selected { border-color: #4ec9b0; background: #2a3a35; }
+.mock-server-tab .mock-gauge { width: 36px; height: 20px; margin: 0 auto 2px; border-bottom: 2px solid #333; border-radius: 18px 18px 0 0; position: relative; overflow: hidden; }
+.mock-server-tab .mock-gauge::after { content: ''; position: absolute; bottom: 0; left: 50%; width: 2px; height: 16px; background: #4ec9b0; transform-origin: bottom center; transform: rotate(-40deg); }
+.mock-server-tab.selected .mock-gauge::after { background: #4ec9b0; }
+.mock-server-tab .mock-gauge-pct { font-size: 9px; font-weight: 700; color: #4ec9b0; line-height: 1; }
+.mock-server-tab .mock-gauge-name { font-size: 8px; color: #555; white-space: nowrap; }
+.mock-server-tab.selected .mock-gauge-name { color: #4ec9b0; }
+
+.mock-engine-row { display: flex; gap: 5px; }
+.mock-engine { background: #2d2d2d; border: 1px solid #404040; border-radius: 3px; padding: 3px 7px; text-align: center; }
+.mock-engine-label { font-size: 8px; color: #888; font-weight: 600; text-transform: uppercase; }
+.mock-engine-bar { width: 36px; height: 3px; background: #4ec9b0; border-radius: 1px; margin: 3px auto; }
+.mock-engine-cd { font-size: 8px; color: #555; }
+
+.mock-body { display: flex; gap: 14px; }
+.mock-col-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.mock-col-right { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
+
+.mock-section { background: #252526; border: 1px solid #404040; border-radius: 5px; padding: 10px 12px; position: relative; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
+.mock-section.mock-highlight { border-color: var(--accent-blue); box-shadow: 0 0 12px rgba(86, 156, 214, 0.3), inset 0 0 8px rgba(86, 156, 214, 0.08); }
+
+/* Brief flash for mock section when clicked from slideout */
+@keyframes mock-section-flash {
+    0% { box-shadow: 0 0 0 rgba(86, 156, 214, 0); }
+    30% { box-shadow: 0 0 20px rgba(86, 156, 214, 0.6), inset 0 0 12px rgba(86, 156, 214, 0.15); }
+    100% { box-shadow: 0 0 12px rgba(86, 156, 214, 0.3), inset 0 0 8px rgba(86, 156, 214, 0.08); }
+}
+.mock-section.mock-flash { animation: mock-section-flash 0.6s ease-out; }
+
+.mock-time-buttons.mock-highlight { outline: 2px solid var(--accent-blue); outline-offset: 3px; border-radius: 4px; }
+
+/* Header area highlight for sections 1 and 2 which are in the header, not mock-section */
+.mock-header-center.mock-highlight, .mock-engine-row.mock-highlight { outline: 2px solid var(--accent-blue); outline-offset: 3px; border-radius: 4px; }
+
+.mock-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #404040; }
+.mock-section-title { color: #4ec9b0; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.mock-badge-live { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: #666; }
+.mock-badge-live .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ec9b0; animation: key-pulse 2s ease-in-out infinite; }
+.mock-badge-event { font-size: 10px; color: #dcdcaa; }
+.mock-badge-action { font-size: 10px; color: #569cd6; }
+
+.mock-metric-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.mock-metric { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 8px 10px; text-align: center; width: 140px; min-height: 60px; }
+.mock-metric-label { font-size: 8px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; }
+.mock-metric-value { font-size: 20px; font-weight: 400; color: #4ec9b0; line-height: 1.1; }
+.mock-metric-unit { font-size: 8px; color: #555; }
+
+.mock-xe-grid { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.mock-xe-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 5px 8px; text-align: center; width: 90px; }
+.mock-xe-label { font-size: 7px; color: #888; line-height: 1.2; }
+.mock-xe-value { font-size: 15px; font-weight: 400; color: #4ec9b0; }
+
+.mock-info-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 9px; border-bottom: 1px solid #333; }
+.mock-info-row:last-child { border-bottom: none; }
+.mock-info-label { color: #888; }
+.mock-info-value { color: #d4d4d4; font-weight: 500; }
+
+.mock-disk-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mock-disk-row:last-child { margin-bottom: 0; }
+.mock-disk-label { font-size: 9px; color: #888; width: 28px; flex-shrink: 0; }
+.mock-disk-bar { flex: 1; height: 8px; background: #404040; border-radius: 2px; overflow: hidden; }
+.mock-disk-fill { height: 100%; border-radius: 2px; background: #4ec9b0; }
+.mock-disk-fill.warning { background: #dcdcaa; }
+
+.mock-ag-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 8px 10px; }
+.mock-ag-row { display: flex; justify-content: space-between; font-size: 9px; padding: 3px 0; }
+.mock-ag-label { color: #888; }
+.mock-ag-value { color: #d4d4d4; }
+.mock-ag-badge { font-size: 7px; font-weight: 600; padding: 1px 5px; border-radius: 8px; background: rgba(78, 201, 176, 0.2); color: #4ec9b0; text-transform: uppercase; }
+
+/* ===== Mock: Chart Placeholder ===== */
+.mock-chart { background: #252526; border-radius: 3px; overflow: hidden; padding: 4px; }
+
+/* ===== Mock: Time Range Buttons ===== */
+.mock-time-buttons { display: inline-flex; gap: 2px; }
+.mock-time-btn { font-size: 7px; color: #666; background: #2d2d2d; border: 1px solid #404040; border-radius: 2px; padding: 1px 4px; }
+.mock-time-btn.active { color: #4ec9b0; border-color: #4ec9b0; background: #2a3a35; }
+
+/* ===== Mock: Agent Status Cards ===== */
+.mock-agent-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.mock-agent-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 8px 10px; flex: 1; min-width: 140px; }
+.mock-agent-name { font-size: 10px; color: #4ec9b0; font-weight: 600; margin-bottom: 5px; }
+.mock-agent-row { display: flex; justify-content: space-between; font-size: 8px; padding: 2px 0; }
+.mock-agent-label { color: #888; }
+.mock-agent-status { font-weight: 600; }
+.mock-agent-status.healthy { color: #4ec9b0; }
+.mock-agent-status.warning { color: #dcdcaa; }
+.mock-agent-status.error { color: #f44747; }
+
+/* ===== Mock: Two-Column Lower Grid ===== */
+.mock-lower-grid { display: flex; gap: 10px; margin-top: 10px; }
+.mock-lower-left { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+.mock-lower-right { width: 280px; flex-shrink: 0; }
+.mock-section-tall { height: 100%; display: flex; flex-direction: column; }
+
+/* ===== Mock: Event Log ===== */
+.mock-event-filter { display: flex; gap: 4px; margin-bottom: 6px; }
+.mock-filter-pill { font-size: 7px; color: #888; background: #2d2d2d; border: 1px solid #404040; border-radius: 8px; padding: 1px 6px; }
+.mock-filter-pill.active { color: #4ec9b0; border-color: #4ec9b0; }
+.mock-event-row { display: flex; gap: 6px; font-size: 8px; padding: 3px 0; border-bottom: 1px solid #333; align-items: baseline; }
+.mock-event-row:last-child { border-bottom: none; }
+.mock-event-row.warning { background: rgba(220, 220, 170, 0.05); }
+.mock-event-time { color: #555; flex-shrink: 0; width: 28px; }
+.mock-event-agent { color: #569cd6; flex-shrink: 0; width: 70px; font-weight: 500; }
+.mock-event-text { color: #888; flex: 1; }
+.mock-event-row.warning .mock-event-text { color: #dcdcaa; }
+
+/* ===== Mock: Wide Layout (pages without two-column body) ===== */
+.mock-container.mock-wide { min-width: 969px; }
+
+/* ===== Key: Mini Rendered UI Elements (flip card fronts) ===== */
+
+@keyframes key-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+.key-badge-live { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 2px 8px; }
+.key-badge-live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); animation: key-pulse 2s ease-in-out infinite; }
+
+.key-badge-event { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 2px 8px; }
+.key-badge-event .bolt { color: #dcdcaa; font-size: 12px; }
+
+.key-badge-action { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 2px 8px; }
+.key-badge-action .arrows { color: var(--accent-blue); font-size: 12px; }
+
+.key-engine-indicator { display: inline-flex; flex-direction: column; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 8px; }
+.key-engine-indicator .eng-label { color: var(--text-secondary); font-weight: 600; font-size: 8px; }
+.key-engine-indicator .eng-bar { width: 36px; height: 3px; background: var(--accent-green); border-radius: 2px; margin: 2px 0; }
+.key-engine-indicator .eng-cd { color: var(--text-muted); font-size: 8px; }
+
+.key-metric-card { display: inline-block; background: var(--bg-secondary); border: 1px solid var(--accent-green-dim); border-radius: 6px; padding: 4px 10px; text-align: center; }
+.key-metric-card .mc-value { font-size: 14px; font-weight: 700; color: var(--accent-green); }
+.key-metric-card .mc-label { font-size: 7px; color: var(--text-secondary); }
+.key-metric-card .mc-arrow { font-size: 6px; color: var(--text-muted); margin-top: 1px; }
+
+.key-tooltip-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-secondary); border: 1px solid var(--text-muted); color: var(--text-muted); font-size: 11px; font-weight: 700; cursor: default; }
+
+/* ===== Screenshot Overlay (legacy, kept for non-CC pages) ===== */
+.screenshot-container { position: relative; display: inline-block; width: 100%; margin: 24px 0 40px 0; border: 1px solid var(--border-color); border-radius: var(--radius); }
+.screenshot-container img { width: 100%; display: block; }
+.screenshot-placeholder { padding: 60px 20px; text-align: center; color: var(--text-muted); font-style: italic; }
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+    .key-flip-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .key-flip-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ===== Mock Modal Previews (hidden until marker highlight) ===== */
+.mock-modal-preview { display: none; }
+.mock-modal-preview.mock-highlight { display: block; }

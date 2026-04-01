@@ -1,0 +1,167 @@
+/* ============================================================
+   docs-erd.css — ERD diagram styles for xFACts documentation
+   
+   Matches the docs-base.css dark theme. Used alongside ddl-erd.js.
+   Version: 2.0.0
+   ============================================================ */
+
+/* Outer wrapper — handles scale-to-fit containment */
+.erd-outer {
+    margin: 16px 0 24px;
+    overflow: hidden;
+}
+
+/* Canvas container — natural pixel size, scaled by JS */
+.erd-canvas {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+}
+
+/* Schema/category title */
+.erd-title {
+    font-family: var(--font-main);
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 4px;
+}
+
+/* Table box */
+.erd-table {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.erd-table:hover {
+    border-color: var(--accent-blue);
+    box-shadow: 0 2px 12px rgba(86, 156, 214, 0.2);
+}
+
+/* Standalone tables — slightly dimmed */
+.erd-table.erd-standalone {
+    opacity: 0.8;
+}
+
+.erd-table.erd-standalone:hover {
+    opacity: 1;
+}
+
+/* Table header */
+.erd-table-header {
+    background: var(--accent-blue-dim);
+    color: var(--accent-blue);
+    font-weight: 600;
+    font-size: 12px;
+    padding: 6px 8px;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Column row */
+.erd-table-col {
+    display: flex;
+    align-items: center;
+    padding: 1px 8px;
+    gap: 5px;
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+}
+
+.erd-table-col.is-pk {
+    background: rgba(86, 156, 214, 0.06);
+}
+
+.erd-table-col.is-fk {
+    background: rgba(76, 175, 80, 0.06);
+}
+
+.erd-table-col.is-uq {
+    background: rgba(255, 167, 38, 0.04);
+}
+
+.erd-table-col.is-pk.is-fk {
+    background: rgba(156, 39, 176, 0.08);
+}
+
+/* Column name */
+.erd-col-name {
+    color: var(--text-primary);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.is-pk .erd-col-name {
+    color: var(--accent-blue);
+}
+
+.is-fk .erd-col-name {
+    color: var(--accent-green);
+}
+
+.is-uq .erd-col-name {
+    color: var(--accent-orange, #ffa726);
+}
+
+.is-pk.is-fk .erd-col-name {
+    color: var(--accent-purple);
+}
+
+/* Column type */
+.erd-col-type {
+    color: var(--text-muted);
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+/* PK/FK/UQ badges */
+.erd-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.erd-badge.pk {
+    color: var(--accent-blue);
+    background: rgba(86, 156, 214, 0.15);
+}
+
+.erd-badge.fk {
+    color: var(--accent-green);
+    background: rgba(76, 175, 80, 0.15);
+}
+
+.erd-badge.uq {
+    color: var(--accent-orange, #ffa726);
+    background: rgba(255, 167, 38, 0.15);
+}
+
+.erd-badge.pk-fk {
+    color: var(--accent-purple);
+    background: rgba(156, 39, 176, 0.15);
+}
+
+/* Table footer — column count */
+.erd-table-footer {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-style: italic;
+    text-align: center;
+    padding: 2px 8px;
+    border-top: 1px solid var(--border-subtle);
+    background: rgba(0, 0, 0, 0.1);
+}
