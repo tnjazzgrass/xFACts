@@ -1,0 +1,972 @@
+﻿{
+    "tables":  [
+                   {
+                       "name":  "CycleLog",
+                       "description":  "Engine heartbeat cycle log capturing one row per orchestrator cycle that found work to do. Provides aggregate metrics for cycle duration, task counts, and overall status for operational monitoring and troubleshooting.",
+                       "module":  "Orchestrator",
+                       "category":  "Orchestrator",
+                       "dataFlow":  "Start-xFACtsOrchestrator.ps1 inserts a row at the beginning of each heartbeat cycle that identifies processes due for execution. Empty heartbeats (no processes due) do not create rows. The engine updates the row at cycle completion with end_dttm, duration_ms, aggregate task counts, and cycle_status. The Control Center Engine Room page queries CycleLog for engine health indicators and cycle history.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "cycle_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for each engine cycle"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "start_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the cycle began"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "end_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the cycle completed. NULL while cycle is running"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "duration_ms",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total cycle duration in milliseconds. Calculated at completion"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "tasks_due",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of processes identified as due at the start of the cycle"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "tasks_executed",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of processes the engine attempted to launch"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "tasks_succeeded",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of tasks that completed with SUCCESS status"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "tasks_failed",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of tasks that completed with FAILED or TIMEOUT status"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "tasks_skipped",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of processes that were due but skipped (e.g., still running from a previous cycle)"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "cycle_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027RUNNING\u0027)",
+                                           "description":  "Overall cycle outcome: RUNNING, SUCCESS, PARTIAL, or FAILED"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "error_message",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Engine-level error message if the cycle itself failed (not individual task errors)"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_CycleLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "cycle_id"
+                                       },
+                                       {
+                                           "name":  "IX_CycleLog_start_dttm",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "start_dttm",
+                                           "includedColumns":  "cycle_status, duration_ms, tasks_executed, tasks_failed"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_CycleLog_cycle_status",
+                                                    "definition":  "([cycle_status]=\u0027FAILED\u0027 OR [cycle_status]=\u0027PARTIAL\u0027 OR [cycle_status]=\u0027SUCCESS\u0027 OR [cycle_status]=\u0027RUNNING\u0027)"
+                                                }
+                                            ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Work-Only Logging",
+                                               "note":  "Heartbeat cycles where no processes are due do not create CycleLog entries. This avoids filling the table with empty heartbeats and keeps every row meaningful for operational monitoring.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Aggregate Metrics",
+                                               "note":  "The tasks_due, tasks_executed, tasks_succeeded, tasks_failed, and tasks_skipped columns provide a complete cycle summary without requiring joins to TaskLog. This supports quick dashboard queries and health checks without touching the much larger task-level table.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "cycle_status",
+                                                "value":  "RUNNING",
+                                                "meaning":  "Cycle is currently executing tasks. Set on initial insert.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "cycle_status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "All tasks in the cycle completed successfully (tasks_failed = 0).",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "cycle_status",
+                                                "value":  "PARTIAL",
+                                                "meaning":  "Some tasks succeeded and some failed within the same cycle.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "cycle_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Engine-level error prevented normal task execution. Individual task failures produce PARTIAL, not FAILED.",
+                                                "sortOrder":  4
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Recent Cycle History",
+                                           "description":  "Shows the most recent engine cycles with timing and task metrics.",
+                                           "sql":  "SELECT TOP 20\r\n    cycle_id,\r\n    start_dttm,\r\n    end_dttm,\r\n    duration_ms,\r\n    cycle_status,\r\n    tasks_due,\r\n    tasks_executed,\r\n    tasks_succeeded,\r\n    tasks_failed,\r\n    tasks_skipped\r\nFROM Orchestrator.CycleLog\r\nORDER BY start_dttm DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Failed or Partial Cycles",
+                                           "description":  "Isolates cycles with failures for troubleshooting.",
+                                           "sql":  "SELECT \r\n    cycle_id,\r\n    start_dttm,\r\n    cycle_status,\r\n    tasks_failed,\r\n    tasks_succeeded,\r\n    error_message\r\nFROM Orchestrator.CycleLog\r\nWHERE cycle_status IN (\u0027FAILED\u0027, \u0027PARTIAL\u0027)\r\nORDER BY start_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Cycle Performance Trend",
+                                           "description":  "Average cycle duration by hour over the last 7 days for performance analysis.",
+                                           "sql":  "SELECT \r\n    CAST(start_dttm AS DATE) AS cycle_date,\r\n    DATEPART(HOUR, start_dttm) AS cycle_hour,\r\n    COUNT(*) AS cycles,\r\n    AVG(duration_ms) AS avg_duration_ms,\r\n    MAX(duration_ms) AS max_duration_ms,\r\n    SUM(tasks_executed) AS total_tasks\r\nFROM Orchestrator.CycleLog\r\nWHERE start_dttm \u003e= DATEADD(DAY, -7, GETDATE())\r\n  AND cycle_status != \u0027RUNNING\u0027\r\nGROUP BY CAST(start_dttm AS DATE), DATEPART(HOUR, start_dttm)\r\nORDER BY cycle_date DESC, cycle_hour DESC;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "TaskLog",
+                                                     "note":  "Each CycleLog row is the parent for one or more TaskLog entries via FK_TaskLog_CycleLog. Drilling down from a cycle to its tasks shows exactly which processes ran, their individual outcomes, and any error output.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "ProcessRegistry",
+                                                     "note":  "CycleLog does not directly reference ProcessRegistry. The cycle records aggregate metrics about what happened; the individual process linkage lives in TaskLog.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "ProcessRegistry",
+                       "description":  "Configuration hub for all orchestrated processes. Defines scheduling, execution mode, dependency ordering, and tracks runtime status for each process managed by the Orchestrator v2 engine.",
+                       "module":  "Orchestrator",
+                       "category":  "Orchestrator",
+                       "dataFlow":  "Rows are manually inserted when onboarding a new process to the orchestrator. Start-xFACtsOrchestrator.ps1 queries ProcessRegistry each heartbeat cycle to identify due processes based on run_mode, interval_seconds, scheduled_time, and running_count. After launching a process, the engine updates last_execution_dttm and increments running_count. On completion, either the engine (WAIT mode) or the Complete-OrchestratorTask callback (FIRE_AND_FORGET mode) updates last_execution_status, last_duration_ms, last_successful_date, and decrements running_count. Queue table INSERT triggers (e.g., TR_Teams_AlertQueue_QueueDepth, TR_Jira_TicketQueue_QueueDepth) increment running_count for queue-driven processes. The Control Center Engine Room page displays process status and scheduling information.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "process_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for each process configuration"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "module_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Functional module the process belongs to (e.g., ServerOps, JobFlow, Jira)"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "process_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Logical name for this process (e.g., Collect-ServerHealth, Monitor-JobFlow)"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "description",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable description of what the process does"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "script_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Full path to PowerShell script. Populated for script-based processes"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "procedure_name",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Schema-qualified stored procedure name. Populated for SP-based processes"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "execution_mode",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027WAIT\u0027)",
+                                           "description":  "How the engine handles process execution. WAIT or FIRE_AND_FORGET"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "dependency_group",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Numeric group controlling execution order. Lower groups execute first"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "interval_seconds",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((300))",
+                                           "description":  "Seconds between executions for interval-based scheduling. Ignored for queue-driven processes"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "scheduled_time",
+                                           "dataType":  "time",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Daily execution time for time-based scheduling. When populated, interval_seconds is ignored. Not used for queue-driven processes"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "timeout_seconds",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Maximum expected duration in seconds. NULL disables timeout monitoring"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "run_mode",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "How the process is scheduled: 0 = Disabled, 1 = Scheduled (interval/time-based), 2 = Queue-driven (triggered by running_count \u003e 0)"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "running_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "For scheduled processes: number of currently active instances. For queue-driven processes: number of pending items to process. Incremented before launch (scheduled) or by queue triggers (queue-driven), decremented/reset on completion"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "allow_concurrent",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "When enabled, the engine launches new instances even when running_count \u003e 0. Used for processes with batch claiming logic where multiple instances safely process different content"
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "last_execution_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the process was last launched. Used by interval-based scheduling to determine if due"
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "last_execution_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Result of the most recent execution: SUCCESS, FAILED, RUNNING, or TIMEOUT"
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "last_duration_ms",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Duration of the most recent execution in milliseconds"
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "last_successful_date",
+                                           "dataType":  "date",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Date of last successful execution. Used by time-based scheduling to prevent duplicate runs on the same day"
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the record was created"
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Who created the record"
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the record was last modified"
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "modified_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Who last modified the record"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_ProcessRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "process_id"
+                                       },
+                                       {
+                                           "name":  "IX_ProcessRegistry_runmode_group",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "run_mode, dependency_group, interval_seconds",
+                                           "includedColumns":  "process_name, script_path, procedure_name, execution_mode, scheduled_time, last_execution_dttm, running_count"
+                                       },
+                                       {
+                                           "name":  "UQ_ProcessRegistry_Module_Process",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "module_name, process_name"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_ProcessRegistry_execution_mode",
+                                                    "definition":  "([execution_mode]=\u0027FIRE_AND_FORGET\u0027 OR [execution_mode]=\u0027WAIT\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_ProcessRegistry_execution_target",
+                                                    "definition":  "([script_path] IS NOT NULL OR [procedure_name] IS NOT NULL)"
+                                                },
+                                                {
+                                                    "name":  "CK_ProcessRegistry_last_execution_status",
+                                                    "definition":  "([last_execution_status]=\u0027NOT_STARTED\u0027 OR [last_execution_status]=\u0027POLLING\u0027 OR [last_execution_status]=\u0027TIMEOUT\u0027 OR [last_execution_status]=\u0027RUNNING\u0027 OR [last_execution_status]=\u0027FAILED\u0027 OR [last_execution_status]=\u0027SUCCESS\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_ProcessRegistry_run_mode",
+                                                    "definition":  "([run_mode]=(2) OR [run_mode]=(1) OR [run_mode]=(0))"
+                                                },
+                                                {
+                                                    "name":  "CK_ProcessRegistry_running_count",
+                                                    "definition":  "([running_count]\u003e=(0))"
+                                                }
+                                            ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Dual Execution Targets",
+                                               "note":  "Each process populates either script_path (PowerShell launched as external process) or procedure_name (stored procedure via Invoke-Sqlcmd). CK_ProcessRegistry_execution_target ensures at least one is populated. This allows the engine to handle both execution styles without separate configuration tables.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Configuration and Live Status Combined",
+                                               "note":  "ProcessRegistry serves as both configuration table and runtime status tracker. The engine updates last_execution_dttm, last_execution_status, last_duration_ms, and running_count directly in the config row. This eliminates the need for a separate status table and ensures the engine always sees current state in a single query.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Three Scheduling Models",
+                                               "note":  "run_mode controls scheduling behavior: 0 = Disabled (never executes), 1 = Scheduled (interval-based when scheduled_time is NULL, time-based when scheduled_time is populated), 2 = Queue-driven (executes when running_count \u003e 0, set by external triggers). Time-based processes use last_successful_date to prevent duplicate runs on the same day.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Running Count Semantics",
+                                               "note":  "running_count has different meanings by run_mode. For scheduled processes (run_mode=1), it tracks active instances to prevent overlap. For queue-driven processes (run_mode=2), it represents pending items to process — incremented by queue INSERT triggers and decremented by the processor script. Floor protection prevents the count from going below zero in case of mismatched decrements.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "run_mode",
+                                                "value":  "0",
+                                                "meaning":  "Disabled — process is not executed by the engine.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "run_mode",
+                                                "value":  "1",
+                                                "meaning":  "Scheduled — process uses interval-based or time-based scheduling.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "run_mode",
+                                                "value":  "2",
+                                                "meaning":  "Queue-driven — process executes when running_count \u003e 0, triggered by external queue INSERT triggers.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "execution_mode",
+                                                "value":  "WAIT",
+                                                "meaning":  "Engine launches the process and waits for completion, capturing stdout/stderr and exit code directly.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "execution_mode",
+                                                "value":  "FIRE_AND_FORGET",
+                                                "meaning":  "Engine launches the process in the background and moves on. The process reports completion via the Complete-OrchestratorTask callback.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "last_execution_status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "Most recent execution completed successfully.",
+                                                "sortOrder":  6
+                                            },
+                                            {
+                                                "column":  "last_execution_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Most recent execution completed with errors.",
+                                                "sortOrder":  7
+                                            },
+                                            {
+                                                "column":  "last_execution_status",
+                                                "value":  "RUNNING",
+                                                "meaning":  "Process is currently executing.",
+                                                "sortOrder":  8
+                                            },
+                                            {
+                                                "column":  "last_execution_status",
+                                                "value":  "TIMEOUT",
+                                                "meaning":  "Process exceeded its timeout_seconds threshold without completing.",
+                                                "sortOrder":  9
+                                            },
+                                            {
+                                                "column":  "last_execution_status",
+                                                "value":  "NOT_STARTED",
+                                                "meaning":  "Process has been registered but has not yet executed.",
+                                                "sortOrder":  10
+                                            },
+                                            {
+                                                "column":  "last_execution_status",
+                                                "value":  "POLLING",
+                                                "meaning":  "Process completed a cycle but reported no actionable work — used by collectors that found nothing new to process.",
+                                                "sortOrder":  11
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "All Registered Processes with Schedule",
+                                           "description":  "Complete process inventory showing execution targets, scheduling configuration, and current runtime status.",
+                                           "sql":  "SELECT \r\n    process_id,\r\n    module_name,\r\n    process_name,\r\n    COALESCE(script_path, procedure_name) AS execution_target,\r\n    execution_mode,\r\n    dependency_group,\r\n    CASE run_mode\r\n        WHEN 0 THEN \u0027Disabled\u0027\r\n        WHEN 1 THEN CASE \r\n            WHEN scheduled_time IS NOT NULL \r\n                THEN \u0027Daily @ \u0027 + CAST(scheduled_time AS VARCHAR(5))\r\n            ELSE CAST(interval_seconds AS VARCHAR) + \u0027s interval\u0027\r\n        END\r\n        WHEN 2 THEN \u0027Queue-driven\u0027\r\n    END AS schedule_desc,\r\n    running_count,\r\n    last_execution_status,\r\n    last_execution_dttm,\r\n    last_duration_ms\r\nFROM Orchestrator.ProcessRegistry\r\nORDER BY run_mode, dependency_group, process_name;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Process Health Summary",
+                                           "description":  "Prioritizes failed and timed-out processes for quick triage.",
+                                           "sql":  "SELECT \r\n    module_name,\r\n    process_name,\r\n    run_mode,\r\n    running_count,\r\n    last_execution_status,\r\n    last_execution_dttm,\r\n    DATEDIFF(MINUTE, last_execution_dttm, GETDATE()) AS minutes_ago,\r\n    last_duration_ms\r\nFROM Orchestrator.ProcessRegistry\r\nORDER BY \r\n    CASE WHEN last_execution_status = \u0027FAILED\u0027 THEN 0 \r\n         WHEN last_execution_status = \u0027TIMEOUT\u0027 THEN 1\r\n         ELSE 2 END,\r\n    module_name, process_name;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Queue-Driven Processes with Pending Work",
+                                           "description":  "Shows queue-driven processes that have items waiting to be processed.",
+                                           "sql":  "SELECT \r\n    process_name,\r\n    module_name,\r\n    running_count AS pending_items,\r\n    last_execution_dttm,\r\n    last_execution_status\r\nFROM Orchestrator.ProcessRegistry\r\nWHERE run_mode = 2\r\n  AND running_count \u003e 0\r\nORDER BY process_name;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "CycleLog",
+                                                     "note":  "Each engine heartbeat cycle that finds due processes creates a CycleLog row. ProcessRegistry is queried to determine which processes are due, but there is no direct foreign key — CycleLog captures aggregate metrics per cycle rather than linking to specific processes.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "TaskLog",
+                                                     "note":  "Every process execution creates a TaskLog row with FK_TaskLog_ProcessRegistry pointing back to the process_id. TaskLog denormalizes module_name, process_name, dependency_group, and execution_target at execution time so historical records remain accurate even if ProcessRegistry changes.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Queue Table Triggers",
+                                                     "note":  "Queue-driven processes (run_mode=2) are triggered by INSERT triggers on their respective queue tables. TR_Teams_AlertQueue_QueueDepth and TR_Jira_TicketQueue_QueueDepth increment running_count when new items are queued, causing the engine to launch the processor on the next heartbeat.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "TaskLog",
+                       "description":  "Per-process execution log capturing individual task results within each engine cycle. Records timing, status, exit codes, and output/error content for every process execution, providing granular troubleshooting detail beneath the cycle-level [Orchestrator - CycleLog].",
+                       "module":  "Orchestrator",
+                       "category":  "Orchestrator",
+                       "dataFlow":  "Start-xFACtsOrchestrator.ps1 inserts a row when launching each process within a cycle, capturing denormalized process identification and setting task_status to RUNNING (WAIT mode) or transitioning through RUNNING to LAUNCHED (FIRE_AND_FORGET mode). For WAIT mode, the engine updates the row upon process completion with end_dttm, duration_ms, task_status, exit_code, output_summary, and error_output. For FIRE_AND_FORGET mode, the Complete-OrchestratorTask callback in xFACts-OrchestratorFunctions.ps1 performs the update. The Control Center Engine Room page queries TaskLog for per-process execution history and troubleshooting detail.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "task_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Unique identifier for each task execution"
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "cycle_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to [Orchestrator - CycleLog]. Links this task to the engine cycle that launched it"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "process_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "FK to [Orchestrator - ProcessRegistry]. Links to the process configuration"
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "module_name",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Module name captured at execution time"
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "process_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Process name captured at execution time"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "dependency_group",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Dependency group captured at execution time"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "execution_mode",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Execution mode used: WAIT or FIRE_AND_FORGET"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "execution_target",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Actual script path or procedure name that was executed"
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "start_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the task execution began"
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "end_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the task completed. NULL while running or for LAUNCHED tasks awaiting callback"
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "duration_ms",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Task duration in milliseconds. Calculated at completion"
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "task_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027RUNNING\u0027)",
+                                           "description":  "Current task state: RUNNING, SUCCESS, FAILED, TIMEOUT, or LAUNCHED"
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "exit_code",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Process exit code (0 = success for PowerShell scripts). NULL for FIRE_AND_FORGET until callback"
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "output_summary",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Captured stdout from the process, truncated to 4000 characters"
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "error_output",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Captured stderr from the process"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_TaskLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "task_id"
+                                       },
+                                       {
+                                           "name":  "IX_TaskLog_cycle_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "cycle_id",
+                                           "includedColumns":  "process_name, task_status, duration_ms"
+                                       },
+                                       {
+                                           "name":  "IX_TaskLog_process_start",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "process_id, start_dttm",
+                                           "includedColumns":  "task_status, duration_ms, exit_code"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_TaskLog_execution_mode",
+                                                    "definition":  "([execution_mode]=\u0027FIRE_AND_FORGET\u0027 OR [execution_mode]=\u0027WAIT\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_TaskLog_task_status",
+                                                    "definition":  "([task_status]=\u0027NOT_STARTED\u0027 OR [task_status]=\u0027POLLING\u0027 OR [task_status]=\u0027LAUNCHED\u0027 OR [task_status]=\u0027TIMEOUT\u0027 OR [task_status]=\u0027FAILED\u0027 OR [task_status]=\u0027SUCCESS\u0027 OR [task_status]=\u0027RUNNING\u0027)"
+                                                }
+                                            ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_TaskLog_CycleLog",
+                                               "column":  "cycle_id",
+                                               "referencedTable":  "Orchestrator.CycleLog",
+                                               "referencedColumn":  "cycle_id"
+                                           },
+                                           {
+                                               "name":  "FK_TaskLog_ProcessRegistry",
+                                               "column":  "process_id",
+                                               "referencedTable":  "Orchestrator.ProcessRegistry",
+                                               "referencedColumn":  "process_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Denormalized Process Context",
+                                               "note":  "TaskLog stores module_name, process_name, dependency_group, and execution_target at execution time even though it has FK_TaskLog_ProcessRegistry. If a process is later renamed, reconfigured, or removed, historical log entries remain accurate and self-contained.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Two Update Patterns",
+                                               "note":  "WAIT mode tasks are updated by the engine after process exit. FIRE_AND_FORGET tasks are updated by the process itself via the Complete-OrchestratorTask callback. Both patterns converge on the same final state — the task row always ends with a terminal status, timing data, and any output or error content.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Output Truncation",
+                                               "note":  "output_summary and error_output are VARCHAR(MAX) but the callback function truncates content to 4000 characters before insertion. This prevents extremely verbose script output from consuming excessive storage while preserving enough detail for troubleshooting.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "task_status",
+                                                "value":  "RUNNING",
+                                                "meaning":  "Task has been launched and is actively executing. Initial status for WAIT mode tasks.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "task_status",
+                                                "value":  "LAUNCHED",
+                                                "meaning":  "FIRE_AND_FORGET task has been started in the background. Awaiting callback from the process.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "task_status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "Task completed successfully (exit code 0 for scripts). Terminal state.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "task_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Task completed with a non-zero exit code or threw an error. Terminal state.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "task_status",
+                                                "value":  "TIMEOUT",
+                                                "meaning":  "Task exceeded its timeout_seconds threshold without completing. Engine kills the process and sets this status.",
+                                                "sortOrder":  5
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Recent Task History",
+                                           "description":  "Shows the most recent task executions across all processes.",
+                                           "sql":  "SELECT TOP 50\r\n    t.task_id,\r\n    t.cycle_id,\r\n    t.module_name,\r\n    t.process_name,\r\n    t.execution_mode,\r\n    t.task_status,\r\n    t.start_dttm,\r\n    t.duration_ms,\r\n    t.exit_code\r\nFROM Orchestrator.TaskLog t\r\nORDER BY t.start_dttm DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Failed Tasks with Error Detail",
+                                           "description":  "Isolates failed and timed-out tasks with error output for troubleshooting.",
+                                           "sql":  "SELECT \r\n    t.task_id,\r\n    t.process_name,\r\n    t.module_name,\r\n    t.task_status,\r\n    t.start_dttm,\r\n    t.exit_code,\r\n    t.error_output,\r\n    LEFT(t.output_summary, 500) AS output_preview\r\nFROM Orchestrator.TaskLog t\r\nWHERE t.task_status IN (\u0027FAILED\u0027, \u0027TIMEOUT\u0027)\r\nORDER BY t.start_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Execution History for a Specific Process",
+                                           "description":  "Last 20 executions of a named process with timing and status.",
+                                           "sql":  "SELECT TOP 20\r\n    t.task_id,\r\n    t.cycle_id,\r\n    t.task_status,\r\n    t.start_dttm,\r\n    t.end_dttm,\r\n    t.duration_ms,\r\n    t.exit_code\r\nFROM Orchestrator.TaskLog t\r\nINNER JOIN Orchestrator.ProcessRegistry p ON t.process_id = p.process_id\r\nWHERE p.process_name = \u0027Process-Name-Here\u0027\r\nORDER BY t.start_dttm DESC;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Drill Down to Tasks for a Specific Cycle",
+                                           "description":  "Shows all tasks within a given engine cycle ordered by dependency group and start time.",
+                                           "sql":  "SELECT \r\n    t.task_id,\r\n    t.process_name,\r\n    t.dependency_group,\r\n    t.execution_mode,\r\n    t.task_status,\r\n    t.duration_ms,\r\n    t.exit_code,\r\n    t.error_output\r\nFROM Orchestrator.TaskLog t\r\nWHERE t.cycle_id = @cycle_id\r\nORDER BY t.dependency_group, t.start_dttm;",
+                                           "sortOrder":  4
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "CycleLog",
+                                                     "note":  "Each task belongs to exactly one engine cycle via FK_TaskLog_CycleLog. The parent CycleLog row provides aggregate cycle-level metrics; TaskLog provides the per-process detail within that cycle.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "ProcessRegistry",
+                                                     "note":  "FK_TaskLog_ProcessRegistry links each task to its process configuration. However, TaskLog denormalizes key process fields at execution time, so the FK is primarily for joins rather than data integrity — historical accuracy is preserved in the denormalized columns.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+                    {
+                        "name":  "Start-xFACtsOrchestrator.ps1",
+                        "description":  "NSSM-hosted orchestrator engine providing heartbeat-driven process scheduling with dependency group execution, timeout enforcement, and drain mode support.",
+                        "module":  "Orchestrator",
+                        "category":  "Orchestrator",
+                        "dataFlow":  "Runs as the xFACtsOrchestrator NSSM Windows service on FA-SQLDBB. Reads heartbeat_interval_seconds and orchestrator_drain_mode from dbo.GlobalConfig. Each heartbeat cycle queries Orchestrator.ProcessRegistry to identify due processes. Inserts a CycleLog row per cycle and a TaskLog row per process launch. For WAIT mode processes, captures stdout/stderr and updates TaskLog and ProcessRegistry on completion. For FIRE_AND_FORGET processes, records LAUNCHED status and moves on. Sends CRITICAL Teams alerts directly to Teams.AlertQueue for WAIT mode timeout events.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Dependency Group Execution",
+                                                "note":  "Processes are organized into numbered dependency groups. Groups execute sequentially (all processes in group 10 complete before group 20 starts). Within a group, processes currently execute sequentially. Queue-driven processes are evaluated separately after all scheduled groups complete.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Drain Mode",
+                                                "note":  "When orchestrator_drain_mode is set to 1 in GlobalConfig, the engine skips new process launches but allows in-flight processes to complete naturally. A WARNING Teams alert fires once per engine startup if drain mode is active. Used for controlled maintenance shutdowns.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "WAIT Mode Timeout Enforcement",
+                                                "note":  "WAIT mode processes have their timeout_seconds enforced by the engine. If a process exceeds its timeout, the engine kills the process, sets TIMEOUT status in TaskLog and ProcessRegistry, and queues a CRITICAL Teams alert directly via INSERT to Teams.AlertQueue with Orchestrator_Timeout trigger type.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "ProcessRegistry",
+                                                      "note":  "Reads process configuration and scheduling data each heartbeat. Updates runtime status fields (running_count, last_execution_dttm, last_execution_status, last_duration_ms) for WAIT mode processes.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "CycleLog",
+                                                      "note":  "Creates one row per heartbeat cycle that finds due processes. Updates with aggregate metrics and final status at cycle completion.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "TaskLog",
+                                                      "note":  "Creates one row per process launch within a cycle. Updates with final results for WAIT mode processes. FIRE_AND_FORGET task rows are updated by the process callback instead.",
+                                                      "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "xFACts-OrchestratorFunctions.ps1",
+                                                      "note":  "Companion function library dot-sourced by managed scripts. Provides the Complete-OrchestratorTask callback that FIRE_AND_FORGET processes use to report completion back to TaskLog and ProcessRegistry.",
+                                                      "sortOrder":  4
+                                                  }
+                                              ]
+                    },
+                    {
+                        "name":  "xFACts-OrchestratorFunctions.ps1",
+                        "description":  "PowerShell function library providing shared script infrastructure and task completion callback capabilities for scripts running under the Orchestrator v2 engine.",
+                        "module":  "Orchestrator",
+                        "category":  "Orchestrator",
+                        "dataFlow":  "Dot-sourced by all xFACts PowerShell scripts at startup. Provides Initialize-XFActsScript for standardized SQL module loading, logging setup, and application identity tagging. The Complete-OrchestratorTask function updates Orchestrator.TaskLog (end_dttm, duration_ms, task_status, exit_code, output_summary, error_output) and Orchestrator.ProcessRegistry (running_count decrement, last_execution_status, last_duration_ms, last_successful_date). Also sends PROCESS_COMPLETED WebSocket events to the Control Center for real-time engine health indicator updates.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Fail-Safe Callback",
+                                                "note":  "Complete-OrchestratorTask catches all exceptions internally and writes a warning instead of throwing. A callback failure should not crash the calling script — the actual work was already done successfully.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Dot-Sourcing Pattern",
+                                                "note":  "Functions are loaded via dot-sourcing rather than a PowerShell module. This matches the pattern used by xFACts-IndexFunctions.ps1 and simplifies deployment — no module registration or path configuration required.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Running Count Floor Protection",
+                                                "note":  "The callback decrements running_count rather than setting it to zero, supporting concurrent execution scenarios. A CASE expression ensures running_count never goes below zero in case of mismatched decrements from race conditions or manual intervention.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "Real-Time Engine Events",
+                                                "note":  "After updating database tables, Send-EngineEvent posts a PROCESS_COMPLETED event with scheduling metadata (interval_seconds, scheduled_time, run_mode) to the Control Center WebSocket endpoint. This enables live countdown timer updates on the Engine Room page without polling.",
+                                                "sortOrder":  4
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "TaskLog",
+                                                      "note":  "Complete-OrchestratorTask updates TaskLog with final execution results including timing, status, exit code, and captured output. This is the FIRE_AND_FORGET counterpart to the engine\u0027s direct WAIT mode updates.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "ProcessRegistry",
+                                                      "note":  "Complete-OrchestratorTask decrements running_count and updates last_execution_status, last_duration_ms, and last_successful_date on the process\u0027s ProcessRegistry row.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Start-xFACtsOrchestrator.ps1",
+                                                      "note":  "The engine script passes TaskId and ProcessId parameters when launching FIRE_AND_FORGET processes. These IDs enable the callback function to update the correct TaskLog and ProcessRegistry rows.",
+                                                      "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "xFACts-IndexFunctions.ps1",
+                                                      "note":  "Uses the same dot-sourcing deployment pattern for shared function libraries. Both are loaded by their respective calling scripts via dot-source at the top of the file.",
+                                                      "sortOrder":  4
+                                                  }
+                                              ]
+                    }
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
