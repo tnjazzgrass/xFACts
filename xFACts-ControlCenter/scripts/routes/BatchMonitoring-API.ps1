@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Batch Monitoring API
 # Location: E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring-API.ps1
 # Version: Tracked in dbo.System_Metadata (component: BatchOps)
