@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     xFACts - Backup Retention Processing
 
