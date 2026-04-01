@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Business Intelligence Departmental Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\BusinessIntelligence.ps1
 # 
