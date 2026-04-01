@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Client Relations Dashboard
 # Location: E:\xFACts-ControlCenter\scripts\routes\ClientRelations.ps1
 # 
