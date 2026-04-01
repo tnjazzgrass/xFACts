@@ -785,6 +785,9 @@ if ($Execute) {
     $manifestLocalSha = Get-GitBlobSha -ContentBytes $manifestBytes
     $manifestChanged = ($null -eq $manifestSha) -or ($manifestLocalSha -ne $manifestSha)
 
+Write-Log "  Manifest size: $($manifestBytes.Length) bytes, Base64: $([Convert]::ToBase64String($manifestBytes).Length) chars" "DEBUG"
+        Write-Log "  ExistingSha: '$manifestSha'" "DEBUG"
+
     if ($manifestChanged) {
         $result = Push-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
             -RepoPath "manifest.json" -ContentBytes $manifestBytes `
