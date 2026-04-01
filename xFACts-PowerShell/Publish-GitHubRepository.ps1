@@ -5,7 +5,7 @@
 .DESCRIPTION
     xFACts - GitHub Integration
     Script: Publish-GitHubRepository.ps1
-    Version: Tracked in dbo.System_Metadata (component: Documentation.Pipeline)
+    Version: Tracked in dbo.System_Metadata (component: n/a)
 
     Publishes all xFACts platform files to a GitHub repository via the REST API.
     Maintains a complete, current snapshot of the platform: PowerShell scripts,
