@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - DM Operations Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1
 # 
