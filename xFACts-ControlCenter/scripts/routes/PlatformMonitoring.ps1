@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Platform Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.Platform)
