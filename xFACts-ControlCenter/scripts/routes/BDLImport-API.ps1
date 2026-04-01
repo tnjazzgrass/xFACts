@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - BDL Import API
 # Location: E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1
 # 
