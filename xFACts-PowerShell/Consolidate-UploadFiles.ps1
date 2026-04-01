@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Consolidates all xFACts platform files into a single upload-ready folder.
 
