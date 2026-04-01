@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     xFACts - Shared Index Maintenance Functions
 
