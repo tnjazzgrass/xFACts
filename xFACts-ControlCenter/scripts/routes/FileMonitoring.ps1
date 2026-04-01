@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - File Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\FileMonitoring.ps1
 # 
