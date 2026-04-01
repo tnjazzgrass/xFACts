@@ -253,7 +253,7 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
             <button class="slideup-close" onclick="Admin.closeDocPipeline()">&times;</button>
         </div>
         <div class="doc-pipeline-body">
-            <!-- Step checkboxes -->
+            <!-- Step checkboxes with inline sub-options -->
             <div class="doc-step-list">
                 <label class="doc-step-item">
                     <input type="checkbox" id="doc-step-ddl" checked>
@@ -264,22 +264,11 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
                 <label class="doc-step-item">
                     <input type="checkbox" id="doc-step-publish" checked>
                     <span class="doc-step-label">Publish to Confluence</span>
-                    <span class="doc-step-desc">Publish HTML pages and export markdown</span>
+                    <span class="doc-step-desc">Publish HTML pages to Confluence Server</span>
                     <span class="doc-step-status" id="doc-status-publish_confluence"></span>
                 </label>
-                <label class="doc-step-item">
-                    <input type="checkbox" id="doc-step-consolidate" checked>
-                    <span class="doc-step-label">Consolidate Upload Files</span>
-                    <span class="doc-step-desc">Collect all platform files into upload folder</span>
-                    <span class="doc-step-status" id="doc-status-consolidate_upload"></span>
-                </label>
-            </div>
-
-            <!-- Options -->
-            <div class="doc-options">
-                <div class="doc-options-title">Options</div>
-                <div class="doc-options-grid">
-                    <label class="doc-option" title="Publish HTML pages to Confluence Server">
+                <div class="doc-step-options" id="doc-step-publish-options">
+                    <label class="doc-option" title="Push pages to Confluence Server via REST API">
                         <input type="checkbox" id="doc-opt-confluence" checked>
                         <span>Publish to Confluence</span>
                     </label>
@@ -287,6 +276,20 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
                         <input type="checkbox" id="doc-opt-markdown" checked>
                         <span>Export Markdown</span>
                     </label>
+                </div>
+                <label class="doc-step-item">
+                    <input type="checkbox" id="doc-step-github" checked>
+                    <span class="doc-step-label">Publish to GitHub</span>
+                    <span class="doc-step-desc">Push platform files and manifest to GitHub repository</span>
+                    <span class="doc-step-status" id="doc-status-publish_github"></span>
+                </label>
+                <label class="doc-step-item">
+                    <input type="checkbox" id="doc-step-consolidate">
+                    <span class="doc-step-label">Consolidate Upload Files</span>
+                    <span class="doc-step-desc">Collect all platform files into upload folder</span>
+                    <span class="doc-step-status" id="doc-status-consolidate_upload"></span>
+                </label>
+                <div class="doc-step-options" id="doc-step-consolidate-options">
                     <label class="doc-option" title="Extract SQL object definitions from database">
                         <input type="checkbox" id="doc-opt-sql" checked>
                         <span>Include SQL Objects</span>
