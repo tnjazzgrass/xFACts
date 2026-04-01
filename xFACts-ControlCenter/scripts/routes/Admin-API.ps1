@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # xFACts Control Center - Administration API Endpoints
 # Location: E:\xFACts-ControlCenter\scripts\routes\Admin-API.ps1
 # Version: See Admin.ps1 for current version
