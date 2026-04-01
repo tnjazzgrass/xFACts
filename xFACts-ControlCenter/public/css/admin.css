@@ -1208,3 +1208,23 @@ a { color: #9cdcfe; }
     border-top: 1px solid #333;
 }
 
+/* ============================================================
+   DOC PIPELINE — Inline Sub-Options (added with GitHub integration)
+   Sub-options nested under their parent step checkbox.
+   Visibility toggled by JS based on parent checkbox state.
+   ============================================================ */
+.doc-step-options {
+    display: flex;
+    gap: 12px 24px;
+    flex-wrap: wrap;
+    padding: 6px 12px 10px 46px;
+    margin-top: -4px;
+    margin-bottom: 4px;
+    background: rgba(86,156,214,0.03);
+    border: 1px solid #333;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+}
+.doc-step-options .doc-option {
+    font-size: 11px;
+}
