@@ -54,7 +54,8 @@ function Invoke-XFActsQuery {
         
         # Add parameters if provided
         foreach ($key in $Parameters.Keys) {
-            $cmd.Parameters.AddWithValue("@$key", $Parameters[$key]) | Out-Null
+            $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
+            if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
         
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
@@ -119,7 +120,8 @@ function Invoke-XFActsProc {
         $cmd.CommandTimeout = 120  # 2 minutes for diagnostic procs
         
         foreach ($key in $Parameters.Keys) {
-            $cmd.Parameters.AddWithValue("@$key", $Parameters[$key]) | Out-Null
+            $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
+            if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
         
         $cmd.ExecuteNonQuery() | Out-Null
@@ -167,7 +169,8 @@ function Invoke-XFActsNonQuery {
         $cmd.CommandTimeout = $TimeoutSeconds
         
         foreach ($key in $Parameters.Keys) {
-            $cmd.Parameters.AddWithValue("@$key", $Parameters[$key]) | Out-Null
+            $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
+            if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
         
         $rowsAffected = $cmd.ExecuteNonQuery()
@@ -1226,7 +1229,8 @@ function Invoke-CRS5ReadQuery {
         $cmd.CommandTimeout = $TimeoutSeconds
         
         foreach ($key in $Parameters.Keys) {
-            $cmd.Parameters.AddWithValue("@$key", $Parameters[$key]) | Out-Null
+            $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
+            if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
         
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
@@ -1279,7 +1283,8 @@ function Invoke-CRS5WriteQuery {
         $cmd.CommandTimeout = 30
         
         foreach ($key in $Parameters.Keys) {
-            $cmd.Parameters.AddWithValue("@$key", $Parameters[$key]) | Out-Null
+            $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
+            if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
         
         return $cmd.ExecuteNonQuery()
@@ -1542,7 +1547,8 @@ function Invoke-AGReadQuery {
         $cmd.CommandTimeout = $TimeoutSeconds
         
         foreach ($key in $Parameters.Keys) {
-            $cmd.Parameters.AddWithValue("@$key", $Parameters[$key]) | Out-Null
+            $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
+            if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
         
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
@@ -1567,7 +1573,58 @@ function Invoke-AGReadQuery {
 }
 
 # ============================================================================
-# Module Exports
+# Data Conversion Helpers — Safe value extraction for JSON serialization
+# Converts DBNull and empty values to $null for clean API responses.
+# ============================================================================
+ 
+function ConvertTo-SafeValue {
+    <#
+    .SYNOPSIS
+        Returns $null if the value is DBNull, otherwise returns the value unchanged.
+        Used for clean JSON serialization from SQL query results.
+    #>
+    param($Value)
+    if ($Value -is [DBNull]) { return $null }
+    return $Value
+}
+ 
+function ConvertTo-SafeDate {
+    <#
+    .SYNOPSIS
+        Converts a date value to a formatted string, returning $null for DBNull or empty values.
+    .PARAMETER Value
+        The date value to convert.
+    .PARAMETER Format
+        Date format string (default: yyyy-MM-dd).
+    #>
+    param($Value, [string]$Format = "yyyy-MM-dd")
+    if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
+    try { return ([DateTime]$Value).ToString($Format) } catch { return $null }
+}
+ 
+function ConvertTo-SafeDateTime {
+    <#
+    .SYNOPSIS
+        Converts a datetime value to yyyy-MM-dd HH:mm:ss format, returning $null for DBNull or empty values.
+    #>
+    param($Value)
+    if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
+    try { return ([DateTime]$Value).ToString("yyyy-MM-dd HH:mm:ss") } catch { return $null }
+}
+ 
+function ConvertTo-SafeDecimal {
+    <#
+    .SYNOPSIS
+        Converts a numeric value to decimal, returning $null for DBNull or empty values.
+    #>
+    param($Value)
+    if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
+    try { return [decimal]$Value } catch { return $null }
+}
+ 
+ 
+# ============================================================================
+# UPDATED Export-ModuleMember — REPLACE the existing block with this one
 # ============================================================================
 Export-ModuleMember -Function @(
     # Database
@@ -1602,5 +1659,10 @@ Export-ModuleMember -Function @(
 #     # AG Generalized Read
      'Invoke-AGReadQuery',
     # DmOps Cache
-    'Get-RemainingCounts'
+    'Get-RemainingCounts',
+    # Data Conversion Helpers
+    'ConvertTo-SafeValue',
+    'ConvertTo-SafeDate',
+    'ConvertTo-SafeDateTime',
+    'ConvertTo-SafeDecimal'
 )
