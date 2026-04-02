@@ -950,24 +950,41 @@ const Admin = (function () {
     var docPollTimer = null;
     var docSelectedSteps = [];
 
-    // Step-to-options mapping: which sub-option div belongs to which step checkbox
+    // Step-to-options mapping: which sub-option div belongs to which step toggle
     var docStepOptionMap = [
-        { step: 'doc-step-publish',      options: 'doc-step-publish-options' },
-        { step: 'doc-step-consolidate',   options: 'doc-step-consolidate-options' }
+        { step: 'doc-step-publish',      card: 'doc-card-publish',      options: 'doc-step-publish-options' },
+        { step: 'doc-step-consolidate',  card: 'doc-card-consolidate',  options: 'doc-step-consolidate-options' }
+    ];
+
+    // All step toggles (for card dimming)
+    var docAllSteps = [
+        { step: 'doc-step-ddl',          card: 'doc-card-ddl' },
+        { step: 'doc-step-publish',      card: 'doc-card-publish' },
+        { step: 'doc-step-github',       card: 'doc-card-github' },
+        { step: 'doc-step-consolidate',  card: 'doc-card-consolidate' }
     ];
 
     function initDocStepToggles() {
-        docStepOptionMap.forEach(function(pair) {
-            var cb = document.getElementById(pair.step);
+        docAllSteps.forEach(function(s) {
+            var cb = document.getElementById(s.step);
             if (cb) {
-                cb.addEventListener('change', docUpdateStepOptions);
+                cb.addEventListener('change', docUpdateCards);
             }
         });
-        // Set initial visibility
-        docUpdateStepOptions();
+        docUpdateCards();
     }
 
-    function docUpdateStepOptions() {
+    function docUpdateCards() {
+        // Update card dim state
+        docAllSteps.forEach(function(s) {
+            var cb = document.getElementById(s.step);
+            var card = document.getElementById(s.card);
+            if (cb && card) {
+                if (cb.checked) { card.classList.remove('off'); }
+                else { card.classList.add('off'); }
+            }
+        });
+        // Update sub-option visibility
         docStepOptionMap.forEach(function(pair) {
             var cb = document.getElementById(pair.step);
             var opts = document.getElementById(pair.options);
@@ -977,14 +994,14 @@ const Admin = (function () {
         });
     }
 
+    function docTogglePill(el) {
+        el.classList.toggle('active');
+    }
+
     function openDocPipeline() {
-        // Reset status indicators for all 4 steps
-        ['generate_ddl', 'publish_confluence', 'publish_github', 'consolidate_upload'].forEach(function(k) {
-            var el = document.getElementById('doc-status-' + k);
-            if (el) { el.textContent = ''; el.className = 'doc-step-status'; }
-        });
-        var out = document.getElementById('doc-output');
-        if (out) out.innerHTML = '';
+        // Clear any previous results
+        var res = document.getElementById('doc-results');
+        if (res) res.innerHTML = '';
         var st = document.getElementById('doc-run-status');
         if (st) { st.textContent = ''; st.className = 'doc-run-status'; }
         var btn = document.getElementById('doc-run-btn');
@@ -993,12 +1010,11 @@ const Admin = (function () {
         document.getElementById('doc-backdrop').classList.add('visible');
         document.getElementById('doc-panel').classList.add('visible');
 
-        // Refresh sub-option visibility based on current checkbox state
-        docUpdateStepOptions();
+        docUpdateCards();
     }
 
     function closeDocPipeline() {
-        if (docRunning) return; // don't close while running
+        if (docRunning) return;
         if (docPollTimer) { clearInterval(docPollTimer); docPollTimer = null; }
         document.getElementById('doc-backdrop').classList.remove('visible');
         document.getElementById('doc-panel').classList.remove('visible');
@@ -1021,16 +1037,15 @@ const Admin = (function () {
             return;
         }
 
-        // Collect options
+        // Collect pill options
         var payload = {
             steps: steps,
-            publish_to_confluence: document.getElementById('doc-opt-confluence').checked,
-            export_markdown: document.getElementById('doc-opt-markdown').checked,
-            include_sql_objects: document.getElementById('doc-opt-sql').checked,
-            include_json: document.getElementById('doc-opt-json').checked
+            publish_to_confluence: document.getElementById('doc-opt-confluence').classList.contains('active'),
+            export_markdown: document.getElementById('doc-opt-markdown').classList.contains('active'),
+            include_sql_objects: document.getElementById('doc-opt-sql').classList.contains('active'),
+            include_json: document.getElementById('doc-opt-json').classList.contains('active')
         };
 
-        // Show running state
         docRunning = true;
         docSelectedSteps = steps.slice();
         var btn = document.getElementById('doc-run-btn');
@@ -1041,16 +1056,9 @@ const Admin = (function () {
         st.textContent = 'Launching pipeline...';
         st.className = 'doc-run-status running';
 
-        // Mark selected steps as pending
-        steps.forEach(function(k) {
-            var el = document.getElementById('doc-status-' + k);
-            if (el) { el.textContent = '\u23F3'; el.className = 'doc-step-status pending'; }
-        });
+        var res = document.getElementById('doc-results');
+        res.innerHTML = '';
 
-        var out = document.getElementById('doc-output');
-        out.innerHTML = '';
-
-        // Fire-and-forget launch
         engineFetch('/api/admin/doc-pipeline', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1070,9 +1078,7 @@ const Admin = (function () {
             st.textContent = 'Pipeline running...';
             st.className = 'doc-run-status running';
 
-            // Start polling for status
             docPollTimer = setInterval(pollDocStatus, 2000);
-            // Also do an immediate first poll after a short delay
             setTimeout(pollDocStatus, 500);
         })
         .catch(function(err) {
@@ -1088,36 +1094,18 @@ const Admin = (function () {
         engineFetch('/api/admin/doc-pipeline/status')
         .then(function(data) {
             if (!data) return;
-            if (data.pending) return; // status file not written yet
+            if (data.pending) return;
 
             var results = data.results || [];
-            var out = document.getElementById('doc-output');
             var st = document.getElementById('doc-run-status');
 
-            // Update per-step status indicators
-            results.forEach(function(r) {
-                var el = document.getElementById('doc-status-' + r.step);
-                if (!el) return;
-                if (r.status === 'running') {
-                    el.textContent = '\u23F3';
-                    el.className = 'doc-step-status pending';
-                } else if (r.status === 'success') {
-                    el.textContent = '\u2713';
-                    el.className = 'doc-step-status success';
-                } else if (r.status === 'failed') {
-                    el.textContent = '\u2717';
-                    el.className = 'doc-step-status failed';
-                }
-            });
-
-            // Update running count in status bar
+            // Update running count
             var doneCount = 0;
             results.forEach(function(r) { if (r.status !== 'running') doneCount++; });
             if (!data.complete) {
                 st.textContent = 'Running... (' + doneCount + '/' + docSelectedSteps.length + ' complete)';
             }
 
-            // If complete, stop polling and render final results
             if (data.complete) {
                 clearInterval(docPollTimer);
                 docPollTimer = null;
@@ -1128,49 +1116,44 @@ const Admin = (function () {
                 btn.textContent = 'OK';
                 btn.onclick = function() { closeDocPipeline(); };
 
-                // Mark any steps still pending as skipped
-                docSelectedSteps.forEach(function(k) {
-                    var el = document.getElementById('doc-status-' + k);
-                    if (el && el.classList.contains('pending')) {
-                        el.textContent = '\u2014';
-                        el.className = 'doc-step-status skipped';
-                    }
-                });
-
                 if (data.success) {
                     st.textContent = 'All steps completed successfully';
                     st.className = 'doc-run-status success';
                 } else {
-                    st.textContent = 'Pipeline stopped \u2014 see details below';
+                    st.textContent = 'Pipeline completed with errors';
                     st.className = 'doc-run-status error';
                 }
 
-                // Build output display
-                var html = '';
+                // Build collapsible results
+                var res = document.getElementById('doc-results');
+                var html = '<div class="doc-results-divider">Results</div>';
                 results.forEach(function(r) {
-                    var cls = r.status === 'success' ? 'doc-result-ok' : 'doc-result-fail';
-                    var icon = r.status === 'success' ? '\u2713' : '\u2717';
-                    html += '<div class="doc-result ' + cls + '">';
-                    html += '<div class="doc-result-header">';
-                    html += '<span class="doc-result-icon">' + icon + '</span>';
-                    html += '<span class="doc-result-label">' + esc(r.label) + '</span>';
+                    var ok = r.status === 'success';
+                    var cls = ok ? 'ok' : 'fail';
+                    var icon = ok ? '\u2713' : '\u2717';
+                    var openAttr = ok ? '' : ' open';
+                    html += '<details class="doc-detail ' + cls + '"' + openAttr + '>';
+                    html += '<summary>';
+                    html += '<span class="doc-detail-arrow">\u25B6</span>';
+                    html += '<span class="doc-detail-icon">' + icon + '</span>';
+                    html += '<span class="doc-detail-label">' + esc(r.label) + '</span>';
                     if (r.exit_code !== null && r.exit_code !== undefined) {
-                        html += '<span class="doc-result-exit">exit ' + r.exit_code + '</span>';
+                        html += '<span class="doc-detail-exit">exit ' + r.exit_code + '</span>';
                     }
-                    html += '</div>';
+                    html += '</summary>';
                     if (r.output && r.output.trim()) {
-                        html += '<pre class="doc-result-output">' + esc(r.output.trim()) + '</pre>';
+                        html += '<pre class="doc-detail-output">' + esc(r.output.trim()) + '</pre>';
                     }
                     if (r.error && r.error.trim()) {
-                        html += '<pre class="doc-result-error">' + esc(r.error.trim()) + '</pre>';
+                        html += '<pre class="doc-detail-error">' + esc(r.error.trim()) + '</pre>';
                     }
-                    html += '</div>';
+                    html += '</details>';
                 });
-                out.innerHTML = html;
+                res.innerHTML = html;
             }
         })
         .catch(function() {
-            // Polling failure is not fatal — will retry on next interval
+            // Polling failure is not fatal
         });
     }
 
@@ -1302,5 +1285,5 @@ const Admin = (function () {
         );
     }
 
-    return{handleEngineEvent:handleEngineEvent,pageRefresh:pageRefresh,setFilter:setFilter,setWindow:setWindow,toggleProcess:toggleProcess,toggleDrain:toggleDrain,closeLog:closeLog,switchLogTab:switchLogTab,serviceControl:serviceControl,openEngineControls:openEngineControls,closeEngineControls:closeEngineControls,cancelConfirm:cancelConfirm,executeConfirm:executeConfirm,openMetadata:openMetadata,closeMetadata:closeMetadata,metaToggleRoot:metaToggleRoot,metaToggleMod:metaToggleMod,metaToggleComp:metaToggleComp,metaDescInput:metaDescInput,metaInsert:metaInsert,metaLoadHistory:metaLoadHistory,metaLoadObjects:metaLoadObjects,closeDetail:closeDetail,cancelInput:cancelInput,confirmInput:confirmInput,openGlobalConfig:openGlobalConfig,closeGlobalConfig:closeGlobalConfig,gcGo:gcGo,gcToggleMod:gcToggleMod,gcToggleRow:gcToggleRow,gcToggleBit:gcToggleBit,gcToggleAlertMode:gcToggleAlertMode,gcStartEdit:gcStartEdit,gcCancelEdit:gcCancelEdit,gcSaveEdit:gcSaveEdit,gcStartAdd:gcStartAdd,gcCancelAdd:gcCancelAdd,gcSubmitAdd:gcSubmitAdd,gcToggleActive:gcToggleActive,gcToggleInactive:gcToggleInactive,openSchedules:openSchedules,closeSchedules:closeSchedules,schedToggleMod:schedToggleMod,schedToggleRow:schedToggleRow,schedStartEdit:schedStartEdit,schedCancelEdit:schedCancelEdit,schedSaveField:schedSaveField,schedToggleMode:schedToggleMode,schedToggleConcurrent:schedToggleConcurrent,schedStartAdd:schedStartAdd,schedCancelAdd:schedCancelAdd,schedSubmitAdd:schedSubmitAdd,schedScriptSelected:schedScriptSelected,schedAddToggleMode:schedAddToggleMode,openDocPipeline:openDocPipeline,closeDocPipeline:closeDocPipeline,runDocPipeline:runDocPipeline,openAlertFailures:openAlertFailures,closeAlertFailures:closeAlertFailures,resendAlert:resendAlert};
+    return{handleEngineEvent:handleEngineEvent,pageRefresh:pageRefresh,setFilter:setFilter,setWindow:setWindow,toggleProcess:toggleProcess,toggleDrain:toggleDrain,closeLog:closeLog,switchLogTab:switchLogTab,serviceControl:serviceControl,openEngineControls:openEngineControls,closeEngineControls:closeEngineControls,cancelConfirm:cancelConfirm,executeConfirm:executeConfirm,openMetadata:openMetadata,closeMetadata:closeMetadata,metaToggleRoot:metaToggleRoot,metaToggleMod:metaToggleMod,metaToggleComp:metaToggleComp,metaDescInput:metaDescInput,metaInsert:metaInsert,metaLoadHistory:metaLoadHistory,metaLoadObjects:metaLoadObjects,closeDetail:closeDetail,cancelInput:cancelInput,confirmInput:confirmInput,openGlobalConfig:openGlobalConfig,closeGlobalConfig:closeGlobalConfig,gcGo:gcGo,gcToggleMod:gcToggleMod,gcToggleRow:gcToggleRow,gcToggleBit:gcToggleBit,gcToggleAlertMode:gcToggleAlertMode,gcStartEdit:gcStartEdit,gcCancelEdit:gcCancelEdit,gcSaveEdit:gcSaveEdit,gcStartAdd:gcStartAdd,gcCancelAdd:gcCancelAdd,gcSubmitAdd:gcSubmitAdd,gcToggleActive:gcToggleActive,gcToggleInactive:gcToggleInactive,openSchedules:openSchedules,closeSchedules:closeSchedules,schedToggleMod:schedToggleMod,schedToggleRow:schedToggleRow,schedStartEdit:schedStartEdit,schedCancelEdit:schedCancelEdit,schedSaveField:schedSaveField,schedToggleMode:schedToggleMode,schedToggleConcurrent:schedToggleConcurrent,schedStartAdd:schedStartAdd,schedCancelAdd:schedCancelAdd,schedSubmitAdd:schedSubmitAdd,schedScriptSelected:schedScriptSelected,schedAddToggleMode:schedAddToggleMode,openDocPipeline:openDocPipeline,closeDocPipeline:closeDocPipeline,runDocPipeline:runDocPipeline,docTogglePill:docTogglePill,openAlertFailures:openAlertFailures,closeAlertFailures:closeAlertFailures,resendAlert:resendAlert};
 })();
