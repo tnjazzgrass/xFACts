@@ -1119,6 +1119,9 @@ const Admin = (function () {
                 } else if (r.status === 'success') {
                     el.textContent = '\u2713';
                     el.className = 'doc-card-status success';
+                } else if (r.status === 'warning') {
+                    el.textContent = '\u26A0';
+                    el.className = 'doc-card-status warning';
                 } else if (r.status === 'failed') {
                     el.textContent = '\u2717';
                     el.className = 'doc-card-status failed';
@@ -1142,9 +1145,15 @@ const Admin = (function () {
                 btn.textContent = 'OK';
                 btn.onclick = function() { closeDocPipeline(); };
 
-                if (data.success) {
+                // Check for any warnings in results
+                var hasWarnings = results.some(function(r) { return r.status === 'warning'; });
+
+                if (data.success && !hasWarnings) {
                     st.textContent = 'All steps completed successfully';
                     st.className = 'doc-run-status success';
+                } else if (data.success && hasWarnings) {
+                    st.textContent = 'Completed with warnings';
+                    st.className = 'doc-run-status warning';
                 } else {
                     st.textContent = 'Pipeline completed with errors';
                     st.className = 'doc-run-status error';
@@ -1154,10 +1163,10 @@ const Admin = (function () {
                 var res = document.getElementById('doc-results');
                 var html = '<div class="doc-results-divider">Results</div>';
                 results.forEach(function(r) {
-                    var ok = r.status === 'success';
-                    var cls = ok ? 'ok' : 'fail';
-                    var icon = ok ? '\u2713' : '\u2717';
-                    var openAttr = ok ? '' : ' open';
+                    var ok = (r.status === 'success' || r.status === 'warning');
+                    var cls = r.status === 'warning' ? 'warn' : (ok ? 'ok' : 'fail');
+                    var icon = r.status === 'warning' ? '\u26A0' : (ok ? '\u2713' : '\u2717');
+                    var openAttr = ok && r.status !== 'warning' ? '' : ' open';
 
                     // Extract output text — handle object with .value (PowerShell serialization artifact)
                     var outputText = '';
