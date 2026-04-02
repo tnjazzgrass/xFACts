@@ -858,6 +858,12 @@ a { color: #9cdcfe; }
 .doc-card-title { font-size: 13px; font-weight: 500; color: #d4d4d4; }
 .doc-card-desc { font-size: 11px; color: #888; margin-top: 2px; }
 
+/* Card status indicator */
+.doc-card-status { font-size: 16px; min-width: 20px; text-align: center; flex-shrink: 0; }
+.doc-card-status.pending { color: #dcdcaa; }
+.doc-card-status.success { color: #4ade80; }
+.doc-card-status.failed { color: #ef4444; }
+
 /* Toggle switch */
 .doc-toggle { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
 .doc-toggle input { display: none; }
