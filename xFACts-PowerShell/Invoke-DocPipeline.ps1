@@ -13,15 +13,19 @@
 .NOTES
     File Name  : Invoke-DocPipeline.ps1
     Location   : E:\xFACts-PowerShell
-    Version    : 1.0.0
+    Version    : Tracked in dbo.System_Metadata (component: Documentation.Pipeline)
 
 ================================================================================
 CHANGELOG
 ================================================================================
-1.0.0  Initial implementation
-       Sequential step execution with per-step status JSON updates
-       Stdout/stderr capture with truncation for API response size
-       Pipeline halts on first failure
+2026-04-02  Bumped output truncation from 2000 to 8000 chars.
+            Added 'warning' status for exit code 2 (success with warnings).
+            Pipeline continues on warning — only halts on failure (non-zero,
+            non-2 exit codes).
+1.0.0      Initial implementation
+           Sequential step execution with per-step status JSON updates
+           Stdout/stderr capture with truncation for API response size
+           Pipeline halts on first failure
 ================================================================================
 #>
 
@@ -92,6 +96,9 @@ function Write-Status {
 # Write initial status
 Write-Status
 
+# Track whether any step completed with warnings
+$pipelineHasWarnings = $false
+
 foreach ($step in $pipeline) {
     if ($step.Key -notin $steps) { continue }
 
@@ -150,18 +157,26 @@ foreach ($step in $pipeline) {
         Remove-Item $outFile -Force -ErrorAction SilentlyContinue
         Remove-Item $errFile -Force -ErrorAction SilentlyContinue
 
-        # Truncate output (keep last 2000 chars)
-        $outputSummary = if ($stdout -and $stdout.Length -gt 2000) {
-            "...`n" + $stdout.Substring($stdout.Length - 2000)
+        # Truncate output (keep last 8000 chars)
+        $outputSummary = if ($stdout -and $stdout.Length -gt 8000) {
+            "...`n" + $stdout.Substring($stdout.Length - 8000)
         } else { $stdout }
 
         $errorSummary = if ($stderr -and $stderr.Trim()) { $stderr.Trim() } else { '' }
 
-        $stepSuccess = ($exitCode -eq 0)
+        # Exit code convention: 0 = success, 2 = success with warnings, other = failure
+        $stepSuccess = ($exitCode -eq 0 -or $exitCode -eq 2)
+        $stepWarning = ($exitCode -eq 2)
 
-        $status.results[$stepIndex].status    = if ($stepSuccess) { 'success' } else { 'failed' }
+        if ($stepWarning) { $pipelineHasWarnings = $true }
+
+        $status.results[$stepIndex].status = if ($stepWarning) { 'warning' }
+                                             elseif ($stepSuccess) { 'success' }
+                                             else { 'failed' }
         $status.results[$stepIndex].exit_code = $exitCode
-        $status.results[$stepIndex].message   = if ($stepSuccess) {
+        $status.results[$stepIndex].message = if ($stepWarning) {
+            "$($step.Label) completed with warnings"
+        } elseif ($stepSuccess) {
             "$($step.Label) completed successfully"
         } else {
             "$($step.Label) failed (exit code $exitCode)"
@@ -171,7 +186,7 @@ foreach ($step in $pipeline) {
 
         Write-Status
 
-        # Stop pipeline on failure
+        # Stop pipeline on failure (warnings continue)
         if (-not $stepSuccess) {
             $status.complete = $true
             $status.success  = $false
@@ -191,7 +206,7 @@ foreach ($step in $pipeline) {
     }
 }
 
-# All selected steps completed successfully
+# All selected steps completed
 $status.complete    = $true
 $status.success     = $true
 $status.finished_at = (Get-Date).ToString('o')
