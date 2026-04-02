@@ -862,6 +862,7 @@ a { color: #9cdcfe; }
 .doc-card-status { font-size: 16px; min-width: 20px; text-align: center; flex-shrink: 0; }
 .doc-card-status.pending { color: #dcdcaa; }
 .doc-card-status.success { color: #4ade80; }
+.doc-card-status.warning { color: #dcdcaa; }
 .doc-card-status.failed { color: #ef4444; }
 
 /* Toggle switch */
@@ -904,6 +905,7 @@ a { color: #9cdcfe; }
 .doc-run-status { font-size: 12px; color: #888; }
 .doc-run-status.running { color: #dcdcaa; }
 .doc-run-status.success { color: #4ade80; }
+.doc-run-status.warning { color: #dcdcaa; }
 .doc-run-status.error { color: #ef4444; }
 
 /* Collapsible results area */
@@ -914,6 +916,7 @@ a { color: #9cdcfe; }
 }
 .doc-detail { border: 1px solid #333; border-radius: 6px; overflow: hidden; }
 .doc-detail.ok { border-color: rgba(74,222,128,0.2); }
+.doc-detail.warn { border-color: rgba(220,220,170,0.2); }
 .doc-detail.fail { border-color: rgba(239,68,68,0.2); }
 .doc-detail summary {
     display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -924,6 +927,7 @@ a { color: #9cdcfe; }
 .doc-detail[open] .doc-detail-arrow { transform: rotate(90deg); }
 .doc-detail-icon { font-size: 14px; }
 .doc-detail.ok .doc-detail-icon { color: #4ade80; }
+.doc-detail.warn .doc-detail-icon { color: #dcdcaa; }
 .doc-detail.fail .doc-detail-icon { color: #ef4444; }
 .doc-detail-label { font-size: 12px; font-weight: 500; color: #d4d4d4; flex: 1; }
 .doc-detail-exit { font-size: 10px; color: #666; font-family: 'Cascadia Code', 'Consolas', monospace; }
