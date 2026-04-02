@@ -58,18 +58,18 @@ $pipeline = @(
                  else { '-ExportOnly' }
     },
     @{
+        Key    = 'publish_github'
+        Label  = 'Publish to GitHub'
+        Script = 'Publish-GitHubRepository.ps1'
+        Args   = '-Execute'
+    },
+    @{
         Key    = 'consolidate_upload'
         Label  = 'Consolidate Upload Files'
         Script = 'Consolidate-UploadFiles.ps1'
         Args   = @('-Execute') +
                  $(if ($IncludeSQLObjects) { '-IncludeSQLObjects' } else { @() }) +
                  $(if ($IncludeJSON) { '-IncludeJSON' } else { @() }) -join ' '
-    },
-    @{
-        Key    = 'publish_github'
-        Label  = 'Publish to GitHub'
-        Script = 'Publish-GitHubRepository.ps1'
-        Args   = '-Execute'
     }
 )
 
