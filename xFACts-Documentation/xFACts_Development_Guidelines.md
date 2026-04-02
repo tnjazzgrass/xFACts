@@ -30,6 +30,8 @@ The single source of truth for how xFACts platform components are built. Every n
 
 **Consolidate shared patterns.** When the same code block, CSS rule, or behavioral pattern appears in multiple files, it belongs in a shared resource. When building something new, check existing shared resources first — someone may have already solved that problem. When you find duplication that doesn't have a shared resource yet, create one and immediately add a backlog item to migrate existing instances. The platform grew organically without shared resource standards, so duplication exists across all layers (PowerShell, CSS, JS). The standard going forward is to consolidate, not copy. See Section 3.6 for PowerShell shared resources and Section 5.11 for Control Center shared CSS/JS.
 
+**GitHub is the file access layer.** All platform files are published to a GitHub repository (`tnjazzgrass/xFACts`) and accessed by Claude via the manifest at the start of each session. This replaces manual file uploads to Project Knowledge. The manifest must be fetched without truncation to enable access to all files — see Section 7.4 for the complete workflow, manifest structure, and known limitations. If GitHub access is unavailable or a specific file cannot be retrieved, the fallback is direct file upload to the chat.
+
 ---
 
 ## 2. Database Standards
@@ -1592,6 +1594,98 @@ See Section 2.6.2 for complete file header standards including changelog policie
 ### 7.3 Alert Deduplication
 
 > **STUB:** Dual-level deduplication (tracking table suppression + integration log lookback) exists across Teams and Jira modules but the precise patterns haven't been formally cataloged. Will be documented during the integration audit effort.
+
+### 7.4 GitHub Integration
+
+The xFACts platform publishes a complete snapshot of all platform files to a GitHub repository (`tnjazzgrass/xFACts`) via the GitHub Contents API. This serves as a versioned archive and as a mechanism for providing file content to Claude at the start of working sessions, eliminating the need to manually upload files.
+
+**Repository:** https://github.com/tnjazzgrass/xFACts
+
+**Four top-level folders:**
+
+| Folder | Content |
+|--------|---------|
+| `xFACts-PowerShell/` | Orchestrator scripts, collector scripts, shared functions |
+| `xFACts-ControlCenter/` | Route files, API files, CSS, JS, documentation site pages, DDL JSON |
+| `xFACts-Documentation/` | Working documents, planning documents, guidelines |
+| `xFACts-SQL/` | Stored procedure and trigger definitions |
+
+**Publishing:** `Publish-GitHubRepository.ps1` handles all publishing. It collects files from the server source directories, extracts SQL object definitions from the database, generates Platform Registry markdown, audits all files against Object_Registry, compares the local inventory against the current repo state, and pushes only changed files. A `manifest.json` is generated and pushed as the final step. The script runs standalone or as a step in the `Invoke-DocPipeline.ps1` pipeline (triggered from the Admin page Documentation modal).
+
+#### 7.4.1 Manifest Structure
+
+The manifest (`manifest.json` at repo root) is the entry point for Claude to access repository content. It contains a timestamp, file count, and a complete list of all files with their raw URLs and Object_Registry metadata:
+```json
+{
+    "generated": "2026-04-02T09:17:26Z",
+    "file_count": 236,
+    "files": [
+        {
+            "path": "xFACts-PowerShell/Execute-DmArchive.ps1",
+            "raw_url": "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DmArchive.ps1?v=20260402091726",
+            "category": "PowerShell",
+            "module": "DmOps",
+            "component": "DmOps.Archive"
+        }
+    ]
+}
+```
+
+Each file URL includes a cache-buster query parameter (`?v=YYYYMMDDHHMMSS`) derived from the publish timestamp. This ensures CDN-fresh content on every fetch. Files with Object_Registry entries include `module` and `component` fields; unregistered files (excluded from audit by convention) omit these fields.
+
+#### 7.4.2 Claude Session Workflow
+
+To provide Claude with access to repository files at the start of a session:
+
+1. **Provide the manifest URL** with a unique cache-buster value. Any value works as long as it has not been used recently in the same session. A date-based value (e.g., `?v=20260402`) or simple incrementing number (e.g., `?v=1`) is sufficient. The cache-buster on the manifest URL is a safety measure against GitHub CDN caching — in practice, any unused value will return the current file.
+```
+    https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=20260402
+```
+
+2. **Claude fetches the full manifest without a token limit.** This is critical. The `web_fetch` tool only recognizes URLs as fetchable if they appeared in the returned text of a previous fetch. If the manifest is truncated (e.g., by setting a `text_content_token_limit`), only the URLs visible in the truncated response will be accessible — all other file URLs will return permission errors. The manifest must be fetched in its entirety for all file URLs to be recognized.
+
+3. **Claude can then fetch any individual file** using its `raw_url` from the manifest. The per-file cache-buster timestamps ensure CDN-fresh content. Files are fetched on demand — Claude does not need to download the entire repository, only the specific files relevant to the current task.
+
+#### 7.4.3 Known Limitations and Workarounds
+
+**Manifest must not be truncated.** If Claude sets a token limit on the manifest fetch, only the first handful of file URLs (those visible before truncation) will be fetchable. All others will fail with permission errors. The fix is to re-fetch the manifest without a token limit. This is the single most common cause of file access failures.
+
+**GitHub CDN caching.** `raw.githubusercontent.com` caches responses via Fastly CDN with a TTL of approximately 5 minutes. The per-file cache-buster query parameters (`?v=YYYYMMDDHHMMSS`) bypass this by making each publish cycle's URLs unique. However, if Claude falls back to a bare URL without a query string (e.g., due to permission issues), it may receive stale cached content. Always use the manifest URLs with their cache-busters, not bare URLs.
+
+**CDN MIME type caching.** If a file is pushed to GitHub with invalid encoding (e.g., Windows-1252 characters in a nominally UTF-8 file), GitHub's CDN may classify it as `application/octet-stream` (binary) and the `web_fetch` tool will return `[binary data]` instead of text. Fixing the file encoding and re-pushing does not always clear this classification immediately — the CDN may cache the binary MIME type for the bare URL even after the fix. The cache-buster query parameters bypass this: using the manifest URL with its timestamp will return the corrected file with `text/plain; charset=utf-8`. If a specific file persistently returns as binary on the bare URL, making any edit to the file and committing forces a new blob hash that triggers re-evaluation.
+
+**File encoding requirements.** All files in the repository must be valid UTF-8 (or pure ASCII). Files containing Windows-1252 characters (e.g., byte `0x97` for em dash instead of the proper UTF-8 sequence `0xE2 0x80 0x94`) will be classified as binary by GitHub's content detection and will not be fetchable as text. VS Code may display such files as "UTF-8" because it does best-effort rendering, but the actual bytes are invalid. To verify: check the file with `[System.IO.File]::ReadAllBytes()` in PowerShell and look for any byte values above `0x7F` that are not part of valid multi-byte UTF-8 sequences.
+
+**URL formatting in Claude chat.** The `web_fetch` tool requires URLs to be provided cleanly in the chat message. URLs wrapped in markdown formatting (surrounding underscores, bold markers, etc.) may not be recognized as user-provided URLs, causing permission errors. Paste URLs on their own line without any surrounding formatting characters.
+
+#### 7.4.4 Object_Registry Audit
+
+The publish script audits every file being pushed against `dbo.Object_Registry` during Phase 5. Files with registry entries get `module` and `component` fields in the manifest. Files without entries are logged as warnings.
+
+**Audit exclusions (by convention, not registered):**
+
+| Exclusion | Reason |
+|-----------|--------|
+| `xFACts-Documentation/Planning/*` | Transient session documents, not platform objects |
+| `xFACts-Documentation/*.md` | Standalone reference documents (Guidelines, Backlog, working docs) |
+| `xFACts-ControlCenter/public/docs/data/ddl/*.json` | Generated output of Generate-DDLReference.ps1 |
+| `Legacy` schema SQL objects | Deprecated, not tracked |
+| Generated files (Platform Registry, manifest) | Runtime-generated, not authored objects |
+
+**Path validation:** The audit also compares Object_Registry `object_path` against the actual source path for each matched file. Mismatches are logged as warnings. This catches registry paths that have drifted from the actual file system.
+
+**Exit code convention:** Exit 0 = clean success (all green). Exit 2 = success with warnings (yellow warning indicator in the Admin modal, results auto-expand). Non-zero/non-2 = failure (red, pipeline halts).
+
+#### 7.4.5 File Categories
+
+The manifest assigns each file a category used for organization:
+
+| Category | Source Directory | Content |
+|----------|-----------------|---------|
+| PowerShell | `E:\xFACts-PowerShell\` | All `.ps1` files (flat directory) |
+| ControlCenter | `E:\xFACts-ControlCenter\` | Routes, APIs, modules, CSS, JS, documentation site |
+| Documentation | `E:\xFACts-Documentation\` | Working docs, planning docs, guidelines |
+| SQL | Extracted from database | Stored procedures, triggers (via `sys.sql_modules`) |
 
 ---
 
