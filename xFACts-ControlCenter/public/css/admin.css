@@ -841,34 +841,50 @@ a { color: #9cdcfe; }
 /* ============================================================
    DOCUMENTATION PIPELINE SLIDEOUT
    ============================================================ */
-.doc-panel { z-index: 1501; width: 560px; max-height: 85vh; }
+.doc-panel { z-index: 1501; width: 560px; max-height: 90vh; }
 .doc-pipeline-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
 
-/* Step checkboxes */
-.doc-step-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-.doc-step-item {
-    display: grid; grid-template-columns: 20px 1fr auto; grid-template-rows: auto auto;
-    gap: 0 10px; align-items: center; cursor: pointer;
-    padding: 10px 12px; background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 6px; transition: border-color 0.15s;
+/* Step cards */
+.doc-step-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.doc-card {
+    background: #2d2d2d; border: 1px solid #404040;
+    border-radius: 6px; padding: 10px 12px; transition: all 0.15s;
 }
-.doc-step-item:hover { border-color: #569cd6; }
-.doc-step-item input[type="checkbox"] { grid-row: 1 / 3; width: 15px; height: 15px; accent-color: #569cd6; cursor: pointer; }
-.doc-step-label { font-size: 13px; font-weight: 500; color: #d4d4d4; }
-.doc-step-desc { grid-column: 2; font-size: 11px; color: #888; margin-top: 2px; }
-.doc-step-status { grid-row: 1 / 3; font-size: 16px; min-width: 20px; text-align: center; }
-.doc-step-status.pending { color: #dcdcaa; }
-.doc-step-status.success { color: #4ade80; }
-.doc-step-status.failed { color: #ef4444; }
-.doc-step-status.skipped { color: #666; }
+.doc-card:hover { border-color: #569cd6; }
+.doc-card.off { opacity: 0.5; }
+.doc-card.off:hover { opacity: 0.7; }
+.doc-card-row { display: flex; align-items: center; gap: 10px; }
+.doc-card-body { flex: 1; }
+.doc-card-title { font-size: 13px; font-weight: 500; color: #d4d4d4; }
+.doc-card-desc { font-size: 11px; color: #888; margin-top: 2px; }
 
-/* Options toggles */
-.doc-options { margin-bottom: 16px; padding: 10px 12px; background: #252526; border: 1px solid #333; border-radius: 6px; }
-.doc-options-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #888; margin-bottom: 8px; }
-.doc-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; }
-.doc-option { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #aaa; cursor: pointer; }
-.doc-option input[type="checkbox"] { width: 14px; height: 14px; accent-color: #569cd6; cursor: pointer; }
-.doc-option:hover span { color: #d4d4d4; }
+/* Toggle switch */
+.doc-toggle { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
+.doc-toggle input { display: none; }
+.doc-toggle-track {
+    position: absolute; inset: 0; background: #404040;
+    border-radius: 10px; transition: background 0.2s;
+}
+.doc-toggle input:checked + .doc-toggle-track { background: #569cd6; }
+.doc-toggle-knob {
+    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    background: #ccc; border-radius: 50%; transition: transform 0.2s, background 0.2s;
+}
+.doc-toggle input:checked ~ .doc-toggle-knob { transform: translateX(16px); background: #fff; }
+
+/* Sub-option pills (inline in card) */
+.doc-card-options {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid #383838;
+}
+.doc-pill {
+    display: inline-flex; align-items: center; padding: 4px 12px;
+    border-radius: 12px; font-size: 11px; cursor: pointer;
+    transition: all 0.15s; border: 1px solid transparent; user-select: none;
+}
+.doc-pill.active { background: rgba(86,156,214,0.15); border-color: rgba(86,156,214,0.35); color: #569cd6; }
+.doc-pill:not(.active) { background: #252526; border-color: #404040; color: #666; }
+.doc-pill:hover { border-color: #569cd6; }
 
 /* Run button + status */
 .doc-run-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
@@ -884,24 +900,34 @@ a { color: #9cdcfe; }
 .doc-run-status.success { color: #4ade80; }
 .doc-run-status.error { color: #ef4444; }
 
-/* Output area */
-.doc-output { display: flex; flex-direction: column; gap: 8px; }
-.doc-result { border: 1px solid #333; border-radius: 6px; overflow: hidden; }
-.doc-result-ok { border-color: rgba(74,222,128,0.2); }
-.doc-result-fail { border-color: rgba(239,68,68,0.2); }
-.doc-result-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #252526; }
-.doc-result-icon { font-size: 14px; }
-.doc-result-ok .doc-result-icon { color: #4ade80; }
-.doc-result-fail .doc-result-icon { color: #ef4444; }
-.doc-result-label { font-size: 12px; font-weight: 500; color: #d4d4d4; flex: 1; }
-.doc-result-exit { font-size: 10px; color: #666; font-family: 'Cascadia Code', 'Consolas', monospace; }
-.doc-result-output, .doc-result-error {
+/* Collapsible results area */
+.doc-results { display: flex; flex-direction: column; gap: 4px; }
+.doc-results-divider {
+    border-top: 1px solid #333; padding-top: 12px; margin-top: 4px; margin-bottom: 8px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #666;
+}
+.doc-detail { border: 1px solid #333; border-radius: 6px; overflow: hidden; }
+.doc-detail.ok { border-color: rgba(74,222,128,0.2); }
+.doc-detail.fail { border-color: rgba(239,68,68,0.2); }
+.doc-detail summary {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: #252526; cursor: pointer; font-size: 12px; color: #d4d4d4; list-style: none;
+}
+.doc-detail summary::-webkit-details-marker { display: none; }
+.doc-detail-arrow { font-size: 9px; color: #666; transition: transform 0.15s; display: inline-block; }
+.doc-detail[open] .doc-detail-arrow { transform: rotate(90deg); }
+.doc-detail-icon { font-size: 14px; }
+.doc-detail.ok .doc-detail-icon { color: #4ade80; }
+.doc-detail.fail .doc-detail-icon { color: #ef4444; }
+.doc-detail-label { font-size: 12px; font-weight: 500; color: #d4d4d4; flex: 1; }
+.doc-detail-exit { font-size: 10px; color: #666; font-family: 'Cascadia Code', 'Consolas', monospace; }
+.doc-detail-output, .doc-detail-error {
     margin: 0; padding: 8px 12px; font-size: 11px; line-height: 1.5;
     font-family: 'Cascadia Code', 'Consolas', monospace;
-    max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+    max-height: 150px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
 }
-.doc-result-output { background: #1e1e1e; color: #aaa; }
-.doc-result-error { background: rgba(239,68,68,0.05); color: #f48771; }
+.doc-detail-output { background: #1e1e1e; color: #aaa; }
+.doc-detail-error { background: rgba(239,68,68,0.05); color: #f48771; }
 
 /* MISC */
 .loading{color:#888;font-size:13px;padding:20px}
@@ -1208,23 +1234,3 @@ a { color: #9cdcfe; }
     border-top: 1px solid #333;
 }
 
-/* ============================================================
-   DOC PIPELINE — Inline Sub-Options (added with GitHub integration)
-   Sub-options nested under their parent step checkbox.
-   Visibility toggled by JS based on parent checkbox state.
-   ============================================================ */
-.doc-step-options {
-    display: flex;
-    gap: 12px 24px;
-    flex-wrap: wrap;
-    padding: 6px 12px 10px 46px;
-    margin-top: -4px;
-    margin-bottom: 4px;
-    background: rgba(86,156,214,0.03);
-    border: 1px solid #333;
-    border-top: none;
-    border-radius: 0 0 6px 6px;
-}
-.doc-step-options .doc-option {
-    font-size: 11px;
-}
