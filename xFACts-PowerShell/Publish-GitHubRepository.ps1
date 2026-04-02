@@ -31,6 +31,8 @@
     2026-04-02  Added Object_Registry audit phase with path validation.
                 Manifest entries now include module_name and component_name
                 from Object_Registry. Unregistered files logged as warnings.
+                Audit exclusions: Planning docs, standalone docs, generated
+                DDL JSON, Legacy schema SQL objects.
     2026-04-01  Initial implementation
 
 .PARAMETER Owner
@@ -639,13 +641,20 @@ foreach ($repoPath in $localFiles.Keys) {
     # Skip generated files (Platform Registry, manifest) - they aren't registered objects
     if ($sourcePath -like "Generated:*") { continue }
 
+    # Skip files excluded from registry audit by convention
+    # Planning/working docs: transient session documents, not platform objects
+    if ($repoPath -like "xFACts-Documentation/Planning/*") { continue }
+    # Standalone documentation files (Guidelines, Backlog, working docs): reference documents, not module objects
+    if ($repoPath -like "xFACts-Documentation/*.md") { continue }
+    # Generated DDL JSON data files: output of Generate-DDLReference.ps1, not authored objects
+    if ($repoPath -like "xFACts-ControlCenter/public/docs/data/ddl/*.json") { continue }
+
     # SQL objects: match by schema.objectname pattern
     if ($sourcePath -like "SQL:*") {
         $sqlIdentifier = $sourcePath.Substring(4)  # Remove "SQL:" prefix
-        $sqlFileName = "$sqlIdentifier.sql"
-        # SQL objects in registry use object_name without .sql extension
-        # and are identified by schema_name + object_name
         $parts = $sqlIdentifier.Split('.')
+        # Skip Legacy schema objects - deprecated, not tracked
+        if ($parts.Count -ge 1 -and $parts[0] -eq 'Legacy') { continue }
         if ($parts.Count -eq 2) {
             $schemaName = $parts[0]
             $objectName = $parts[1]
@@ -730,6 +739,9 @@ if ($auditPathMismatch -gt 0) {
         Write-Log "      Actual:   $($m.ActualPath)" "WARN"
     }
 }
+
+# Track whether audit found issues (used for exit code)
+$auditHasWarnings = ($auditUnregistered -gt 0 -or $auditPathMismatch -gt 0)
 
 # ============================================================================
 # PHASE 6: FETCH REMOTE STATE AND COMPUTE DIFF
@@ -1008,5 +1020,11 @@ if (-not $Execute) {
 }
 else {
     Write-Log ""
-    Write-Log "GitHub repository push complete" "SUCCESS"
+    if ($auditHasWarnings) {
+        Write-Log "GitHub repository push complete (with audit warnings)" "WARN"
+        exit 2
+    }
+    else {
+        Write-Log "GitHub repository push complete" "SUCCESS"
+    }
 }
