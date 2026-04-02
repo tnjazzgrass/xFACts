@@ -999,13 +999,17 @@ const Admin = (function () {
     }
 
     function openDocPipeline() {
-        // Clear any previous results
+        // Clear any previous results and status indicators
         var res = document.getElementById('doc-results');
         if (res) res.innerHTML = '';
         var st = document.getElementById('doc-run-status');
         if (st) { st.textContent = ''; st.className = 'doc-run-status'; }
         var btn = document.getElementById('doc-run-btn');
         if (btn) { btn.disabled = false; btn.textContent = 'Run Selected'; btn.onclick = function() { runDocPipeline(); }; }
+        ['generate_ddl', 'publish_confluence', 'publish_github', 'consolidate_upload'].forEach(function(k) {
+            var el = document.getElementById('doc-status-' + k);
+            if (el) { el.textContent = ''; el.className = 'doc-card-status'; }
+        });
 
         document.getElementById('doc-backdrop').classList.add('visible');
         document.getElementById('doc-panel').classList.add('visible');
@@ -1056,6 +1060,12 @@ const Admin = (function () {
         st.textContent = 'Launching pipeline...';
         st.className = 'doc-run-status running';
 
+        // Mark selected steps as pending
+        steps.forEach(function(k) {
+            var el = document.getElementById('doc-status-' + k);
+            if (el) { el.textContent = '\u23F3'; el.className = 'doc-card-status pending'; }
+        });
+
         var res = document.getElementById('doc-results');
         res.innerHTML = '';
 
@@ -1099,6 +1109,22 @@ const Admin = (function () {
             var results = data.results || [];
             var st = document.getElementById('doc-run-status');
 
+            // Update per-step card status indicators
+            results.forEach(function(r) {
+                var el = document.getElementById('doc-status-' + r.step);
+                if (!el) return;
+                if (r.status === 'running') {
+                    el.textContent = '\u23F3';
+                    el.className = 'doc-card-status pending';
+                } else if (r.status === 'success') {
+                    el.textContent = '\u2713';
+                    el.className = 'doc-card-status success';
+                } else if (r.status === 'failed') {
+                    el.textContent = '\u2717';
+                    el.className = 'doc-card-status failed';
+                }
+            });
+
             // Update running count
             var doneCount = 0;
             results.forEach(function(r) { if (r.status !== 'running') doneCount++; });
@@ -1132,6 +1158,19 @@ const Admin = (function () {
                     var cls = ok ? 'ok' : 'fail';
                     var icon = ok ? '\u2713' : '\u2717';
                     var openAttr = ok ? '' : ' open';
+
+                    // Extract output text — handle object with .value (PowerShell serialization artifact)
+                    var outputText = '';
+                    if (r.output) {
+                        if (typeof r.output === 'string') { outputText = r.output.trim(); }
+                        else if (r.output.value && typeof r.output.value === 'string') { outputText = r.output.value.trim(); }
+                    }
+                    var errorText = '';
+                    if (r.error) {
+                        if (typeof r.error === 'string') { errorText = r.error.trim(); }
+                        else if (r.error.value && typeof r.error.value === 'string') { errorText = r.error.value.trim(); }
+                    }
+
                     html += '<details class="doc-detail ' + cls + '"' + openAttr + '>';
                     html += '<summary>';
                     html += '<span class="doc-detail-arrow">\u25B6</span>';
@@ -1141,11 +1180,11 @@ const Admin = (function () {
                         html += '<span class="doc-detail-exit">exit ' + r.exit_code + '</span>';
                     }
                     html += '</summary>';
-                    if (r.output && r.output.trim()) {
-                        html += '<pre class="doc-detail-output">' + esc(r.output.trim()) + '</pre>';
+                    if (outputText) {
+                        html += '<pre class="doc-detail-output">' + esc(outputText) + '</pre>';
                     }
-                    if (r.error && r.error.trim()) {
-                        html += '<pre class="doc-detail-error">' + esc(r.error.trim()) + '</pre>';
+                    if (errorText) {
+                        html += '<pre class="doc-detail-error">' + esc(errorText) + '</pre>';
                     }
                     html += '</details>';
                 });
