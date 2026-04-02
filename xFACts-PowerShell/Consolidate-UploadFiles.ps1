@@ -67,6 +67,7 @@ param(
 
 $ScriptsRoot = "E:\xFACts-PowerShell"
 $CCRoot      = "E:\xFACts-ControlCenter"
+$DocsRoot    = "E:\xFACts-Documentation"
 
 # Source mappings: each entry defines what to collect
 $FileSources = @(
@@ -84,7 +85,7 @@ $FileSources = @(
     @{ Source = "$CCRoot\public\docs\css";               Filter = "*.css";  Description = "Documentation CSS" }
     @{ Source = "$CCRoot\public\docs\js";                Filter = "*.js";   Description = "Documentation JS" }
     @{ Source = "$CCRoot\public\docs\data\md\ref";    Filter = "*.md";   Description = "Module reference documentation (ref-only md exports)" }
-    @{ Source = "$ScriptsRoot\docs";                     Filter = "*.md";   Description = "Planning documents" }
+    @{ Source = "$DocsRoot\docs";                        Filter = "*.md";   Description = "Planning documents" }
 )
 
 if ($IncludeJSON) {
