@@ -202,6 +202,15 @@ Add-PodeRoute -Method Get -Path '/' -Authentication 'ADLogin' -ScriptBlock {
                 <p>Departmental Operations</p>
             </a>
         </div>
+
+        <div class="section-spacer"></div>
+        <div class="section-header">Tools</div>
+        <div class="nav-grid">
+            <a href="/client-portal" class="nav-card">
+                <h3>Client Portal</h3>
+                <p>Consumer and account lookup</p>
+            </a>
+        </div>
     </div>
     
     <div class="status-bar">
