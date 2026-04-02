@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-02 08:43:09
+Generated: 2026-04-02 16:48:28
 
 ## Module Registry
 
@@ -375,10 +375,14 @@ Generated: 2026-04-02 08:43:09
 | Tools.Operations | BDL_ImportLog | Database | Table | Tools | Audit trail for BDL import executions. One row per import capturing the full lifecycle from validation through DM submission. |
 | Tools.Operations | ServerConfig | Database | Table | Tools | Per-server configuration for Tools module operations. One row per tools-enabled target server with DM file paths and API connection details. |
 | Tools.Operations | BDLImport-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1 | BDL Import CC API endpoints |
+| Tools.Operations | ClientPortal-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ClientPortal-API.ps1 | Client Portal CC API endpoints — search, consumer/account detail, lookups |
 | Tools.Operations | bdl-import.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\bdl-import.css | BDL Import CC styles |
+| Tools.Operations | client-portal.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\client-portal.css | Client Portal CC styles — dark chrome with light-themed portal content area |
 | Tools.Operations | bdl-import.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\bdl-import.js | BDL Import CC client-side logic |
+| Tools.Operations | client-portal.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\client-portal.js | Client Portal CC client-side logic — navigation, rendering, lookup resolution |
 | Tools.Operations | xlsx.full.min.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\xlsx.full.min.js | SheetJS library for Excel file parsing (BDL Import) |
 | Tools.Operations | BDLImport.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1 | BDL Import CC page route |
+| Tools.Operations | ClientPortal.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\ClientPortal.ps1 | Client Portal CC page route — consumer and account lookup |
 | Tools.Utilities | sp_SyncColumnOrdinals | Database | Procedure | Tools | Aligns Object_Metadata column description sort_order values with actual sys.columns column_id ordinals for a specified table. Deactivates Object_Metadata rows for dropped columns. |
 
 ## Global Configuration
@@ -560,3 +564,4 @@ Generated: 2026-04-02 08:43:09
 | Shared | Monitoring | SourceReplica | SECONDARY | VARCHAR | Which AG replica to query for source data (PRIMARY or SECONDARY) |
 | Teams | AlertFailures | alert_failure_lookback_days | 3 | INT | Days to look back when showing failed alerts on Admin page |
 | Teams | Retry | teams_retry_max_attempts | 3 | INT | Max delivery retries before marking an alert as permanently failed |
+| Tools | Portal | crs5_portal_query_timeout_seconds | 60 | INT | Command timeout in seconds for Client Portal queries against crs5_oltp |
