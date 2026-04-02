@@ -261,6 +261,7 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
                             <div class="doc-card-title">Generate DDL Reference</div>
                             <div class="doc-card-desc">Regenerate JSON data files from Object_Metadata</div>
                         </div>
+                        <span class="doc-card-status" id="doc-status-generate_ddl"></span>
                         <label class="doc-toggle"><input type="checkbox" id="doc-step-ddl" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
                     </div>
                 </div>
@@ -270,6 +271,7 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
                             <div class="doc-card-title">Publish to Confluence</div>
                             <div class="doc-card-desc">Publish HTML pages to Confluence Server</div>
                         </div>
+                        <span class="doc-card-status" id="doc-status-publish_confluence"></span>
                         <label class="doc-toggle"><input type="checkbox" id="doc-step-publish" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
                     </div>
                     <div class="doc-card-options" id="doc-step-publish-options">
@@ -283,6 +285,7 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
                             <div class="doc-card-title">Publish to GitHub</div>
                             <div class="doc-card-desc">Push platform files and manifest to GitHub repository</div>
                         </div>
+                        <span class="doc-card-status" id="doc-status-publish_github"></span>
                         <label class="doc-toggle"><input type="checkbox" id="doc-step-github" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
                     </div>
                 </div>
@@ -292,6 +295,7 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
                             <div class="doc-card-title">Consolidate Upload Files</div>
                             <div class="doc-card-desc">Collect all platform files into upload folder</div>
                         </div>
+                        <span class="doc-card-status" id="doc-status-consolidate_upload"></span>
                         <label class="doc-toggle"><input type="checkbox" id="doc-step-consolidate" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
                     </div>
                     <div class="doc-card-options" id="doc-step-consolidate-options">
