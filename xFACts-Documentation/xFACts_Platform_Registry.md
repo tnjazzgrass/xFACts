@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-02 04:17:21
+Generated: 2026-04-02 06:34:47
 
 ## Module Registry
 
@@ -63,16 +63,16 @@ Generated: 2026-04-02 04:17:21
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
 | BatchOps | Status | Database | Table | BatchOps | Batch status code definitions |
-| BatchOps | Collect-NBBatchStatus.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-NBBatchStatus.ps1 | Collects NewBatch processing status |
-| BatchOps | Collect-PMTBatchStatus.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-PMTBatchStatus.ps1 | Collects PMT processing status |
-| BatchOps | Send-OpenBatchSummary.ps1 | PowerShell | Script | E:\xFACts\scripts\alerts\Send-OpenBatchSummary.ps1 | Evaluates open batches and queues summary alert |
+| BatchOps | Collect-NBBatchStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-NBBatchStatus.ps1 | Collects NewBatch processing status |
+| BatchOps | Collect-PMTBatchStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-PMTBatchStatus.ps1 | Collects PMT processing status |
+| BatchOps | Send-OpenBatchSummary.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Send-OpenBatchSummary.ps1 | Evaluates open batches and queues summary alert |
 | BatchOps | BatchMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring-API.ps1 | Batch Monitoring CC API endpoints |
 | BatchOps | batch-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\batch-monitoring.css | Batch Monitoring CC styles |
 | BatchOps | batch-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\batch-monitoring.js | Batch Monitoring CC client-side logic |
 | BatchOps | BatchMonitoring.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring.ps1 | Batch Monitoring CC page route |
 | BIDATA | BuildExecution | Database | Table | BIDATA | Nightly BIDATA build execution tracking |
 | BIDATA | StepExecution | Database | Table | BIDATA | Build step execution detail |
-| BIDATA | Monitor-BIDATABuild.ps1 | PowerShell | Script | E:\xFACts\scripts\monitors\Monitor-BIDATABuild.ps1 | Monitors BIDATA nightly build and queues alerts |
+| BIDATA | Monitor-BIDATABuild.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Monitor-BIDATABuild.ps1 | Monitors BIDATA nightly build and queues alerts |
 | BIDATA | BIDATAMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BIDATAMonitoring-API.ps1 | BIDATA Monitoring CC API endpoints |
 | BIDATA | bidata-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\bidata-monitoring.css | BIDATA Monitoring CC styles |
 | BIDATA | bidata-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\bidata-monitoring.js | BIDATA Monitoring CC client-side logic |
@@ -89,7 +89,7 @@ Generated: 2026-04-02 04:17:21
 | ControlCenter.Platform | PlatformMonitoring.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1 | Platform Monitoring CC page route |
 | ControlCenter.Shared | server.psd1 | PowerShell | Config | E:\xFACts-ControlCenter\scripts | Pode server configuration. Sets request timeout to 180 seconds for long-running API operations (e.g., DM App Server firewall commit). |
 | ControlCenter.Shared | xFACts-Helpers.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\modules\xFACts-Helpers.psm1 | Shared helper functions module for all CC pages |
-| ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-ControlCenter\Start-ControlCenter.ps1 | Control Center Pode server entry point |
+| ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Start-ControlCenter.ps1 | Control Center Pode server entry point |
 | ControlCenter.Shared | engine-events.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\engine-events.css | Shared engine event styles |
 | ControlCenter.Shared | engine-events.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\engine-events.js | Shared engine event stream client |
 | DeptOps.ApplicationsIntegration | applications-integration.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\applications-integration.css | Applications & Integration CC styles |
@@ -101,8 +101,8 @@ Generated: 2026-04-02 04:17:21
 | DeptOps.BusinessServices | BS_ReviewRequest_Group | Database | Table | DeptOps | Review request group definitions |
 | DeptOps.BusinessServices | BS_ReviewRequest_Tracking | Database | Table | DeptOps | Review request processing tracking |
 | DeptOps.BusinessServices | BS_ReviewRequest_User | Database | Table | DeptOps | Review request user assignments |
-| DeptOps.BusinessServices | Collect-BSReviewRequests.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-BSReviewRequests.ps1 | Collects Business Services review request data |
-| DeptOps.BusinessServices | Distribute-BSReviewRequests.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Distribute-BSReviewRequests.ps1 | Distributes review requests to analysts |
+| DeptOps.BusinessServices | Collect-BSReviewRequests.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-BSReviewRequests.ps1 | Collects Business Services review request data |
+| DeptOps.BusinessServices | Distribute-BSReviewRequests.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Distribute-BSReviewRequests.ps1 | Distributes review requests to analysts |
 | DeptOps.BusinessServices | BusinessServices-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BusinessServices-API.ps1 | Business Services CC API endpoints |
 | DeptOps.BusinessServices | business-services.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\business-services.css | Business Services CC styles |
 | DeptOps.BusinessServices | business-services.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\business-services.js | Business Services CC client-side logic |
@@ -122,10 +122,11 @@ Generated: 2026-04-02 04:17:21
 | DmOps.ShellPurge | ShellPurge_ExclusionLog | Database | Table | DmOps | Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence — one row per consumer per exclusion reason |
 | DmOps.ShellPurge | ShellPurge_Schedule | Database | Table | DmOps | Weekly schedule grid controlling shell purge execution mode per hour — blocked, full batch, or reduced batch |
 | DmOps.ShellPurge | Execute-DmShellPurge.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmShellPurge.ps1 | Consumer shell purge execution — removes orphaned consumer records with no remaining accounts from crs5_oltp |
-| Documentation.Pipeline | Consolidate-UploadFiles.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Consolidate-UploadFiles.ps1 | Collects all platform files into upload folder |
-| Documentation.Pipeline | Generate-DDLReference.ps1 | PowerShell | Script | E:\xFACts\scripts\documentation\Generate-DDLReference.ps1 | Orchestrates DDL reference JSON generation |
-| Documentation.Pipeline | Invoke-DocPipeline.ps1 | PowerShell | Script | E:\xFACts\scripts\documentation\Invoke-DocPipeline.ps1 | Orchestrates the full documentation pipeline |
-| Documentation.Pipeline | Publish-ConfluenceDocumentation.ps1 | PowerShell | Script | E:\xFACts\scripts\documentation\Publish-ConfluenceDocumentation.ps1 | Publishes HTML docs to Confluence and exports markdown |
+| Documentation.Pipeline | Consolidate-UploadFiles.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Consolidate-UploadFiles.ps1 | Collects all platform files into upload folder |
+| Documentation.Pipeline | Generate-DDLReference.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Generate-DDLReference.ps1 | Orchestrates DDL reference JSON generation |
+| Documentation.Pipeline | Invoke-DocPipeline.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Invoke-DocPipeline.ps1 | Orchestrates the full documentation pipeline |
+| Documentation.Pipeline | Publish-ConfluenceDocumentation.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Publish-ConfluenceDocumentation.ps1 | Publishes HTML docs to Confluence and exports markdown |
+| Documentation.Pipeline | Publish-GitHubRepository.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Publish-GitHubRepository.ps1 | Publishes all xFACts platform files to GitHub repository via REST API with manifest generation |
 | Documentation.Site | docs-architecture.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-architecture.css | Architecture page styles |
 | Documentation.Site | docs-base.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-base.css | Documentation site base styles |
 | Documentation.Site | docs-controlcenter.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-controlcenter.css | Module Control Center page styles |
@@ -195,8 +196,8 @@ Generated: 2026-04-02 04:17:21
 | Engine.Orchestrator | CycleLog | Database | Table | Orchestrator | Orchestrator heartbeat cycle log |
 | Engine.Orchestrator | ProcessRegistry | Database | Table | Orchestrator | Registered processes with schedules and run modes |
 | Engine.Orchestrator | TaskLog | Database | Table | Orchestrator | Individual process execution records |
-| Engine.Orchestrator | Start-xFACtsOrchestrator.ps1 | PowerShell | Script | E:\xFACts\scripts\Start-xFACtsOrchestrator.ps1 | Main orchestrator engine entry point |
-| Engine.Orchestrator | xFACts-OrchestratorFunctions.ps1 | PowerShell | Script | E:\xFACts\scripts\xFACts-OrchestratorFunctions.ps1 | Shared orchestrator function library |
+| Engine.Orchestrator | Start-xFACtsOrchestrator.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Start-xFACtsOrchestrator.ps1 | Main orchestrator engine entry point |
+| Engine.Orchestrator | xFACts-OrchestratorFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-OrchestratorFunctions.ps1 | Shared orchestrator function library |
 | Engine.RBAC | RBAC_ActionGrant | Database | Table | dbo | Granted actions per user |
 | Engine.RBAC | RBAC_ActionRegistry | Database | Table | dbo | Defined actions available for granting |
 | Engine.RBAC | RBAC_AuditLog | Database | Table | dbo | RBAC change audit trail |
@@ -227,7 +228,7 @@ Generated: 2026-04-02 04:17:21
 | FileOps | MonitorLog | Database | Table | FileOps | File monitoring event log |
 | FileOps | MonitorStatus | Database | Table | FileOps | Current monitoring status per configuration |
 | FileOps | ServerConfig | Database | Table | FileOps | SFTP server connection configuration |
-| FileOps | Scan-SFTPFiles.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Scan-SFTPFiles.ps1 | Scans SFTP directories for expected files |
+| FileOps | Scan-SFTPFiles.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Scan-SFTPFiles.ps1 | Scans SFTP directories for expected files |
 | FileOps | FileMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\FileMonitoring-API.ps1 | File Monitoring CC API endpoints |
 | FileOps | file-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\file-monitoring.css | File Monitoring CC styles |
 | FileOps | file-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\file-monitoring.js | File Monitoring CC client-side logic |
@@ -235,7 +236,7 @@ Generated: 2026-04-02 04:17:21
 | JBoss | ConfigHistory | Database | Table | JBoss | JBoss configuration change detection for application servers |
 | JBoss | QueueSnapshot | Database | Table | JBoss | Per-queue JMS metrics for JBoss application servers |
 | JBoss | Snapshot | Database | Table | JBoss | Append-only point-in-time health snapshots per JBoss application server per collection cycle |
-| JBoss | Collect-JBossMetrics.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-JBossMetrics.ps1 | JBoss Management API metrics collector for application servers |
+| JBoss | Collect-JBossMetrics.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-JBossMetrics.ps1 | JBoss Management API metrics collector for application servers |
 | JBoss | JBossMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\JBossMonitoring-API.ps1 | JBoss Monitoring CC API endpoints |
 | JBoss | jboss-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\jboss-monitoring.css | JBoss Monitoring CC styles |
 | JBoss | jboss-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\jboss-monitoring.js | JBoss Monitoring CC client-side logic |
@@ -244,7 +245,7 @@ Generated: 2026-04-02 04:17:21
 | Jira | RequestLog | Database | Table | Jira | Jira API request attempt log |
 | Jira | TicketQueue | Database | Table | Jira | Queued Jira tickets awaiting creation |
 | Jira | TR_Jira_TicketQueue_QueueDepth | Database | Trigger | Jira | Monitors ticket queue depth and raises warnings |
-| Jira | Process-JiraTicketQueue.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Process-JiraTicketQueue.ps1 | Processes pending tickets and creates via Jira API |
+| Jira | Process-JiraTicketQueue.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-JiraTicketQueue.ps1 | Processes pending tickets and creates via Jira API |
 | JobFlow | ErrorCategory | Database | Table | JobFlow | Error category definitions |
 | JobFlow | FlowConfig | Database | Table | JobFlow | SSIS flow monitoring configuration |
 | JobFlow | FlowExecutionTracking | Database | Table | JobFlow | SSIS package execution tracking |
@@ -256,7 +257,7 @@ Generated: 2026-04-02 04:17:21
 | JobFlow | Status | Database | Table | JobFlow | Status code definitions |
 | JobFlow | ValidationException | Database | Table | JobFlow | Validation exception rules |
 | JobFlow | ValidationLog | Database | Table | JobFlow | Validation check results |
-| JobFlow | Monitor-JobFlow.ps1 | PowerShell | Script | E:\xFACts\scripts\monitors\Monitor-JobFlow.ps1 | Monitors job/flow executions and queues alerts |
+| JobFlow | Monitor-JobFlow.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Monitor-JobFlow.ps1 | Monitors job/flow executions and queues alerts |
 | JobFlow | JobFlowMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\JobFlowMonitoring-API.ps1 | JobFlow Monitoring CC API endpoints |
 | JobFlow | jobflow-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\jobflow-monitoring.css | JobFlow Monitoring CC styles |
 | JobFlow | jobflow-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\jobflow-monitoring.js | JobFlow Monitoring CC client-side logic |
@@ -264,10 +265,10 @@ Generated: 2026-04-02 04:17:21
 | ServerOps.Backup | Backup_DatabaseConfig | Database | Table | ServerOps | Per-database backup configuration and policies |
 | ServerOps.Backup | Backup_ExecutionLog | Database | Table | ServerOps | Backup execution records |
 | ServerOps.Backup | Backup_FileTracking | Database | Table | ServerOps | Tracks backup files through copy/upload/retention lifecycle |
-| ServerOps.Backup | Collect-BackupStatus.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-BackupStatus.ps1 | Collects backup status from all enrolled servers |
-| ServerOps.Backup | Process-BackupAWSUpload.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Process-BackupAWSUpload.ps1 | Uploads backup files to AWS S3 |
-| ServerOps.Backup | Process-BackupNetworkCopy.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Process-BackupNetworkCopy.ps1 | Copies backup files to network share |
-| ServerOps.Backup | Process-BackupRetention.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Process-BackupRetention.ps1 | Manages backup file retention and cleanup |
+| ServerOps.Backup | Collect-BackupStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-BackupStatus.ps1 | Collects backup status from all enrolled servers |
+| ServerOps.Backup | Process-BackupAWSUpload.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-BackupAWSUpload.ps1 | Uploads backup files to AWS S3 |
+| ServerOps.Backup | Process-BackupNetworkCopy.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-BackupNetworkCopy.ps1 | Copies backup files to network share |
+| ServerOps.Backup | Process-BackupRetention.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-BackupRetention.ps1 | Manages backup file retention and cleanup |
 | ServerOps.Backup | Backup-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\Backup-API.ps1 | Backup Monitoring CC API endpoints |
 | ServerOps.Backup | backup.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\backup.css | Backup Monitoring CC styles |
 | ServerOps.Backup | backup.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\backup.js | Backup Monitoring CC client-side logic |
@@ -283,8 +284,8 @@ Generated: 2026-04-02 04:17:21
 | ServerOps.Disk | Disk_Snapshot | Database | Table | ServerOps | Point-in-time disk space snapshots |
 | ServerOps.Disk | Disk_Status | Database | Table | ServerOps | Current disk space status per drive |
 | ServerOps.Disk | Disk_ThresholdConfig | Database | Table | ServerOps | Disk space alert threshold configuration |
-| ServerOps.Disk | Collect-ServerHealth.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-ServerHealth.ps1 | Collects server-level health metrics including disk space |
-| ServerOps.Disk | Send-DiskHealthSummary.ps1 | PowerShell | Script | E:\xFACts\scripts\alerts\Send-DiskHealthSummary.ps1 | Evaluates disk space and queues Teams alerts |
+| ServerOps.Disk | Collect-ServerHealth.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-ServerHealth.ps1 | Collects server-level health metrics including disk space |
+| ServerOps.Disk | Send-DiskHealthSummary.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Send-DiskHealthSummary.ps1 | Evaluates disk space and queues Teams alerts |
 | ServerOps.Index | sp_Index_AddDatabaseHolidaySchedule | Database | Procedure | ServerOps | Adds a holiday maintenance window for a database |
 | ServerOps.Index | sp_Index_AddDatabaseSchedule | Database | Procedure | ServerOps | Adds a maintenance window schedule for a database |
 | ServerOps.Index | Index_DatabaseConfig | Database | Table | ServerOps | Per-database index maintenance configuration |
@@ -297,11 +298,11 @@ Generated: 2026-04-02 04:17:21
 | ServerOps.Index | Index_Registry | Database | Table | ServerOps | Master catalog of all discovered indexes |
 | ServerOps.Index | Index_StatsExecutionLog | Database | Table | ServerOps | Statistics update execution records |
 | ServerOps.Index | Index_Status | Database | Table | ServerOps | Current index health status |
-| ServerOps.Index | Execute-IndexMaintenance.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Execute-IndexMaintenance.ps1 | Window-aware index rebuild execution engine |
-| ServerOps.Index | Scan-IndexFragmentation.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Scan-IndexFragmentation.ps1 | Scans physical fragmentation levels |
-| ServerOps.Index | Sync-IndexRegistry.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Sync-IndexRegistry.ps1 | Daily discovery and metadata refresh of all indexes |
-| ServerOps.Index | Update-IndexStatistics.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Update-IndexStatistics.ps1 | Updates statistics on recently rebuilt indexes |
-| ServerOps.Index | xFACts-IndexFunctions.ps1 | PowerShell | Script | E:\xFACts\scripts\xFACts-IndexFunctions.ps1 | Shared function library for index operations |
+| ServerOps.Index | Execute-IndexMaintenance.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-IndexMaintenance.ps1 | Window-aware index rebuild execution engine |
+| ServerOps.Index | Scan-IndexFragmentation.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Scan-IndexFragmentation.ps1 | Scans physical fragmentation levels |
+| ServerOps.Index | Sync-IndexRegistry.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Sync-IndexRegistry.ps1 | Daily discovery and metadata refresh of all indexes |
+| ServerOps.Index | Update-IndexStatistics.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Update-IndexStatistics.ps1 | Updates statistics on recently rebuilt indexes |
+| ServerOps.Index | xFACts-IndexFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-IndexFunctions.ps1 | Shared function library for index operations |
 | ServerOps.Index | IndexMaintenance-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\IndexMaintenance-API.ps1 | Index Maintenance CC API endpoints |
 | ServerOps.Index | index-maintenance.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\index-maintenance.css | Index Maintenance CC styles |
 | ServerOps.Index | index-maintenance.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\index-maintenance.js | Index Maintenance CC client-side logic |
@@ -310,7 +311,7 @@ Generated: 2026-04-02 04:17:21
 | ServerOps.Replication | Replication_EventLog | Database | Table | ServerOps | Replication event log |
 | ServerOps.Replication | Replication_LatencyHistory | Database | Table | ServerOps | Historical replication latency measurements |
 | ServerOps.Replication | Replication_PublicationRegistry | Database | Table | ServerOps | Replication publication monitoring configuration |
-| ServerOps.Replication | Collect-ReplicationHealth.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-ReplicationHealth.ps1 | Collects replication agent status and latency metrics |
+| ServerOps.Replication | Collect-ReplicationHealth.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-ReplicationHealth.ps1 | Collects replication agent status and latency metrics |
 | ServerOps.Replication | ReplicationMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ReplicationMonitoring-API.ps1 | Replication Monitoring CC API endpoints |
 | ServerOps.Replication | replication-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\replication-monitoring.css | Replication Monitoring CC styles |
 | ServerOps.Replication | replication-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\replication-monitoring.js | Replication Monitoring CC client-side logic |
@@ -343,8 +344,8 @@ Generated: 2026-04-02 04:17:21
 | ServerOps.ServerHealth | xFACts_LS_Inbound | Database | XE Session | ServerOps | Inbound linked server XE session definition |
 | ServerOps.ServerHealth | xFACts_LS_Outbound | Database | XE Session | ServerOps | Outbound linked server XE session definition |
 | ServerOps.ServerHealth | xFACts_Tracking | Database | XE Session | ServerOps | xFACts tracking XE session definition |
-| ServerOps.ServerHealth | Collect-DMVMetrics.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-DMVMetrics.ps1 | Collects DMV performance snapshots from all enrolled servers |
-| ServerOps.ServerHealth | Collect-XEEvents.ps1 | PowerShell | Script | E:\xFACts\scripts\collectors\Collect-XEEvents.ps1 | Harvests Extended Events data from configured sessions |
+| ServerOps.ServerHealth | Collect-DMVMetrics.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-DMVMetrics.ps1 | Collects DMV performance snapshots from all enrolled servers |
+| ServerOps.ServerHealth | Collect-XEEvents.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-XEEvents.ps1 | Harvests Extended Events data from configured sessions |
 | ServerOps.ServerHealth | ServerHealth-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ServerHealth-API.ps1 | Server Health CC API endpoints |
 | ServerOps.ServerHealth | server-health.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\server-health.css | Server Health CC styles |
 | ServerOps.ServerHealth | server-health.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\server-health.js | Server Health CC client-side logic |
@@ -355,7 +356,7 @@ Generated: 2026-04-02 04:17:21
 | Teams | WebhookConfig | Database | Table | Teams | Teams webhook channel configuration |
 | Teams | WebhookSubscription | Database | Table | Teams | Module-to-webhook subscription mappings |
 | Teams | TR_Teams_AlertQueue_QueueDepth | Database | Trigger | Teams | Monitors alert queue depth and raises warnings |
-| Teams | Process-TeamsAlertQueue.ps1 | PowerShell | Script | E:\xFACts\scripts\processors\Process-TeamsAlertQueue.ps1 | Processes pending alerts and delivers via Teams webhook |
+| Teams | Process-TeamsAlertQueue.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-TeamsAlertQueue.ps1 | Processes pending alerts and delivers via Teams webhook |
 | Tools.Catalog | Catalog_ApiRegistry | Database | Table | Tools | REST API endpoint catalog — one row per path+method combination. Parsed from OpenAPI 3.0 YAML specs. |
 | Tools.Catalog | Catalog_ApiSchemaRegistry | Database | Table | Tools | REST API schema property catalog — one row per property within each model object. Links to Catalog_ApiRegistry via schema name. |
 | Tools.Catalog | Catalog_BDLElementRegistry | Database | Table | Tools | BDL element catalog — one row per element within each entity type. Links to Catalog_BDLFormatRegistry via spec_version + type_name. |
