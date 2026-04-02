@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-02 06:39:02
+Generated: 2026-04-02 07:23:39
 
 ## Module Registry
 
@@ -87,9 +87,9 @@ Generated: 2026-04-02 06:39:02
 | ControlCenter.Platform | platform-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\platform-monitoring.css | Platform Monitoring CC styles |
 | ControlCenter.Platform | platform-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\platform-monitoring.js | Platform Monitoring CC client-side logic |
 | ControlCenter.Platform | PlatformMonitoring.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1 | Platform Monitoring CC page route |
-| ControlCenter.Shared | server.psd1 | PowerShell | Config | E:\xFACts-ControlCenter\scripts | Pode server configuration. Sets request timeout to 180 seconds for long-running API operations (e.g., DM App Server firewall commit). |
-| ControlCenter.Shared | xFACts-Helpers.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\modules\xFACts-Helpers.psm1 | Shared helper functions module for all CC pages |
-| ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Start-ControlCenter.ps1 | Control Center Pode server entry point |
+| ControlCenter.Shared | server.psd1 | PowerShell | Config | E:\xFACts-ControlCenter\scripts\server.psd1 | Pode server configuration. Sets request timeout to 180 seconds for long-running API operations (e.g., DM App Server firewall commit). |
+| ControlCenter.Shared | xFACts-Helpers.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\scripts\modules\xFACts-Helpers.psm1 | Shared helper functions module for all CC pages |
+| ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1 | Control Center Pode server entry point |
 | ControlCenter.Shared | engine-events.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\engine-events.css | Shared engine event styles |
 | ControlCenter.Shared | engine-events.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\engine-events.js | Shared engine event stream client |
 | DeptOps.ApplicationsIntegration | applications-integration.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\applications-integration.css | Applications & Integration CC styles |
@@ -115,7 +115,14 @@ Generated: 2026-04-02 06:39:02
 | DmOps.Archive | Archive_BatchLog | Database | Table | DmOps | Batch-level execution summary for archive processing — one row per batch with counts, timing, and status |
 | DmOps.Archive | Archive_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer and account archived — tall skinny log for BI cross-reference and reconciliation |
 | DmOps.Archive | Archive_Schedule | Database | Table | DmOps | Weekly schedule grid controlling archive execution mode per hour — blocked, full batch, or reduced batch |
+| DmOps.Archive | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
+| DmOps.Archive | dmops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dmops-ref.html | DM Operations reference documentation page |
+| DmOps.Archive | dmops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dmops.html | DM Operations narrative documentation page |
 | DmOps.Archive | Execute-DmArchive.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmArchive.ps1 | Account-level archive execution — registry-driven batch deletion of tagged accounts from crs5_oltp |
+| DmOps.Archive | DmOperations-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1 | DM Operations CC API endpoints |
+| DmOps.Archive | dm-operations.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\dm-operations.css | DM Operations CC styles |
+| DmOps.Archive | dm-operations.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\dm-operations.js | DM Operations CC client-side logic |
+| DmOps.Archive | DmOperations.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1 | DM Operations CC page route |
 | DmOps.ShellPurge | ShellPurge_BatchDetail | Database | Table | DmOps | Per-table operation detail within each shell purge batch — delete order, rows affected, duration, and status |
 | DmOps.ShellPurge | ShellPurge_BatchLog | Database | Table | DmOps | Batch-level execution summary for shell purge processing — one row per batch with counts, timing, and status |
 | DmOps.ShellPurge | ShellPurge_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer purged — batch and consumer ID for reconciliation |
@@ -135,15 +142,15 @@ Generated: 2026-04-02 06:39:02
 | Documentation.Site | docs-narrative.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-narrative.css | Narrative page styles |
 | Documentation.Site | docs-reference.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-reference.css | Reference page styles |
 | Documentation.Site | backup-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\backup-arch.html | Backup architecture page |
-| Documentation.Site | backup-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\backup-cc.html | Backup Monitoring Control Center guide page |
+| Documentation.Site | backup-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\backup-cc.html | Backup Monitoring Control Center guide page |
 | Documentation.Site | backup-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\backup-ref.html | Backup DDL reference page |
 | Documentation.Site | backup.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\backup.html | Backup narrative page |
 | Documentation.Site | batchops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\batchops-arch.html | BatchOps architecture page |
-| Documentation.Site | batchops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\batchops-cc.html | Batch Monitoring Control Center guide page |
+| Documentation.Site | batchops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\batchops-cc.html | Batch Monitoring Control Center guide page |
 | Documentation.Site | batchops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\batchops-ref.html | BatchOps DDL reference page |
 | Documentation.Site | batchops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\batchops.html | BatchOps narrative page |
 | Documentation.Site | bidata-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\bidata-arch.html | BIDATA architecture page |
-| Documentation.Site | bidata-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\bidata-cc.html | BIDATA Monitoring Control Center guide page |
+| Documentation.Site | bidata-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\bidata-cc.html | BIDATA Monitoring Control Center guide page |
 | Documentation.Site | bidata-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\bidata-ref.html | BIDATA DDL reference page |
 | Documentation.Site | bidata.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\bidata.html | BIDATA narrative page |
 | Documentation.Site | controlcenter-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\controlcenter-arch.html | Control Center architecture page |
@@ -158,11 +165,11 @@ Generated: 2026-04-02 06:39:02
 | Documentation.Site | engine-room-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\engine-room-ref.html | Engine Room DDL reference page |
 | Documentation.Site | engine-room.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\engine-room.html | Engine Room narrative page |
 | Documentation.Site | fileops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\fileops-arch.html | FileOps architecture page |
-| Documentation.Site | fileops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\fileops-cc.html | File Monitoring Control Center guide page |
+| Documentation.Site | fileops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\fileops-cc.html | File Monitoring Control Center guide page |
 | Documentation.Site | fileops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\fileops-ref.html | FileOps DDL reference page |
 | Documentation.Site | fileops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\fileops.html | FileOps narrative page |
 | Documentation.Site | indexmaint-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\indexmaint-arch.html | Index Maintenance architecture page |
-| Documentation.Site | indexmaint-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\indexmaint-cc.html | Index Maintenance Control Center guide page |
+| Documentation.Site | indexmaint-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\indexmaint-cc.html | Index Maintenance Control Center guide page |
 | Documentation.Site | indexmaint-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\indexmaint-ref.html | Index Maintenance DDL reference page |
 | Documentation.Site | indexmaint.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\indexmaint.html | Index Maintenance narrative page |
 | Documentation.Site | jboss-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\jboss-arch.html | JBoss Monitoring architecture page |
@@ -173,15 +180,15 @@ Generated: 2026-04-02 06:39:02
 | Documentation.Site | jira-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\jira-ref.html | Jira DDL reference page |
 | Documentation.Site | jira.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\jira.html | Jira narrative page |
 | Documentation.Site | jobflow-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\jobflow-arch.html | JobFlow architecture page |
-| Documentation.Site | jobflow-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\jobflow-cc.html | JobFlow Monitoring Control Center guide page |
+| Documentation.Site | jobflow-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\jobflow-cc.html | JobFlow Monitoring Control Center guide page |
 | Documentation.Site | jobflow-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\jobflow-ref.html | JobFlow DDL reference page |
 | Documentation.Site | jobflow.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\jobflow.html | JobFlow narrative page |
 | Documentation.Site | replication-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\replication-arch.html | Replication architecture page |
-| Documentation.Site | replication-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\replication-cc.html | Replication Monitoring Control Center guide page |
+| Documentation.Site | replication-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\replication-cc.html | Replication Monitoring Control Center guide page |
 | Documentation.Site | replication-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\replication-ref.html | Replication DDL reference page |
 | Documentation.Site | replication.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\replication.html | Replication narrative page |
 | Documentation.Site | serverhealth-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\serverhealth-arch.html | ServerHealth architecture page |
-| Documentation.Site | serverhealth-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\pages\cc\serverhealth-cc.html | ServerHealth Control Center guide page |
+| Documentation.Site | serverhealth-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\serverhealth-cc.html | ServerHealth Control Center guide page |
 | Documentation.Site | serverhealth-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\serverhealth-ref.html | ServerHealth DDL reference page |
 | Documentation.Site | serverhealth.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\serverhealth.html | ServerHealth narrative page |
 | Documentation.Site | teams-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\teams-arch.html | Teams architecture page |
@@ -370,6 +377,7 @@ Generated: 2026-04-02 06:39:02
 | Tools.Operations | BDLImport-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1 | BDL Import CC API endpoints |
 | Tools.Operations | bdl-import.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\bdl-import.css | BDL Import CC styles |
 | Tools.Operations | bdl-import.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\bdl-import.js | BDL Import CC client-side logic |
+| Tools.Operations | xlsx.full.min.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\xlsx.full.min.js | SheetJS library for Excel file parsing (BDL Import) |
 | Tools.Operations | BDLImport.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1 | BDL Import CC page route |
 | Tools.Utilities | sp_SyncColumnOrdinals | Database | Procedure | Tools | Aligns Object_Metadata column description sort_order values with actual sys.columns column_id ordinals for a specified table. Deactivates Object_Metadata rows for dropped columns. |
 
