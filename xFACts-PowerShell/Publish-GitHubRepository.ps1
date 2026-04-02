@@ -5,7 +5,7 @@
 .DESCRIPTION
     xFACts - GitHub Integration
     Script: Publish-GitHubRepository.ps1
-    Version: Tracked in dbo.System_Metadata (component: Documentation.Pipeline)
+    Version: Tracked in dbo.System_Metadata (component: Engine.SharedInfrastructure)
 
     Publishes all xFACts platform files to a GitHub repository via the REST API.
     Maintains a complete, current snapshot of the platform: PowerShell scripts,
@@ -19,14 +19,18 @@
     1. Collect file inventory from server source directories
     2. Extract SQL object definitions from the database
     3. Generate Platform Registry markdown from registry tables
-    4. Fetch current repo state (file listing with SHAs)
-    5. Compare local vs remote - identify creates, updates, deletes
-    6. Push changes to GitHub via Contents API
-    7. Generate and push manifest.json
-    8. Report summary
+    4. Audit collected files against Object_Registry
+    5. Fetch current repo state (file listing with SHAs)
+    6. Compare local vs remote - identify creates, updates, deletes
+    7. Push changes to GitHub via Contents API
+    8. Generate and push manifest.json (enriched with module/component)
+    9. Report summary
 
     CHANGELOG
     ---------
+    2026-04-02  Added Object_Registry audit phase with path validation.
+                Manifest entries now include module_name and component_name
+                from Object_Registry. Unregistered files logged as warnings.
     2026-04-01  Initial implementation
 
 .PARAMETER Owner
@@ -568,11 +572,171 @@ if ($exportedTables -gt 0) {
 }
 
 # ============================================================================
-# PHASE 5: FETCH REMOTE STATE AND COMPUTE DIFF
+# PHASE 5: AUDIT FILES AGAINST OBJECT_REGISTRY
+# ============================================================================
+# Query Object_Registry to build a lookup by filename. Validates that every
+# file being published has a corresponding registry entry, and that registry
+# paths match actual source paths. Also validates SQL objects exist in the
+# registry. Results are used in Phase 8 to enrich manifest entries with
+# module_name and component_name.
+
+Write-Log ""
+Write-Log "Phase 5: Object_Registry audit"
+Write-Log "---------------------------------"
+
+$registryQuery = @"
+    SELECT 
+        r.object_name,
+        r.object_path,
+        r.object_category,
+        r.object_type,
+        r.module_name,
+        r.component_name
+    FROM dbo.Object_Registry r
+    WHERE r.is_active = 1
+"@
+
+$registryRows = Get-SqlData -Query $registryQuery -Timeout 60
+
+# Build lookup by object_name (filename) -> registry entry
+# Some filenames may appear in multiple components (unlikely but possible)
+$registryLookup = @{}
+if ($registryRows) {
+    foreach ($row in @($registryRows)) {
+        $name = $row.object_name
+        if (-not $registryLookup.ContainsKey($name)) {
+            $registryLookup[$name] = @()
+        }
+        $registryLookup[$name] += @{
+            object_path     = if ($row.object_path -is [DBNull]) { $null } else { [string]$row.object_path }
+            object_category = [string]$row.object_category
+            object_type     = [string]$row.object_type
+            module_name     = if ($row.module_name -is [DBNull]) { $null } else { [string]$row.module_name }
+            component_name  = if ($row.component_name -is [DBNull]) { $null } else { [string]$row.component_name }
+        }
+    }
+    Write-Log "  Object_Registry: $($registryLookup.Count) unique objects loaded"
+}
+else {
+    Write-Log "  WARN  Could not load Object_Registry" "WARN"
+}
+
+# Audit each collected file against the registry
+$auditMatched = 0
+$auditUnregistered = 0
+$auditPathMismatch = 0
+$unregisteredFiles = @()
+$pathMismatches = @()
+
+# Build a manifest enrichment lookup: repoPath -> { module_name, component_name }
+$manifestEnrichment = @{}
+
+foreach ($repoPath in $localFiles.Keys) {
+    $entry = $localFiles[$repoPath]
+    $fileName = $repoPath.Split('/')[-1]
+    $sourcePath = $entry.Source
+
+    # Skip generated files (Platform Registry, manifest) - they aren't registered objects
+    if ($sourcePath -like "Generated:*") { continue }
+
+    # SQL objects: match by schema.objectname pattern
+    if ($sourcePath -like "SQL:*") {
+        $sqlIdentifier = $sourcePath.Substring(4)  # Remove "SQL:" prefix
+        $sqlFileName = "$sqlIdentifier.sql"
+        # SQL objects in registry use object_name without .sql extension
+        # and are identified by schema_name + object_name
+        $parts = $sqlIdentifier.Split('.')
+        if ($parts.Count -eq 2) {
+            $schemaName = $parts[0]
+            $objectName = $parts[1]
+            # Look for the object by its actual name (without schema prefix)
+            if ($registryLookup.ContainsKey($objectName)) {
+                $regEntry = $registryLookup[$objectName] | Where-Object { $_.object_category -eq 'Database' } | Select-Object -First 1
+                if ($regEntry) {
+                    $auditMatched++
+                    $manifestEnrichment[$repoPath] = @{
+                        module_name    = $regEntry.module_name
+                        component_name = $regEntry.component_name
+                    }
+                }
+                else {
+                    $auditUnregistered++
+                    $unregisteredFiles += $repoPath
+                }
+            }
+            # Also try schema.objectname as the lookup key
+            elseif ($registryLookup.ContainsKey($sqlIdentifier)) {
+                $regEntry = $registryLookup[$sqlIdentifier][0]
+                $auditMatched++
+                $manifestEnrichment[$repoPath] = @{
+                    module_name    = $regEntry.module_name
+                    component_name = $regEntry.component_name
+                }
+            }
+            else {
+                $auditUnregistered++
+                $unregisteredFiles += $repoPath
+            }
+        }
+        continue
+    }
+
+    # File-based objects: match by filename
+    if ($registryLookup.ContainsKey($fileName)) {
+        $regEntry = $registryLookup[$fileName][0]
+        $auditMatched++
+        $manifestEnrichment[$repoPath] = @{
+            module_name    = $regEntry.module_name
+            component_name = $regEntry.component_name
+        }
+
+        # Path validation: compare registry object_path to actual source path
+        if ($regEntry.object_path) {
+            $registryPathNormalized = $regEntry.object_path.TrimEnd('\') -replace '/', '\'
+            $sourcePathNormalized = $sourcePath.TrimEnd('\') -replace '/', '\'
+            if ($registryPathNormalized -ne $sourcePathNormalized) {
+                $auditPathMismatch++
+                $pathMismatches += @{
+                    File         = $fileName
+                    RegistryPath = $regEntry.object_path
+                    ActualPath   = $sourcePath
+                }
+            }
+        }
+    }
+    else {
+        $auditUnregistered++
+        $unregisteredFiles += $repoPath
+    }
+}
+
+Write-Log "  Matched:      $auditMatched files"
+
+if ($auditUnregistered -gt 0) {
+    Write-Log "  Unregistered: $auditUnregistered files" "WARN"
+    foreach ($f in $unregisteredFiles) {
+        Write-Log "    MISSING  $f" "WARN"
+    }
+}
+else {
+    Write-Log "  Unregistered: 0" "SUCCESS"
+}
+
+if ($auditPathMismatch -gt 0) {
+    Write-Log "  Path mismatches: $auditPathMismatch" "WARN"
+    foreach ($m in $pathMismatches) {
+        Write-Log "    MISMATCH  $($m.File)" "WARN"
+        Write-Log "      Registry: $($m.RegistryPath)" "WARN"
+        Write-Log "      Actual:   $($m.ActualPath)" "WARN"
+    }
+}
+
+# ============================================================================
+# PHASE 6: FETCH REMOTE STATE AND COMPUTE DIFF
 # ============================================================================
 
 Write-Log ""
-Write-Log "Phase 5: Computing repository diff"
+Write-Log "Phase 6: Computing repository diff"
 Write-Log "-----------------------------------"
 
 $remoteTree = Get-RepoTree -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers
@@ -653,12 +817,12 @@ if ($toCreate.Count -eq 0 -and $toUpdate.Count -eq 0 -and $toDelete.Count -eq 0)
 }
 
 # ============================================================================
-# PHASE 6: PUSH CHANGES TO GITHUB
+# PHASE 7: PUSH CHANGES TO GITHUB
 # ============================================================================
 
 if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
     Write-Log ""
-    Write-Log "Phase 6: Pushing changes to GitHub"
+    Write-Log "Phase 7: Pushing changes to GitHub"
     Write-Log "----------------------------------"
 
     $pushErrors = 0
@@ -741,11 +905,11 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
 }
 
 # ============================================================================
-# PHASE 7: GENERATE AND PUSH MANIFEST
+# PHASE 8: GENERATE AND PUSH MANIFEST
 # ============================================================================
 
 Write-Log ""
-Write-Log "Phase 7: Generating manifest.json"
+Write-Log "Phase 8: Generating manifest.json"
 Write-Log "---------------------------------"
 
 $baseRawUrl = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch"
@@ -760,11 +924,20 @@ foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
                 elseif ($repoPath.StartsWith("xFACts-SQL/")) { "SQL" }
                 else { "Other" }
 
-    $manifestFiles += [ordered]@{
+    $fileEntry = [ordered]@{
         path     = $repoPath
         raw_url  = "$baseRawUrl/${repoPath}?v=$cacheBuster"
         category = $category
     }
+
+    # Enrich with module/component from Object_Registry audit
+    if ($manifestEnrichment.ContainsKey($repoPath)) {
+        $enrichment = $manifestEnrichment[$repoPath]
+        $fileEntry.module    = $enrichment.module_name
+        $fileEntry.component = $enrichment.component_name
+    }
+
+    $manifestFiles += $fileEntry
 }
 
 $manifest = [ordered]@{
@@ -823,6 +996,7 @@ Write-Log "=========================================="
 Write-Log "  Files scanned:  $($localFiles.Count)"
 Write-Log "  SQL objects:    $sqlCount"
 Write-Log "  Registry:       $exportedTables tables"
+Write-Log "  Audit:          $auditMatched matched, $auditUnregistered unregistered, $auditPathMismatch path mismatches"
 Write-Log "  To create:      $($toCreate.Count)"
 Write-Log "  To update:      $($toUpdate.Count)"
 Write-Log "  To delete:      $($toDelete.Count)"
