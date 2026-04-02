@@ -253,51 +253,51 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
             <button class="slideup-close" onclick="Admin.closeDocPipeline()">&times;</button>
         </div>
         <div class="doc-pipeline-body">
-            <!-- Step checkboxes with inline sub-options -->
+            <!-- Step cards with toggle switches -->
             <div class="doc-step-list">
-                <label class="doc-step-item">
-                    <input type="checkbox" id="doc-step-ddl" checked>
-                    <span class="doc-step-label">Generate DDL Reference</span>
-                    <span class="doc-step-desc">Regenerate JSON data files from Object_Metadata</span>
-                    <span class="doc-step-status" id="doc-status-generate_ddl"></span>
-                </label>
-                <label class="doc-step-item">
-                    <input type="checkbox" id="doc-step-publish" checked>
-                    <span class="doc-step-label">Publish to Confluence</span>
-                    <span class="doc-step-desc">Publish HTML pages to Confluence Server</span>
-                    <span class="doc-step-status" id="doc-status-publish_confluence"></span>
-                </label>
-                <div class="doc-step-options" id="doc-step-publish-options">
-                    <label class="doc-option" title="Push pages to Confluence Server via REST API">
-                        <input type="checkbox" id="doc-opt-confluence" checked>
-                        <span>Publish to Confluence</span>
-                    </label>
-                    <label class="doc-option" title="Export markdown files for Claude upload">
-                        <input type="checkbox" id="doc-opt-markdown" checked>
-                        <span>Export Markdown</span>
-                    </label>
+                <div class="doc-card" id="doc-card-ddl">
+                    <div class="doc-card-row">
+                        <div class="doc-card-body">
+                            <div class="doc-card-title">Generate DDL Reference</div>
+                            <div class="doc-card-desc">Regenerate JSON data files from Object_Metadata</div>
+                        </div>
+                        <label class="doc-toggle"><input type="checkbox" id="doc-step-ddl" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
+                    </div>
                 </div>
-                <label class="doc-step-item">
-                    <input type="checkbox" id="doc-step-github" checked>
-                    <span class="doc-step-label">Publish to GitHub</span>
-                    <span class="doc-step-desc">Push platform files and manifest to GitHub repository</span>
-                    <span class="doc-step-status" id="doc-status-publish_github"></span>
-                </label>
-                <label class="doc-step-item">
-                    <input type="checkbox" id="doc-step-consolidate">
-                    <span class="doc-step-label">Consolidate Upload Files</span>
-                    <span class="doc-step-desc">Collect all platform files into upload folder</span>
-                    <span class="doc-step-status" id="doc-status-consolidate_upload"></span>
-                </label>
-                <div class="doc-step-options" id="doc-step-consolidate-options">
-                    <label class="doc-option" title="Extract SQL object definitions from database">
-                        <input type="checkbox" id="doc-opt-sql" checked>
-                        <span>Include SQL Objects</span>
-                    </label>
-                    <label class="doc-option" title="Include JSON data files in upload folder">
-                        <input type="checkbox" id="doc-opt-json">
-                        <span>Include JSON</span>
-                    </label>
+                <div class="doc-card" id="doc-card-publish">
+                    <div class="doc-card-row">
+                        <div class="doc-card-body">
+                            <div class="doc-card-title">Publish to Confluence</div>
+                            <div class="doc-card-desc">Publish HTML pages to Confluence Server</div>
+                        </div>
+                        <label class="doc-toggle"><input type="checkbox" id="doc-step-publish" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
+                    </div>
+                    <div class="doc-card-options" id="doc-step-publish-options">
+                        <span class="doc-pill active" id="doc-opt-confluence" onclick="Admin.docTogglePill(this)" title="Push pages to Confluence Server via REST API">Publish to Confluence</span>
+                        <span class="doc-pill active" id="doc-opt-markdown" onclick="Admin.docTogglePill(this)" title="Export markdown files for Claude upload">Export Markdown</span>
+                    </div>
+                </div>
+                <div class="doc-card" id="doc-card-github">
+                    <div class="doc-card-row">
+                        <div class="doc-card-body">
+                            <div class="doc-card-title">Publish to GitHub</div>
+                            <div class="doc-card-desc">Push platform files and manifest to GitHub repository</div>
+                        </div>
+                        <label class="doc-toggle"><input type="checkbox" id="doc-step-github" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
+                    </div>
+                </div>
+                <div class="doc-card" id="doc-card-consolidate">
+                    <div class="doc-card-row">
+                        <div class="doc-card-body">
+                            <div class="doc-card-title">Consolidate Upload Files</div>
+                            <div class="doc-card-desc">Collect all platform files into upload folder</div>
+                        </div>
+                        <label class="doc-toggle"><input type="checkbox" id="doc-step-consolidate" checked><div class="doc-toggle-track"></div><div class="doc-toggle-knob"></div></label>
+                    </div>
+                    <div class="doc-card-options" id="doc-step-consolidate-options">
+                        <span class="doc-pill active" id="doc-opt-sql" onclick="Admin.docTogglePill(this)" title="Extract SQL object definitions from database">Include SQL Objects</span>
+                        <span class="doc-pill" id="doc-opt-json" onclick="Admin.docTogglePill(this)" title="Include JSON data files in upload folder">Include JSON</span>
+                    </div>
                 </div>
             </div>
 
@@ -307,8 +307,8 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
                 <span class="doc-run-status" id="doc-run-status"></span>
             </div>
 
-            <!-- Output area (shown after execution) -->
-            <div class="doc-output" id="doc-output"></div>
+            <!-- Results area (shown after execution) -->
+            <div class="doc-results" id="doc-results"></div>
         </div>
     </div>
 
