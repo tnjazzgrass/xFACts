@@ -153,6 +153,67 @@
                                                       "sortOrder":  2
                                                   }
                                               ]
+                    },
+                    {
+                        "name":  "Publish-GitHubRepository.ps1",
+                        "description":  "Publishes a complete snapshot of all xFACts platform files to a GitHub repository (tnjazzgrass/xFACts) via the GitHub Contents API. Collects files from server source directories, extracts SQL object definitions from the database, generates Platform Registry markdown from registry tables, compares local inventory against the current repo state via tree API, and pushes only changed files. Generates and pushes manifest.json as the final step, cataloging all files with cache-busted raw URLs for Claude session access.",
+                        "module":  "ControlCenter",
+                        "category":  "Documentation.Pipeline",
+                        "dataFlow":  "Collects files from three server source directories (E:\\xFACts-PowerShell, E:\\xFACts-ControlCenter, E:\\xFACts-Documentation) using configurable source mappings with filter and recurse options. Extracts SQL object definitions from sys.sql_modules on AVG-PROD-LSNR. Generates Platform Registry markdown by querying dbo.Module_Registry, dbo.Component_Registry, dbo.Object_Registry, and dbo.GlobalConfig. Retrieves the current repository state via the GitHub Git Trees API (recursive tree listing with blob SHAs), computes local git blob SHAs to identify creates, updates, and deletes without downloading remote content. Pushes changes via the GitHub Contents API (one commit per file). Generates and pushes manifest.json as the final step, cataloging all files with cache-busted raw URLs for Claude session access. Authenticates via PAT stored in dbo.Credentials (ServiceName: GitHub_xFACts).",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "SHA-Based Diff Without Downloads",
+                                                "note":  "Computes git blob SHA1 hashes locally using the same algorithm git uses internally (SHA1 of \"blob \u003csize\u003e\\0\u003ccontent\u003e\"). Compares these against the remote tree SHAs retrieved via a single API call. This identifies exactly which files changed without downloading any remote file content, keeping API usage minimal.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "BOM Stripping",
+                                                "note":  "Strips UTF-8 BOM (0xEF 0xBB 0xBF) from file content before computing SHAs and pushing to GitHub. PowerShell and some Windows editors add BOMs that GitHub does not expect, which would cause every file to appear as changed on every push and can trigger binary content detection.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Managed Prefix Scoping",
+                                                "note":  "Orphan detection (files in the repo not present locally) is scoped to four managed prefixes: xFACts-PowerShell/, xFACts-ControlCenter/, xFACts-Documentation/, xFACts-SQL/. Files outside these prefixes (such as manifest.json, README, .gitignore) are never deleted. This prevents the script from removing repo-level files it does not manage.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "Generated File Tracking",
+                                                "note":  "SQL object definitions and Platform Registry markdown are generated at runtime rather than read from disk. These paths are tracked in a GeneratedRepoPaths list so orphan detection does not flag them for deletion — they exist only in memory during the publish run, not as files on the server file system.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "topic":  "Manifest Cache-Buster Pattern",
+                                                "note":  "Each file URL in manifest.json includes a query parameter (?v=YYYYMMDDHHMMSS) derived from the publish timestamp. This forces CDN cache misses when Claude fetches files via web_fetch, ensuring current content regardless of GitHub CDN TTL. The manifest itself requires a user-provided cache-buster when fetched at the start of a Claude session.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "topic":  "Rate Limit Awareness",
+                                                "note":  "Checks GitHub API rate limit on startup and warns if remaining calls are low. Inserts 100ms pauses between file push operations to stay within API rate limits during large pushes. The Contents API has a lower effective rate limit than the Git Data API.",
+                                                "sortOrder":  6
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "Documentation Pipeline",
+                                                      "note":  "Runs as a step in the Invoke-DocPipeline.ps1 pipeline, launched from the Admin page Documentation modal. Can also run standalone. When run via the pipeline, the -Execute switch is always passed.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "dbo.Credentials",
+                                                      "note":  "Retrieves GitHub Personal Access Token via Get-ServiceCredentials using ServiceName GitHub_xFACts. The PAT requires repo scope for Contents API access (create, update, delete files).",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Platform Registry Tables",
+                                                      "note":  "Queries dbo.Module_Registry, dbo.Component_Registry, dbo.Object_Registry, and dbo.GlobalConfig to generate xFACts_Platform_Registry.md as part of each publish run. This ensures the registry export in the repository always reflects the current database state.",
+                                                      "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Claude Session Access",
+                                                      "note":  "The manifest.json produced by this script is the entry point for Claude to access repository content at the start of working sessions. Claude fetches the manifest to discover all file URLs, then fetches individual files on demand. The manifest must be fetched without token truncation for all URLs to be accessible.",
+                                                      "sortOrder":  4
+                                                  }
+                                              ]
                     }
                 ],
     "xeSessions":  [
