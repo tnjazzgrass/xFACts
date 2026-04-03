@@ -1,0 +1,1593 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_Export BDL"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub AcctTags_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Acctfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Acctfile = Me.outDir & "BDL_cnsmr_accnt_tag_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Acctfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_accnt_tag;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+        hdr = "<?xml version='1.0' encoding='UTF-8'?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>B" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00.001-05:00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <account_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Acctfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_accnt_tag seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_TAG"">"
+
+                    Set ntdf = dB.TableDefs("cnsmr_accnt_tag")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(10) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(8) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("cnsmr_accnt_tag")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(8) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_accnt_tag>"
+        
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "    </account_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+End Sub
+
+Private Sub addJdgmnt_Click()
+Dim fs, f
+Dim jn As Recordset
+Dim cnt As Long, seq As Long
+Dim fld As Field, nfld As Field, afld As Field
+Dim tdf As TableDef, ntdf As TableDef, nadi As TableDef, adi As TableDef
+Dim LineItem As Recordset, ad As Recordset, c As Recordset, cid As Recordset
+Dim BDL_Cnsmrfile As String, hdr As String, xmlb As String, nullify As String, bse As String, adl As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Cnsmrfile = Me.outDir & "BDL_jdgmnt_base_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Cnsmrfile
+
+    Set jn = dB.OpenRecordset("SELECT cnsmr_idntfr_agncy_id, 'a' AS docket FROM bdl_judgment_base UNION SELECT DISTINCT a.cnsmr_idntfr_agncy_id, 'b' AS docket FROM bdl_judgment_addl a INNER JOIN bdl_judgment_base b ON a.cnsmr_idntfr_agncy_id = b.cnsmr_idntfr_agncy_id;")
+    
+    jn.MoveLast
+    cnt = jn.RecordCount
+    
+    Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_judgment_base ORDER BY cnsmr_idntfr_agncy_id;")
+    
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <import_as_user_name>apischeduler</import_as_user_name>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>cnsmr_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <consumer_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Cnsmrfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Set ad = dB.OpenRecordset("SELECT * FROM bdl_judgment_addl ORDER BY cnsmr_idntfr_agncy_id;")
+        
+        If ad.EOF Then
+            
+        Else
+            
+            Do Until ad.EOF
+            
+                Set cid = dB.OpenRecordset("SELECT biz_key FROM bdl_jdg_bizkey WHERE cnsmr_idntfr_agncy_id = '" & ad!cnsmr_idntfr_agncy_id & "';")
+                
+                seq = seq + 1
+                
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<jdgmnt_addtnl_info seq_no=""" & seq & """ type=""JUDGEMENT_ADDITIONAL_INFO"" biz_ky_id=""" & cid!biz_key & """>"
+
+                    Set nadi = dB.TableDefs("bdl_judgment_addl")
+                    
+                        For Each afld In nadi.Fields
+                                
+                            nullify = nullify & IIf(ad(afld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & afld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                    End If
+                        nullify = ""
+            
+                    Set adi = dB.TableDefs("bdl_judgment_addl")
+                    
+                        For Each fld In adi.Fields
+                                
+                            xmlb = xmlb & IIf(IsNull(ad(fld.Name)), "", IIf(ad(fld.Name) = "NULL", "", IIf(fld.Name = "cnsmr_idntfr_agncy_id", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & ad(fld.Name) & "</" & fld.Name & ">")))
+                            
+                        Next
+                        
+                    xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</jdgmnt_addtnl_info>"
+                    
+                f.Write xmlb
+                xmlb = ""
+                nullify = ""
+            
+                ad.MoveNext
+            
+                Loop
+            
+        End If
+
+    
+        f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+        dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub closeBDL_Click()
+
+    DoCmd.OpenForm "Apps Toolkit", acNormal
+    DoCmd.Close acForm, "Export BDL", acSaveNo
+
+End Sub
+
+Private Sub exp_aUDP_Click()
+
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, A As Recordset, u As Recordset, uf As Recordset
+Dim BDL_Acctfile As String, hdr As String, xmlb As String, nullify As String, udp As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Acctfile = Me.outDir & "BDL_cnsmr_accnt_udp_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Acctfile
+
+    Set LineItem = dB.OpenRecordset("SELECT DISTINCT [Consumer Account Number], [UDP Name] FROM udp_cnsmr_accnt GROUP BY [Consumer Account Number], [UDP Name];")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <communication_reference_id_txt>Organization</communication_reference_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>cnsmr_accnt_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Acctfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    xmlb = ""
+        
+        Set A = dB.OpenRecordset("SELECT DISTINCT [Consumer Account Number] FROM udp_cnsmr_accnt GROUP BY [Consumer Account Number];")
+        
+        Do Until A.EOF
+        
+            'Compose UDP node
+             udp = ""
+             
+                'Find all UDPs for the account
+                 Set u = dB.OpenRecordset("SELECT DISTINCT [UDP Name] FROM udp_cnsmr_accnt WHERE [Consumer Account Number]='" & A![Consumer Account Number] & "' GROUP BY [UDP Name];")
+            
+                 Do Until u.EOF
+                 udp = udp & Chr(13) & Chr(10) & Space(14) & "<cnsmr_accnt_udp seq_no=""" & seq & """ type=""" & u![UDP Name] & """>"
+                 udp = udp & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_idntfr_agncy_id>" & A![Consumer Account Number] & "</cnsmr_accnt_idntfr_agncy_id>"
+                 udp = udp & Chr(13) & Chr(10) & Space(16) & "<udp_fields>"
+                    
+                    'Compose all field data for the current UDP
+                     Set uf = dB.OpenRecordset("SELECT * FROM udp_cnsmr_accnt WHERE [Consumer Account Number]='" & A![Consumer Account Number] & "' AND [UDP Name]='" & u![UDP Name] & "';")
+    
+                        Do Until uf.EOF
+                            udp = udp & Chr(13) & Chr(10) & Space(18) & "<udp_field xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""" & uf![Field Type] & "_type"" name=""" & uf![Field Name] & """>"
+                            udp = udp & Chr(13) & Chr(10) & Space(20) & "<value>" & uf![Field Value] & "</value>"
+                            udp = udp & Chr(13) & Chr(10) & Space(18) & "</udp_field>"
+                        uf.MoveNext
+                        Loop
+                                
+                  udp = udp & Chr(13) & Chr(10) & Space(16) & "</udp_fields>"
+                  udp = udp & Chr(13) & Chr(10) & Space(14) & "</cnsmr_accnt_udp>"
+                        
+                  u.MoveNext
+                  seq = seq + 1
+                  Loop
+     
+            xmlb = xmlb & udp
+            f.Write xmlb
+            xmlb = ""
+            
+          A.MoveNext
+          Loop
+        
+          f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_operational_transaction_data>"
+          f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+          f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+          f.Close
+          dB.Close
+
+    x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub exp_cUDP_Click()
+
+
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, A As Recordset, u As Recordset, uf As Recordset
+Dim BDL_Acctfile As String, hdr As String, xmlb As String, nullify As String, udp As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Acctfile = Me.outDir & "BDL_cnsmr_udp_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Acctfile
+
+    Set LineItem = dB.OpenRecordset("SELECT DISTINCT [Consumer Number], [UDP Name] FROM udp_cnsmr GROUP BY [Consumer Number], [UDP Name];")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <communication_reference_id_txt>Organization</communication_reference_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>cnsmr_accnt_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Acctfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    xmlb = ""
+        
+        Set A = dB.OpenRecordset("SELECT DISTINCT [Consumer Number] FROM udp_cnsmr GROUP BY [Consumer Number];")
+        
+        Do Until A.EOF
+        
+            'Compose UDP node
+             udp = ""
+             
+                'Find all UDPs for the account
+                 Set u = dB.OpenRecordset("SELECT DISTINCT [UDP Name] FROM udp_cnsmr WHERE [Consumer Number]='" & A![Consumer Number] & "' GROUP BY [UDP Name];")
+            
+                 Do Until u.EOF
+                 udp = udp & Chr(13) & Chr(10) & Space(14) & "<cnsmr_udp seq_no=""" & seq & """ type=""" & u![UDP Name] & """>"
+                 udp = udp & Chr(13) & Chr(10) & Space(16) & "<cnsmr_idntfr_agncy_id>" & A![Consumer Number] & "</cnsmr_idntfr_agncy_id>"
+                 udp = udp & Chr(13) & Chr(10) & Space(16) & "<udp_fields>"
+                    
+                    'Compose all field data for the current UDP
+                     Set uf = dB.OpenRecordset("SELECT * FROM udp_cnsmr WHERE [Consumer Number]='" & A![Consumer Number] & "' AND [UDP Name]='" & u![UDP Name] & "';")
+    
+                        Do Until uf.EOF
+                            udp = udp & Chr(13) & Chr(10) & Space(18) & "<udp_field xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""" & uf![Field Type] & "_type"" name=""" & uf![Field Name] & """>"
+                            udp = udp & Chr(13) & Chr(10) & Space(20) & "<value>" & uf![Field Value] & "</value>"
+                            udp = udp & Chr(13) & Chr(10) & Space(18) & "</udp_field>"
+                        uf.MoveNext
+                        Loop
+                                
+                  udp = udp & Chr(13) & Chr(10) & Space(16) & "</udp_fields>"
+                  udp = udp & Chr(13) & Chr(10) & Space(14) & "</cnsmr_udp>"
+                        
+                  u.MoveNext
+                  seq = seq + 1
+                  Loop
+     
+            xmlb = xmlb & udp
+            f.Write xmlb
+            xmlb = ""
+            
+          A.MoveNext
+          Loop
+        
+          f.Write Chr(13) & Chr(10) & "           </cnsmr_operational_transaction_data>"
+          f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+          f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+          f.Close
+          dB.Close
+
+    x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub expAccount_Click()
+
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Long, seq As Long
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Acctfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Acctfile = Me.outDir & "BDL_cnsmr_accnt_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Acctfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_accnt_operational_transaction_data;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <communication_reference_id_txt>Organization</communication_reference_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>cnsmr_accnt_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Acctfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt seq_no=""" & seq & """ type=""CONSUMERACCOUNT"">"
+
+                    Set ntdf = dB.TableDefs("cnsmr_accnt_operational_transaction_data")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("cnsmr_accnt_operational_transaction_data")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt>"
+        
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub expAddress_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Cnsmrfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Cnsmrfile = Me.outDir & "BDL_cnsmr_addrss_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Cnsmrfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_addrss;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "    <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <batch_id_txt>cnsmr_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <consumer_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Cnsmrfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_addrss seq_no=""" & seq & """ type=""CONSUMER_ADDRESS"">"
+
+                    Set ntdf = dB.TableDefs("cnsmr_addrss")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("cnsmr_addrss")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_addrss>"
+
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+'        LineItem.MoveFirst
+'        Do Until LineItem.EOF
+'
+'            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_tag seq_no=""" & seq & """ type=""CONSUMER_TAG"">"
+'
+'                xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+'                xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<tag_shrt_nm>541Addr</tag_shrt_nm>"
+'
+'            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_tag>"
+'
+'        f.Write xmlb
+'        xmlb = ""
+'        seq = seq + 1
+'
+'        LineItem.MoveNext
+'
+'        Loop
+        
+            f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub expAREvent_Click()
+
+Dim fs, f
+Dim cnt As Integer, seq As Integer
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_arfile As String, hdr As String, xmlb As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_arfile = Me.outDir & "BDL_ar_event_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_arfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_accnt_ar_log_operational_transaction_data;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+    hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+    hdr = hdr & Chr(13) & Chr(10) & "   xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"""
+    hdr = hdr & Chr(13) & Chr(10) & "   xsi:schemaLocation=""http://www.fico.com/xml/debtmanager/data/v1_0 dm_import_export.xsd"">"
+    hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+    hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>AR sender_1</sender_id_txt>"
+    hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>AR target_id_1</target_id_txt>"
+    hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>AR batch_id_" & c!flcnt & "</batch_id_txt>"
+    hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>"
+    hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+    hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+    hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+    hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+    hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_ar_log_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_arfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_ar_log seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_AR_LOG"">"
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_idntfr_lgcy_txt > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_lgcy_txt>" & LineItem!cnsmr_idntfr_lgcy_txt & "</cnsmr_idntfr_lgcy_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_idntfr_agncy_id > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_nm_frst_txt > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_nm_frst_txt>" & LineItem!cnsmr_nm_frst_txt & "</cnsmr_nm_frst_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_nm_lst_txt > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_nm_lst_txt>" & LineItem!cnsmr_nm_lst_txt & "</cnsmr_nm_lst_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_idntfr_lgcy_txt > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_idntfr_lgcy_txt>" & LineItem!cnsmr_accnt_idntfr_lgcy_txt & "</cnsmr_accnt_idntfr_lgcy_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_idntfr_agncy_id > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_idntfr_agncy_id>" & LineItem!cnsmr_accnt_idntfr_agncy_id & "</cnsmr_accnt_idntfr_agncy_id>", "")
+            xmlb = xmlb & IIf(Len(LineItem!crdtr_shrt_nm > 0), Chr(13) & Chr(10) & Space(20) & "<crdtr_shrt_nm>" & LineItem!crdtr_shrt_nm & "</crdtr_shrt_nm>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_crdtr_rfrnc_id_txt > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_crdtr_rfrnc_id_txt>" & LineItem!cnsmr_accnt_crdtr_rfrnc_id_txt & "</cnsmr_accnt_crdtr_rfrnc_id_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_crdtr_rfrnc_corltn_id_txt > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_crdtr_rfrnc_corltn_id_txt>" & LineItem!cnsmr_accnt_crdtr_rfrnc_corltn_id_txt & "</cnsmr_accnt_crdtr_rfrnc_corltn_id_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!actn_cd_shrt_val_txt > 0), Chr(13) & Chr(10) & Space(20) & "<actn_cd_shrt_val_txt>" & LineItem!actn_cd_shrt_val_txt & "</actn_cd_shrt_val_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!rslt_cd_shrt_val_txt > 0), Chr(13) & Chr(10) & Space(20) & "<rslt_cd_shrt_val_txt>" & LineItem!rslt_cd_shrt_val_txt & "</rslt_cd_shrt_val_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_ar_mssg_txt > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_mssg_txt>" & LineItem!cnsmr_accnt_ar_mssg_txt & "</cnsmr_accnt_ar_mssg_txt>", "")
+            xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_ar_log_crt_usr_nm > 0), Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_log_crt_usr_nm>" & LineItem!cnsmr_accnt_ar_log_crt_usr_nm & "</cnsmr_accnt_ar_log_crt_usr_nm>", "")
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt_ar_log>"
+        
+        f.Write xmlb
+        xmlb = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_ar_log_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub expConsumer_Click()
+
+Dim vTemp
+Dim wDb As Database
+Dim tdf As TableDef
+Dim qrySet As String, dLine As String, fldName As String, sql As String, rType As String, BDL_cnsmr As String
+Dim fld As Field, fldSize As Integer
+Dim actPt As Recordset, rst As Recordset, rsChk As Recordset, rstR As Recordset
+Dim oFS As FileSystemObject, oFS1 As FileSystemObject
+Dim oTS As TextStream, oTS1 As TextStream
+Dim fs, f
+Dim ConID As String, AccID As String, SerID As String
+
+BDL_cnsmr = Me.outDir & "BDL_cnsmr.xml"
+    
+    DoCmd.TransferText acExportFixed, "expRecord00", "Record00", FCL
+    DoCmd.TransferText acExportFixed, "expRecord99", "Record99", "C:\TestData\Record99.txt"
+
+    Set wDb = CurrentDb
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(FCL, ForAppending, TristateFalse)
+    Set actPt = wDb.OpenRecordset("SELECT [Unique Consumer ID] FROM Record01;")
+
+        Do Until actPt.EOF
+        
+            Me.actAcct = actPt![Unique Consumer ID]
+            Me.Recalc
+            Me.Repaint
+            
+            Set rst = wDb.OpenRecordset("SELECT RecordType, TotalCnt, RecLen FROM RecordCnt WHERE TotalCnt>0 AND RecordType < 'Record35' OR TotalCnt>0 AND RecordType > 'Record59';")
+        
+            Do Until rst.EOF
+            
+                dLine = ""
+                
+                rType = IIf(rst!RecordType = "Record37", " (Primary)", "")
+                sql = "SELECT * FROM " & rst!RecordType & " WHERE [Unique Consumer ID" & rType & "]='" & actPt![Unique Consumer ID] & "';"
+                Set rsChk = wDb.OpenRecordset(sql)
+                
+                While Not rsChk.EOF
+                        
+                    Set tdf = wDb.TableDefs(rst!RecordType)
+                    
+                        For Each fld In tdf.Fields
+                        
+                                If fld.Type <> 10 Then
+                                    fldName = fld.Name & tdf.Name
+                                    Select Case fldName
+                                        Case "CommentRecord04", "Creditor DescriptionRecord60"
+                                            fldSize = 512
+                                        Case "CommentRecord80", "Custom Page Information FieldRecord15", "Custom Page Information FieldRecord42", "Custom Page Information FieldRecord74"
+                                            fldSize = 500
+                                        Case "RemarksRecord50", "DescriptionRecord52", "Supplemental InformationRecord52", "Reason Not CoveredRecord54"
+                                            fldSize = 1024
+                                        Case Else
+                                            fldSize = 256
+                                    End Select
+                                Else
+                                    fldSize = fld.Size
+                                End If
+                            
+                            dLine = dLine & rsChk(fld.Name) & Space(fldSize - IIf(IsNull(rsChk(fld.Name)), 0, Len(rsChk(fld.Name))))
+                            
+                            If rst!RecordType = "Record31" Then
+                                ConID = rsChk![Unique Consumer ID]
+                                AccID = rsChk![Unique Consumer Account ID]
+                            End If
+
+                        Next
+                
+                    dLine = dLine & Chr(13) & Chr(10)
+                    
+                    If rst!RecordType = "Record31" Then
+                        dLine = dLine & MedRec(ConID, AccID)
+                    End If
+                
+                    If dLine <> "" Then
+                        f.Write dLine
+                        dLine = ""
+                    End If
+                    
+                    rsChk.MoveNext
+                    
+                    Wend
+            
+            rst.MoveNext
+            Loop
+
+        actPt.MoveNext
+        Loop
+        
+    f.Close
+    wDb.Close
+
+    Set oFS = New FileSystemObject
+    Set oFS1 = New FileSystemObject
+    Set oTS = oFS.OpenTextFile("C:\TestData\Record99.txt", ForReading)
+    vTemp = oTS.ReadAll
+    oTS.Close
+    
+    Set oTS1 = oFS.OpenTextFile(FCL, ForAppending, True)
+    oTS1.Write (vTemp)
+    oTS1.Close
+    
+    Kill "C:\TestData\Record99.txt"
+    
+    x = MsgBox("Export complete, ready for XML encoding", vbOKOnly, "FILE READY")
+    
+End Sub
+
+Private Sub expCnsmrTags_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Long, seq As Long
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Acctfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Acctfile = Me.outDir & "BDL_cnsmr_tag_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Acctfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_tag;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+        hdr = "<?xml version='1.0' encoding='UTF-8'?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>B" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00.001-05:00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <account_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Acctfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_tag seq_no=""" & seq & """ type=""CONSUMER_TAG"">"
+
+                    Set ntdf = dB.TableDefs("cnsmr_tag")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(10) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(8) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("cnsmr_tag")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(8) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_tag>"
+        
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "    </account_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub expCnsmrUpdt_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Long, seq As Long
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Cnsmrfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Cnsmrfile = Me.outDir & "BDL_cnsmr_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Cnsmrfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>cnsmr_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <consumer_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Cnsmrfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr seq_no=""" & seq & """ type=""CONSUMER"">"
+
+                    Set ntdf = dB.TableDefs("cnsmr")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("cnsmr")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr>"
+        
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+Private Sub expConComm_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Cnsmrfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Cnsmrfile = Me.outDir & "BDL_cnsmr_cmmnt_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Cnsmrfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_cmmnt;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "    <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <batch_id_txt>cnsmr_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <consumer_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Cnsmrfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        LineItem.MoveFirst
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_cmmnt seq_no=""" & seq & """ type=""CONSUMER_COMMENT"">"
+
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_cmmnt_txt>" & LineItem!cnsmr_cmmnt & "</cnsmr_cmmnt_txt>"
+
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_cmmnt>"
+
+        f.Write xmlb
+        xmlb = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+End Sub
+
+Private Sub expCreditorUser_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Long, seq As Long
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim CDL_PortalFile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+CDL_PortalFile = Me.outDir & "CDL_creditor_portal_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", CDL_PortalFile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM creditor_portal_config;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+        hdr = "<?xml version=""1.0""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>B" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_type>CONFIG_ITEM</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <total_count>" & cnt + 2 & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00.001-05:00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property name=""crs.core.reference.cnfg_entty_typ_cd.portal_user_role_association.header.count"">1</custom_property>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property name=""db.version"">R11.1.0.1.5.24</custom_property>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property name=""crs.core.reference.cnfg_entty_typ_cd.creditor_portal_user.header.count"">1</custom_property>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property name=""crs.core.reference.cnfg_entty_typ_cd.portal_user_creditor_association.header.count"">" & cnt & "</custom_property>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <config_items>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(CDL_PortalFile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 3
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<config_item xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""cdl_crdtr_prtl_usr_crdtr_assctn_data_type"" cdl_item_stgng_prnt_id=""" & LineItem!prtl_usr_id & """ type=""PORTAL_USER_CREDITOR_ASSOCIATION"" entty_id=""" & LineItem!assctn_id & """  seq_no=""" & seq & """ > "
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<crdtr_shrt_nm>" & LineItem!crdtr_shrt_nm & "</crdtr_shrt_nm>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<crdtr_prtl_usr_crdtr_assctn_sft_dlt_flg>false</crdtr_prtl_usr_crdtr_assctn_sft_dlt_flg>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</config_item>"
+        
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "  </config_items>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for CDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub expJdgmnt_base_Click()
+Dim fs, f
+Dim jn As Recordset
+Dim cnt As Long, seq As Long
+Dim fld As Field, nfld As Field, afld As Field
+Dim tdf As TableDef, ntdf As TableDef, nadi As TableDef, adi As TableDef
+Dim LineItem As Recordset, ad As Recordset, c As Recordset, cid As Recordset
+Dim BDL_Cnsmrfile As String, hdr As String, xmlb As String, nullify As String, bse As String, adl As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Cnsmrfile = Me.outDir & "BDL_jdgmnt_base_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Cnsmrfile
+
+    Set jn = dB.OpenRecordset("SELECT cnsmr_idntfr_agncy_id, 'a' AS docket FROM bdl_judgment_base UNION SELECT DISTINCT a.cnsmr_idntfr_agncy_id, 'b' AS docket FROM bdl_judgment_addl a INNER JOIN bdl_judgment_base b ON a.cnsmr_idntfr_agncy_id = b.cnsmr_idntfr_agncy_id;")
+    
+    jn.MoveLast
+    cnt = jn.RecordCount
+    
+    Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_judgment_base ORDER BY cnsmr_idntfr_agncy_id;")
+    
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <import_as_user_name>apischeduler</import_as_user_name>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>cnsmr_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "           <consumer_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Cnsmrfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+            
+            Set cid = dB.OpenRecordset("SELECT biz_key FROM bdl_jdg_bizkey WHERE cnsmr_idntfr_agncy_id = '" & LineItem!cnsmr_idntfr_agncy_id & "';")
+            
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<jdgmnt seq_no=""" & seq & """ type=""LEGAL_JUDGEMENT"" biz_ky_id=""" & cid!biz_key & """>"
+
+                    Set ntdf = dB.TableDefs("bdl_judgment_base")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                    End If
+                        nullify = ""
+            
+                Set tdf = dB.TableDefs("bdl_judgment_base")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</jdgmnt>"
+                            
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+
+        Set ad = dB.OpenRecordset("SELECT * FROM bdl_judgment_addl ORDER BY cnsmr_idntfr_agncy_id;")
+        
+        If ad.EOF Then
+            
+        Else
+            
+            Do Until ad.EOF
+            
+                Set cid = dB.OpenRecordset("SELECT biz_key FROM bdl_jdg_bizkey WHERE cnsmr_idntfr_agncy_id = '" & ad!cnsmr_idntfr_agncy_id & "';")
+                
+                seq = seq + 1
+                
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<jdgmnt_addtnl_info seq_no=""" & seq & """ type=""JUDGEMENT_ADDITIONAL_INFO"" biz_ky_id=""" & cid!biz_key & """>"
+
+                    Set nadi = dB.TableDefs("bdl_judgment_addl")
+                    
+                        For Each afld In nadi.Fields
+                                
+                            nullify = nullify & IIf(ad(afld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & afld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                    End If
+                        nullify = ""
+            
+                    Set adi = dB.TableDefs("bdl_judgment_addl")
+                    
+                        For Each fld In adi.Fields
+                                
+                            xmlb = xmlb & IIf(IsNull(ad(fld.Name)), "", IIf(ad(fld.Name) = "NULL", "", IIf(fld.Name = "cnsmr_idntfr_agncy_id", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & ad(fld.Name) & "</" & fld.Name & ">")))
+                            
+                        Next
+                        
+                    xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</jdgmnt_addtnl_info>"
+                    
+                f.Write xmlb
+                xmlb = ""
+                nullify = ""
+            
+                ad.MoveNext
+            
+                Loop
+            
+        End If
+        
+        f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+        dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+
+Private Sub expPaySchedule_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, ins As Recordset, act As Recordset, c As Recordset
+Dim BDL_PaySchedule As String, hdr As String, xmlb As String, nullify As String, inSQL As String, acSQL As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_PaySchedule = Me.outDir & "BDL_pay_schedule_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_PaySchedule
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM schdld_pymnt_smmry;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"""
+        hdr = hdr & Chr(13) & Chr(10) & "  xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"""
+        hdr = hdr & Chr(13) & Chr(10) & "  xsi:schemaLocation=""http://www.fico.com/xml/debtmanager/data/v1_0 dm_import_export.xsd"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>B" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_type>PAYMENT_SCHEDULE</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00.001-05:00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <payment_schedule_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_PaySchedule, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<schdld_pymnt_smmry seq_no=""" & seq & """ type=""PAYMENT_SCHEDULE"">"
+
+                    Set ntdf = dB.TableDefs("schdld_pymnt_smmry")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(10) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(8) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("schdld_pymnt_smmry")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(8) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</schdld_pymnt_smmry>"
+            
+                inSQL = "SELECT * FROM schdld_pymnt_instnc WHERE schdld_pymnt_smmry_idntfr = '" & LineItem!schdld_pymnt_smmry_idntfr & "' ORDER BY schdld_pymnt_instnc_dttm;"
+                Set ins = dB.OpenRecordset(inSQL)
+                
+                seq = seq + 1
+                
+                    Do Until ins.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<schdld_pymnt_instnc seq_no=""" & seq & """ type=""SCHEDULED_PAYMENT"">"
+                        
+                            Set tdf = dB.TableDefs("schdld_pymnt_instnc")
+                            
+                                For Each fld In tdf.Fields
+                                        
+                                    xmlb = xmlb & IIf(IsNull(ins(fld.Name)), "", IIf(ins(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(12) & "<" & fld.Name & ">" & ins(fld.Name) & "</" & fld.Name & ">"))
+                                    
+                                Next
+                            
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</schdld_pymnt_instnc>"
+                        
+                        seq = seq + 1
+                        
+                    ins.MoveNext
+                    Loop
+                    
+                acSQL = "SELECT * FROM schdld_pymnt_cnsmr_accnt_assctn WHERE schdld_pymnt_smmry_idntfr = '" & LineItem!schdld_pymnt_smmry_idntfr & "' ORDER BY cnsmr_accnt_idntfr_agncy_id;"
+                Set act = dB.OpenRecordset(acSQL)
+                
+                    Do Until act.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<schdld_pymnt_cnsmr_accnt_assctn seq_no=""" & seq & """ type=""PAYMENT_SCHEDULE_CONSUMER_ACCOUNT"">"
+                        
+                            Set tdf = dB.TableDefs("schdld_pymnt_cnsmr_accnt_assctn")
+                            
+                                For Each fld In tdf.Fields
+                                        
+                                    xmlb = xmlb & IIf(IsNull(act(fld.Name)), "", IIf(act(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(12) & "<" & fld.Name & ">" & act(fld.Name) & "</" & fld.Name & ">"))
+                                    
+                                Next
+                            
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</schdld_pymnt_cnsmr_accnt_assctn>"
+                        
+                        seq = seq + 1
+                    
+                    act.MoveNext
+                    Loop
+        
+        f.Write xmlb
+        xmlb = ""
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "    </payment_schedule_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+End Sub
+
+Private Sub expPhones_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Cnsmrfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Cnsmrfile = Me.outDir & "BDL_cnsmr_phn_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Cnsmrfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_phn;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+    hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "    <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <batch_id_txt>cnsmr_btch_id_" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <consumer_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Cnsmrfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_phn seq_no=""" & seq & """ type=""CONSUMER"">"
+
+                    Set ntdf = dB.TableDefs("cnsmr_phn")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("cnsmr_phn")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_phn>"
+        
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+End Sub
+
+Private Sub JntOwnrs_Click()
+Dim fs, f
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim tdf As TableDef, ntdf As TableDef
+Dim LineItem As Recordset, c As Recordset
+Dim BDL_Acctfile As String, hdr As String, xmlb As String, nullify As String
+
+    Set dB = CurrentDb
+
+dB.Execute "UPDATE FileCnt SET FileCnt.flcnt = [flcnt]+1;"
+Set c = dB.OpenRecordset("SELECT flcnt FROM FileCnt;")
+BDL_Acctfile = Me.outDir & "BDL_cnsmr_accnt_" & c!flcnt & ".txt"
+DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", BDL_Acctfile
+
+    Set LineItem = dB.OpenRecordset("SELECT * FROM cnsmr_accnt_ownrs;")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+        hdr = "<?xml version='1.0' encoding='UTF-8'?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>B" & c!flcnt & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00.001-05:00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <account_operational_transaction_data>"
+
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    Set f = fs.OpenTextFile(BDL_Acctfile, ForAppending, TristateFalse)
+    
+    f.Write hdr
+    
+    seq = 1
+    nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_accnt_ownrs seq_no=""" & seq & """ type=""JOINT_ACCOUNT_OWNERSHIP"">"
+
+                    Set ntdf = dB.TableDefs("cnsmr_accnt_ownrs")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(10) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(8) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("cnsmr_accnt_ownrs")
+                
+                    For Each fld In tdf.Fields
+                            
+                        xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(8) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_accnt_ownrs>"
+        
+        f.Write xmlb
+        xmlb = ""
+        nullify = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        
+        Loop
+        
+            f.Write Chr(13) & Chr(10) & "    </account_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            dB.Close
+
+x = MsgBox("Export complete, ready for BDL processing", vbOKOnly, "FILE READY")
+
+End Sub
+Private Sub Command16_Click()
+On Error GoTo Err_Command16_Click
+
+
+    Screen.PreviousControl.SetFocus
+    DoCmd.FindNext
+
+Exit_Command16_Click:
+    Exit Sub
+
+Err_Command16_Click:
+    MsgBox err.Description
+    Resume Exit_Command16_Click
+    
+End Sub
