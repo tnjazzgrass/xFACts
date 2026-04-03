@@ -1,6 +1,42 @@
 {
     "tables":  [
                    {
+                       "name":  "BDL_CONSUMERACCOUNT_dhirt_20260403_153526",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_accnt_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "cnsmr_accnt_crdtr_rfrnc_id_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "40",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
                        "name":  "BDL_PHONE_bgilbert_20260403_110805",
                        "columns":  [
                                        {
@@ -1298,6 +1334,142 @@
                    },
                    {
                        "name":  "BDL_PHONE_dcota_20260403_075915",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "cnsmr_phn_nmbr_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "cnsmr_phn_typ_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "cnsmr_phn_stts_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "cnsmr_phn_src_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "cnsmr_phn_qlty_score_nmbr",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
+                       "name":  "BDL_PHONE_dhirt_20260403_150842",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "cnsmr_phn_nmbr_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "cnsmr_phn_typ_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "cnsmr_phn_stts_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "cnsmr_phn_src_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "cnsmr_phn_qlty_score_nmbr",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
+                       "name":  "BDL_PHONE_dhirt_20260403_152047",
                        "columns":  [
                                        {
                                            "ordinal":  1,
