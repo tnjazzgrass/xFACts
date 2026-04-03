@@ -14,6 +14,7 @@ var BDL = (function () {
     var uploadedFile = null, parsedFileData = null, columnMapping = null;
     var validationResult = null, stagingContext = null;
     var allEntities = [], MAX_PREVIEW_ROWS = 10;
+    var executeInProgress = false;
 
     function init() { loadEnvironments(); restoreCompactMode(); checkStagingCleanup(); }
 
@@ -46,6 +47,7 @@ var BDL = (function () {
     function nextStep() {
         if (currentStep < totalSteps && stepComplete[currentStep - 1]) {
             if (currentStep === 4) { stageData(function () { runValidation(); }); return; }
+            if (currentStep === 5) { showStep(6); renderExecuteReview(); return; }
             showStep(currentStep + 1);
         }
     }
@@ -91,9 +93,17 @@ var BDL = (function () {
     }
     function updateNavButtons() {
         var back = document.getElementById('btn-back'), next = document.getElementById('btn-next');
-        back.disabled = (currentStep === 1); next.disabled = !stepComplete[currentStep - 1];
-        if (currentStep === totalSteps) { next.textContent = 'Execute Import'; next.classList.add('btn-execute'); }
-        else { next.innerHTML = 'Next &#8594;'; next.classList.remove('btn-execute'); }
+        back.disabled = (currentStep === 1);
+
+        if (currentStep === 6) {
+            // Hide the default Next button on Step 6 — execute button is in the panel
+            next.style.display = 'none';
+        } else {
+            next.style.display = '';
+            next.disabled = !stepComplete[currentStep - 1];
+            next.innerHTML = 'Next &#8594;';
+            next.classList.remove('btn-execute');
+        }
     }
 
     // ── Step 1 ───────────────────────────────────────────────────────────
@@ -105,7 +115,7 @@ var BDL = (function () {
     function renderEnvironments(envs) {
         var c = document.getElementById('env-cards');
         if (!envs.length) { c.innerHTML = '<div class="placeholder-message">No environments configured.</div>'; return; }
-        var h = ''; envs.forEach(function (env) { h += '<div class="env-card" data-env="' + env.environment + '" onclick="BDL.selectEnvironment(this,' + env.config_id + ')"><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div></div>'; });
+        var h = ''; envs.forEach(function (env) { var locked = (env.environment === 'STAGE' || env.environment === 'PROD'); h += '<div class="env-card' + (locked ? ' env-locked' : '') + '" data-env="' + env.environment + '"' + (locked ? '' : ' onclick="BDL.selectEnvironment(this,' + env.config_id + ')"') + '><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div>' + (locked ? '<div class="env-locked-label">Coming Soon</div>' : '') + '</div>'; });
         c.innerHTML = h; c._envData = envs;
     }
     function selectEnvironment(card, configId) {
@@ -533,16 +543,299 @@ var BDL = (function () {
 
     function revalidate() { validationResult = null; runValidation(); }
 
+    // ── Step 6: Review & Execute ─────────────────────────────────────────
+
+    function renderExecuteReview() {
+        var area = document.getElementById('execute-area');
+        var envName = selectedEnvironment ? selectedEnvironment.environment : '?';
+        var entityName = formatEntityName(selectedEntity ? selectedEntity.entity_type : '?');
+        var fileName = uploadedFile ? uploadedFile.name : '?';
+        var mappedCount = columnMapping ? Object.keys(columnMapping).length : 0;
+        var rowCount = stagingContext ? stagingContext.row_count : 0;
+
+        var html = '';
+
+        // Summary card
+        html += '<div class="execute-summary">';
+        html += '<div class="execute-summary-header">Import Summary</div>';
+        html += '<div class="execute-summary-grid">';
+        html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
+        html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value">' + entityName + ' <code class="summary-code">' + escapeHtml(selectedEntity.entity_type) + '</code></span></div>';
+        html += '<div class="summary-item"><span class="summary-label">Source File</span><span class="summary-value">' + escapeHtml(fileName) + '</span></div>';
+        html += '<div class="summary-item"><span class="summary-label">Rows to Import</span><span class="summary-value">' + rowCount.toLocaleString() + '</span></div>';
+        html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>';
+        html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(stagingContext.staging_table) + '</code></span></div>';
+        html += '</div></div>';
+
+        // Column mapping reference
+        html += '<div class="execute-mapping">';
+        html += '<div class="execute-section-header" onclick="BDL.toggleSection(\'mapping-ref\')">Column Mapping <span class="section-toggle" id="toggle-mapping-ref">&#9660;</span></div>';
+        html += '<div class="execute-section-body" id="mapping-ref">';
+        var mKeys = Object.keys(columnMapping);
+        mKeys.forEach(function (sc) {
+            var te = columnMapping[sc];
+            var displayName = getFieldDisplayNameByElement(te);
+            html += '<div class="execute-map-row"><span class="exec-map-source">' + escapeHtml(sc) + '</span><span class="exec-map-arrow">&#8594;</span>';
+            if (displayName !== te) {
+                html += '<span class="exec-map-target">' + escapeHtml(displayName) + ' <code>' + te + '</code></span>';
+            } else {
+                html += '<span class="exec-map-target"><code>' + te + '</code></span>';
+            }
+            html += '</div>';
+        });
+        html += '</div></div>';
+
+        // XML Preview section
+        html += '<div class="execute-preview">';
+        html += '<div class="execute-section-header" onclick="BDL.toggleSection(\'xml-preview\')">XML Preview <span class="section-toggle" id="toggle-xml-preview">&#9654;</span></div>';
+        html += '<div class="execute-section-body collapsed" id="xml-preview">';
+        html += '<div class="xml-preview-loading" id="xml-preview-content">Click to load XML preview...</div>';
+        html += '<div class="xml-preview-actions"><button class="nav-btn" onclick="BDL.loadXmlPreview()">Load Preview</button></div>';
+        html += '</div></div>';
+
+        // Execute button and progress area
+        html += '<div class="execute-actions" id="execute-actions">';
+        if (envName === 'PROD') {
+            html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>';
+        }
+        html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeImport()">Submit BDL Import</button>';
+        html += '</div>';
+
+        // Progress area (hidden until execute starts)
+        html += '<div class="execute-progress hidden" id="execute-progress"></div>';
+
+        // Result area (hidden until complete)
+        html += '<div class="execute-result hidden" id="execute-result"></div>';
+
+        area.innerHTML = html;
+    }
+
+    function toggleSection(sectionId) {
+        var body = document.getElementById(sectionId);
+        var toggle = document.getElementById('toggle-' + sectionId);
+        if (!body) return;
+        if (body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            if (toggle) toggle.innerHTML = '&#9660;';
+        } else {
+            body.classList.add('collapsed');
+            if (toggle) toggle.innerHTML = '&#9654;';
+        }
+    }
+
+    function loadXmlPreview() {
+        var content = document.getElementById('xml-preview-content');
+        content.innerHTML = '<div class="loading">Building XML preview...</div>';
+ 
+        fetch('/api/bdl-import/build-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staging_table: stagingContext.staging_table, entity_type: selectedEntity.entity_type, config_id: selectedEnvironment.config_id }) })
+        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+        .then(function (data) {
+            var sizeKB = (data.full_size_bytes / 1024).toFixed(1);
+            var header = '<div class="xml-preview-header">';
+            header += '<span class="xml-filename">' + escapeHtml(data.xml_filename) + '</span>';
+            header += '<span class="xml-meta">' + data.row_count.toLocaleString() + ' rows &middot; ' + sizeKB + ' KB';
+            if (data.truncated) header += ' &middot; <em>preview truncated</em>';
+            header += '</span></div>';
+            content.innerHTML = header + '<pre class="xml-preview-code">' + highlightXml(data.xml) + '</pre>';
+        })
+        .catch(function (err) {
+            content.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to build preview: ' + err.message + '</div>';
+        });
+    }
+	
+    function highlightXml(xml) {
+        // Escape HTML first, then apply syntax coloring via spans
+        var s = xml
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+ 
+        // XML declaration: <?xml ... ?>
+        s = s.replace(/(&lt;\?xml\b)(.*?)(\?&gt;)/g,
+            '<span class="xml-decl">$1$2$3</span>');
+ 
+        // Comments: <!-- ... -->
+        s = s.replace(/(&lt;!--)([\s\S]*?)(--&gt;)/g,
+            '<span class="xml-comment">$1$2$3</span>');
+ 
+        // Closing tags: </tagname>
+        s = s.replace(/(&lt;\/)([\w_:-]+)(&gt;)/g,
+            '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
+ 
+        // Self-closing tags: <tagname/>
+        s = s.replace(/(&lt;)([\w_:-]+)(\/&gt;)/g,
+            '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
+ 
+        // Opening tags with attributes — process in two passes
+        // First: match the tag open and tag name
+        s = s.replace(/(&lt;)([\w_:-]+)((?:\s+[\w_:-]+=&quot;[^&]*?&quot;)*\s*\/?)(&gt;)/g,
+            function (match, lt, tagName, attrs, gt) {
+                // Now highlight attributes within the attrs portion
+                var coloredAttrs = attrs.replace(/([\w_:-]+)(=)(&quot;)(.*?)(&quot;)/g,
+                    '<span class="xml-attr-name">$1</span><span class="xml-bracket">$2</span><span class="xml-attr-val">$3$4$5</span>');
+                return '<span class="xml-bracket">' + lt + '</span><span class="xml-tag">' + tagName + '</span>' + coloredAttrs + '<span class="xml-bracket">' + gt + '</span>';
+            });
+ 
+        // Text content between tags — color the values
+        s = s.replace(/(<\/span>)([^<]+)(<span class="xml-bracket">&lt;)/g,
+            function (match, closeSpan, text, openSpan) {
+                if (text.trim() === '') return match;
+                return closeSpan + '<span class="xml-value">' + text + '</span>' + openSpan;
+            });
+ 
+        return s;
+    }
+ 
+    function executeImport() {
+        if (executeInProgress) return;
+
+        // Confirmation
+        var envName = selectedEnvironment.environment;
+        var msg = 'Submit BDL import to ' + envName + '?\n\n';
+        msg += 'Entity: ' + selectedEntity.entity_type + '\n';
+        msg += 'Rows: ' + stagingContext.row_count.toLocaleString() + '\n\n';
+        if (envName === 'PROD') msg += 'WARNING: This is a PRODUCTION import and cannot be undone.\n\n';
+        msg += 'Continue?';
+        if (!confirm(msg)) return;
+
+        executeInProgress = true;
+
+        // Disable the execute button
+        var execBtn = document.getElementById('btn-execute-import');
+        if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; }
+
+        // Show progress area
+        var progress = document.getElementById('execute-progress');
+        progress.classList.remove('hidden');
+        progress.innerHTML = renderProgressSteps('building');
+
+        // Build the column mapping JSON for audit
+        var mappingJson = JSON.stringify(columnMapping);
+
+        fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                staging_table: stagingContext.staging_table,
+                entity_type: selectedEntity.entity_type,
+                config_id: selectedEnvironment.config_id,
+                source_filename: uploadedFile ? uploadedFile.name : 'unknown',
+                column_mapping: mappingJson
+            })
+        })
+        .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
+        .then(function (data) {
+            executeInProgress = false;
+
+            if (data._httpStatus >= 400 || data.error) {
+                // Failed
+                progress.innerHTML = renderProgressSteps('failed');
+                var result = document.getElementById('execute-result');
+                result.classList.remove('hidden');
+                result.innerHTML = '<div class="execute-result-fail">'
+                    + '<span class="result-icon">&#10006;</span>'
+                    + '<div><strong>Import Failed</strong>'
+                    + '<div class="result-detail">' + escapeHtml(data.error) + '</div>'
+                    + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '')
+                    + '</div></div>';
+
+                if (execBtn) { execBtn.disabled = false; execBtn.textContent = 'Retry Submit'; }
+            } else {
+                // Success
+                progress.innerHTML = renderProgressSteps('submitted');
+                var result = document.getElementById('execute-result');
+                result.classList.remove('hidden');
+                result.innerHTML = '<div class="execute-result-success">'
+                    + '<span class="result-icon">&#10003;</span>'
+                    + '<div><strong>BDL Import Submitted</strong>'
+                    + '<div class="result-detail">' + escapeHtml(data.message) + '</div>'
+                    + '<div class="result-meta">'
+                    + 'File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; '
+                    + 'Registry ID: <strong>' + data.file_registry_id + '</strong> &middot; '
+                    + 'Log ID: ' + data.log_id + ' &middot; '
+                    + data.row_count.toLocaleString() + ' rows'
+                    + '</div></div></div>';
+
+                // Hide the execute button area
+                var actions = document.getElementById('execute-actions');
+                if (actions) actions.classList.add('hidden');
+
+                stepComplete[5] = true;
+                updateStepperUI();
+            }
+        })
+        .catch(function (err) {
+            executeInProgress = false;
+            progress.innerHTML = renderProgressSteps('failed');
+            var result = document.getElementById('execute-result');
+            result.classList.remove('hidden');
+            result.innerHTML = '<div class="execute-result-fail">'
+                + '<span class="result-icon">&#10006;</span>'
+                + '<div><strong>Request Failed</strong>'
+                + '<div class="result-detail">' + escapeHtml(err.message) + '</div>'
+                + '</div></div>';
+
+            if (execBtn) { execBtn.disabled = false; execBtn.textContent = 'Retry Submit'; }
+        });
+    }
+
+    function renderProgressSteps(currentPhase) {
+        var phases = [
+            { key: 'building',   label: 'Building XML' },
+            { key: 'writing',    label: 'Writing File' },
+            { key: 'registered', label: 'Registering with DM' },
+            { key: 'submitted',  label: 'Triggering Import' }
+        ];
+
+        var phaseOrder = { building: 0, writing: 1, registered: 2, submitted: 3, failed: -1 };
+        var currentIdx = phaseOrder[currentPhase] !== undefined ? phaseOrder[currentPhase] : -1;
+        var isFailed = (currentPhase === 'failed');
+
+        var html = '<div class="progress-steps">';
+        phases.forEach(function (p, idx) {
+            var cls = 'progress-step';
+            if (isFailed) {
+                cls += (idx <= Math.max(currentIdx, 0)) ? ' progress-failed' : '';
+            } else if (idx < currentIdx) {
+                cls += ' progress-complete';
+            } else if (idx === currentIdx) {
+                cls += ' progress-active';
+            }
+            var icon = '';
+            if (isFailed && idx === Math.max(currentIdx, 0)) icon = '&#10006;';
+            else if (idx < currentIdx || (currentPhase === 'submitted' && idx === currentIdx)) icon = '&#10003;';
+            else if (idx === currentIdx && !isFailed) icon = '&#9679;';
+            else icon = '&#9675;';
+
+            html += '<div class="' + cls + '"><span class="progress-icon">' + icon + '</span><span class="progress-label">' + p.label + '</span></div>';
+            if (idx < phases.length - 1) html += '<div class="progress-connector' + (idx < currentIdx ? ' progress-connector-done' : '') + '"></div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
     function resetFromStep(step) {
         for (var i = step - 1; i < totalSteps; i++) stepComplete[i] = false;
         if (step <= 3) { uploadedFile = null; parsedFileData = null; }
         if (step <= 4) { columnMapping = null; }
         if (step <= 5) { validationResult = null; stagingContext = null; }
+        executeInProgress = false;
         updateStepperUI(); updateNavButtons();
     }
 
     function escapeHtml(str) { if (!str) return ''; var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
-    return { init: init, goToStep: goToStep, nextStep: nextStep, prevStep: prevStep, toggleCompactMode: toggleCompactMode, selectEnvironment: selectEnvironment, selectEntity: selectEntity, filterEntities: filterEntities, dragOver: dragOver, dragLeave: dragLeave, fileDrop: fileDrop, fileSelected: fileSelected, removeFile: removeFile, sourceClick: sourceClick, targetClick: targetClick, chipDragStart: chipDragStart, chipDragOver: chipDragOver, chipDrop: chipDrop, unmapPair: unmapPair, identifierChanged: identifierChanged, revalidate: revalidate, applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows, runCleanup: runCleanup };
+    return {
+        init: init, goToStep: goToStep, nextStep: nextStep, prevStep: prevStep,
+        toggleCompactMode: toggleCompactMode, selectEnvironment: selectEnvironment,
+        selectEntity: selectEntity, filterEntities: filterEntities,
+        dragOver: dragOver, dragLeave: dragLeave, fileDrop: fileDrop, fileSelected: fileSelected, removeFile: removeFile,
+        sourceClick: sourceClick, targetClick: targetClick, chipDragStart: chipDragStart, chipDragOver: chipDragOver, chipDrop: chipDrop,
+        unmapPair: unmapPair, identifierChanged: identifierChanged,
+        revalidate: revalidate, applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows,
+        runCleanup: runCleanup,
+        // Step 6
+        toggleSection: toggleSection, loadXmlPreview: loadXmlPreview, executeImport: executeImport
+    };
 })();
 document.addEventListener('DOMContentLoaded', BDL.init);
