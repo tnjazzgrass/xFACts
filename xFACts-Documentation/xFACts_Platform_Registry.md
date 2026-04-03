@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-03 04:32:10
+Generated: 2026-04-03 10:29:03
 
 ## Module Registry
 
@@ -405,9 +405,9 @@ Generated: 2026-04-03 04:32:10
 | BatchOps | NB | nb_stall_poll_threshold | 6 | INT | Consecutive idle polls before merge stall alert |
 | BatchOps | NB | nb_unreleased_minutes | 480 | INT | Minutes unreleased before alerting (manual release required) |
 | BatchOps | NB | nb_upload_stall_minutes | 120 | INT | Minutes in uploading status before upload stall alert |
-| BatchOps | PMT | pmt_alert_failed_routing | 1 | ALERT_MODE | Alert destination(s) when a payment batch fails |
-| BatchOps | PMT | pmt_alert_import_failed_routing | 1 | ALERT_MODE | Alert destination(s) when a payment import fails |
-| BatchOps | PMT | pmt_alert_partial_routing | 1 | ALERT_MODE | Alert destination(s) for partial payment failures |
+| BatchOps | PMT | pmt_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a payment batch fails |
+| BatchOps | PMT | pmt_alert_import_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a payment import fails |
+| BatchOps | PMT | pmt_alert_partial_routing | 3 | ALERT_MODE | Alert destination(s) for partial payment failures |
 | BatchOps | PMT | pmt_alert_reversal_failed_routing | 1 | ALERT_MODE | Alert destination(s) when a payment reversal fails |
 | BatchOps | PMT | pmt_alerting_enabled | 1 | BIT | Master on/off switch for all PMT batch alerting |
 | BatchOps | PMT | pmt_lookback_days | 7 | INT | How many days back xFACts checks DM for payment batch collection |
