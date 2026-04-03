@@ -1,0 +1,122 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_pay_batch_01_main"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub addAPay_Click()
+
+    If Me.JIRA = "IT-" Or Left(Me.JIRA, 3) <> "IT-" Then
+                    
+        MsgBox "Please enter a JIRA IT Ticket number to proceed.", vbCritical, "INVALID JIRA NUMBER"
+                        
+    Else
+    
+        DoCmd.OpenForm "pay_batch_03_add_accnt", acNormal
+        
+    End If
+
+End Sub
+
+Private Sub addCPay_Click()
+
+    If Me.JIRA = "IT-" Or Left(Me.JIRA, 3) <> "IT-" Then
+                    
+        MsgBox "Please enter a JIRA IT Ticket number to proceed.", vbCritical, "INVALID JIRA NUMBER"
+                        
+    Else
+    
+        DoCmd.OpenForm "pay_batch_03_add_cnsmr", acNormal
+        
+    End If
+
+End Sub
+
+Private Sub backPays_Click()
+
+    DoCmd.OpenForm "fnncl_srvcs", acNormal
+    DoCmd.Close acForm, "pay_batch_01_main", acSaveNo
+
+End Sub
+
+Private Sub delPay_Click()
+
+    DoCmd.OpenForm "pay_batch_03_delete", acNormal
+
+End Sub
+
+Private Sub Form_Load()
+Dim dB As Database
+Dim u As Recordset
+
+    Set dB = CurrentDb
+    Set u = dB.OpenRecordset("SELECT xtsRole, xtsInitials FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+        Me.usr.Value = u!xtsInitials
+    
+    dB.Close
+    
+    Me.pay_batch_02_detail.Requery
+    
+End Sub
+
+Private Sub postPays_Click()
+Dim dB As Database
+Dim tgs As Recordset
+
+    Set dB = CurrentDb
+    Set tgs = dB.OpenRecordset("SELECT COUNT(*) AS recs FROM payment_info WHERE xProc = 'N' AND xType = 'PAY' AND xUser = '" & Me.usr.Value & "' AND xComment IS NULL;")
+    
+        If tgs!recs = 0 Then
+        
+            MsgBox "Please enter payments before attempting to run the process.", vbCritical, "NO UNPROCESSED RECORDS FOUND"
+            
+        Else
+
+            If Me.JIRA = "IT-" Or Left(Me.JIRA, 3) <> "IT-" Then
+                
+                    MsgBox "Please enter a JIRA IT Ticket number to proceed.", vbCritical, "INVALID JIRA NUMBER"
+                    
+            Else
+            
+                Select Case Me.runEnv
+            
+                    Case 1
+                    
+                        PostPayments ("test")
+                
+                    Case 2
+                    
+                        PostPayments ("stage")
+                
+                    Case 3
+                    
+                        PostPayments ("prod")
+                        
+                End Select
+            
+            End If
+            
+        End If
+       
+    Me.pay_batch_02_detail.Requery
+    Me.JIRA.Value = "IT-"
+    dB.Close
+
+End Sub
+
+Private Sub runEnv_AfterUpdate()
+Dim dB As Database
+
+    Set dB = CurrentDb
+        dB.Execute ("DELETE FROM payment_info WHERE xProc = 'N' AND xType = 'PAY' AND xUser = '" & Me.usr.Value & "';")
+    dB.Close
+    
+    Me.pay_batch_02_detail.Requery
+
+End Sub
