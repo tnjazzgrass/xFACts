@@ -658,6 +658,7 @@ foreach ($repoPath in $localFiles.Keys) {
     # Skip files excluded from registry audit by convention
     # Planning/working docs: transient session documents, not platform objects
     if ($repoPath -like "xFACts-Documentation/Planning/*") { continue }
+    if ($repoPath -like "xFACts-Documentation/WorkingFiles/*") { continue }
     # Standalone documentation files (Guidelines, Backlog, working docs): reference documents, not module objects
     if ($repoPath -like "xFACts-Documentation/*.md") { continue }
     # Generated DDL JSON data files: output of Generate-DDLReference.ps1, not authored objects
