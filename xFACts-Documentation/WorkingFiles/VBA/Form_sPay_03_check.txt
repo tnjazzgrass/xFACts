@@ -1,0 +1,125 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_sPay_03_check"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub addAdj_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_add_adjst", acNormal
+
+End Sub
+
+Private Sub addAPay_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_add_accnt", acNormal
+
+End Sub
+
+Private Sub addCPay_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "sPay_03aCheck", acNormal
+
+End Sub
+
+Private Sub canPay_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "sPay_01main", acNormal
+
+End Sub
+Private Sub eBatch_Click()
+
+Dim dB As Database
+Dim look As Recordset
+
+    If IsNull(Me.recSel) Then
+    
+         MsgBox "There are no records available to edit.", vbCritical, "EMPTY RECORD SET"
+    
+    Else
+    
+        Set dB = CurrentDb
+        Set look = dB.OpenRecordset("SELECT * FROM payment_info WHERE PayID = " & Me.recSel.Value)
+        
+        If look!xProc = "Y" Then
+            
+            MsgBox "This record has already been processed and cannot be edited or re-run.", vbOKOnly, "RECORD CANNOT BE EDITED"
+            dB.Close
+            
+        Else
+    
+            DoCmd.OpenForm "sPay_03eCheck", acNormal
+                
+                [Forms]![sPay_03eCheck]![ePayID] = look!PayID
+                [Forms]![sPay_03eCheck]![eConsumer] = look!PayConsumerNumber
+                [Forms]![sPay_03eCheck]![eCheckNo] = look!PayCheckNum
+                [Forms]![sPay_03eCheck]![eAccount] = look!PayAccountNumber
+                [Forms]![sPay_03eCheck]![eAmount] = look!PayAmt
+                [Forms]![sPay_03eCheck]![eType] = look!PayType
+                [Forms]![sPay_03eCheck]![eLocation] = look!PayLocation
+                [Forms]![sPay_03eCheck]![eMemo] = look!PayMemoCode
+                [Forms]![sPay_03eCheck]![eDate] = look!PayEnterDate
+                [Forms]![sPay_03eCheck]![eComment] = look!PayComment
+            
+        End If
+
+    DoCmd.Close acForm, "sPay_03_check", acSaveNo
+    
+    End If
+
+End Sub
+Private Sub pBatch_Click()
+Dim dB As Database
+Dim rec As Recordset, u As Recordset
+
+    Set dB = CurrentDb
+    
+    Set rec = dB.OpenRecordset("SELECT * FROM payment_info WHERE xProc = 'N' AND xType = 'CHK' AND xUser = '" & [Forms]![sPay_01main]![xIt] & "' AND xComment IS NULL;")
+    
+        If rec.EOF Then
+        
+            MsgBox "Please create new financial transaction records to post before continuing with this process.", vbOKOnly, "NO NEW TRANSACTIONS TO POST"
+            
+        Else
+            
+            Select Case Me.runEnv
+            
+                Case 1
+                
+                    PostCheckPays ("test")
+                
+                Case 2
+                
+                    PostCheckPays ("stage")
+                
+                Case 3
+    
+                    PostCheckPays ("prod")
+                
+            End Select
+                        
+        End If
+        
+    dB.Close
+        
+End Sub
+
+Private Sub xBatch_Click()
+Dim dB As Database
+
+    Set dB = CurrentDb
+    
+    dB.Execute "DELETE FROM payment_info WHERE xType = 'CHK' AND xProc = 'N' AND xUser = '" & [Forms]![sPay_01main]![xIt] & "';"
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "sPay_03_check", acNormal
+
+End Sub
