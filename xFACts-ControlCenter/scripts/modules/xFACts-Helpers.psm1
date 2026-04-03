@@ -1621,7 +1621,186 @@ function ConvertTo-SafeDecimal {
     if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
     try { return [decimal]$Value } catch { return $null }
 }
- 
+
+# ============================================================================
+# HELPER: Build-BDLXml
+# Constructs the BDL XML from staging table data and catalog metadata.
+# Mirrors Matt's VBA XML structure exactly:
+#   <dm_data xmlns="...">
+#     <header>...</header>
+#     <operational_transaction_data>
+#       <{wrapper}_operational_transaction_data>
+#         <{entity_element} seq_no="N" type="{ENTITY_TYPE}">
+#           <field>value</field>
+#         </{entity_element}>
+#       </{wrapper}_operational_transaction_data>
+#     </operational_transaction_data>
+#   </dm_data>
+# ============================================================================
+
+function Build-BDLXml {
+    param(
+        [string]$StagingTable,
+        [string]$EntityType,
+        [int]$ConfigId,
+        $WebEvent
+    )
+
+    # ── Validate staging table exists ───────────────────────────────
+    $tableCheck = Invoke-XFActsQuery -Query @"
+        SELECT 1 FROM sys.tables t
+        INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+        WHERE s.name = 'Staging' AND t.name = @tableName
+"@ -Parameters @{ tableName = $StagingTable }
+
+    if (-not $tableCheck -or $tableCheck.Count -eq 0) {
+        return @{ Error = "Staging table not found: $StagingTable"; StatusCode = 404 }
+    }
+
+    # ── Get server config ───────────────────────────────────────────
+    $serverConfig = Invoke-XFActsQuery -Query @"
+        SELECT environment FROM Tools.ServerConfig
+        WHERE config_id = @configId AND is_active = 1
+"@ -Parameters @{ configId = $ConfigId }
+
+    if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+        return @{ Error = 'Environment configuration not found'; StatusCode = 404 }
+    }
+    $environment = $serverConfig[0].environment
+
+    # ── Get entity format info ──────────────────────────────────────
+    $formatInfo = Invoke-XFActsQuery -Query @"
+        SELECT f.format_id, f.entity_type, f.type_name, f.folder
+        FROM Tools.Catalog_BDLFormatRegistry f
+        WHERE f.entity_type = @entityType
+          AND f.is_active = 1
+"@ -Parameters @{ entityType = $EntityType }
+
+    if (-not $formatInfo -or $formatInfo.Count -eq 0) {
+        return @{ Error = "Entity type not found: $EntityType"; StatusCode = 404 }
+    }
+    $typeName = $formatInfo[0].type_name
+    $folder = $formatInfo[0].folder
+
+    # ── Get wrapper info from catalog ───────────────────────────────
+    # This query finds the operational_transaction_data wrapper that
+    # contains this entity type (e.g., consumer_operational_transaction_data)
+    $wrapperInfo = Invoke-XFActsQuery -Query @"
+        SELECT w.type_name AS wrapper_type, we.element_name AS entity_element
+        FROM Tools.Catalog_BDLFormatRegistry w
+        INNER JOIN Tools.Catalog_BDLElementRegistry we
+            ON we.format_id = w.format_id
+        WHERE we.data_type = @typeName
+          AND w.entity_type IS NULL
+"@ -Parameters @{ typeName = $typeName }
+
+    # Determine wrapper element name and entity element name
+    $wrapperElement = 'consumer_operational_transaction_data'  # default
+    $entityElement = $typeName -replace '_data_type$', ''       # e.g., bdl_cnsmr_phn_data_type → bdl_cnsmr_phn
+
+    if ($wrapperInfo -and $wrapperInfo.Count -gt 0) {
+        # wrapper_type is like "consumer_operational_transaction_data_type"
+        $wrapperElement = $wrapperInfo[0].wrapper_type -replace '_type$', ''
+        $entityElement = $wrapperInfo[0].entity_element
+    }
+
+    # Determine the operational_transaction_type for the header
+    # This maps to the folder level: consumer → CONSUMER, consumer/account → CONSUMERACCOUNT
+    $operationalTransactionType = 'CONSUMER'
+    if ($folder) {
+        switch -Wildcard ($folder) {
+            '*account*'    { $operationalTransactionType = 'CONSUMERACCOUNT' }
+            '*consumer*'   { $operationalTransactionType = 'CONSUMER' }
+            default        { $operationalTransactionType = $EntityType }
+        }
+    }
+
+    # ── Read staging data (non-skipped rows) ────────────────────────
+    $safeTable = "Staging.[" + $StagingTable.Replace(']', ']]') + "]"
+    $stagingRows = Invoke-XFActsQuery -Query "SELECT * FROM $safeTable WHERE _skip = 0 ORDER BY _row_number"
+
+    $rowCount = if ($stagingRows) { $stagingRows.Count } else { 0 }
+    if ($rowCount -eq 0) {
+        return @{ Error = 'No rows to export (all rows may be skipped)'; StatusCode = 400 }
+    }
+
+    # Get skipped count
+    $skipResult = Invoke-XFActsQuery -Query "SELECT COUNT(*) AS cnt FROM $safeTable WHERE _skip = 1"
+    $skippedCount = if ($skipResult -and $skipResult.Count -gt 0) { $skipResult[0].cnt } else { 0 }
+
+    # Identify mapped columns (exclude system and unmapped columns)
+    $mappedColumns = @($stagingRows[0].Keys | Where-Object { 
+        $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -notlike '*_unmapped' 
+    })
+
+    # ── Build filename ──────────────────────────────────────────────
+    $username = $WebEvent.Auth.User.Username
+    if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
+    $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
+    $xmlFilename = "xFACts_${EntityType}_${username}_${timestamp}.txt"
+
+    # ── Build the XML ───────────────────────────────────────────────
+    $sb = New-Object System.Text.StringBuilder 8192
+
+    # XML declaration
+    [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
+
+    # Root element
+    [void]$sb.AppendLine('<dm_data xmlns="http://www.fico.com/xml/debtmanager/data/v1_0">')
+
+    # Header — mirrors Matt's VBA header structure exactly
+    [void]$sb.AppendLine('  <header>')
+    [void]$sb.AppendLine('    <sender_id_txt>Organization</sender_id_txt>')
+    [void]$sb.AppendLine('    <target_id_txt>FAC Debt Manager</target_id_txt>')
+    [void]$sb.AppendLine("    <batch_id_txt>xFACts_${EntityType}_${timestamp}</batch_id_txt>")
+    [void]$sb.AppendLine("    <operational_transaction_type>${operationalTransactionType}</operational_transaction_type>")
+    [void]$sb.AppendLine("    <total_count>${rowCount}</total_count>")
+    $creationDate = (Get-Date).ToString('yyyy-MM-dd') + 'T' + (Get-Date).ToString('HH:mm') + ':00'
+    [void]$sb.AppendLine("    <creation_data>${creationDate}</creation_data>")
+    [void]$sb.AppendLine('    <custom_properties>')
+    [void]$sb.AppendLine('      <custom_property/>')
+    [void]$sb.AppendLine('    </custom_properties>')
+    [void]$sb.AppendLine('  </header>')
+
+    # Operational transaction data
+    [void]$sb.AppendLine('  <operational_transaction_data>')
+    [void]$sb.AppendLine("    <${wrapperElement}>")
+
+    # Entity rows
+    $seq = 1
+    foreach ($row in $stagingRows) {
+        [void]$sb.AppendLine("      <${entityElement} seq_no=`"${seq}`" type=`"${EntityType}`">")
+
+        foreach ($col in $mappedColumns) {
+            $val = $row[$col]
+            if ($val -is [System.DBNull] -or $null -eq $val) { continue }
+            $valStr = [string]$val
+            if ($valStr.Trim() -eq '') { continue }
+
+            # XML-escape the value
+            $valStr = $valStr.Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;').Replace('"', '&quot;').Replace("'", '&apos;')
+
+            [void]$sb.AppendLine("        <${col}>${valStr}</${col}>")
+        }
+
+        [void]$sb.AppendLine("      </${entityElement}>")
+        $seq++
+    }
+
+    # Close wrapper and root
+    [void]$sb.AppendLine("    </${wrapperElement}>")
+    [void]$sb.AppendLine('  </operational_transaction_data>')
+    [void]$sb.AppendLine('</dm_data>')
+
+    return @{
+        Xml          = $sb.ToString()
+        Filename     = $xmlFilename
+        RowCount     = $rowCount
+        SkippedCount = $skippedCount
+        Environment  = $environment
+        Error        = $null
+    }
+} 
  
 # ============================================================================
 # UPDATED Export-ModuleMember — REPLACE the existing block with this one
@@ -1652,6 +1831,8 @@ Export-ModuleMember -Function @(
     'Get-CachedResult',
     # Credentials
     'Get-ServiceCredentials',
+    # BDL Process
+    'Build-BDLXml',
     # CRS5 (Debt Manager) Database
     'Get-CRS5Connection',
     'Invoke-CRS5ReadQuery',
