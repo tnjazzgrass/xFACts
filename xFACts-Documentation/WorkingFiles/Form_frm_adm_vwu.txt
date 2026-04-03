@@ -1,0 +1,28 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frm_adm_vwu"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub userEdit_Click()
+
+End Sub
+
+Private Sub usrAddNew_Click()
+
+    DoCmd.OpenForm "frm_adm_newu", acNormal
+    DoCmd.Close acForm, "frm_adm_vwu", acSaveNo
+    
+End Sub
+
+Private Sub usrNewBack_Click()
+
+    DoCmd.OpenForm "frm_adm_main", acNormal
+    DoCmd.Close acForm, "frm_adm_vwu", acSaveNo
+
+End Sub
