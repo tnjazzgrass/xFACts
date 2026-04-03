@@ -1,6 +1,1302 @@
 {
     "tables":  [
                    {
+                       "name":  "BDL_PHONE_bgilbert_20260403_110805",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "First_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "Middle_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "Last_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "Address_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "City_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "State_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "Zip_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "SSN_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "DOB_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "Phone1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "Phone2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "Phone3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "Phone4_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "Phone5_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "Phone6_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "Phone7_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "Phone8_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "Phone9_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "Phone10_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "cnsmr_phn_nmbr_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "subj_phone_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "cnsmr_phn_typ_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "subj_phone_confirmation_flag_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "subj_phone_possible_relationship_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "subj_phone_listing_name_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "subj_phone_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "subj_phone_line_type_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "subj_phone_confirmation_flag_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "subj_phone_possible_relationship_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "subj_phone_listing_name_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "subj_phone_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "subj_phone_line_type_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "subj_phone_confirmation_flag_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "subj_phone_possible_relationship_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "cnsmr_phn_src_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  39,
+                                           "name":  "cnsmr_phn_stts_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  40,
+                                           "name":  "cnsmr_phn_qlty_score_nmbr",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
+                       "name":  "BDL_PHONE_bgilbert_20260403_111502",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "First_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "Middle_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "Last_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "Address_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "City_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "State_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "Zip_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "SSN_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "DOB_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "Phone1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "Phone2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "Phone3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "Phone4_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "Phone5_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "Phone6_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "Phone7_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "Phone8_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "Phone9_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "Phone10_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "subj_phone_listing_name_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "cnsmr_phn_nmbr_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "cnsmr_phn_typ_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "subj_phone_confirmation_flag_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "subj_phone_possible_relationship_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "subj_phone_listing_name_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "subj_phone_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "subj_phone_line_type_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "subj_phone_confirmation_flag_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "subj_phone_possible_relationship_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "subj_phone_listing_name_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "subj_phone_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "subj_phone_line_type_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "subj_phone_confirmation_flag_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "subj_phone_possible_relationship_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "cnsmr_phn_src_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  39,
+                                           "name":  "cnsmr_phn_stts_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  40,
+                                           "name":  "cnsmr_phn_qlty_score_nmbr",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
+                       "name":  "BDL_PHONE_bgilbert_20260403_113629",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "First_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "Middle_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "Last_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "Address_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "City_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "State_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "Zip_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "SSN_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "DOB_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "Phone1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "Phone2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "Phone3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "Phone4_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "Phone5_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "Phone6_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "Phone7_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "Phone8_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "Phone9_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "Phone10_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "subj_phone_listing_name_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "cnsmr_phn_nmbr_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "cnsmr_phn_typ_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "subj_phone_confirmation_flag_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "subj_phone_possible_relationship_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "subj_phone_listing_name_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "subj_phone_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "subj_phone_line_type_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "subj_phone_confirmation_flag_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "subj_phone_possible_relationship_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "subj_phone_listing_name_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "subj_phone_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "subj_phone_line_type_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "subj_phone_confirmation_flag_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "subj_phone_possible_relationship_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "cnsmr_phn_src_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  39,
+                                           "name":  "cnsmr_phn_stts_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  40,
+                                           "name":  "cnsmr_phn_qlty_score_nmbr",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
+                       "name":  "BDL_PHONE_bgilbert_20260403_113808",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "First_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "Middle_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "Last_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "Address_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "City_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "State_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "Zip_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "SSN_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "DOB_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "Phone1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "Phone2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "Phone3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "Phone4_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "Phone5_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "Phone6_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "Phone7_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "Phone8_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "Phone9_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "Phone10_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "subj_phone_listing_name_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "cnsmr_phn_nmbr_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "cnsmr_phn_typ_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "subj_phone_confirmation_flag_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "subj_phone_possible_relationship_1_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "subj_phone_listing_name_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "subj_phone_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "subj_phone_line_type_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "subj_phone_confirmation_flag_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "subj_phone_possible_relationship_2_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "subj_phone_listing_name_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "subj_phone_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "subj_phone_line_type_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "subj_phone_confirmation_flag_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "subj_phone_possible_relationship_3_unmapped",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "cnsmr_phn_src_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  39,
+                                           "name":  "cnsmr_phn_stts_val_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "32",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  40,
+                                           "name":  "cnsmr_phn_qlty_score_nmbr",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
                        "name":  "BDL_PHONE_dcota_20260403_075915",
                        "columns":  [
                                        {
