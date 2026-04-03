@@ -1,0 +1,54 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_voapps_02import"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub vopClsImp_Click()
+
+    DoCmd.OpenForm "voapps_01main", acNormal
+    DoCmd.Close acForm, "voapps_02import", acSaveNo
+
+End Sub
+
+Private Sub vopImpNew_Click()
+Dim fName As String
+Dim dB As Database
+Dim err As Integer
+Dim fs As Object
+
+    fName = "\\kingkong\dpbackup\VOAppsTestResults\" & Me.newFile
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    err = 0
+    
+    If fs.FileExists(fName) = False Then
+            
+            err = err + 1
+            MsgBox "Please enter a valid filename for import.", vbOKOnly, "INVALID FILENAME"
+            
+    End If
+    
+    If Right(Me.newFile, 4) <> ".csv" Then
+            
+            err = err + 1
+            MsgBox "The file must be formatted as a .csv file for import.", vbOKOnly, "INVALID FORMAT"
+            
+    End If
+    
+    If err = 0 Then
+    
+        DoCmd.TransferText acImportDelim, "voapp_imp_optl", "voapps_stg", fName, True
+    
+        Set dB = CurrentDb
+        dB.Execute ("UPDATE voapps_stg SET vstg_file = '" & Me.newFile & "', fmt_time = CDate(Left([voapps_timestamp],19)) WHERE vstg_file IS NULL;")
+        dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('impVOApp', 'N/A', '" & Environ("username") & "', Now())"
+        dB.Close
+    
+        MsgBox "The specified file has been loaded and is ready to be formatted for BDL.", vbOKOnly, "IMPORT COMPLETE"
+        
+    End If
+    
+End Sub
