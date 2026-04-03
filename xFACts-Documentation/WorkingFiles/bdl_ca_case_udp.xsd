@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (c) 2006-2018 Fair Isaac Corporation.  All rights reserved. -->
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+           elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="../../../dm_import_export_common.xsd" />
+
+    <xs:include schemaLocation="../../bdl_udp_field_type.xsd" />
+
+    <xs:complexType name="bdl_ca_case_udp_data_type">
+        <xs:sequence>
+            <xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>list of fields to be nullified</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+
+            <!-- START Business Key elements -->
+
+
+
+           <xs:element name="cnsmr_idntfr_lgcy_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="40" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_idntfr_agncy_id" type="xs:long" minOccurs="0" />
+
+            <xs:element name="cnsmr_idntfr_ssn_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="20" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_nm_frst_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="64" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_nm_lst_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="128" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="ca_case_idntfr_agncy_id" type="xs:long" minOccurs="0" />
+
+            <xs:element name="ca_case_extrnl_ref_id_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="40" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="ca_case_nm" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="128" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <!-- END Business Key elements -->
+
+            <xs:element name="udp_fields" type="udp_fields_type" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>List of user defined page fields</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+
+        <xs:attribute name="seq_no" type="xs:long">
+            <xs:annotation>
+                <xs:documentation>sequence number</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+        <xs:attribute name="type" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>entity type</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+
+    </xs:complexType>
+
+
+</xs:schema>
