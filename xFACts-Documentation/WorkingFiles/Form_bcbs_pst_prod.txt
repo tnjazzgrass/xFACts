@@ -1,0 +1,29 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_bcbs_pst_prod"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub bcbsCncPost_Click()
+
+    DoCmd.Close acForm, "bcbs_pst_prod", acSaveNo
+
+End Sub
+
+Private Sub bcbsPostPayprod_Click()
+Dim dB As Database
+
+    Set dB = CurrentDb
+
+    BCBSpay ("prod")
+    
+    DoCmd.OpenQuery "bcbs_add_qry06_arch", acViewNormal, acEdit
+    
+    dB.Close
+    
+    DoCmd.Close acForm, "bcbs_pst_prod", acSaveNo
+
+End Sub
