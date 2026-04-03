@@ -475,6 +475,10 @@ var BDL = (function () {
                             html += '<input type="text" id="' + rid + '" class="replace-input" placeholder="Enter value...">';
                         }
                         html += ' <button class="replace-btn" onclick="BDL.fillEmpty(\'' + sf + '\',\'' + rid + '\')">Fill</button>';
+                        var fieldObj = entityFields.find(function(ff) { return ff.element_name === w.field; });
+                        if (!fieldObj || !fieldObj.is_not_nullifiable) {
+                            html += ' <button class="skip-btn" onclick="BDL.skipRows(\'' + sf + '\',\'\',\'row-' + rid + '\')">Skip</button>';
+                        }
                         html += '</span></div></div>';
                     }
 
