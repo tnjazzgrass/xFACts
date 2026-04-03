@@ -186,15 +186,15 @@ $FileSources = @(
         Description = "Planning documents (working docs, roadmaps)"
     }
     @{
-        ServerPath = "$DocsRoot\Planning\WorkingFiles"
-        RepoPath   = "xFACts-Documentation/Planning/WorkingFiles"
+        ServerPath = "$DocsRoot\WorkingFiles"
+        RepoPath   = "xFACts-Documentation/WorkingFiles"
         Filter     = @("*.*")
         Recurse    = $true
         Description = "Working reference files for active builds"
     }
     @{
-        ServerPath = "$DocsRoot\Planning\WorkingFiles\VBA"
-        RepoPath   = "xFACts-Documentation/Planning/WorkingFiles\VBA"
+        ServerPath = "$DocsRoot\WorkingFiles\VBA"
+        RepoPath   = "xFACts-Documentation/WorkingFiles/VBA"
         Filter     = @("*.*")
         Recurse    = $true
         Description = "Access Apps Toolkit VBA Extracts"
