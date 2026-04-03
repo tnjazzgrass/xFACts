@@ -1,0 +1,115 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_bdl_pst_accnt_tags"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub backAccntTags_Click()
+
+    DoCmd.OpenForm "BDL Files", acNormal
+    DoCmd.Close acForm, "bdl_pst_accnt_tags", acSaveNo
+
+End Sub
+
+Private Sub Form_Load()
+Dim dB As Database
+Dim u As Recordset
+
+    Set dB = CurrentDb
+    Set u = dB.OpenRecordset("SELECT xtsRole, xtsInitials FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+        Me.usr.Value = u!xtsInitials
+    
+    dB.Close
+    
+    Me.bdl_accnt_tag_dtl.Requery
+    
+End Sub
+
+Private Sub pstAccntTags_Click()
+Dim sql As String
+Dim dB As Database
+Dim tgs As Recordset, rst As Recordset
+
+
+    Set dB = CurrentDb
+    Set tgs = dB.OpenRecordset("SELECT COUNT(*) AS recs FROM bdl_accnt_tag WHERE bdl_usr = '" & Me.usr.Value & "' AND bdl_proc = 'N';")
+    
+        If tgs!recs = 0 Then
+        
+            MsgBox "Please enter new accounts tag records before attempting to run the BDL.", vbCritical, "NO UNPROCESSED RECORDS FOUND"
+            
+        Else
+
+            If Me.JIRA = "IT-" Or Left(Me.JIRA, 3) <> "IT-" Then
+                
+                    MsgBox "Please enter a JIRA IT Ticket number to proceed.", vbCritical, "INVALID JIRA NUMBER"
+                    
+            Else
+            
+                Set rst = dB.OpenRecordset("SELECT cnsmr_accnt_idntfr_agncy_id FROM bdl_accnt_tag WHERE cnsmr_idntfr_agncy_id IS NULL AND bdl_usr = '" & Me.usr.Value & "' AND bdl_proc = 'N';")
+                
+                If rst.EOF Then
+                
+                    Select Case Me.runEnv
+                
+                        Case 1
+                        
+                            PostAccntTags ("test")
+                    
+                        Case 2
+                        
+                            PostAccntTags ("stage")
+                    
+                        Case 3
+                        
+                            PostAccntTags ("prod")
+                            
+                    End Select
+                    
+                Else
+                
+                    DoCmd.OpenForm "bdl_msg_cnsmr_id", acNormal
+                    
+                    Do Until rst.EOF
+    
+                        sql = "UPDATE bdl_accnt_tag SET cnsmr_idntfr_agncy_id = '" & GetConsumerID(rst!cnsmr_accnt_idntfr_agncy_id) & "' WHERE cnsmr_accnt_idntfr_agncy_id = '" & rst!cnsmr_accnt_idntfr_agncy_id & "';"
+                        dB.Execute (sql)
+                        sql = ""
+                        
+                    rst.MoveNext
+                    Loop
+                    
+                    DoCmd.Close acForm, "bdl_msg_cnsmr_id", acSaveNo
+                    
+                    Select Case Me.runEnv
+                
+                        Case 1
+                        
+                            PostAccntTags ("test")
+                    
+                        Case 2
+                        
+                            PostAccntTags ("stage")
+                    
+                        Case 3
+                        
+                            PostAccntTags ("prod")
+                            
+                    End Select
+                
+                End If
+            
+            End If
+            
+        End If
+        
+    dB.Close
+    DoCmd.OpenForm "BDL Files", acNormal
+    DoCmd.Close acForm, "bdl_pst_accnt_tags", acSaveNo
+    
+End Sub
