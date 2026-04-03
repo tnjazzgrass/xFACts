@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+	elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+	<xs:include schemaLocation="../../../dm_import_export_common.xsd" />
+
+
+	<xs:complexType name="bdl_cnsmr_accnt_frwrd_rcll_dtl_data_type">
+		<xs:sequence>
+			<!-- START Business Key elements -->
+			<xs:element name="ca_frwrd_rcll_dtl_id" type="xs:long" minOccurs="0" />
+
+			<xs:element name="cnsmr_accnt_idntfr_agncy_id" type="xs:long" minOccurs="0" />
+
+			<xs:element name="cnsmr_accnt_idntfr_lgcy_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="20" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="crdtr_shrt_nm" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="8" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="cnsmr_accnt_crdtr_rfrnc_id_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="40" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="cnsmr_accnt_crdtr_rfrnc_corltn_id_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="40" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<!-- END Business Key elements -->
+
+			<xs:element name="rcvr_shrt_nm" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="8" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="cnsmr_accnt_frwrd_rcll_mode_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="cnsmr_accnt_frwrd_rcll_stts_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="cnsmr_accnt_frwrd_rqst_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="cnsmr_accnt_frwrd_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="cnsmr_accnt_frwrd_bal_amnt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="16" />
+						<xs:fractionDigits value="6" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="cnsmr_accnt_rcll_rqst_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="cnsmr_accnt_rcll_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="cnsmr_accnt_rcll_bal_amnt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="16" />
+						<xs:fractionDigits value="6" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="cnsmr_accnt_expctd_rcll_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="cnsmr_accnt_frwd_hrd_rcll_flg" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+		</xs:sequence>
+		<!-- SEQUENCE NUMBER -->
+		<xs:attribute name="seq_no" type="xs:long">
+			<xs:annotation>
+				<xs:documentation>sequence number</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+		<xs:attribute name="type" type="xs:string" fixed="ACCOUNT_FORWARDING">
+			<xs:annotation>
+				<xs:documentation>entity type</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+</xs:schema>
