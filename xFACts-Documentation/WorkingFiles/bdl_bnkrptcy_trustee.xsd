@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+	elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+	<xs:include schemaLocation="../../dm_import_export_common.xsd" />
+
+
+	<xs:complexType name="bdl_bnkrptcy_trustee_data_type">
+		<xs:sequence>
+			<!-- List of Fields to be marked as null -->
+			<xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+				<xs:annotation>
+					<xs:documentation>list of fields to be nullified</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+
+			<xs:element name="bnkrptcy_trustee_id" type="xs:long" minOccurs="0" />
+
+			<xs:element name="bnkrptcy_trustee_nm" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="256" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_ln_1_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="128" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_ln_2_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="128" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_ln_3_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="128" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_pstl_cd_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_city_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="64" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_cnty_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="128" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_st_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="20" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_addrss_cntry_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="bnkrptcy_trustee_phn_nmbr_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="20" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:sequence>
+		<!-- SEQUENCE NUMBER -->
+		<xs:attribute name="seq_no" type="xs:long">
+			<xs:annotation>
+				<xs:documentation>sequence number</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+		<xs:attribute name="type" type="xs:string" fixed="BANKRUPTCY_TRUSTEE">
+			<xs:annotation>
+				<xs:documentation>entity type</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<!-- The biz_ky_id used to tie parent child entities -->
+		<xs:attribute name="prnt_biz_ky_id" type="xs:string" use="required">
+			<xs:annotation>
+				<xs:documentation>the biz_ky_id used to tie parent-child AND/OR related entities</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+</xs:schema>
