@@ -1,0 +1,73 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_bdl_pst_cnsmr_updts"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub backCnsmrUpdt_Click()
+
+    DoCmd.OpenForm "BDL Files", acNormal
+    DoCmd.Close acForm, "bdl_pst_cnsmr_updts", acSaveNo
+
+End Sub
+
+Private Sub Form_Load()
+Dim dB As Database
+Dim u As Recordset
+
+    Set dB = CurrentDb
+    Set u = dB.OpenRecordset("SELECT xtsRole, xtsInitials FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+        Me.usr.Value = u!xtsInitials
+    
+    dB.Close
+    
+    Me.bdl_cnsmr_updt_dtl.Requery
+    
+End Sub
+Private Sub pstCnsmrUpdt_Click()
+Dim dB As Database
+Dim tgs As Recordset
+
+    Set dB = CurrentDb
+    Set tgs = dB.OpenRecordset("SELECT COUNT(*) AS recs FROM bdl_cnsmr_data WHERE bdl_usr = '" & Me.usr.Value & "' AND bdl_proc = 'N';")
+    
+        If tgs!recs = 0 Then
+        
+            MsgBox "Please enter new accounts tag records before attempting to run the BDL.", vbCritical, "NO UNPROCESSED RECORDS FOUND"
+            
+        Else
+
+            If Me.JIRA = "SD-" Or Left(Me.JIRA, 3) <> "SD-" Then
+                
+                    MsgBox "Please enter a JIRA IT Ticket number to proceed.", vbCritical, "INVALID JIRA NUMBER"
+                    
+            Else
+            
+                Select Case Me.runEnv
+            
+                    Case 1
+                    
+                        PostCnsmrUpdts ("test")
+                
+                    Case 2
+                    
+                        PostCnsmrUpdts ("stage")
+                
+                    Case 3
+                    
+                        PostCnsmrUpdts ("prod")
+                        
+                End Select
+            
+            End If
+            
+        End If
+        
+    dB.Close
+
+End Sub
