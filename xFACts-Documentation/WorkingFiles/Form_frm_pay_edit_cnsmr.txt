@@ -1,0 +1,93 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frm_pay_edit_cnsmr"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub addConPay_Click()
+Dim sql As String
+Dim err As Integer
+Dim rec As Recordset
+Dim dB As Database
+Dim look As Recordset
+Dim curr_bal As Double
+
+'   Error Check - make sure form is filled out
+    err = 0
+    
+    If IsNull(Me.nConsumer) = True Then
+        MsgBox "Please enter a consumer number to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+    If IsNull(Me.nAmount) = True Then
+        MsgBox "Please enter a valid payment amount to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+    If IsNull(Me.nComment) = True Then
+        MsgBox "Please enter a ticket number or payment comment to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+
+    If err = 0 Then
+    
+        Set dB = CurrentDb
+        
+        Set look = dB.OpenRecordset("SELECT cnsmr_idntfr_agncy_id FROM dbo_vw_Apps Toolkit_cnsmr_accnts WHERE cnsmr_idntfr_agncy_id = '" & Me.nConsumer & "';")
+        
+        If look.EOF Then
+        
+            err = err + 1
+            MsgBox "This app cannot be used to process payments for this consumer. Please use Debt Manager to post payments on consumers with fewer than 100 accounts.", vbOKOnly, "NO RECORD FOUND"
+            
+        Else
+    
+            Set rec = dB.OpenRecordset("SELECT CONSUMER_AGENCY_ID, consumer_current_balance FROM dbo_vw_Apps Toolkit_cnsmr_smmry WHERE CONSUMER_AGENCY_ID = '" & Me.nConsumer & "';")
+            
+                    If rec!consumer_current_balance < Me.nAmount Then
+                            err = err + 1
+                            MsgBox "The amount you have entered for this payment exceeds the current balance for this consumer. Please enter a lower payment amount or choose another consumer.", vbOKOnly, "OVERPAYMENT"
+                    End If
+            
+                If err = 0 Then
+    
+                    sql = "INSERT INTO payment_info (PayConsumerNumber, PayAmt, PayType, PayLocation, PayEnterDate, PayTenderDate, PayMemoCode, PayComment, xUser, xType)"
+                    sql = sql & " SELECT " & Me.nConsumer & ", " & Me.nAmount & ", '" & Me.nType & "', '" & Me.nLocation & "', '" & Format(Me.nDate, "yyyy-MM-dd") & "', '" & Format(Me.nDate, "yyyy-MM-dd") & "', '" & Me.nMemo & "', '" & Me.nComment & "', '" & [Forms]![Apps Toolkit]![xIt] & "', 'CPY';"
+                    
+                    dB.Execute sql
+            
+                End If
+        
+        DoCmd.OpenForm "frm_pay_rec_" & [Forms]![Apps Toolkit]![xIt], acNormal
+        DoCmd.Close acForm, "frm_pay_add_cnsmr", acSaveNo
+    
+        End If
+        
+    End If
+
+End Sub
+
+Private Sub canConPay_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_rec_" & [Forms]![Apps Toolkit]![xIt], acNormal
+
+End Sub
+
+Private Sub delConPay_Click()
+Dim dB As Database
+
+    Set dB = CurrentDb
+    dB.Execute ("Delete payment_info.PayID FROM payment_info WHERE (((payment_info.PayID)=" & Me.ePayID & "));")
+    dB.Close
+    
+    MsgBox "This record has been deleted from the current batch.", vbOKOnly, "RECORD DELETED"
+    
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_rec_" & [Forms]![Apps Toolkit]![xIt], acNormal
+
+End Sub
