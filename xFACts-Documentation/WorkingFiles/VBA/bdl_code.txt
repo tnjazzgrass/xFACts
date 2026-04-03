@@ -1,0 +1,2265 @@
+Attribute VB_Name = "bdl_code"
+Option Compare Database
+Option Explicit
+Function PostAccntTags(PATenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim BDL_atfile As String, hdr As String, xmlb As String, reg_id As String
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case PATenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_atfile = [Forms]![bdl_pst_accnt_tags]![JIRA] & " Account Tags Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_atfile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_accnt_tag WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>FAC Debt Manager</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>" & Left(BDL_atfile, 5) & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "      </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <account_operational_transaction_data>"
+    
+    '   Write the header to file
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_atfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+    '   Begin composing the AR Event XML records
+        seq = 1
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_accnt_tag seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_TAG"">"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<cnsmr_accnt_idntfr_agncy_id>" & LineItem!cnsmr_accnt_idntfr_agncy_id & "</cnsmr_accnt_idntfr_agncy_id>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<tag_shrt_nm>" & LineItem!tag_shrt_nm & "</tag_shrt_nm>"
+                xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_tag_assgn_dt > 0), Chr(13) & Chr(10) & Space(8) & "<cnsmr_accnt_tag_assgn_dt>" & LineItem!cnsmr_accnt_tag_assgn_dt & "</cnsmr_accnt_tag_assgn_dt>", "")
+                xmlb = xmlb & IIf(Len(LineItem!cnsmr_accnt_tag_ordr_nmbr > 0), Chr(13) & Chr(10) & Space(8) & "<cnsmr_accnt_tag_ordr_nmbr>" & LineItem!cnsmr_accnt_tag_ordr_nmbr & "</cnsmr_accnt_tag_ordr_nmbr>", "")
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_accnt_tag>"
+            
+            f.Write xmlb
+            xmlb = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            
+            Loop
+     '  CLose the last XML Nodes and write to file
+        f.Write Chr(13) & Chr(10) & "    </account_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_atfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+'    Debug.Print Chr(13) & Chr(10) & response
+        
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_accnt_tag SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PATenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('postAccntTags', '" & PATenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+        
+    MsgBox "BDL file " & BDL_atfile & " has been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify that it processed completely.", vbInformation, "BDL FILE SUBMITTED"
+
+End Function
+Function PostCnsmrTags(PATenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+Dim BDL_atfile As String, BDL_arfile As String, hdr As String, xmlb As String, reg_id As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case PATenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_atfile = [Forms]![bdl_pst_cnsmr_tags]![JIRA] & " Consumer Tags Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_atfile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_cnsmr_tag WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>FAC Debt Manager</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>" & Left(BDL_atfile, 5) & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <operational_transaction_type>CONSUMER</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "      </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <account_operational_transaction_data>"
+    
+    '   Write the header to file
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_atfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+    '   Begin composing the AR Event XML records
+        seq = 1
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_tag seq_no=""" & seq & """ type=""CONSUMER_TAG"">"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<tag_shrt_nm>" & LineItem!tag_shrt_nm & "</tag_shrt_nm>"
+                xmlb = xmlb & IIf(Len(LineItem!cnsmr_tag_assgn_dt > 0), Chr(13) & Chr(10) & Space(8) & "<cnsmr_tag_assgn_dt>" & LineItem!cnsmr_tag_assgn_dt & "</cnsmr_tag_assgn_dt>", "")
+                xmlb = xmlb & IIf(Len(LineItem!cnsmr_tag_ordr_nmbr > 0), Chr(13) & Chr(10) & Space(8) & "<cnsmr_tag_ordr_nmbr>" & LineItem!cnsmr_tag_ordr_nmbr & "</cnsmr_tag_ordr_nmbr>", "")
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_tag>"
+            
+            f.Write xmlb
+            xmlb = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            
+            Loop
+     '  CLose the last XML Nodes and write to file
+        f.Write Chr(13) & Chr(10) & "    </account_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_atfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+'    Debug.Print Chr(13) & Chr(10) & response
+
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'   CREATE & POST THE AR EVENT FILE
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'    Create the empty file for writing to in the location specified above
+     BDL_arfile = [Forms]![bdl_pst_cnsmr_tags]![JIRA] & " AR Events Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+     DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_arfile
+     
+     '   Get the count of records to be written from the table
+         LineItem.MoveLast
+         cnt = LineItem.RecordCount
+         LineItem.MoveFirst
+
+'    Compose the XML file header
+     hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+     hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+     hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & Mid(BDL_arfile, 4, 7) & "</batch_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_ar_log_operational_transaction_data>"
+ 
+ '   Write the header to file
+     Set fs = CreateObject("Scripting.FileSystemObject")
+     Set f = fs.OpenTextFile(fileLoc & BDL_arfile, ForAppending, TristateFalse)
+     
+     f.Write hdr
+     
+ '   Begin composing the AR Event XML records
+     seq = 1
+     
+         Do Until LineItem.EOF
+         
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_ar_log seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_AR_LOG"">"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<actn_cd_shrt_val_txt>CO</actn_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<rslt_cd_shrt_val_txt>CO</rslt_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_mssg_txt>" & [Forms]![bdl_pst_cnsmr_tags]![JIRA] & ": Consumer Tag applied." & "</cnsmr_accnt_ar_mssg_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_log_crt_usr_nm>" & Environ("username") & "</cnsmr_accnt_ar_log_crt_usr_nm>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt_ar_log>"
+         
+         f.Write xmlb
+         xmlb = ""
+         seq = seq + 1
+         
+         LineItem.MoveNext
+         
+         Loop
+  '  CLose the last XML Nodes and write to file
+     f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_ar_log_operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "</dm_data>"
+     
+     f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_arfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+        'Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+        
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_cnsmr_tag SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PATenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('postCnsmrTags', '" & PATenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+        
+    MsgBox "BDL file " & BDL_atfile & " has been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify that it processed completely.", vbInformation, "BDL FILE SUBMITTED"
+
+End Function
+Function PostRegFUDPs(RGFenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim BDL_rffile As String, hdr As String, xmlb As String, reg_id As String
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case RGFenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_rffile = [Forms]![bdl_pst_regf_udps]![JIRA] & " Reg F UDPs " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_rffile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_regf_udp WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>FAC Debt Manager</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>" & Mid(BDL_rffile, 4, 8) & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "      </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <account_operational_transaction_data>"
+    
+    '   Write the header to file
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_rffile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+    '   Begin composing the AR Event XML records
+        seq = 1
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_accnt_udp seq_no=""" & seq & """ type=""UDEFCREDITORTRANHIST"">"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<cnsmr_accnt_idntfr_agncy_id>" & LineItem!cnsmr_accnt_idntfr_agncy_id & "</cnsmr_accnt_idntfr_agncy_id>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<udp_fields>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<udp_field xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""text_type"" name=""udefserv_bal_due"">"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<value>" & LineItem![serv_bal_due] & "</value>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</udp_field>"
+                
+                    If Len(LineItem![pay_amt]) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<udp_field xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""text_type"" name=""udefpay_amt"">"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<value>" & LineItem![pay_amt] & "</value>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</udp_field>"
+                    End If
+                
+                    If Len(LineItem![fee_amt]) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<udp_field xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""text_type"" name=""udeffee_amt"">"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<value>" & LineItem![fee_amt] & "</value>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</udp_field>"
+                    End If
+                    
+                
+                    If Len(LineItem![int_amt]) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<udp_field xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""text_type"" name=""udefint_amt"">"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<value>" & LineItem![int_amt] & "</value>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</udp_field>"
+                    End If
+                    
+                
+                    If Len(LineItem![note_bal]) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<udp_field xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:type=""text_type"" name=""udefacct_note_bal"">"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<value>" & LineItem![note_bal] & "</value>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</udp_field>"
+                    End If
+                    
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</udp_fields>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_accnt_udp>"
+            
+            f.Write xmlb
+            xmlb = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            
+            Loop
+     '  CLose the last XML Nodes and write to file
+        f.Write Chr(13) & Chr(10) & "    </account_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_rffile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+'    Debug.Print Chr(13) & Chr(10) & response
+        
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_regf_udp SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & RGFenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('addRegFUDPs', '" & RGFenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+        
+    MsgBox "BDL file " & BDL_rffile & " has been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify that it processed completely.", vbInformation, "BDL FILE SUBMITTED"
+
+End Function
+Function ReturnAccounts(PATenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim cnt As Long, seq As Long, rslt As Recordset
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+Dim BDL_atfile As String, BDL_arfile As String, hdr As String, xmlb As String, reg_id As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+        
+    '   Get result code for AR Event
+        Set rslt = dB.OpenRecordset("SELECT * FROM accntRtrnReasons WHERE tag_shrt_nm = '" & [Forms]![bdl_pst_accnt_rtrns]![rsnCD] & "';")
+    
+    '   Set environment specific variables
+        Select Case PATenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_atfile = [Forms]![bdl_pst_accnt_rtrns]![JIRA] & " Account Return Tags " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_atfile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_accnt_rtrn WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount * 2
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>FAC Debt Manager</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>" & Mid(BDL_atfile, 4, 7) & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "         <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "        <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "      </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <account_operational_transaction_data>"
+    
+    '   Write the header to file
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_atfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+    '   Begin composing the Current State and Return Reason tags XML records
+        seq = 1
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_accnt_tag seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_TAG"">"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<cnsmr_accnt_idntfr_agncy_id>" & LineItem!cnsmr_accnt_idntfr_agncy_id & "</cnsmr_accnt_idntfr_agncy_id>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<tag_shrt_nm>TA_CSRET</tag_shrt_nm>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_accnt_tag>"
+            
+            f.Write xmlb
+            xmlb = ""
+            seq = seq + 1
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<cnsmr_accnt_tag seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_TAG"">"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<cnsmr_accnt_idntfr_agncy_id>" & LineItem!cnsmr_accnt_idntfr_agncy_id & "</cnsmr_accnt_idntfr_agncy_id>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<tag_shrt_nm>" & [Forms]![bdl_pst_accnt_rtrns]![rsnCD] & "</tag_shrt_nm>"
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</cnsmr_accnt_tag>"
+            
+            f.Write xmlb
+            xmlb = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            
+            Loop
+     '  CLose the last XML Nodes and write to file
+        f.Write Chr(13) & Chr(10) & "    </account_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_atfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+    
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'   CREATE & POST THE AR EVENT FILE
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'    Create the empty file for writing to in the location specified above
+     BDL_arfile = [Forms]![bdl_pst_accnt_rtrns]![JIRA] & " AR Events Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+     DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_arfile
+     
+     '   Get the count of records to be written from the table
+         LineItem.MoveLast
+         cnt = LineItem.RecordCount
+         LineItem.MoveFirst
+
+'    Compose the XML file header
+     hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+     hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+     hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & Mid(BDL_arfile, 4, 7) & "</batch_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_ar_log_operational_transaction_data>"
+ 
+ '   Write the header to file
+     Set fs = CreateObject("Scripting.FileSystemObject")
+     Set f = fs.OpenTextFile(fileLoc & BDL_arfile, ForAppending, TristateFalse)
+     
+     f.Write hdr
+     
+ '   Begin composing the AR Event XML records
+     seq = 1
+     
+         Do Until LineItem.EOF
+         
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_ar_log seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_AR_LOG"">"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_idntfr_agncy_id>" & LineItem!cnsmr_accnt_idntfr_agncy_id & "</cnsmr_accnt_idntfr_agncy_id>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<actn_cd_shrt_val_txt>CO</actn_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<rslt_cd_shrt_val_txt>" & rslt!rslt_cd & "</rslt_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_mssg_txt>" & [Forms]![bdl_pst_accnt_rtrns]![JIRA] & ": Account returned " & [Forms]![bdl_pst_accnt_rtrns]![rsnCD] & "</cnsmr_accnt_ar_mssg_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_log_crt_usr_nm>" & Environ("username") & "</cnsmr_accnt_ar_log_crt_usr_nm>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt_ar_log>"
+         
+         f.Write xmlb
+         xmlb = ""
+         seq = seq + 1
+         
+         LineItem.MoveNext
+         
+         Loop
+  '  CLose the last XML Nodes and write to file
+     f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_ar_log_operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "</dm_data>"
+     
+     f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_arfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+        'Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+        
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_accnt_rtrn SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PATenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('ReturnAccounts', '" & PATenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+        
+    MsgBox "Two BDL files (" & BDL_atfile & " and " & BDL_arfile & ") have been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify that they processed completely.", vbInformation, "BDL RETURN FILES SUBMITTED"
+
+End Function
+Function PostAccntUpdts(PATenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim tdf As TableDef, ntdf As TableDef
+Dim cnt As Long, seq As Long, nullify As String
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim envURL As String, hdr As String, xmlb As String, reg_id As String
+Dim fileLoc As String, response As String, jBody As String, BDL_acfile As String, BDL_arfile As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case PATenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_acfile = [Forms]![bdl_pst_accnt_updts]![JIRA] & " Account Update Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_acfile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_cnsmr_accnt_data WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+            hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+            hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <communication_reference_id_txt>Organization</communication_reference_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & [Forms]![bdl_pst_accnt_updts]![JIRA] & "</batch_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMERACCOUNT</operational_transaction_type>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+            hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_operational_transaction_data>"
+    
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_acfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+        seq = 1
+        nullify = ""
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt seq_no=""" & seq & """ type=""CONSUMERACCOUNT"">"
+    
+                        Set ntdf = dB.TableDefs("bdl_cnsmr_accnt_data")
+                        
+                            For Each nfld In ntdf.Fields
+                                    
+                                nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                                
+                            Next
+                            
+                        If Len(nullify) > 0 Then
+                            xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                        End If
+                
+                    Set tdf = dB.TableDefs("bdl_cnsmr_accnt_data")
+                    
+                        For Each fld In tdf.Fields
+                                
+                            If Left(fld.Name, 4) <> "bdl_" Then
+                                xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                            End If
+                            
+                        Next
+                    
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt>"
+            
+            f.Write xmlb
+            xmlb = ""
+            nullify = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            Loop
+        
+        f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_acfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+'    Debug.Print Chr(13) & Chr(10) & response
+        
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_cnsmr_accnt_data SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PATenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('postAccntUpdts', '" & PATenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+        
+    MsgBox "BDL file " & BDL_acfile & " has been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify that it processed completely.", vbInformation, "BDL FILE SUBMITTED"
+
+End Function
+Function PostAddrUpdts(PATenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim tdf As TableDef, ntdf As TableDef
+Dim cnt As Long, seq As Long, nullify As String
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+Dim BDL_adfile As String, BDL_arfile As String, hdr As String, xmlb As String, reg_id As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case PATenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_adfile = [Forms]![bdl_pst_addr_updts]![JIRA] & " Address Updates Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_adfile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_addrss_updt WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+            hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+            hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <communication_reference_id_txt>Organization</communication_reference_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & [Forms]![bdl_pst_addr_updts]![JIRA] & "</batch_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER</operational_transaction_type>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+            hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <consumer_operational_transaction_data>"
+    
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_adfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+        seq = 1
+        nullify = ""
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_addrss seq_no=""" & seq & """ type=""CONSUMER_ADDRESS"">"
+    
+                        Set ntdf = dB.TableDefs("bdl_addrss_updt")
+                        
+                            For Each nfld In ntdf.Fields
+                                    
+                                nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                                
+                            Next
+                            
+                        If Len(nullify) > 0 Then
+                            xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                        End If
+                
+                    Set tdf = dB.TableDefs("bdl_addrss_updt")
+                    
+                        For Each fld In tdf.Fields
+                                
+                            If Left(fld.Name, 4) <> "bdl_" Then
+                                xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                            End If
+                            
+                        Next
+                    
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_addrss>"
+            
+            f.Write xmlb
+            xmlb = ""
+            nullify = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            Loop
+        
+        f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_adfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+'    Debug.Print Chr(13) & Chr(10) & response
+
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'   CREATE & POST THE AR EVENT FILE
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'    Create the empty file for writing to in the location specified above
+     BDL_arfile = [Forms]![bdl_pst_addr_updts]![JIRA] & " AR Events Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+     DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_arfile
+     
+     '   Get the count of records to be written from the table
+         LineItem.MoveLast
+         cnt = LineItem.RecordCount
+         LineItem.MoveFirst
+
+'    Compose the XML file header
+     hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+     hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+     hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & Mid(BDL_arfile, 4, 7) & "</batch_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_ar_log_operational_transaction_data>"
+ 
+ '   Write the header to file
+     Set fs = CreateObject("Scripting.FileSystemObject")
+     Set f = fs.OpenTextFile(fileLoc & BDL_arfile, ForAppending, TristateFalse)
+     
+     f.Write hdr
+     
+ '   Begin composing the AR Event XML records
+     seq = 1
+     
+         Do Until LineItem.EOF
+         
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_ar_log seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_AR_LOG"">"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<actn_cd_shrt_val_txt>CC</actn_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<rslt_cd_shrt_val_txt>CC</rslt_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_mssg_txt>" & [Forms]![bdl_pst_addr_updts]![JIRA] & ": Address update ticket</cnsmr_accnt_ar_mssg_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_log_crt_usr_nm>" & Environ("username") & "</cnsmr_accnt_ar_log_crt_usr_nm>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt_ar_log>"
+         
+         f.Write xmlb
+         xmlb = ""
+         seq = seq + 1
+         
+         LineItem.MoveNext
+         
+         Loop
+  '  CLose the last XML Nodes and write to file
+     f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_ar_log_operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "</dm_data>"
+     
+     f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_arfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+        'Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+    
+    MsgBox "BDL files " & BDL_adfile & " and " & BDL_arfile & " have been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify they have processed completely.", vbInformation, "BDL FILE SUBMITTED"
+    
+    If [Forms]![bdl_pst_addr_updts]![runMR] = -1 Then
+    
+        RemoveMailReturns PATenv
+        
+    End If
+    
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_addrss_updt SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PATenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('postAddrUpdts', '" & PATenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+     
+
+End Function
+Function PostPhnUpdts(PATenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim tdf As TableDef, ntdf As TableDef
+Dim cnt As Long, seq As Long, nullify As String
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+Dim BDL_adfile As String, BDL_arfile As String, hdr As String, xmlb As String, reg_id As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case PATenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_adfile = [Forms]![bdl_pst_phn_updts]![JIRA] & " Phone Updates Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_adfile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_phn WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+            hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+            hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <communication_reference_id_txt>Organization</communication_reference_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & [Forms]![bdl_pst_phn_updts]![JIRA] & "</batch_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER</operational_transaction_type>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+            hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <consumer_operational_transaction_data>"
+    
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_adfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+        seq = 1
+        nullify = ""
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_phn seq_no=""" & seq & """ type=""PHONE"">"
+    
+                        Set ntdf = dB.TableDefs("bdl_phn")
+                        
+                            For Each nfld In ntdf.Fields
+                                    
+                                nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                                
+                            Next
+                            
+                        If Len(nullify) > 0 Then
+                            xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                        End If
+                
+                    Set tdf = dB.TableDefs("bdl_phn")
+                    
+                        For Each fld In tdf.Fields
+                                
+                            If Left(fld.Name, 4) <> "bdl_" Then
+                                xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                            End If
+                            
+                        Next
+                    
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_phn>"
+            
+            f.Write xmlb
+            xmlb = ""
+            nullify = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            Loop
+        
+        f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_adfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+'    Debug.Print Chr(13) & Chr(10) & response
+
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'   CREATE & POST THE AR EVENT FILE
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'    Create the empty file for writing to in the location specified above
+     BDL_arfile = [Forms]![bdl_pst_phn_updts]![JIRA] & " AR Events Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+     DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_arfile
+     
+     '   Get the count of records to be written from the table
+         LineItem.MoveLast
+         cnt = LineItem.RecordCount
+         LineItem.MoveFirst
+
+'    Compose the XML file header
+     hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+     hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+     hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & Mid(BDL_arfile, 4, 7) & "</batch_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_ar_log_operational_transaction_data>"
+ 
+ '   Write the header to file
+     Set fs = CreateObject("Scripting.FileSystemObject")
+     Set f = fs.OpenTextFile(fileLoc & BDL_arfile, ForAppending, TristateFalse)
+     
+     f.Write hdr
+     
+ '   Begin composing the AR Event XML records
+     seq = 1
+     
+         Do Until LineItem.EOF
+         
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_ar_log seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_AR_LOG"">"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<actn_cd_shrt_val_txt>CC</actn_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<rslt_cd_shrt_val_txt>CC</rslt_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_mssg_txt>" & [Forms]![bdl_pst_phn_updts]![JIRA] & ": Phone update ticket</cnsmr_accnt_ar_mssg_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_log_crt_usr_nm>" & Environ("username") & "</cnsmr_accnt_ar_log_crt_usr_nm>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt_ar_log>"
+         
+         f.Write xmlb
+         xmlb = ""
+         seq = seq + 1
+         
+         LineItem.MoveNext
+         
+         Loop
+  '  CLose the last XML Nodes and write to file
+     f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_ar_log_operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "</dm_data>"
+     
+     f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_arfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+        'Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+    
+    MsgBox "BDL files " & BDL_adfile & " and " & BDL_arfile & " have been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify they have processed completely.", vbInformation, "BDL FILE SUBMITTED"
+    
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_phn SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PATenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('postPhnUpdts', '" & PATenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+     
+
+End Function
+Function RemoveMailReturns(MRenv As String)
+Dim del As Long
+Dim mrdb As Database
+Dim httpReq As New XMLHTTP60
+Dim rst1 As Recordset, c As Recordset, x As Recordset, rs As ADODB.Recordset
+Dim response As String, jBody As String, sql As String, sURL As String, strSQL As String
+
+    Set mrdb = CurrentDb
+    DoCmd.OpenForm "bdl_mr_count", acNormal
+    
+'   Set environment specific variables
+    Select Case MRenv
+    
+        Case "test"
+        
+            sURL = "http://dm-test-app:8080/dm-rest-services/api"
+            
+        Case "stage"
+        
+            sURL = "http://dm-stage-app:8080/dm-rest-services/api"
+            
+        Case "prod"
+        
+            sURL = "http://dm-prod-app:8080/dm-rest-services/api"
+            
+    End Select
+
+    Set rst1 = mrdb.OpenRecordset("SELECT * FROM bdl_addrss_updt WHERE bdl_usr = '" & [Forms]![bdl_pst_addr_updts]![usr] & "' AND bdl_proc = 'N' ORDER BY cnsmr_idntfr_agncy_id;")
+    Set c = mrdb.OpenRecordset("SELECT * FROM APIDeets;")
+
+    Do Until rst1.EOF
+    
+        '   Set the ADODB sql string
+            strSQL = "SELECT cnsmr_addrss_mail_rtrn_cd AS mr FROM crs5_oltp.dbo.cnsmr_addrss WHERE cnsmr_id = (SELECT cnsmr_id FROM crs5_oltp.dbo.cnsmr WHERE cnsmr_idntfr_agncy_id = 56416611);"
+
+        '   Find out if there's a mail return
+            Select Case MRenv
+            
+                Case "test"
+                
+                    OpenDMrect rs, strSQL
+                    
+                Case "stage"
+                
+                    OpenDMrecg rs, strSQL
+                    
+                Case "prod"
+                
+                    OpenDMrecs rs, strSQL
+                    
+            End Select
+            
+            If IsNull(rs!mr) Then
+            
+                response = "No mail return present"
+                
+            Else
+        
+                httpReq.Open "DELETE", sURL & "/consumers/" & rst1!cnsmr_idntfr_agncy_id & "/addressmailreturn", False, c!uName, c!pwd
+                httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                httpReq.setRequestHeader "Authorization", c!auth
+                httpReq.sEnd
+        
+                response = httpReq.responseText
+                
+            End If
+        
+            sql = "UPDATE bdl_addrss_updt SET bdl_mr_resp = '" & response & "', bdl_mr_proc = 'Y' WHERE cnsmr_idntfr_agncy_id = '" & rst1!cnsmr_idntfr_agncy_id & "' AND bdl_usr = '" & [Forms]![bdl_pst_addr_updts]![usr] & "' AND bdl_proc = 'N';"
+            mrdb.Execute (sql)
+            
+            del = Timer + 1
+            Do While Timer < del
+                Set x = mrdb.OpenRecordset("SELECT COUNT(*) AS cnt FROM bdl_addrss_updt WHERE bdl_usr = '" & [Forms]![bdl_pst_addr_updts]![usr] & "' AND bdl_mr_proc = 'Y' AND bdl_proc = 'N';")
+                    Forms("bdl_mr_count").Controls("apiComp").Value = x!cnt
+                Set x = Nothing
+                DoEvents
+            Loop
+    
+    rst1.MoveNext
+    Loop
+    
+    DoCmd.Close acForm, "bdl_mr_count", acSaveNo
+    mrdb.Close
+
+    MsgBox "The API calls to delete mail returns have been submitted", vbInformation, "MAIL RETURN APIs SUBMITTED"
+
+End Function
+Function PostCnsmrUpdts(PATenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim tdf As TableDef, ntdf As TableDef
+Dim cnt As Long, seq As Long, nullify As String
+Dim LineItem As Recordset, c As Recordset, u As Recordset
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+Dim BDL_adfile As String, BDL_arfile As String, hdr As String, xmlb As String, reg_id As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case PATenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_adfile = [Forms]![bdl_pst_cnsmr_updts]![JIRA] & " Consumer Demo Updates Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_adfile
+
+   '    Select the unprocessed records from the VOApps AR table
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_cnsmr_data WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+        
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+
+   '    Compose the XML file header
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+            hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+            hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <communication_reference_id_txt>Organization</communication_reference_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & [Forms]![bdl_pst_cnsmr_updts]![JIRA] & "</batch_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER</operational_transaction_type>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "             <custom_property/>"
+            hdr = hdr & Chr(13) & Chr(10) & "           </custom_properties>"
+            hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <consumer_operational_transaction_data>"
+    
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_adfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+        seq = 1
+        nullify = ""
+        
+            Do Until LineItem.EOF
+            
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr seq_no=""" & seq & """ type=""CONSUMER"">"
+    
+                        Set ntdf = dB.TableDefs("bdl_cnsmr_data")
+                        
+                            For Each nfld In ntdf.Fields
+                                    
+                                nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(22) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                                
+                            Next
+                            
+                        If Len(nullify) > 0 Then
+                            xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(20) & "</nullify_fields>"
+                        End If
+                
+                    Set tdf = dB.TableDefs("bdl_cnsmr_data")
+                    
+                        For Each fld In tdf.Fields
+                                
+                            If Left(fld.Name, 4) <> "bdl_" Then
+                                xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(20) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                            End If
+                            
+                        Next
+                    
+                xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr>"
+            
+            f.Write xmlb
+            xmlb = ""
+            nullify = ""
+            seq = seq + 1
+            
+            LineItem.MoveNext
+            Loop
+        
+        f.Write Chr(13) & Chr(10) & "           </consumer_operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+        f.Write Chr(13) & Chr(10) & "</dm_data>"
+        
+        f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_adfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+'    Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+'    Debug.Print Chr(13) & Chr(10) & response
+
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'   CREATE & POST THE AR EVENT FILE
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'    Create the empty file for writing to in the location specified above
+     BDL_arfile = [Forms]![bdl_pst_cnsmr_updts]![JIRA] & " AR Events Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+     DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_arfile
+     
+     '   Get the count of records to be written from the table
+         LineItem.MoveLast
+         cnt = LineItem.RecordCount
+         LineItem.MoveFirst
+
+'    Compose the XML file header
+     hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+     hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+     hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & Mid(BDL_arfile, 4, 7) & "</batch_id_txt>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+     hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+     hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_ar_log_operational_transaction_data>"
+ 
+ '   Write the header to file
+     Set fs = CreateObject("Scripting.FileSystemObject")
+     Set f = fs.OpenTextFile(fileLoc & BDL_arfile, ForAppending, TristateFalse)
+     
+     f.Write hdr
+     
+ '   Begin composing the AR Event XML records
+     seq = 1
+     
+         Do Until LineItem.EOF
+         
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_ar_log seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_AR_LOG"">"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<actn_cd_shrt_val_txt>CC</actn_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<rslt_cd_shrt_val_txt>CC</rslt_cd_shrt_val_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_mssg_txt>" & [Forms]![bdl_pst_cnsmr_updts]![JIRA] & ": Consumer demographic update ticket</cnsmr_accnt_ar_mssg_txt>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_log_crt_usr_nm>" & Environ("username") & "</cnsmr_accnt_ar_log_crt_usr_nm>"
+             xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt_ar_log>"
+         
+         f.Write xmlb
+         xmlb = ""
+         seq = seq + 1
+         
+         LineItem.MoveNext
+         
+         Loop
+  '  CLose the last XML Nodes and write to file
+     f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_ar_log_operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+     f.Write Chr(13) & Chr(10) & "</dm_data>"
+     
+     f.Close
+             
+'   Register the BDL file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_arfile & ""","
+    jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+    jBody = jBody & Chr(13) & Chr(10) & "}"
+
+        httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        reg_id = Mid(response, 46, 6)
+        
+    jBody = ""
+
+        'Debug.Print response
+
+'   Import the registered BDL file
+    httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", c!auth
+    httpReq.sEnd (jBody)
+    
+    response = httpReq.responseText
+    
+    MsgBox "BDL files " & BDL_adfile & " and " & BDL_arfile & " have been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify they have processed completely.", vbInformation, "BDL FILE SUBMITTED"
+    
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_cnsmr_data SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PATenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('postCnsmrUpdts', '" & PATenv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+     
+
+End Function
+Function ImportPaySchedules(PSenv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim tdf As TableDef, ntdf As TableDef
+Dim cnt As Long, seq As Long, nullify As String
+Dim fileLoc As String, envURL As String, response As String, jBody As String
+Dim LineItem As Recordset, c As Recordset, u As Recordset, ins As Recordset, act As Recordset
+Dim BDL_psfile As String, BDL_arfile As String, hdr As String, xmlb As String, reg_id As String, inSQL As String, acSQL As String
+
+    Set dB = CurrentDb
+
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case PSenv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+    
+   '    Create the empty file for writing to in the location specified above
+        BDL_psfile = [Forms]![bdl_pay_schd_main]![JIRA] & " Payment Schedule Import " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_psfile
+
+        Set LineItem = dB.OpenRecordset("SELECT * FROM bdl_pay_schd_smy WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+    
+        LineItem.MoveLast
+        cnt = LineItem.RecordCount
+        LineItem.MoveFirst
+
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+        hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"""
+        hdr = hdr & Chr(13) & Chr(10) & "  xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"""
+        hdr = hdr & Chr(13) & Chr(10) & "  xsi:schemaLocation=""http://www.fico.com/xml/debtmanager/data/v1_0 dm_import_export.xsd"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <header>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <sender_id_txt>Organization</sender_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <target_id_txt>target_id_1</target_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <batch_id_txt>" & [Forms]![bdl_pay_schd_main]![JIRA] & "</batch_id_txt>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <operational_transaction_type>PAYMENT_SCHEDULE</operational_transaction_type>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <total_count>" & cnt & "</total_count>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00.001-05:00</creation_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "      <custom_property/>"
+        hdr = hdr & Chr(13) & Chr(10) & "    </custom_properties>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <operational_transaction_data>"
+        hdr = hdr & Chr(13) & Chr(10) & "    <payment_schedule_operational_transaction_data>"
+
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & BDL_psfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+        seq = 1
+        nullify = ""
+    
+        Do Until LineItem.EOF
+        
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<schdld_pymnt_smmry seq_no=""" & seq & """ type=""PAYMENT_SCHEDULE"">"
+
+                    Set ntdf = dB.TableDefs("bdl_pay_schd_smy")
+                    
+                        For Each nfld In ntdf.Fields
+                                
+                            nullify = nullify & IIf(LineItem(nfld.Name) = "NULL", Chr(13) & Chr(10) & Space(10) & "<nullify_field>" & nfld.Name & "</nullify_field>", "")
+                            
+                        Next
+                        
+                    If Len(nullify) > 0 Then
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<nullify_fields>" & nullify & Chr(13) & Chr(10) & Space(8) & "</nullify_fields>"
+                    End If
+            
+                Set tdf = dB.TableDefs("bdl_pay_schd_smy")
+                
+                    For Each fld In tdf.Fields
+                            
+                        If Left(fld.Name, 4) <> "bdl_" Then
+                            xmlb = xmlb & IIf(IsNull(LineItem(fld.Name)), "", IIf(LineItem(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(8) & "<" & fld.Name & ">" & LineItem(fld.Name) & "</" & fld.Name & ">"))
+                        End If
+                        
+                    Next
+                
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</schdld_pymnt_smmry>"
+            
+                inSQL = "SELECT * FROM bdl_pay_schd_ins WHERE schdld_pymnt_smmry_idntfr = '" & LineItem!schdld_pymnt_smmry_idntfr & "' AND bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N' ORDER BY schdld_pymnt_instnc_dttm;"
+                Set ins = dB.OpenRecordset(inSQL)
+                
+                seq = seq + 1
+                
+                    Do Until ins.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<schdld_pymnt_instnc seq_no=""" & seq & """ type=""SCHEDULED_PAYMENT"">"
+                        
+                            Set tdf = dB.TableDefs("bdl_pay_schd_ins")
+                            
+                                For Each fld In tdf.Fields
+                                        
+                                    If Left(fld.Name, 4) <> "bdl_" Then
+                                        xmlb = xmlb & IIf(IsNull(ins(fld.Name)), "", IIf(ins(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(12) & "<" & fld.Name & ">" & ins(fld.Name) & "</" & fld.Name & ">"))
+                                    End If
+                                    
+                                Next
+                            
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</schdld_pymnt_instnc>"
+                        
+                        seq = seq + 1
+                        
+                    ins.MoveNext
+                    Loop
+                    
+                acSQL = "SELECT * FROM bdl_pay_schd_asc WHERE schdld_pymnt_smmry_idntfr = '" & LineItem!schdld_pymnt_smmry_idntfr & "' AND bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N' ORDER BY cnsmr_accnt_idntfr_agncy_id;"
+                Set act = dB.OpenRecordset(acSQL)
+                
+                    Do Until act.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<schdld_pymnt_cnsmr_accnt_assctn seq_no=""" & seq & """ type=""PAYMENT_SCHEDULE_CONSUMER_ACCOUNT"">"
+                        
+                            Set tdf = dB.TableDefs("bdl_pay_schd_asc")
+                            
+                                For Each fld In tdf.Fields
+                                        
+                                    If Left(fld.Name, 4) <> "bdl_" Then
+                                        xmlb = xmlb & IIf(IsNull(act(fld.Name)), "", IIf(act(fld.Name) = "NULL", "", Chr(13) & Chr(10) & Space(12) & "<" & fld.Name & ">" & act(fld.Name) & "</" & fld.Name & ">"))
+                                    End If
+                                    
+                                Next
+                            
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</schdld_pymnt_cnsmr_accnt_assctn>"
+                        
+                        seq = seq + 1
+                    
+                    act.MoveNext
+                    Loop
+        
+            f.Write xmlb
+            xmlb = ""
+            
+            LineItem.MoveNext
+            
+            Loop
+        
+            f.Write Chr(13) & Chr(10) & "    </payment_schedule_operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "  </operational_transaction_data>"
+            f.Write Chr(13) & Chr(10) & "</dm_data>"
+            
+            f.Close
+            
+            '   Register the BDL file
+
+            Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+        
+            jBody = "{"
+            jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_psfile & ""","
+            jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+            jBody = jBody & Chr(13) & Chr(10) & "}"
+        
+                httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+                httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                httpReq.setRequestHeader "Authorization", c!auth
+                httpReq.sEnd (jBody)
+        
+                response = httpReq.responseText
+                reg_id = Mid(response, 46, 6)
+                
+            jBody = ""
+    
+        '    Debug.Print response
+        
+        '   Import the registered BDL file
+            httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", c!auth
+            httpReq.sEnd (jBody)
+            
+            response = httpReq.responseText
+    '       Debug.Print Chr(13) & Chr(10) & response
+
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+'       CREATE & POST THE AR EVENT FILE
+'-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    '   Create the empty file for writing to in the location specified above
+        BDL_arfile = [Forms]![bdl_pay_schd_main]![JIRA] & " AR Events Batch " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & BDL_arfile
+             
+        '   Get the count of records to be written from the table
+            LineItem.MoveLast
+            cnt = LineItem.RecordCount
+            LineItem.MoveFirst
+        
+        '   Compose the XML file header
+            hdr = "<?xml version=""1.0"" encoding=""UTF-8""?>"
+            hdr = hdr & Chr(13) & Chr(10) & "<dm_data xmlns=""http://www.fico.com/xml/debtmanager/data/v1_0"">"
+            hdr = hdr & Chr(13) & Chr(10) & "       <header>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <sender_id_txt>Organization</sender_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <target_id_txt>FAC Debt Manager</target_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <batch_id_txt>" & [Forms]![bdl_pay_schd_main]![JIRA] & "</batch_id_txt>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <total_count>" & cnt & "</total_count>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <creation_data>" & Format(Date, "yyyy-mm-dd") & "T" & Format(Time(), "Short time") & ":00</creation_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "       </header>"
+            hdr = hdr & Chr(13) & Chr(10) & "       <operational_transaction_data>"
+            hdr = hdr & Chr(13) & Chr(10) & "           <cnsmr_accnt_ar_log_operational_transaction_data>"
+         
+         '  Write the header to file
+            Set fs = CreateObject("Scripting.FileSystemObject")
+            Set f = fs.OpenTextFile(fileLoc & BDL_arfile, ForAppending, TristateFalse)
+             
+            f.Write hdr
+             
+         '  Begin composing the AR Event XML records
+            seq = 1
+             
+                 Do Until LineItem.EOF
+                 
+                     xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "<cnsmr_accnt_ar_log seq_no=""" & seq & """ type=""CONSUMER_ACCOUNT_AR_LOG"">"
+                     xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_idntfr_agncy_id>" & LineItem!cnsmr_idntfr_agncy_id & "</cnsmr_idntfr_agncy_id>"
+                     xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<actn_cd_shrt_val_txt>CC</actn_cd_shrt_val_txt>"
+                     xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<rslt_cd_shrt_val_txt>CC</rslt_cd_shrt_val_txt>"
+                     xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_mssg_txt>" & [Forms]![bdl_pay_schd_main]![JIRA] & ": Payment schedule updated per ticket</cnsmr_accnt_ar_mssg_txt>"
+                     xmlb = xmlb & Chr(13) & Chr(10) & Space(20) & "<cnsmr_accnt_ar_log_crt_usr_nm>" & Environ("username") & "</cnsmr_accnt_ar_log_crt_usr_nm>"
+                     xmlb = xmlb & Chr(13) & Chr(10) & Space(16) & "</cnsmr_accnt_ar_log>"
+                 
+                 f.Write xmlb
+                 xmlb = ""
+                 seq = seq + 1
+                 
+                 LineItem.MoveNext
+                 
+                 Loop
+          '  CLose the last XML Nodes and write to file
+             f.Write Chr(13) & Chr(10) & "           </cnsmr_accnt_ar_log_operational_transaction_data>"
+             f.Write Chr(13) & Chr(10) & "       </operational_transaction_data>"
+             f.Write Chr(13) & Chr(10) & "</dm_data>"
+             
+             f.Close
+                     
+        '   Register the BDL file
+        
+            Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+        
+            jBody = "{"
+            jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & BDL_arfile & ""","
+            jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""BDL_IMPORT"""
+            jBody = jBody & Chr(13) & Chr(10) & "}"
+        
+                httpReq.Open "POST", envURL & "/fileregistry", False, c!uName, c!pwd
+                httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                httpReq.setRequestHeader "Authorization", c!auth
+                httpReq.sEnd (jBody)
+        
+                response = httpReq.responseText
+                reg_id = Mid(response, 46, 6)
+                
+            jBody = ""
+        
+                'Debug.Print response
+        
+        '   Import the registered BDL file
+            httpReq.Open "POST", envURL & "/fileregistry/" & reg_id & "/bdlimport", False, c!uName, c!pwd
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", c!auth
+            httpReq.sEnd (jBody)
+            
+            response = httpReq.responseText
+            
+            MsgBox "BDL files " & BDL_psfile & " and " & BDL_arfile & " have been submitted in Debt Manager. Check the Consumer/Account Data Processing Screen in DM to verify they have processed completely.", vbInformation, "BDL FILE SUBMITTED"
+            
+'   Mark all the records as processed
+    dB.Execute ("UPDATE bdl_pay_schd_smy SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PSenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute ("UPDATE bdl_pay_schd_ins SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PSenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute ("UPDATE bdl_pay_schd_asc SET bdl_proc = 'Y', bdl_post = NOW(), bdl_env = '" & PSenv & "' WHERE bdl_proc = 'N' AND bdl_usr = '" & u!xtsInitials & "';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('impPaySchedule', '" & PSenv & "', '" & Environ("username") & "', Now())"
+    
+    dB.Close
+
+End Function
+Function ImportNB(nbEnv As String)
+Dim fs, f
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field, err As Long, rb As String
+Dim cnt As Integer, seq As Integer, bsn As String, ss As Integer
+Dim XML_nbfile As String, hdr As String, xmlb As String, reg_id As String
+Dim con As Recordset, acc As Recordset, c As Recordset, u As Recordset, rs As ADODB.Recordset
+Dim fileLoc As String, envURL As String, response As String, jBody As String, strSQL As String
+
+    Set dB = CurrentDb
+    
+    '   Get user ID
+        Set u = dB.OpenRecordset("SELECT * FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+    '   Set environment specific variables
+        Select Case nbEnv
+        
+            Case "test"
+            
+                fileLoc = "\\dm-test-app\e$\dmfs\import\bdl\"
+                envURL = "http://dm-test-app:8080/dm-rest-services/api"
+                
+            Case "stage"
+            
+                fileLoc = "\\dm-stage-app3\dmfs\import\bdl\"
+                envURL = "http://dm-stage-app:8080/dm-rest-services/api"
+                
+            Case "prod"
+            
+                fileLoc = "\\dm-prod-app3\dmfs\import\bdl\"
+                envURL = "http://dm-prod-app:8080/dm-rest-services/api"
+                
+        End Select
+        
+   '    Create unique new biz batch short name
+        err = 1
+        Do Until err = 0
+        
+            cnt = 0
+            rb = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+            Do Until cnt = 8
+                ss = RandBetween(1, 33)
+                bsn = bsn & Mid(rb, ss, 1)
+                cnt = cnt + 1
+            Loop
+            
+            Set strSQL = "SELECT COUNT(*) AS nc FROM new_bsnss_btch WHERE new_bsnss_btch_shrt_nm = '" & bsn & "';"
+                
+                Select Case nbEnv
+                
+                    Case "test"
+                        OpenDMrect rs, strSQL
+                        
+                    Case "stage"
+                        OpenDMrecg rs, strSQL
+                        
+                    Case "prod"
+                        OpenDMrecs rs, strSQL
+                        
+                End Select
+                
+            err = rs!nc
+            strSQL = ""
+            rs.Close
+            
+        Loop
+    
+   '    Create the empty file for writing to in the location specified above
+        XML_nbfile = "NB_SAMPLE_RECS " & Format(Now(), "yyyyMMdd") & CLng(Timer) & ".txt"
+        DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", fileLoc & XML_nbfile
+
+   '    Select the consumer detail records from the test record table
+        Set c = dB.OpenRecordset("SELECT DISTINCT ConsumerLegacyID FROM nb_test_records ORDER BY ConsumerLegacyID;")
+        
+        '   Get the count of records to be written from the table
+            c.MoveLast
+            cnt = LineItem.RecordCount
+            c.MoveFirst
+
+    '   Start with the XML header (this routine just sets all the counts to 1 since they're not used by the system anyway)
+        hdr = "<?xml version=""1.0"" encoding=""UTF-8""?><newbiz xmlns=""http://www.crsoftwareinc.com/xml/ns/titanium/common/v1_0"" xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"">"
+        hdr = hdr & Chr(13) & Chr(10) & "  <newbiz-header>"
+        hdr = hdr & Chr(13) & Chr(10) & "     <total-consumers>1</total-consumers>"
+        hdr = hdr & Chr(13) & Chr(10) & "     <creditor-name></creditor-name>"
+        hdr = hdr & Chr(13) & Chr(10) & "     <total-principal>1</total-principal>"
+        hdr = hdr & Chr(13) & Chr(10) & "     <total-charge>1</total-charge>"
+        hdr = hdr & Chr(13) & Chr(10) & "     <total-interest>1</total-interest>    <total-balance>1</total-balance>"
+        hdr = hdr & Chr(13) & Chr(10) & "  </newbiz-header>"
+        hdr = hdr & Chr(13) & Chr(10) & "  <consumers>"
+    
+    '   Write the header to file
+        Set fs = CreateObject("Scripting.FileSystemObject")
+        Set f = fs.OpenTextFile(fileLoc & NB_actfile, ForAppending, TristateFalse)
+        
+        f.Write hdr
+        
+    '   Begin composing the AR Event XML records
+        seq = 1
+        
+        Do Until c.EOF
+        
+        Set con = dB.OpenRecordset("SELECT TOP 1 * FROM nb_test_records WHERE ConsumerLegacyID = '" & c!ConsumerLegacyID & "';")
+        
+        '   Compose the XML for the basic consumer node
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<consumer>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-info>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<is-commercial-flag>" & IIf(LineItem![CommericalConsumer] = "Y", "true", "false") & "</is-commercial-flag>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<consumer-name>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<last-name>" & con![Commerical Name] & "</last-name>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</consumer-name>"
+            
+            'More consumer node fields
+            'xmlb = xmlb & IIf(LineItem![Commercial Contact Name] <> "", Chr(13) & Chr(10) & Space(10) & "<commercial-contact-name>" & LineItem![Commercial Contact Name] & "</commercial-contact-name>", "")
+            'xmlb = xmlb & IIf(LineItem![Commerical Consumer] = "Y", Chr(13) & Chr(10) & Space(10) & "<commercial-name>" & LineItem![Commerical Name] & "</commercial-name>", "")
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-info>"
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<consumer-address-infos>"
+            'Compose the address node
+            'Check to see if there's some address info to write first)
+                chk = chk + IIf(LineItem![Street Address 1] <> "", 1, 0) + IIf(LineItem![Postal Code] <> "", 1, 0) + IIf(LineItem![City] <> "", 1, 0) + IIf(LineItem![State] <> "", 1, 0)
+                If chk > 0 Then
+                    ca = "<consumer-address-info>"
+                    ca = ca & Chr(13) & Chr(10) & Space(14) & "<consumer-address>"
+                    ca = ca & IIf(LineItem![Street Address 1] <> "", Chr(13) & Chr(10) & Space(16) & "<address-line-1>" & LineItem![Street Address 1] & "</address-line-1>", "")
+                    ca = ca & IIf(LineItem![Street Address 2] <> "", Chr(13) & Chr(10) & Space(16) & "<address-line-2>" & LineItem![Street Address 2] & "</address-line-2>", "")
+                    ca = ca & IIf(LineItem![State] <> "", Chr(13) & Chr(10) & Space(16) & "<address-state-code>" & LineItem![State] & "</address-state-code>", "")
+                    ca = ca & IIf(LineItem![Postal Code] <> "", Chr(13) & Chr(10) & Space(16) & "<address-postal-code>" & LineItem![Postal Code] & "</address-postal-code>", "")
+                    ca = ca & IIf(LineItem![City] <> "", Chr(13) & Chr(10) & Space(16) & "<address-city>" & LineItem![City] & "</address-city>", "")
+                    ca = ca & Chr(13) & Chr(10) & Space(14) & "</consumer-address>"
+                    ca = ca & Chr(13) & Chr(10) & Space(12) & "</consumer-address-info>"
+                    'Add the composed address block
+                    xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & ca
+                End If
+            
+            'Clear the address variables and close the address node
+            chk = 0
+            ca = ""
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</consumer-address-infos>"
+                    
+        '   Compose the Account node
+            act = Chr(13) & Chr(10) & Space(10) & "<newbiz-accounts>"
+            
+                act = act & Chr(13) & Chr(10) & Space(12) & "<staging-account>"
+                act = act & Chr(13) & Chr(10) & Space(14) & "<is-bpcm-rate-specified>true</is-bpcm-rate-specified>"
+                
+                act = act & Chr(13) & Chr(10) & Space(14) & "<financial-details>"
+                act = act & Chr(13) & Chr(10) & Space(16) & "<financial-detail>"
+                act = act & Chr(13) & Chr(10) & Space(18) & "<bucket-name>PRI</bucket-name>"
+                act = act & Chr(13) & Chr(10) & Space(18) & "<bucket-transaction-type>PLACEMENT</bucket-transaction-type>"
+                act = act & Chr(13) & Chr(10) & Space(18) & "<transaction-amount>0</transaction-amount>"
+                act = act & Chr(13) & Chr(10) & Space(16) & "</financial-detail>"
+                act = act & Chr(13) & Chr(10) & Space(14) & "</financial-details>"
+                        
+                act = act & Chr(13) & Chr(10) & Space(14) & "<account>"
+                    
+                act = act & Chr(13) & Chr(10) & Space(16) & "<creditor-name>" & LineItem![Creditor Short Name] & "</creditor-name>"
+                act = act & IIf(LineItem![Creditor Reference Number] <> "", Chr(13) & Chr(10) & Space(16) & "<creditor-account-reference-identifier>" & LineItem![Creditor Reference Number] & "</creditor-account-reference-identifier>", "")
+                act = act & IIf(LineItem![Unique Consumer Account ID] <> "", Chr(13) & Chr(10) & Space(16) & "<creditor-account-legacy-identifier>" & LineItem![Unique Consumer Account ID] & "</creditor-account-legacy-identifier>", "")
+                act = act & IIf(LineItem![Placement Date] <> "", Chr(13) & Chr(10) & Space(16) & "<credit-placement-date>" & LineItem![Placement Date] & "</credit-placement-date>", "")
+                act = act & IIf(LineItem![Description Field] <> "", Chr(13) & Chr(10) & Space(16) & "<description-text>" & LineItem![Description Field] & "</description-text>", "")
+                act = act & Chr(13) & Chr(10) & Space(16) & "<is-internal-flag>false</is-internal-flag>"
+                act = act & IIf(LineItem![Original Nominal Balance] <> "", Chr(13) & Chr(10) & Space(16) & "<original-nominal-balance>" & LineItem![Original Nominal Balance] & "</original-nominal-balance>", "")
+                    
+                act = act & Chr(13) & Chr(10) & Space(14) & "</account>"
+                    
+            'Compose UDP node
+             udp = ""
+
+                udp = udp & Chr(13) & Chr(10) & Space(14) & "<consumer-account-udfs>"
+                
+                    udp = udp & Chr(13) & Chr(10) & Space(16) & "<user-defined-page-data>"
+                    udp = udp & Chr(13) & Chr(10) & Space(18) & "<user-defined-page-name>CREDITORTRANHIST</user-defined-page-name>"
+                    udp = udp & Chr(13) & Chr(10) & Space(18) & "<user-defined-data-rows>"
+                    udp = udp & Chr(13) & Chr(10) & Space(20) & "<user-defined-data-row>"
+                    
+                        udp = udp & Chr(13) & Chr(10) & Space(22) & "<field name=""SERV_BAL_DUE"">"
+                        udp = udp & Chr(13) & Chr(10) & Space(24) & "<field-value xsi:type=""field-text-valueType"" >"
+                        udp = udp & Chr(13) & Chr(10) & Space(26) & "<value>0.00</value>"
+                        udp = udp & Chr(13) & Chr(10) & Space(24) & "</field-value>"
+                        udp = udp & Chr(13) & Chr(10) & Space(22) & "</field>"
+                            
+                    udp = udp & Chr(13) & Chr(10) & Space(20) & "</user-defined-data-row>"
+                    udp = udp & Chr(13) & Chr(10) & Space(18) & "</user-defined-data-rows>"
+                    udp = udp & Chr(13) & Chr(10) & Space(16) & "</user-defined-page-data>"
+
+                udp = udp & Chr(13) & Chr(10) & Space(14) & "</consumer-account-udfs>"
+                
+                act = act & udp
+                         
+                act = act & Chr(13) & Chr(10) & Space(12) & "</staging-account>"
+                
+            act = act & Chr(13) & Chr(10) & Space(10) & "</newbiz-accounts>"
+            
+            'Close the account node and add it to the current consumer record string
+            xmlb = xmlb & act
+            xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</consumer>"
+        
+        f.Write xmlb
+        
+        act = ""
+        xmlb = ""
+        seq = seq + 1
+        
+        LineItem.MoveNext
+        Loop
+        
+    f.Write Chr(13) & Chr(10) & "  </consumers>"
+    f.Write Chr(13) & Chr(10) & "</newbiz>"
+    
+    f.Close
+             
+'   Submit the New Biz file
+
+    Set c = dB.OpenRecordset("SELECT * FROM APIDeets;")
+
+    jBody = "{"
+    jBody = jBody & "\""shortName\"": \""" & bsn & "\"","
+    jBody = jBody & "\""uploadFileName\"": \""" & NB_actfile & "\"","
+    jBody = jBody & "\""manualUpload\"": false,"
+    jBody = jBody & "\""autoLinkingEnabledFlag\"": false,"
+    jBody = jBody & "\""autoMergingEnabledFlag\"": true,"
+    jBody = jBody & "\""autoRelease\"": true"
+    jBody = jBody & "}"
+
+        httpReq.Open "POST", envURL & "/newbusinessbatch/newbusinessbatch", False, c!uName, c!pwd
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", c!auth
+        httpReq.sEnd (jBody)
+
+        response = httpReq.responseText
+        MsgBox response, vbInformation, "NEW BUSINESS BATCH SUBMITTED"
+        
+        Debug.Print Chr(13) & Chr(10) & jBody
+        Debug.Print Chr(13) & Chr(10) & response
+        
+    jBody = ""
+  
+'   Mark all the records as processed
+    dB.Execute ("UPDATE crdtr_fee_dm_accnt SET nb_proc = 'Y', nb_env = '" & nbEnv & "', nb_usr = '" & u!xtsInitials & "' WHERE nb_proc = 'N';")
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('CreateCredAccnt', '" & nbEnv & "', '" & Environ("username") & "', Now())"
+    dB.Close
+
+End Function
