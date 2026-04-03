@@ -192,13 +192,6 @@ $FileSources = @(
         Recurse    = $true
         Description = "Working reference files for active builds"
     }
-    @{
-        ServerPath = "$DocsRoot\WorkingFiles\VBA"
-        RepoPath   = "xFACts-Documentation/WorkingFiles/VBA"
-        Filter     = @("*.*")
-        Recurse    = $true
-        Description = "Access Apps Toolkit VBA Extracts"
-    }
 )
 
 # Track generated file paths so orphan cleanup doesn't delete them
