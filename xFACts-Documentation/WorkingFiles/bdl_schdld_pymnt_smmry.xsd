@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+	elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+	<xs:include schemaLocation="../../dm_import_export_common.xsd" />
+
+	<xs:complexType name="bdl_schdld_pymnt_smmry_data_type">
+		<xs:sequence>
+
+			<!-- List of Fields to be marked as null -->
+			<xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+				<xs:annotation>
+					<xs:documentation>list of fields to be nullified</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+
+			<!-- START Business Key elements -->
+			<xs:element name="schdld_pymnt_smmry_id" type="xs:long" minOccurs="0" />
+
+			<xs:element name="cnsmr_idntfr_lgcy_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="40" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="cnsmr_idntfr_agncy_id" type="xs:long" minOccurs="0" />
+
+			<xs:element name="cnsmr_idntfr_ssn_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="20" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="cnsmr_nm_frst_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="64" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="cnsmr_nm_lst_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="128" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<!-- END Business Key elements -->
+
+			<xs:element name="schdld_pymnt_smmry_idntfr" minOccurs="1" maxOccurs="1">
+				<xs:simpleType>
+					<xs:annotation>
+						<xs:documentation>the unique identifier field used to tie related entities</xs:documentation>
+					</xs:annotation>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_ttl_amnt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="11" />
+						<xs:fractionDigits value="3" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_cmmnt_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1024" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_cnt" type="xs:short" minOccurs="0" />
+			<xs:element name="schdld_pymnt_smmry_crt_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="schdld_pymnt_smmry_crt_usrnm" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="128" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_end_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="schdld_pymnt_smmry_frqncy_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_frqncy_cnt" type="xs:short" minOccurs="0" />
+			<xs:element name="schdld_pymnt_smmry_strt_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="schdld_pymnt_smmry_is_rglr_flg" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_stts_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_typ_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_dwnpymnt_amnt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="11" />
+						<xs:fractionDigits value="3" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_dwnpymnt_dttm" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="schdld_pymnt_smmry_rglr_amnt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="11" />
+						<xs:fractionDigits value="3" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_lst_amnt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="11" />
+						<xs:fractionDigits value="3" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_rsn_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_is_pyff_schdl_flg" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_trt_as_prms_flg" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="schdld_pymnt_smmry_wght_nmbr" type="xs:short" minOccurs="0" />
+			<xs:element name="sp_smmry_stts_updt_dttm" type="xs:dateTime" minOccurs="0" />
+
+			<xs:element name="sp_smmry_days_of_mnth_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1000" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="sp_smmry_days_of_wk_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1000" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="sp_smmry_mnths_of_yr_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1000" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="sp_smmry_wks_of_mnth_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="1000" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="sp_smmry_days_offst_nmbr" type="xs:int" minOccurs="0"/>
+			<xs:element name="sp_smmry_schdld_strt_dt" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="sp_smmry_schdld_end_dt" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="sp_smmry_nmbr_of_mnths_cnt" type="xs:int" minOccurs="0"/>
+			<xs:element name="schdl_metadata_val_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="32" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:sequence>
+
+		<!-- SEQUENCE NUMBER -->
+		<xs:attribute name="seq_no" type="xs:long">
+			<xs:annotation>
+				<xs:documentation>sequence number</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+		<xs:attribute name="type" type="xs:string" fixed="PAYMENT_SCHEDULE">
+			<xs:annotation>
+				<xs:documentation>entity type</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+</xs:schema>
