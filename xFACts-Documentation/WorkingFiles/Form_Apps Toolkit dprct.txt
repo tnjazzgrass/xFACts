@@ -1,0 +1,104 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_Apps Toolkit dprct"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub exit_Click()
+
+    DoCmd.Quit acQuitSaveNone
+
+End Sub
+
+Private Sub Form_Load()
+Dim dB As Database
+Dim perm As Recordset
+Dim uName As String, uRole As String
+
+    uName = Environ("username")
+
+    Set dB = CurrentDb
+    
+    Set perm = dB.OpenRecordset("SELECT toolRole FROM toolUsers WHERE toolUsername = '" & uName & "';")
+    
+    If perm.EOF Then
+    
+        MsgBox "This application has not been set up for user " & uName & ", please contact the Apps team for access.", vbOKOnly, "ACCESS DENIED"
+        DoCmd.Quit acQuitSaveNone
+        
+    Else
+    
+    uRole = perm!toolRole
+    
+        Select Case uRole
+        
+            Case "Sales"
+        
+                Me.gotoCounts.Visible = False
+                Me.openTime.Visible = False
+                Me.gotoAPIs.Enabled = False
+                Me.gotoXML.Enabled = True
+                Me.gotoBDL.Enabled = False
+            
+            Case "Ops"
+        
+                Me.gotoCounts.Visible = False
+                Me.openTime.Visible = False
+                Me.gotoAPIs.Enabled = False
+                Me.gotoXML.Enabled = True
+                Me.gotoBDL.Enabled = True
+            
+            Case "Apps"
+        
+                Me.gotoCounts.Visible = False
+                Me.openTime.Visible = False
+                Me.gotoAPIs.Enabled = True
+                Me.gotoXML.Enabled = True
+                Me.gotoBDL.Enabled = True
+            
+            Case "Admin"
+        
+                Me.openTime.Visible = True
+                Me.gotoCounts.Visible = True
+                Me.openTime.Visible = False
+                Me.gotoAPIs.Enabled = True
+                Me.gotoXML.Enabled = True
+                Me.gotoBDL.Enabled = True
+                
+        End Select
+        
+    End If
+
+End Sub
+
+Private Sub gotoAPIs_Click()
+
+    DoCmd.OpenForm "Call Rest API", acNormal
+    DoCmd.Close acForm, "Apps Toolkit", acSaveNo
+
+End Sub
+
+Private Sub gotoBDL_Click()
+
+    DoCmd.OpenForm "BDL Files", acNormal
+    DoCmd.Close acForm, "Apps Toolkit", acSaveNo
+
+End Sub
+
+Private Sub gotoCounts_Click()
+
+End Sub
+
+Private Sub gotoXML_Click()
+
+    DoCmd.OpenForm "New Biz Pay XML", acNormal
+    DoCmd.Close acForm, "Apps Toolkit", acSaveNo
+
+End Sub
+
+Private Sub openTime_Click()
+
+End Sub
