@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+           elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="../../../dm_import_export_common.xsd" />
+
+    <xs:complexType name="bdl_ca_effctv_intrst_rt_data_type">
+        <xs:sequence>
+
+            <!-- List of Fields to be marked as null -->
+            <xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>list of fields to be nullified</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+
+            <xs:element name="cnsmr_accnt_intrst_effctv_dttm"  minOccurs="0" maxOccurs="1">
+                <xs:simpleType>
+                    <xs:annotation>
+                        <xs:documentation>Calendar dates are represented yyyy-mm-dd format, following ISO 8601. This is a W3C XML Schema date type, but without the optional timezone data.</xs:documentation>
+                    </xs:annotation>
+                    <xs:restriction base="xs:date">
+                        <xs:pattern value="[^:Z]*" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="cnsmr_accnt_intrst_end_dttm"  minOccurs="0" maxOccurs="1" >
+                <xs:simpleType>
+                    <xs:annotation>
+                        <xs:documentation>Calendar dates are represented yyyy-mm-dd format, following ISO 8601. This is a W3C XML Schema date type, but without the optional timezone data.</xs:documentation>
+                    </xs:annotation>
+                    <xs:restriction base="xs:date">
+                        <xs:pattern value="[^:Z]*" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="cnsmr_accnt_intrst_prcntg" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:decimal">
+                        <xs:totalDigits value="16"/>
+                        <xs:fractionDigits value="6"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="intrst_typ_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="intrst_frqncy_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="ca_intrst_frqncy_prd_nmbr" type="xs:short" minOccurs="0" maxOccurs="1" />
+            <xs:element name="intrst_days_in_yr_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="ca_end_int_accmltn_flg" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="1"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="int_strt_dt_lst_mnthday_flg" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="1"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+        </xs:sequence>
+        <!-- SEQUENCE NUMBER -->
+        <xs:attribute name="seq_no" type="xs:long">
+            <xs:annotation>
+                <xs:documentation>sequence number</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+
+    </xs:complexType>
+</xs:schema>
