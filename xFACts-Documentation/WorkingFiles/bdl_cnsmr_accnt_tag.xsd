@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+	elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+	<xs:include schemaLocation="../../../dm_import_export_common.xsd" />
+
+
+	<xs:complexType name="bdl_cnsmr_accnt_tag_data_type">
+		<xs:sequence>
+			<!-- List of Fields to be marked as null -->
+			<xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+				<xs:annotation>
+					<xs:documentation>list of fields to be nullified</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+
+			<!-- START Business Key elements -->
+			<xs:element name="cnsmr_accnt_tag_id" type="xs:long" minOccurs="0" />
+
+			<xs:element name="cnsmr_accnt_idntfr_agncy_id" type="xs:long" minOccurs="0" />
+
+			<xs:element name="cnsmr_accnt_idntfr_lgcy_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="20" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="crdtr_shrt_nm" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="8" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="cnsmr_accnt_crdtr_rfrnc_id_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="40" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+
+			<xs:element name="cnsmr_accnt_crdtr_rfrnc_corltn_id_txt" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="40" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<!-- END Business Key elements -->
+
+			<xs:element name="tag_shrt_nm" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="8" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="cnsmr_accnt_tag_assgn_dt" type="xs:dateTime" minOccurs="0" />
+			<xs:element name="cnsmr_accnt_tag_ordr_nmbr" type="xs:int" minOccurs="0" />
+			<xs:element name="cnsmr_accnt_tag_sft_delete_flg" type="xs:boolean" minOccurs="0"/>
+
+		</xs:sequence>
+		<!-- SEQUENCE NUMBER -->
+		<xs:attribute name="seq_no" type="xs:long">
+			<xs:annotation>
+				<xs:documentation>sequence number</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+		<xs:attribute name="type" type="xs:string" fixed="CONSUMER_ACCOUNT_TAG">
+			<xs:annotation>
+				<xs:documentation>entity type</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+</xs:schema>
