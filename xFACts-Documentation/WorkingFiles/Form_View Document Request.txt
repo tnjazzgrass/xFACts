@@ -1,0 +1,28 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_View Document Request"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub canDocReq_Click()
+    
+    DoCmd.OpenForm "vwDocReqCancel", acNormal
+    
+End Sub
+
+Private Sub closeViewReq_Click()
+Dim dB As Database
+Dim rst1 As Recordset
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+    dB.Execute "DELETE FROM curr_safety_net"
+    
+    DoCmd.OpenQuery "pop_curr_safety_net", acViewNormal
+    DoCmd.OpenForm "Safety Net", acFormDS
+    DoCmd.Close acForm, "View Document Request", acSaveNo
+
+End Sub
