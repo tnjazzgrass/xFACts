@@ -1,0 +1,30 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_z_log_scan"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub Form_Timer()
+Dim dB As Database
+Dim lck As Recordset
+
+    Set dB = CurrentDb
+    
+    Set lck = dB.OpenRecordset("SELECT * FROM toolMaint")
+    
+        If lck!maintShutdown = -1 Then
+            DoCmd.OpenForm "z_log_request", acNormal
+        End If
+    
+    dB.Close
+
+End Sub
+
+Private Sub scnHide_Click()
+    Me.Visible = False
+End Sub
