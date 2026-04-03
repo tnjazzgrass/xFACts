@@ -1,0 +1,482 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frm_pay_rec_000"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub addAdj_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_add_adjst", acNormal
+
+End Sub
+
+Private Sub addAPay_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_add_accnt", acNormal
+
+End Sub
+
+Private Sub addCPay_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_add_cnsmr", acNormal
+
+End Sub
+
+Private Sub canPay_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "Apps Toolkit", acNormal
+
+End Sub
+Private Sub eBatch_Click()
+
+Dim dB As Database
+Dim look As Recordset
+    
+    Set dB = CurrentDb
+
+    Set look = dB.OpenRecordset("SELECT * FROM payment_info WHERE PayID = " & Me.recSel.Value)
+    
+    If look!xProc = "Y" Then
+        
+        MsgBox "This record has already been processed and cannot be edited or re-run.", vbOKOnly, "RECORD CANNOT BE EDITED"
+        
+    Else
+
+        Select Case Me.recType.Value
+
+        Case "CPY"
+            DoCmd.OpenForm "frm_pay_edit_cnsmr", acNormal
+            
+                [Forms]![frm_pay_edit_cnsmr]![ePayID] = look!PayID
+                [Forms]![frm_pay_edit_cnsmr]![eConsumer] = look!PayConsumerNumber
+                [Forms]![frm_pay_edit_cnsmr]![eAmount] = look!PayAmt
+                [Forms]![frm_pay_edit_cnsmr]![eType] = look!PayType
+                [Forms]![frm_pay_edit_cnsmr]![eLocation] = look!PayLocation
+                [Forms]![frm_pay_edit_cnsmr]![eMemo] = look!PayMemoCode
+                [Forms]![frm_pay_edit_cnsmr]![eDate] = look!PayEnterDate
+                [Forms]![frm_pay_edit_cnsmr]![eComment] = look!PayComment
+
+           DoCmd.Close acForm, "frm_pay_rec_" & [Forms]![Apps Toolkit]![xIt], acSaveNo
+    
+        Case "APY"
+           DoCmd.OpenForm "frm_pay_edit_accnt", acNormal
+            
+                [Forms]![frm_pay_edit_accnt]![ePayID] = look!PayID
+                [Forms]![frm_pay_edit_accnt]![eAccount] = look!PayConsumerNumber
+                [Forms]![frm_pay_edit_accnt]![eAmount] = look!PayAmt
+                [Forms]![frm_pay_edit_accnt]![eType] = look!PayType
+                [Forms]![frm_pay_edit_accnt]![eLocation] = look!PayLocation
+                [Forms]![frm_pay_edit_accnt]![eMemo] = look!PayMemoCode
+                [Forms]![frm_pay_edit_accnt]![eDate] = look!PayEnterDate
+                [Forms]![frm_pay_edit_accnt]![eComment] = look!PayComment
+
+           DoCmd.Close acForm, "frm_pay_rec_" & [Forms]![Apps Toolkit]![xIt], acSaveNo
+    
+        Case "ADJ"
+           DoCmd.OpenForm "frm_pay_edit_adjst", acNormal
+            
+                [Forms]![frm_pay_edit_adjst]![ePayID] = look!PayID
+                [Forms]![frm_pay_edit_adjst]![eAccount] = look!PayConsumerNumber
+                [Forms]![frm_pay_edit_adjst]![eAmount] = look!PayAmt
+                [Forms]![frm_pay_edit_adjst]![eType] = look!PayType
+                [Forms]![frm_pay_edit_adjst]![eBucket] = look!PayBucketName
+                [Forms]![frm_pay_edit_adjst]![eLocation] = look!PayLocation
+                [Forms]![frm_pay_edit_adjst]![eMemo] = look!PayMemoCode
+                [Forms]![frm_pay_edit_adjst]![eDate] = look!PayEnterDate
+                [Forms]![frm_pay_edit_adjst]![eComment] = look!PayComment
+
+           DoCmd.Close acForm, "frm_pay_rec_" & [Forms]![Apps Toolkit]![xIt], acSaveNo
+           
+        End Select
+        
+    End If
+
+End Sub
+
+Private Sub Form_Load()
+Dim dB As Database
+Dim perm As Recordset
+Dim uName As String, uRole As String
+
+    uName = Environ("username")
+
+    Set dB = CurrentDb
+    
+    Set perm = dB.OpenRecordset("SELECT xtsRole, xtsInitials FROM xtsUsers WHERE xtsUsername = '" & uName & "';")
+    
+        uRole = perm!xtsRole
+    
+        Select Case uRole
+            
+            Case "Admin"
+        
+                Me.adminOver.Visible = True
+        
+        End Select
+        
+End Sub
+
+Private Sub pBatch_Click()
+Dim fs, f
+Dim httpReq As New XMLHTTP60
+Dim fld As Field, nfld As Field
+Dim cnt As Integer, seq As Integer, cpj As Integer
+Dim response As String, jBody As String, sql As String, reg_id As String, cpb_id As String
+Dim LineItem As Recordset, b As Recordset, c As Recordset, cpy As Recordset, apy As Recordset, api As Recordset
+Dim pay_batch As String, hdr As String, xmlb As String, pay_file As String, axml As String, bSQL As String, uInt As String
+
+    Set dB = CurrentDb
+    
+    Set LineItem = dB.OpenRecordset("SELECT SUM(PayAmt) AS payTot FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "';")
+    
+    If LineItem.EOF Then
+    
+        MsgBox "There are no payments for you to batch and post. Please add payments to your batch in order to post.", vbInformation, "NO UNPROCESSED PAYMENTS PRESENT"
+        
+    Else
+    
+            dB.Execute "UPDATE payment_info INNER JOIN payMemos ON payment_info.PayMemoCode = payMemos.memo_cd_shrt_nm SET payment_info.PayInstrument = [pymnt_instrmnt_typ_cd] WHERE (((payment_info.PayInstrument) Is Null));"
+        
+            pay_batch = "Apps Toolkit_BATCH_" & Format(Now(), "yyyyMMdd") & CLng(Timer)
+            pay_file = "\\dm-test-app\e$\dmfs\import\payments\" & pay_batch & ".txt"
+            
+            Set b = dB.OpenRecordset("SELECT SUM(PayAmt) AS payTot FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "';")
+            Set c = dB.OpenRecordset("SELECT DISTINCT PayConsumerNumber FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "';")
+        
+                c.MoveLast
+                cpj = c.RecordCount
+                c.MoveFirst
+        
+            DoCmd.TransferText acExportFixed, "BlankFileExp", "BlankFile", pay_file
+            
+            hdr = "<consumer-payment-import-job xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xsi:schemaLocation=""http://www.crsoftwareinc.com/xml/ns/titanium/common/v1_0 consumer-payment-import-job.xsd"" xmlns=""http://www.crsoftwareinc.com/xml/ns/titanium/common/v1_0"">"
+                hdr = hdr & Chr(13) & Chr(10) & "  <payment-import-header>"
+                hdr = hdr & Chr(13) & Chr(10) & "     <number-of-accounts>" & cpj & "</number-of-accounts>"
+                hdr = hdr & Chr(13) & Chr(10) & "     <total-value-of-account-payment>" & b!payTot & "</total-value-of-account-payment>"
+                hdr = hdr & Chr(13) & Chr(10) & "     <date-of-turnover>" & Format(Date, "yyyy-mm-dd") & "</date-of-turnover>"
+                hdr = hdr & Chr(13) & Chr(10) & "  </payment-import-header>"
+                    
+                hdr = hdr & Chr(13) & Chr(10) & "  <consumer-payment-imports>"
+                
+                    If Me.adminOver = -1 Then
+                        hdr = hdr & Chr(13) & Chr(10) & "  <payment-batch-options>"
+                        hdr = hdr & Chr(13) & Chr(10) & "    <payment-batch-option>"
+                        hdr = hdr & Chr(13) & Chr(10) & "      <skip-payment-adjustment-eligibility-check>true</skip-payment-adjustment-eligibility-check>"
+                        hdr = hdr & Chr(13) & Chr(10) & "    </payment-batch-option>"
+                        hdr = hdr & Chr(13) & Chr(10) & "  </payment-batch-options>"
+                    End If
+        
+            Set fs = CreateObject("Scripting.FileSystemObject")
+            Set f = fs.OpenTextFile(pay_file, ForAppending, TristateFalse)
+            
+            f.Write hdr
+            
+            seq = 1
+            
+            '   Consumer Pays
+                Set cpy = dB.OpenRecordset("SELECT * FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "' AND xType = 'CPY' ORDER BY PayConsumerNumber;")
+                
+                    Do Until cpy.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<consumer-payment-import>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<import-record-identifier>" & seq & "</import-record-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-amount>" & cpy!PayAmt & "</payment-amount>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<bucket-transaction-type>" & cpy!PayType & "</bucket-transaction-type>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<tendered-date>" & cpy!PayTenderDate & "</tendered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<entered-date>" & cpy!PayEnterDate & "</entered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-location-code>" & cpy!PayLocation & "</payment-location-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-memo-code>" & cpy!PayMemoCode & "</payment-memo-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<payment-method-type-code>" & cpy!PayInstrument & "</payment-method-type-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-comments>" & cpy!PayComment & "</payment-comments>"
+                        xmlb = xmlb & IIf(IsNull(cpy!PayExtRef), "", Chr(13) & Chr(10) & Space(10) & "<external-reference-identifier>" & cpy!PayExtRef & "</external-reference-identifier>")
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<agency-identifier>" & cpy!PayConsumerNumber & "</agency-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</consumer-payment-import>"
+                    
+                    f.Write xmlb
+                    xmlb = ""
+                    axml = ""
+                    seq = seq + 1
+                    
+                    cpy.MoveNext
+                    Loop
+                    
+            '   End of Consumer Pays
+                    
+            '   Account Pays
+            '   Find all the cpj's first
+                Set cpy = dB.OpenRecordset("SELECT DISTINCT PayConsumerNumber, PayType, First(PayComment) AS PC, Sum(PayAmt) AS PD, Min(PayTenderDate) AS ED, First(PayLocation) AS PL, First(PayMemoCode) AS MC, First(PayInstrument) AS PI FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "' AND xType = 'APY' GROUP BY PayConsumerNumber, PayType ORDER BY PayConsumerNumber;")
+                
+                    Do Until cpy.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<consumer-payment-import>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<import-record-identifier>" & seq & "</import-record-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-amount>" & cpy!PD & "</payment-amount>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<bucket-transaction-type>" & cpy![PayType] & "</bucket-transaction-type>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<tendered-date>" & cpy!ED & "</tendered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<entered-date>" & cpy!ED & "</entered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-location-code>" & cpy!PL & "</payment-location-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-memo-code>" & cpy!MC & "</payment-memo-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<payment-method-type-code>" & cpy!PI & "</payment-method-type-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-comments>" & cpy!PC & "</payment-comments>"
+                        'xmlb = xmlb & IIf(IsNull(cpy!PayExtRef), "", Chr(13) & Chr(10) & Space(10) & "<external-reference-identifier>" & cpy!PayExtRef & "</external-reference-identifier>")
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<agency-identifier>" & cpy!PayConsumerNumber & "</agency-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-identifier>"
+                        
+                            '   Add account details
+                                Set apy = dB.OpenRecordset("SELECT * FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "' AND PayConsumerNumber = '" & cpy!PayConsumerNumber & "' AND xType = 'APY' ORDER BY PayAccountNumber;")
+                                
+                                    axml = "<consumer-account-payment-imports>"
+                                
+                                    Do Until apy.EOF
+                                
+                                    axml = axml & Chr(13) & Chr(10) & Space(10) & "<consumer-account-payment-import>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "<consumer-account-payment>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(14) & "<payment-amount>" & apy!PayAmt & "</payment-amount>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(14) & "<bucket-transaction-type>" & apy!PayType & "</bucket-transaction-type>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "</consumer-account-payment>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "<consumer-account-identifier>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(14) & "<agency-identifier>" & apy!PayAccountNumber & "</agency-identifier>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "</consumer-account-identifier>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(10) & "</consumer-account-payment-import>"
+                                    
+                                    apy.MoveNext
+                                    Loop
+                                    
+                                    axml = axml & Chr(13) & Chr(10) & Space(8) & "</consumer-account-payment-imports>"
+                                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & axml
+                            
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</consumer-payment-import>"
+                        
+                        f.Write xmlb
+                        xmlb = ""
+                        axml = ""
+                        seq = seq + 1
+                        
+                        cpy.MoveNext
+                        Loop
+                          
+            '   End of Account Pays
+            
+            '   Adjustments
+            '   One consumer + account record for each adjustment
+                Set cpy = dB.OpenRecordset("SELECT DISTINCT PayConsumerNumber, SUM(payAmt) AS PA, FIRST(PayEnterDate) AS PD, FIRST(PayLocation) AS PL, FIRST(PayMemoCode) AS PM, FIRST(PayInstrument) AS PI, FIRST(PayComment) AS PC FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "' AND xType = 'ADJ' GROUP BY PayConsumerNumber ORDER BY PayConsumerNumber;")
+                
+                    Do Until cpy.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<consumer-payment-import>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<import-record-identifier>" & seq & "</import-record-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-amount>" & cpy!PA & "</payment-amount>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<bucket-transaction-type>ADJUSTMENT</bucket-transaction-type>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<tendered-date>" & cpy!PD & "</tendered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<entered-date>" & cpy!PD & "</entered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-location-code>" & cpy!PL & "</payment-location-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-memo-code>" & cpy!PM & "</payment-memo-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<payment-method-type-code>" & cpy!PI & "</payment-method-type-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-comments>" & cpy!PC & "</payment-comments>"
+                        'xmlb = xmlb & IIf(IsNull(cpy!PayExtRef), "", Chr(13) & Chr(10) & Space(10) & "<external-reference-identifier>" & cpy!PayExtRef & "</external-reference-identifier>")
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<agency-identifier>" & cpy!PayConsumerNumber & "</agency-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-identifier>"
+                        
+                            '   Add account & bucket level details
+
+                                    Set apy = dB.OpenRecordset("SELECT * FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "' AND PayConsumerNumber = '" & cpy!PayConsumerNumber & "' AND xType = 'ADJ' ORDER BY PayAccountNumber;")
+                                    
+                                    axml = "<consumer-account-payment-imports>"
+                                    
+                                    Do Until apy.EOF
+                                
+                                        axml = axml & Chr(13) & Chr(10) & Space(10) & "<consumer-account-payment-import>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(12) & "<consumer-account-payment>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(14) & "<payment-amount>" & apy!PayAmt & "</payment-amount>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(14) & "<bucket-transaction-type>" & apy!PayType & "</bucket-transaction-type>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(12) & "</consumer-account-payment>"
+                                            axml = axml & Chr(13) & Chr(10) & Space(12) & "<consumer-account-financial-details>"
+                                                axml = axml & Chr(13) & Chr(10) & Space(14) & "<consumer-account-financial-detail>"
+                                                axml = axml & Chr(13) & Chr(10) & Space(16) & "<bucket-name>" & apy!PayBucketName & "</bucket-name>"
+                                                axml = axml & Chr(13) & Chr(10) & Space(16) & "<bucket-transaction-type>" & apy!PayType & "</bucket-transaction-type>"
+                                                axml = axml & Chr(13) & Chr(10) & Space(16) & "<transaction-amount>" & apy!PayBucketAmt & "</transaction-amount>"
+                                                axml = axml & Chr(13) & Chr(10) & Space(14) & "</consumer-account-financial-detail>"
+                                            axml = axml & Chr(13) & Chr(10) & Space(12) & "</consumer-account-financial-details>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(12) & "<consumer-account-identifier>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(14) & "<agency-identifier>" & apy!PayAccountNumber & "</agency-identifier>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(12) & "</consumer-account-identifier>"
+                                        axml = axml & Chr(13) & Chr(10) & Space(10) & "</consumer-account-payment-import>"
+                                    
+                                    apy.MoveNext
+                                    Loop
+                                    
+                                    axml = axml & Chr(13) & Chr(10) & Space(8) & "</consumer-account-payment-imports>"
+                                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & axml
+                            
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</consumer-payment-import>"
+                        
+                        f.Write xmlb
+                        xmlb = ""
+                        axml = ""
+                        seq = seq + 1
+                        
+                        cpy.MoveNext
+                        Loop
+                        
+            '   End of Adjustments
+                    
+            '   Reversals
+            '   Find all the cpj's first
+                Set cpy = dB.OpenRecordset("SELECT DISTINCT PayConsumerNumber, PayType, First(PayComment) AS PC, Sum(PayAmt) AS PD, Min(PayTenderDate) AS ED, First(PayLocation) AS PL, First(PayMemoCode) AS MC, First(PayInstrument) AS PI FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "' AND xType = 'REV' GROUP BY PayConsumerNumber, PayType ORDER BY PayConsumerNumber;")
+                
+                    Do Until cpy.EOF
+                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "<consumer-payment-import>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<import-record-identifier>" & seq & "</import-record-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-amount>" & cpy!PD & "</payment-amount>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<bucket-transaction-type>" & cpy![PayType] & "</bucket-transaction-type>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<tendered-date>" & cpy!ED & "</tendered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<entered-date>" & cpy!ED & "</entered-date>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-location-code>" & cpy!PL & "</payment-location-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-memo-code>" & cpy!MC & "</payment-memo-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(12) & "<payment-method-type-code>" & cpy!PI & "</payment-method-type-code>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "</payment-method>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<payment-comments>" & cpy!PC & "</payment-comments>"
+                        'xmlb = xmlb & IIf(IsNull(cpy!PayExtRef), "", Chr(13) & Chr(10) & Space(10) & "<external-reference-identifier>" & cpy!PayExtRef & "</external-reference-identifier>")
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-payment>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "<consumer-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(10) & "<agency-identifier>" & cpy!PayConsumerNumber & "</agency-identifier>"
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & "</consumer-identifier>"
+                        
+                            '   Add account details
+                                Set apy = dB.OpenRecordset("SELECT * FROM payment_info WHERE xProc = 'N' AND xUser = '" & [Forms]![Apps Toolkit]![xIt] & "' AND PayConsumerNumber = '" & cpy!PayConsumerNumber & "' AND xType = 'REV' ORDER BY PayAccountNumber;")
+                                
+                                    axml = "<consumer-account-payment-imports>"
+                                
+                                    Do Until apy.EOF
+                                
+                                    axml = axml & Chr(13) & Chr(10) & Space(10) & "<consumer-account-payment-import>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "<consumer-account-payment>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(14) & "<payment-amount>" & apy!PayAmt & "</payment-amount>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(14) & "<bucket-transaction-type>" & apy!PayType & "</bucket-transaction-type>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "</consumer-account-payment>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "<staging-account>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(14) & "<creditor-name>" & apy!PayCredKey & "</creditor-name>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(14) & "<creditor-account-reference-identifier>" & apy!PayCredRefID & "</creditor-account-reference-identifier>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(12) & "</staging-account>"
+                                    axml = axml & Chr(13) & Chr(10) & Space(10) & "</consumer-account-payment-import>"
+                                    
+                                    apy.MoveNext
+                                    Loop
+                                    
+                                    axml = axml & Chr(13) & Chr(10) & Space(8) & "</consumer-account-payment-imports>"
+                                    
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(8) & axml
+                            
+                        xmlb = xmlb & Chr(13) & Chr(10) & Space(6) & "</consumer-payment-import>"
+                        
+                        f.Write xmlb
+                        xmlb = ""
+                        axml = ""
+                        seq = seq + 1
+                        
+                        cpy.MoveNext
+                        Loop
+                          
+            '   End of Reversals
+                
+                    f.Write Chr(13) & Chr(10) & "       </consumer-payment-imports>"
+                    f.Write Chr(13) & Chr(10) & "</consumer-payment-import-job>"
+                    
+                    dB.Execute "UPDATE payment_info SET xProc = 'Y' WHERE xUser = '" & [Forms]![Apps Toolkit]![xIt] & "';"
+                    
+                    f.Close
+        
+                    
+         '  Register the payment file
+            Set api = dB.OpenRecordset("SELECT * FROM xtsCred;")
+         
+                   jBody = "{"
+                   jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileName"":""" & pay_batch & ".txt"","
+                   jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileType"":""PAYMENTIMPORT"""
+                   jBody = jBody & Chr(13) & Chr(10) & "}"
+               
+                       httpReq.Open "POST", "http://dm-test-app:8080/dm-rest-services/api/fileregistry", False, api!xtsUser, api!xtsPass
+                       httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                       httpReq.setRequestHeader "Authorization", api!xtsAuth
+                       httpReq.sEnd (jBody)
+                       
+                       response = httpReq.responseText
+                       reg_id = Mid(response, 46, 6)
+                       
+                       'Debug.Print response
+                       
+                       
+                   
+         '  Batch & process the payment file
+                   jBody = "{"
+                   jBody = jBody & Chr(13) & Chr(10) & Space(2) & """fileRegistryId"":" & reg_id & ","
+                   jBody = jBody & Chr(13) & Chr(10) & Space(2) & """batchName"":""" & pay_batch & ""","
+                   jBody = jBody & Chr(13) & Chr(10) & Space(2) & """processPostPaymentBatch"":Y"
+                   jBody = jBody & Chr(13) & Chr(10) & "}"
+               
+                       httpReq.Open "POST", "http://dm-test-app:8080/dm-rest-services/api/consumerfinancialimportbatches", False, api!xtsUser, api!xtsPass
+                       httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                       httpReq.setRequestHeader "Authorization", api!xtsAuth
+                       httpReq.sEnd (jBody)
+                         
+                    Debug.Print jBody
+                 
+                response = httpReq.responseText
+                Debug.Print response
+                
+                cpb_id = Mid(response, 39, 6)
+                
+         '  Post the payment batch
+                       httpReq.Open "POST", "http://dm-test-app:8080/dm-rest-services/api/consumerfinancialimportbatches/" & cpb_id & "/post", False, api!xtsUser, api!xtsPass
+                       httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                       httpReq.setRequestHeader "Authorization", api!xtsAuth
+                       httpReq.sEnd (jBody)
+        
+        MsgBox "Payment batch " & pay_batch & " has been submitted in Debt Manager. Please check the Financial Transactions tab for this batch to see if any further steps are needed.", vbInformation, "BATCH SUBMITTED"
+    
+    End If
+    
+    dB.Close
+        
+End Sub
+
+Private Sub xBatch_Click()
+Dim dB As Database
+
+    Set dB = CurrentDb
+    
+    dB.Execute "DELETE FROM payment_info WHERE xUser = '" & [Forms]![Apps Toolkit]![xIt] & "';"
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "frm_pay_rec_" & [Forms]![Apps Toolkit]![xIt], acNormal
+
+End Sub
