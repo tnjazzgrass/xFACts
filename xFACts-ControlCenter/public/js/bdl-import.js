@@ -115,7 +115,7 @@ var BDL = (function () {
     function renderEnvironments(envs) {
         var c = document.getElementById('env-cards');
         if (!envs.length) { c.innerHTML = '<div class="placeholder-message">No environments configured.</div>'; return; }
-        var h = ''; envs.forEach(function (env) { var locked = (env.environment === 'STAGE' || env.environment === 'PROD'); h += '<div class="env-card' + (locked ? ' env-locked' : '') + '" data-env="' + env.environment + '"' + (locked ? '' : ' onclick="BDL.selectEnvironment(this,' + env.config_id + ')"') + '><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div>' + (locked ? '<div class="env-locked-label">Coming Soon</div>' : '') + '</div>'; });
+        var h = ''; envs.forEach(function (env) { var locked = (env.environment === 'STAGE'|| env.environment === 'PROD' ); h += '<div class="env-card' + (locked ? ' env-locked' : '') + '" data-env="' + env.environment + '"' + (locked ? '' : ' onclick="BDL.selectEnvironment(this,' + env.config_id + ')"') + '><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div>' + (locked ? '<div class="env-locked-label">Coming Soon</div>' : '') + '</div>'; });
         c.innerHTML = h; c._envData = envs;
     }
     function selectEnvironment(card, configId) {
