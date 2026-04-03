@@ -1,0 +1,64 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_prodAPI_refDrools"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub canRefPrdDrl_Click()
+    
+    DoCmd.Close acForm, "prodAPI_refDrools", acSaveNo
+    [Forms]![Call REST API].Visible = True
+    
+End Sub
+
+Private Sub refProdDrls_Click()
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+Dim sURL As String, sUser As String, sPass As String, sAuth As String
+
+    Set dB = CurrentDb
+    
+   'APP
+    sURL = "http://dm-prod-app:8080/dm-rest-services/api/scheduledjobs/REFRESH_DROOLS"
+
+        httpReq.Open "POST", sURL, False, [Forms]![Call REST API]![APIuser], [Forms]![Call REST API]![APIpass]
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", [Forms]![Call REST API]![authCode]
+        httpReq.sEnd
+        
+        response = "APP: " & httpReq.responseText
+    
+   'APP2
+    sURL = "http://dm-prod-app2:8080/dm-rest-services/api/scheduledjobs/REFRESH_DROOLS"
+
+        httpReq.Open "POST", sURL, False, [Forms]![Call REST API]![APIuser], [Forms]![Call REST API]![APIpass]
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", [Forms]![Call REST API]![authCode]
+        httpReq.sEnd
+        
+        response = response & Chr(13) & Chr(10) & "APP2: " & httpReq.responseText
+    
+   'APP3
+    sURL = "http://dm-prod-app3:8080/dm-rest-services/api/scheduledjobs/REFRESH_DROOLS"
+
+        httpReq.Open "POST", sURL, False, [Forms]![Call REST API]![APIuser], [Forms]![Call REST API]![APIpass]
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", [Forms]![Call REST API]![authCode]
+        httpReq.sEnd
+        
+        response = response & Chr(13) & Chr(10) & "APP3: " & httpReq.responseText
+       
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('refDrools', 'PROD', '" & Environ("username") & "', Now())"
+    
+    MsgBox response, vbInformation, "PRODUCTION WEBSERVICE RESPONSE"
+
+    DoCmd.Close acForm, "prodAPI_refDrools", acSaveNo
+    [Forms]![Call REST API].Visible = True
+    
+End Sub
