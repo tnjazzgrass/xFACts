@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+           elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="../../../dm_import_export_common.xsd" />
+
+<xs:complexType name="bdl_ca_bckt_sttlmnt_data_type">
+        <xs:sequence>
+
+            <!-- List of Fields to be marked as null -->
+            <xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>list of fields to be nullified</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+
+            <xs:element name="ca_sttlmnt_idntfr_txt" minOccurs="0" maxOccurs="1">
+                <xs:simpleType>
+                    <xs:annotation>
+                        <xs:documentation>the unique identifier field used to tie related entities</xs:documentation>
+                    </xs:annotation>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="128" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+                        <xs:element name="bckt_shrt_nm" minOccurs="0" maxOccurs="1">
+                            <xs:simpleType>
+                                <xs:restriction base="xs:string">
+                                    <xs:maxLength value="32" />
+                                </xs:restriction>
+                            </xs:simpleType>
+                        </xs:element>
+                        <xs:element name="ca_bckt_sttlmnt_crrnt_bal_amnt" minOccurs="0">
+                            <xs:simpleType>
+                                <xs:restriction base="xs:decimal">
+                                    <xs:totalDigits value="16"/>
+                                    <xs:fractionDigits value="6"/>
+                                </xs:restriction>
+                            </xs:simpleType>
+                        </xs:element>
+                        <xs:element name="ca_bckt_sttlmnt_prcntg" minOccurs="0">
+                            <xs:simpleType>
+                                <xs:restriction base="xs:decimal">
+                                    <xs:totalDigits value="7"/>
+                                    <xs:fractionDigits value="4"/>
+                                </xs:restriction>
+                            </xs:simpleType>
+                        </xs:element>
+                        <xs:element name="ca_bckt_sttlmnt_sav_amnt" minOccurs="0">
+                            <xs:simpleType>
+                                <xs:restriction base="xs:decimal">
+                                    <xs:totalDigits value="16"/>
+                                    <xs:fractionDigits value="6"/>
+                                </xs:restriction>
+                            </xs:simpleType>
+                        </xs:element>
+                        <xs:element name="ca_bckt_sttlmnt_sav_prcntg" minOccurs="0">
+                            <xs:simpleType>
+                                <xs:restriction base="xs:decimal">
+                                    <xs:totalDigits value="7"/>
+                                    <xs:fractionDigits value="4"/>
+                                </xs:restriction>
+                            </xs:simpleType>
+                        </xs:element>
+
+        </xs:sequence>
+            <!-- SEQUENCE NUMBER -->
+            <xs:attribute name="seq_no" type="xs:long">
+                <xs:annotation>
+                    <xs:documentation>sequence number</xs:documentation>
+                </xs:annotation>
+            </xs:attribute>
+            <!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+            <xs:attribute name="type" type="xs:string" fixed="CONSUMER_ACCOUNT_BUCKET_SETTLEMENT">
+                <xs:annotation>
+                    <xs:documentation>entity type</xs:documentation>
+                </xs:annotation>
+            </xs:attribute>
+
+
+</xs:complexType>
+
+</xs:schema>
