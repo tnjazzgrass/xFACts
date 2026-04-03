@@ -1,0 +1,28 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_pay_batch_03_delete"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub canDelete_Click()
+
+    DoCmd.Close acForm, "pay_batch_03_delete", acSaveNo
+
+End Sub
+
+Private Sub payDelete_Click()
+Dim dB As Database
+
+    Set dB = CurrentDb
+    
+    dB.Execute ("DELETE FROM payment_info WHERE PayConsumerNumber = '" & [Forms]![pay_batch_01_main]![slct] & "' AND xProc = 'N' AND xType = 'PAY' AND xUser = '" & [Forms]![pay_batch_01_main]![usr] & "';")
+
+    Forms![pay_batch_01_main]![pay_batch_02_detail].Form.Requery
+    DoCmd.Close acForm, "pay_batch_03_delete", acSaveNo
+
+End Sub
