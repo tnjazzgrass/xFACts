@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0" targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+           elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="../../../dm_import_export_common.xsd" />
+
+
+    <xs:complexType name="bdl_dcmnt_rqst_data_type">
+        <xs:sequence>
+            <!-- List of Fields to be marked as null -->
+            <xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>list of fields to be nullified</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+
+            <!-- START Business Key elements -->
+            <xs:element name="dcmnt_rqst_id" type="xs:long" minOccurs="0"/>
+
+            <xs:element name="cnsmr_idntfr_lgcy_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="40" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_idntfr_agncy_id" type="xs:long" minOccurs="0" />
+
+            <xs:element name="cnsmr_idntfr_ssn_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="20" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_nm_frst_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="64" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_nm_lst_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="128" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_accnt_idntfr_agncy_id" type="xs:long" minOccurs="0" />
+
+            <xs:element name="cnsmr_accnt_idntfr_lgcy_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="20" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="crdtr_shrt_nm" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="8" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_accnt_crdtr_rfrnc_id_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="40" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="cnsmr_accnt_crdtr_rfrnc_corltn_id_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="40" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <!-- END Business Key elements -->
+
+            <xs:element name="dcmnt_rqst_dt" type="xs:dateTime" minOccurs="0" />
+
+            <xs:element name="dcmnt_rqst_mnl_flg" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="1" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_rqst_send_to_entty_assctn_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="64" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_tmplt_shrt_nm" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_send_dt" type="xs:dateTime" minOccurs="0" />
+
+            <xs:element name="dcmnt_rqst_usr_usrnm" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="128" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_rqst_stts_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_typ_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+
+            <xs:element name="dcmnt_rqst_sbjct_entty_assctn_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="64" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+
+            <xs:element name="dcmnt_rqst_addtnl_info_entty_assctn_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="64" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+
+            <xs:element name="dcmnt_rqst_send_to_entty_nm_full_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="256" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+
+            <xs:element name="dcmnt_rqst_wrkgrp_shrt_nm_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_rqst_email_sbjct_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="1024" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_rqst_email_bdy_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="1024" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+            <xs:element name="dcmnt_dlvry_chnl_typ_val_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="32" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+
+
+        </xs:sequence>
+        <!-- SEQUENCE NUMBER -->
+        <xs:attribute name="seq_no" type="xs:long">
+            <xs:annotation>
+                <xs:documentation>sequence number</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+        <xs:attribute name="type" type="xs:string" fixed="NOTICE">
+            <xs:annotation>
+                <xs:documentation>entity type</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <!-- The biz_ky_id used to tie parent child entities -->
+        <xs:attribute name="biz_ky_id" type="xs:string" use="required" >
+            <xs:annotation>
+                <xs:documentation>the biz_ky_id used to tie parent-child AND/OR related entities</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+</xs:schema>
