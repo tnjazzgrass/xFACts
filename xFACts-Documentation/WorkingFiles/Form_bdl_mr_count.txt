@@ -1,0 +1,25 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_bdl_mr_count"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub Form_Load()
+Dim bdb As Database
+Dim u As Recordset
+Dim A As Recordset
+
+    Set bdb = CurrentDb
+    Set u = bdb.OpenRecordset("SELECT xtsRole, xtsInitials FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    Set A = bdb.OpenRecordset("SELECT COUNT(*) AS cnt FROM bdl_addrss_updt WHERE bdl_usr = '" & u!xtsInitials & "' AND bdl_proc = 'N';")
+    
+        Me.usr.Value = u!xtsInitials
+        Me.apiTot.Value = A!cnt
+    
+    bdb.Close
+    
+End Sub
