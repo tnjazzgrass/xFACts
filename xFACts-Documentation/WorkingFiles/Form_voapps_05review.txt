@@ -1,0 +1,15 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_voapps_05review"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub vopClsRev_Click()
+
+    DoCmd.OpenForm "voapps_01main", acNormal
+    DoCmd.Close acForm, "voapps_05review", acSaveNo
+
+End Sub
