@@ -305,3 +305,95 @@ body.compact .bdl-main { flex: 1; }
 .skip-btn:hover { background: #333; border-color: #f48771; color: #f48771; }
 .replace-done { color: #4ec9b0; font-size: 12px; }
 .skip-done { color: #f48771; font-size: 12px; }
+
+/* ============================================================================
+   STEP 6: REVIEW & EXECUTE
+   Append this entire block to the bottom of bdl-import.css
+   ============================================================================ */
+
+/* Execute Summary Card */
+.execute-summary { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
+.execute-summary-header { padding: 10px 14px; background: #333; color: #569cd6; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #404040; }
+.execute-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.summary-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #333; }
+.summary-item:nth-last-child(-n+2) { border-bottom: none; }
+.summary-label { color: #888; font-size: 12px; }
+.summary-value { color: #d4d4d4; font-size: 13px; font-weight: 600; text-align: right; }
+.summary-code { background: #252526; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #4ec9b0; font-size: 11px; font-weight: normal; margin-left: 6px; }
+.summary-env-test { color: #dcdcaa; }
+.summary-env-stage { color: #ce9178; }
+.summary-env-prod { color: #4ec9b0; }
+
+/* Collapsible Sections */
+.execute-mapping, .execute-preview { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
+.execute-section-header { padding: 10px 14px; background: #2a2a2a; color: #888; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; user-select: none; }
+.execute-section-header:hover { background: #333; color: #d4d4d4; }
+.section-toggle { font-size: 10px; color: #666; }
+.execute-section-body { padding: 10px 14px; }
+.execute-section-body.collapsed { display: none; }
+
+/* Mapping Reference in Execute */
+.execute-map-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; border-bottom: 1px solid #2a2a2a; }
+.execute-map-row:last-child { border-bottom: none; }
+.exec-map-source { color: #569cd6; font-weight: 600; flex: 1; }
+.exec-map-arrow { color: #4ec9b0; flex-shrink: 0; }
+.exec-map-target { color: #d4d4d4; flex: 1; text-align: right; }
+.exec-map-target code { background: #252526; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #ce9178; font-size: 11px; }
+
+/* XML Preview */
+.xml-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.xml-filename { color: #569cd6; font-weight: 600; font-size: 12px; }
+.xml-meta { color: #888; font-size: 11px; }
+.xml-preview-code { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 12px; font-family: 'Consolas', 'Courier New', monospace; font-size: 11px; color: #d4d4d4; overflow-x: auto; max-height: 400px; overflow-y: auto; line-height: 1.5; white-space: pre; margin: 0; }
+.xml-preview-actions { margin-top: 8px; }
+.xml-preview-loading { color: #888; font-size: 12px; font-style: italic; padding: 12px 0; }
+
+/* Execute Actions */
+.execute-actions { padding: 16px 0; text-align: center; }
+.execute-prod-warning { background: #3d2020; border: 1px solid #6d3030; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; color: #f48771; font-size: 13px; text-align: center; }
+.execute-btn { padding: 14px 40px; background: #4ec9b0; border: none; border-radius: 6px; color: #1e1e1e; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.2s; letter-spacing: 0.3px; }
+.execute-btn:hover:not(:disabled) { background: #5fd4bb; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(78, 201, 176, 0.3); }
+.execute-btn:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
+
+/* Progress Steps */
+.execute-progress { margin-bottom: 12px; }
+.progress-steps { display: flex; align-items: center; justify-content: center; gap: 0; padding: 16px; background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; }
+.progress-step { display: flex; align-items: center; gap: 6px; padding: 6px 10px; }
+.progress-icon { font-size: 14px; color: #555; }
+.progress-label { font-size: 12px; color: #666; white-space: nowrap; }
+.progress-complete .progress-icon { color: #4ec9b0; }
+.progress-complete .progress-label { color: #4ec9b0; }
+.progress-active .progress-icon { color: #569cd6; animation: pulse 1.2s infinite; }
+.progress-active .progress-label { color: #d4d4d4; }
+.progress-failed .progress-icon { color: #f48771; }
+.progress-failed .progress-label { color: #f48771; }
+.progress-connector { width: 30px; height: 2px; background: #404040; flex-shrink: 0; }
+.progress-connector-done { background: #4ec9b0; }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Result Cards */
+.execute-result-success, .execute-result-fail { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 6px; }
+.execute-result-success { background: #1e3a2a; border: 1px solid #2d5a3d; }
+.execute-result-fail { background: #3d2020; border: 1px solid #6d3030; }
+.execute-result-success .result-icon { color: #4ec9b0; font-size: 24px; flex-shrink: 0; }
+.execute-result-fail .result-icon { color: #f48771; font-size: 24px; flex-shrink: 0; }
+.execute-result-success strong { color: #4ec9b0; font-size: 15px; }
+.execute-result-fail strong { color: #f48771; font-size: 15px; }
+.result-detail { color: #d4d4d4; font-size: 13px; margin-top: 4px; }
+.result-meta { color: #888; font-size: 11px; margin-top: 8px; }
+.result-meta code { background: #1e1e1e; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #9cdcfe; font-size: 11px; }
+
+.xml-decl { color: #6a9955; }
+.xml-comment { color: #6a9955; font-style: italic; }
+.xml-bracket { color: #808080; }
+.xml-tag { color: #569cd6; }
+.xml-attr-name { color: #9cdcfe; }
+.xml-attr-val { color: #ce9178; }
+.xml-value { color: #d4d4d4; }
+
+.env-card.env-locked { opacity: 0.35; cursor: default; pointer-events: none; }
+.env-locked-label { font-size: 10px; color: #888; margin-top: 4px; font-style: italic; }
