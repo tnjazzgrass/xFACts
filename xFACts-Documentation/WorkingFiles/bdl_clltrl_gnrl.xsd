@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.fico.com/xml/debtmanager/data/v1_0"
+           targetNamespace="http://www.fico.com/xml/debtmanager/data/v1_0"
+           elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="../../../dm_import_export_common.xsd"/>
+
+
+    <xs:complexType name="bdl_clltrl_gnrl_data_type">
+        <xs:sequence>
+            <!-- List of Fields to be marked as null -->
+            <xs:element name="nullify_fields" type="nullify_fields_type" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>list of fields to be nullified</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="refudefcol_ref_typ_cd"  minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="256" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_crrncy" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="256" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_note_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="128" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_is_prior_rpssd" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="1" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_ref_sub_typ_cd" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="256" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_rfrnc_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="64" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_id" type="xs:long" minOccurs="1"/>
+            <xs:element name="refudefcol_prchsd_val" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:decimal">
+                        <xs:totalDigits value="16" />
+                        <xs:fractionDigits value="6" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_orgnl_val" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:decimal">
+                        <xs:totalDigits value="16" />
+                        <xs:fractionDigits value="6" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_prchsd_dt" type="xs:dateTime" minOccurs="0" />
+            <xs:element name="refudefcol_loan_amnt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:decimal">
+                        <xs:totalDigits value="16" />
+                        <xs:fractionDigits value="6" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_dpst_pd" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:decimal">
+                        <xs:totalDigits value="16" />
+                        <xs:fractionDigits value="6" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_rsdl_val" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:decimal">
+                        <xs:totalDigits value="16" />
+                        <xs:fractionDigits value="6" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="refudefcol_dscptn_txt" minOccurs="0">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="128" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+        </xs:sequence>
+        <!-- SEQUENCE NUMBER -->
+        <xs:attribute name="seq_no" type="xs:long">
+            <xs:annotation>
+                <xs:documentation>sequence number</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <!-- ITEM TYPE MAPS TO Ref_entty_assctn_cd.entty_assctn_val_txt -->
+        <xs:attribute name="type" type="xs:string" fixed="REFUDEFCOL_COLLATERAL">
+            <xs:annotation>
+                <xs:documentation>entity type</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <!-- The biz_ky_id used to tie parent child entities -->
+        <xs:attribute name="prnt_biz_ky_id" type="xs:string" use="required" >
+            <xs:annotation>
+                <xs:documentation>the biz_ky_id used to tie parent-child AND/OR related entities</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+</xs:schema>
