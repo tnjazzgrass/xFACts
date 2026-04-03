@@ -657,3 +657,234 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
     }
 }
+
+# ----------------------------------------------------------------------------
+# POST /api/bdl-import/build-preview
+# Builds the BDL XML from staging data and returns it for preview.
+# Does NOT write the file or call DM APIs.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/build-preview' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $stagingTable = $body.staging_table
+        $entityType = $body.entity_type
+        $configId = $body.config_id
+
+        if (-not $stagingTable -or -not $entityType -or -not $configId) {
+            Write-PodeJsonResponse -Value @{ error = 'staging_table, entity_type, and config_id are required' } -StatusCode 400
+            return
+        }
+
+        $xmlResult = Build-BDLXml -StagingTable $stagingTable -EntityType $entityType -ConfigId $configId -WebEvent $WebEvent
+        if ($xmlResult.Error) {
+            Write-PodeJsonResponse -Value @{ error = $xmlResult.Error } -StatusCode $xmlResult.StatusCode
+            return
+        }
+
+        # Return a truncated preview if the XML is very large
+        $xmlPreview = $xmlResult.Xml
+        $truncated = $false
+        if ($xmlPreview.Length -gt 100000) {
+            $xmlPreview = $xmlPreview.Substring(0, 100000) + "`n<!-- ... truncated for preview (full file: $([math]::Round($xmlResult.Xml.Length / 1024, 1)) KB) -->"
+            $truncated = $true
+        }
+
+        Write-PodeJsonResponse -Value @{
+            xml             = $xmlPreview
+            xml_filename    = $xmlResult.Filename
+            row_count       = $xmlResult.RowCount
+            skipped_count   = $xmlResult.SkippedCount
+            environment     = $xmlResult.Environment
+            truncated       = $truncated
+            full_size_bytes = $xmlResult.Xml.Length
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# POST /api/bdl-import/execute
+# Full execute: build XML → write to dmfs → register with DM → trigger import.
+# Mirrors Matt's legacy VBA pattern exactly.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $stagingTable = $body.staging_table
+        $entityType = $body.entity_type
+        $configId = $body.config_id
+        $sourceFilename = $body.source_filename
+        $columnMapping = $body.column_mapping
+
+        if (-not $stagingTable -or -not $entityType -or -not $configId) {
+            Write-PodeJsonResponse -Value @{ error = 'staging_table, entity_type, and config_id are required' } -StatusCode 400
+            return
+        }
+
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
+        $username = $WebEvent.Auth.User.Username
+        if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
+
+        # ── Step 1: Build the XML ───────────────────────────────────────
+        $xmlResult = Build-BDLXml -StagingTable $stagingTable -EntityType $entityType -ConfigId $configId -WebEvent $WebEvent
+        if ($xmlResult.Error) {
+            Write-PodeJsonResponse -Value @{ error = $xmlResult.Error } -StatusCode $xmlResult.StatusCode
+            return
+        }
+
+        # ── Step 2: Create ImportLog row (BUILDING status) ──────────────
+        $logInsert = Invoke-XFActsQuery -Query @"
+            INSERT INTO Tools.BDL_ImportLog 
+                (server_config_id, environment, entity_type, source_filename,
+                 xml_filename, row_count, column_mapping, status, executed_by)
+            OUTPUT INSERTED.log_id
+            VALUES 
+                (@configId, @environment, @entityType, @sourceFilename,
+                 @xmlFilename, @rowCount, @columnMapping, 'BUILDING', @executedBy)
+"@ -Parameters @{
+            configId       = $configId
+            environment    = $xmlResult.Environment
+            entityType     = $entityType
+            sourceFilename = if ($sourceFilename) { $sourceFilename } else { 'unknown' }
+            xmlFilename    = $xmlResult.Filename
+            rowCount       = $xmlResult.RowCount
+            columnMapping  = if ($columnMapping) { $columnMapping } else { [DBNull]::Value }
+            executedBy     = $user
+        }
+
+        $logId = $logInsert[0].log_id
+
+        # ── Step 3: Get server config for file path and API URL ─────────
+        $serverConfig = Invoke-XFActsQuery -Query @"
+            SELECT api_base_url, dmfs_base_path, dmfs_bdl_folder, environment
+            FROM Tools.ServerConfig
+            WHERE config_id = @configId AND is_active = 1
+"@ -Parameters @{ configId = $configId }
+
+        $apiBaseUrl = $serverConfig[0].api_base_url
+        $dmfsPath = $serverConfig[0].dmfs_base_path + '\' + $serverConfig[0].dmfs_bdl_folder + '\'
+
+        # ── Step 4: Write XML file to dmfs ──────────────────────────────
+        try {
+            $fullFilePath = $dmfsPath + $xmlResult.Filename
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($fullFilePath, $xmlResult.Xml, $utf8NoBom)
+        }
+        catch {
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog 
+                SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; errorMsg = "File write failed: $($_.Exception.Message)" }
+
+            Write-PodeJsonResponse -Value @{ error = "Failed to write file to dmfs: $($_.Exception.Message)"; log_id = $logId } -StatusCode 500
+            return
+        }
+
+        # ── Step 5: Get DM API credentials ──────────────────────────────
+        try {
+            $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
+        }
+        catch {
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog 
+                SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; errorMsg = "Credential retrieval failed: $($_.Exception.Message)" }
+
+            Write-PodeJsonResponse -Value @{ error = "Failed to retrieve DM API credentials: $($_.Exception.Message)"; log_id = $logId } -StatusCode 500
+            return
+        }
+
+        $authHeader = $creds.AuthHeader
+        $apiHeaders = @{
+            'Authorization' = $authHeader
+            'Content-Type'  = 'application/vnd.fico.dm.v1+json'
+        }
+
+        # ── Step 6: Register file with DM (POST /fileregistry) ──────────
+        try {
+            $regBody = @{
+                fileName = $xmlResult.Filename
+                fileType = 'BDL_IMPORT'
+            } | ConvertTo-Json
+
+            $regResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry" `
+                -Method POST -Headers $apiHeaders -Body $regBody -ErrorAction Stop
+
+            # Extract file_registry_id from response
+            # DM returns: { status: "success", data: { fileRegistryId: NNN, ... } }
+            $fileRegistryId = $null
+            if ($regResponse.data -and $regResponse.data.fileRegistryId) {
+                $fileRegistryId = $regResponse.data.fileRegistryId
+            }
+            elseif ($regResponse.fileRegistryId) {
+                $fileRegistryId = $regResponse.fileRegistryId
+            }
+            elseif ($regResponse.id) {
+                $fileRegistryId = $regResponse.id
+            }
+            if (-not $fileRegistryId) {
+                $regResponseText = $regResponse | ConvertTo-Json -Depth 5
+                throw "Could not extract file_registry_id from response: $regResponseText"
+            }
+
+            # Update log with REGISTERED status and file_registry_id
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog 
+                SET status = 'REGISTERED', file_registry_id = @regId
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; regId = $fileRegistryId }
+        }
+        catch {
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog 
+                SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; errorMsg = "File registration failed: $($_.Exception.Message)" }
+
+            Write-PodeJsonResponse -Value @{ error = "DM file registration failed: $($_.Exception.Message)"; log_id = $logId } -StatusCode 500
+            return
+        }
+
+        # ── Step 7: Trigger BDL import (POST /fileregistry/{id}/bdlimport)
+        try {
+            $importResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$fileRegistryId/bdlimport" `
+                -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
+
+            # Update log with SUBMITTED status
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog 
+                SET status = 'SUBMITTED', completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId }
+        }
+        catch {
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog 
+                SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; errorMsg = "BDL import trigger failed: $($_.Exception.Message)" }
+
+            Write-PodeJsonResponse -Value @{ error = "BDL import trigger failed: $($_.Exception.Message)"; log_id = $logId; file_registry_id = $fileRegistryId } -StatusCode 500
+            return
+        }
+
+        # ── Success ─────────────────────────────────────────────────────
+        Write-PodeJsonResponse -Value @{
+            success          = $true
+            log_id           = $logId
+            file_registry_id = $fileRegistryId
+            xml_filename     = $xmlResult.Filename
+            row_count        = $xmlResult.RowCount
+            environment      = $xmlResult.Environment
+            status           = 'SUBMITTED'
+            message          = "BDL file $($xmlResult.Filename) has been submitted to Debt Manager."
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
