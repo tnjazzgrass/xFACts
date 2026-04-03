@@ -1,0 +1,82 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_sPay_03aCheck"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub addChkPay_Click()
+Dim sql As String
+Dim err As Integer
+Dim rec As Recordset
+Dim dB As Database
+Dim look As Recordset
+Dim curr_bal As Double
+
+'   Error Check - make sure form is filled out
+    err = 0
+    
+    If IsNull(Me.nConsumer) = True Then
+        MsgBox "Please enter a consumer number to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+    If IsNull(Me.nCheckNo) = True Then
+        MsgBox "Please enter a check number to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+    If IsNull(Me.nAccount) = True Then
+        MsgBox "Please enter an account number to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+    If IsNull(Me.nAmount) = True Then
+        MsgBox "Please enter a valid payment amount to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+    If IsNull(Me.nComment) = True Then
+        MsgBox "Please enter a ticket number or payment comment to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+        err = err + 1
+    End If
+
+    If err = 0 Then
+    
+        Set dB = CurrentDb
+            
+            Set rec = dB.OpenRecordset("SELECT ACCOUNT_AGENCY_ID, account_curr_bal, account_status_tag FROM dbo_vw_Apps Toolkit_accnt_smmry WHERE ACCOUNT_AGENCY_ID = '" & Me.nAccount & "';")
+            
+                Select Case rec!account_status_tag
+                    Case "TA_CSCLS", "TA_CSPIF", "TA_CSRET", "TA_CSRTR", "TA_CSSIF"
+                        err = err + 1
+                        MsgBox "This account has a status tag which makes it ineligible for payments. Please choose another account.", vbOKOnly, "ACCOUNT CLOSED"
+                End Select
+                
+                    If err = 0 Then
+                        If rec!account_curr_bal < Me.nAmount Then
+                                err = err + 1
+                                MsgBox "The amount you have entered for this payment exceeds the current balance for this account. Please enter a lower payment amount or choose another account.", vbOKOnly, "OVERPAYMENT"
+                        End If
+                    End If
+            
+                If err = 0 Then
+                
+                    sql = "INSERT INTO payment_info (PayConsumerNumber, PayAccountNumber, PayAmt, PayType, PayLocation, PayEnterDate, PayTenderDate, PayMemoCode, PayCheckNum, PayBucketName, PayBucketAmt, PayComment, xUser, xType)"
+                    sql = sql & " SELECT '" & Me.nConsumer & "', '" & Me.nAccount & "', " & Me.nAmount & ", '" & Me.nType & "', '" & Me.nLocation & "', '" & Format(Me.nDate, "yyyy-MM-dd") & "', '" & Format(Me.nDate, "yyyy-MM-dd") & "', '" & Me.nMemo & "', '" & Me.nCheckNo & "', 'PRI', " & Me.nAmount & ", '" & Me.nComment & "', '" & [Forms]![Apps Toolkit]![xIt] & "', 'CHK';"
+                    
+                    dB.Execute sql
+                    
+                End If
+        
+        DoCmd.OpenForm "sPay_03_check", acNormal
+        DoCmd.Close acForm, "sPay_03aCheck", acSaveNo
+    
+    End If
+
+End Sub
+
+Private Sub bckChkPay_Click()
+
+    DoCmd.OpenForm "sPay_03aCheck", acNormal
+    DoCmd.Close acForm, "sPay_03aCheck", acSaveNo
+
+End Sub
