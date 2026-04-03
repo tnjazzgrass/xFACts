@@ -1,0 +1,551 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_Call REST API"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub APImoveAcct_Click()
+Dim del As Long
+Dim dB As Database
+Dim rst1 As Recordset
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+    Set rst1 = dB.OpenRecordset("SELECT * FROM rData WHERE Processed = 'N'")
+    
+    Do Until rst1.EOF
+        
+        jBody = "{"
+        jBody = jBody & Chr(13) & Chr(10) & """consumerAgencyId"":" & rst1!ConsumerID & ","
+        jBody = jBody & Chr(13) & Chr(10) & """accountIds"":[" & rst1!AccountID & "],"
+        jBody = jBody & Chr(13) & Chr(10) & """attachConsumers"":false,"
+        jBody = jBody & Chr(13) & Chr(10) & """attachLinkedConsumers"":false"
+        jBody = jBody & Chr(13) & Chr(10) & "}"
+    
+            httpReq.Open "POST", Me.APIurl & "consumers/" & rst1!ConsumerID & "/split", False, Me.APIuser, Me.APIpass
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", Me.authCode
+            httpReq.sEnd (jBody)
+        
+       response = httpReq.responseText
+       Debug.Print response
+        
+       sql = "UPDATE rData SET Processed = 'Y' WHERE ConsumerID = '" & rst1!ConsumerID & "' AND AccountID = '" & rst1!AccountID & "'"
+       dB.Execute (sql)
+       
+'       Debug.Print Chr(13) & Chr(10) & sql
+       
+       del = Timer + 2
+       Do While Timer < del
+           DoEvents
+       Loop
+    
+    rst1.MoveNext
+    Loop
+    
+    MsgBox "The split consumer/account APIs have been submitted", vbInformation, "WEBSERVICE RESPONSE"
+
+End Sub
+Private Sub canNotes_Click()
+Dim del As Long
+Dim dB As Database
+Dim rst1 As Recordset
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+Dim sURL As String, sUser As String, sPass As String, sAuth As String
+
+    Set dB = CurrentDb
+    Set rst1 = dB.OpenRecordset("SELECT * FROM badNotes WHERE Processed = 'N'")
+    sUser = Me.APIuser
+    sPass = Me.APIpass
+    
+    Do Until rst1.EOF
+        
+        sURL = Me.APIurl & "consumers/" & rst1!ConsumerID & "/noticerequests/" & rst1!NoteID
+    
+            httpReq.Open "DELETE", sURL, False, Me.APIuser, Me.APIpass
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", Me.authCode
+            httpReq.sEnd (jBody)
+            
+            response = httpReq.responseText
+        
+       sql = "UPDATE badNotes SET Processed = 'Y', Response = '" & response & "' WHERE ConsumerID = '" & rst1!ConsumerID & "' AND NoteID = '" & rst1!NoteID & "'"
+       dB.Execute (sql)
+       
+'       Debug.Print Chr(13) & Chr(10) & rst1!ConsumerID & ": " & response
+'       Debug.Print Chr(13) & Chr(10) & sql
+'       Debug.Print Chr(13) & Chr(10) & sUrl
+       
+       del = Timer + 1
+       Do While Timer < del
+           DoEvents
+       Loop
+    
+    rst1.MoveNext
+    Loop
+    
+    MsgBox "The notice cancellation APIs have been submitted", vbInformation, "WEBSERVICE RESPONSE"
+
+End Sub
+Private Sub del_phn_Click()
+Dim del As Long
+Dim dB As Database
+Dim rst1 As Recordset
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+    Set rst1 = dB.OpenRecordset("SELECT * FROM delete_phones ORDER BY ConAgencyID, phn_id")
+    
+    Do Until rst1.EOF
+    
+            httpReq.Open "DELETE", Me.APIurl & "consumers/" & rst1!ConAgencyID & "/phones/" & rst1!phn_id, False, Me.APIuser, Me.APIpass
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", Me.authCode
+        
+'       response = httpReq.responseText
+'       Debug.Print response
+       
+       del = Timer + 1
+       Do While Timer < del
+           DoEvents
+       Loop
+    
+    rst1.MoveNext
+    Loop
+    
+    MsgBox "The delete consumer phone APIs have been submitted", vbInformation, "WEBSERVICE RESPONSE"
+
+End Sub
+Private Sub delMailRet_Click()
+Dim x As String
+
+    Me.Visible = False
+
+'TEST
+    If Me.runEnv = 1 Then
+    
+        DoCmd.OpenForm "entry_delMailRet", acNormal
+        
+    End If
+
+'STAGE
+    If Me.runEnv = 2 Then
+    
+        DoCmd.OpenForm "entry_delMailRet", acNormal
+        
+    End If
+    
+'PROD
+    If Me.runEnv = 3 Then
+        
+        x = MsgBox("Calling this API will result in an update to Production, do you wish to proceed?", vbYesNo, "PRODUCTION UPDATE")
+        
+           If x = vbYes Then
+        
+                DoCmd.OpenForm "entry_delMailRet", acNormal
+                
+            Else
+            
+                [Forms]![Call REST API].Visible = True
+            
+            End If
+        
+    End If
+    
+End Sub
+
+Private Sub fix100_Click()
+
+'Base next screen on selected environment
+    
+    Select Case Me.runEnv
+    
+        Case 1
+            Me.Visible = False
+            DoCmd.OpenForm "split100_API", acNormal
+        
+        Case 2
+            MsgBox "The STAGE Environment is not available.", vbOKOnly, "ENVIRONMENT INACTIVE"
+        
+        Case 3
+            Me.Visible = False
+            DoCmd.OpenForm "split100_API_prod", acNormal
+            
+    End Select
+
+End Sub
+Private Sub mrgCnsmr_Click()
+Dim del As Long
+Dim dB As Database
+Dim rst1 As Recordset
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+    Set rst1 = dB.OpenRecordset("SELECT * FROM merge_consumers_string WHERE ResponseString IS NULL ORDER BY ConsumerName, TargetAgencyID, SourceAgencyID")
+    
+    Do Until rst1.EOF
+        
+        jBody = "{"
+        jBody = jBody & Chr(13) & Chr(10) & """consumerAgencyId"": " & rst1!TargetAgencyID & ","
+        jBody = jBody & Chr(13) & Chr(10) & """linkedAccounts"": " & rst1!AccountString
+        jBody = jBody & Chr(13) & Chr(10) & "}"
+    
+            httpReq.Open "POST", Me.APIurl & "consumers/" & rst1!SourceAgencyID & "/merge", False, Me.APIuser, Me.APIpass
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", Me.authCode
+            httpReq.sEnd (jBody)
+        
+        response = httpReq.responseText
+        sql = "UPDATE merge_consumers_string SET ResponseString = '" & response & "' WHERE SourceAgencyID = " & rst1!SourceAgencyID
+        dB.Execute (sql)
+       
+       del = Timer + 1
+       Do While Timer < del
+           DoEvents
+       Loop
+    
+    response = ""
+    rst1.MoveNext
+    Loop
+    
+    MsgBox "The merge consumer/account APIs have been submitted", vbInformation, "WEBSERVICE RESPONSE"
+
+
+End Sub
+
+Private Sub balSync_Click()
+
+    Select Case Me.runEnv
+    
+        Case 1
+            Me.Visible = False
+            DoCmd.OpenForm "runBalSync_low", acNormal
+        
+        Case 2
+            Me.Visible = False
+            DoCmd.OpenForm "runBalSync_low", acNormal
+        
+        Case 3
+            Me.Visible = False
+            DoCmd.OpenForm "prodAPI_runBalSync", acNormal
+            
+    End Select
+    
+End Sub
+
+Private Sub exit_Click()
+
+    DoCmd.OpenForm "Apps Toolkit", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+    
+End Sub
+
+Private Sub gotoMrg_Click()
+
+    DoCmd.OpenForm "frm_mrg_main", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
+
+Private Sub hld_cnsmr_Click()
+
+    DoCmd.OpenForm "Call REST Hold Consumer", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
+
+Private Sub post_ar_Click()
+
+    DoCmd.OpenForm "Call REST POST AR", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
+
+Private Sub pst_btch_Click()
+
+    DoCmd.OpenForm "Call REST POST BATCH", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
+
+Private Sub pstBDL_Click()
+
+    DoCmd.OpenForm "Call REST POST BDL", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
+
+Private Sub refDrools_Click()
+
+    Select Case Me.runEnv
+    
+        Case 1
+            Me.Visible = False
+            DoCmd.OpenForm "refDrools_low", acNormal
+        
+        Case 2
+            Me.Visible = False
+            DoCmd.OpenForm "refDrools_low", acNormal
+        
+        Case 3
+            Me.Visible = False
+            DoCmd.OpenForm "prodAPI_refDrools", acNormal
+            
+    End Select
+
+End Sub
+
+Private Sub relNotes_Click()
+
+    Select Case Me.runEnv
+    
+        Case 1
+            Me.Visible = False
+            DoCmd.OpenForm "relNotes_low", acNormal
+        
+        Case 2
+            Me.Visible = False
+            DoCmd.OpenForm "relNotes_low", acNormal
+        
+        Case 3
+            Me.Visible = False
+            DoCmd.OpenForm "prodAPI_relNotes", acNormal
+            
+    End Select
+    
+End Sub
+Private Sub sendBBalCorr_Click()
+Dim del As Long
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim rst As Recordset, rst1 As Recordset, rst2 As Recordset, rst3 As Recordset
+Dim response As String, jBody As String, sql As String, astr As String, dt As String
+
+    Set dB = CurrentDb
+    dB.Execute ("DELETE FROM bal_corr_consumers_string")
+    
+    Set rst = dB.OpenRecordset("SELECT unix_date FROM unix_dates WHERE Today = Date()")
+    dt = rst!unix_date
+    
+    Set rst1 = dB.OpenRecordset("SELECT DISTINCT ConsumerID FROM bal_corr_accounts WHERE Processed = 'N'")
+    
+    If rst1.EOF Then
+    
+        MsgBox "Please populate the bal_corr_accounts table.", vbInformation, "NO RECORDS FOUND"
+        
+    Else
+    
+        dB.Execute ("INSERT INTO bal_corr_consumers_string ( ConsumerID ) SELECT DISTINCT ConsumerID FROM bal_corr_accounts WHERE Processed = 'N' GROUP BY ConsumerID")
+        
+        Do Until rst1.EOF
+        
+            astr = ""
+            
+            sql = "SELECT * FROM bal_corr_accounts WHERE Processed = 'N' AND ConsumerID = '" & rst1!ConsumerID & "' ORDER BY ConsumerID, AccountIDs"
+            Set rst2 = dB.OpenRecordset(sql)
+            
+                Do Until rst2.EOF
+        
+                    astr = astr & "," & rst2!AccountIDs
+
+                rst2.MoveNext
+                Loop
+                
+            dB.Execute ("UPDATE bal_corr_accounts SET Processed = 'Y' WHERE ConsumerID = '" & rst1!ConsumerID & "'")
+            dB.Execute ("UPDATE bal_corr_consumers_string SET AccountString = '" & Mid(astr, 2, Len(astr)) & "' WHERE ConsumerID = '" & rst1!ConsumerID & "'")
+            
+        rst1.MoveNext
+        Loop
+        
+        Set rst3 = dB.OpenRecordset("SELECT * FROM bal_corr_consumers_string WHERE ResponseStr IS NULL")
+        Do Until rst3.EOF
+                    
+            jBody = "{"
+            jBody = jBody & Chr(13) & Chr(10) & """onDemand"": false,"
+            jBody = jBody & Chr(13) & Chr(10) & """documentTemplateShortName"": ""BBalCorr"","
+            jBody = jBody & Chr(13) & Chr(10) & """deliveryChannelTypeReference"": ""PRINT"","
+            jBody = jBody & Chr(13) & Chr(10) & """sendDate"": " & dt & ","
+            jBody = jBody & Chr(13) & Chr(10) & """sendToEntityDescriptors"": ["
+            jBody = jBody & Chr(13) & Chr(10) & "{"
+            jBody = jBody & Chr(13) & Chr(10) & """entityIdentifier"": " & rst3!ConsumerID & ","
+            jBody = jBody & Chr(13) & Chr(10) & """entityType"": ""CONSUMER"""
+            jBody = jBody & Chr(13) & Chr(10) & "}"
+            jBody = jBody & Chr(13) & Chr(10) & "],"
+            jBody = jBody & Chr(13) & Chr(10) & """accountsInNotice"": ["
+            jBody = jBody & Chr(13) & Chr(10) & rst3!AccountString
+            jBody = jBody & Chr(13) & Chr(10) & "]"
+            jBody = jBody & Chr(13) & Chr(10) & "}"
+        
+                httpReq.Open "POST", Me.APIurl & "consumers/" & rst3!ConsumerID & "/noticerequests", False, Me.APIuser, Me.APIpass
+                httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                httpReq.setRequestHeader "Authorization", Me.authCode
+                httpReq.sEnd (jBody)
+            
+           response = httpReq.responseText
+           dB.Execute ("UPDATE bal_corr_consumers_string SET ResponseStr = '" & response & "' WHERE ConsumerID = '" & rst3!ConsumerID & "'")
+           
+           Debug.Print response
+           Debug.Print Chr(13) & Chr(10)
+           Debug.Print jBody
+      '    Debug.Print Chr(13) & Chr(10) & sql
+           
+           del = Timer + 1
+           Do While Timer < del
+               DoEvents
+           Loop
+           
+        rst3.MoveNext
+        Loop
+        
+        MsgBox "The letter request APIs have been submitted", vbInformation, "WEBSERVICE RESPONSE"
+        
+    End If
+
+End Sub
+
+Private Sub updAddress_Click()
+Dim del As Long
+Dim dB As Database
+Dim rst1 As Recordset
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+    Set rst1 = dB.OpenRecordset("SELECT DISTINCT ConsumerID FROM rData WHERE Processed = 'N'")
+    
+    Do Until rst1.EOF
+        
+        jBody = "{"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & """version"": 0,"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & """address"": {"
+        jBody = jBody & IIf(IsNull(Me.nAddr), "", Chr(13) & Chr(10) & Space(6) & """addressLine1"": """ & Me.nAddr & """," & Chr(13) & Chr(10) & Space(6) & """addressLine2"": null," & Chr(13) & Chr(10) & Space(6) & """addressLine3"": null,")
+        jBody = jBody & IIf(IsNull(Me.nCity), "", Chr(13) & Chr(10) & Space(6) & """city"": """ & Me.nCity & """,")
+        jBody = jBody & IIf(IsNull(Me.nState), "", Chr(13) & Chr(10) & Space(6) & """state"": """ & Me.nState & """,")
+        jBody = jBody & IIf(IsNull(Me.nZIP), "", Chr(13) & Chr(10) & Space(6) & """postalCode"": """ & Me.nZIP & """,")
+        jBody = jBody & Chr(13) & Chr(10) & Space(6) & """countryCode"": ""US"""
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & "}"
+        jBody = jBody & Chr(13) & Chr(10) & "}"
+        
+        Debug.Print jBody
+    
+            httpReq.Open "PUT", Me.APIurl & "consumers/" & rst1!ConsumerID & "/address", False, Me.APIuser, Me.APIpass
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", Me.authCode
+            httpReq.sEnd (jBody)
+        
+       response = httpReq.responseText
+       Debug.Print response
+        
+       sql = "UPDATE rData SET Processed = 'Y', Response = '" & response & "' WHERE ConsumerID = '" & rst1!ConsumerID & "'"
+       dB.Execute (sql)
+       
+       del = Timer + 1
+       Do While Timer < del
+           DoEvents
+       Loop
+       
+       jBody = ""
+    
+    rst1.MoveNext
+    Loop
+    
+    MsgBox "The address update APIs have been completed", vbInformation, "API CALLS SUBMITTED"
+
+End Sub
+
+Private Sub updConsumer_Click()
+Dim del As Long
+Dim dB As Database
+Dim rst1 As Recordset
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+    Set rst1 = dB.OpenRecordset("SELECT DISTINCT ConsumerAgencyID FROM updt_cnsmr_nm WHERE Processed = 'N'")
+    
+    Do Until rst1.EOF
+        
+        jBody = "{"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & """version"": 0,"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & """securePersonIdentifier"": {"
+        jBody = jBody & Chr(13) & Chr(10) & Space(6) & """displayValue"": null"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & "},"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & """consumerEmail"": {"
+        jBody = jBody & Chr(13) & Chr(10) & Space(6) & """emailAddress"": """ & Me.nEmail & """"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & "},"
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & """firstName"": """ & Me.fName & ""","
+        jBody = jBody & Chr(13) & Chr(10) & Space(4) & """lastName"": """ & Me.lName & """"
+        jBody = jBody & Chr(13) & Chr(10) & "}"
+        
+        Debug.Print jBody
+    
+            httpReq.Open "PUT", Me.APIurl & "consumers/" & rst1!ConsumerAgencyID, False, Me.APIuser, Me.APIpass
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", Me.authCode
+            httpReq.sEnd (jBody)
+        
+       response = httpReq.responseText
+ '      Debug.Print response
+
+       sql = "UPDATE updt_cnsmr_nm SET Processed = 'Y', Response = '" & response & "' WHERE ConsumerAgencyID = '" & rst1!ConsumerAgencyID & "'"
+       dB.Execute (sql)
+       
+       del = Timer + 1
+       Do While Timer < del
+           DoEvents
+       Loop
+       
+       jBody = ""
+    
+    rst1.MoveNext
+    Loop
+    
+    MsgBox "The consumer update APIs have been completed", vbInformation, "API CALLS SUBMITTED"
+
+End Sub
+
+Private Sub splitAccounts_Click()
+'Base next screen on selected environment
+    
+    Select Case Me.runEnv
+    
+        Case 1
+            DoCmd.OpenForm "splitAccnt_API", acNormal
+        
+        Case 2
+            DoCmd.OpenForm "splitAccnt_API", acNormal
+        
+        Case 3
+            DoCmd.OpenForm "splitAccnt_API_prod", acNormal
+            
+    End Select
+End Sub
+
+Private Sub tst_lnch_jb_Click()
+
+    DoCmd.OpenForm "Call REST Job Flow", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
+
+Private Sub updCons_Click()
+
+    DoCmd.OpenForm "Call REST POST JIRA", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
+
+Private Sub val_rreq_Click()
+
+    DoCmd.OpenForm "frm_req_val", acNormal
+    DoCmd.Close acForm, "Call REST API", acSaveNo
+
+End Sub
