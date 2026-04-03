@@ -582,6 +582,100 @@
                                              ]
                    },
                    {
+                       "name":  "BDL_ImportTemplate",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "template_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "entity_type",
+                                           "dataType":  "varchar",
+                                           "length":  "60",
+                                           "nullable":  false,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "template_name",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "column_mapping",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  false,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))"
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())"
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())"
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "modified_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_BDL_ImportTemplate",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "template_id"
+                                       },
+                                       {
+                                           "name":  "UQ_BDL_ImportTemplate_entity_template",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "entity_type, template_name"
+                                       }
+                                   ]
+                   },
+                   {
                        "name":  "Catalog_ApiRegistry",
                        "description":  "REST API endpoint catalog containing one row per path and HTTP method combination. Parsed from OpenAPI 3.0 YAML specification files. Supports multi-product cataloging via product_name column. Links to Catalog_ApiSchemaRegistry via request_schema and response_schema for field-level detail.",
                        "module":  "dbo",
