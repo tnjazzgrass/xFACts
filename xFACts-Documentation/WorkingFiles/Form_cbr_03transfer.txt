@@ -1,0 +1,43 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_cbr_03transfer"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub clsCBRimp_Click()
+
+    DoCmd.OpenForm "cbr_01main", acNormal
+    DoCmd.Close acForm, "cbr_03transfer", acSaveNo
+
+End Sub
+
+Private Sub cbrExpFile_Click()
+Dim dB As Database
+Dim cnt As Long
+Dim fName As String
+Dim rec As Recordset
+
+    fName = Me.newFile
+            
+    Set dB = CurrentDb
+    dB.Execute ("DELETE * FROM CbrOutput_CurrentFile WHERE Account_Status NOT IN ('62','93','DA');")
+    Set rec = dB.OpenRecordset("SELECT TOP 1 Time_Stamp FROM CbrOutput_CurrentFile;")
+    
+    DoCmd.TransferText acExportFixed, "Metro2_base", "CbrOutput_CurrentFile", fName & "CbrOutput_" & rec!Time_Stamp & "_TU.txt", False
+    DoCmd.TransferText acExportFixed, "Metro2_trailer", "CbrOutput_CurrentTrailer", fName & "CbrOutput_Trailer_" & Format(Now(), "yyyyMMdd") & ".txt", False
+    
+        Set famt = dB.OpenRecordset("SELECT * FROM CbrOutput_CurrentFile;")
+        famt.MoveLast
+        cnt = famt.RecordCount
+        
+        MsgBox "The CBR base and trailer files have been exported, " & cnt & " records were included - be sure to combine the files along with the header record from the original file. Also make sure to fix the carriage return/line feed format before sending.", vbOKOnly, "EXPORT COMPLETE"
+
+    dB.Close
+    
+    DoCmd.OpenForm "cbr_01main", acNormal
+    DoCmd.Close acForm, "cbr_03transfer", acSaveNo
+
+End Sub
