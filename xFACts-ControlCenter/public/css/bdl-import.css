@@ -412,6 +412,29 @@ a { color: #9cdcfe; }
 .result-detail { color: #d4d4d4; font-size: 13px; margin-top: 4px; }
 .result-meta { color: #888; font-size: 11px; margin-top: 8px; }
 .result-meta code { background: #1e1e1e; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #9cdcfe; font-size: 11px; }
+
+/* ============================================================================
+   JIRA TICKET LINK (Step 6)
+   ============================================================================ */
+.execute-ticket { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
+.execute-ticket .execute-section-header { cursor: default; }
+.ticket-optional { font-weight: normal; color: #555; font-size: 11px; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.ticket-description { padding: 8px 14px 0; font-size: 12px; color: #888; line-height: 1.5; }
+.ticket-fields { padding: 10px 14px 14px; }
+.ticket-field-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ticket-field-row:last-child { margin-bottom: 0; }
+.ticket-label { font-size: 12px; font-weight: 600; color: #888; width: 80px; flex-shrink: 0; }
+.ticket-input { flex: 1; max-width: 300px; padding: 7px 10px; background: #252526; border: 1px solid #404040; border-radius: 4px; color: #d4d4d4; font-size: 13px; outline: none; transition: border-color 0.2s; }
+.ticket-input:focus { border-color: #569cd6; }
+.ticket-input::placeholder { color: #555; }
+.ticket-message-input { max-width: 100%; }
+
+/* AR Log Result Card */
+.execute-result-ar { margin-top: 8px; }
+.execute-result-warn { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 6px; background: #3d3520; border: 1px solid #6d5a30; }
+.execute-result-warn .result-icon { color: #dcdcaa; font-size: 24px; flex-shrink: 0; }
+.execute-result-warn strong { color: #dcdcaa; font-size: 15px; }
+
 /* ============================================================================
    TEMPLATE SECTION (Right Column)
    ============================================================================ */
