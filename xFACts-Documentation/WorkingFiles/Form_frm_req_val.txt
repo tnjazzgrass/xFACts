@@ -1,0 +1,53 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frm_req_val"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub exit_Click()
+
+    DoCmd.OpenForm "Call REST API", acNormal
+    DoCmd.Close acForm, "frm_req_val", acSaveNo
+    
+End Sub
+
+Private Sub req_val_Click()
+Dim dB As Database
+Dim httpReq As New XMLHTTP60
+Dim sday As Integer, eday As Integer
+Dim strSQL As String, excmd As String
+Dim rs As ADODB.Recordset, rst As Recordset
+Dim response As String, jBody As String, sql As String
+
+    sday = DateDiff("d", Me.sdt, Now())
+    eday = DateDiff("d", Me.edt, Now())
+    
+    excmd = "EXEC Applications.dbo.sp_DM_ReRequest_Valid_API " & sday & ", " & eday
+
+    ExecDMcmd (excmd)
+
+    httpReq.Open "POST", "http://DM-PROD-APP/dm-rest-services/api/jobs/JC_CBVAL/execute", False, Me.APIuser, Me.APIpass
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", Me.authCode
+    httpReq.sEnd (jBody)
+    response = httpReq.responseText
+
+    httpReq.Open "POST", "http://DM-PROD-APP/dm-rest-services/api/jobs/JC_CRVAL/execute", False, Me.APIuser, Me.APIpass
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", Me.authCode
+    httpReq.sEnd (jBody)
+    response = response & Chr(13) & Chr(10) & httpReq.responseText
+
+    httpReq.Open "POST", "http://DM-PROD-APP/dm-rest-services/api/jobs/JC_CYVAL/execute", False, Me.APIuser, Me.APIpass
+    httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+    httpReq.setRequestHeader "Authorization", Me.authCode
+    httpReq.sEnd (jBody)
+    response = response & Chr(13) & Chr(10) & httpReq.responseText
+    
+    MsgBox response, vbInformation, "API CALLS SUBMITTED"
+
+End Sub
