@@ -1684,6 +1684,14 @@ To provide Claude with access to repository files at the start of a session:
 
 **URL formatting in Claude chat.** The `web_fetch` tool requires URLs to be provided cleanly in the chat message. URLs wrapped in markdown formatting (surrounding underscores, bold markers, etc.) may not be recognized as user-provided URLs, causing permission errors. Paste URLs on their own line without any surrounding formatting characters.
 
+**web_fetch rate limiting.** The `web_fetch` tool is subject to an hourly rate limit on total requests. The exact limit and reset timing are not visible to Claude -- there is no counter, no remaining-request header, and no way to check before a fetch fails. When the limit is hit, all fetches fail until the window resets (approximately one hour from the burst of activity that triggered it). This affects all web_fetch calls, not just GitHub URLs. To minimize the risk of hitting the limit mid-session:
+
+- **Front-load all fetches at session start.** Pull the master manifest, relevant sub-manifests, and all files needed for the task in the first few minutes, before any code generation begins. If the limit is hit during front-loading, no work is lost.
+- **Minimize redundant fetches.** Once a file is fetched, work from the in-context copy. Never re-fetch a file that is already in the conversation. Save files locally on first fetch when they will be edited.
+- **Fetch only relevant sub-manifests.** A BDL session does not need the SQL or cc-docs sub-manifests. A DmOps session does not need cc-app. Selective fetching conserves the budget for individual file retrievals.
+- **Avoid re-fetching the same large file.** If a file like the Development Guidelines was pulled early in the session, do not pull it again later -- use the copy already in context.
+- **If the limit is hit mid-session,** wait approximately one hour for the window to reset. The limit is account-scoped, not chat-scoped -- starting a new chat does not reset it. The existing chat will work once the window cycles.
+
 #### 7.4.4 Object_Registry Audit
 
 The publish script audits every file being pushed against `dbo.Object_Registry` during Phase 5. Files with registry entries get `module` and `component` fields in the manifest. Files without entries are logged as warnings.
