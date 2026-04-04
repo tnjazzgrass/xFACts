@@ -594,7 +594,8 @@ var BDL = (function () {
         // Context and actions
         html += '<div class="validation-context">Staged to <strong>' + escapeHtml(serverData.staging_table) + '</strong> &middot; Validated against <strong>' + escapeHtml(serverData.environment) + '</strong> (' + escapeHtml(serverData.db_instance) + ')';
         var lc = Object.keys(serverData.lookups || {}).length; if (lc > 0) html += ' &middot; ' + lc + ' lookup table(s) queried';
-        html += '</div><div class="validation-actions"><button class="nav-btn" onclick="BDL.revalidate()">Re-validate</button></div>';
+        // html += '</div><div class="validation-actions"><button class="nav-btn" onclick="BDL.revalidate()">Re-validate</button></div>';
+        html += '</div>';
         area.innerHTML = html;
     }
 
@@ -645,7 +646,6 @@ var BDL = (function () {
             var body = document.getElementById('body-' + card.id);
             var chevron = document.getElementById('chevron-' + card.id);
             if (card.id === cardId) {
-                // Toggle this card
                 if (body.style.display === 'none') {
                     body.style.display = 'block';
                     if (chevron) chevron.innerHTML = '&#9660;';
@@ -656,7 +656,6 @@ var BDL = (function () {
                     card.classList.remove('val-card-expanded');
                 }
             } else {
-                // Collapse other cards
                 if (body) body.style.display = 'none';
                 if (chevron) chevron.innerHTML = '&#9654;';
                 card.classList.remove('val-card-expanded');
@@ -677,7 +676,6 @@ var BDL = (function () {
         }
     }
 
-    // ── Check if all values in a lookup card are resolved ────────────────
     function checkLookupCardComplete(rowElement) {
         var table = rowElement.closest('.lookup-replace-table');
         if (!table) return;
@@ -687,24 +685,17 @@ var BDL = (function () {
         table.dataset.resolved = String(resolvedCount);
 
         if (resolvedCount >= totalValues) {
-            // All values for this element resolved — trigger cascading re-validate
             triggerCascadingRevalidate();
         }
     }
 
-    // ── Cascading re-validate ────────────────────────────────────────────
     function triggerCascadingRevalidate() {
         if (revalidating) return;
         revalidating = true;
-
         var area = document.getElementById('validation-area');
         area.innerHTML = '<div class="loading">Applying changes and re-validating...</div>';
-
-        // Small delay to let the UI update before the fetch
         setTimeout(function () { runValidation(); }, 200);
     }
-
-    // ── Action handlers with cascading support ───────────────────────────
 
     function applyReplacement(field, oldValue, selectId) {
         if (revalidating) return;
@@ -741,7 +732,6 @@ var BDL = (function () {
             if (row) {
                 row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>(empty)</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Filled</span>';
             }
-            // Required empty is always a single action — trigger re-validate immediately
             triggerCascadingRevalidate();
         }).catch(function (err) { alert('Fill failed: ' + err.message); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
     }
@@ -749,7 +739,6 @@ var BDL = (function () {
     function skipRows(field, value, rowElementId) {
         if (revalidating) return;
         var rowEl = document.getElementById(rowElementId);
-        // Disable buttons in this row while the request is in flight
         if (rowEl) {
             var btns = rowEl.querySelectorAll('button');
             btns.forEach(function (b) { b.disabled = true; });
@@ -762,14 +751,10 @@ var BDL = (function () {
             var row = document.getElementById(rowElementId);
             if (row) {
                 row.innerHTML = '<span class="lrr-count">' + data.rows_skipped + '</span><span class="lrr-value"><code>' + escapeHtml(value || '(empty)') + '</code></span><span class="lrr-action skip-done">&#10005; Skipped (' + data.rows_skipped + ' rows)</span>';
-
-                // Check if this is a lookup card (has data-resolved attribute) or a required empty
                 if (row.dataset.resolved !== undefined) {
-                    // Lookup card — mark resolved, check if all values done
                     row.dataset.resolved = 'true';
                     checkLookupCardComplete(row);
                 } else {
-                    // Required empty — single action, trigger re-validate immediately
                     triggerCascadingRevalidate();
                 }
             }
@@ -807,6 +792,21 @@ var BDL = (function () {
         html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(stagingContext.staging_table) + '</code></span></div>';
         html += '</div></div>';
 
+        // ── Jira Ticket Link (Optional) ────────────────────────────────
+        html += '<div class="execute-ticket">';
+        html += '<div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional)</span></div>';
+        html += '<div class="ticket-description">Link this import to a Jira ticket by entering the ticket number below. This creates a companion AR log entry on each imported record in Debt Manager, providing an audit trail back to the originating ticket.</div>';
+        html += '<div class="ticket-fields">';
+        html += '<div class="ticket-field-row">';
+        html += '<label class="ticket-label" for="jira-ticket">Ticket</label>';
+        html += '<input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" oninput="BDL.ticketChanged()">';
+        html += '</div>';
+        html += '<div class="ticket-field-row" id="ar-message-row" style="display:none;">';
+        html += '<label class="ticket-label" for="ar-message">AR Message</label>';
+        html += '<input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message that will appear in DM AR log">';
+        html += '</div>';
+        html += '</div></div>';
+
         html += '<div class="execute-mapping">';
         html += '<div class="execute-section-header" onclick="BDL.toggleSection(\'mapping-ref\')">Column Mapping <span class="section-toggle" id="toggle-mapping-ref">&#9660;</span></div>';
         html += '<div class="execute-section-body" id="mapping-ref">';
@@ -842,6 +842,31 @@ var BDL = (function () {
         html += '<div class="execute-result hidden" id="execute-result"></div>';
 
         area.innerHTML = html;
+    }
+
+    function ticketChanged() {
+        var ticketInput = document.getElementById('jira-ticket');
+        var messageRow = document.getElementById('ar-message-row');
+        var messageInput = document.getElementById('ar-message');
+        var ticket = ticketInput ? ticketInput.value.trim() : '';
+
+        if (ticket) {
+            messageRow.style.display = '';
+            // Only set default if the user hasn't customized the message yet
+            if (!messageInput.dataset.userEdited) {
+                var entityType = selectedEntity ? selectedEntity.entity_type : '';
+                messageInput.value = ticket + ': ' + entityType + ' update via BDL Import';
+            }
+        } else {
+            messageRow.style.display = 'none';
+            messageInput.value = '';
+            messageInput.dataset.userEdited = '';
+        }
+    }
+
+    function markMessageEdited() {
+        var messageInput = document.getElementById('ar-message');
+        if (messageInput) messageInput.dataset.userEdited = '1';
     }
 
     function toggleSection(sectionId) {
@@ -917,9 +942,14 @@ var BDL = (function () {
         if (executeInProgress) return;
 
         var envName = selectedEnvironment.environment;
+        var jiraTicket = (document.getElementById('jira-ticket') || {}).value || '';
+        jiraTicket = jiraTicket.trim();
+
         var msg = 'Submit BDL import to ' + envName + '?\n\n';
         msg += 'Entity: ' + selectedEntity.entity_type + '\n';
-        msg += 'Rows: ' + stagingContext.row_count.toLocaleString() + '\n\n';
+        msg += 'Rows: ' + stagingContext.row_count.toLocaleString() + '\n';
+        if (jiraTicket) msg += 'Jira Ticket: ' + jiraTicket + ' (AR log will be created)\n';
+        msg += '\n';
         if (envName === 'PROD') msg += 'WARNING: This is a PRODUCTION import and cannot be undone.\n\n';
         msg += 'Continue?';
         if (!confirm(msg)) return;
@@ -935,14 +965,23 @@ var BDL = (function () {
 
         var mappingJson = JSON.stringify(columnMapping);
 
+        var requestBody = {
+            staging_table: stagingContext.staging_table,
+            entity_type: selectedEntity.entity_type,
+            config_id: selectedEnvironment.config_id,
+            source_filename: uploadedFile ? uploadedFile.name : 'unknown',
+            column_mapping: mappingJson
+        };
+
+        // Include Jira ticket info if provided
+        if (jiraTicket) {
+            requestBody.jira_ticket = jiraTicket;
+            var arMessage = (document.getElementById('ar-message') || {}).value || '';
+            if (arMessage.trim()) requestBody.ar_message = arMessage.trim();
+        }
+
         fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                staging_table: stagingContext.staging_table,
-                entity_type: selectedEntity.entity_type,
-                config_id: selectedEnvironment.config_id,
-                source_filename: uploadedFile ? uploadedFile.name : 'unknown',
-                column_mapping: mappingJson
-            })
+            body: JSON.stringify(requestBody)
         })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
         .then(function (data) {
@@ -964,7 +1003,8 @@ var BDL = (function () {
                 progress.innerHTML = renderProgressSteps('submitted');
                 var result = document.getElementById('execute-result');
                 result.classList.remove('hidden');
-                result.innerHTML = '<div class="execute-result-success">'
+
+                var resultHtml = '<div class="execute-result-success">'
                     + '<span class="result-icon">&#10003;</span>'
                     + '<div><strong>BDL Import Submitted</strong>'
                     + '<div class="result-detail">' + escapeHtml(data.message) + '</div>'
@@ -974,6 +1014,30 @@ var BDL = (function () {
                     + 'Log ID: ' + data.log_id + ' &middot; '
                     + data.row_count.toLocaleString() + ' rows'
                     + '</div></div></div>';
+
+                // AR log result (if applicable)
+                if (data.ar_log) {
+                    if (data.ar_log.success) {
+                        resultHtml += '<div class="execute-result-success execute-result-ar">'
+                            + '<span class="result-icon">&#10003;</span>'
+                            + '<div><strong>AR Log Submitted</strong>'
+                            + '<div class="result-detail">Jira ticket link created for ' + data.ar_log.row_count.toLocaleString() + ' records.</div>'
+                            + '<div class="result-meta">'
+                            + 'File: <code>' + escapeHtml(data.ar_log.xml_filename) + '</code> &middot; '
+                            + 'Registry ID: <strong>' + data.ar_log.file_registry_id + '</strong> &middot; '
+                            + 'Log ID: ' + data.ar_log.log_id
+                            + '</div></div></div>';
+                    } else {
+                        resultHtml += '<div class="execute-result-warn execute-result-ar">'
+                            + '<span class="result-icon">&#9888;</span>'
+                            + '<div><strong>AR Log Failed</strong>'
+                            + '<div class="result-detail">The primary import succeeded, but the AR log could not be submitted: ' + escapeHtml(data.ar_log.error) + '</div>'
+                            + '<div class="result-meta">The import data is in Debt Manager. The Jira ticket link was not created.</div>'
+                            + '</div></div>';
+                    }
+                }
+
+                result.innerHTML = resultHtml;
 
                 var actions = document.getElementById('execute-actions');
                 if (actions) actions.classList.add('hidden');
@@ -1016,9 +1080,9 @@ var BDL = (function () {
                 cls += (idx <= Math.max(currentIdx, 0)) ? ' progress-failed' : '';
             } else if (idx < currentIdx) {
                 cls += ' progress-complete';
-            } else if (idx === currentIdx) {
-                cls += ' progress-active';
-            }
+			} else if (idx === currentIdx) {
+				cls += (currentPhase === 'submitted') ? ' progress-complete' : ' progress-active';
+			}
             var icon = '';
             if (isFailed && idx === Math.max(currentIdx, 0)) icon = '&#10006;';
             else if (idx < currentIdx || (currentPhase === 'submitted' && idx === currentIdx)) icon = '&#10003;';
@@ -1103,7 +1167,6 @@ var BDL = (function () {
                 saveArea.classList.add('hidden');
             }
         }
-        // Re-render list to update match counts when step changes
         if (entityTemplates.length > 0) renderTemplateList();
     }
 
@@ -1124,7 +1187,6 @@ var BDL = (function () {
 
         var html = '';
 
-        // Meta info
         var creator = template.created_by || '';
         if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
         html += '<div class="slideout-meta">';
@@ -1132,14 +1194,12 @@ var BDL = (function () {
         html += '<div class="slideout-creator">Created by <strong>' + escapeHtml(creator) + '</strong></div>';
         html += '</div>';
 
-        // Match summary (only on Step 4 with a file loaded)
         if (parsedFileData && currentStep === 4) {
             var matchCount = countTemplateMatches(mapping);
             var matchClass = (matchCount === mappingKeys.length) ? 'slideout-match-full' : (matchCount > 0 ? 'slideout-match-partial' : 'slideout-match-none');
             html += '<div class="slideout-match-summary ' + matchClass + '">' + matchCount + ' of ' + mappingKeys.length + ' mapped columns found in your file</div>';
         }
 
-        // Mapping pairs
         html += '<div class="slideout-mappings-header">Column Mappings (' + mappingKeys.length + ')</div>';
         html += '<div class="slideout-mappings">';
         var fileHeaders = parsedFileData ? parsedFileData.headers.map(function (h) { return h.toUpperCase(); }) : [];
@@ -1164,14 +1224,12 @@ var BDL = (function () {
         });
         html += '</div>';
 
-        // Action buttons
         if (currentStep === 4 && parsedFileData) {
             html += '<div class="slideout-actions">';
             html += '<button class="replace-btn" onclick="BDL.applyTemplate(' + templateId + ')">Apply Template</button>';
             html += '</div>';
         }
 
-        // Delete button (creator or admin)
         var currentUser = 'FAC\\' + (window.userTier || '');
         var isCreator = (template.created_by === currentUser);
         if (isCreator || window.isAdmin) {
@@ -1197,7 +1255,6 @@ var BDL = (function () {
         var templateMapping = {};
         try { templateMapping = JSON.parse(template.column_mapping); } catch (e) { return; }
 
-        // Match template source columns to current file headers (case-insensitive)
         var fileHeaderMap = {};
         parsedFileData.headers.forEach(function (h) { fileHeaderMap[h.toUpperCase()] = h; });
 
@@ -1226,7 +1283,6 @@ var BDL = (function () {
         status.classList.add('hidden');
         status.textContent = '';
 
-        // Show preview of what will be saved
         var preview = document.getElementById('save-template-preview');
         var mKeys = Object.keys(columnMapping);
         var html = '<div class="template-modal-preview-header">' + mKeys.length + ' field mapping(s) will be saved:</div>';
@@ -1340,6 +1396,7 @@ var BDL = (function () {
         runCleanup: runCleanup,
         toggleValidationCard: toggleValidationCard, toggleInfoCard: toggleInfoCard,
         toggleSection: toggleSection, loadXmlPreview: loadXmlPreview, executeImport: executeImport,
+        ticketChanged: ticketChanged,
         previewTemplate: previewTemplate, closeTemplatePreview: closeTemplatePreview,
         applyTemplate: applyTemplate, showSaveTemplate: showSaveTemplate,
         closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate
