@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-03 16:04:07
+Generated: 2026-04-04 05:16:49
 
 ## Module Registry
 
@@ -373,6 +373,7 @@ Generated: 2026-04-03 16:04:07
 | Tools.Operations | AccessConfig | Database | Table | Tools | Controls which tools and entity types are available per department. Admin tier users bypass department filtering. |
 | Tools.Operations | AccessFieldConfig | Database | Table | Tools | Department-scoped field-level whitelist for BDL entity access. Child of AccessConfig. |
 | Tools.Operations | BDL_ImportLog | Database | Table | Tools | Audit trail for BDL import executions. One row per import capturing the full lifecycle from validation through DM submission. |
+| Tools.Operations | BDL_ImportTemplate | Database | Table | Tools | Saved column mapping templates for BDL Import. Stores reusable source-to-element field mappings per entity type, allowing users to apply a known file layout without manual column pairing. |
 | Tools.Operations | ServerConfig | Database | Table | Tools | Per-server configuration for Tools module operations. One row per tools-enabled target server with DM file paths and API connection details. |
 | Tools.Operations | BDLImport-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1 | BDL Import CC API endpoints |
 | Tools.Operations | ClientPortal-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ClientPortal-API.ps1 | Client Portal CC API endpoints — search, consumer/account detail, lookups |
