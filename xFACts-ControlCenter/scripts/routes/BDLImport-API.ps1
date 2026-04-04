@@ -4,6 +4,11 @@
 # 
 # API endpoints for the BDL Import workflow.
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.BDLImport)
+#
+# CHANGELOG
+# ---------
+# 2026-04-04  Added drop_existing support to stage endpoint for re-staging
+# 2026-04-04  Added template CRUD endpoints (list, save, update, delete)
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -173,6 +178,8 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
 
 # ----------------------------------------------------------------------------
 # POST /api/bdl-import/stage
+# Creates a staging table and inserts all rows from the uploaded file.
+# Optional: drop_existing parameter drops a prior staging table before creating.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -200,6 +207,20 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
         }
 
         $environment = $serverConfig[0].environment
+
+        # ── Drop existing staging table if re-staging ───────────────────
+        $dropExisting = $body.drop_existing
+        if ($dropExisting) {
+            $dropCheck = Invoke-XFActsQuery -Query @"
+                SELECT 1 FROM sys.tables t
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = 'Staging' AND t.name = @tableName
+"@ -Parameters @{ tableName = $dropExisting }
+            if ($dropCheck -and $dropCheck.Count -gt 0) {
+                $safeDrop = "Staging.[" + $dropExisting.Replace(']', ']]') + "]"
+                Invoke-XFActsNonQuery -Query "DROP TABLE $safeDrop;"
+            }
+        }
 
         $username = $WebEvent.Auth.User.Username
         if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
@@ -814,8 +835,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             $regResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry" `
                 -Method POST -Headers $apiHeaders -Body $regBody -ErrorAction Stop
 
-            # Extract file_registry_id from response
-            # DM returns: { status: "success", data: { fileRegistryId: NNN, ... } }
             $fileRegistryId = $null
             if ($regResponse.data -and $regResponse.data.fileRegistryId) {
                 $fileRegistryId = $regResponse.data.fileRegistryId
@@ -831,7 +850,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
                 throw "Could not extract file_registry_id from response: $regResponseText"
             }
 
-            # Update log with REGISTERED status and file_registry_id
             Invoke-XFActsNonQuery -Query @"
                 UPDATE Tools.BDL_ImportLog 
                 SET status = 'REGISTERED', file_registry_id = @regId
@@ -854,7 +872,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             $importResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$fileRegistryId/bdlimport" `
                 -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
 
-            # Update log with SUBMITTED status
             Invoke-XFActsNonQuery -Query @"
                 UPDATE Tools.BDL_ImportLog 
                 SET status = 'SUBMITTED', completed_dttm = GETDATE()
@@ -883,6 +900,200 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             status           = 'SUBMITTED'
             message          = "BDL file $($xmlResult.Filename) has been submitted to Debt Manager."
         }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# GET /api/bdl-import/templates?entity_type=PHONE
+# Returns active templates for a given entity type. Visible to all users.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Get -Path '/api/bdl-import/templates' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $entityType = $WebEvent.Query['entity_type']
+        if (-not $entityType) {
+            Write-PodeJsonResponse -Value @{ error = 'entity_type parameter required' } -StatusCode 400
+            return
+        }
+
+        $results = Invoke-XFActsQuery -Query @"
+            SELECT template_id, entity_type, template_name, description,
+                   column_mapping, created_by, created_dttm,
+                   modified_by, modified_dttm
+            FROM Tools.BDL_ImportTemplate
+            WHERE entity_type = @entityType
+              AND is_active = 1
+            ORDER BY template_name
+"@ -Parameters @{ entityType = $entityType }
+
+        Write-PodeJsonResponse -Value @{ templates = @($results) }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# POST /api/bdl-import/templates
+# Save a new template. Any authenticated user can create.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/templates' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $entityType = $body.entity_type
+        $templateName = $body.template_name
+        $description = $body.description
+        $columnMapping = $body.column_mapping
+
+        if (-not $entityType -or -not $templateName -or -not $columnMapping) {
+            Write-PodeJsonResponse -Value @{ error = 'entity_type, template_name, and column_mapping are required' } -StatusCode 400
+            return
+        }
+
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
+
+        # Check for duplicate name within entity type
+        $existing = Invoke-XFActsQuery -Query @"
+            SELECT template_id FROM Tools.BDL_ImportTemplate
+            WHERE entity_type = @entityType AND template_name = @templateName AND is_active = 1
+"@ -Parameters @{ entityType = $entityType; templateName = $templateName }
+
+        if ($existing -and $existing.Count -gt 0) {
+            Write-PodeJsonResponse -Value @{ error = "A template named '$templateName' already exists for this entity type." } -StatusCode 409
+            return
+        }
+
+        $result = Invoke-XFActsQuery -Query @"
+            INSERT INTO Tools.BDL_ImportTemplate
+                (entity_type, template_name, description, column_mapping, created_by)
+            OUTPUT INSERTED.template_id
+            VALUES
+                (@entityType, @templateName, @description, @columnMapping, @createdBy)
+"@ -Parameters @{
+            entityType    = $entityType
+            templateName  = $templateName
+            description   = if ($description) { $description } else { [DBNull]::Value }
+            columnMapping = $columnMapping
+            createdBy     = $user
+        }
+
+        $templateId = $result[0].template_id
+
+        Write-PodeJsonResponse -Value @{
+            success     = $true
+            template_id = $templateId
+            message     = "Template '$templateName' saved."
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# PUT /api/bdl-import/templates/:id
+# Update a template. Creator or admin only.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Put -Path '/api/bdl-import/templates/:id' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $templateId = $WebEvent.Parameters['id']
+        $body = $WebEvent.Data
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
+
+        $existing = Invoke-XFActsQuery -Query @"
+            SELECT template_id, created_by, entity_type
+            FROM Tools.BDL_ImportTemplate
+            WHERE template_id = @templateId AND is_active = 1
+"@ -Parameters @{ templateId = $templateId }
+
+        if (-not $existing -or $existing.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = 'Template not found' } -StatusCode 404
+            return
+        }
+
+        # Check ownership: creator or admin
+        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
+        $isOwner = ($existing[0].created_by -eq $user)
+        if (-not $isOwner -and $access.Tier -ne 'admin') {
+            Write-PodeJsonResponse -Value @{ error = 'Only the template creator or an admin can modify this template.' } -StatusCode 403
+            return
+        }
+
+        # Build dynamic SET clause based on provided fields
+        $setClauses = @("modified_by = @modifiedBy", "modified_dttm = GETDATE()")
+        $params = @{ templateId = $templateId; modifiedBy = $user }
+
+        if ($body.template_name) {
+            # Check for duplicate name (excluding self)
+            $dupCheck = Invoke-XFActsQuery -Query @"
+                SELECT template_id FROM Tools.BDL_ImportTemplate
+                WHERE entity_type = @entityType AND template_name = @templateName
+                  AND template_id != @templateId AND is_active = 1
+"@ -Parameters @{ entityType = $existing[0].entity_type; templateName = $body.template_name; templateId = $templateId }
+
+            if ($dupCheck -and $dupCheck.Count -gt 0) {
+                Write-PodeJsonResponse -Value @{ error = "A template named '$($body.template_name)' already exists for this entity type." } -StatusCode 409
+                return
+            }
+            $setClauses += "template_name = @templateName"
+            $params['templateName'] = $body.template_name
+        }
+        if ($null -ne $body.description) {
+            $setClauses += "description = @description"
+            $params['description'] = if ($body.description -eq '') { [DBNull]::Value } else { $body.description }
+        }
+        if ($body.column_mapping) {
+            $setClauses += "column_mapping = @columnMapping"
+            $params['columnMapping'] = $body.column_mapping
+        }
+
+        $updateSql = "UPDATE Tools.BDL_ImportTemplate SET " + ($setClauses -join ", ") + " WHERE template_id = @templateId"
+        Invoke-XFActsNonQuery -Query $updateSql -Parameters $params
+
+        Write-PodeJsonResponse -Value @{ success = $true; message = 'Template updated.' }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# DELETE /api/bdl-import/templates/:id
+# Soft-delete (deactivate) a template. Creator or admin only.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Delete -Path '/api/bdl-import/templates/:id' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $templateId = $WebEvent.Parameters['id']
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
+
+        $existing = Invoke-XFActsQuery -Query @"
+            SELECT template_id, created_by
+            FROM Tools.BDL_ImportTemplate
+            WHERE template_id = @templateId AND is_active = 1
+"@ -Parameters @{ templateId = $templateId }
+
+        if (-not $existing -or $existing.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = 'Template not found' } -StatusCode 404
+            return
+        }
+
+        # Check ownership: creator or admin
+        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
+        $isOwner = ($existing[0].created_by -eq $user)
+        if (-not $isOwner -and $access.Tier -ne 'admin') {
+            Write-PodeJsonResponse -Value @{ error = 'Only the template creator or an admin can delete this template.' } -StatusCode 403
+            return
+        }
+
+        Invoke-XFActsNonQuery -Query @"
+            UPDATE Tools.BDL_ImportTemplate
+            SET is_active = 0, modified_by = @modifiedBy, modified_dttm = GETDATE()
+            WHERE template_id = @templateId
+"@ -Parameters @{ templateId = $templateId; modifiedBy = $user }
+
+        Write-PodeJsonResponse -Value @{ success = $true; message = 'Template deleted.' }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
