@@ -28,6 +28,10 @@
 
     CHANGELOG
     ---------
+    2026-04-04  Segmented manifest into sub-manifests by category.
+                Master manifest.json is now a lightweight index with
+                links to category sub-manifests (cc-app, cc-docs,
+                powershell, sql, documentation).
     2026-04-02  Added Object_Registry audit phase with path validation.
                 Manifest entries now include module_name and component_name
                 from Object_Registry. Unregistered files logged as warnings.
@@ -195,8 +199,11 @@ $FileSources = @(
 )
 
 # Track generated file paths so orphan cleanup doesn't delete them
-$GeneratedRepoPaths = [System.Collections.Generic.List[string]]::new()
-$GeneratedRepoPaths.Add("manifest.json")
+$GeneratedRepoPaths.Add("manifest-cc-app.json")
+$GeneratedRepoPaths.Add("manifest-cc-docs.json")
+$GeneratedRepoPaths.Add("manifest-powershell.json")
+$GeneratedRepoPaths.Add("manifest-sql.json")
+$GeneratedRepoPaths.Add("manifest-documentation.json")
 
 # ============================================================================
 # GITHUB API FUNCTIONS
@@ -925,29 +932,58 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
 }
 
 # ============================================================================
-# PHASE 8: GENERATE AND PUSH MANIFEST
+# PHASE 8: GENERATE AND PUSH SEGMENTED MANIFESTS
 # ============================================================================
+# Generates category-specific sub-manifests and a master index manifest.
+# The master manifest contains only metadata and URLs to sub-manifests.
+# Each sub-manifest contains the actual file entries for its category.
+# This prevents fetch truncation as the repository grows.
 
 Write-Log ""
-Write-Log "Phase 8: Generating manifest.json"
-Write-Log "---------------------------------"
+Write-Log "Phase 8: Generating segmented manifests"
+Write-Log "---------------------------------------"
 
 $baseRawUrl = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch"
-
 $cacheBuster = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
+$generatedTimestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-$manifestFiles = @()
+# -- Classify files into sub-manifest categories ----------------------------
+# ControlCenter is split into cc-app (routes, CSS, JS) and cc-docs (docs site)
+
+$subManifestBuckets = @{}
+
 foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
-    $category = if ($repoPath.StartsWith("xFACts-PowerShell/")) { "PowerShell" }
-                elseif ($repoPath.StartsWith("xFACts-ControlCenter/")) { "ControlCenter" }
-                elseif ($repoPath.StartsWith("xFACts-Documentation/")) { "Documentation" }
-                elseif ($repoPath.StartsWith("xFACts-SQL/")) { "SQL" }
-                else { "Other" }
+    $subCategory = $null
+
+    if ($repoPath.StartsWith("xFACts-PowerShell/")) {
+        $subCategory = "powershell"
+    }
+    elseif ($repoPath.StartsWith("xFACts-SQL/")) {
+        $subCategory = "sql"
+    }
+    elseif ($repoPath.StartsWith("xFACts-Documentation/")) {
+        $subCategory = "documentation"
+    }
+    elseif ($repoPath.StartsWith("xFACts-ControlCenter/")) {
+        # Split CC: anything under public/docs/ goes to cc-docs, everything else to cc-app
+        if ($repoPath -like "xFACts-ControlCenter/public/docs/*") {
+            $subCategory = "cc-docs"
+        }
+        else {
+            $subCategory = "cc-app"
+        }
+    }
+    else {
+        $subCategory = "other"
+    }
+
+    if (-not $subManifestBuckets.ContainsKey($subCategory)) {
+        $subManifestBuckets[$subCategory] = @()
+    }
 
     $fileEntry = [ordered]@{
-        path     = $repoPath
-        raw_url  = "$baseRawUrl/${repoPath}?v=$cacheBuster"
-        category = $category
+        path    = $repoPath
+        raw_url = "$baseRawUrl/${repoPath}?v=$cacheBuster"
     }
 
     # Enrich with module/component from Object_Registry audit
@@ -957,52 +993,121 @@ foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
         $fileEntry.component = $enrichment.component_name
     }
 
-    $manifestFiles += $fileEntry
+    $subManifestBuckets[$subCategory] += $fileEntry
 }
 
-$manifest = [ordered]@{
-    generated    = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+# -- Sub-manifest definitions -----------------------------------------------
+
+$subManifestDefs = @(
+    @{ Key = "cc-app";        Filename = "manifest-cc-app.json";        Title = "Control Center Application" }
+    @{ Key = "cc-docs";       Filename = "manifest-cc-docs.json";       Title = "Control Center Documentation Site" }
+    @{ Key = "powershell";    Filename = "manifest-powershell.json";    Title = "PowerShell Scripts" }
+    @{ Key = "sql";           Filename = "manifest-sql.json";           Title = "SQL Object Definitions" }
+    @{ Key = "documentation"; Filename = "manifest-documentation.json"; Title = "Documentation and Working Files" }
+)
+
+# -- Generate each sub-manifest --------------------------------------------
+
+$subManifestSummaries = @()
+$allManifestFiles = @{}  # repoPath -> bytes, for pushing
+
+foreach ($def in $subManifestDefs) {
+    $bucketKey = $def.Key
+    $filename = $def.Filename
+    $files = if ($subManifestBuckets.ContainsKey($bucketKey)) { $subManifestBuckets[$bucketKey] } else { @() }
+
+    $subManifest = [ordered]@{
+        generated  = $generatedTimestamp
+        category   = $def.Title
+        file_count = $files.Count
+        files      = @($files)
+    }
+
+    $subJson = $subManifest | ConvertTo-Json -Depth 4
+    $subBytes = [System.Text.Encoding]::UTF8.GetBytes($subJson)
+    $allManifestFiles[$filename] = $subBytes
+
+    $subManifestSummaries += [ordered]@{
+        category   = $def.Title
+        filename   = $filename
+        raw_url    = "$baseRawUrl/${filename}?v=$cacheBuster"
+        file_count = $files.Count
+    }
+
+    Write-Log "  Sub-manifest: $filename - $($files.Count) files"
+}
+
+# Handle any "other" category files (shouldn't normally exist)
+if ($subManifestBuckets.ContainsKey("other") -and $subManifestBuckets["other"].Count -gt 0) {
+    Write-Log "  WARN  $($subManifestBuckets['other'].Count) files in 'other' category - not in any sub-manifest" "WARN"
+}
+
+# -- Generate master manifest (index only) ----------------------------------
+
+$totalFileCount = 0
+foreach ($s in $subManifestSummaries) { $totalFileCount += $s.file_count }
+
+$masterManifest = [ordered]@{
+    generated    = $generatedTimestamp
     repository   = "https://github.com/$Owner/$Repo"
     base_raw_url = $baseRawUrl
-    file_count   = $manifestFiles.Count
-    files        = $manifestFiles
+    file_count   = $totalFileCount
+    manifests    = @($subManifestSummaries)
 }
 
-$manifestJson = $manifest | ConvertTo-Json -Depth 4
-$manifestBytes = [System.Text.Encoding]::UTF8.GetBytes($manifestJson)
+$masterJson = $masterManifest | ConvertTo-Json -Depth 4
+$masterBytes = [System.Text.Encoding]::UTF8.GetBytes($masterJson)
+$allManifestFiles["manifest.json"] = $masterBytes
 
-Write-Log "  Manifest: $($manifestFiles.Count) files cataloged"
+Write-Log "  Master manifest: $($subManifestSummaries.Count) sub-manifests, $totalFileCount total files"
+
+# -- Push all manifests -----------------------------------------------------
 
 if ($Execute) {
-    # Check if manifest exists in remote
-    $manifestSha = $null
-    if ($remoteTree -and $remoteTree.ContainsKey("manifest.json")) {
-        $manifestSha = $remoteTree["manifest.json"]
-    }
+    $manifestPushCount = 0
+    $manifestSkipCount = 0
 
-    # Check if content actually changed
-    $manifestLocalSha = Get-GitBlobSha -ContentBytes $manifestBytes
-    $manifestChanged = ($null -eq $manifestSha) -or ($manifestLocalSha -ne $manifestSha)
+    foreach ($manifestPath in $allManifestFiles.Keys) {
+        $manifestBytes = $allManifestFiles[$manifestPath]
 
-    if ($manifestChanged) {
-        $result = Push-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
-            -RepoPath "manifest.json" -ContentBytes $manifestBytes `
-            -CommitMessage "Update manifest.json - $($manifestFiles.Count) files" `
-            -ExistingSha $manifestSha
+        # Check if this manifest exists in remote
+        $existingSha = $null
+        if ($remoteTree -and $remoteTree.ContainsKey($manifestPath)) {
+            $existingSha = $remoteTree[$manifestPath]
+        }
 
-        if ($result) {
-            Write-Log "  Manifest pushed successfully" "SUCCESS"
+        # Check if content actually changed
+        $localSha = Get-GitBlobSha -ContentBytes $manifestBytes
+        $contentChanged = ($null -eq $existingSha) -or ($localSha -ne $existingSha)
+
+        if ($contentChanged) {
+            $result = Push-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
+                -RepoPath $manifestPath -ContentBytes $manifestBytes `
+                -CommitMessage "Update $manifestPath" `
+                -ExistingSha $existingSha
+
+            if ($result) {
+                Write-Log "  PUSH  $manifestPath" "SUCCESS"
+                $manifestPushCount++
+            }
+            else {
+                Write-Log "  FAILED  $manifestPath" "ERROR"
+            }
+
+            Start-Sleep -Milliseconds 100
         }
         else {
-            Write-Log "  Manifest push failed" "ERROR"
+            $manifestSkipCount++
         }
     }
-    else {
-        Write-Log "  Manifest unchanged - skipped"
-    }
+
+    Write-Log "  Manifests: $manifestPushCount pushed, $manifestSkipCount unchanged"
 }
 else {
-    Write-Log "  PREVIEW - Manifest would be pushed with $($manifestFiles.Count) entries" "WARN"
+    Write-Log "  PREVIEW - Manifests would be pushed:" "WARN"
+    foreach ($manifestPath in $allManifestFiles.Keys) {
+        Write-Log "    $manifestPath"
+    }
 }
 
 # ============================================================================
@@ -1021,6 +1126,7 @@ Write-Log "  To create:      $($toCreate.Count)"
 Write-Log "  To update:      $($toUpdate.Count)"
 Write-Log "  To delete:      $($toDelete.Count)"
 Write-Log "  Unchanged:      $unchanged"
+Write-Log "  Sub-manifests:  $($subManifestSummaries.Count)"
 
 if (-not $Execute) {
     Write-Log ""
