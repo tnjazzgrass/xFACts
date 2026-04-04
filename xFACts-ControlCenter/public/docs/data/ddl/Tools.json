@@ -583,13 +583,18 @@
                    },
                    {
                        "name":  "BDL_ImportTemplate",
+                       "description":  "Saved column mapping templates for BDL Import. One row per template storing a reusable mapping between source file column headers and BDL element names. Templates are entity-type specific and visible to all users. The creator or an admin can update or deactivate a template. Applied templates perform case-insensitive header matching against the current file, mapping only columns that exist in both the template and the uploaded file.",
+                       "module":  "Tools",
+                       "category":  "Operations",
+                       "dataFlow":  "Templates are created from the BDL Import page Step 4 (Map Columns) via the Save Template button, which captures the current column mapping as JSON. The template list API endpoint returns all active templates for the selected entity type, displayed in the right column of the BDL Import page. When a user applies a template, the JS performs case-insensitive header matching against the current file and populates the column mapping. Templates can be updated by their creator or an admin via the slideout preview panel. Deactivation sets is_active = 0 rather than deleting the row. The template_id is referenced by BDL_ImportLog.template_id when a template-based import is executed.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
                                            "name":  "template_id",
                                            "dataType":  "int",
                                            "nullable":  false,
-                                           "identity":  true
+                                           "identity":  true,
+                                           "description":  "Identity primary key."
                                        },
                                        {
                                            "ordinal":  2,
@@ -597,7 +602,8 @@
                                            "dataType":  "varchar",
                                            "length":  "60",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "BDL entity type this template applies to. Matches Catalog_BDLFormatRegistry.entity_type. Templates are scoped to a single entity type — a PHONE template cannot be used for CONSUMER_TAG imports."
                                        },
                                        {
                                            "ordinal":  3,
@@ -605,55 +611,71 @@
                                            "dataType":  "varchar",
                                            "length":  "100",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "User-defined name for the template. Must be unique within the entity type. Displayed in the template list and slideout preview."
                                        },
                                        {
                                            "ordinal":  4,
+                                           "name":  "description",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Optional user-provided description of the template. Provides context on the file layout or vendor format the template was built for."
+                                       },
+                                       {
+                                           "ordinal":  5,
                                            "name":  "column_mapping",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "JSON object storing source-to-element field mappings. Keys are source file column headers, values are BDL element names. Applied via case-insensitive header matching — only columns present in both the template and the current file are mapped."
                                        },
                                        {
-                                           "ordinal":  5,
+                                           "ordinal":  6,
                                            "name":  "is_active",
                                            "dataType":  "bit",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "((1))"
+                                           "default":  "((1))",
+                                           "description":  "Whether this template is active. 0 = deactivated (soft delete), 1 = active (default). Deactivated templates are excluded from the template list but retained for audit."
                                        },
                                        {
-                                           "ordinal":  6,
+                                           "ordinal":  7,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "(suser_sname())"
+                                           "default":  "(suser_sname())",
+                                           "description":  "AD username of the user who created the template. Uses FAC\\\\username format from the authenticated session. Determines ownership for update and delete permissions."
                                        },
                                        {
-                                           "ordinal":  7,
+                                           "ordinal":  8,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "(getdate())"
+                                           "default":  "(getdate())",
+                                           "description":  "When the template was created."
                                        },
                                        {
-                                           "ordinal":  8,
+                                           "ordinal":  9,
                                            "name":  "modified_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Who last modified the template. NULL if never modified."
                                        },
                                        {
-                                           "ordinal":  9,
+                                           "ordinal":  10,
                                            "name":  "modified_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "When the template was last modified. NULL if never modified."
                                        }
                                    ],
                        "indexes":  [
@@ -673,7 +695,31 @@
                                            "isUniqueConstraint":  true,
                                            "keyColumns":  "entity_type, template_name"
                                        }
-                                   ]
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Case-Insensitive Header Matching",
+                                               "note":  "When a template is applied to a new file, the mapping uses case-insensitive comparison between the template source column names and the current file headers. This accommodates vendor files where header casing may vary between exports while the column structure remains the same. Columns that exist in the template but not in the file are silently skipped — the user can manually map any remaining fields.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Ownership Model",
+                                               "note":  "Any authenticated user can create templates and all templates are visible to all users regardless of department or RBAC tier. Update and delete operations are restricted to the template creator or users with admin tier on the BDL Import page. Non-owners who want to modify a template must save a new copy under a different name.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "BDL_ImportLog",
+                                                     "note":  "BDL_ImportLog.template_id references this table when a template-based import is executed. The template_id provides audit trail linkage between an import and the mapping template that was used. NULL template_id in the log indicates an ad-hoc mapping.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Catalog_BDLFormatRegistry",
+                                                     "note":  "entity_type corresponds to Catalog_BDLFormatRegistry.entity_type. No physical foreign key — the entity type serves as a logical scoping filter. Templates are only presented when the user selects a matching entity type in the BDL Import wizard.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
                    },
                    {
                        "name":  "Catalog_ApiRegistry",
