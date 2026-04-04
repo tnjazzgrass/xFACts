@@ -1,0 +1,112 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_split100_wait"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub canSearch_Click()
+
+    DoCmd.Close acForm, Me.Form.Name, acSaveNo
+    DoCmd.OpenForm "Apps Toolkit", acNormal
+    
+End Sub
+Private Sub runSearch_Click()
+
+Dim dB As Database
+Dim stDocName As String
+Dim stLinkCriteria As String
+Dim uName As String, uRole As String, strSQL As String, sql As String, u As Recordset
+Dim look As Recordset, rs As ADODB.Recordset, rsc As ADODB.Recordset, rsa As ADODB.Recordset, rsr As ADODB.Recordset
+
+    Set dB = CurrentDb
+    Set u = dB.OpenRecordset("SELECT * FROM toolUsers WHERE toolUsername = '" & Environ("username") & "';")
+    
+    Select Case Me.typSearch
+    
+        Case 1
+
+            strSQL = "SELECT cnsmr_id FROM Applications.dbo.vw_xfacts_cnsmr_accnts WHERE cnsmr_idntfr_agncy_id = '" & Me.AgencyID & "';"
+            
+        Case 2
+        
+            strSQL = "SELECT cnsmr_id FROM Applications.dbo.vw_xfacts_cnsmr_accnts WHERE cnsmr_accnt_idntfr_agncy_id = '" & Me.AgencyID & "';"
+        
+    End Select
+    
+    OpenDMrecs rs, strSQL
+    
+        If rs.RecordCount = 0 Then
+
+                MsgBox "The record entered cannot be viewed using this application, please try your lookup in Debt Manager.", vbOKOnly, "NO RECORD FOUND"
+                rs.Close
+                
+            Else
+            '   Populate consumer results
+                strSQL = "SELECT * FROM Applications.dbo.vw_xfacts_cnsmr_smmry WHERE consumer_id = '" & rs!cnsmr_id & "';"
+                OpenDMrecs rsc, strSQL
+                
+                    sql = "INSERT INTO xfacts_cnsmr_smmry (consumer_agency_id, consumer_id, workgroup, workgroup_id, behavior_score, consumer_status_tag, strategy, strategy_id, consumer_current_balance, consumer_first_name, consumer_last_name, has_hold, last_consumer_pay_date, address_line_1, address_line_2, address_city, address_state, address_zip, address_status, mail_return_reason, xUser) "
+                    sql = sql & "VALUES ('" & rsc!CONSUMER_AGENCY_ID & "', '" & rsc!consumer_id & "', '" & rsc!workgroup & "', '" & rsc!workgroup_id & "', '" & rsc!behavior_score & "', '" & rsc!consumer_status_tag & "', '" & rsc!strategy & "', '" & rsc!strategy_id & "', '" & rsc!consumer_current_balance & "', '" & rsc!consumer_first_name & "', '" & rsc!consumer_last_name & "', '" & rsc!has_hold & "', '" & rsc!last_consumer_pay_date & "', '" & rsc!address_line_1 & "', '" & rsc!address_line_2 & "', '" & rsc!address_city & "', '" & rsc!address_state & "', '" & rsc!address_zip & "', '" & rsc!address_status & "', '" & rsc!mail_return_reason & "', '" & u!toolInitials & "');"
+                
+                    dB.Execute sql
+                    
+                sql = ""
+                strSQL = ""
+                rsc.Close
+                
+            '   Populate account results
+                strSQL = "SELECT * FROM Applications.dbo.vw_xfacts_accnt_smmry WHERE consumer_id = '" & rs!cnsmr_id & "';"
+                OpenDMrecs rsa, strSQL
+                
+                    Do Until rsa.EOF
+                
+                        sql = "INSERT INTO xfacts_accnt_smmry (account_agency_id, account_id, consumer_id, new_biz_batch_id, creditor_ref_id, creditor_ext_account_id, account_regarding, account_curr_bal, account_orig_bal, account_paid_bal, creditor_id, creditor_key, creditor_group, account_status_tag, service_date, place_date, release_date, account_on_hold, hold_start, hold_end, account_last_paid, has_vdys_tag, udp_tag_date, xUser) "
+                        sql = sql & "VALUES ('" & rsa!ACCOUNT_AGENCY_ID & "', '" & rsa!account_id & "','" & rsa!consumer_id & "','" & rsa!new_biz_batch_id & "','" & rsa!creditor_ref_id & "','" & IIf(IsNull(rsa!creditor_ext_account_id), "", rsa!creditor_ext_account_id) & "','" & rsa!account_regarding & "'," & rsa!account_curr_bal & "," & rsa!account_orig_bal & "," & rsa!account_paid_bal & ",'" & rsa!creditor_id & "','" & rsa!creditor_key & "','" & rsa!creditor_group & "','" & rsa!account_status_tag & "','" & rsa!service_date & "','" & rsa!place_date & "','" & rsa!release_date & "','" & rsa!account_on_hold & "','" & IIf(IsNull(rsa!hold_start), "", rsa!hold_start) & "','" & IIf(IsNull(rsa!hold_end), "", rsa!hold_end) & "','" & IIf(IsNull(rsa!account_last_paid), "", rsa!account_last_paid) & "','" & rsa!has_vdys_tag & "','" & IIf(IsNull(rsa!udp_tag_date), "", udp_tag_date) & "','" & u!toolInitials & "');"
+                    
+                    Debug.Print sql
+                    
+                        dB.Execute sql
+                        sql = ""
+                    
+                    rsa.MoveNext
+                    Loop
+                    
+                strSQL = ""
+                rsa.Close
+                
+            '   Populate ar event results
+                strSQL = "SELECT * FROM Applications.dbo.vw_xfacts_ar_events WHERE cnsmr_id = '" & rs!cnsmr_id & "';"
+                OpenDMrecs rsr, strSQL
+                
+                    Do Until rsr.EOF
+                
+                        sql = "INSERT INTO xfacts_ar_events (cnsmr_accnt_ar_log_id, cnsmr_id, cnsmr_accnt_idntfr_agncy_id, upsrt_dttm, actn_cd_shrt_val_txt, rslt_cd_shrt_val_txt, usr_usrnm, cnsmr_accnt_ar_mssg_txt, xUser) "
+                        sql = sql & "VALUES ('" & rsr!cnsmr_accnt_ar_log_id & "', '" & rsr!cnsmr_id & "','" & rsr!cnsmr_accnt_idntfr_agncy_id & "','" & rsr!upsrt_dttm & "','" & rsr!actn_cd_shrt_val_txt & "','" & rsr!rslt_cd_shrt_val_txt & "','" & rsr!usr_usrnm & "','" & rsr!cnsmr_accnt_ar_mssg_txt & "','" & u!toolInitials & "');"
+                    
+                        dB.Execute sql
+                        sql = ""
+                    
+                    rsr.MoveNext
+                    Loop
+                
+                strSQL = ""
+                rsr.Close
+                
+                stDocName = "frm_vw_cnsmr_000"
+                
+                stLinkCriteria = "[consumer_id]='" & rs![cnsmr_id] & "'"
+                DoCmd.OpenForm stDocName, , , stLinkCriteria
+                
+                rs.Close
+                
+                DoCmd.Close acForm, Me.Form.Name, acSaveNo
+                
+        End If
+        dB.Close
+    
+End Sub
+
