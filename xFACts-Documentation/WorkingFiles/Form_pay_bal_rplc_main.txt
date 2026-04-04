@@ -1,0 +1,136 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_pay_bal_rplc_main"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub backBalAdj_Click()
+
+    DoCmd.OpenForm "fnncl_srvcs", acNormal
+    DoCmd.Close acForm, "pay_bal_rplc_main", acSaveNo
+
+End Sub
+
+Private Sub Form_Load()
+Dim dB As Database
+Dim u As Recordset
+
+    Set dB = CurrentDb
+    Set u = dB.OpenRecordset("SELECT xtsRole, xtsInitials FROM xtsUsers WHERE xtsUsername = '" & Environ("username") & "';")
+    
+        Me.usr.Value = u!xtsInitials
+        
+        If u!xtsRole = "admin" Then
+            Me.eligibleOver.Visible = True
+        Else
+            Me.eligibleOver.Visible = False
+        End If
+    
+    dB.Close
+    
+    Me.pay_bal_rplc_sub.Requery
+    
+End Sub
+Private Sub pstAccntUpdt_Click()
+Dim dB As Database
+Dim tgs As Recordset
+
+    Set dB = CurrentDb
+    Set tgs = dB.OpenRecordset("SELECT COUNT(*) AS recs FROM bdl_cnsmr_accnt_data WHERE bdl_usr = '" & Me.usr.Value & "' AND bdl_proc = 'N';")
+    
+        If tgs!recs = 0 Then
+        
+            MsgBox "Please enter accounts update records before attempting to run the BDL.", vbCritical, "NO UNPROCESSED RECORDS FOUND"
+            
+        Else
+
+            If Me.JIRA = "IT-" Or Left(Me.JIRA, 3) <> "IT-" Then
+                
+                    MsgBox "Please enter a JIRA IT Ticket number to proceed.", vbCritical, "INVALID JIRA NUMBER"
+                    
+            Else
+            
+                Select Case Me.runEnv
+            
+                    Case 1
+                    
+                        PostAccntUpdts ("test")
+                
+                    Case 2
+                    
+                        PostAccntUpdts ("stage")
+                
+                    Case 3
+                    
+                        PostAccntUpdts ("prod")
+                        
+                End Select
+            
+            End If
+            
+        End If
+        
+    dB.Close
+    DoCmd.OpenForm "BDL Files", acNormal
+    DoCmd.Close acForm, "bdl_pst_accnt_updts", acSaveNo
+
+End Sub
+
+Private Sub pstBalAdj_Click()
+Dim dB As Database
+Dim tgs As Recordset
+
+    Set dB = CurrentDb
+    Set tgs = dB.OpenRecordset("SELECT COUNT(*) AS recs FROM payment_info WHERE xProc = 'N' AND xType = 'RPL' AND xUser = '" & Me.usr.Value & "' AND xComment IS NULL;")
+    
+        If tgs!recs = 0 Then
+        
+            MsgBox "Please enter accounts update records before attempting to run the BDL.", vbCritical, "NO UNPROCESSED RECORDS FOUND"
+            
+        Else
+
+            If Me.JIRA = "SD-" Or Left(Me.JIRA, 3) <> "SD-" Then
+                
+                    MsgBox "Please enter a JIRA SD Ticket number to proceed.", vbCritical, "INVALID JIRA NUMBER"
+                    
+            Else
+            
+                Select Case Me.runEnv
+            
+                    Case 1
+                        If Me.z_bal = -1 Then
+                            ZeroBalOut ("test")
+                        Else
+                            ReplaceBalances ("test")
+                        End If
+                
+                    Case 2
+                        If Me.z_bal = -1 Then
+                            ZeroBalOut ("stage")
+                        Else
+                            ReplaceBalances ("stage")
+                        End If
+                
+                    Case 3
+                        If Me.z_bal = -1 Then
+                            ZeroBalOut ("prod")
+                        Else
+                            ReplaceBalances ("prod")
+                        End If
+                        
+                End Select
+                
+                DoCmd.OpenForm "fnncl_srvcs", acNormal
+                DoCmd.Close acForm, "pay_bal_rplc_main", acSaveNo
+            
+            End If
+            
+        End If
+        
+    dB.Close
+
+End Sub
