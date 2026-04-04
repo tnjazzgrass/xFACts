@@ -1614,37 +1614,63 @@ The xFACts platform publishes a complete snapshot of all platform files to a Git
 
 #### 7.4.1 Manifest Structure
 
-The manifest (`manifest.json` at repo root) is the entry point for Claude to access repository content. It contains a timestamp, file count, and a complete list of all files with their raw URLs and Object_Registry metadata:
+The manifest system uses a two-tier structure: a lightweight master index at the repo root, plus category-specific sub-manifests containing the actual file entries.
+
+**Master manifest** (`manifest.json` at repo root) contains only metadata and links to sub-manifests:
+
 ```json
 {
-    "generated": "2026-04-02T09:17:26Z",
-    "file_count": 236,
-    "files": [
+    "generated": "2026-04-04T10:18:11Z",
+    "repository": "https://github.com/tnjazzgrass/xFACts",
+    "base_raw_url": "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main",
+    "file_count": 369,
+    "manifests": [
         {
-            "path": "xFACts-PowerShell/Execute-DmArchive.ps1",
-            "raw_url": "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DmArchive.ps1?v=20260402091726",
-            "category": "PowerShell",
-            "module": "DmOps",
-            "component": "DmOps.Archive"
-        }
+            "category": "Control Center Application",
+            "filename": "manifest-cc-app.json",
+            "raw_url": "https://raw.githubusercontent.com/.../manifest-cc-app.json?v=20260404101811",
+            "file_count": 81
+        },
+        ...
     ]
 }
 ```
 
-Each file URL includes a cache-buster query parameter (`?v=YYYYMMDDHHMMSS`) derived from the publish timestamp. This ensures CDN-fresh content on every fetch. Files with Object_Registry entries include `module` and `component` fields; unregistered files (excluded from audit by convention) omit these fields.
+**Sub-manifests** (at repo root alongside the master) contain the actual file entries with raw URLs and Object_Registry metadata:
+
+| Sub-manifest | Content | Typical Size |
+|---|---|---|
+| `manifest-cc-app.json` | CC routes, APIs, JS, CSS, modules, startup | ~80 files |
+| `manifest-cc-docs.json` | Docs pages, docs CSS/JS, DDL JSON, doc-registry | ~90 files |
+| `manifest-powershell.json` | Orchestrator scripts, collectors, shared functions | ~35 files |
+| `manifest-sql.json` | Stored procedure and trigger definitions | ~15 files |
+| `manifest-documentation.json` | Planning docs, guidelines, backlog, working files (incl. VBA extracts) | ~150 files |
+
+The ControlCenter split uses a simple path rule: files under `xFACts-ControlCenter/public/docs/` go to `cc-docs`, everything else under `xFACts-ControlCenter/` goes to `cc-app`.
+
+Each sub-manifest file entry includes `path`, `raw_url` (with cache-buster), and optionally `module` and `component` from the Object_Registry audit. The cache-buster timestamp is shared across the master and all sub-manifests for a given publish run.
+
+This segmentation prevents fetch truncation as the repository grows. The master manifest is under 1KB. Individual sub-manifests stay well within safe fetch limits even with hundreds of files.
 
 #### 7.4.2 Claude Session Workflow
 
 To provide Claude with access to repository files at the start of a session:
 
-1. **Provide the manifest URL** with a unique cache-buster value. Any value works as long as it has not been used recently in the same session. A date-based value (e.g., `?v=20260402`) or simple incrementing number (e.g., `?v=1`) is sufficient. The cache-buster on the manifest URL is a safety measure against GitHub CDN caching — in practice, any unused value will return the current file.
+1. **Provide the master manifest URL** with a unique cache-buster value:
 ```
-    https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=20260402
+    https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=20260404
 ```
 
-2. **Claude fetches the full manifest without a token limit.** This is critical. The `web_fetch` tool only recognizes URLs as fetchable if they appeared in the returned text of a previous fetch. If the manifest is truncated (e.g., by setting a `text_content_token_limit`), only the URLs visible in the truncated response will be accessible — all other file URLs will return permission errors. The manifest must be fetched in its entirety for all file URLs to be recognized.
+2. **Claude fetches the master manifest.** This is a small JSON index containing sub-manifest URLs and file counts per category. No token limit concerns -- the master is under 1KB.
 
-3. **Claude can then fetch any individual file** using its `raw_url` from the manifest. The per-file cache-buster timestamps ensure CDN-fresh content. Files are fetched on demand — Claude does not need to download the entire repository, only the specific files relevant to the current task.
+3. **Claude fetches the relevant sub-manifests** based on the session's focus area. For example, a BDL session would fetch `manifest-documentation.json` and `manifest-cc-app.json`. A DmOps session might fetch `manifest-powershell.json` and `manifest-documentation.json`. Fetching a sub-manifest unlocks all file URLs within it.
+
+4. **Claude fetches individual files on demand** using the `raw_url` from the sub-manifest entries. The per-file cache-buster timestamps ensure CDN-fresh content.
+
+**Key principle:** Only fetch the sub-manifests needed for the current task. There is no need to fetch all sub-manifests at session start. The master manifest provides enough context (category names and file counts) to determine which sub-manifests are relevant.
+
+**Cascading URL unlock pattern:** The `web_fetch` tool only recognizes URLs that appeared in the text of a previous fetch. Fetching the master unlocks the sub-manifest URLs. Fetching a sub-manifest unlocks all file URLs within it. This is a two-hop chain instead of the previous single-hop pattern, but each hop is small and reliable.
+
 
 #### 7.4.3 Known Limitations and Workarounds
 
