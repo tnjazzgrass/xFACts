@@ -1,0 +1,48 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_mrgConsumers"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub runMrgConsumers_Click()
+Dim del As Long
+Dim dB As Database
+Dim rst1 As Recordset
+Dim httpReq As New XMLHTTP60
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+    Set rst1 = dB.OpenRecordset("SELECT * FROM merge_consumers_string ORDER BY ConsumerName, PrimaryAgencyID, SecondaryAgencyID")
+    
+    Do Until rst1.EOF
+        
+        jBody = "{"
+        jBody = jBody & Chr(13) & Chr(10) & """consumerAgencyId"": " & rst1!PrimaryAgencyID & ","
+        jBody = jBody & Chr(13) & Chr(10) & """linkedAccounts"": " & rst1!AccountString
+        jBody = jBody & Chr(13) & Chr(10) & "}"
+    
+            httpReq.Open "POST", Me.APIurl & "consumers/" & rst1!SecondaryAgencyID & "/merge", False, Me.APIuser, Me.APIpass
+            httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+            httpReq.setRequestHeader "Authorization", Me.authCode
+            httpReq.sEnd (jBody)
+        
+ '      response = httpReq.responseText
+  '     Debug.Print response
+   '    Debug.Print jBody
+       
+'       Debug.Print Chr(13) & Chr(10) & sql
+       
+       del = Timer + 1
+       Do While Timer < del
+           DoEvents
+       Loop
+    
+    rst1.MoveNext
+    Loop
+    
+    MsgBox "The merge consumer/account APIs have been submitted", vbInformation, "WEBSERVICE RESPONSE"
+
+End Sub
