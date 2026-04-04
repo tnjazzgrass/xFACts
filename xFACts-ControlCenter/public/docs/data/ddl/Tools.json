@@ -379,6 +379,14 @@
                                        },
                                        {
                                            "ordinal":  13,
+                                           "name":  "parent_log_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Self-referential FK linking a companion AR log row back to its parent primary import row. NULL for primary imports. Populated when the execute endpoint generates a second BDL file for Jira ticket AR log entries. Both rows have independent file_registry_id values from DM since they are separate imports."
+                                       },
+                                       {
+                                           "ordinal":  14,
                                            "name":  "status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -388,7 +396,7 @@
                                            "description":  "Current lifecycle status of the import. Progresses through VALIDATING, BUILDING, REGISTERED, SUBMITTED, COMPLETED, or FAILED. See status values for details."
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  15,
                                            "name":  "error_message",
                                            "dataType":  "varchar",
                                            "length":  "2000",
@@ -397,7 +405,7 @@
                                            "description":  "Error details captured on failure. NULL when status is not FAILED. May contain DM API error responses, validation summary, or file system errors depending on which stage failed."
                                        },
                                        {
-                                           "ordinal":  15,
+                                           "ordinal":  16,
                                            "name":  "executed_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -406,7 +414,7 @@
                                            "description":  "AD username of the Control Center user who initiated the import. Captured from the authenticated session at import start."
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  17,
                                            "name":  "started_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -415,7 +423,7 @@
                                            "description":  "When the import process was initiated by the user."
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  18,
                                            "name":  "completed_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -423,7 +431,7 @@
                                            "description":  "When the import reached a terminal status (COMPLETED or FAILED). NULL while the import is in progress."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  19,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -432,7 +440,7 @@
                                            "description":  "When the log row was created."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  20,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -470,6 +478,14 @@
                                            "includedColumns":  "entity_type, environment, status"
                                        },
                                        {
+                                           "name":  "IX_BDL_ImportLog_parent_log_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "parent_log_id"
+                                       },
+                                       {
                                            "name":  "IX_BDL_ImportLog_status",
                                            "type":  "NONCLUSTERED",
                                            "isUnique":  false,
@@ -486,6 +502,12 @@
                                                 }
                                             ],
                        "foreignKeys":  [
+                                           {
+                                               "name":  "FK_BDL_ImportLog_ParentLog",
+                                               "column":  "parent_log_id",
+                                               "referencedTable":  "Tools.BDL_ImportLog",
+                                               "referencedColumn":  "log_id"
+                                           },
                                            {
                                                "name":  "FK_BDL_ImportLog_ServerConfig",
                                                "column":  "server_config_id",
@@ -508,6 +530,11 @@
                                                "topic":  "DM Import Status Confirmation",
                                                "note":  "The SUBMITTED to COMPLETED transition reflects DM confirming successful processing. DM updates the file registry status to complete when the import finishes. The mechanism for checking this status (polling, callback, or manual confirmation) is determined by the import workflow implementation.",
                                                "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "AR Log Companion Pattern",
+                                               "note":  "When a Jira ticket is provided during import execution, the system generates two separate BDL files: the primary data file (e.g., PHONE updates) and a companion CONSUMER_ACCOUNT_AR_LOG file that creates a clerical comment (CC/CC action/result codes) on each imported record linking it back to the ticket. This mirrors the legacy VBA toolkit pattern where update operations always produced a companion AR Event file. The two files are registered and imported through the DM API independently. parent_log_id links the AR log row to its parent primary import row for audit trail purposes. The relationship is internal to xFACts — on the DM side, each file has its own file_registry_id and processes through the BDL pipeline independently. AR log failure does not roll back the primary import.",
+                                               "sortOrder":  4
                                            }
                                        ],
                        "statusValues":  [
