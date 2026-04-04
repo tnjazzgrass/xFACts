@@ -1,0 +1,89 @@
+{
+    "generated":  "2026-04-04T10:18:11Z",
+    "category":  "SQL Object Definitions",
+    "file_count":  14,
+    "files":  [
+                  {
+                      "path":  "xFACts-SQL/dbo.sp_AddHoliday.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/dbo.sp_AddHoliday.sql?v=20260404101811",
+                      "module":  "dbo",
+                      "component":  "Engine.SharedInfrastructure"
+                  },
+                  {
+                      "path":  "xFACts-SQL/dbo.sp_GenerateHolidays.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/dbo.sp_GenerateHolidays.sql?v=20260404101811",
+                      "module":  "dbo",
+                      "component":  "Engine.SharedInfrastructure"
+                  },
+                  {
+                      "path":  "xFACts-SQL/dbo.sp_LogProtectionViolation.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/dbo.sp_LogProtectionViolation.sql?v=20260404101811",
+                      "module":  "dbo",
+                      "component":  "Engine.SharedInfrastructure"
+                  },
+                  {
+                      "path":  "xFACts-SQL/FileOps.sp_AddNewMonitorConfig.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/FileOps.sp_AddNewMonitorConfig.sql?v=20260404101811",
+                      "module":  "FileOps",
+                      "component":  "FileOps"
+                  },
+                  {
+                      "path":  "xFACts-SQL/Jira.sp_QueueTicket.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/Jira.sp_QueueTicket.sql?v=20260404101811",
+                      "module":  "Jira",
+                      "component":  "Jira"
+                  },
+                  {
+                      "path":  "xFACts-SQL/Jira.TR_Jira_TicketQueue_QueueDepth.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/Jira.TR_Jira_TicketQueue_QueueDepth.sql?v=20260404101811",
+                      "module":  "Jira",
+                      "component":  "Jira"
+                  },
+                  {
+                      "path":  "xFACts-SQL/Legacy.TR_System_Metadata_AutoSupersede.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/Legacy.TR_System_Metadata_AutoSupersede.sql?v=20260404101811"
+                  },
+                  {
+                      "path":  "xFACts-SQL/ServerOps.sp_Activity_CorrelateIncidents.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/ServerOps.sp_Activity_CorrelateIncidents.sql?v=20260404101811",
+                      "module":  "ServerOps",
+                      "component":  "ServerOps.ServerHealth"
+                  },
+                  {
+                      "path":  "xFACts-SQL/ServerOps.sp_DiagnoseServerHealth.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/ServerOps.sp_DiagnoseServerHealth.sql?v=20260404101811",
+                      "module":  "ServerOps",
+                      "component":  "ServerOps.ServerHealth"
+                  },
+                  {
+                      "path":  "xFACts-SQL/ServerOps.sp_Index_AddDatabaseHolidaySchedule.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/ServerOps.sp_Index_AddDatabaseHolidaySchedule.sql?v=20260404101811",
+                      "module":  "ServerOps",
+                      "component":  "ServerOps.Index"
+                  },
+                  {
+                      "path":  "xFACts-SQL/ServerOps.sp_Index_AddDatabaseSchedule.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/ServerOps.sp_Index_AddDatabaseSchedule.sql?v=20260404101811",
+                      "module":  "ServerOps",
+                      "component":  "ServerOps.Index"
+                  },
+                  {
+                      "path":  "xFACts-SQL/Teams.sp_QueueAlert.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/Teams.sp_QueueAlert.sql?v=20260404101811",
+                      "module":  "Teams",
+                      "component":  "Teams"
+                  },
+                  {
+                      "path":  "xFACts-SQL/Teams.TR_Teams_AlertQueue_QueueDepth.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/Teams.TR_Teams_AlertQueue_QueueDepth.sql?v=20260404101811",
+                      "module":  "Teams",
+                      "component":  "Teams"
+                  },
+                  {
+                      "path":  "xFACts-SQL/Tools.sp_SyncColumnOrdinals.sql",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-SQL/Tools.sp_SyncColumnOrdinals.sql?v=20260404101811",
+                      "module":  "Tools",
+                      "component":  "Tools.Utilities"
+                  }
+              ]
+}
