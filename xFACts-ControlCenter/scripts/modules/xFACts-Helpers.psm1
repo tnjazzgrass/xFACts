@@ -1801,6 +1801,112 @@ function Build-BDLXml {
         Error        = $null
     }
 } 
+
+# ============================================================================
+# HELPER: Build-ARLogXml
+# Constructs a CONSUMER_ACCOUNT_AR_LOG BDL XML from staging table data.
+# Creates one AR log entry per non-skipped row, linking the BDL import
+# back to a Jira ticket via the cnsmr_accnt_ar_mssg_txt field.
+# Mirrors Matt's VBA AR Event pattern (CC/CC action/result codes).
+# Called optionally from the execute endpoint when a Jira ticket is provided.
+# ============================================================================
+
+function Build-ARLogXml {
+    param(
+        [string]$StagingTable,
+        [string]$EntityType,
+        [string]$JiraTicket,
+        [string]$ArMessage,
+        [string]$IdentifierElement,
+        $WebEvent
+    )
+
+    # ── Validate staging table exists ───────────────────────────────
+    $tableCheck = Invoke-XFActsQuery -Query @"
+        SELECT 1 FROM sys.tables t
+        INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+        WHERE s.name = 'Staging' AND t.name = @tableName
+"@ -Parameters @{ tableName = $StagingTable }
+
+    if (-not $tableCheck -or $tableCheck.Count -eq 0) {
+        return @{ Error = "Staging table not found: $StagingTable"; StatusCode = 404 }
+    }
+
+    # ── Get environment from ServerConfig ───────────────────────────
+    # (EntityType is passed for filename; environment comes from the
+    #  same ConfigId the caller already validated)
+
+    # ── Read staging data (non-skipped rows, identifier column only) ─
+    $safeTable = "Staging.[" + $StagingTable.Replace(']', ']]') + "]"
+    $safeIdCol = "[" + $IdentifierElement.Replace(']', ']]') + "]"
+
+    $stagingRows = Invoke-XFActsQuery -Query "SELECT $safeIdCol FROM $safeTable WHERE _skip = 0 ORDER BY _row_number"
+
+    $rowCount = if ($stagingRows) { $stagingRows.Count } else { 0 }
+    if ($rowCount -eq 0) {
+        return @{ Error = 'No rows for AR log (all rows may be skipped)'; StatusCode = 400 }
+    }
+
+    # ── Build filename ──────────────────────────────────────────────
+    $username = $WebEvent.Auth.User.Username
+    if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
+    $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
+    $xmlFilename = "xFACts_${EntityType}_AR_${username}_${timestamp}.txt"
+
+    # ── Default message if not provided ─────────────────────────────
+    if (-not $ArMessage) {
+        $ArMessage = "${JiraTicket}: ${EntityType} update via BDL Import"
+    }
+
+    # ── Build the XML ───────────────────────────────────────────────
+    $sb = New-Object System.Text.StringBuilder 4096
+
+    [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
+    [void]$sb.AppendLine('<dm_data xmlns="http://www.fico.com/xml/debtmanager/data/v1_0">')
+    [void]$sb.AppendLine('  <header>')
+    [void]$sb.AppendLine('    <sender_id_txt>Organization</sender_id_txt>')
+    [void]$sb.AppendLine('    <target_id_txt>FAC Debt Manager</target_id_txt>')
+    [void]$sb.AppendLine("    <batch_id_txt>${JiraTicket}</batch_id_txt>")
+    [void]$sb.AppendLine('    <operational_transaction_type>CONSUMER_ACCOUNT_AR_LOG</operational_transaction_type>')
+    [void]$sb.AppendLine("    <total_count>${rowCount}</total_count>")
+    $creationDate = (Get-Date).ToString('yyyy-MM-dd') + 'T' + (Get-Date).ToString('HH:mm') + ':00'
+    [void]$sb.AppendLine("    <creation_data>${creationDate}</creation_data>")
+    [void]$sb.AppendLine('  </header>')
+    [void]$sb.AppendLine('  <operational_transaction_data>')
+    [void]$sb.AppendLine('    <cnsmr_accnt_ar_log_operational_transaction_data>')
+
+    # XML-escape the message once
+    $escapedMessage = $ArMessage.Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;').Replace('"', '&quot;').Replace("'", '&apos;')
+
+    $seq = 1
+    foreach ($row in $stagingRows) {
+        $idVal = $row[$IdentifierElement]
+        if ($idVal -is [System.DBNull] -or $null -eq $idVal) { continue }
+        $idStr = [string]$idVal
+        if ($idStr.Trim() -eq '') { continue }
+        $idStr = $idStr.Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;')
+
+        [void]$sb.AppendLine("      <cnsmr_accnt_ar_log seq_no=`"${seq}`" type=`"CONSUMER_ACCOUNT_AR_LOG`">")
+        [void]$sb.AppendLine("        <${IdentifierElement}>${idStr}</${IdentifierElement}>")
+        [void]$sb.AppendLine('        <actn_cd_shrt_val_txt>CC</actn_cd_shrt_val_txt>')
+        [void]$sb.AppendLine('        <rslt_cd_shrt_val_txt>CC</rslt_cd_shrt_val_txt>')
+        [void]$sb.AppendLine("        <cnsmr_accnt_ar_mssg_txt>${escapedMessage}</cnsmr_accnt_ar_mssg_txt>")
+        [void]$sb.AppendLine("        <cnsmr_accnt_ar_log_crt_usr_nm>${username}</cnsmr_accnt_ar_log_crt_usr_nm>")
+        [void]$sb.AppendLine('      </cnsmr_accnt_ar_log>')
+        $seq++
+    }
+
+    [void]$sb.AppendLine('    </cnsmr_accnt_ar_log_operational_transaction_data>')
+    [void]$sb.AppendLine('  </operational_transaction_data>')
+    [void]$sb.AppendLine('</dm_data>')
+
+    return @{
+        Xml      = $sb.ToString()
+        Filename = $xmlFilename
+        RowCount = $rowCount
+        Error    = $null
+    }
+}
  
 # ============================================================================
 # UPDATED Export-ModuleMember — REPLACE the existing block with this one
@@ -1833,6 +1939,7 @@ Export-ModuleMember -Function @(
     'Get-ServiceCredentials',
     # BDL Process
     'Build-BDLXml',
+    'Build-ARLogXml',
     # CRS5 (Debt Manager) Database
     'Get-CRS5Connection',
     'Invoke-CRS5ReadQuery',
