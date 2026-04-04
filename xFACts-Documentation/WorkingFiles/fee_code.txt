@@ -1,0 +1,6 @@
+Attribute VB_Name = "fee_code"
+Option Compare Database
+Option Explicit
+Function ChargeCurrFees()
+
+End Function
