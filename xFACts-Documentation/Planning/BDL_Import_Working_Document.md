@@ -22,7 +22,7 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - `Tools.ServerConfig` -- 3 rows (one per environment) with API URLs, dmfs paths, `db_instance`, and pipeline folder names for environment-specific targeting
 - `Tools.AccessConfig` -- department-scoped entity access control (BI seeded with PHONE only)
 - `Tools.AccessFieldConfig` -- field-level whitelist, child of AccessConfig. Strict whitelist: no child rows = zero field access. Admin tier bypasses entirely. BI seeded with `is_import_required` PHONE fields.
-- `Tools.BDL_ImportLog` -- import execution audit trail with lifecycle status tracking, `column_mapping` JSON, `value_changes` column for replacement audit, and `file_registry_id` from DM API
+- `Tools.BDL_ImportLog` -- import execution audit trail with lifecycle status tracking, `column_mapping` JSON, `value_changes` column for replacement audit, `file_registry_id` from DM API, and `parent_log_id` self-referential FK for linking AR log companion rows to their parent primary import
 - `Tools.BDL_ImportTemplate` -- saved column mapping templates for vendor-specific file layouts. Columns: `template_id` (PK), `entity_type`, `template_name`, `description`, `column_mapping` (JSON), `is_active`, audit columns. Unique constraint on `entity_type + template_name`. Object_Registry and Object_Metadata baselines created.
 - `Staging` schema -- created for temporary import staging tables (not registered in xFACts platform, invisible to documentation pipeline)
 - `AVG-STAGE-LSNR` added to `dbo.ServerRegistry` (AG_LISTENER, STAGE, DMSTAGEAG, is_active=0)
@@ -34,6 +34,18 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - Auth pattern mirrors Matt's legacy VBA toolkit exactly: `Authorization` header passed through as-is from stored `AuthHeader` value, `Content-Type: application/vnd.fico.dm.v1+json`
 - API flow: POST `/fileregistry` (register file, extract `data.fileRegistryId` from response) -> POST `/fileregistry/{id}/bdlimport` (trigger import)
 - File write uses BOM-less UTF-8 encoding (`New-Object System.Text.UTF8Encoding($false)`) -- DM's XML parser rejects BOM
+
+**AR Log (Jira Ticket Link) -- fully operational:**
+- `Build-ARLogXml` function in `xFACts-Helpers.psm1` -- constructs a `CONSUMER_ACCOUNT_AR_LOG` BDL XML from staging table data, creating one AR log entry per non-skipped row
+- Uses CC/CC (clerical comment) action/result codes across all entity types -- internal codes that do not appear on client export notes
+- Mirrors Matt's legacy VBA companion AR Event file pattern exactly
+- Identifier element auto-detected: `cnsmr_idntfr_agncy_id` for consumer-level entities, `cnsmr_accnt_idntfr_agncy_id` for account-level
+- `cnsmr_accnt_ar_log_crt_usr_nm` set to the logged-in Windows username (not the API service account)
+- AR log BDL is built and submitted as a separate file through the full register -> import cycle after the primary BDL succeeds
+- AR log failure does NOT roll back the primary import
+- AR log row in `BDL_ImportLog` uses `parent_log_id` to link back to the primary import row
+- Default AR message format: `"{ticket}: {entity_type} update via BDL Import"` -- editable by the user on Step 6
+- Jira ticket field and AR message field are optional on Step 6; if left blank, no AR log is generated (current behavior preserved)
 
 **Catalog enrichment:**
 - `format_id` integer FK added to `Catalog_BDLElementRegistry` and `Catalog_CDLElementRegistry` (replaces composite FK)
@@ -50,6 +62,7 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 **Shared helpers:**
 - `Invoke-XFActsNonQuery` added to `xFACts-Helpers.psm1` -- ExecuteNonQuery() for DDL and DML operations against xFACts database
 - `Build-BDLXml` added to `xFACts-Helpers.psm1` -- constructs BDL XML from staging table data and catalog metadata
+- `Build-ARLogXml` added to `xFACts-Helpers.psm1` -- constructs CONSUMER_ACCOUNT_AR_LOG BDL XML for Jira ticket linking
 - `Get-ServiceCredentials` in `xFACts-Helpers.psm1` -- two-tier decryption for DM API credentials
 
 **Control Center pages:**
@@ -78,9 +91,9 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
    - **Validate:** Accordion-style issue cards. Actionable issues (required empty, invalid lookup) shown as collapsed cards -- click to expand and resolve. One card expandable at a time. Required empty: fill or skip triggers immediate re-validate. Lookup invalid: all unique values resolved per element, then auto re-validate. Cascading effect: skipping rows for one field removes those rows from subsequent lookup/required checks.
    - Informational warnings (max length, data type) shown in separate collapsible section with no action controls.
    - Next button muted/gray when issues exist, colored blue when validation passes.
-   - **Re-validate button** retained at bottom as manual sanity check.
+   - **Re-validate button removed** -- cascading auto-revalidation after each fill/skip action renders the manual button obsolete.
    - **Staging cleanup:** Banner on page load if tables older than 48 hours found. One-click cleanup drops them.
-6. **Review & Execute** -- Summary display showing environment, entity type, source file, row count, mapped fields, and staging table. Collapsible column mapping reference. Collapsible XML preview with syntax highlighting. Execute button with PROD warning. Progress visualization. Success/failure result cards.
+6. **Review & Execute** -- Summary display showing environment, entity type, source file, row count, mapped fields, and staging table. Optional Jira ticket input with editable AR message (defaults to `"{ticket}: {ENTITY_TYPE} update via BDL Import"`). Collapsible column mapping reference. Collapsible XML preview with syntax highlighting. Execute button with PROD warning. Progress visualization. Success/failure result cards. When a Jira ticket is provided, a companion AR log BDL is built and submitted after the primary import succeeds, with its own result card shown below the primary result.
 
 ### End-to-End Test Results
 
@@ -90,6 +103,9 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 
 **April 4, 2026 (PROD):**
 - **Test 3 (Dirk):** PHONE BDL import into PRODUCTION -- 100% success. First production import via xFACts.
+
+**April 4, 2026 (TEST - AR Log):**
+- **Test 4 (Dirk):** 395-row file with Jira ticket link -> primary BDL submitted successfully, AR log companion BDL submitted successfully. Both files processed in DM with 395 records each.
 
 ---
 
@@ -116,6 +132,18 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - After all unique values for a lookup invalid field are resolved (replaced or skipped), auto re-validate fires
 - Cascading effect: skipping rows with empty phone numbers removes those same rows from phone type and phone status lookup checks
 - User interaction disabled during re-validate cycle to prevent race conditions
+- Manual re-validate button removed -- cascading auto-revalidation makes it obsolete
+
+### AR Log Companion Pattern
+- When a Jira ticket is provided during import execution, the system generates two separate BDL files: the primary data file and a companion CONSUMER_ACCOUNT_AR_LOG file
+- The AR log creates a clerical comment (CC/CC action/result codes) on each imported record, linking it back to the originating Jira ticket via `cnsmr_accnt_ar_mssg_txt`
+- This mirrors the legacy VBA toolkit pattern where update operations (phone, address, account, consumer) always produced a companion AR Event file
+- CC/CC codes are internal clerical comments that do not appear on client export notes files; CO/CO is the standard comment code that does -- CC/CC is used across all entity types for BDL Import
+- The two files are registered and imported through the DM API independently as separate BDL imports
+- `parent_log_id` on `BDL_ImportLog` links the AR log row to its parent primary import row -- this is an internal xFACts relationship for audit trail purposes; on the DM side each file has its own `file_registry_id` and processes independently
+- AR log failure does not roll back the primary import -- the primary data is already in DM
+- `cnsmr_accnt_ar_log_crt_usr_nm` is set to the logged-in Windows username, providing visibility into who ran the BDL (vs. the API service account `apiuser` that appears on the import itself)
+- Default message format: `"{ticket}: {ENTITY_TYPE} update via BDL Import"` -- editable by the user before submission
 
 ### Identifier Field Gating
 - Mapping panels (source columns, BDL fields, mapped pairs) are disabled and dimmed until the identifier column is selected
@@ -146,6 +174,12 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - File extension is `.txt` (not `.xml`) -- matches Matt's convention
 - File written with BOM-less UTF-8 encoding
 
+### communication_reference_id_txt Header Element
+- Present in Matt's VBA for some entity types (PostPhnUpdts, PostAddrUpdts, PostAccntUpdts, PostCnsmrUpdts) but not others (PostAccntTags, PostCnsmrTags, PostRegFUDPs)
+- Always hardcoded to `"Organization"` in the VBA
+- PHONE import into PROD succeeded without it -- appears to be optional/informational
+- **Decision:** Not included in xFACts XML output. If DM requires it for specific entity types in the future, it can be added as a catalog-driven header element.
+
 ### Access Control (Three Layers)
 1. **RBAC page access** -- `RBAC_PermissionMapping` controls who can see the page
 2. **Entity access** -- `Tools.AccessConfig` controls which BDL entity types a department can use. Admin tier bypasses.
@@ -164,6 +198,7 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - Failed imports require a new file with a new filename
 - Column mapping captured as JSON in `BDL_ImportLog.column_mapping` for audit trail
 - `template_id` column links to `BDL_ImportTemplate` when a template-based import is executed
+- Import completion tracking (processed count, error count, DM status) is deferred to the BatchOps BDL monitoring collector -- see Next Steps
 
 ### RBAC Middleware: Department-Scoped Roles on Shared Pages
 - **Problem:** Department-scoped roles were silently ignored on non-departmental pages like `/bdl-import`.
@@ -203,9 +238,9 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 | POST | `/api/bdl-import/skip-rows` | Mark rows as skipped in staging table (handles empty match) |
 | GET | `/api/bdl-import/staging-cleanup` | Check for expired staging tables (>48 hours) |
 | POST | `/api/bdl-import/staging-cleanup` | Drop expired staging tables |
-| GET | `/api/bdl-import/history` | Recent import history from BDL_ImportLog |
+| GET | `/api/bdl-import/history` | Recent import history from BDL_ImportLog (includes parent_log_id) |
 | POST | `/api/bdl-import/build-preview` | Build XML and return for preview (no file write or API calls) |
-| POST | `/api/bdl-import/execute` | Full pipeline: build XML -> write to dmfs -> register -> trigger import |
+| POST | `/api/bdl-import/execute` | Full pipeline: build XML -> write to dmfs -> register -> trigger import. Optionally builds and submits companion AR log BDL when `jira_ticket` is provided. |
 | GET | `/api/bdl-import/templates?entity_type=X` | List saved templates for an entity type |
 | POST | `/api/bdl-import/templates` | Save a new template (duplicate name check) |
 | PUT | `/api/bdl-import/templates/:id` | Update a template (creator or admin only) |
@@ -217,7 +252,15 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 
 ### Immediate (Next Session)
 
-1. **`communication_reference_id_txt` header element** -- Verify with Matt whether this is required by DM or just informational. Matt's VBA includes it in some BDL functions (PostPhnUpdts, PostAddrUpdts, PostAccntUpdts, PostCnsmrUpdts) but not others (PostAccntTags, PostCnsmrTags).
+1. **Promote to Production** -- After a successful TEST or STAGE import, offer an option to submit the same data to PRODUCTION without re-running the wizard.
+   - **Trigger:** Success result card on Step 6 after a non-PROD import. Only appears if the target PROD environment is unlocked (not "Coming Soon").
+   - **Cooldown timer:** A GlobalConfig-driven countdown (e.g., `bdl_promote_cooldown_seconds` under Tools module) displayed on the button. Button appears styled dark/inactive with countdown text. Clicking during countdown shows a message: "This was just submitted to {environment}. Please confirm the data looks correct in Debt Manager before loading this content into Production."
+   - **When timer expires:** Button activates. Clicking opens a confirmation modal with PROD warning.
+   - **Screen repaint:** The entire Step 6 re-renders targeting PROD -- fresh summary, PROD environment displayed, Jira ticket fields pre-populated from the test run (but editable so users can add/change the ticket for PROD), fresh execute button.
+   - **Data source:** Rebuilds XML from the existing staging table (still alive from the test run). Does NOT re-read the original file.
+   - **Staging table check:** If the staging table no longer exists (expired, manually cleaned), display a message and redirect to Step 1 to start fresh.
+   - **Back button:** Removed from Step 6 after a successful submission (replaced by the promote option or nothing if PROD is locked).
+   - **GlobalConfig entry needed:** `bdl_promote_cooldown_seconds` under module `Tools`, category `Operations`.
 
 2. **Step guide text refinement** -- Update the right-column guidance text for each step based on user feedback. Content is in `BDLImport.ps1` HTML.
 
@@ -231,6 +274,7 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - `display_name` enrichment across additional entity elements
 - Staging table resume/review capability
 - Post-import staging table viewer
+- **BatchOps BDL monitoring collector** -- Pulls BDL processing results from DM's logging tables (file_registry tables, processing status, record counts, errors). Writes completion status back to `Tools.BDL_ImportLog` via `file_registry_id` join. This is already on the BatchOps roadmap as the final monitoring component -- building it also solves the BDL Import completion tracking gap. Cross-module: collector lives in BatchOps, write-back targets Tools schema.
 
 ### Future Enhancements
 
@@ -258,17 +302,17 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 | ServerConfig | Table | Per-environment DM server configuration (incl. db_instance) |
 | AccessConfig | Table | Department-scoped tool/entity access control |
 | AccessFieldConfig | Table | Field-level whitelist, child of AccessConfig |
-| BDL_ImportLog | Table | Import execution audit trail |
+| BDL_ImportLog | Table | Import execution audit trail (incl. parent_log_id for AR log linking) |
 | BDL_ImportTemplate | Table | Saved column mapping templates (incl. description column) |
 | BDLImport.ps1 | Route | BDL Import CC page route (two-column layout) |
-| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD) |
+| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, AR log execute) |
 | bdl-import.js | JavaScript | BDL Import CC client-side logic |
 | bdl-import.css | CSS | BDL Import CC styles |
 
 ### ControlCenter.Shared Component
 | Object | Type | Description |
 |--------|------|-------------|
-| xFACts-Helpers.psm1 | Module | Shared helper functions (incl. Invoke-XFActsNonQuery, Build-BDLXml, Get-ServiceCredentials) |
+| xFACts-Helpers.psm1 | Module | Shared helper functions (incl. Invoke-XFActsNonQuery, Build-BDLXml, Build-ARLogXml, Get-ServiceCredentials) |
 
 ### DeptOps.ApplicationsIntegration Component
 | Object | Type | Description |
@@ -283,6 +327,11 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 **Object_Registry entries completed this session:**
 - `BDL_ImportTemplate` table -- registered with Object_Metadata baselines, column descriptions, data flow, design notes, and relationship notes
 
+**Object_Metadata entries completed this session:**
+- `parent_log_id` column description on `BDL_ImportLog`
+- `AR Log Companion Pattern` design note on `BDL_ImportLog`
+
 **System_Metadata version bumps needed (end of session):**
-- **Module: Tools -> Component: Tools.Operations** -- `BDL_ImportTemplate` table with description column, template CRUD API endpoints, `drop_existing` staging support
-- **Module: ControlCenter -> Component: ControlCenter.BDLImport** (or Tools.Operations if BDL Import CC files are under that component) -- Cascading validation redesign, accordion cards, back button mapping preservation, guide panel simplification, template UI with slideout preview, identifier field gating, Next button color logic, shared engine-events.css integration
+- **Module: Tools -> Component: Tools.Operations** -- `parent_log_id` column on BDL_ImportLog, AR log companion pattern
+- **Module: ControlCenter -> Component: ControlCenter.BDLImport** -- AR log UI (Jira ticket input, editable message, AR log result cards), re-validate button removal, progress step completion fix
+- **Module: ControlCenter -> Component: ControlCenter.Shared** -- `Build-ARLogXml` function added to xFACts-Helpers.psm1
