@@ -93,6 +93,11 @@
                                     <div class="mock-engine-cd">3m</div>
                                 </div>
                                 <div class="mock-engine">
+                                    <div class="mock-engine-label">BDL</div>
+                                    <div class="mock-engine-bar"></div>
+                                    <div class="mock-engine-cd">1m</div>
+                                </div>
+                                <div class="mock-engine">
                                     <div class="mock-engine-label">Summary</div>
                                     <div class="mock-engine-bar"></div>
                                     <div class="mock-engine-cd">45m</div>
@@ -122,9 +127,15 @@
                                     </div>
                                     <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
                                         <div style="font-size:9px; color:#888;">Payments</div>
-                                        <div style="font-size:22px; color:#ce9178; font-weight:600;">8</div>
+                                        <div style="font-size:22px; color:#c586c0; font-weight:600;">8</div>
                                         <div style="font-size:8px;"><span style="color:#4ec9b0;">6 complete</span> &nbsp;<span style="color:#569cd6;">2 active</span></div>
                                         <div style="font-size:7px; color:#666;">1,847 payments</div>
+                                    </div>
+                                    <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:10px; text-align:center;">
+                                        <div style="font-size:9px; color:#888;">BDL Import</div>
+                                        <div style="font-size:22px; color:#ce9178; font-weight:600;">3</div>
+                                        <div style="font-size:8px;"><span style="color:#4ec9b0;">3 complete</span></div>
+                                        <div style="font-size:7px; color:#666;">1,255 records</div>
                                     </div>
                                 </div>
                             </div>
@@ -139,6 +150,7 @@
                                             <span style="font-size:7px; color:#ccc; background:#404040; border-radius:3px; padding:1px 6px;">All</span>
                                             <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">NB</span>
                                             <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">PMT</span>
+                                            <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">BDL</span>
                                         </div>
                                         <span class="mock-badge-live"><span class="mock-live-dot" style="width:6px; height:6px;"></span></span>
                                     </div>
@@ -192,6 +204,10 @@
                                         <div style="font-size:8px; color:#888;">3m ago &middot; 0.8s</div>
                                     </div>
                                     <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px; display:flex; justify-content:space-between; align-items:center;">
+                                        <div><span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">OK</span> <span style="font-size:9px; color:#ccc; margin-left:6px;">Collect-BDLBatchStatus</span></div>
+                                        <div style="font-size:8px; color:#888;">1m ago &middot; 0.5s</div>
+                                    </div>
+                                    <div style="background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px; display:flex; justify-content:space-between; align-items:center;">
                                         <div><span style="font-size:7px; color:#4ec9b0; background:#264f26; border-radius:3px; padding:1px 6px;">OK</span> <span style="font-size:9px; color:#ccc; margin-left:6px;">Send-OpenBatchSummary</span></div>
                                         <div style="font-size:8px; color:#888;">45m ago &middot; 0.3s</div>
                                     </div>
@@ -208,6 +224,7 @@
                                             <span style="font-size:7px; color:#ccc; background:#404040; border-radius:3px; padding:1px 6px;">All</span>
                                             <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">NB</span>
                                             <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">PMT</span>
+                                            <span style="font-size:7px; color:#888; border:1px solid #404040; border-radius:3px; padding:1px 6px;">BDL</span>
                                         </div>
                                         <span class="mock-badge-event">&#9889;</span>
                                     </div>
@@ -238,8 +255,8 @@
             <div class="sticky-ref-sidebar">
                 <div class="sidebar-intro">
                     <h3>About This Page</h3>
-                    <p>The Batch Monitoring page tracks New Business and Payment batches as they move through Debt Manager&rsquo;s batch lifecycle. Each batch type follows a distinct pipeline of states from creation through completion.</p>
-                    <p>Two independent collectors monitor NB and PMT batches respectively, with a third process sending daily summary notifications. The page shows today&rsquo;s activity, currently in-flight batches, collector health, and full batch history.</p>
+                    <p>The Batch Monitoring page tracks New Business, Payment, and BDL Import batches as they move through Debt Manager&rsquo;s batch lifecycle. Each batch type follows a distinct pipeline of states from creation through completion.</p>
+                    <p>Three independent collectors monitor NB, PMT, and BDL batches respectively, with a fourth process sending daily summary notifications. The page shows today&rsquo;s activity, currently in-flight batches, collector health, and full batch history.</p>
                     <p>This guide walks through each section so you know what you&rsquo;re looking at and what the numbers mean.</p>
                 </div>
                 <h3>Sections and Features at a Glance</h3>
@@ -261,37 +278,39 @@
     <div class="cc-guide-content">
         <div class="guide-section" id="section-1"><div class="section">
             <h2><span class="section-number">1</span>Engine Indicators</h2>
-            <p>Three engine cards in the upper right represent the processes behind this page.</p>
+            <p>Four engine cards in the upper right represent the processes behind this page.</p>
             <p><strong>NB</strong> &mdash; <code>Collect-NBBatchStatus.ps1</code>. Monitors New Business batches by querying Debt Manager&rsquo;s batch tables. Tracks each batch from upload through merge completion, detecting stalls, failures, and status transitions.</p>
             <p><strong>PMT</strong> &mdash; <code>Collect-PMTBatchStatus.ps1</code>. Monitors Payment batches through their lifecycle from creation through posting. Tracks import, release, posting progress, and terminal states including failures and partial postings.</p>
+            <p><strong>BDL</strong> &mdash; <code>Collect-BDLBatchStatus.ps1</code>. Monitors BDL (Bulk Data Load) import files through staging and import processing. Tracks partition-level progress, captures DM&rsquo;s summary counts, and detects stalled processing.</p>
             <p><strong>Summary</strong> &mdash; <code>Send-OpenBatchSummary.ps1</code>. Sends a daily notification card summarizing open (incomplete) batches. Runs on a less frequent schedule than the collectors since it&rsquo;s a reporting process, not a monitoring one.</p>
             <p>Green bar means the last run succeeded. Red means it failed. These update via WebSocket independently of the page&rsquo;s refresh cycle.</p>
         </div></div>
         <div class="guide-section" id="section-2"><div class="section">
             <h2><span class="section-number">2</span>Today&rsquo;s Activity</h2>
-            <p>Two summary cards showing the day&rsquo;s batch volume at a glance, one per batch type.</p>
+            <p>Three summary cards showing the day&rsquo;s batch volume at a glance, one per batch type.</p>
             <p><strong>New Business</strong> &mdash; Total NB batches today with a breakdown: completed (green), failed (red), and active/in-flight (blue). Below the status breakdown, the total account count across all today&rsquo;s NB batches gives a sense of volume.</p>
             <p><strong>Payments</strong> &mdash; Total PMT batches today with the same breakdown: completed, failed, active. The payment count shows total payments across all batches. A muted footnote may appear showing counts for companion batch types like reapplies or other special types that are tracked but not prominently displayed.</p>
-            <p>These cards update when either collector completes (lightning bolt badge). Zero counts are normal outside of business hours &mdash; NB batches typically arrive during the day, and payment batches are created throughout the day as imports and manual entries.</p>
+            <p><strong>BDL Import</strong> &mdash; Total BDL files today with the same breakdown. The record count shows total records across all files. BDL includes both scheduled automated imports and user-initiated imports from the BDL Import wizard.</p>
+            <p>These cards update when any collector completes (lightning bolt badge). Zero counts are normal outside of business hours.</p>
         </div></div>
         <div class="guide-section" id="section-3"><div class="section">
             <h2><span class="section-number">3</span>Active Batches</h2>
-            <p>A unified table showing every batch currently in flight across both NB and PMT types. Filter buttons at the top let you narrow to one type. This section uses live polling (pulsing dot badge) for real-time visibility into batch progress.</p>
-            <p>Each row shows the batch type tag (NB in blue, PMT in orange), batch ID, name, a color-coded status badge, progress indicator, record count, and age (how long since the batch was created).</p>
-            <p>The <strong>Progress</strong> column adapts based on the batch&rsquo;s current state. For NB batches actively merging, it shows a progress bar with processed/total counts. For PMT batches in the posting phase, it shows journal posted vs. active counts. For batches in transit between states, the column shows a descriptive label like &ldquo;Uploaded,&rdquo; &ldquo;Released,&rdquo; or &ldquo;In Queue.&rdquo; Failed batches show a red failure label.</p>
+            <p>A unified table showing every batch currently in flight across NB, PMT, and BDL types. Filter buttons at the top let you narrow to one type. This section uses live polling (pulsing dot badge) for real-time visibility into batch progress.</p>
+            <p>Each row shows the batch type tag (NB in blue, PMT in purple, BDL in orange), batch ID, name, a color-coded status badge, progress indicator, record count, and age (how long since the batch was created).</p>
+            <p>The <strong>Progress</strong> column adapts based on the batch&rsquo;s current state. For NB batches actively merging, it shows a progress bar with processed/total counts. For PMT batches in the posting phase, it shows journal posted vs. active counts. For BDL files being processed, it shows partition completion progress. For batches in transit between states, the column shows a descriptive label like &ldquo;Uploaded,&rdquo; &ldquo;Released,&rdquo; &ldquo;In Queue,&rdquo; or &ldquo;Awaiting Import.&rdquo; Failed batches show a red failure label.</p>
             <div class="callout tip"><p>The age column is your early warning for stuck batches. An NB batch that&rsquo;s been &ldquo;Uploaded&rdquo; for hours without moving to &ldquo;Merging&rdquo; may be waiting in queue behind other work, or something may have prevented it from being picked up. Compare with the Process Status cards to see if the collectors are running normally.</p></div>
         </div></div>
         <div class="guide-section" id="section-4"><div class="section">
             <h2><span class="section-number">4</span>Process Status</h2>
             <p>One card per collector process showing its current health. Each card displays a status badge, the collector name, how long ago it last ran, and the execution duration.</p>
             <p>Status badges reflect the process health: <strong>OK</strong> (green) means healthy and running on schedule. <strong>Running</strong> (blue) means actively executing. <strong>Delayed</strong> (yellow) means it&rsquo;s been longer than expected since the last run. <strong>Failed</strong> or <strong>Stale</strong> (red) means the last run errored or the process hasn&rsquo;t reported in beyond the critical threshold.</p>
-            <p>These cards update when any engine process completes (lightning bolt badge). A healthy page shows all three cards as OK with recent timestamps and sub-second durations.</p>
+            <p>These cards update when any engine process completes (lightning bolt badge). A healthy page shows all four cards as OK with recent timestamps and sub-second durations.</p>
         </div></div>
         <div class="guide-section" id="section-5"><div class="section">
             <h2><span class="section-number">5</span>Batch History</h2>
-            <p>A collapsible tree showing the complete history of all tracked batches. Filter buttons let you view all batches or narrow to NB or PMT only. Organized by year and month with batch counts and success/failure tallies at every level.</p>
+            <p>A collapsible tree showing the complete history of all tracked batches. Filter buttons let you view all batches or narrow to NB, PMT, or BDL only. Organized by year and month with batch counts and success/failure tallies at every level.</p>
             <p>Click a <strong>year</strong> to expand its months. Each month row shows total batches, succeeded, and failed. Click a <strong>month</strong> to load its daily breakdown. Click a <strong>day</strong> to open a slideout with every batch that was active that day &mdash; full details including batch name, type, status timeline, record counts, and duration.</p>
-            <div class="callout info"><p>The history tree includes all batches that reached a terminal state (completed or failed) on each date. A batch that started on Monday but didn&rsquo;t complete until Tuesday will appear under Tuesday&rsquo;s date. Use the NB/PMT filter to isolate one type when investigating patterns in a specific batch category.</p></div>
+            <div class="callout info"><p>The history tree includes all batches that reached a terminal state (completed or failed) on each date. A batch that started on Monday but didn&rsquo;t complete until Tuesday will appear under Tuesday&rsquo;s date. Use the NB/PMT/BDL filter to isolate one type when investigating patterns in a specific batch category.</p></div>
         </div></div>
     </div>
 
