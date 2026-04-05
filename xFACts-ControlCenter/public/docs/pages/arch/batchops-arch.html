@@ -15,7 +15,7 @@
     <!-- Header -->
     <div class="page-header">
         <h1>Batch Monitoring Architecture</h1>
-        <div class="subtitle">How two collectors, three tables, and a lot of status codes keep the batch pipeline visible</div>
+        <div class="subtitle">How three collectors, four tables, and a lot of status codes keep the batch pipeline visible</div>
     </div>
 
     <!-- Sticky Section Nav -->
@@ -25,6 +25,7 @@
             <a href="#erd">Schema Overview</a>
             <a href="#nb-lifecycle">NB Batch Lifecycle</a>
             <a href="#pmt-lifecycle">PMT Batch Lifecycle</a>
+            <a href="#bdl-lifecycle">BDL File Lifecycle</a>
             <a href="#stall-detection">Stall Detection</a>
             <a href="#alert-conditions">Alert Conditions</a>
             <a href="#pre-maintenance">Pre-Maintenance Summary</a>
@@ -34,7 +35,7 @@
 
     <!-- Context Bar -->
     <div class="context-bar">
-        The narrative page tells you <em>what</em> Batch Monitoring does and <em>why</em>. This page tells you <em>how</em>. Three tables, three scripts, two parallel pipelines, and a whole lot of DM status codes that determine when something needs attention.
+        The narrative page tells you <em>what</em> Batch Monitoring does and <em>why</em>. This page tells you <em>how</em>. Four tables, four scripts, three parallel pipelines, and a whole lot of DM status codes that determine when something needs attention.
     </div>
 
     <!-- ============================================ -->
@@ -43,7 +44,7 @@
     <div class="section" id="erd">
         <h2>Schema Overview</h2>
 
-        <p>The BatchOps schema is simple by design. Two tracking tables (one per batch type), one health dashboard, and no stored procedures or triggers. All logic lives in the PowerShell collectors, which makes the system easy to reason about: the tables store state, the scripts do everything else.</p>
+        <p>The BatchOps schema is simple by design. Three tracking tables (one per batch type), one health dashboard, and no stored procedures or triggers. All logic lives in the PowerShell collectors, which makes the system easy to reason about: the tables store state, the scripts do everything else.</p>
 
         <div class="erd-root" data-schema="BatchOps"></div>
 
@@ -52,12 +53,13 @@
             <tbody>
                 <tr><td><code>NB_BatchTracking</code></td><td>New Business batch lifecycle tracking</td><td>One row per batch (batch_id from DM)</td></tr>
                 <tr><td><code>PMT_BatchTracking</code></td><td>Payment batch lifecycle tracking</td><td>One row per batch (batch_id from DM)</td></tr>
+                <tr><td><code>BDL_BatchTracking</code></td><td>BDL import file lifecycle tracking</td><td>One row per file (file_registry_id from DM)</td></tr>
                 <tr><td><code>Status</code></td><td>Collector execution health</td><td>One row per process (collector_name)</td></tr>
             </tbody>
         </table>
 
         <div class="tech-tip">
-            <strong>No foreign keys between the tracking tables.</strong> NB and PMT are completely independent pipelines. They don't reference each other, don't share state, and don't coordinate timing. The only shared resource is <code>Status</code>, which each collector updates for its own row.
+            <strong>No foreign keys between the tracking tables.</strong> NB, PMT, and BDL are completely independent pipelines. They don't reference each other, don't share state, and don't coordinate timing. The only shared resource is <code>Status</code>, which each collector updates for its own row.
         </div>
     </div>
 
@@ -69,10 +71,30 @@
 
         <p>New Business batches have a dual state machine. The <em>batch status</em> tracks upload through release. The <em>merge status</em> tracks what happens after release. Nearly all batches reach RELEASED without issue &mdash; the merge phase is where things get interesting.</p>
 
-        <!-- PLACEHOLDER: NB lifecycle flow diagram -->
-        <div class="diagram-placeholder">
-            <div class="placeholder-label">NB Dual State Machine</div>
-            <div class="placeholder-desc">Batch Status: UPLOADING → UPLOADED → RELEASED (most batches stop here) | Merge Status: QUEUED → MERGING → POST_RELEASE_MERGE_COMPLETE (success) / PRTL_MRGD_WTH_ERS / FAILED (terminal)</div>
+        <!-- NB lifecycle flow diagram -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Upload</div>
+                    <div class="arch-flow-step-detail">UPLOADING &rarr;<br>UPLOADED</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Release</div>
+                    <div class="arch-flow-step-detail">RELEASING &rarr;<br>RELEASED</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Merge</div>
+                    <div class="arch-flow-step-detail">MERGING &rarr;<br>MERGE_COMPLETE</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Terminal</div>
+                    <div class="arch-flow-step-detail">Success or<br>failure state</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Batch status drives upload &rarr; release. Merge status takes over after RELEASED. Most batches reach RELEASED without issue &mdash; the merge is where things get interesting.</div>
         </div>
 
         <h3>Batch Status (State Machine 1)</h3>
@@ -120,10 +142,30 @@
 
         <p>Payment batches have a single state machine but multiple processing paths depending on batch type. The collector tracks all types but only alerts on terminal failures.</p>
 
-        <!-- PLACEHOLDER: PMT lifecycle flow diagram -->
-        <div class="diagram-placeholder">
-            <div class="placeholder-label">PMT Batch State Machine</div>
-            <div class="placeholder-desc">IMPORT path: IMPORTING → INPROCESS → POSTED (success) / IMPORTFAILED / FAILED / PARTIAL | MANUAL path: INPROCESS → POSTED / FAILED | REVERSAL path: REVERSING → POSTED / REVERSALFAILED</div>
+        <!-- PMT lifecycle flow diagram -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Import</div>
+                    <div class="arch-flow-step-detail">NEWIMPORT &rarr;<br>IMPORTING</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Process</div>
+                    <div class="arch-flow-step-detail">RELEASED &rarr;<br>INPROCESS</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Post</div>
+                    <div class="arch-flow-step-detail">Journal entries<br>posted per payment</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Terminal</div>
+                    <div class="arch-flow-step-detail">POSTED / FAILED /<br>PARTIAL</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">Multiple processing paths depending on batch type (IMPORT, MANUAL, REVERSAL, REAPPLY). The collector tracks all types but only alerts on terminal failures.</div>
         </div>
 
         <h3>Batch Types</h3>
@@ -168,6 +210,70 @@
     </div>
 
     <!-- ============================================ -->
+    <!-- SECTION: BDL File Lifecycle -->
+    <!-- ============================================ -->
+    <div class="section" id="bdl-lifecycle">
+        <h2>BDL File Lifecycle</h2>
+
+        <p>BDL (Bulk Data Load) files are architecturally different from NB and PMT batches. There's no <code>bdl_batch</code> table with a status column. Instead, the file's current state is derived from log entries in <code>bdl_log</code>. File-level entries (where <code>sub_entty_nm_txt IS NULL</code>) track the overall lifecycle. Partition-level entries (where <code>sub_entty_nm_txt IS NOT NULL</code>) track processing progress within the file.</p>
+
+        <!-- BDL lifecycle flow diagram -->
+        <div class="arch-flow">
+            <div class="arch-flow-steps">
+                <div class="arch-flow-step blue">
+                    <div class="arch-flow-step-title">Register</div>
+                    <div class="arch-flow-step-detail">File registered<br>in File_Registry</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step green">
+                    <div class="arch-flow-step-title">Stage</div>
+                    <div class="arch-flow-step-detail">PROCESSING &rarr;<br>STAGED</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step orange">
+                    <div class="arch-flow-step-title">Import</div>
+                    <div class="arch-flow-step-detail">Partitions processed<br>records imported</div>
+                </div>
+                <span class="arch-flow-arrow">&rarr;</span>
+                <div class="arch-flow-step purple">
+                    <div class="arch-flow-step-title">Terminal</div>
+                    <div class="arch-flow-step-detail">IMPORTED /<br>STAGEFAILED /<br>IMPORT_FAILED</div>
+                </div>
+            </div>
+            <div class="arch-flow-caption">File-level status is derived from the most recent bdl_log entry. Partition-level entries provide processing progress between file-level transitions.</div>
+        </div>
+
+        <h3>File-Level Status Codes</h3>
+
+        <table class="info-table">
+            <thead><tr><th>Status</th><th>Code</th><th>Terminal?</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr><td>PROCESSING</td><td>2</td><td>No</td><td>File is being staged &mdash; partitions are being created and validated</td></tr>
+                <tr><td>STAGED</td><td>10</td><td>No</td><td>All partitions staged successfully, awaiting import</td></tr>
+                <tr><td>IMPORTED</td><td>12</td><td>Yes</td><td>Primary success path &mdash; all records imported into DM</td></tr>
+                <tr><td>STAGEFAILED</td><td>8</td><td>Yes</td><td>Staging validation failed &mdash; XML or data issues</td></tr>
+                <tr><td>IMPORT_FAILED</td><td>11</td><td>Yes</td><td>Staged successfully but import processing failed</td></tr>
+                <tr><td>DELETING</td><td>13</td><td>Yes</td><td>DM cleanup &mdash; file data being purged</td></tr>
+                <tr><td>DELETED</td><td>14</td><td>Yes</td><td>DM cleanup complete</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Partition-Based Progress</h3>
+
+        <p>During the PROCESSING phase, DM splits the file into numbered partitions and processes each independently. The collector tracks progress by counting partitions with completed processing (status 3 with a non-null <code>bdl_prcssd_cnt</code>) against the total partition count. This provides a progress indicator similar to NB's merge progress or PMT's journal posting progress.</p>
+
+        <p>DM also captures summary counts in <code>file_rgstry_cstm_dtl</code> after processing: staging success/failure counts and import processed/success/failure counts. The collector reads these into the tracking table for historical analysis.</p>
+
+        <h3>Orphan Detection</h3>
+
+        <p>NB batches can be hard-deleted from DM outside the normal lifecycle (e.g., manual cleanup of failed rollover batches). When this happens, the batch row disappears from <code>new_bsnss_btch</code> and the collector can no longer query its status. The NB collector detects these orphans by checking all incomplete batch IDs against DM each cycle and marking any missing batches as <code>HARD_DELETED</code>.</p>
+
+        <div class="tech-tip">
+            <strong>Log-based vs. row-based status.</strong> NB and PMT batch status lives on the batch row itself (<code>new_bsnss_btch.new_bsnss_btch_stts_cd</code>, <code>cnsmr_pymnt_btch.cnsmr_pymnt_btch_stts_cd</code>). BDL status lives in <code>bdl_log</code> entries. This means the active batches live query for BDL must find the most recent file-level log entry to determine current status, whereas NB and PMT simply read the status column. The terminal status exclusion happens after ranking to ensure the true latest status is found.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
     <!-- SECTION: Stall Detection -->
     <!-- ============================================ -->
     <div class="section" id="stall-detection">
@@ -200,6 +306,12 @@
         <h3>PMT: Stall Detection (Planned)</h3>
 
         <p>Payment batch stall detection is deferred to a future phase. Currently, the PMT collector only alerts on terminal failure states. Log-based stall detection using <code>cnsmr_pymnt_btch_log</code> activity is architecturally supported &mdash; the <code>stall_poll_count</code> and <code>last_log_id</code> columns exist in PMT_BatchTracking and are updated each cycle &mdash; but the alert evaluation logic hasn't been implemented yet.</p>
+
+        <h3>BDL: Partition-Based Stall Detection</h3>
+
+        <p>BDL stall detection follows the same principle as NB but monitors partition-level activity in <code>bdl_log</code> instead of merge log entries. Each polling cycle, the collector reads the maximum <code>bdl_log_id</code> for partition-level entries. If unchanged from the previous poll, <code>stall_poll_count</code> increments. New partition activity resets the counter and clears <code>alert_count</code> for re-alerting on subsequent stall episodes.</p>
+
+        <p>The stall threshold (<code>bdl_stall_poll_threshold</code>, default 12) triggers an alert when partition processing has shown no activity for approximately 60 minutes. This catches files that start processing but freeze mid-partition without reaching a terminal file-level status.</p>
     </div>
 
     <!-- ============================================ -->
@@ -247,8 +359,23 @@
             </tbody>
         </table>
 
+        <h3>BDL: Three Alert Conditions</h3>
+
         <div class="tech-tip">
             <strong>IMPORTFAILED insert-path timing.</strong> There's a known one-cycle delay for batches that are already in IMPORTFAILED when first discovered by the collector. The insert-path terminal detection doesn't include IMPORTFAILED (status 11), so these batches are inserted as incomplete and detected as terminal on the next polling cycle. The update path handles all terminal states correctly. This means a ~5 minute delay for this specific edge case.
+        </div>
+
+        <table class="info-table">
+            <thead><tr><th>Condition</th><th>Severity</th><th>Jira Cascading Field</th><th>Dedup</th></tr></thead>
+            <tbody>
+                <tr><td>STAGEFAILED</td><td>CRITICAL</td><td>File Processing → BDL Import Failure</td><td>alert_count (one per file)</td></tr>
+                <tr><td>IMPORT_FAILED</td><td>CRITICAL</td><td>File Processing → BDL Import Failure</td><td>alert_count (one per file)</td></tr>
+                <tr><td>Stall (partition inactive)</td><td>WARNING</td><td>File Processing → BDL Import Failure</td><td>batch_id + last_log_id (per-episode, re-alertable)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="tech-tip">
+            <strong>NB alerting exclusion.</strong> Batches where <code>is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0</code> are excluded from all NB alert evaluations. These are manually-managed batches (such as Matt's Rollover Link Monitor process) that are intentionally handled outside the normal lifecycle and should not generate automated alerts.
         </div>
     </div>
 
@@ -295,11 +422,12 @@
         <table class="info-table">
             <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
             <tbody>
-                <tr><td><code>Collect-NBBatchStatus.ps1</code></td><td><code>NB_BatchTracking</code></td><td>Creates, updates, and completes tracking rows</td></tr>
+                <tr><td><code>Collect-NBBatchStatus.ps1</code></td><td><code>NB_BatchTracking</code></td><td>Creates, updates, completes, and detects orphaned tracking rows</td></tr>
                 <tr><td><code>Collect-PMTBatchStatus.ps1</code></td><td><code>PMT_BatchTracking</code></td><td>Creates, updates, and completes tracking rows</td></tr>
-                <tr><td>Both collectors + summary</td><td><code>Status</code></td><td>Update own health row at execution start/end</td></tr>
-                <tr><td>Both collectors</td><td><code>Teams.AlertQueue</code></td><td>Direct INSERT for alert conditions</td></tr>
-                <tr><td>Both collectors</td><td><code>Jira.TicketQueue</code></td><td>Via sp_QueueTicket for Jira-routed conditions</td></tr>
+                <tr><td><code>Collect-BDLBatchStatus.ps1</code></td><td><code>BDL_BatchTracking</code></td><td>Creates, updates, and completes tracking rows</td></tr>
+                <tr><td>All three collectors + summary</td><td><code>Status</code></td><td>Update own health row at execution start/end</td></tr>
+                <tr><td>All three collectors</td><td><code>Teams.AlertQueue</code></td><td>Direct INSERT for alert conditions</td></tr>
+                <tr><td>All three collectors</td><td><code>Jira.TicketQueue</code></td><td>Via sp_QueueTicket for Jira-routed conditions</td></tr>
                 <tr><td><code>Send-OpenBatchSummary.ps1</code></td><td><code>Teams.AlertQueue</code></td><td>Direct INSERT with pre-built card_json</td></tr>
             </tbody>
         </table>
@@ -309,7 +437,7 @@
         <table class="info-table">
             <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
             <tbody>
-                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules all three scripts (5-min cycle for collectors, daily for summary)</td></tr>
+                <tr><td><code>Orchestrator.ProcessRegistry</code></td><td>Orchestrator</td><td>Schedules all four scripts (5-min cycle for collectors, daily for summary)</td></tr>
                 <tr><td><code>dbo.GlobalConfig</code></td><td>Shared Infrastructure</td><td>AG config, alert thresholds, routing settings, feature toggles</td></tr>
                 <tr><td>Debt Manager (crs5_oltp)</td><td>External</td><td>Source system &mdash; read-only via AG secondary replica</td></tr>
                 <tr><td><code>Teams.RequestLog</code> / <code>Jira.RequestLog</code></td><td>Integration</td><td>Deduplication checks before alert queueing</td></tr>
@@ -325,12 +453,16 @@
                 <tr><td><code>Ref_new_bsnss_btch_stts_cd</code></td><td>NB collector</td><td>Batch status code reference</td></tr>
                 <tr><td><code>ref_cnsmr_mrg_lnk_stts_cd</code></td><td>NB collector</td><td>Merge status code reference</td></tr>
                 <tr><td><code>new_bsnss_log</code></td><td>NB collector</td><td>Merge log activity for stall detection</td></tr>
-                <tr><td><code>File_Registry</code></td><td>NB collector</td><td>Source filename for batch</td></tr>
                 <tr><td><code>cnsmr_pymnt_btch</code></td><td>PMT collector, Summary</td><td>Payment batch header data</td></tr>
                 <tr><td><code>ref_pymnt_btch_stts_cd</code></td><td>PMT collector</td><td>Payment status code reference</td></tr>
                 <tr><td><code>ref_pymnt_btch_typ_cd</code></td><td>PMT collector</td><td>Payment batch type reference</td></tr>
                 <tr><td><code>cnsmr_pymnt_btch_log</code></td><td>PMT collector</td><td>Payment log activity for stall detection</td></tr>
                 <tr><td><code>cnsmr_pymnt_jrnl</code></td><td>PMT collector</td><td>Journal-level posting progress</td></tr>
+                <tr><td><code>bdl_log</code></td><td>BDL collector, Active Batches</td><td>File-level status and partition-level processing progress</td></tr>
+                <tr><td><code>ref_entty_async_stts_cd</code></td><td>BDL collector, Active Batches</td><td>BDL status code reference</td></tr>
+                <tr><td><code>File_Registry</code></td><td>NB collector, BDL collector, Active Batches</td><td>Source filename and file metadata</td></tr>
+                <tr><td><code>file_rgstry_dtl</code></td><td>BDL collector, Active Batches</td><td>File record counts and batch identifier</td></tr>
+                <tr><td><code>file_rgstry_cstm_dtl</code></td><td>BDL collector</td><td>DM summary counts (staging success/failure, import success/failure)</td></tr>
             </tbody>
         </table>
     </div>
