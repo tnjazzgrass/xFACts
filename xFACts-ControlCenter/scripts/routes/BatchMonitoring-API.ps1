@@ -8,7 +8,7 @@
 #
 # Endpoints:
 #   GET /api/batch-monitoring/process-status    - Collector health from BatchOps.Status
-#   GET /api/batch-monitoring/active-batches    - Currently in-flight NB + PMT batches
+#   GET /api/batch-monitoring/active-batches    - Currently in-flight NB + PMT + BDL batches
 #   GET /api/batch-monitoring/daily-summary     - Today's batch counts and status breakdown
 #   GET /api/batch-monitoring/history           - Year/month rollup for tree navigation
 #   GET /api/batch-monitoring/history-month     - Day-level detail for a given month
@@ -136,11 +136,73 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
             ORDER BY b.cnsmr_pymnt_btch_crt_dttm DESC
 "@
         
+        # Active BDL files - direct from DM source tables
+        # BDL lifecycle: PROCESSING (2) -> STAGED (10) -> IMPORTED (12)
+        # BDL status lives in bdl_log (no batch table with status column like NB/PMT).
+        # CurrentStatus CTE finds the true latest file-level status from all log entries,
+        # then the outer WHERE excludes files whose latest status is terminal.
+        # Terminal: IMPORTED (12), DELETING (13), DELETED (14)
+        # Keeps: PROCESSING (2), STAGED (10), STAGEFAILED (8), IMPORT_FAILED (11)
+        # Uses file-level log entries (sub_entty_nm_txt IS NULL) for status,
+        # partition-level entries (sub_entty_nm_txt IS NOT NULL) for progress
+        $bdlBatches = Invoke-CRS5ReadQuery -Query @"
+            ;WITH CurrentStatus AS (
+                SELECT
+                    bl.file_registry_id,
+                    bl.bdl_prcss_stss_cd,
+                    s.entty_async_stts_val_txt AS status_text,
+                    bl.crtd_dttm AS status_dttm,
+                    ROW_NUMBER() OVER (PARTITION BY bl.file_registry_id ORDER BY bl.crtd_dttm DESC) AS rn
+                FROM dbo.bdl_log bl
+                INNER JOIN dbo.ref_entty_async_stts_cd s ON bl.bdl_prcss_stss_cd = s.entty_async_stts_cd
+                WHERE bl.sub_entty_nm_txt IS NULL
+                  AND bl.crtd_dttm >= DATEADD(DAY, -3, GETDATE())
+            ),
+            EntityType AS (
+                SELECT file_registry_id, sub_entty_nm_txt,
+                    ROW_NUMBER() OVER (PARTITION BY file_registry_id ORDER BY bdl_log_id) AS rn
+                FROM dbo.bdl_log
+                WHERE sub_entty_nm_txt IS NOT NULL
+                  AND crtd_dttm >= DATEADD(DAY, -3, GETDATE())
+            ),
+            PartitionProgress AS (
+                SELECT bl.file_registry_id,
+                    COUNT(DISTINCT bl.bdl_prttn_nmbr) AS partition_count,
+                    SUM(CASE WHEN bl.bdl_prcss_stss_cd IN (3, 7) AND bl.bdl_prcssd_cnt IS NOT NULL THEN 1 ELSE 0 END) AS partitions_completed
+                FROM dbo.bdl_log bl
+                WHERE bl.sub_entty_nm_txt IS NOT NULL
+                  AND bl.crtd_dttm >= DATEADD(DAY, -3, GETDATE())
+                GROUP BY bl.file_registry_id
+            )
+            SELECT
+                'BDL' AS batch_type,
+                cs.file_registry_id AS batch_id,
+                fr.file_name_full_txt AS batch_name,
+                cs.status_text AS batch_status,
+                cs.bdl_prcss_stss_cd AS file_status_code,
+                fr.file_crt_dttm AS batch_created_dttm,
+                DATEDIFF(MINUTE, fr.file_crt_dttm, GETDATE()) AS age_minutes,
+                frd.file_rgstry_dtl_rec_ttl_cnt AS total_record_count,
+                et.sub_entty_nm_txt AS entity_type,
+                pp.partition_count,
+                pp.partitions_completed
+            FROM CurrentStatus cs
+            INNER JOIN dbo.File_Registry fr ON cs.file_registry_id = fr.File_registry_id
+            LEFT JOIN dbo.file_rgstry_dtl frd ON cs.file_registry_id = frd.file_registry_id
+            LEFT JOIN EntityType et ON cs.file_registry_id = et.file_registry_id AND et.rn = 1
+            LEFT JOIN PartitionProgress pp ON cs.file_registry_id = pp.file_registry_id
+            WHERE cs.rn = 1
+              AND cs.bdl_prcss_stss_cd NOT IN (12, 13, 14)    -- Exclude terminal: IMPORTED, DELETING, DELETED
+            ORDER BY fr.file_crt_dttm DESC
+"@
+        
         Write-PodeJsonResponse -Value @{
             nb = $nbBatches
             pmt = $pmtBatches
+            bdl = $bdlBatches
             nb_count = @($nbBatches).Count
             pmt_count = @($pmtBatches).Count
+            bdl_count = @($bdlBatches).Count
         }
     }
     catch {
@@ -190,9 +252,23 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentic
             WHERE CAST(batch_created_dttm AS DATE) = CAST(GETDATE() AS DATE)
 "@
         
+        # BDL files created today
+        # Success = IMPORTED; Failed = STAGEFAILED or IMPORT_FAILED
+        $bdlToday = Invoke-XFActsQuery -Query @"
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN is_complete = 1 AND completed_status = 'IMPORTED' THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN is_complete = 1 AND completed_status IN ('STAGEFAILED', 'IMPORT_FAILED') THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,
+                SUM(ISNULL(total_record_count, 0)) AS total_records
+            FROM BatchOps.BDL_BatchTracking
+            WHERE CAST(file_created_dttm AS DATE) = CAST(GETDATE() AS DATE)
+"@
+        
         Write-PodeJsonResponse -Value @{
             nb = if ($nbToday.Count -gt 0) { $nbToday[0] } else { @{ total = 0; completed = 0; failed = 0; in_flight = 0; total_accounts = 0 } }
             pmt = if ($pmtToday.Count -gt 0) { $pmtToday[0] } else { @{ total = 0; completed = 0; failed = 0; in_flight = 0; total_payments = 0; reapply_count = 0; other_count = 0 } }
+            bdl = if ($bdlToday.Count -gt 0) { $bdlToday[0] } else { @{ total = 0; completed = 0; failed = 0; in_flight = 0; total_records = 0 } }
         }
     }
     catch {
@@ -202,7 +278,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentic
 
 # ============================================================================
 # History - Year/Month rollup for tree navigation
-# Query parameter: ?type=ALL|NB|PMT (default ALL)
+# Query parameter: ?type=ALL|NB|PMT|BDL (default ALL)
 # ============================================================================
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -260,6 +336,26 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 
             $years += $pmtYears
         }
         
+        # BDL history rollup
+        if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'BDL') {
+            $bdlYears = Invoke-XFActsQuery -Query @"
+                SELECT
+                    'BDL' AS batch_type,
+                    YEAR(file_created_dttm) AS [year],
+                    MONTH(file_created_dttm) AS [month],
+                    COUNT(*) AS total_batches,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status = 'IMPORTED' THEN 1 ELSE 0 END) AS completed,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('STAGEFAILED', 'IMPORT_FAILED') THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,
+                    SUM(ISNULL(total_record_count, 0)) AS total_records,
+                    AVG(CASE WHEN completed_dttm IS NOT NULL THEN DATEDIFF(MINUTE, file_created_dttm, completed_dttm) END) AS avg_total_minutes
+                FROM BatchOps.BDL_BatchTracking
+                GROUP BY YEAR(file_created_dttm), MONTH(file_created_dttm)
+                ORDER BY [year] DESC, [month] DESC
+"@
+            $years += $bdlYears
+        }
+        
         Write-PodeJsonResponse -Value @{ data = $years }
     }
     catch {
@@ -269,7 +365,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 
 
 # ============================================================================
 # History Month Detail - Day-level rows for a given year/month
-# Query parameters: ?year=YYYY&month=MM&type=ALL|NB|PMT
+# Query parameters: ?year=YYYY&month=MM&type=ALL|NB|PMT|BDL
 # ============================================================================
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -335,6 +431,29 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentic
             $days += $pmtDays
         }
         
+        if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'BDL') {
+            $bdlDays = Invoke-XFActsQuery -Query @"
+                SELECT
+                    'BDL' AS batch_type,
+                    CAST(file_created_dttm AS DATE) AS batch_date,
+                    COUNT(*) AS total_batches,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status = 'IMPORTED' THEN 1 ELSE 0 END) AS completed,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('STAGEFAILED', 'IMPORT_FAILED') THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,
+                    SUM(ISNULL(total_record_count, 0)) AS total_records,
+                    AVG(DATEDIFF(MINUTE, file_created_dttm, staged_dttm)) AS avg_upload_to_release_min,
+                    AVG(DATEDIFF(MINUTE, staged_dttm, imported_dttm)) AS avg_release_to_processed_min,
+                    NULL AS avg_merge_duration_min,
+                    AVG(CASE WHEN completed_dttm IS NOT NULL THEN DATEDIFF(MINUTE, file_created_dttm, completed_dttm) END) AS avg_total_min
+                FROM BatchOps.BDL_BatchTracking
+                WHERE YEAR(file_created_dttm) = @year
+                  AND MONTH(file_created_dttm) = @month
+                GROUP BY CAST(file_created_dttm AS DATE)
+                ORDER BY batch_date DESC
+"@ -Parameters @{ year = $year; month = $month }
+            $days += $bdlDays
+        }
+        
         Write-PodeJsonResponse -Value @{ data = $days }
     }
     catch {
@@ -344,7 +463,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentic
 
 # ============================================================================
 # History Day Detail - Individual batches for a given day
-# Query parameters: ?date=YYYY-MM-DD&type=ALL|NB|PMT
+# Query parameters: ?date=YYYY-MM-DD&type=ALL|NB|PMT|BDL
 # ============================================================================
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-day' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -420,6 +539,43 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-day' -Authenticat
                 ORDER BY batch_created_dttm DESC
 "@ -Parameters @{ date = $date }
             $batches += $pmtBatches
+        }
+        
+        if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'BDL') {
+            $bdlBatches = Invoke-XFActsQuery -Query @"
+                SELECT
+                    'BDL' AS batch_type,
+                    file_registry_id AS batch_id,
+                    filename AS batch_name,
+                    entity_type,
+                    file_status AS batch_status,
+                    file_status_code,
+                    is_complete,
+                    completed_status,
+                    file_created_dttm AS batch_created_dttm,
+                    processing_started_dttm,
+                    staged_dttm,
+                    imported_dttm,
+                    completed_dttm,
+                    DATEDIFF(MINUTE, file_created_dttm, staged_dttm) AS created_to_staged_min,
+                    DATEDIFF(MINUTE, staged_dttm, imported_dttm) AS staged_to_imported_min,
+                    DATEDIFF(MINUTE, file_created_dttm, completed_dttm) AS total_min,
+                    total_record_count,
+                    staging_success_count,
+                    staging_failed_count,
+                    import_processed_count,
+                    import_success_count,
+                    import_failed_count,
+                    partition_count,
+                    partitions_completed,
+                    error_message,
+                    alert_count,
+                    stall_poll_count
+                FROM BatchOps.BDL_BatchTracking
+                WHERE CAST(file_created_dttm AS DATE) = @date
+                ORDER BY file_created_dttm DESC
+"@ -Parameters @{ date = $date }
+            $batches += $bdlBatches
         }
         
         Write-PodeJsonResponse -Value @{ data = $batches }
