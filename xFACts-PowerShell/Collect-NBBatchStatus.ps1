@@ -785,6 +785,102 @@ function Step-UpdateIncompleteBatches {
     }
 }
 
+function Step-DetectOrphanedBatches {
+    <#
+    .SYNOPSIS
+        Detects incomplete batches in the tracking table whose source rows have been
+        hard-deleted from DM (dbo.new_bsnss_btch). Marks them as HARD_DELETED.
+        This handles cases where batches are removed outside the normal DM lifecycle
+        (e.g., Matt's manual cleanup of failed Rollover batches).
+    #>
+    param([bool]$PreviewOnly = $true)
+
+    Write-Log "Step: Detect Orphaned Batches" "STEP"
+    $orphanCount = 0
+
+    try {
+        # Get all incomplete batch IDs from tracking table
+        $incompleteQuery = @"
+            SELECT batch_id, batch_name
+            FROM BatchOps.NB_BatchTracking
+            WHERE is_complete = 0
+"@
+        $incompleteBatches = Get-SqlData -Query $incompleteQuery
+
+        if (-not $incompleteBatches) {
+            Write-Log "  No incomplete batches to check" "INFO"
+            return @{ Orphaned = 0 }
+        }
+
+        $batchCount = @($incompleteBatches).Count
+        Write-Log "  Checking $batchCount incomplete batch(es) against DM" "INFO"
+
+        # Build comma-separated ID list for bulk existence check
+        $batchIds = @($incompleteBatches | ForEach-Object { $_.batch_id }) -join ','
+
+        # Query DM for which of these batch IDs still exist
+        $existsQuery = @"
+            SELECT new_bsnss_btch_id
+            FROM dbo.new_bsnss_btch
+            WHERE new_bsnss_btch_id IN ($batchIds)
+"@
+        $existingBatches = Get-SourceData -Query $existsQuery
+
+        $existingIds = @()
+        if ($existingBatches) {
+            $existingIds = @($existingBatches | ForEach-Object { $_.new_bsnss_btch_id })
+        }
+
+        # Find orphans — tracked but no longer in DM
+        $orphans = @($incompleteBatches | Where-Object { $existingIds -notcontains $_.batch_id })
+
+        if ($orphans.Count -eq 0) {
+            Write-Log "  No orphaned batches detected" "INFO"
+            return @{ Orphaned = 0 }
+        }
+
+        Write-Log "  Found $($orphans.Count) orphaned batch(es)" "WARN"
+
+        foreach ($orphan in $orphans) {
+            $batchId = $orphan.batch_id
+            $batchName = $orphan.batch_name
+
+            if ($PreviewOnly) {
+                Write-Log "  [Preview] Would mark batch $batchId ($batchName) as HARD_DELETED" "INFO"
+                $orphanCount++
+            }
+            else {
+                $updateQuery = @"
+                    UPDATE BatchOps.NB_BatchTracking
+                    SET is_complete      = 1,
+                        completed_dttm   = GETDATE(),
+                        completed_status = 'HARD_DELETED',
+                        stall_poll_count = 0,
+                        alert_count      = 0,
+                        last_polled_dttm = GETDATE()
+                    WHERE batch_id = $batchId
+"@
+                $result = Invoke-SqlNonQuery -Query $updateQuery
+                if ($result) {
+                    $orphanCount++
+                    Write-Log "  Batch $batchId ($batchName): marked HARD_DELETED" "SUCCESS"
+                }
+                else {
+                    Write-Log "  Batch $batchId ($batchName): update failed" "ERROR"
+                }
+            }
+        }
+
+        if ($PreviewOnly) { $orphanCount = $orphans.Count }
+        Write-Log "  Orphaned batches resolved: $orphanCount" "INFO"
+        return @{ Orphaned = $orphanCount }
+    }
+    catch {
+        Write-Log "  Error in Detect Orphaned Batches: $($_.Exception.Message)" "ERROR"
+        return @{ Orphaned = $orphanCount; Error = $_.Exception.Message }
+    }
+}
+
 function Step-EvaluateAlerts {
     <#
     .SYNOPSIS
@@ -836,6 +932,7 @@ function Step-EvaluateAlerts {
             WHERE is_complete = 0
               AND batch_status_code IN (3, 13)
               AND alert_count = 0
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $uploadFailures = Get-SqlData -Query $uploadFailedQuery
@@ -1029,6 +1126,7 @@ Action: Delete the failed batch in Debt Manager and re-upload.
             WHERE is_complete = 0
               AND batch_status_code = 9
               AND alert_count = 0
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $releaseFailures = Get-SqlData -Query $releaseFailedQuery
@@ -1181,6 +1279,7 @@ Action: Set batch back to Uploaded status and re-release manually.
               AND stall_poll_count >= $stallThreshold
               AND last_log_id IS NOT NULL
               AND alert_count = 0
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $stalledBatches = Get-SqlData -Query $stalledQuery
@@ -1336,6 +1435,7 @@ Action: Check merge queue and batch status in Debt Manager. May need to reset ba
             WHERE is_complete = 0
               AND batch_status_code = 2
               AND DATEDIFF(MINUTE, batch_created_dttm, GETDATE()) >= $uploadStallMinutes
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $uploadStalls = Get-SqlData -Query $uploadStallQuery
@@ -1488,6 +1588,7 @@ Action: Check upload process in Debt Manager. Upload may need to be cancelled an
               AND release_completed_dttm IS NOT NULL
               AND is_auto_merge = 1
               AND DATEDIFF(MINUTE, release_completed_dttm, GETDATE()) >= $queueWaitMinutes
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $queueWaits = Get-SqlData -Query $queueWaitQuery
@@ -1643,6 +1744,7 @@ No merge log activity since release. Merge queue may be backed up or batch may n
               AND release_completed_dttm IS NOT NULL
               AND is_auto_merge = 0
               AND DATEDIFF(MINUTE, release_completed_dttm, GETDATE()) >= $queueWaitNoMergeMinutes
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $queueWaitNoMerge = Get-SqlData -Query $queueWaitNoMergeQuery
@@ -1797,6 +1899,7 @@ This batch has auto-merge disabled and has been in RELEASED status without merge
               AND batch_status_code IN (4, 6)
               AND is_auto_release = 0
               AND DATEDIFF(MINUTE, batch_created_dttm, GETDATE()) >= $unreleasedMinutes
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $unreleasedBatches = Get-SqlData -Query $unreleasedQuery
@@ -1957,6 +2060,7 @@ Action: Release this batch manually in Debt Manager. Client is not configured fo
               AND merge_status_code >= 2
               AND stall_poll_count >= $releaseMergeSkipThreshold
               AND alert_count = 0
+              AND NOT (is_auto_release = 0 AND is_manual_upload = 0 AND is_auto_merge = 0)
 "@
 
         $releaseMergeSkips = Get-SqlData -Query $releaseMergeSkipQuery
@@ -2214,7 +2318,10 @@ $stepResults.Collect = Step-CollectNewBatches -PreviewOnly $previewOnly
 # Step 2: Update all incomplete batches
 $stepResults.Update = Step-UpdateIncompleteBatches -PreviewOnly $previewOnly
 
-# Step 3: Evaluate alert conditions
+# Step 3: Detect orphaned batches (hard-deleted from DM)
+$stepResults.Orphans = Step-DetectOrphanedBatches -PreviewOnly $previewOnly
+
+# Step 4: Evaluate alert conditions
 $stepResults.Alerts = Step-EvaluateAlerts -PreviewOnly $previewOnly
 
 # ============================================================================
@@ -2226,7 +2333,7 @@ $scriptDuration = $scriptEnd - $scriptStart
 $totalMs = [int]$scriptDuration.TotalMilliseconds
 
 $finalStatus = "SUCCESS"
-if ($stepResults.Collect.Error -or $stepResults.Update.Error -or $stepResults.Alerts.Error) {
+if ($stepResults.Collect.Error -or $stepResults.Update.Error -or $stepResults.Orphans.Error -or $stepResults.Alerts.Error) {
     $finalStatus = "FAILED"
 }
 
@@ -2242,6 +2349,7 @@ Write-Host "  Results:"
 Write-Host "    New Batches:       $($stepResults.Collect.NewBatches)"
 Write-Host "    Batches Updated:   $($stepResults.Update.Updated)"
 Write-Host "    Batches Completed: $($stepResults.Update.Completed)"
+Write-Host "    Orphans Resolved:  $($stepResults.Orphans.Orphaned)"
 Write-Host "    Alerts Detected:   $($stepResults.Alerts.Detected)"
 Write-Host "    Alerts Fired:      $($stepResults.Alerts.Fired)"
 Write-Host ""
@@ -2264,7 +2372,7 @@ Write-Host ""
 
 # Orchestrator callback
 if ($TaskId -gt 0) {
-    $outputSummary = "New:$($stepResults.Collect.NewBatches) Updated:$($stepResults.Update.Updated) Completed:$($stepResults.Update.Completed) Alerts:$($stepResults.Alerts.Detected)"
+    $outputSummary = "New:$($stepResults.Collect.NewBatches) Updated:$($stepResults.Update.Updated) Completed:$($stepResults.Update.Completed) Orphans:$($stepResults.Orphans.Orphaned) Alerts:$($stepResults.Alerts.Detected)"
 
     Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
         -TaskId $TaskId -ProcessId $ProcessId `
