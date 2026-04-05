@@ -23,8 +23,6 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 |------|------|----------|-------|
 | Enhance | Platform-wide data retention policy | Medium | No retention is currently in place for any module. Design and implement a retention strategy covering all historical data tables: Activity DMV/XE snapshots, backup/disk/replication history, API_RequestLog, Teams/Jira RequestLog, Orchestrator TaskLog/CycleLog, index execution history, batch tracking history. Define per-table retention periods based on operational value. Implement via orchestrator-scheduled cleanup process. |
 | Enhance | Config source tracking for GlobalConfig-referencing scripts | Low | Enhance Initialize-Configuration in all scripts to log whether each setting was loaded from GlobalConfig or fell back to script default. PMT collector is the reference implementation. Enables quick diagnosis when alerts fire unexpectedly due to config connection issues. |
-| Enhance | PowerShell 7 migration | Low | Investigate feasibility and impact. Here as a reminder — not currently on the roadmap. |
-| Enhance | Object_Metadata ordinal sync utility | Low | Create standalone proc to align Object_Metadata sort_order with actual sys.columns column_id. Supports @PreviewOnly = 1. Needed after column additions, removals, or moves between tables. Lightweight, run-as-needed. |
 | Enhance | Extended property cleanup | Low | Remove legacy MS_Description extended properties from all objects. Object_Metadata is the sole documentation source. Properties are inert — cleanup is cosmetic but removes confusion about which system is authoritative. |
 | Enhance | Index_ table constraint and index rename | Low | Four ServerOps tables renamed to Index_ prefix but constraints/indexes still carry old names. Rename to match convention. Cosmetic only. |
 
@@ -84,9 +82,7 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Enhance | Shared Send-TeamsAlert | Migrate NB and PMT scripts to use shared Send-TeamsAlert in xFACts-OrchestratorFunctions |
-| Bug | Active batch status accuracy | Medium | Active Batches window shows batches in active status that were actually failed and deleted. Suspected gap in collector logic — edge cases where batches reach terminal state between polling cycles. |
-| Build | Phase 4: BDL collector | Medium | Implement Collect-BDLBatchStatus.ps1 and BDL_BatchTracking table. Requires Phase 0 investigation into BDL grouping key. |
+| Enhance | Shared Send-TeamsAlert | Migrate NB, PMT and BDL scripts to use shared Send-TeamsAlert in xFACts-OrchestratorFunctions. Currently they are direct inserting? |
 | Build | Send-OpenBatchSummary BDL/Notice sections | Medium | Implement remaining check functions (Get-OpenBDLImports, Get-ActiveNoticeProcessing). Requires Phase 0 investigation. |
 | Enhance | DM concurrency cap investigation | High | Investigate all DM processing thread caps via env_prfl_cnfg_ovrrd and config_item tables. Findings impact stall detection logic for both PMT and NB collectors. |
 | Enhance | PMT Phase 3b-2: Stall and time-based alerting | Medium | INPROCESS stall detection, stuck ACTIVE, stuck DELETING, ACTIVEWITHSUSPENSE. Requires DM concurrency cap investigation. |
@@ -94,7 +90,6 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 | Enhance | PMT error extraction for IMPORTFAILED | Medium | Confirm whether cnsmr_pymnt_btch_log contains actionable error messages for import failures. Currently using placeholder text in Jira tickets. |
 | Enhance | PMT ACTIVEWITHSUSPENSE batch resolution | Medium | 12 stuck batches from 2023-2026 requiring business resolution. Review with Matt. |
 | Enhance | Alert lookback period evaluation | Medium | Evaluate applying lookback period to alert evaluation so old batches are excluded from checks. Confirm with Matt whether any lifecycle could exceed the lookback window. |
-| Enhance | Slideout filter redesign | Medium | Current filter bar mixes status and batch type dimensions. Needs dual-dimension filtering. Defer until BDL integration is in place. |
 | Enhance | PMT insert-path IMPORTFAILED terminal detection | Low | One-cycle delay before terminal detection. No operational impact — zero IMPORTFAILED batches exist historically. |
 | Enhance | Investigate 270 historical incomplete NB batches | Low | Batches marked INVESTIGATE during initial deployment. Review and resolve with appropriate completed_status. 2025 batches are highest priority. |
 
@@ -104,7 +99,7 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Enhance | Alert architecture alignment | High | Migrate from sp_QueueAlert to direct AlertQueue INSERT. Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters. Populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
+| Enhance | Alert architecture alignment | High | Migrate from sp_QueueAlert to shared Send-TeamsAlert. Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters. Populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
 
 ---
 
@@ -158,12 +153,6 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 ## New Modules
 
 Modules not yet started. No schema, no tables, no CC pages.
-
-### DM Administration
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | DMAdmin schema and foundation tables | High | Administrative page for all DM functionality from the current Access database xFACts standalone. |
 
 ### Sterling
 
