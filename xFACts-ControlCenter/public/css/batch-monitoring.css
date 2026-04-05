@@ -295,7 +295,7 @@ h1 {
 
 .summary-cards {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 10px;
 }
 
@@ -352,6 +352,10 @@ h1 {
     border-color: rgba(197, 134, 192, 0.4);
 }
 
+.summary-card.bdl-card {
+    border-color: rgba(206, 145, 120, 0.4);
+}
+
 /* ============================================
    BATCH TYPE INDICATORS
    ============================================ */
@@ -377,13 +381,27 @@ h1 {
     border: 1px solid rgba(197, 134, 192, 0.3);
 }
 
+.batch-type-tag.bdl {
+    background: rgba(206, 145, 120, 0.2);
+    color: #ce9178;
+    border: 1px solid rgba(206, 145, 120, 0.3);
+}
+
+/* BDL entity type label in active batches name column */
+.bdl-entity-label {
+    font-size: 10px;
+    color: #888;
+    font-weight: 400;
+    margin-left: 4px;
+}
+
 /* ============================================
    PROCESS STATUS CARDS
    ============================================ */
 
 .status-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
 }
 
