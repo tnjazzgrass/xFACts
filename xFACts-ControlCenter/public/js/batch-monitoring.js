@@ -12,6 +12,7 @@
 var ENGINE_PROCESSES = {
     'Collect-NBBatchStatus':  { slug: 'nb'},
     'Collect-PMTBatchStatus': { slug: 'pmt'},
+    'Collect-BDLBatchStatus': { slug: 'bdl'},
     'Send-OpenBatchSummary':  { slug: 'summary'}
 };
 
@@ -98,6 +99,21 @@ function pmtStatusBadgeClass(batchCode) {
     if (batchCode === 2 || batchCode === 8 || batchCode === 9 || batchCode === 12 || batchCode === 15 || batchCode === 18 || batchCode === 21 || batchCode === 25) return 'waiting';
     // Wrap-up and delete
     if (batchCode === 16 || batchCode === 17 || batchCode === 23 || batchCode === 24 || batchCode === 28) return 'info';
+    return 'info';
+}
+
+var bdlStatusMap = {
+    'PROCESSING': 'Processing', 'STAGED': 'Staged', 'IMPORTED': 'Imported',
+    'STAGEFAILED': 'Stage Failed', 'IMPORT_FAILED': 'Import Failed',
+    'DELETING': 'Deleting', 'DELETED': 'Deleted'
+};
+
+function bdlStatusBadgeClass(statusCode) {
+    // BDL status codes: PROCESSING (2), STAGED (10), STAGEFAILED (8), IMPORT_FAILED (11), IMPORTED (12)
+    if (statusCode === 8 || statusCode === 11) return 'failed';
+    if (statusCode === 2) return 'active';
+    if (statusCode === 10) return 'waiting';
+    if (statusCode === 12) return 'processing';
     return 'info';
 }
 
@@ -387,9 +403,11 @@ function renderDailySummary(data) {
     var container = document.getElementById('daily-summary');
     var nb = data.nb || {};
     var pmt = data.pmt || {};
+    var bdl = data.bdl || {};
     
     var nbTotal = safeInt(nb.total);
     var pmtTotal = safeInt(pmt.total);
+    var bdlTotal = safeInt(bdl.total);
     
     var html = '';
     
@@ -432,6 +450,21 @@ function renderDailySummary(data) {
     }
     html += '</div></div>';
     
+    // BDL Card
+    html += '<div class="summary-card bdl-card">';
+    html += '<div class="card-label">BDL Import</div>';
+    html += '<div class="card-value">' + bdlTotal + '</div>';
+    html += '<div class="card-detail">';
+    if (bdlTotal > 0) {
+        html += '<span class="success">' + safeInt(bdl.completed) + ' complete</span>';
+        if (safeInt(bdl.failed) > 0) html += '<span class="failed">' + safeInt(bdl.failed) + ' failed</span>';
+        if (safeInt(bdl.in_flight) > 0) html += '<span class="active">' + safeInt(bdl.in_flight) + ' active</span>';
+        if (safeInt(bdl.total_records) > 0) html += '<span>' + safeInt(bdl.total_records).toLocaleString() + ' records</span>';
+    } else {
+        html += '<span>No files today</span>';
+    }
+    html += '</div></div>';
+    
     container.innerHTML = html;
 }
 
@@ -444,14 +477,17 @@ function renderActiveBatches(data) {
     
     var nbList = data.nb || [];
     var pmtList = data.pmt || [];
+    var bdlList = data.bdl || [];
     
     // Apply client-side filter
     var showNB = (currentActiveFilter === 'ALL' || currentActiveFilter === 'NB');
     var showPMT = (currentActiveFilter === 'ALL' || currentActiveFilter === 'PMT');
+    var showBDL = (currentActiveFilter === 'ALL' || currentActiveFilter === 'BDL');
     var filteredNB = showNB ? nbList : [];
     var filteredPMT = showPMT ? pmtList : [];
+    var filteredBDL = showBDL ? bdlList : [];
     
-    if (filteredNB.length === 0 && filteredPMT.length === 0) {
+    if (filteredNB.length === 0 && filteredPMT.length === 0 && filteredBDL.length === 0) {
         var msg = currentActiveFilter === 'ALL' ? 'No batches currently in flight' : 'No ' + currentActiveFilter + ' batches currently in flight';
         container.innerHTML = '<div class="no-activity">' + msg + '</div>';
         return;
@@ -587,6 +623,58 @@ function renderActiveBatches(data) {
         html += '<td>' + b.batch_id + '</td>';
         html += '<td class="batch-name-cell">' + escapeHtml(b.batch_name || b.external_name || 'Batch ' + b.batch_id) + '</td>';
         html += '<td class="status-cell"><span class="status-badge ' + pmtStatusBadgeClass(batchCode) + '">' + escapeHtml(statusDisplay) + '</span></td>';
+        html += '<td class="activity-cell">' + activityHtml + '</td>';
+        html += '<td class="count-cell">' + countDisplay + '</td>';
+        html += '<td class="age-cell">' + ageDisplay + '</td>';
+        html += '</tr>';
+    });
+    
+    // BDL files
+    filteredBDL.forEach(function(b) {
+        var statusDisplay = friendlyStatus(b.batch_status, bdlStatusMap);
+        var ageDisplay = formatAge(safeInt(b.age_minutes));
+        var statusCode = safeInt(b.file_status_code);
+        var totalRecords = safeInt(b.total_record_count);
+        var countDisplay = totalRecords > 0 ? totalRecords.toLocaleString() : '-';
+        
+        var activityHtml = '';
+        
+        if (statusCode === 8) {
+            // STAGEFAILED
+            activityHtml = '<span class="activity-label failed">Stage Failed</span>';
+        } else if (statusCode === 11) {
+            // IMPORT_FAILED
+            activityHtml = '<span class="activity-label failed">Import Failed</span>';
+        } else if (statusCode === 2) {
+            // PROCESSING — show partition progress if available
+            var partCount = safeInt(b.partition_count);
+            var partCompleted = safeInt(b.partitions_completed);
+            if (partCount > 0 && partCompleted > 0) {
+                var pct = Math.min(100, Math.round((partCompleted / partCount) * 100));
+                activityHtml = '<div class="progress-bar-container">';
+                activityHtml += '<div class="progress-bar" style="width:' + pct + '%"></div>';
+                activityHtml += '<span class="progress-text">' + partCompleted + '/' + partCount + ' partitions (' + pct + '%)</span>';
+                activityHtml += '</div>';
+            } else {
+                activityHtml = '<span class="activity-label processing">Processing</span>';
+            }
+        } else if (statusCode === 10) {
+            // STAGED — waiting for import
+            activityHtml = '<span class="activity-label waiting">Awaiting Import</span>';
+        } else {
+            activityHtml = '<span class="activity-label info">' + escapeHtml(statusDisplay) + '</span>';
+        }
+        
+        var nameDisplay = b.batch_name || 'File ' + b.batch_id;
+        var entityType = b.entity_type;
+        
+        html += '<tr>';
+        html += '<td><span class="batch-type-tag bdl">BDL</span></td>';
+        html += '<td>' + b.batch_id + '</td>';
+        html += '<td class="batch-name-cell">' + escapeHtml(nameDisplay);
+        if (entityType) html += ' <span class="bdl-entity-label">' + escapeHtml(entityType) + '</span>';
+        html += '</td>';
+        html += '<td class="status-cell"><span class="status-badge ' + bdlStatusBadgeClass(statusCode) + '">' + escapeHtml(statusDisplay) + '</span></td>';
         html += '<td class="activity-cell">' + activityHtml + '</td>';
         html += '<td class="count-cell">' + countDisplay + '</td>';
         html += '<td class="age-cell">' + ageDisplay + '</td>';
@@ -796,6 +884,7 @@ function renderDayDetail(batches) {
 
 function getBatchOutcome(b) {
     var isNB = (b.batch_type === 'NB');
+    var isBDL = (b.batch_type === 'BDL');
     if (!b.is_complete) return 'active';
     var cs = (b.completed_status || '').toUpperCase();
     if (isNB) {
@@ -803,6 +892,8 @@ function getBatchOutcome(b) {
                          'POST_RELEASE_MERGE_CMPLT_WTH_ERS', 'POST_RELEASE_PARTIAL_MERGED',
                          'POST_RELEASE_LINK_COMPLETE'];
         return (nbSuccess.indexOf(cs) >= 0) ? 'success' : 'failed';
+    } else if (isBDL) {
+        return (cs === 'IMPORTED') ? 'success' : 'failed';
     } else {
         return (cs === 'POSTED') ? 'success' : 'failed';
     }
@@ -827,12 +918,13 @@ function renderSlideoutContent() {
     var batches = currentSlideoutBatches;
     var hasNB = batches.some(function(b) { return b.batch_type === 'NB'; });
     var hasPmt = batches.some(function(b) { return b.batch_type === 'PMT'; });
+    var hasBDL = batches.some(function(b) { return b.batch_type === 'BDL'; });
     
     var html = '';
     
-    // ── Tab bar: ALL / NB / PMT ──
+    // ── Tab bar: ALL / NB / PMT / BDL ──
     html += '<div class="slideout-tab-bar">';
-    var tabs = ['ALL', 'NB', 'PMT'];
+    var tabs = ['ALL', 'NB', 'PMT', 'BDL'];
     tabs.forEach(function(t) {
         var activeClass = (currentSlideoutTab === t) ? ' active' : '';
         var label = t === 'ALL' ? 'All' : t;
@@ -877,7 +969,7 @@ function renderSlideoutContent() {
     // ── Apply PMT sub-type filter ──
     if (currentSlideoutPmtFilter !== 'ALL' && (currentSlideoutTab === 'PMT' || currentSlideoutTab === 'ALL')) {
         filtered = filtered.filter(function(b) {
-            if (b.batch_type === 'NB') return true; // NB passes through sub-type filter
+            if (b.batch_type === 'NB' || b.batch_type === 'BDL') return true; // NB and BDL pass through sub-type filter
             if (currentSlideoutPmtFilter === 'OTHER') {
                 var knownTypes = ['IMPORT', 'MANUAL', 'REVERSAL', 'REAPPLY'];
                 return knownTypes.indexOf((b.pmt_batch_type || '').toUpperCase()) === -1;
@@ -919,9 +1011,17 @@ function renderSlideoutContent() {
     // Render compact batch rows
     filtered.forEach(function(b, idx) {
         var isNB = (b.batch_type === 'NB');
-        var typeClass = isNB ? 'nb' : 'pmt';
+        var isBDL = (b.batch_type === 'BDL');
+        var typeClass = isNB ? 'nb' : (isBDL ? 'bdl' : 'pmt');
         var outcome = getBatchOutcome(b);
-        var batchName = isNB ? (b.upload_filename || b.batch_name || '') : (b.batch_name || b.external_name || 'Batch ' + b.batch_id);
+        var batchName = '';
+        if (isNB) {
+            batchName = b.upload_filename || b.batch_name || '';
+        } else if (isBDL) {
+            batchName = b.batch_name || 'File ' + b.batch_id;
+        } else {
+            batchName = b.batch_name || b.external_name || 'Batch ' + b.batch_id;
+        }
         
         // Status display text and class
         var statusText = '';
@@ -967,6 +1067,16 @@ function renderSlideoutContent() {
             html += metricSpan('Balance', b.total_balance_amt ? '$' + safeFloat(b.total_balance_amt).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : '-');
             html += metricSpan('Posted', b.posted_account_count ? safeInt(b.posted_account_count).toLocaleString() : '-');
             html += metricSpan('Duration', durationText);
+        } else if (isBDL) {
+            html += metricSpan('Entity', b.entity_type || '-');
+            html += metricSpan('Records', b.total_record_count ? safeInt(b.total_record_count).toLocaleString() : '-');
+            html += metricSpan('Staged', b.staging_success_count ? safeInt(b.staging_success_count).toLocaleString() : '-');
+            if (safeInt(b.staging_failed_count) > 0) html += metricSpan('Stage Errors', safeInt(b.staging_failed_count).toLocaleString());
+            html += metricSpan('Imported', b.import_success_count ? safeInt(b.import_success_count).toLocaleString() : '-');
+            if (safeInt(b.import_failed_count) > 0) html += metricSpan('Import Errors', safeInt(b.import_failed_count).toLocaleString());
+            html += metricSpan('Partitions', b.partition_count ? (safeInt(b.partitions_completed) + '/' + safeInt(b.partition_count)) : '-');
+            html += metricSpan('Duration', durationText);
+            if (b.error_message) html += metricSpan('Error', b.error_message);
         } else {
             html += metricSpan('Type', b.pmt_batch_type || '-');
             html += metricSpan('Payments', b.active_count ? safeInt(b.active_count).toLocaleString() : '-');
@@ -989,6 +1099,12 @@ function renderSlideoutContent() {
                 html += phaseRow('Upload &#8594; Release', uploadRelease, totalMin, 'upload');
                 html += phaseRow('Queue Wait', releaseMerge, totalMin, 'release');
                 html += phaseRow('Merge', mergeDur, totalMin, 'merge');
+            } else if (isBDL) {
+                var createdToStaged = safeInt(b.created_to_staged_min);
+                var stagedToImported = safeInt(b.staged_to_imported_min);
+                
+                html += phaseRow('Processing &#8594; Staged', createdToStaged, totalMin, 'upload');
+                html += phaseRow('Staged &#8594; Imported', stagedToImported, totalMin, 'process');
             } else {
                 var createRelease = safeInt(b.created_to_release_min);
                 var releaseProcess = safeInt(b.release_to_processed_min);
