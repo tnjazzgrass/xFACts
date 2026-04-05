@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-04 14:08:45
+Generated: 2026-04-04 22:47:29
 
 ## Module Registry
 
@@ -60,9 +60,11 @@ Generated: 2026-04-04 14:08:45
 
 | component_name | object_name | object_category | object_type | object_path | description |
 | --- | --- | --- | --- | --- | --- |
+| BatchOps | BDL_BatchTracking | Database | Table |  | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
 | BatchOps | Status | Database | Table | BatchOps | Batch status code definitions |
+| BatchOps | Collect-BDLBatchStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-BDLBatchStatus.ps1 | Collects BDL batch processing status with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | Collect-NBBatchStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-NBBatchStatus.ps1 | Collects NewBatch processing status |
 | BatchOps | Collect-PMTBatchStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-PMTBatchStatus.ps1 | Collects PMT processing status |
 | BatchOps | Send-OpenBatchSummary.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Send-OpenBatchSummary.ps1 | Evaluates open batches and queues summary alert |
@@ -390,6 +392,12 @@ Generated: 2026-04-04 14:08:45
 
 | module_name | category | setting_name | setting_value | data_type | description |
 | --- | --- | --- | --- | --- | --- |
+| BatchOps | BDL | bdl_alert_import_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file fails import processing |
+| BatchOps | BDL | bdl_alert_stagefailed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file fails staging validation |
+| BatchOps | BDL | bdl_alert_stall_routing | 1 | ALERT_MODE | Alert destination(s) when BDL partition processing stalls |
+| BatchOps | BDL | bdl_alerting_enabled | 0 | BIT | Master on/off switch for all BDL batch alerting |
+| BatchOps | BDL | bdl_lookback_days | 7 | INT | How many days back xFACts checks DM for BDL file collection |
+| BatchOps | BDL | bdl_stall_poll_threshold | 12 | INT | Consecutive idle polls with no new partition activity before stall alert |
 | BatchOps | NB | nb_alert_queue_wait_no_merge_routing | 1 | ALERT_MODE | Alert destination(s) when non-auto-merge batches exceed threshold |
 | BatchOps | NB | nb_alert_queue_wait_routing | 1 | ALERT_MODE | Alert destination(s) when batches wait in merge queue with no activity |
 | BatchOps | NB | nb_alert_release_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a batch release fails |
