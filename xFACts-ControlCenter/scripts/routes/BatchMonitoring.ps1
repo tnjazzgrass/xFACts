@@ -3,7 +3,7 @@
 # Location: E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring.ps1
 # 
 # Renders the Batch Monitoring dashboard page showing batch lifecycle
-# tracking across NB and PMT batch types with live activity, process
+# tracking across NB, PMT, and BDL batch types with live activity, process
 # health, and historical analysis with phase duration breakdowns.
 #
 # CSS: /css/batch-monitoring.css
@@ -80,6 +80,11 @@
                     <div class="engine-bar disabled" id="engine-bar-pmt"></div>
                     <span class="engine-countdown" id="engine-cd-pmt">&nbsp;</span>
                 </div>
+                <div class="engine-card" id="card-engine-bdl">
+                    <span class="engine-label">BDL</span>
+                    <div class="engine-bar disabled" id="engine-bar-bdl"></div>
+                    <span class="engine-countdown" id="engine-cd-bdl">&nbsp;</span>
+                </div>
                 <div class="engine-card" id="card-engine-summary">
                     <span class="engine-label">Summary</span>
                     <div class="engine-bar disabled" id="engine-bar-summary"></div>
@@ -117,6 +122,7 @@
                             <button class="active-filter-btn active" data-filter="ALL">All</button>
                             <button class="active-filter-btn" data-filter="NB">NB</button>
                             <button class="active-filter-btn" data-filter="PMT">PMT</button>
+                            <button class="active-filter-btn" data-filter="BDL">BDL</button>
                         </div>
                         <span class="refresh-badge-live" title="Refreshes on live interval"><span class="badge-dot"></span></span>
                     </div>
@@ -150,6 +156,7 @@
                             <button class="filter-btn active" data-filter="ALL">All</button>
                             <button class="filter-btn" data-filter="NB">NB</button>
                             <button class="filter-btn" data-filter="PMT">PMT</button>
+                            <button class="filter-btn" data-filter="BDL">BDL</button>
                         </div>
                         <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                     </div>
