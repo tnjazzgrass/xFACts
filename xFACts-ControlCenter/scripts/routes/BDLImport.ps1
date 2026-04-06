@@ -287,6 +287,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
     <script>window.isAdmin = __IS_ADMIN__;</script>
     <script>window.userTier = '__USER_TIER__';</script>
     <script src="/js/xlsx.full.min.js"></script>
+    <script src="/js/engine-events.js"></script>
     <script src="/js/bdl-import.js"></script>
 </body>
 </html>
