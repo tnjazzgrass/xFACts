@@ -328,6 +328,15 @@
                                        },
                                        {
                                            "ordinal":  7,
+                                           "name":  "staging_table",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Name of the Staging schema table used for this import. Correlates test-to-production imports — when the same staging table name appears on multiple rows across different environments, it indicates the user tested before promoting to production. A PROD row with a staging_table that has no corresponding TEST/STAGE row indicates a direct-to-production import."
+                                       },
+                                       {
+                                           "ordinal":  8,
                                            "name":  "row_count",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -335,7 +344,7 @@
                                            "description":  "Number of data rows in the uploaded file. NULL until file parsing completes. Excludes header rows."
                                        },
                                        {
-                                           "ordinal":  8,
+                                           "ordinal":  9,
                                            "name":  "validation_errors",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -344,7 +353,7 @@
                                            "description":  "Count of rows that failed validation. 0 indicates a clean validation pass. Populated during the VALIDATING stage."
                                        },
                                        {
-                                           "ordinal":  9,
+                                           "ordinal":  10,
                                            "name":  "column_mapping",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -353,7 +362,7 @@
                                            "description":  "JSON representation of the field mapping used for this import. Captures which source file columns were mapped to which BDL element names. Provides a complete audit trail independent of whether a template was used."
                                        },
                                        {
-                                           "ordinal":  10,
+                                           "ordinal":  11,
                                            "name":  "value_changes",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -362,7 +371,7 @@
                                            "description":  "JSON array of value replacements applied by the user during the validation step. Each entry captures the field name, original value, replacement value, affected row count, who made the change, and when. NULL when no replacements were applied. Provides full audit trail from source file content to final import data."
                                        },
                                        {
-                                           "ordinal":  11,
+                                           "ordinal":  12,
                                            "name":  "template_id",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -370,7 +379,7 @@
                                            "description":  "FK to future template table. Identifies the saved column mapping template used for this import. NULL indicates an ad-hoc mapping was configured manually."
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  13,
                                            "name":  "file_registry_id",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -378,7 +387,7 @@
                                            "description":  "File registry ID returned by the DM REST API after successful file registration (POST /fileregistry). NULL until the REGISTERED stage. Used as the path parameter for the import trigger call."
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  14,
                                            "name":  "parent_log_id",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -386,7 +395,7 @@
                                            "description":  "Self-referential FK linking a companion AR log row back to its parent primary import row. NULL for primary imports. Populated when the execute endpoint generates a second BDL file for Jira ticket AR log entries. Both rows have independent file_registry_id values from DM since they are separate imports."
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  15,
                                            "name":  "status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -396,7 +405,7 @@
                                            "description":  "Current lifecycle status of the import. Progresses through VALIDATING, BUILDING, REGISTERED, SUBMITTED, COMPLETED, or FAILED. See status values for details."
                                        },
                                        {
-                                           "ordinal":  15,
+                                           "ordinal":  16,
                                            "name":  "error_message",
                                            "dataType":  "varchar",
                                            "length":  "2000",
@@ -405,7 +414,7 @@
                                            "description":  "Error details captured on failure. NULL when status is not FAILED. May contain DM API error responses, validation summary, or file system errors depending on which stage failed."
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  17,
                                            "name":  "executed_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -414,7 +423,7 @@
                                            "description":  "AD username of the Control Center user who initiated the import. Captured from the authenticated session at import start."
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  18,
                                            "name":  "started_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -423,7 +432,7 @@
                                            "description":  "When the import process was initiated by the user."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  19,
                                            "name":  "completed_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -431,7 +440,7 @@
                                            "description":  "When the import reached a terminal status (COMPLETED or FAILED). NULL while the import is in progress."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  20,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -440,7 +449,7 @@
                                            "description":  "When the log row was created."
                                        },
                                        {
-                                           "ordinal":  20,
+                                           "ordinal":  21,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
