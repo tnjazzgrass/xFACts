@@ -492,3 +492,28 @@ h1 a:hover { color: #9cdcfe; }
     padding: 20px;
     text-align: center;
 }
+
+/* ============================================================================
+   Styled Modal System (Shared)
+   Replaces native alert() and confirm() across all Control Center pages.
+   Used by showAlert() and showConfirm() in engine-events.js.
+   Reference implementation: BDL Import page.
+   ============================================================================ */
+
+@keyframes xfModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.xf-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 1300; display: flex; align-items: center; justify-content: center; animation: xfModalFadeIn 0.2s ease; }
+.xf-modal { background: #252526; border: 1px solid #404040; border-radius: 8px; width: 460px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+.xf-modal-header { display: flex; align-items: center; gap: 10px; padding: 16px 20px; background: #333; border-bottom: 1px solid #404040; border-radius: 8px 8px 0 0; font-size: 15px; font-weight: 600; color: #d4d4d4; }
+.xf-modal-icon { font-size: 20px; }
+.xf-modal-body { padding: 20px; }
+.xf-modal-body p { color: #bbb; font-size: 13px; line-height: 1.6; margin: 0 0 10px 0; }
+.xf-modal-body p:last-child { margin-bottom: 0; }
+.xf-modal-body strong { color: #4ec9b0; }
+.xf-modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid #404040; }
+.xf-modal-btn-cancel { padding: 8px 20px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #d4d4d4; font-size: 13px; cursor: pointer; transition: all 0.15s; }
+.xf-modal-btn-cancel:hover { background: #333; border-color: #888; }
+.xf-modal-btn-primary { padding: 8px 20px; background: #0e639c; border: 1px solid #0e639c; border-radius: 4px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+.xf-modal-btn-primary:hover { background: #1177bb; border-color: #1177bb; }
+.xf-modal-btn-danger { padding: 8px 20px; background: #6d3030; border: 1px solid #8b3a3a; border-radius: 4px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+.xf-modal-btn-danger:hover { background: #8b3a3a; border-color: #a04444; }
