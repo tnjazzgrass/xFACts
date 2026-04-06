@@ -3407,7 +3407,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "(\u0027PROD\u0027)",
-                                           "description":  "Environment: PROD, DEV, QA, UAT"
+                                           "description":  "Server environment designation. Constrained to PROD, STAGE, TEST, or DEV. Only PROD servers can have is_active = 1 (enforced by CK_ServerRegistry_environment_is_active)."
                                        },
                                        {
                                            "ordinal":  7,
@@ -3451,7 +3451,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "((1))",
-                                           "description":  "Master enable/disable for this server"
+                                           "description":  "Controls whether the server is enrolled in orchestrator-managed collection processes. Servers with is_active = 1 are actively monitored by automated collectors in the Orchestrator. Servers with is_active = 0 are registered for reference by other processes but excluded from automated collection. Constrained by CK_ServerRegistry_environment_is_active: only PROD servers can be set to 1."
                                        },
                                        {
                                            "ordinal":  12,
@@ -3674,6 +3674,10 @@
                                                     "definition":  "([environment]=\u0027PROD\u0027 OR [environment]=\u0027STAGE\u0027 OR [environment]=\u0027TEST\u0027 OR [environment]=\u0027DEV\u0027)"
                                                 },
                                                 {
+                                                    "name":  "CK_ServerRegistry_environment_is_active",
+                                                    "definition":  "([environment]=\u0027PROD\u0027 OR [is_active]=(0))"
+                                                },
+                                                {
                                                     "name":  "CK_ServerRegistry_ServerType",
                                                     "definition":  "([server_type]=\u0027APP_SERVER\u0027 OR [server_type]=\u0027AG_LISTENER\u0027 OR [server_type]=\u0027WINDOWS\u0027 OR [server_type]=\u0027SQL_SERVER\u0027 OR [server_type]=\u0027STANDALONE\u0027)"
                                                 }
@@ -3693,13 +3697,18 @@
                                                "topic":  "Service Start Time Context",
                                                "note":  "The last_service_start_dttm field captures when the SQL Server service last started, sourced from sys.dm_os_sys_info. This provides context for DMV-based statistics like index usage stats which reset on service restart.",
                                                "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Environment-Based Activation Constraint",
+                                               "note":  "CK_ServerRegistry_environment_is_active enforces that only PROD servers can be set to is_active = 1. Non-PROD servers (STAGE, TEST, DEV) are registered for reference by processes that need environment-specific targets but are permanently excluded from orchestrator-managed collection cycles. This prevents accidental enrollment of lower-environment servers in production monitoring.",
+                                               "sortOrder":  4
                                            }
                                        ],
                        "statusValues":  [
                                             {
                                                 "column":  "environment",
                                                 "value":  "PROD",
-                                                "meaning":  "Production environment. All currently monitored servers are PROD.",
+                                                "meaning":  "Production environment. These servers can be set to is_active = 1 for orchestrator-managed collection. All automated monitoring runs exclusively against PROD servers.",
                                                 "sortOrder":  1
                                             },
                                             {
@@ -3707,6 +3716,18 @@
                                                 "value":  "SQL_SERVER",
                                                 "meaning":  "Standard SQL Server instance. Default value for new registrations.",
                                                 "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "is_active",
+                                                "value":  "1",
+                                                "meaning":  "Server is actively enrolled in orchestrator-managed collection processes. Only PROD servers can have this value (enforced by CK_ServerRegistry_environment_is_active). All automated collectors filter on is_active = 1.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "is_active",
+                                                "value":  "0",
+                                                "meaning":  "Server is registered but not enrolled in automated collection. Required for all non-PROD servers (STAGE, TEST, DEV). PROD servers may also be set to 0 to temporarily exclude them from collection without removing the registration.",
+                                                "sortOrder":  2
                                             },
                                             {
                                                 "column":  "server_type",
@@ -3717,13 +3738,13 @@
                                             {
                                                 "column":  "environment",
                                                 "value":  "DEV",
-                                                "meaning":  "Development environment.",
+                                                "meaning":  "Development environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Available as a target for testing processes via environment-based lookups.",
                                                 "sortOrder":  2
                                             },
                                             {
                                                 "column":  "environment",
-                                                "value":  "QA",
-                                                "meaning":  "Quality assurance environment.",
+                                                "value":  "TEST",
+                                                "meaning":  "Test environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Used by DmOps archive/shell purge testing and BDL Import testing via environment-based or GlobalConfig target_instance lookups.",
                                                 "sortOrder":  3
                                             },
                                             {
@@ -3740,8 +3761,8 @@
                                             },
                                             {
                                                 "column":  "environment",
-                                                "value":  "UAT",
-                                                "meaning":  "User acceptance testing environment.",
+                                                "value":  "STAGE",
+                                                "meaning":  "Staging environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Represents the DM staging AG cluster (DM-STAGE-DB / DM-STAGE-REP / AVG-STAGE-LSNR) and associated app servers.",
                                                 "sortOrder":  4
                                             }
                                         ],
