@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-06 06:34:58
+Generated: 2026-04-06 14:46:46
 
 ## Module Registry
 
@@ -573,4 +573,5 @@ Generated: 2026-04-06 06:34:58
 | Shared | Monitoring | SourceReplica | SECONDARY | VARCHAR | Which AG replica to query for source data (PRIMARY or SECONDARY) |
 | Teams | AlertFailures | alert_failure_lookback_days | 3 | INT | Days to look back when showing failed alerts on Admin page |
 | Teams | Retry | teams_retry_max_attempts | 3 | INT | Max delivery retries before marking an alert as permanently failed |
+| Tools | Operations | bdl_promote_cooldown_seconds | 300 | INT | Countdown timer in seconds before the Promote to Production button activates after a successful non-PROD import. Gives users time to verify their data in Debt Manager before promoting. |
 | Tools | Portal | crs5_portal_query_timeout_seconds | 60 | INT | Command timeout in seconds for Client Portal queries against crs5_oltp |
