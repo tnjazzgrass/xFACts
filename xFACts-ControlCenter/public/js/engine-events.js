@@ -989,3 +989,89 @@ if (typeof pageRefresh !== 'function') {
         }
     };
 }
+
+// ============================================================================
+// STYLED MODAL UTILITIES
+// ============================================================================
+// Replaces native alert() and confirm() across all Control Center pages.
+// Returns Promises so callers can use .then() for async flow.
+//
+// Usage:
+//   showAlert('File not found.', { title: 'Error', icon: '&#10005;', iconColor: '#f48771' });
+//
+//   showConfirm('Delete this item?', {
+//       title: 'Confirm Delete',
+//       confirmLabel: 'Delete',
+//       confirmClass: 'xf-modal-btn-danger'
+//   }).then(function(confirmed) { if (confirmed) { ... } });
+//
+//   // For HTML content in the body:
+//   showConfirm('<p>Rich <strong>HTML</strong> content</p>', { html: true, ... });
+// ============================================================================
+
+function showAlert(message, options) {
+    var opts = options || {};
+    var title = opts.title || 'Notice';
+    var icon = opts.icon || '&#9432;';
+    var iconColor = opts.iconColor || '#569cd6';
+    var buttonLabel = opts.buttonLabel || 'OK';
+
+    return new Promise(function (resolve) {
+        var id = 'xf-alert-' + Date.now();
+        var overlay = document.createElement('div');
+        overlay.id = id;
+        overlay.className = 'xf-modal-overlay';
+        overlay.innerHTML = '<div class="xf-modal">'
+            + '<div class="xf-modal-header">'
+            + '<span class="xf-modal-icon" style="color:' + iconColor + '">' + icon + '</span>'
+            + '<span>' + _escapeModalText(title) + '</span>'
+            + '</div>'
+            + '<div class="xf-modal-body"><p>' + _escapeModalText(message) + '</p></div>'
+            + '<div class="xf-modal-actions">'
+            + '<button class="xf-modal-btn-primary" id="' + id + '-ok">' + _escapeModalText(buttonLabel) + '</button>'
+            + '</div></div>';
+        document.body.appendChild(overlay);
+        document.getElementById(id + '-ok').onclick = function () { overlay.remove(); resolve(); };
+        document.getElementById(id + '-ok').focus();
+    });
+}
+
+function showConfirm(message, options) {
+    var opts = options || {};
+    var title = opts.title || 'Confirm';
+    var icon = opts.icon || '&#9888;';
+    var iconColor = opts.iconColor || '#dcdcaa';
+    var confirmLabel = opts.confirmLabel || 'Continue';
+    var cancelLabel = opts.cancelLabel || 'Cancel';
+    var confirmClass = opts.confirmClass || 'xf-modal-btn-primary';
+    var messageHtml = opts.html || false;
+
+    return new Promise(function (resolve) {
+        var id = 'xf-confirm-' + Date.now();
+        var overlay = document.createElement('div');
+        overlay.id = id;
+        overlay.className = 'xf-modal-overlay';
+        var bodyContent = messageHtml ? message : '<p>' + _escapeModalText(message) + '</p>';
+        overlay.innerHTML = '<div class="xf-modal">'
+            + '<div class="xf-modal-header">'
+            + '<span class="xf-modal-icon" style="color:' + iconColor + '">' + icon + '</span>'
+            + '<span>' + _escapeModalText(title) + '</span>'
+            + '</div>'
+            + '<div class="xf-modal-body">' + bodyContent + '</div>'
+            + '<div class="xf-modal-actions">'
+            + '<button class="xf-modal-btn-cancel" id="' + id + '-cancel">' + _escapeModalText(cancelLabel) + '</button>'
+            + '<button class="' + confirmClass + '" id="' + id + '-ok">' + _escapeModalText(confirmLabel) + '</button>'
+            + '</div></div>';
+        document.body.appendChild(overlay);
+        document.getElementById(id + '-cancel').onclick = function () { overlay.remove(); resolve(false); };
+        document.getElementById(id + '-ok').onclick = function () { overlay.remove(); resolve(true); };
+    });
+}
+
+// Private helper — avoids dependency on page-specific escapeHtml functions
+function _escapeModalText(str) {
+    if (!str) return '';
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
