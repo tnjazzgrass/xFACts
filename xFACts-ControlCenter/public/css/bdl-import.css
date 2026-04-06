@@ -521,3 +521,33 @@ a { color: #9cdcfe; }
 .template-modal-status { margin-top: 12px; padding: 8px 12px; border-radius: 4px; font-size: 12px; text-align: center; }
 .template-modal-success { background: #1e3a2a; border: 1px solid #2d5a3d; color: #4ec9b0; }
 .template-modal-error { background: #3d2020; border: 1px solid #6d3030; color: #f48771; }
+
+/* ============================================================================
+   XML PREVIEW & PROMOTE TO PRODUCTION
+   Added: 2026-04-06
+   ============================================================================ */
+
+/* ── XML Preview prominent header ─────────────────────────────────────── */
+.execute-preview-prominent { border-color: #505050; }
+.execute-xml-header { color: #9cdcfe !important; font-size: 13px !important; }
+
+/* ── Promote to Production Card ───────────────────────────────────────── */
+.promote-area { margin-top: 12px; }
+.promote-card { background: #1e1e1e; border: 2px solid #404040; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.3s ease; }
+.promote-card:hover { border-color: #569cd6; background: #222; }
+.promote-card.promote-ready { border-color: #4ec9b0; background: rgba(78, 201, 176, 0.06); }
+.promote-card.promote-ready:hover { border-color: #5fd4bb; background: rgba(78, 201, 176, 0.1); }
+.promote-card-header { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px; }
+.promote-card-icon { font-size: 16px; color: #569cd6; }
+.promote-ready .promote-card-icon { color: #4ec9b0; }
+.promote-card-title { font-size: 15px; font-weight: 600; color: #d4d4d4; }
+.promote-ready .promote-card-title { color: #4ec9b0; }
+.promote-card-timer { font-size: 28px; font-weight: 700; color: #888; font-family: 'Consolas', 'Courier New', monospace; margin-bottom: 8px; letter-spacing: 2px; }
+.promote-ready .promote-card-timer { color: #4ec9b0; font-family: 'Segoe UI', Arial, sans-serif; font-size: 16px; letter-spacing: 0; }
+.promote-card-hint { font-size: 12px; color: #888; transition: color 0.3s; }
+.promote-ready .promote-card-hint { color: #999; }
+.promote-hint-flash { color: #dcdcaa !important; }
+
+/* ── XML Copy Button ──────────────────────────────────────────────────── */
+.xml-copy-btn { margin-left: auto; padding: 3px 10px; background: #2d2d2d; border: 1px solid #404040; border-radius: 3px; color: #888; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+.xml-copy-btn:hover { background: #333; color: #d4d4d4; border-color: #569cd6; }
