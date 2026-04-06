@@ -762,11 +762,11 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
         $logInsert = Invoke-XFActsQuery -Query @"
             INSERT INTO Tools.BDL_ImportLog 
                 (server_config_id, environment, entity_type, source_filename,
-                 xml_filename, row_count, column_mapping, status, executed_by)
+                 xml_filename, staging_table, row_count, column_mapping, status, executed_by)
             OUTPUT INSERTED.log_id
             VALUES 
                 (@configId, @environment, @entityType, @sourceFilename,
-                 @xmlFilename, @rowCount, @columnMapping, 'BUILDING', @executedBy)
+                 @xmlFilename, @stagingTable, @rowCount, @columnMapping, 'BUILDING', @executedBy)
 "@ -Parameters @{
             configId       = $configId
             environment    = $xmlResult.Environment
@@ -775,6 +775,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             xmlFilename    = $xmlResult.Filename
             rowCount       = $xmlResult.RowCount
             columnMapping  = if ($columnMapping) { $columnMapping } else { [DBNull]::Value }
+            stagingTable   = $stagingTable
             executedBy     = $user
         }
 
@@ -904,6 +905,33 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             status           = 'SUBMITTED'
             message          = "BDL file $($xmlResult.Filename) has been submitted to Debt Manager."
         }
+		
+# ── Promote metadata for non-PROD environments ─────────────────
+        if ($xmlResult.Environment -ne 'PROD') {
+            $cooldownConfig = Invoke-XFActsQuery -Query @"
+                SELECT setting_value
+                FROM dbo.GlobalConfig
+                WHERE module_name = 'Tools'
+                  AND category = 'Operations'
+                  AND setting_name = 'bdl_promote_cooldown_seconds'
+                  AND is_active = 1
+"@
+            $prodConfig = Invoke-XFActsQuery -Query @"
+                SELECT sc.config_id
+                FROM Tools.ServerConfig sc
+                INNER JOIN dbo.ServerRegistry sr ON sr.server_id = sc.server_id
+                WHERE sc.environment = 'PROD'
+                  AND sc.is_active = 1
+                  AND sr.tools_enabled = 1
+"@
+
+            if ($cooldownConfig -and $cooldownConfig.Count -gt 0) {
+                $primaryResult.promote_cooldown_seconds = [int]$cooldownConfig[0].setting_value
+            }
+            if ($prodConfig -and $prodConfig.Count -gt 0) {
+                $primaryResult.prod_config_id = $prodConfig[0].config_id
+            }
+        }
 
         # ── Step 8 (Optional): Build and submit AR Log BDL ──────────────
         # When a Jira ticket is provided, a second BDL file is built and
@@ -955,17 +983,18 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
                     $arLogInsert = Invoke-XFActsQuery -Query @"
                         INSERT INTO Tools.BDL_ImportLog 
                             (server_config_id, environment, entity_type, source_filename,
-                             xml_filename, row_count, status, executed_by, parent_log_id)
+                             xml_filename, staging_table, row_count, status, executed_by, parent_log_id)
                         OUTPUT INSERTED.log_id
                         VALUES 
                             (@configId, @environment, 'CONSUMER_ACCOUNT_AR_LOG', @sourceFilename,
-                             @xmlFilename, @rowCount, 'BUILDING', @executedBy, @parentLogId)
+                             @xmlFilename, @stagingTable, @rowCount, 'BUILDING', @executedBy, @parentLogId)
 "@ -Parameters @{
                         configId       = $configId
                         environment    = $xmlResult.Environment
                         sourceFilename = if ($sourceFilename) { $sourceFilename } else { 'unknown' }
                         xmlFilename    = $arXmlResult.Filename
                         rowCount       = $arXmlResult.RowCount
+                        stagingTable    = $stagingTable						
                         executedBy     = $user
                         parentLogId    = $primaryLogId
                     }
