@@ -3,6 +3,17 @@
    Location: E:\xFACts-ControlCenter\public\js\bdl-import.js
    Steps: Environment → Entity Type → Upload → Map Columns → Validate → Execute
    Version: Tracked in dbo.System_Metadata (component: ControlCenter.BDLImport)
+
+   CHANGELOG
+   ---------
+   2026-04-06  Replaced all native alert/confirm dialogs with shared styled modals
+               XML preview auto-loads on section expand (no extra button)
+               XML preview section header more prominent
+               Added Promote to Production flow with cooldown timer
+               Added PROD advisory modal on direct environment selection
+               Back button hidden after successful submission
+               Unlocked STAGE and PROD environments
+               Row count on Step 6 reflects non-skipped rows
    ============================================================================ */
 
 var BDL = (function () {
@@ -19,6 +30,15 @@ var BDL = (function () {
     var revalidating = false; // prevents interaction during re-validate cycle
     var entityTemplates = []; // cached templates for the selected entity type
     var activeTemplateId = null; // template currently applied to the mapping
+
+    // Promote to Production state
+    var promoteData = null;
+    var promoteCountdownTimer = null;
+    var promoteSecondsRemaining = 0;
+    var promoteReady = false;
+
+    // XML preview state
+    var xmlPreviewLoaded = false;
 
     function init() { loadEnvironments(); checkStagingCleanup(); }
 
@@ -51,20 +71,16 @@ var BDL = (function () {
     }
     function prevStep() { if (currentStep > 1) showStep(currentStep - 1); }
 
-    // ── Step 4 → 5 transition: reuse staging or re-stage ────────────────
     function handleStepFourNext() {
         if (stagingContext && stagedMapping && mappingsAreEqual(columnMapping, stagedMapping)) {
-            // Mapping unchanged — reuse existing staging table, just re-validate
             showStep(5);
             runValidation();
         } else if (stagingContext) {
-            // Mapping changed — pass old table name so stage endpoint can drop it
             var oldTable = stagingContext.staging_table;
             stagingContext = null;
             stagedMapping = null;
             stageData(function () { runValidation(); }, oldTable);
         } else {
-            // No staging yet — first time through
             stageData(function () { runValidation(); });
         }
     }
@@ -113,6 +129,13 @@ var BDL = (function () {
         var back = document.getElementById('btn-back'), next = document.getElementById('btn-next');
         back.disabled = (currentStep === 1);
 
+        // Hide back button on Step 6 after successful submission
+        if (currentStep === 6 && stepComplete[5]) {
+            back.style.display = 'none';
+        } else {
+            back.style.display = '';
+        }
+
         if (currentStep === 6) {
             next.style.display = 'none';
         } else {
@@ -120,7 +143,6 @@ var BDL = (function () {
             next.disabled = !stepComplete[currentStep - 1];
             next.innerHTML = 'Next &#8594;';
             next.classList.remove('btn-execute');
-            // Next button: muted when disabled, colored when ready to proceed
             if (stepComplete[currentStep - 1]) {
                 next.classList.add('btn-next');
             } else {
@@ -138,13 +160,56 @@ var BDL = (function () {
     function renderEnvironments(envs) {
         var c = document.getElementById('env-cards');
         if (!envs.length) { c.innerHTML = '<div class="placeholder-message">No environments configured.</div>'; return; }
-        var h = ''; envs.forEach(function (env) { var locked = (env.environment === 'STAGE'|| env.environment === 'PROD' ); h += '<div class="env-card' + (locked ? ' env-locked' : '') + '" data-env="' + env.environment + '"' + (locked ? '' : ' onclick="BDL.selectEnvironment(this,' + env.config_id + ')"') + '><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div>' + (locked ? '<div class="env-locked-label">Coming Soon</div>' : '') + '</div>'; });
+        var h = ''; envs.forEach(function (env) { var locked = false; h += '<div class="env-card' + (locked ? ' env-locked' : '') + '" data-env="' + env.environment + '"' + (locked ? '' : ' onclick="BDL.selectEnvironment(this,' + env.config_id + ')"') + '><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div>' + (locked ? '<div class="env-locked-label">Coming Soon</div>' : '') + '</div>'; });
         c.innerHTML = h; c._envData = envs;
     }
     function selectEnvironment(card, configId) {
+        var envData = (document.getElementById('env-cards')._envData || []).find(function (e) { return e.config_id === configId; });
+        if (!envData) return;
+
+        if (envData.environment === 'PROD') {
+            showProdAdvisoryModal(card, envData);
+            return;
+        }
+
+        applyEnvironmentSelection(card, envData);
+    }
+    function applyEnvironmentSelection(card, envData) {
         document.querySelectorAll('.env-card').forEach(function (c) { c.classList.remove('selected'); }); card.classList.add('selected');
-        selectedEnvironment = (document.getElementById('env-cards')._envData || []).find(function (e) { return e.config_id === configId; });
+        selectedEnvironment = envData;
         stepComplete[0] = true; updateNavButtons(); updateStepperUI(); resetFromStep(2);
+    }
+
+    // ── PROD Advisory Modal ──────────────────────────────────────────────
+    function showProdAdvisoryModal(card, envData) {
+        var existing = document.getElementById('prod-advisory-modal');
+        if (existing) existing.remove();
+
+        var modal = document.createElement('div');
+        modal.id = 'prod-advisory-modal';
+        modal.className = 'xf-modal-overlay';
+        modal.innerHTML = '<div class="xf-modal">'
+            + '<div class="xf-modal-header">'
+            + '<span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span>'
+            + '<span>Production Environment</span>'
+            + '</div>'
+            + '<div class="xf-modal-body">'
+            + '<p>You are about to target <strong>Production</strong> directly.</p>'
+            + '<p>If you haven\'t validated this data in a test environment first, consider running a test import on TEST or STAGE before loading to Production.</p>'
+            + '</div>'
+            + '<div class="xf-modal-actions">'
+            + '<button class="xf-modal-btn-cancel" id="prod-advisory-back">Go Back</button>'
+            + '<button class="xf-modal-btn-primary" id="prod-advisory-continue">Continue to Production</button>'
+            + '</div>'
+            + '</div>';
+
+        document.body.appendChild(modal);
+
+        document.getElementById('prod-advisory-back').onclick = function () { modal.remove(); };
+        document.getElementById('prod-advisory-continue').onclick = function () {
+            modal.remove();
+            applyEnvironmentSelection(card, envData);
+        };
     }
 
     // ── Step 2 ───────────────────────────────────────────────────────────
@@ -178,7 +243,6 @@ var BDL = (function () {
     }
     function formatEntityName(et) { return et.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(' '); }
 
-    // ── Helpers for display names ────────────────────────────────────────
     function getFieldDisplayName(f) {
         return (f.display_name && f.display_name !== '') ? f.display_name : f.element_name;
     }
@@ -198,14 +262,14 @@ var BDL = (function () {
     function fileSelected(input) { if (input.files.length > 0) handleFile(input.files[0]); }
     function handleFile(file) {
         var ext = '.' + file.name.split('.').pop().toLowerCase();
-        if (['.csv', '.txt', '.xlsx', '.xls'].indexOf(ext) === -1) { alert('Invalid file type.'); return; }
+        if (['.csv', '.txt', '.xlsx', '.xls'].indexOf(ext) === -1) { showAlert('Supported formats: CSV, TXT, XLSX, XLS', { title: 'Invalid File Type', icon: '&#10005;', iconColor: '#f48771' }); return; }
         uploadedFile = file;
         if (ext === '.csv' || ext === '.txt') parseCSVPreview(file); else parseExcelPreview(file);
     }
     function parseCSVPreview(file) {
         var reader = new FileReader(); reader.onload = function (e) {
             var lines = e.target.result.split(/\r?\n/).filter(function (l) { return l.trim(); });
-            if (lines.length < 2) { alert('File appears empty.'); return; }
+            if (lines.length < 2) { showAlert('The file contains no data rows.', { title: 'Empty File', icon: '&#9888;', iconColor: '#dcdcaa' }); return; }
             var headers = parseCSVLine(lines[0]), rows = [];
             for (var i = 1; i <= Math.min(lines.length - 1, MAX_PREVIEW_ROWS); i++) rows.push(parseCSVLine(lines[i]));
             parsedFileData = { headers: headers, rows: rows, rowCount: lines.length - 1 };
@@ -223,9 +287,9 @@ var BDL = (function () {
         var reader = new FileReader(); reader.onload = function (e) {
             try {
                 var data = new Uint8Array(e.target.result), wb = XLSX.read(data, { type: 'array' }), sh = wb.Sheets[wb.SheetNames[0]];
-                if (!sh['!ref']) { alert('File appears empty.'); return; }
+                if (!sh['!ref']) { showAlert('The file contains no data.', { title: 'Empty File', icon: '&#9888;', iconColor: '#dcdcaa' }); return; }
                 var range = XLSX.utils.decode_range(sh['!ref']), totalRows = range.e.r;
-                if (totalRows < 1) { alert('File has no data rows.'); return; }
+                if (totalRows < 1) { showAlert('The file has headers but no data rows.', { title: 'No Data Rows', icon: '&#9888;', iconColor: '#dcdcaa' }); return; }
                 var headers = [];
                 for (var col = range.s.c; col <= range.e.c; col++) { var cell = sh[XLSX.utils.encode_cell({ r: 0, c: col })]; headers.push(cell ? String(cell.v) : 'Column ' + (col + 1)); }
                 var rows = [];
@@ -234,7 +298,7 @@ var BDL = (function () {
                 showFileInfo(file, parsedFileData); renderFilePreview(parsedFileData);
                 document.getElementById('upload-prompt').style.display = 'none';
                 stepComplete[2] = true; updateNavButtons(); updateStepperUI();
-            } catch (err) { alert('Failed to parse Excel file: ' + err.message); }
+            } catch (err) { showAlert(err.message, { title: 'Excel Parse Error', icon: '&#10005;', iconColor: '#f48771' }); }
         }; reader.readAsArrayBuffer(file);
     }
     function showFileInfo(file, data) {
@@ -269,11 +333,7 @@ var BDL = (function () {
         var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
         var idField = visibleFields.find(function (f) { return f.element_name === idElemName; });
         var mappableFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
-
-        // Preserve existing mapping on back navigation — only initialize if null
         if (!columnMapping) { columnMapping = {}; }
-
-        // Check if identifier was previously mapped
         var prevIdIdx = '';
         if (columnMapping) {
             for (var k in columnMapping) {
@@ -284,7 +344,6 @@ var BDL = (function () {
                 }
             }
         }
-
         var html = '';
         var idSelected = (prevIdIdx !== '');
         if (idField) {
@@ -320,7 +379,6 @@ var BDL = (function () {
             srcH += '<div class="mapping-chip source-chip' + selCls + '" draggable="true" data-source="' + escapeHtml(header) + '" data-idx="' + idx + '" ondragstart="BDL.chipDragStart(event)" onclick="BDL.sourceClick(\'' + escapeHtml(header).replace(/'/g, "\\'") + '\')">';
             srcH += '<div class="chip-name">' + escapeHtml(header) + '</div>'; if (sample) srcH += '<div class="chip-sample">' + escapeHtml(sample) + '</div>'; srcH += '</div>';
         }); srcList.innerHTML = srcH || '<div class="panel-empty">All columns mapped</div>';
-
         var tgtList = document.getElementById('target-list'), tgtH = '';
         mf.forEach(function (f) {
             if (mTgt.indexOf(f.element_name) !== -1) return;
@@ -335,7 +393,6 @@ var BDL = (function () {
             if (f.field_description) tgtH += '<div class="chip-desc">' + escapeHtml(f.field_description.substring(0, 80)) + '</div>';
             var meta = buildFieldMeta(f); if (meta) tgtH += '<div class="chip-meta">' + meta + '</div>'; tgtH += '</div>';
         }); tgtList.innerHTML = tgtH || '<div class="panel-empty">All fields mapped</div>';
-
         var mapList = document.getElementById('mapped-list'), mapH = '', mKeys = Object.keys(columnMapping);
         if (!mKeys.length) { mapH = '<div class="panel-empty">Click a source column, then click a BDL field to pair them. Or drag and drop between panels.</div>'; }
         else {
@@ -365,8 +422,6 @@ var BDL = (function () {
         var a = document.getElementById('mapping-area'), idSel = document.getElementById('identifier-column'), idElem = a._identifierElementName;
         for (var k in columnMapping) { if (columnMapping[k] === idElem) delete columnMapping[k]; }
         if (idSel.value !== '') { columnMapping[parsedFileData.headers[parseInt(idSel.value)]] = idElem; }
-
-        // Update identifier visual state
         var idSection = document.querySelector('.mapping-identifier');
         var wrap = document.getElementById('mapping-panels-wrap');
         if (idSel.value !== '') {
@@ -376,7 +431,6 @@ var BDL = (function () {
             if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); }
             if (wrap) { wrap.classList.add('mapping-disabled'); }
         }
-
         refreshMappingPanels();
     }
     function checkMappingComplete() {
@@ -394,7 +448,6 @@ var BDL = (function () {
     }
 
     // ── Step 5 ───────────────────────────────────────────────────────────
-
     function stageData(onComplete, dropExistingTable) {
         showStep(5);
         var area = document.getElementById('validation-area');
@@ -413,7 +466,6 @@ var BDL = (function () {
             .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
             .then(function (data) {
                 stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] };
-                // Snapshot the mapping used for staging
                 stagedMapping = JSON.parse(JSON.stringify(columnMapping));
                 if (onComplete) onComplete();
             })
@@ -434,6 +486,13 @@ var BDL = (function () {
             serverData.staging_table = stagingContext.staging_table;
             var warnings = validateStagedRows(serverData);
             validationResult = { warnings: warnings, serverData: serverData };
+            // Update staging context with accurate non-skipped row count
+            if (serverData.row_count !== undefined) {
+                stagingContext.row_count = serverData.row_count;
+            }
+            if (serverData.skipped_count !== undefined) {
+                stagingContext.skipped_count = serverData.skipped_count;
+            }
             renderValidationResults(warnings, serverData);
             var hasRequiredEmpty = warnings.some(function (w) { return w.type === 'required_empty'; });
             stepComplete[4] = !hasRequiredEmpty;
@@ -457,11 +516,9 @@ var BDL = (function () {
         var lookups = serverData.lookups || {}, lookupErrors = serverData.lookup_errors || {};
         var fieldMap = {}; entityFields.forEach(function (f) { fieldMap[f.element_name] = f; });
         var colIndex = {}; columns.forEach(function (col, idx) { colIndex[col] = idx; });
-
         Object.keys(lookupErrors).forEach(function (en) {
             warnings.push({ type: 'lookup_error', field: en, message: lookupErrors[en], rowCount: 0, samples: [] });
         });
-
         var MAX_SAMPLES = 5;
         columns.forEach(function (colName) {
             var field = fieldMap[colName]; if (!field) return;
@@ -473,7 +530,6 @@ var BDL = (function () {
             if (lookupSet) { lookupMap = {}; lookupSet.forEach(function (v) { lookupMap[String(v).toUpperCase()] = true; }); }
             var sourceCol = null;
             Object.keys(columnMapping).forEach(function (sc) { if (columnMapping[sc] === colName) sourceCol = sc; });
-
             for (var i = 0; i < rows.length; i++) {
                 var val = rows[i][ci]; if (val === undefined || val === null) val = '';
                 var tr = val.trim();
@@ -485,7 +541,6 @@ var BDL = (function () {
                 else if (dt === 'boolean') { if (['true', 'false', '1', '0', 'yes', 'no'].indexOf(tr.toLowerCase()) === -1) { typeErrs.total++; if (typeErrs.items.length < MAX_SAMPLES) typeErrs.items.push({ row: i + 1, value: tr.substring(0, 30) }); } }
                 if (lookupMap && tr !== '') { if (!lookupMap[tr.toUpperCase()]) { var uKey = tr.toUpperCase(); if (!lookupMiss.uv[uKey]) lookupMiss.uv[uKey] = { display: tr, count: 0 }; lookupMiss.uv[uKey].count++; lookupMiss.total++; } }
             }
-
             if (emptyCount > 0) warnings.push({ type: 'required_empty', field: colName, sourceColumn: sourceCol, message: emptyCount.toLocaleString() + ' row(s) have empty values for required field', rowCount: emptyCount, hasLookup: !!lookupSet, lookupValues: lookupSet, samples: [] });
             if (lenErrs.total > 0) warnings.push({ type: 'max_length', field: colName, sourceColumn: sourceCol, message: lenErrs.total.toLocaleString() + ' row(s) exceed max length of ' + maxLen, rowCount: lenErrs.total, samples: lenErrs.items });
             if (typeErrs.total > 0) warnings.push({ type: 'data_type', field: colName, sourceColumn: sourceCol, message: typeErrs.total.toLocaleString() + ' row(s) have invalid ' + dt + ' values', rowCount: typeErrs.total, samples: typeErrs.items });
@@ -494,16 +549,13 @@ var BDL = (function () {
         return warnings;
     }
 
-    // ── Validation Results: Accordion Card Rendering ─────────────────────
-
+    // ── Validation Results ────────────────────────────────────────────────
     function renderValidationResults(warnings, serverData) {
         var area = document.getElementById('validation-area'), html = '';
         var rc = serverData.row_count || 0, skipped = serverData.skipped_count || 0;
         var actionableWarnings = warnings.filter(function (w) { return w.type === 'required_empty' || w.type === 'lookup_invalid'; });
         var infoWarnings = warnings.filter(function (w) { return w.type !== 'required_empty' && w.type !== 'lookup_invalid'; });
         var rowSummary = rc.toLocaleString() + ' rows validated' + (skipped > 0 ? ', ' + skipped.toLocaleString() + ' skipped' : '');
-
-        // Summary banner
         if (!warnings.length) {
             html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>Validation passed</strong><div class="validation-detail">' + rowSummary + '. No issues found.</div></div></div>';
         } else if (actionableWarnings.length > 0) {
@@ -511,76 +563,32 @@ var BDL = (function () {
         } else {
             html += '<div class="validation-summary validation-warn"><span class="validation-icon">&#9888;</span><div><strong>' + infoWarnings.length + ' warning' + (infoWarnings.length > 1 ? 's' : '') + '</strong><div class="validation-detail">' + rowSummary + '. Review warnings below — you may proceed.</div></div></div>';
         }
-
-        // Actionable issue cards (accordion)
         if (actionableWarnings.length > 0) {
             html += '<div class="validation-cards" id="validation-cards">';
             var typeLabels = { required_empty: 'Required Value Missing', lookup_invalid: 'Invalid Lookup Value' };
-
             actionableWarnings.forEach(function (w, idx) {
                 var cardId = 'vcard-' + idx;
                 var fieldDisplay = getFieldDisplayNameByElement(w.field);
-
-                html += '<div class="val-card" id="' + cardId + '">';
-
-                // Card header (always visible, clickable)
-                html += '<div class="val-card-header" onclick="BDL.toggleValidationCard(\'' + cardId + '\')">';
-                html += '<div class="val-card-header-left">';
-                html += '<span class="val-card-field">';
-                if (fieldDisplay !== w.field) {
-                    html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>';
-                } else {
-                    html += '<code class="val-target">' + w.field + '</code>';
-                }
-                html += '</span>';
-                html += '<span class="val-badge">' + typeLabels[w.type] + '</span>';
-                html += '</div>';
-                html += '<div class="val-card-header-right">';
-                html += '<span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span>';
-                html += '<span class="val-card-chevron" id="chevron-' + cardId + '">&#9654;</span>';
-                html += '</div>';
-                html += '</div>';
-
-                // Card body (hidden by default)
+                html += '<div class="val-card" id="' + cardId + '"><div class="val-card-header" onclick="BDL.toggleValidationCard(\'' + cardId + '\')"><div class="val-card-header-left"><span class="val-card-field">';
+                if (fieldDisplay !== w.field) { html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; } else { html += '<code class="val-target">' + w.field + '</code>'; }
+                html += '</span><span class="val-badge">' + typeLabels[w.type] + '</span></div><div class="val-card-header-right"><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-card-chevron" id="chevron-' + cardId + '">&#9654;</span></div></div>';
                 html += '<div class="val-card-body" id="body-' + cardId + '" style="display:none;">';
-
-                // Action controls — jump straight to them
-                if (w.type === 'required_empty') {
-                    html += renderRequiredEmptyActions(w, cardId);
-                } else if (w.type === 'lookup_invalid') {
-                    html += renderLookupInvalidActions(w, cardId, serverData);
-                }
-
-                html += '</div>'; // end card body
-                html += '</div>'; // end card
+                if (w.type === 'required_empty') { html += renderRequiredEmptyActions(w, cardId); }
+                else if (w.type === 'lookup_invalid') { html += renderLookupInvalidActions(w, cardId, serverData); }
+                html += '</div></div>';
             });
-            html += '</div>'; // end validation-cards
+            html += '</div>';
         }
-
-        // Informational warnings (max length, data type, lookup errors — not actionable)
         if (infoWarnings.length > 0) {
-            html += '<div class="validation-info-section">';
-            html += '<div class="validation-info-header">Warnings (' + infoWarnings.length + ')</div>';
+            html += '<div class="validation-info-section"><div class="validation-info-header">Warnings (' + infoWarnings.length + ')</div>';
             infoWarnings.forEach(function (w, idx) {
                 var infoId = 'vinfo-' + idx;
                 var fieldDisplay = getFieldDisplayNameByElement(w.field);
                 var typeLabel = { max_length: 'Max Length', data_type: 'Data Type', lookup_error: 'Lookup Discovery' }[w.type] || w.type;
-
-                html += '<div class="val-info-card" id="' + infoId + '">';
-                html += '<div class="val-info-header" onclick="BDL.toggleInfoCard(\'' + infoId + '\')">';
-                html += '<span class="val-card-field">';
-                if (fieldDisplay !== w.field) {
-                    html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>';
-                } else {
-                    html += '<code class="val-target">' + w.field + '</code>';
-                }
-                html += '</span>';
-                html += '<span class="val-badge val-badge-info">' + typeLabel + '</span>';
-                html += '<span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span>';
-                html += '<span class="val-info-chevron" id="chevron-' + infoId + '">&#9654;</span>';
-                html += '</div>';
-                html += '<div class="val-info-body" id="body-' + infoId + '" style="display:none;">';
-                html += '<div class="val-card-message">' + escapeHtml(w.message) + '</div>';
+                html += '<div class="val-info-card" id="' + infoId + '"><div class="val-info-header" onclick="BDL.toggleInfoCard(\'' + infoId + '\')"><span class="val-card-field">';
+                if (fieldDisplay !== w.field) { html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; } else { html += '<code class="val-target">' + w.field + '</code>'; }
+                html += '</span><span class="val-badge val-badge-info">' + typeLabel + '</span><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-info-chevron" id="chevron-' + infoId + '">&#9654;</span></div>';
+                html += '<div class="val-info-body" id="body-' + infoId + '" style="display:none;"><div class="val-card-message">' + escapeHtml(w.message) + '</div>';
                 if (w.samples && w.samples.length > 0) {
                     html += '<div class="validation-samples">';
                     w.samples.forEach(function (s) { html += '<span class="val-sample">Row ' + s.row + ': <code>' + escapeHtml(String(s.value)) + '</code>'; if (s.length) html += ' (' + s.length + ' chars)'; html += '</span>'; });
@@ -590,11 +598,8 @@ var BDL = (function () {
             });
             html += '</div>';
         }
-
-        // Context and actions
         html += '<div class="validation-context">Staged to <strong>' + escapeHtml(serverData.staging_table) + '</strong> &middot; Validated against <strong>' + escapeHtml(serverData.environment) + '</strong> (' + escapeHtml(serverData.db_instance) + ')';
         var lc = Object.keys(serverData.lookups || {}).length; if (lc > 0) html += ' &middot; ' + lc + ' lookup table(s) queried';
-        // html += '</div><div class="validation-actions"><button class="nav-btn" onclick="BDL.revalidate()">Re-validate</button></div>';
         html += '</div>';
         area.innerHTML = html;
     }
@@ -638,7 +643,6 @@ var BDL = (function () {
         return html;
     }
 
-    // ── Accordion card toggling ──────────────────────────────────────────
     function toggleValidationCard(cardId) {
         if (revalidating) return;
         var cards = document.querySelectorAll('.val-card');
@@ -646,63 +650,40 @@ var BDL = (function () {
             var body = document.getElementById('body-' + card.id);
             var chevron = document.getElementById('chevron-' + card.id);
             if (card.id === cardId) {
-                if (body.style.display === 'none') {
-                    body.style.display = 'block';
-                    if (chevron) chevron.innerHTML = '&#9660;';
-                    card.classList.add('val-card-expanded');
-                } else {
-                    body.style.display = 'none';
-                    if (chevron) chevron.innerHTML = '&#9654;';
-                    card.classList.remove('val-card-expanded');
-                }
+                if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; card.classList.add('val-card-expanded'); }
+                else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded'); }
             } else {
-                if (body) body.style.display = 'none';
-                if (chevron) chevron.innerHTML = '&#9654;';
-                card.classList.remove('val-card-expanded');
+                if (body) body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded');
             }
         });
     }
-
     function toggleInfoCard(infoId) {
         var body = document.getElementById('body-' + infoId);
         var chevron = document.getElementById('chevron-' + infoId);
         if (!body) return;
-        if (body.style.display === 'none') {
-            body.style.display = 'block';
-            if (chevron) chevron.innerHTML = '&#9660;';
-        } else {
-            body.style.display = 'none';
-            if (chevron) chevron.innerHTML = '&#9654;';
-        }
+        if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; }
+        else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; }
     }
-
     function checkLookupCardComplete(rowElement) {
         var table = rowElement.closest('.lookup-replace-table');
         if (!table) return;
         var totalValues = parseInt(table.dataset.totalValues) || 0;
         var resolvedRows = table.querySelectorAll('.lookup-replace-row[data-resolved="true"]');
-        var resolvedCount = resolvedRows.length;
-        table.dataset.resolved = String(resolvedCount);
-
-        if (resolvedCount >= totalValues) {
-            triggerCascadingRevalidate();
-        }
+        table.dataset.resolved = String(resolvedRows.length);
+        if (resolvedRows.length >= totalValues) { triggerCascadingRevalidate(); }
     }
-
     function triggerCascadingRevalidate() {
         if (revalidating) return;
         revalidating = true;
-        var area = document.getElementById('validation-area');
-        area.innerHTML = '<div class="loading">Applying changes and re-validating...</div>';
+        document.getElementById('validation-area').innerHTML = '<div class="loading">Applying changes and re-validating...</div>';
         setTimeout(function () { runValidation(); }, 200);
     }
 
     function applyReplacement(field, oldValue, selectId) {
         if (revalidating) return;
-        var sel = document.getElementById(selectId); if (!sel || !sel.value) { alert('Please select a replacement value.'); return; }
+        var sel = document.getElementById(selectId); if (!sel || !sel.value) { showAlert('Please select a replacement value.', { title: 'Selection Required', icon: '&#9432;', iconColor: '#569cd6' }); return; }
         var newVal = sel.value, btn = sel.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true;
         var skipBtn = sel.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true;
-
         fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ staging_table: stagingContext.staging_table, field: field, old_value: oldValue, new_value: newVal }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
@@ -713,17 +694,16 @@ var BDL = (function () {
                 row.dataset.resolved = 'true';
                 checkLookupCardComplete(row);
             }
-        }).catch(function (err) { alert('Replacement failed: ' + err.message); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
+        }).catch(function (err) { showAlert(err.message, { title: 'Replacement Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
     }
 
     function fillEmpty(field, inputId) {
         if (revalidating) return;
         var input = document.getElementById(inputId);
         var newVal = input ? input.value : '';
-        if (!newVal) { alert('Please enter or select a value.'); return; }
+        if (!newVal) { showAlert('Please enter or select a value.', { title: 'Value Required', icon: '&#9432;', iconColor: '#569cd6' }); return; }
         var btn = input.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true;
         var skipBtn = input.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true;
-
         fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ staging_table: stagingContext.staging_table, field: field, old_value: '', new_value: newVal }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
@@ -733,17 +713,13 @@ var BDL = (function () {
                 row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>(empty)</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Filled</span>';
             }
             triggerCascadingRevalidate();
-        }).catch(function (err) { alert('Fill failed: ' + err.message); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
+        }).catch(function (err) { showAlert(err.message, { title: 'Fill Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
     }
 
     function skipRows(field, value, rowElementId) {
         if (revalidating) return;
         var rowEl = document.getElementById(rowElementId);
-        if (rowEl) {
-            var btns = rowEl.querySelectorAll('button');
-            btns.forEach(function (b) { b.disabled = true; });
-        }
-
+        if (rowEl) { rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = true; }); }
         fetch('/api/bdl-import/skip-rows', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ staging_table: stagingContext.staging_table, field: field, value: value }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
@@ -751,26 +727,18 @@ var BDL = (function () {
             var row = document.getElementById(rowElementId);
             if (row) {
                 row.innerHTML = '<span class="lrr-count">' + data.rows_skipped + '</span><span class="lrr-value"><code>' + escapeHtml(value || '(empty)') + '</code></span><span class="lrr-action skip-done">&#10005; Skipped (' + data.rows_skipped + ' rows)</span>';
-                if (row.dataset.resolved !== undefined) {
-                    row.dataset.resolved = 'true';
-                    checkLookupCardComplete(row);
-                } else {
-                    triggerCascadingRevalidate();
-                }
+                if (row.dataset.resolved !== undefined) { row.dataset.resolved = 'true'; checkLookupCardComplete(row); }
+                else { triggerCascadingRevalidate(); }
             }
         }).catch(function (err) {
-            alert('Skip failed: ' + err.message);
-            if (rowEl) {
-                var btns = rowEl.querySelectorAll('button');
-                btns.forEach(function (b) { b.disabled = false; });
-            }
+            showAlert(err.message, { title: 'Skip Failed', icon: '&#10005;', iconColor: '#f48771' });
+            if (rowEl) { rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); }
         });
     }
 
     function revalidate() { validationResult = null; runValidation(); }
 
     // ── Step 6: Review & Execute ─────────────────────────────────────────
-
     function renderExecuteReview() {
         var area = document.getElementById('execute-area');
         var envName = selectedEnvironment ? selectedEnvironment.environment : '?';
@@ -778,35 +746,37 @@ var BDL = (function () {
         var fileName = uploadedFile ? uploadedFile.name : '?';
         var mappedCount = columnMapping ? Object.keys(columnMapping).length : 0;
         var rowCount = stagingContext ? stagingContext.row_count : 0;
+        var skippedRows = stagingContext && stagingContext.skipped_count ? stagingContext.skipped_count : 0;
+
+        clearPromoteState();
+        xmlPreviewLoaded = false;
 
         var html = '';
-
         html += '<div class="execute-summary">';
         html += '<div class="execute-summary-header">Import Summary</div>';
         html += '<div class="execute-summary-grid">';
         html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
         html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value">' + entityName + ' <code class="summary-code">' + escapeHtml(selectedEntity.entity_type) + '</code></span></div>';
         html += '<div class="summary-item"><span class="summary-label">Source File</span><span class="summary-value">' + escapeHtml(fileName) + '</span></div>';
-        html += '<div class="summary-item"><span class="summary-label">Rows to Import</span><span class="summary-value">' + rowCount.toLocaleString() + '</span></div>';
+        html += '<div class="summary-item"><span class="summary-label">Rows to Import</span><span class="summary-value">' + rowCount.toLocaleString() + (skippedRows > 0 ? ' <span style="color:#888;font-size:11px;">(' + skippedRows + ' skipped)</span>' : '') + '</span></div>';
         html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>';
         html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(stagingContext.staging_table) + '</code></span></div>';
         html += '</div></div>';
 
-        // ── Jira Ticket Link (Optional) ────────────────────────────────
+        // Jira Ticket Link
         html += '<div class="execute-ticket">';
         html += '<div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional)</span></div>';
         html += '<div class="ticket-description">Link this import to a Jira ticket by entering the ticket number below. This creates a companion AR log entry on each imported record in Debt Manager, providing an audit trail back to the originating ticket.</div>';
         html += '<div class="ticket-fields">';
-        html += '<div class="ticket-field-row">';
-        html += '<label class="ticket-label" for="jira-ticket">Ticket</label>';
-        html += '<input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" oninput="BDL.ticketChanged()">';
-        html += '</div>';
-        html += '<div class="ticket-field-row" id="ar-message-row" style="display:none;">';
-        html += '<label class="ticket-label" for="ar-message">AR Message</label>';
-        html += '<input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message that will appear in DM AR log">';
-        html += '</div>';
+        html += '<div class="ticket-field-row"><label class="ticket-label" for="jira-ticket">Ticket</label>';
+        var ticketVal = (promoteData && promoteData.jiraTicket) ? escapeHtml(promoteData.jiraTicket) : '';
+        var arMsgVal = (promoteData && promoteData.arMessage) ? escapeHtml(promoteData.arMessage) : '';
+        html += '<input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" value="' + ticketVal + '" oninput="BDL.ticketChanged()"></div>';
+        html += '<div class="ticket-field-row" id="ar-message-row" style="' + (ticketVal ? '' : 'display:none;') + '"><label class="ticket-label" for="ar-message">AR Message</label>';
+        html += '<input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message that will appear in DM AR log" value="' + arMsgVal + '"></div>';
         html += '</div></div>';
 
+        // Column Mapping
         html += '<div class="execute-mapping">';
         html += '<div class="execute-section-header" onclick="BDL.toggleSection(\'mapping-ref\')">Column Mapping <span class="section-toggle" id="toggle-mapping-ref">&#9660;</span></div>';
         html += '<div class="execute-section-body" id="mapping-ref">';
@@ -815,33 +785,43 @@ var BDL = (function () {
             var te = columnMapping[sc];
             var displayName = getFieldDisplayNameByElement(te);
             html += '<div class="execute-map-row"><span class="exec-map-source">' + escapeHtml(sc) + '</span><span class="exec-map-arrow">&#8594;</span>';
-            if (displayName !== te) {
-                html += '<span class="exec-map-target">' + escapeHtml(displayName) + ' <code>' + te + '</code></span>';
-            } else {
-                html += '<span class="exec-map-target"><code>' + te + '</code></span>';
-            }
+            if (displayName !== te) { html += '<span class="exec-map-target">' + escapeHtml(displayName) + ' <code>' + te + '</code></span>'; }
+            else { html += '<span class="exec-map-target"><code>' + te + '</code></span>'; }
             html += '</div>';
         });
         html += '</div></div>';
 
-        html += '<div class="execute-preview">';
-        html += '<div class="execute-section-header" onclick="BDL.toggleSection(\'xml-preview\')">XML Preview <span class="section-toggle" id="toggle-xml-preview">&#9654;</span></div>';
-        html += '<div class="execute-section-body collapsed" id="xml-preview">';
-        html += '<div class="xml-preview-loading" id="xml-preview-content">Click to load XML preview...</div>';
-        html += '<div class="xml-preview-actions"><button class="nav-btn" onclick="BDL.loadXmlPreview()">Load Preview</button></div>';
-        html += '</div></div>';
+        // XML Preview (auto-loads on expand)
+        html += '<div class="execute-preview execute-preview-prominent">';
+        html += '<div class="execute-section-header execute-xml-header" onclick="BDL.toggleXmlPreview()">&#128196; Click here for XML output preview <span class="section-toggle" id="toggle-xml-preview">&#9654;</span></div>';
+        html += '<div class="execute-section-body collapsed" id="xml-preview"><div id="xml-preview-content"></div></div></div>';
 
+        // Execute Actions
         html += '<div class="execute-actions" id="execute-actions">';
         if (envName === 'PROD') {
             html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>';
         }
         html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeImport()">Submit BDL Import</button>';
         html += '</div>';
-
         html += '<div class="execute-progress hidden" id="execute-progress"></div>';
         html += '<div class="execute-result hidden" id="execute-result"></div>';
+        html += '<div class="promote-area hidden" id="promote-area"></div>';
 
         area.innerHTML = html;
+    }
+
+    function toggleXmlPreview() {
+        var body = document.getElementById('xml-preview');
+        var toggle = document.getElementById('toggle-xml-preview');
+        if (!body) return;
+        if (body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            if (toggle) toggle.innerHTML = '&#9660;';
+            if (!xmlPreviewLoaded) { loadXmlPreview(); }
+        } else {
+            body.classList.add('collapsed');
+            if (toggle) toggle.innerHTML = '&#9654;';
+        }
     }
 
     function ticketChanged() {
@@ -849,10 +829,8 @@ var BDL = (function () {
         var messageRow = document.getElementById('ar-message-row');
         var messageInput = document.getElementById('ar-message');
         var ticket = ticketInput ? ticketInput.value.trim() : '';
-
         if (ticket) {
             messageRow.style.display = '';
-            // Only set default if the user hasn't customized the message yet
             if (!messageInput.dataset.userEdited) {
                 var entityType = selectedEntity ? selectedEntity.entity_type : '';
                 messageInput.value = ticket + ': ' + entityType + ' update via BDL Import';
@@ -863,201 +841,167 @@ var BDL = (function () {
             messageInput.dataset.userEdited = '';
         }
     }
-
-    function markMessageEdited() {
-        var messageInput = document.getElementById('ar-message');
-        if (messageInput) messageInput.dataset.userEdited = '1';
-    }
+    function markMessageEdited() { var messageInput = document.getElementById('ar-message'); if (messageInput) messageInput.dataset.userEdited = '1'; }
 
     function toggleSection(sectionId) {
         var body = document.getElementById(sectionId);
         var toggle = document.getElementById('toggle-' + sectionId);
         if (!body) return;
-        if (body.classList.contains('collapsed')) {
-            body.classList.remove('collapsed');
-            if (toggle) toggle.innerHTML = '&#9660;';
-        } else {
-            body.classList.add('collapsed');
-            if (toggle) toggle.innerHTML = '&#9654;';
-        }
+        if (body.classList.contains('collapsed')) { body.classList.remove('collapsed'); if (toggle) toggle.innerHTML = '&#9660;'; }
+        else { body.classList.add('collapsed'); if (toggle) toggle.innerHTML = '&#9654;'; }
     }
 
     function loadXmlPreview() {
         var content = document.getElementById('xml-preview-content');
         content.innerHTML = '<div class="loading">Building XML preview...</div>';
-
         fetch('/api/bdl-import/build-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ staging_table: stagingContext.staging_table, entity_type: selectedEntity.entity_type, config_id: selectedEnvironment.config_id }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
         .then(function (data) {
+            xmlPreviewLoaded = true;
             var sizeKB = (data.full_size_bytes / 1024).toFixed(1);
             var header = '<div class="xml-preview-header">';
             header += '<span class="xml-filename">' + escapeHtml(data.xml_filename) + '</span>';
             header += '<span class="xml-meta">' + data.row_count.toLocaleString() + ' rows &middot; ' + sizeKB + ' KB';
             if (data.truncated) header += ' &middot; <em>preview truncated</em>';
-            header += '</span></div>';
+            header += '</span><button class="xml-copy-btn" onclick="BDL.copyXmlPreview()" title="Copy XML to clipboard">&#128203; Copy</button></div>';
             content.innerHTML = header + '<pre class="xml-preview-code">' + highlightXml(data.xml) + '</pre>';
         })
         .catch(function (err) {
             content.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to build preview: ' + err.message + '</div>';
         });
     }
+	
+	function copyXmlPreview() {
+		var pre = document.querySelector('.xml-preview-code');
+		if (!pre) return;
+		var text = pre.textContent;
+		var ta = document.createElement('textarea');
+		ta.value = text;
+		ta.style.position = 'fixed';
+		ta.style.opacity = '0';
+		document.body.appendChild(ta);
+		ta.select();
+		document.execCommand('copy');
+		document.body.removeChild(ta);
+		var btn = document.querySelector('.xml-copy-btn');
+		if (btn) { var orig = btn.innerHTML; btn.innerHTML = '&#10003; Copied'; setTimeout(function () { btn.innerHTML = orig; }, 1500); }
+    }
 
     function highlightXml(xml) {
-        var s = xml
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-
-        s = s.replace(/(&lt;\?xml\b)(.*?)(\?&gt;)/g,
-            '<span class="xml-decl">$1$2$3</span>');
-
-        s = s.replace(/(&lt;!--)([\s\S]*?)(--&gt;)/g,
-            '<span class="xml-comment">$1$2$3</span>');
-
-        s = s.replace(/(&lt;\/)([\w_:-]+)(&gt;)/g,
-            '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
-
-        s = s.replace(/(&lt;)([\w_:-]+)(\/&gt;)/g,
-            '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
-
+        var s = xml.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        s = s.replace(/(&lt;\?xml\b)(.*?)(\?&gt;)/g, '<span class="xml-decl">$1$2$3</span>');
+        s = s.replace(/(&lt;!--)([\s\S]*?)(--&gt;)/g, '<span class="xml-comment">$1$2$3</span>');
+        s = s.replace(/(&lt;\/)([\w_:-]+)(&gt;)/g, '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
+        s = s.replace(/(&lt;)([\w_:-]+)(\/&gt;)/g, '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
         s = s.replace(/(&lt;)([\w_:-]+)((?:\s+[\w_:-]+=&quot;[^&]*?&quot;)*\s*\/?)(&gt;)/g,
             function (match, lt, tagName, attrs, gt) {
                 var coloredAttrs = attrs.replace(/([\w_:-]+)(=)(&quot;)(.*?)(&quot;)/g,
                     '<span class="xml-attr-name">$1</span><span class="xml-bracket">$2</span><span class="xml-attr-val">$3$4$5</span>');
                 return '<span class="xml-bracket">' + lt + '</span><span class="xml-tag">' + tagName + '</span>' + coloredAttrs + '<span class="xml-bracket">' + gt + '</span>';
             });
-
         s = s.replace(/(<\/span>)([^<]+)(<span class="xml-bracket">&lt;)/g,
             function (match, closeSpan, text, openSpan) {
                 if (text.trim() === '') return match;
                 return closeSpan + '<span class="xml-value">' + text + '</span>' + openSpan;
             });
-
         return s;
     }
 
     function executeImport() {
         if (executeInProgress) return;
-
         var envName = selectedEnvironment.environment;
         var jiraTicket = (document.getElementById('jira-ticket') || {}).value || '';
         jiraTicket = jiraTicket.trim();
 
-        var msg = 'Submit BDL import to ' + envName + '?\n\n';
-        msg += 'Entity: ' + selectedEntity.entity_type + '\n';
-        msg += 'Rows: ' + stagingContext.row_count.toLocaleString() + '\n';
-        if (jiraTicket) msg += 'Jira Ticket: ' + jiraTicket + ' (AR log will be created)\n';
-        msg += '\n';
-        if (envName === 'PROD') msg += 'WARNING: This is a PRODUCTION import and cannot be undone.\n\n';
-        msg += 'Continue?';
-        if (!confirm(msg)) return;
-
-        executeInProgress = true;
-
-        var execBtn = document.getElementById('btn-execute-import');
-        if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; }
-
-        var progress = document.getElementById('execute-progress');
-        progress.classList.remove('hidden');
-        progress.innerHTML = renderProgressSteps('building');
-
-        var mappingJson = JSON.stringify(columnMapping);
-
-        var requestBody = {
-            staging_table: stagingContext.staging_table,
-            entity_type: selectedEntity.entity_type,
-            config_id: selectedEnvironment.config_id,
-            source_filename: uploadedFile ? uploadedFile.name : 'unknown',
-            column_mapping: mappingJson
-        };
-
-        // Include Jira ticket info if provided
-        if (jiraTicket) {
-            requestBody.jira_ticket = jiraTicket;
-            var arMessage = (document.getElementById('ar-message') || {}).value || '';
-            if (arMessage.trim()) requestBody.ar_message = arMessage.trim();
+        var bodyHtml = '<p>Submit BDL import to <strong class="summary-env-' + envName.toLowerCase() + '">' + envName + '</strong>?</p>'
+            + '<p style="font-size:12px;color:#999;">Entity: ' + escapeHtml(selectedEntity.entity_type) + '<br>'
+            + 'Rows: ' + stagingContext.row_count.toLocaleString()
+            + (jiraTicket ? '<br>Jira Ticket: ' + escapeHtml(jiraTicket) + ' (AR log will be created)' : '')
+            + '</p>';
+        if (envName === 'PROD') {
+            bodyHtml += '<p style="color:#f48771;font-weight:600;">This is a PRODUCTION import and cannot be undone.</p>';
         }
 
-        fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-        })
-        .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
-        .then(function (data) {
-            executeInProgress = false;
-
-            if (data._httpStatus >= 400 || data.error) {
+        showConfirm(bodyHtml, {
+            title: 'Submit BDL Import',
+            icon: envName === 'PROD' ? '&#9888;' : '&#9654;',
+            iconColor: envName === 'PROD' ? '#f48771' : '#4ec9b0',
+            confirmLabel: 'Submit Import',
+            cancelLabel: 'Cancel',
+            confirmClass: envName === 'PROD' ? 'xf-modal-btn-danger' : 'xf-modal-btn-primary',
+            html: true
+        }).then(function (confirmed) {
+            if (!confirmed) return;
+            executeInProgress = true;
+            var execBtn = document.getElementById('btn-execute-import');
+            if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; }
+            var progress = document.getElementById('execute-progress');
+            progress.classList.remove('hidden');
+            progress.innerHTML = renderProgressSteps('building');
+            var mappingJson = JSON.stringify(columnMapping);
+            var requestBody = {
+                staging_table: stagingContext.staging_table,
+                entity_type: selectedEntity.entity_type,
+                config_id: selectedEnvironment.config_id,
+                source_filename: uploadedFile ? uploadedFile.name : 'unknown',
+                column_mapping: mappingJson
+            };
+            if (jiraTicket) {
+                requestBody.jira_ticket = jiraTicket;
+                var arMessage = (document.getElementById('ar-message') || {}).value || '';
+                if (arMessage.trim()) requestBody.ar_message = arMessage.trim();
+            }
+            fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            })
+            .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
+            .then(function (data) {
+                executeInProgress = false;
+                if (data._httpStatus >= 400 || data.error) {
+                    progress.innerHTML = renderProgressSteps('failed');
+                    var result = document.getElementById('execute-result');
+                    result.classList.remove('hidden');
+                    result.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Import Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>';
+                    if (execBtn) { execBtn.disabled = false; execBtn.textContent = 'Retry Submit'; }
+                } else {
+                    progress.innerHTML = renderProgressSteps('submitted');
+                    var result = document.getElementById('execute-result');
+                    result.classList.remove('hidden');
+                    var resultHtml = '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>BDL Import Submitted</strong><div class="result-detail">' + escapeHtml(data.message) + '</div><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: <strong>' + data.file_registry_id + '</strong> &middot; Log ID: ' + data.log_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>';
+                    if (data.ar_log) {
+                        if (data.ar_log.success) {
+                            resultHtml += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log Submitted</strong><div class="result-detail">Jira ticket link created for ' + data.ar_log.row_count.toLocaleString() + ' records.</div><div class="result-meta">File: <code>' + escapeHtml(data.ar_log.xml_filename) + '</code> &middot; Registry ID: <strong>' + data.ar_log.file_registry_id + '</strong> &middot; Log ID: ' + data.ar_log.log_id + '</div></div></div>';
+                        } else {
+                            resultHtml += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log Failed</strong><div class="result-detail">The primary import succeeded, but the AR log could not be submitted: ' + escapeHtml(data.ar_log.error) + '</div><div class="result-meta">The import data is in Debt Manager. The Jira ticket link was not created.</div></div></div>';
+                        }
+                    }
+                    result.innerHTML = resultHtml;
+                    var actions = document.getElementById('execute-actions');
+                    if (actions) actions.classList.add('hidden');
+                    stepComplete[5] = true;
+                    updateStepperUI();
+                    updateNavButtons();
+                    if (envName !== 'PROD' && data.promote_cooldown_seconds && data.prod_config_id) {
+                        promoteData = {
+                            cooldownSeconds: data.promote_cooldown_seconds,
+                            prodConfigId: data.prod_config_id,
+                            jiraTicket: jiraTicket,
+                            arMessage: (document.getElementById('ar-message') || {}).value || '',
+                            testEnvironment: envName
+                        };
+                        showPromoteCard();
+                    }
+                }
+            })
+            .catch(function (err) {
+                executeInProgress = false;
                 progress.innerHTML = renderProgressSteps('failed');
                 var result = document.getElementById('execute-result');
                 result.classList.remove('hidden');
-                result.innerHTML = '<div class="execute-result-fail">'
-                    + '<span class="result-icon">&#10006;</span>'
-                    + '<div><strong>Import Failed</strong>'
-                    + '<div class="result-detail">' + escapeHtml(data.error) + '</div>'
-                    + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '')
-                    + '</div></div>';
-
+                result.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
                 if (execBtn) { execBtn.disabled = false; execBtn.textContent = 'Retry Submit'; }
-            } else {
-                progress.innerHTML = renderProgressSteps('submitted');
-                var result = document.getElementById('execute-result');
-                result.classList.remove('hidden');
-
-                var resultHtml = '<div class="execute-result-success">'
-                    + '<span class="result-icon">&#10003;</span>'
-                    + '<div><strong>BDL Import Submitted</strong>'
-                    + '<div class="result-detail">' + escapeHtml(data.message) + '</div>'
-                    + '<div class="result-meta">'
-                    + 'File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; '
-                    + 'Registry ID: <strong>' + data.file_registry_id + '</strong> &middot; '
-                    + 'Log ID: ' + data.log_id + ' &middot; '
-                    + data.row_count.toLocaleString() + ' rows'
-                    + '</div></div></div>';
-
-                // AR log result (if applicable)
-                if (data.ar_log) {
-                    if (data.ar_log.success) {
-                        resultHtml += '<div class="execute-result-success execute-result-ar">'
-                            + '<span class="result-icon">&#10003;</span>'
-                            + '<div><strong>AR Log Submitted</strong>'
-                            + '<div class="result-detail">Jira ticket link created for ' + data.ar_log.row_count.toLocaleString() + ' records.</div>'
-                            + '<div class="result-meta">'
-                            + 'File: <code>' + escapeHtml(data.ar_log.xml_filename) + '</code> &middot; '
-                            + 'Registry ID: <strong>' + data.ar_log.file_registry_id + '</strong> &middot; '
-                            + 'Log ID: ' + data.ar_log.log_id
-                            + '</div></div></div>';
-                    } else {
-                        resultHtml += '<div class="execute-result-warn execute-result-ar">'
-                            + '<span class="result-icon">&#9888;</span>'
-                            + '<div><strong>AR Log Failed</strong>'
-                            + '<div class="result-detail">The primary import succeeded, but the AR log could not be submitted: ' + escapeHtml(data.ar_log.error) + '</div>'
-                            + '<div class="result-meta">The import data is in Debt Manager. The Jira ticket link was not created.</div>'
-                            + '</div></div>';
-                    }
-                }
-
-                result.innerHTML = resultHtml;
-
-                var actions = document.getElementById('execute-actions');
-                if (actions) actions.classList.add('hidden');
-
-                stepComplete[5] = true;
-                updateStepperUI();
-            }
-        })
-        .catch(function (err) {
-            executeInProgress = false;
-            progress.innerHTML = renderProgressSteps('failed');
-            var result = document.getElementById('execute-result');
-            result.classList.remove('hidden');
-            result.innerHTML = '<div class="execute-result-fail">'
-                + '<span class="result-icon">&#10006;</span>'
-                + '<div><strong>Request Failed</strong>'
-                + '<div class="result-detail">' + escapeHtml(err.message) + '</div>'
-                + '</div></div>';
-
-            if (execBtn) { execBtn.disabled = false; execBtn.textContent = 'Retry Submit'; }
+            });
         });
     }
 
@@ -1068,27 +1012,20 @@ var BDL = (function () {
             { key: 'registered', label: 'Registering with DM' },
             { key: 'submitted',  label: 'Triggering Import' }
         ];
-
         var phaseOrder = { building: 0, writing: 1, registered: 2, submitted: 3, failed: -1 };
         var currentIdx = phaseOrder[currentPhase] !== undefined ? phaseOrder[currentPhase] : -1;
         var isFailed = (currentPhase === 'failed');
-
         var html = '<div class="progress-steps">';
         phases.forEach(function (p, idx) {
             var cls = 'progress-step';
-            if (isFailed) {
-                cls += (idx <= Math.max(currentIdx, 0)) ? ' progress-failed' : '';
-            } else if (idx < currentIdx) {
-                cls += ' progress-complete';
-			} else if (idx === currentIdx) {
-				cls += (currentPhase === 'submitted') ? ' progress-complete' : ' progress-active';
-			}
+            if (isFailed) { cls += (idx <= Math.max(currentIdx, 0)) ? ' progress-failed' : ''; }
+            else if (idx < currentIdx) { cls += ' progress-complete'; }
+            else if (idx === currentIdx) { cls += (currentPhase === 'submitted') ? ' progress-complete' : ' progress-active'; }
             var icon = '';
             if (isFailed && idx === Math.max(currentIdx, 0)) icon = '&#10006;';
             else if (idx < currentIdx || (currentPhase === 'submitted' && idx === currentIdx)) icon = '&#10003;';
             else if (idx === currentIdx && !isFailed) icon = '&#9679;';
             else icon = '&#9675;';
-
             html += '<div class="' + cls + '"><span class="progress-icon">' + icon + '</span><span class="progress-label">' + p.label + '</span></div>';
             if (idx < phases.length - 1) html += '<div class="progress-connector' + (idx < currentIdx ? ' progress-connector-done' : '') + '"></div>';
         });
@@ -1096,39 +1033,139 @@ var BDL = (function () {
         return html;
     }
 
-    // ── Templates ─────────────────────────────────────────────────────────
+    // ── Promote to Production ────────────────────────────────────────────
+    function clearPromoteState() {
+        if (promoteCountdownTimer) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; }
+        promoteData = null;
+        promoteSecondsRemaining = 0;
+        promoteReady = false;
+    }
 
+    function showPromoteCard() {
+        var area = document.getElementById('promote-area');
+        if (!area || !promoteData) return;
+        promoteSecondsRemaining = promoteData.cooldownSeconds;
+        promoteReady = false;
+        var html = '<div class="promote-card" id="promote-card" onclick="BDL.promoteClicked()">';
+        html += '<div class="promote-card-header"><span class="promote-card-icon">&#9650;</span><span class="promote-card-title">Promote to Production</span></div>';
+        html += '<div class="promote-card-timer" id="promote-timer">' + formatCountdown(promoteSecondsRemaining) + '</div>';
+        html += '<div class="promote-card-hint" id="promote-hint">Verify your data in Debt Manager before promoting</div>';
+        html += '</div>';
+        area.innerHTML = html;
+        area.classList.remove('hidden');
+        promoteCountdownTimer = setInterval(function () {
+            promoteSecondsRemaining--;
+            var timerEl = document.getElementById('promote-timer');
+            var hintEl = document.getElementById('promote-hint');
+            var cardEl = document.getElementById('promote-card');
+            if (promoteSecondsRemaining <= 0) {
+                clearInterval(promoteCountdownTimer);
+                promoteCountdownTimer = null;
+                promoteReady = true;
+                if (timerEl) timerEl.textContent = 'Ready';
+                if (hintEl) hintEl.textContent = 'Click to promote this import to Production';
+                if (cardEl) cardEl.classList.add('promote-ready');
+            } else {
+                if (timerEl) timerEl.textContent = formatCountdown(promoteSecondsRemaining);
+            }
+        }, 1000);
+    }
+
+    function formatCountdown(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = seconds % 60;
+        return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function promoteClicked() {
+        if (!promoteData) return;
+        if (!promoteReady) {
+            var hintEl = document.getElementById('promote-hint');
+            if (hintEl) {
+                hintEl.textContent = 'This was just submitted to ' + promoteData.testEnvironment + '. Please confirm the data looks correct in Debt Manager before promoting.';
+                hintEl.classList.add('promote-hint-flash');
+                setTimeout(function () { hintEl.classList.remove('promote-hint-flash'); }, 2000);
+            }
+            return;
+        }
+        showPromoteConfirmModal();
+    }
+
+    function showPromoteConfirmModal() {
+        var existing = document.getElementById('promote-confirm-modal');
+        if (existing) existing.remove();
+        var modal = document.createElement('div');
+        modal.id = 'promote-confirm-modal';
+        modal.className = 'xf-modal-overlay';
+        modal.innerHTML = '<div class="xf-modal">'
+            + '<div class="xf-modal-header"><span class="xf-modal-icon" style="color:#4ec9b0">&#9650;</span><span>Promote to Production</span></div>'
+            + '<div class="xf-modal-body">'
+            + '<p>You are about to submit this same data to <strong>Production</strong>.</p>'
+            + '<p>The XML will be rebuilt from your existing staging table and submitted through the Production DM API.</p>'
+            + '<p style="color:#f48771;font-weight:600;">This action cannot be undone.</p>'
+            + '</div>'
+            + '<div class="xf-modal-actions">'
+            + '<button class="xf-modal-btn-cancel" id="promote-confirm-cancel">Cancel</button>'
+            + '<button class="xf-modal-btn-danger" id="promote-confirm-go">Promote to Production</button>'
+            + '</div></div>';
+        document.body.appendChild(modal);
+        document.getElementById('promote-confirm-cancel').onclick = function () { modal.remove(); };
+        document.getElementById('promote-confirm-go').onclick = function () { modal.remove(); executePromote(); };
+    }
+
+    function executePromote() {
+        if (!promoteData || !stagingContext) return;
+        fetch('/api/bdl-import/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staging_table: stagingContext.staging_table, entity_type: selectedEntity.entity_type, config_id: promoteData.prodConfigId })
+        })
+        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+        .then(function () {
+            var envCards = document.getElementById('env-cards');
+            var envData = (envCards._envData || []).find(function (e) { return e.config_id === promoteData.prodConfigId; });
+            if (!envData) { envData = { config_id: promoteData.prodConfigId, environment: 'PROD', server_name: 'Production' }; }
+            selectedEnvironment = envData;
+            var savedJiraTicket = promoteData.jiraTicket;
+            var savedArMessage = promoteData.arMessage;
+            clearPromoteState();
+            promoteData = { jiraTicket: savedJiraTicket, arMessage: savedArMessage };
+            stepComplete[5] = false;
+            renderExecuteReview();
+            promoteData = null;
+        })
+        .catch(function (err) {
+            var errMsg = err.message || '';
+            if (errMsg.indexOf('not found') !== -1) {
+                showAlert('The staging table no longer exists (it may have been cleaned up). You will need to start a new import.', {
+                    title: 'Staging Table Expired', icon: '&#9888;', iconColor: '#dcdcaa'
+                }).then(function () { resetFromStep(1); showStep(1); });
+            } else {
+                showAlert(errMsg, { title: 'Verification Failed', icon: '&#10005;', iconColor: '#f48771' });
+            }
+        });
+    }
+
+    // ── Templates ─────────────────────────────────────────────────────────
     function loadTemplates(entityType) {
         entityTemplates = [];
         var list = document.getElementById('template-list');
         if (!list) return;
         list.innerHTML = '<div class="template-empty">Loading templates...</div>';
-
         fetch('/api/bdl-import/templates?entity_type=' + encodeURIComponent(entityType))
             .then(function (r) { return r.json(); })
-            .then(function (data) {
-                entityTemplates = data.templates || [];
-                renderTemplateList();
-            })
-            .catch(function () {
-                list.innerHTML = '<div class="template-empty">Failed to load templates.</div>';
-            });
+            .then(function (data) { entityTemplates = data.templates || []; renderTemplateList(); })
+            .catch(function () { list.innerHTML = '<div class="template-empty">Failed to load templates.</div>'; });
     }
 
     function renderTemplateList() {
         var list = document.getElementById('template-list');
         if (!list) return;
-
-        if (!entityTemplates.length) {
-            list.innerHTML = '<div class="template-empty">No saved templates for this entity type.</div>';
-            return;
-        }
-
+        if (!entityTemplates.length) { list.innerHTML = '<div class="template-empty">No saved templates for this entity type.</div>'; return; }
         var isStep4 = (currentStep === 4);
         var html = '';
         entityTemplates.forEach(function (t) {
-            var mapping = {};
-            try { mapping = JSON.parse(t.column_mapping); } catch (e) {}
+            var mapping = {}; try { mapping = JSON.parse(t.column_mapping); } catch (e) {}
             var fieldCount = Object.keys(mapping).length;
             var matchInfo = '';
             if (isStep4 && parsedFileData) {
@@ -1138,7 +1175,6 @@ var BDL = (function () {
             var creator = t.created_by || '';
             if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
             var activeCls = (activeTemplateId === t.template_id) ? ' template-card-active' : '';
-
             html += '<div class="template-card' + activeCls + '" onclick="BDL.previewTemplate(' + t.template_id + ')">';
             html += '<div class="template-card-name">' + escapeHtml(t.template_name) + '</div>';
             if (t.description) html += '<div class="template-card-desc">' + escapeHtml(t.description) + '</div>';
@@ -1152,20 +1188,15 @@ var BDL = (function () {
         if (!parsedFileData) return 0;
         var count = 0;
         var fileHeaders = parsedFileData.headers.map(function (h) { return h.toUpperCase(); });
-        Object.keys(mapping).forEach(function (sourceCol) {
-            if (fileHeaders.indexOf(sourceCol.toUpperCase()) !== -1) count++;
-        });
+        Object.keys(mapping).forEach(function (sourceCol) { if (fileHeaders.indexOf(sourceCol.toUpperCase()) !== -1) count++; });
         return count;
     }
 
     function updateTemplateSectionState() {
         var saveArea = document.getElementById('template-save-area');
         if (saveArea) {
-            if (currentStep === 4 && columnMapping && Object.keys(columnMapping).length > 0) {
-                saveArea.classList.remove('hidden');
-            } else {
-                saveArea.classList.add('hidden');
-            }
+            if (currentStep === 4 && columnMapping && Object.keys(columnMapping).length > 0) { saveArea.classList.remove('hidden'); }
+            else { saveArea.classList.add('hidden'); }
         }
         if (entityTemplates.length > 0) renderTemplateList();
     }
@@ -1173,33 +1204,25 @@ var BDL = (function () {
     function previewTemplate(templateId) {
         var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
         if (!template) return;
-
-        var mapping = {};
-        try { mapping = JSON.parse(template.column_mapping); } catch (e) {}
+        var mapping = {}; try { mapping = JSON.parse(template.column_mapping); } catch (e) {}
         var mappingKeys = Object.keys(mapping);
-
         var slideout = document.getElementById('template-slideout');
         var overlay = document.getElementById('template-slideout-overlay');
         var title = document.getElementById('template-slideout-title');
         var body = document.getElementById('template-slideout-body');
-
         title.textContent = template.template_name;
-
         var html = '';
-
         var creator = template.created_by || '';
         if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
         html += '<div class="slideout-meta">';
         if (template.description) html += '<div class="slideout-desc">' + escapeHtml(template.description) + '</div>';
         html += '<div class="slideout-creator">Created by <strong>' + escapeHtml(creator) + '</strong></div>';
         html += '</div>';
-
         if (parsedFileData && currentStep === 4) {
             var matchCount = countTemplateMatches(mapping);
             var matchClass = (matchCount === mappingKeys.length) ? 'slideout-match-full' : (matchCount > 0 ? 'slideout-match-partial' : 'slideout-match-none');
             html += '<div class="slideout-match-summary ' + matchClass + '">' + matchCount + ' of ' + mappingKeys.length + ' mapped columns found in your file</div>';
         }
-
         html += '<div class="slideout-mappings-header">Column Mappings (' + mappingKeys.length + ')</div>';
         html += '<div class="slideout-mappings">';
         var fileHeaders = parsedFileData ? parsedFileData.headers.map(function (h) { return h.toUpperCase(); }) : [];
@@ -1208,34 +1231,21 @@ var BDL = (function () {
             var displayName = getFieldDisplayNameByElement(elementName);
             var matched = fileHeaders.indexOf(sourceCol.toUpperCase()) !== -1;
             var matchCls = parsedFileData ? (matched ? ' slideout-pair-match' : ' slideout-pair-miss') : '';
-
-            html += '<div class="slideout-pair' + matchCls + '">';
-            html += '<span class="slideout-pair-source">' + escapeHtml(sourceCol) + '</span>';
-            html += '<span class="slideout-pair-arrow">&#8594;</span>';
-            if (displayName !== elementName) {
-                html += '<span class="slideout-pair-target">' + escapeHtml(displayName) + ' <code>' + elementName + '</code></span>';
-            } else {
-                html += '<span class="slideout-pair-target"><code>' + elementName + '</code></span>';
-            }
-            if (parsedFileData) {
-                html += '<span class="slideout-pair-status">' + (matched ? '&#10003;' : '&#10005;') + '</span>';
-            }
+            html += '<div class="slideout-pair' + matchCls + '"><span class="slideout-pair-source">' + escapeHtml(sourceCol) + '</span><span class="slideout-pair-arrow">&#8594;</span>';
+            if (displayName !== elementName) { html += '<span class="slideout-pair-target">' + escapeHtml(displayName) + ' <code>' + elementName + '</code></span>'; }
+            else { html += '<span class="slideout-pair-target"><code>' + elementName + '</code></span>'; }
+            if (parsedFileData) { html += '<span class="slideout-pair-status">' + (matched ? '&#10003;' : '&#10005;') + '</span>'; }
             html += '</div>';
         });
         html += '</div>';
-
         if (currentStep === 4 && parsedFileData) {
-            html += '<div class="slideout-actions">';
-            html += '<button class="replace-btn" onclick="BDL.applyTemplate(' + templateId + ')">Apply Template</button>';
-            html += '</div>';
+            html += '<div class="slideout-actions"><button class="replace-btn" onclick="BDL.applyTemplate(' + templateId + ')">Apply Template</button></div>';
         }
-
         var currentUser = 'FAC\\' + (window.userTier || '');
         var isCreator = (template.created_by === currentUser);
         if (isCreator || window.isAdmin) {
             html += '<div class="slideout-danger"><button class="slideout-delete-btn" onclick="BDL.deleteTemplate(' + templateId + ')">Delete Template</button></div>';
         }
-
         body.innerHTML = html;
         slideout.classList.add('open');
         overlay.classList.add('open');
@@ -1251,21 +1261,14 @@ var BDL = (function () {
     function applyTemplate(templateId) {
         var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
         if (!template || !parsedFileData) return;
-
-        var templateMapping = {};
-        try { templateMapping = JSON.parse(template.column_mapping); } catch (e) { return; }
-
+        var templateMapping = {}; try { templateMapping = JSON.parse(template.column_mapping); } catch (e) { return; }
         var fileHeaderMap = {};
         parsedFileData.headers.forEach(function (h) { fileHeaderMap[h.toUpperCase()] = h; });
-
         columnMapping = {};
         Object.keys(templateMapping).forEach(function (sourceCol) {
             var actualHeader = fileHeaderMap[sourceCol.toUpperCase()];
-            if (actualHeader) {
-                columnMapping[actualHeader] = templateMapping[sourceCol];
-            }
+            if (actualHeader) { columnMapping[actualHeader] = templateMapping[sourceCol]; }
         });
-
         activeTemplateId = templateId;
         closeTemplatePreview();
         renderMapping();
@@ -1278,57 +1281,35 @@ var BDL = (function () {
         var nameInput = document.getElementById('save-template-name');
         var descInput = document.getElementById('save-template-desc');
         var status = document.getElementById('save-template-status');
-        nameInput.value = '';
-        descInput.value = '';
-        status.classList.add('hidden');
-        status.textContent = '';
-
+        nameInput.value = ''; descInput.value = '';
+        status.classList.add('hidden'); status.textContent = '';
         var preview = document.getElementById('save-template-preview');
         var mKeys = Object.keys(columnMapping);
         var html = '<div class="template-modal-preview-header">' + mKeys.length + ' field mapping(s) will be saved:</div>';
         mKeys.forEach(function (sc) {
-            var te = columnMapping[sc];
-            var displayName = getFieldDisplayNameByElement(te);
-            html += '<div class="template-modal-preview-row">';
-            html += '<span class="pair-source">' + escapeHtml(sc) + '</span>';
-            html += '<span class="pair-arrow">&#8594;</span>';
-            if (displayName !== te) {
-                html += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>';
-            } else {
-                html += '<span class="pair-target">' + te + '</span>';
-            }
+            var te = columnMapping[sc]; var displayName = getFieldDisplayNameByElement(te);
+            html += '<div class="template-modal-preview-row"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>';
+            if (displayName !== te) { html += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>'; }
+            else { html += '<span class="pair-target">' + te + '</span>'; }
             html += '</div>';
         });
         preview.innerHTML = html;
-
         modal.classList.remove('hidden');
         nameInput.focus();
     }
 
-    function closeSaveTemplate() {
-        document.getElementById('template-modal-overlay').classList.add('hidden');
-    }
+    function closeSaveTemplate() { document.getElementById('template-modal-overlay').classList.add('hidden'); }
 
     function saveTemplate() {
         var nameInput = document.getElementById('save-template-name');
         var descInput = document.getElementById('save-template-desc');
         var status = document.getElementById('save-template-status');
         var name = nameInput.value.trim();
-
         if (!name) { nameInput.focus(); nameInput.style.borderColor = '#f48771'; return; }
         nameInput.style.borderColor = '';
-
-        var mappingJson = JSON.stringify(columnMapping);
-
         fetch('/api/bdl-import/templates', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                entity_type: selectedEntity.entity_type,
-                template_name: name,
-                description: descInput.value.trim() || null,
-                column_mapping: mappingJson
-            })
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity_type: selectedEntity.entity_type, template_name: name, description: descInput.value.trim() || null, column_mapping: JSON.stringify(columnMapping) })
         })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
         .then(function (data) {
@@ -1341,10 +1322,7 @@ var BDL = (function () {
                 status.className = 'template-modal-status template-modal-success';
                 status.classList.remove('hidden');
                 activeTemplateId = data.template_id;
-                setTimeout(function () {
-                    closeSaveTemplate();
-                    loadTemplates(selectedEntity.entity_type);
-                }, 1000);
+                setTimeout(function () { closeSaveTemplate(); loadTemplates(selectedEntity.entity_type); }, 1000);
             }
         })
         .catch(function (err) {
@@ -1357,20 +1335,28 @@ var BDL = (function () {
     function deleteTemplate(templateId) {
         var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
         if (!template) return;
-        if (!confirm('Delete template "' + template.template_name + '"?\n\nThis cannot be undone.')) return;
-
-        fetch('/api/bdl-import/templates/' + templateId, { method: 'DELETE' })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data.success) {
-                    if (activeTemplateId === templateId) activeTemplateId = null;
-                    closeTemplatePreview();
-                    loadTemplates(selectedEntity.entity_type);
-                } else {
-                    alert(data.error || 'Failed to delete template.');
-                }
-            })
-            .catch(function (err) { alert('Error: ' + err.message); });
+        showConfirm('Delete template "' + template.template_name + '"? This cannot be undone.', {
+            title: 'Delete Template',
+            icon: '&#128465;',
+            iconColor: '#f48771',
+            confirmLabel: 'Delete',
+            cancelLabel: 'Keep',
+            confirmClass: 'xf-modal-btn-danger'
+        }).then(function (confirmed) {
+            if (!confirmed) return;
+            fetch('/api/bdl-import/templates/' + templateId, { method: 'DELETE' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        if (activeTemplateId === templateId) activeTemplateId = null;
+                        closeTemplatePreview();
+                        loadTemplates(selectedEntity.entity_type);
+                    } else {
+                        showAlert(data.error || 'Failed to delete template.', { title: 'Delete Failed', icon: '&#10005;', iconColor: '#f48771' });
+                    }
+                })
+                .catch(function (err) { showAlert(err.message, { title: 'Error', icon: '&#10005;', iconColor: '#f48771' }); });
+        });
     }
 
     function resetFromStep(step) {
@@ -1380,6 +1366,8 @@ var BDL = (function () {
         if (step <= 5 && step > 3) { validationResult = null; }
         if (step <= 4 && step > 3) { validationResult = null; activeTemplateId = null; }
         executeInProgress = false;
+        xmlPreviewLoaded = false;
+        clearPromoteState();
         updateStepperUI(); updateNavButtons();
     }
 
@@ -1395,11 +1383,12 @@ var BDL = (function () {
         revalidate: revalidate, applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows,
         runCleanup: runCleanup,
         toggleValidationCard: toggleValidationCard, toggleInfoCard: toggleInfoCard,
-        toggleSection: toggleSection, loadXmlPreview: loadXmlPreview, executeImport: executeImport,
+		toggleSection: toggleSection, toggleXmlPreview: toggleXmlPreview, copyXmlPreview: copyXmlPreview, executeImport: executeImport,
         ticketChanged: ticketChanged,
         previewTemplate: previewTemplate, closeTemplatePreview: closeTemplatePreview,
         applyTemplate: applyTemplate, showSaveTemplate: showSaveTemplate,
-        closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate
+        closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate,
+        promoteClicked: promoteClicked
     };
 })();
 document.addEventListener('DOMContentLoaded', BDL.init);
