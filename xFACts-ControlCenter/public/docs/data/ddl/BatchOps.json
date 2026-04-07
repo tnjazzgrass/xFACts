@@ -5,7 +5,7 @@
                        "description":  "BDL import lifecycle tracking table. Captures each BDL file from registration through terminal state with partition-based progress tracking, DM summary count capture from file_rgstry_cstm_dtl, and log-based stall detection. Tracks files from all BDL sources including Sterling ETL pipelines, manual IT imports, and xFACts BDL Import tool submissions.",
                        "module":  "BatchOps",
                        "category":  "BatchOps",
-                       "dataFlow":  "Collect-BDLBatchStatus.ps1 queries the DM replica for file-level bdl_log rows (sub_entty_nm_txt IS NULL) within the configured lookback window and inserts one tracking row per new file_registry_id. File_Registry provides the filename and creation timestamp. file_rgstry_dtl provides the total record count and batch identifier from the BDL XML header. On each subsequent polling cycle, all incomplete rows are updated with current file-level status from bdl_log, partition progress counts from partition-level bdl_log rows, and DM summary counts from file_rgstry_cstm_dtl (staging success/failed, import processed/success/failed) which are populated by DM at or near import completion. Terminal states (IMPORTED, STAGEFAILED, IMPORT_FAILED) set is_complete = 1 and record completed_status. The alert evaluation step reads incomplete rows for stall detection and completed rows for terminal failure alerting. The Control Center Batch Monitoring page reads this table for active BDL file status display and historical analysis.",
+                       "dataFlow":  "Collect-BDLBatchStatus.ps1 queries the DM replica for BDL file data from multiple source tables: bdl_log for file-level status and partition progress, File_Registry and Ref_File_Stts_Cd for authoritative terminal state detection, file_rgstry_dtl for record counts, and file_rgstry_cstm_dtl for DM summary metrics. New files are inserted with terminal detection at insert time via File_Registry.file_stts_cd. Incomplete files are updated each polling cycle with current status from both bdl_log (bdl_log_status_code, bdl_log_status) and File_Registry (file_registry_status_code, file_registry_status). The collector writes to BDL_BatchTracking via the AG listener.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -25,7 +25,7 @@
                                        },
                                        {
                                            "ordinal":  3,
-                                           "name":  "filename",
+                                           "name":  "file_name",
                                            "dataType":  "varchar",
                                            "length":  "512",
                                            "nullable":  true,
@@ -60,20 +60,20 @@
                                        },
                                        {
                                            "ordinal":  7,
-                                           "name":  "file_status_code",
+                                           "name":  "bdl_log_status_code",
                                            "dataType":  "smallint",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Current file-level status code from bdl_log (bdl_prcss_stss_cd). Only file-level rows are tracked (sub_entty_nm_txt IS NULL). Joined to ref_entty_async_stts_cd for status text."
+                                           "description":  "Current file-level status code from bdl_log (bdl_prcss_stss_cd). Only file-level rows are tracked (sub_entty_nm_txt IS NULL). Joined to ref_entty_async_stts_cd for status text. Used for progress display and timing — not for terminal state detection, which is driven by file_registry_status_code from File_Registry."
                                        },
                                        {
                                            "ordinal":  8,
-                                           "name":  "file_status",
+                                           "name":  "bdl_log_status",
                                            "dataType":  "varchar",
                                            "length":  "32",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Human-readable file-level status text from ref_entty_async_stts_cd."
+                                           "description":  "Human-readable file-level status text from ref_entty_async_stts_cd. Reflects bdl_log status for progress display. Terminal state is determined by file_registry_status_code from File_Registry."
                                        },
                                        {
                                            "ordinal":  9,
@@ -105,7 +105,7 @@
                                            "dataType":  "datetime",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Timestamp of the IMPORTED (status 12) row in bdl_log. Marks successful completion of import processing. This is the terminal success timestamp."
+                                           "description":  "Timestamp of the IMPORTED (status 12) row in bdl_log, if one was written. Some files complete processing without DM writing an IMPORTED row to bdl_log. This column is informational — terminal state is determined by file_registry_status_code, not by the presence of this timestamp."
                                        },
                                        {
                                            "ordinal":  13,
@@ -170,36 +170,53 @@
                                            "length":  "512",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Error message captured from bdl_log.bdl_log_msg on STAGEFAILED rows or from File_Registry.file_err_msg_txt on file-level failures."
+                                           "description":  "Error message captured from bdl_log.bdl_log_msg on failure rows or from File_Registry.file_err_msg_txt. The collector checks bdl_log first, falling back to File_Registry if no log message exists."
                                        },
                                        {
                                            "ordinal":  21,
+                                           "name":  "file_registry_status_code",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "File_Registry status code from DM (File_Registry.file_stts_cd joined to Ref_File_Stts_Cd). The authoritative source for terminal state detection. Updated from File_Registry each polling cycle. Terminal values: 5 (PROCESSED), 6 (FAILED), 7 (CANCELED), 8 (PARTIALLY_PROCESSED). Non-terminal values indicate the file is still in-flight."
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "file_registry_status",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable File_Registry status text from Ref_File_Stts_Cd.file_stts_val_txt. Paired with file_registry_status_code. Displayed in the Control Center active batches view as the primary BDL status indicator."
+                                       },
+                                       {
+                                           "ordinal":  23,
                                            "name":  "is_complete",
                                            "dataType":  "bit",
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "((0))",
-                                           "description":  "Whether the file has reached a terminal state. Incomplete files are updated each polling cycle. Terminal states: IMPORTED (12), STAGEFAILED (8), IMPORT_FAILED (11)."
+                                           "description":  "Whether the file has reached a terminal state in File_Registry. Incomplete files are updated each polling cycle. Terminal File_Registry statuses: PROCESSED (5), FAILED (6), CANCELED (7), PARTIALLY_PROCESSED (8)."
                                        },
                                        {
-                                           "ordinal":  22,
+                                           "ordinal":  24,
                                            "name":  "completed_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "When the file reached terminal state as detected by the collector."
+                                           "description":  "When the file reached terminal state. Sourced from File_Registry.upsrt_dttm when file_stts_cd transitions to a terminal value (5, 6, 7, or 8)."
                                        },
                                        {
-                                           "ordinal":  23,
+                                           "ordinal":  25,
                                            "name":  "completed_status",
                                            "dataType":  "varchar",
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "How the file completed. Set from the file-level bdl_log status text at terminal detection."
+                                           "description":  "How the file completed. Set from Ref_File_Stts_Cd.file_stts_val_txt when File_Registry.file_stts_cd reaches a terminal value. Values align with DM file status terminology."
                                        },
                                        {
-                                           "ordinal":  24,
+                                           "ordinal":  26,
                                            "name":  "last_log_id",
                                            "dataType":  "bigint",
                                            "nullable":  true,
@@ -207,7 +224,7 @@
                                            "description":  "Max bdl_log_id from partition-level rows for this file. Compared across polls to detect activity. Unlike NB which uses a separate log table, BDL stall detection uses the partition rows in bdl_log itself as the activity indicator."
                                        },
                                        {
-                                           "ordinal":  25,
+                                           "ordinal":  27,
                                            "name":  "last_log_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -215,7 +232,7 @@
                                            "description":  "Timestamp of the most recent partition-level bdl_log entry. Provides human-readable recency of processing activity."
                                        },
                                        {
-                                           "ordinal":  26,
+                                           "ordinal":  28,
                                            "name":  "stall_poll_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -224,7 +241,7 @@
                                            "description":  "Consecutive polls with no new partition activity. Increments when last_log_id is unchanged, resets to 0 on new activity. Drives stall detection alerting when threshold is exceeded."
                                        },
                                        {
-                                           "ordinal":  27,
+                                           "ordinal":  29,
                                            "name":  "alert_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -233,7 +250,7 @@
                                            "description":  "Number of alerts fired for this file. Used to prevent duplicate alerting. Resets to 0 when partition activity resumes, enabling re-alerting on subsequent stall episodes."
                                        },
                                        {
-                                           "ordinal":  28,
+                                           "ordinal":  30,
                                            "name":  "collected_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -242,7 +259,7 @@
                                            "description":  "When this row was first inserted by the collector."
                                        },
                                        {
-                                           "ordinal":  29,
+                                           "ordinal":  31,
                                            "name":  "last_polled_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -266,7 +283,7 @@
                                            "isPrimaryKey":  false,
                                            "isUniqueConstraint":  false,
                                            "keyColumns":  "file_created_dttm",
-                                           "includedColumns":  "file_registry_id, filename, is_complete, file_status_code, entity_type"
+                                           "includedColumns":  "file_registry_id, file_name, is_complete, bdl_log_status_code, entity_type"
                                        },
                                        {
                                            "name":  "IX_BDL_BatchTracking_Incomplete",
@@ -275,7 +292,7 @@
                                            "isPrimaryKey":  false,
                                            "isUniqueConstraint":  false,
                                            "keyColumns":  "is_complete, last_polled_dttm",
-                                           "includedColumns":  "file_registry_id, file_status_code, last_log_id, stall_poll_count"
+                                           "includedColumns":  "file_registry_id, bdl_log_status_code, last_log_id, stall_poll_count"
                                        },
                                        {
                                            "name":  "UQ_BDL_BatchTracking_FileRegistryID",
@@ -289,7 +306,7 @@
                        "designNotes":  [
                                            {
                                                "topic":  "Single-Table Source with Dual Row Types",
-                                               "note":  "BDL has no separate batch header table. bdl_log serves as both status log and partition tracker. File-level rows (sub_entty_nm_txt IS NULL) track the overall lifecycle: PROCESSING, STAGED, IMPORTED, STAGEFAILED, IMPORT_FAILED. Partition-level rows (sub_entty_nm_txt IS NOT NULL, bdl_prttn_flg = Y) track individual processing chunks of approximately 100 operational units each. The collector uses file-level rows for status detection and partition-level rows for progress tracking and stall detection.",
+                                               "note":  "BDL has no separate batch header table. bdl_log serves as both status log and partition tracker. File-level rows (sub_entty_nm_txt IS NULL) track processing progress: PROCESSING, STAGED, and optionally IMPORTED. However, bdl_log does not reliably reflect the true terminal state of a file — some files complete processing without DM writing the expected terminal rows. Terminal state is determined exclusively from File_Registry.file_stts_cd (stored as file_registry_status_code), which is the authoritative source DM uses to record file outcomes.",
                                                "sortOrder":  1
                                            },
                                            {
@@ -321,57 +338,73 @@
                                                "topic":  "Source-Agnostic Collection",
                                                "note":  "The collector tracks all BDL files regardless of origin. Sources include Sterling/IBM ETL pipelines (SENDRIGHT_*, CLIENTS_*, DM_ACCNTS_*, LINK_DHS_*, ACRNT_*), manual IT ticket imports (SD-* filenames), and xFACts BDL Import tool submissions (xFACts_* filenames). The tracking table does not distinguish between sources — all files follow the same lifecycle through bdl_log. The future BDL Import write-back feature will use file_registry_id to correlate xFACts-originated imports with their tracking rows.",
                                                "sortOrder":  7
+                                           },
+                                           {
+                                               "topic":  "File_Registry-Based Terminal Detection",
+                                               "note":  "Terminal state is determined by File_Registry.file_stts_cd (stored as file_registry_status_code) rather than bdl_log status codes. Investigation revealed that bdl_log file-level rows do not reliably reflect the true file outcome: files can complete processing in DM without receiving IMPORTED (12) rows in bdl_log, and files that DM marks as FAILED (file_stts_cd = 6) may still show IMPORTED in bdl_log. File_Registry.file_stts_cd is the single authoritative source DM uses for file lifecycle state. The file_registry_status_code and file_registry_status columns are updated from File_Registry each polling cycle, and completed_dttm is sourced from File_Registry.upsrt_dttm when a terminal status is detected.",
+                                               "sortOrder":  8
+                                           },
+                                           {
+                                               "topic":  "Dual Status Column Naming",
+                                               "note":  "Two distinct status sources are tracked on each row. bdl_log_status_code and bdl_log_status reflect the latest file-level entry from bdl_log — used for progress display and partition timing. file_registry_status_code and file_registry_status reflect File_Registry.file_stts_cd — used for authoritative terminal detection and displayed as the primary status in the Control Center. Column names include their source system prefix to prevent confusion between the two.",
+                                               "sortOrder":  9
                                            }
                                        ],
                        "statusValues":  [
                                             {
                                                 "column":  "completed_status",
-                                                "value":  "IMPORTED",
-                                                "meaning":  "File successfully imported into DM (file-level status 12). Primary success terminal state representing the vast majority of completions. Set when the IMPORTED row appears in bdl_log for the file.",
+                                                "value":  "PROCESSED",
+                                                "meaning":  "File successfully processed by DM (file_registry_status_code = 5). All records staged and imported without file-level failure. Individual record-level failures may still exist within partitions but the overall file outcome is success.",
                                                 "sortOrder":  1
                                             },
                                             {
                                                 "column":  "completed_status",
-                                                "value":  "STAGEFAILED",
-                                                "meaning":  "File failed XML validation or entity configuration during staging (status 8). Terminal failure. Error message captured from bdl_log.bdl_log_msg or File_Registry.file_err_msg_txt. Common cause: all entities in the XML failed validation or the entity type is not configured in DM import metadata.",
+                                                "value":  "PARTIALLY_PROCESSED",
+                                                "meaning":  "File processed by DM with partial success (file_registry_status_code = 8). Some records failed during staging or import. The import_failed_count and staging_failed_count columns indicate the scope of failures. Common for large ETL files where business rules reject a subset of records.",
                                                 "sortOrder":  2
                                             },
                                             {
                                                 "column":  "completed_status",
-                                                "value":  "IMPORT_FAILED",
-                                                "meaning":  "File staged successfully but failed during import processing (status 11). Terminal failure. Rare — only 7 historical occurrences. The file content was parsed and staged but the import step could not complete.",
+                                                "value":  "FAILED",
+                                                "meaning":  "File failed processing in DM (file_registry_status_code = 6). Covers both staging failures (XML validation, unconfigured entity types) and import processing failures. The error_message column and File_Registry.file_err_msg_txt provide failure details.",
                                                 "sortOrder":  3
                                             },
                                             {
                                                 "column":  "completed_status",
-                                                "value":  "ABANDONED",
-                                                "meaning":  "Historical files that remained in PROCESSING or STAGED status beyond a reasonable timeframe. Applied during the initial backfill to files older than 5 days that never reached a terminal state. These are stuck files that will never complete and require manual investigation in DM.",
+                                                "value":  "CANCELED",
+                                                "meaning":  "File was canceled in DM (file_registry_status_code = 7). Never observed in production data but exists as a valid terminal state in the DM reference table.",
                                                 "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "RETRY",
+                                                "meaning":  "Historical edge case. Four files from the initial data backfill had file_registry_status_code = 11 (RETRY) and were manually marked complete. RETRY is not treated as a terminal state by the collector — if new files land on this status, the collector will continue polling them and stall-alert if no progress is detected.",
+                                                "sortOrder":  5
                                             }
                                         ],
                        "queries":  [
                                        {
                                            "name":  "Active files with progress",
                                            "description":  "All incomplete BDL files with partition progress, total record count, and stall detection state.",
-                                           "sql":  "SELECT file_registry_id, filename, file_status, entity_type,\r\n       total_record_count, partition_count, partitions_completed,\r\n       stall_poll_count, last_log_dttm,\r\n       DATEDIFF(MINUTE, file_created_dttm, GETDATE()) AS minutes_since_created\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE is_complete = 0\r\nORDER BY file_created_dttm DESC;",
+                                           "sql":  "SELECT file_registry_id, file_name, bdl_log_status, entity_type,\r\n        file_registry_status_code, file_registry_status,\r\n        total_record_count, partition_count, partitions_completed,\r\n        stall_poll_count, last_log_dttm,\r\n        DATEDIFF(MINUTE, file_created_dttm, GETDATE()) AS age_minutes\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE is_complete = 0\r\nORDER BY file_created_dttm DESC;",
                                            "sortOrder":  1
                                        },
                                        {
                                            "name":  "Recent completions with duration and record counts",
                                            "description":  "Completed BDL files from the last 7 days with processing duration and DM summary counts.",
-                                           "sql":  "SELECT file_registry_id, filename, entity_type, completed_status,\r\n       total_record_count, import_success_count, import_failed_count,\r\n       staging_failed_count,\r\n       file_created_dttm, completed_dttm,\r\n       DATEDIFF(MINUTE, processing_started_dttm, completed_dttm) AS total_minutes\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE is_complete = 1\r\n  AND completed_dttm \u003e= DATEADD(DAY, -7, GETDATE())\r\nORDER BY completed_dttm DESC;",
+                                           "sql":  "SELECT file_registry_id, file_name, entity_type, completed_status,\r\n       total_record_count, import_success_count, import_failed_count,\r\n       staging_failed_count,\r\n       file_created_dttm, completed_dttm,\r\n       DATEDIFF(MINUTE, processing_started_dttm, completed_dttm) AS total_minutes\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE is_complete = 1\r\n  AND completed_dttm \u003e= DATEADD(DAY, -7, GETDATE())\r\nORDER BY completed_dttm DESC;",
                                            "sortOrder":  2
                                        },
                                        {
                                            "name":  "Stalled files",
                                            "description":  "Incomplete files with active stall counters — partition activity has stopped.",
-                                           "sql":  "SELECT file_registry_id, filename, file_status, entity_type,\r\n       total_record_count, partition_count, partitions_completed,\r\n       stall_poll_count, last_log_dttm,\r\n       DATEDIFF(MINUTE, last_log_dttm, GETDATE()) AS minutes_since_activity\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE is_complete = 0\r\n  AND stall_poll_count \u003e 0\r\nORDER BY stall_poll_count DESC;",
+                                           "sql":  "SELECT file_registry_id, file_name, bdl_log_status, entity_type,\r\n        file_registry_status_code, file_registry_status,\r\n        total_record_count, partition_count, partitions_completed,\r\n        stall_poll_count, last_log_dttm,\r\n        DATEDIFF(MINUTE, last_log_dttm, GETDATE()) AS minutes_since_activity\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE is_complete = 0\r\n  AND stall_poll_count \u003e 0\r\nORDER BY stall_poll_count DESC;",
                                            "sortOrder":  3
                                        },
                                        {
                                            "name":  "Daily BDL volume summary",
                                            "description":  "Seven-day trend of BDL file volume, outcomes, and total records processed.",
-                                           "sql":  "SELECT CAST(file_created_dttm AS DATE) AS file_date,\r\n       COUNT(*) AS total_files,\r\n       SUM(CASE WHEN completed_status = \u0027IMPORTED\u0027 THEN 1 ELSE 0 END) AS imported,\r\n       SUM(CASE WHEN completed_status IN (\u0027STAGEFAILED\u0027, \u0027IMPORT_FAILED\u0027) THEN 1 ELSE 0 END) AS failed,\r\n       SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_progress,\r\n       SUM(ISNULL(total_record_count, 0)) AS total_records,\r\n       SUM(ISNULL(import_success_count, 0)) AS records_imported\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE file_created_dttm \u003e= DATEADD(DAY, -7, GETDATE())\r\nGROUP BY CAST(file_created_dttm AS DATE)\r\nORDER BY file_date DESC;",
+                                           "sql":  "SELECT CAST(file_created_dttm AS DATE) AS file_date,\r\n        COUNT(*) AS total_files,\r\n        SUM(CASE WHEN completed_status IN (\u0027PROCESSED\u0027, \u0027PARTIALLY_PROCESSED\u0027) THEN 1 ELSE 0 END) AS succeeded,\r\n        SUM(CASE WHEN completed_status IN (\u0027FAILED\u0027, \u0027CANCELED\u0027) THEN 1 ELSE 0 END) AS failed,\r\n        SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,\r\n        SUM(ISNULL(total_record_count, 0)) AS total_records\r\nFROM BatchOps.BDL_BatchTracking\r\nWHERE file_created_dttm \u003e= DATEADD(DAY, -7, GETDATE())\r\nGROUP BY CAST(file_created_dttm AS DATE)\r\nORDER BY file_date DESC;",
                                            "sortOrder":  4
                                        }
                                    ],
@@ -1548,14 +1581,14 @@
     "scripts":  [
                     {
                         "name":  "Collect-BDLBatchStatus.ps1",
-                        "description":  "Monitors Debt Manager BDL file lifecycle from registration through terminal state. Collects new files from bdl_log, updates status for in-flight files with partition-based progress tracking, captures DM summary counts from file_rgstry_dtl and file_rgstry_cstm_dtl, and evaluates three alert conditions (STAGEFAILED, IMPORT_FAILED, stall detection) with configurable Jira/Teams routing.",
+                        "description":  "Monitors Debt Manager BDL file lifecycle from registration through terminal state. Collects new files, updates status for in-flight files with partition-based progress tracking, captures DM summary counts from file_rgstry_cstm_dtl, and evaluates alert conditions. Terminal state determined by File_Registry.file_stts_cd (PROCESSED, FAILED, CANCELED, PARTIALLY_PROCESSED). Two alert conditions: FAILED files and stalled partition processing.",
                         "module":  "BatchOps",
                         "category":  "BatchOps",
-                        "dataFlow":  "Reads GlobalConfig for AG replica settings, alert thresholds, and routing configuration. Reads bdl_log (file-level and partition-level rows), ref_entty_async_stts_cd, File_Registry, file_rgstry_dtl, and file_rgstry_cstm_dtl from the DM replica. Writes to BatchOps.BDL_BatchTracking (inserts and updates), BatchOps.Status (execution state). Alert evaluation writes to Teams.AlertQueue (direct INSERT) and Jira.TicketQueue (via sp_QueueTicket). Reads Teams.RequestLog and Jira.RequestLog for deduplication checks. Calls Complete-OrchestratorTask for orchestrator callback.",
+                        "dataFlow":  "Reads GlobalConfig for AG replica settings, alert thresholds, and routing configuration. Reads bdl_log (file-level and partition-level rows), ref_entty_async_stts_cd, File_Registry, Ref_File_Stts_Cd, file_rgstry_dtl, and file_rgstry_cstm_dtl from the DM replica for BDL file status and progress data. Terminal state detection uses File_Registry.file_stts_cd as the authoritative source, stored as file_registry_status_code and file_registry_status on the tracking row. Writes to BatchOps.BDL_BatchTracking for lifecycle tracking. Queues alerts to Teams.AlertQueue and Jira.sp_QueueTicket with deduplication checks against Teams.RequestLog and Jira.RequestLog. Updates BatchOps.Status for proof-of-life monitoring.",
                         "designNotes":  [
                                             {
                                                 "topic":  "Three-Step Execution Pattern",
-                                                "note":  "Follows the established BatchOps collector pattern: Step 1 (Collect) discovers new files and inserts tracking rows with terminal detection at insert time. Step 2 (Update) polls all incomplete files for current status, partition progress, and DM summary counts. Step 3 (Evaluate) checks three alert conditions — STAGEFAILED, IMPORT_FAILED, and stall detection. Each step is independent and reports results to the execution summary.",
+                                                "note":  "Follows the established BatchOps collector pattern: Step 1 (Collect) discovers new files via bdl_log and inserts tracking rows with terminal detection from File_Registry.file_stts_cd at insert time. Step 2 (Update) polls all incomplete files for current status from both bdl_log (progress info, partition counts, timestamps) and File_Registry (terminal state via file_registry_status_code). Step 3 (Evaluate) checks two alert conditions: FAILED completions and stalled processing.",
                                                 "sortOrder":  1
                                             },
                                             {
@@ -1565,7 +1598,7 @@
                                             },
                                             {
                                                 "topic":  "Bitwise Alert Routing",
-                                                "note":  "Each of the three alert conditions has an independent GlobalConfig routing value using bitwise flags: 0 = disabled, 1 = Teams only, 2 = Jira only, 3 = Both. The script checks routing -band 2 for Jira and routing -band 1 for Teams. A master switch (bdl_alerting_enabled) must be 1 for any alerts to fire regardless of individual routing.",
+                                                "note":  "Each of the two alert conditions has an independent GlobalConfig routing value using bitwise flags: 0 = disabled, 1 = Teams only, 2 = Jira only, 3 = Both. The script checks routing -band 2 for Jira and -band 1 for Teams. Alert conditions: bdl_alert_failed_routing (covers all FAILED completions regardless of failure phase) and bdl_alert_stall_routing (partition processing stalls). Deduplication checks prevent duplicate alerts for the same trigger.",
                                                 "sortOrder":  3
                                             },
                                             {
@@ -1577,7 +1610,7 @@
                         "relationshipNotes":  [
                                                   {
                                                       "relatedObject":  "BDL_BatchTracking",
-                                                      "note":  "Primary data store. The script inserts new tracking rows, updates all incomplete rows each cycle with status, partition progress, DM summary counts, and stall detection counters. Terminal state detection sets is_complete and completed_status.",
+                                                      "note":  "Primary data store. The script inserts new tracking rows, updates all incomplete rows each cycle with status from bdl_log (bdl_log_status_code, bdl_log_status) and File_Registry (file_registry_status_code, file_registry_status), partition progress, DM summary counts, and stall detection counters. Terminal state detection uses File_Registry.file_stts_cd via file_registry_status_code.",
                                                       "sortOrder":  1
                                                   },
                                                   {
