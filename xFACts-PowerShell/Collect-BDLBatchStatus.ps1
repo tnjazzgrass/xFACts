@@ -12,11 +12,19 @@
     with partition-based progress tracking, captures DM summary counts, and
     evaluates alert conditions.
 
-    BDL lifecycle (file-level, filtered by sub_entty_nm_txt IS NULL):
-      Happy path:    PROCESSING (2) -> STAGED (10) -> IMPORTED (12)
-      Stage failure: PROCESSING (2) -> STAGEFAILED (8)
-      Import failure: PROCESSING (2) -> STAGED (10) -> IMPORT_FAILED (11)
-      Cleanup (not monitored): DELETING (13) -> DELETED (14)
+    Terminal state is determined by File_Registry.file_stts_cd (authoritative):
+      5 = PROCESSED (success)
+      6 = FAILED (failure)
+      7 = CANCELED (failure, never observed)
+      8 = PARTIALLY_PROCESSED (partial success)
+
+    Non-terminal File_Registry statuses (file remains in-flight):
+      0 = UNKNOWN, 1 = NEW, 2 = UPDATING, 3 = READY, 4 = PROCESSING,
+      9 = WAITING, 10 = STAGED, 11 = RETRY
+
+    BDL lifecycle in bdl_log (used for progress tracking and timestamps, NOT terminal detection):
+      File-level rows (sub_entty_nm_txt IS NULL): PROCESSING (2), STAGED (10), IMPORTED (12)
+      Cleanup rows excluded from tracking: DELETING (13), DELETED (14), DELETE_FAILED (15)
 
     Follows the xFACts collect/evaluate pattern:
     - Reads from configurable AG replica (PRIMARY or SECONDARY) for DM queries
@@ -26,6 +34,13 @@
 
     CHANGELOG
     ---------
+    2026-04-06  Terminal detection refactored to use File_Registry.file_stts_cd
+                instead of bdl_log status codes. file_registry_status_code stored on tracking row.
+                completed_status vocabulary aligned with DM: PROCESSED, FAILED,
+                PARTIALLY_PROCESSED, CANCELED. ABANDONED status retired.
+                completed_dttm sourced from File_Registry.upsrt_dttm.
+                Alert evaluation consolidated: STAGEFAILED + IMPORT_FAILED merged
+                into single FAILED check.
     2026-04-04  Refactored to bulk query pattern matching NB/PMT collectors
                 Collect step uses single bulk query with joins instead of per-file queries
                 Update step uses bulk queries for status, partitions, and custom details
@@ -173,8 +188,7 @@ function Initialize-Configuration {
         BDL_StallPollThreshold          = 12
         BDL_AlertingEnabled             = $false
         BDL_LookbackDays                = 7
-        BDL_Alert_StageFailed           = 3
-        BDL_Alert_ImportFailed          = 3
+        BDL_Alert_Failed                = 3
         BDL_Alert_Stall                 = 1
     }
 
@@ -186,8 +200,7 @@ function Initialize-Configuration {
                 "bdl_stall_poll_threshold"          { $Script:Config.BDL_StallPollThreshold = [int]$row.setting_value }
                 "bdl_alerting_enabled"              { $Script:Config.BDL_AlertingEnabled = [bool][int]$row.setting_value }
                 "bdl_lookback_days"                 { $Script:Config.BDL_LookbackDays = [int]$row.setting_value }
-                "bdl_alert_stagefailed_routing"     { $Script:Config.BDL_Alert_StageFailed = [int]$row.setting_value }
-                "bdl_alert_import_failed_routing"   { $Script:Config.BDL_Alert_ImportFailed = [int]$row.setting_value }
+                "bdl_alert_failed_routing"          { $Script:Config.BDL_Alert_Failed = [int]$row.setting_value }
                 "bdl_alert_stall_routing"           { $Script:Config.BDL_Alert_Stall = [int]$row.setting_value }
             }
         }
@@ -269,6 +282,7 @@ function Step-CollectNewFiles {
     .SYNOPSIS
         Discovers new BDL files in DM not yet tracked in xFACts and inserts them.
         Single bulk query with joins pulls all data, then filters in memory.
+        Terminal state determined by File_Registry.file_stts_cd.
     #>
     param([bool]$PreviewOnly = $true)
 
@@ -284,8 +298,9 @@ function Step-CollectNewFiles {
         $lookbackDays = $Script:Config.BDL_LookbackDays
 
         # Single bulk query: all BDL file data in one round trip
+        # Terminal detection from File_Registry.file_stts_cd, not bdl_log
         $sourceQuery = @"
-            ;WITH CurrentStatus AS (
+            ;WITH CurrentBDLStatus AS (
                 SELECT
                     bl.file_registry_id,
                     bl.bdl_prcss_stss_cd,
@@ -338,16 +353,18 @@ function Step-CollectNewFiles {
                 INNER JOIN dbo.file_rgstry_dtl d ON cd.file_rgstry_dtl_id = d.file_rgstry_dtl_id
                 GROUP BY d.file_registry_id
             )
-            SELECT cs.file_registry_id, cs.bdl_prcss_stss_cd AS file_status_code, cs.status_text AS file_status,
+            SELECT cs.file_registry_id, cs.bdl_prcss_stss_cd AS bdl_log_status_code, cs.status_text AS bdl_log_status,
                 cs.bdl_log_msg AS error_message, cs.crtd_dttm AS status_dttm,
                 fr.file_name_full_txt AS filename, fr.file_crt_dttm AS file_created_dttm, fr.file_err_msg_txt,
+                fr.file_stts_cd AS file_registry_status_code, frs.file_stts_val_txt AS file_registry_status, fr.upsrt_dttm AS file_registry_upsrt_dttm,
                 frd.file_rgstry_dtl_rec_ttl_cnt AS total_record_count, frd.btch_idntfr_txt AS batch_identifier,
                 ft.processing_started, ft.staged, ft.imported,
                 et.sub_entty_nm_txt AS entity_type,
                 pp.partition_count, pp.partitions_completed, pp.max_log_id, pp.max_log_dttm,
                 cd.staging_success, cd.staging_failed, cd.import_processed, cd.import_success, cd.import_failed
-            FROM CurrentStatus cs
+            FROM CurrentBDLStatus cs
             INNER JOIN dbo.File_Registry fr ON cs.file_registry_id = fr.File_registry_id
+            INNER JOIN dbo.Ref_File_Stts_Cd frs ON fr.file_stts_cd = frs.file_stts_cd
             INNER JOIN FileTimestamps ft ON cs.file_registry_id = ft.file_registry_id
             LEFT JOIN dbo.file_rgstry_dtl frd ON cs.file_registry_id = frd.file_registry_id
             LEFT JOIN EntityType et ON cs.file_registry_id = et.file_registry_id AND et.rn = 1
@@ -375,13 +392,15 @@ function Step-CollectNewFiles {
 
         foreach ($file in $newFiles) {
             $fileRegId = $file.file_registry_id
-            $statusCode = $file.file_status_code
+            $fileSttsCode = $file.file_registry_status_code
+            $fileSttsText = ($file.file_registry_status -replace "'", "''").Trim()
+            $statusCode = $file.bdl_log_status_code
 
             $filenameSafe = if ($file.filename -is [DBNull]) { "NULL" } else { "'" + ($file.filename -replace "'", "''") + "'" }
             $entityType = if ($file.entity_type -is [DBNull]) { "NULL" } else { "'" + ($file.entity_type -replace "'", "''") + "'" }
             $batchIdent = if ($file.batch_identifier -is [DBNull]) { "NULL" } else { "'" + ($file.batch_identifier -replace "'", "''") + "'" }
             $totalRecCnt = if ($file.total_record_count -is [DBNull]) { "NULL" } else { $file.total_record_count }
-            $statusText = ($file.file_status -replace "'", "''").Trim()
+            $statusText = ($file.bdl_log_status -replace "'", "''").Trim()
 
             $fileCrtDttm = if ($file.file_created_dttm -is [DBNull]) { "NULL" } else { "'" + $file.file_created_dttm.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'" }
             $procStarted = if ($file.processing_started -is [DBNull]) { "NULL" } else { "'" + $file.processing_started.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'" }
@@ -405,17 +424,16 @@ function Step-CollectNewFiles {
             if ($logMsg) { $errorMsg = "'" + ($logMsg -replace "'", "''").Trim() + "'" }
             elseif ($fileErrMsg -and $fileErrMsg.Trim() -ne '') { $errorMsg = "'" + ($fileErrMsg -replace "'", "''").Trim() + "'" }
 
+            # Terminal detection from File_Registry.file_stts_cd
             $isComplete = 0; $completedDttm = "NULL"; $completedStatus = "NULL"
-            if ($statusCode -eq 12) {
-                $isComplete = 1; $completedDttm = $importedDttm; $completedStatus = "'IMPORTED'"
-            } elseif ($statusCode -eq 8) {
-                $isComplete = 1; $completedDttm = "'" + $file.status_dttm.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'"; $completedStatus = "'STAGEFAILED'"
-            } elseif ($statusCode -eq 11) {
-                $isComplete = 1; $completedDttm = "'" + $file.status_dttm.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'"; $completedStatus = "'IMPORT_FAILED'"
+            if ($fileSttsCode -in @(5, 6, 7, 8)) {
+                $isComplete = 1
+                $completedDttm = "'" + $file.file_registry_upsrt_dttm.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'"
+                $completedStatus = "'$fileSttsText'"
             }
 
             if ($PreviewOnly) {
-                $statusInfo = if ($isComplete -eq 1) { "COMPLETE ($completedStatus)" } else { $statusText }
+                $statusInfo = if ($isComplete -eq 1) { "COMPLETE ($completedStatus)" } else { "$statusText (File_Registry: $fileSttsText)" }
                 $filenameDisplay = if ($file.filename -is [DBNull]) { "unknown" } else { $file.filename }
                 Write-Log "  [Preview] Would insert file $fileRegId ($filenameDisplay) - $statusInfo" "INFO"
                 $newFileCount++
@@ -423,8 +441,8 @@ function Step-CollectNewFiles {
             else {
                 $insertQuery = @"
                     INSERT INTO BatchOps.BDL_BatchTracking (
-                        file_registry_id, filename, entity_type, batch_identifier, total_record_count,
-                        file_status_code, file_status,
+                        file_registry_id, file_name, entity_type, batch_identifier, total_record_count,
+                        bdl_log_status_code, bdl_log_status, file_registry_status_code, file_registry_status,
                         file_created_dttm, processing_started_dttm, staged_dttm, imported_dttm,
                         staging_success_count, staging_failed_count,
                         import_processed_count, import_success_count, import_failed_count,
@@ -435,7 +453,7 @@ function Step-CollectNewFiles {
                     )
                     VALUES (
                         $fileRegId, $filenameSafe, $entityType, $batchIdent, $totalRecCnt,
-                        $statusCode, '$statusText',
+                        $statusCode, '$statusText', $fileSttsCode, '$fileSttsText',
                         $fileCrtDttm, $procStarted, $stagedDttm, $importedDttm,
                         $stagingSuccess, $stagingFailed,
                         $importProcessed, $importSuccess, $importFailed,
@@ -448,7 +466,7 @@ function Step-CollectNewFiles {
                 $result = Invoke-SqlNonQuery -Query $insertQuery
                 if ($result) {
                     $newFileCount++
-                    Write-Log "  Inserted file $fileRegId - $(if ($isComplete -eq 1) { 'COMPLETE' } else { $statusText })" "SUCCESS"
+                    Write-Log "  Inserted file $fileRegId - $(if ($isComplete -eq 1) { "COMPLETE ($fileSttsText)" } else { "$statusText (File_Registry: $fileSttsText)" })" "SUCCESS"
                 } else {
                     Write-Log "  Failed to insert file $fileRegId" "ERROR"
                 }
@@ -470,6 +488,7 @@ function Step-UpdateIncompleteFiles {
     .SYNOPSIS
         Updates all incomplete files with current DM state. Uses bulk queries
         to minimize round trips, then matches against tracked rows in memory.
+        Terminal detection from File_Registry.file_stts_cd.
     #>
     param([bool]$PreviewOnly = $true)
 
@@ -479,8 +498,8 @@ function Step-UpdateIncompleteFiles {
 
     try {
         $incompleteQuery = @"
-            SELECT tracking_id, file_registry_id, filename,
-                   last_log_id, stall_poll_count, alert_count, file_status_code
+            SELECT tracking_id, file_registry_id, file_name,
+                   last_log_id, stall_poll_count, alert_count, bdl_log_status_code
             FROM BatchOps.BDL_BatchTracking
             WHERE is_complete = 0
 "@
@@ -497,7 +516,17 @@ function Step-UpdateIncompleteFiles {
         # Build comma-separated ID list for bulk queries
         $fileIds = @($incompleteFiles | ForEach-Object { $_.file_registry_id }) -join ','
 
-        # ── Bulk query 1: Current file-level status ──
+        # ── Bulk query 1: File_Registry status (authoritative terminal detection) ──
+        $fileRegistryQuery = @"
+            SELECT fr.File_registry_id, fr.file_stts_cd AS file_registry_status_code, frs.file_stts_val_txt AS file_registry_status,
+                   fr.upsrt_dttm AS file_registry_upsrt_dttm, fr.file_err_msg_txt
+            FROM dbo.File_Registry fr
+            INNER JOIN dbo.Ref_File_Stts_Cd frs ON fr.file_stts_cd = frs.file_stts_cd
+            WHERE fr.File_registry_id IN ($fileIds)
+"@
+        $fileRegistryData = Get-SourceData -Query $fileRegistryQuery
+
+        # ── Bulk query 2: Current bdl_log file-level status (for progress info) ──
         $statusQuery = @"
             ;WITH RankedStatus AS (
                 SELECT bl.file_registry_id, bl.bdl_prcss_stss_cd, s.entty_async_stts_val_txt AS status_text,
@@ -514,7 +543,7 @@ function Step-UpdateIncompleteFiles {
 "@
         $statusData = Get-SourceData -Query $statusQuery
 
-        # ── Bulk query 2: Lifecycle timestamps ──
+        # ── Bulk query 3: Lifecycle timestamps ──
         $timestampQuery = @"
             SELECT bl.file_registry_id,
                 MIN(CASE WHEN bl.bdl_prcss_stss_cd = 10 THEN bl.crtd_dttm END) AS staged,
@@ -525,7 +554,7 @@ function Step-UpdateIncompleteFiles {
 "@
         $timestampData = Get-SourceData -Query $timestampQuery
 
-        # ── Bulk query 3: Entity types ──
+        # ── Bulk query 4: Entity types ──
         $entityQuery = @"
             ;WITH RankedEntity AS (
                 SELECT file_registry_id, sub_entty_nm_txt,
@@ -537,7 +566,7 @@ function Step-UpdateIncompleteFiles {
 "@
         $entityData = Get-SourceData -Query $entityQuery
 
-        # ── Bulk query 4: Partition progress ──
+        # ── Bulk query 5: Partition progress ──
         $partitionQuery = @"
             SELECT bl.file_registry_id,
                 COUNT(DISTINCT bl.bdl_prttn_nmbr) AS partition_count,
@@ -550,7 +579,7 @@ function Step-UpdateIncompleteFiles {
 "@
         $partitionData = Get-SourceData -Query $partitionQuery
 
-        # ── Bulk query 5: Custom details ──
+        # ── Bulk query 6: Custom details ──
         $customDtlQuery = @"
             SELECT d.file_registry_id,
                 MAX(CASE WHEN cd.file_rgstry_cstm_dtl_nm = 'Dm_staging_success_count' THEN cd.file_rgstry_cstm_dtl_val_txt END) AS staging_success,
@@ -566,6 +595,8 @@ function Step-UpdateIncompleteFiles {
         $customDtlData = Get-SourceData -Query $customDtlQuery
 
         # ── Build lookup hashtables for O(1) access ──
+        $fileRegistryLookup = @{}
+        if ($fileRegistryData) { foreach ($r in @($fileRegistryData)) { $fileRegistryLookup[$r.File_registry_id] = $r } }
         $statusLookup = @{}
         if ($statusData) { foreach ($r in @($statusData)) { $statusLookup[$r.file_registry_id] = $r } }
         $timestampLookup = @{}
@@ -585,15 +616,20 @@ function Step-UpdateIncompleteFiles {
             $currentAlertCount = if ($tracking.alert_count -is [DBNull]) { 0 } else { $tracking.alert_count }
             $filenameDisplay = if ($tracking.filename -is [DBNull]) { "file $fileRegId" } else { $tracking.filename }
 
-            $status = $statusLookup[$fileRegId]
-            if (-not $status) {
-                Write-Log "  File ${fileRegId}: no status data found in DM" "WARN"
+            # File_Registry lookup (authoritative)
+            $frData = $fileRegistryLookup[$fileRegId]
+            if (-not $frData) {
+                Write-Log "  File ${fileRegId}: no File_Registry data found" "WARN"
                 continue
             }
+            $fileSttsCode = $frData.file_registry_status_code
+            $fileSttsText = ($frData.file_registry_status -replace "'", "''").Trim()
 
-            $statusCode = $status.bdl_prcss_stss_cd
-            $statusText = ($status.status_text -replace "'", "''").Trim()
-            $logMsg = if ($status.bdl_log_msg -is [DBNull]) { $null } else { $status.bdl_log_msg }
+            # bdl_log status (for progress info)
+            $status = $statusLookup[$fileRegId]
+            $statusCode = if ($status) { $status.bdl_prcss_stss_cd } else { $null }
+            $statusText = if ($status) { ($status.status_text -replace "'", "''").Trim() } else { "UNKNOWN" }
+            $logMsg = if ($status -and $status.bdl_log_msg -isnot [DBNull]) { $status.bdl_log_msg } else { $null }
 
             $ts = $timestampLookup[$fileRegId]
             $stagedDttm = if (-not $ts -or $ts.staged -is [DBNull]) { "NULL" } else { "'" + $ts.staged.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'" }
@@ -617,9 +653,15 @@ function Step-UpdateIncompleteFiles {
             $lastLogIdSql = if ($null -eq $newLogId) { "NULL" } else { $newLogId }
 
             $errorMsg = "NULL"
+            $fileErrMsg = if ($frData.file_err_msg_txt -isnot [DBNull]) { $frData.file_err_msg_txt } else { $null }
             if ($logMsg) { $errorMsg = "'" + ($logMsg -replace "'", "''").Trim() + "'" }
+            elseif ($fileErrMsg -and $fileErrMsg.Trim() -ne '') { $errorMsg = "'" + ($fileErrMsg -replace "'", "''").Trim() + "'" }
 
-            # Stall detection
+            # Use bdl_log status code for bdl_log_status_code if available, otherwise keep existing
+            $statusCodeSql = if ($null -ne $statusCode) { $statusCode } else { "bdl_log_status_code" }
+            $statusTextSql = if ($status) { "'$statusText'" } else { "bdl_log_status" }
+
+            # Stall detection (still based on partition activity in bdl_log)
             $newAlertCount = $currentAlertCount
             if ($null -eq $newLogId) {
                 $newStallCount = $currentStallCount
@@ -633,19 +675,17 @@ function Step-UpdateIncompleteFiles {
                 }
             }
 
-            # Terminal state detection
+            # Terminal state detection from File_Registry.file_stts_cd
             $isComplete = 0; $completedDttm = "NULL"; $completedStatus = "NULL"
-            if ($statusCode -eq 12) {
-                $isComplete = 1; $completedDttm = $importedDttm; $completedStatus = "'IMPORTED'"
-            } elseif ($statusCode -eq 8) {
-                $isComplete = 1; $completedDttm = "'" + $status.crtd_dttm.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'"; $completedStatus = "'STAGEFAILED'"
-            } elseif ($statusCode -eq 11) {
-                $isComplete = 1; $completedDttm = "'" + $status.crtd_dttm.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'"; $completedStatus = "'IMPORT_FAILED'"
+            if ($fileSttsCode -in @(5, 6, 7, 8)) {
+                $isComplete = 1
+                $completedDttm = "'" + $frData.file_registry_upsrt_dttm.ToString("yyyy-MM-dd HH:mm:ss.fff") + "'"
+                $completedStatus = "'$fileSttsText'"
             }
 
             if ($PreviewOnly) {
-                $statusDesc = $statusText
-                if ($isComplete -eq 1) { $statusDesc += " -> COMPLETE" }
+                $statusDesc = "$statusText (File_Registry: $fileSttsText)"
+                if ($isComplete -eq 1) { $statusDesc += " -> COMPLETE ($completedStatus)" }
                 if ($newStallCount -gt 0) { $statusDesc += " (stall: $newStallCount)" }
                 Write-Log "  [Preview] Would update file $fileRegId ($filenameDisplay): $statusDesc" "INFO"
                 $filesUpdated++
@@ -654,8 +694,10 @@ function Step-UpdateIncompleteFiles {
             else {
                 $updateQuery = @"
                     UPDATE BatchOps.BDL_BatchTracking
-                    SET file_status_code         = $statusCode,
-                        file_status              = '$statusText',
+                    SET bdl_log_status_code         = $statusCodeSql,
+                        bdl_log_status              = $statusTextSql,
+                        file_registry_status_code = $fileSttsCode,
+                        file_registry_status         = '$fileSttsText',
                         entity_type              = COALESCE(entity_type, $entityType),
                         staged_dttm              = COALESCE(staged_dttm, $stagedDttm),
                         imported_dttm            = COALESCE(imported_dttm, $importedDttm),
@@ -682,9 +724,9 @@ function Step-UpdateIncompleteFiles {
                     $filesUpdated++
                     if ($isComplete -eq 1) {
                         $filesCompleted++
-                        Write-Log "  File ${fileRegId}: COMPLETED ($completedStatus)" "SUCCESS"
+                        Write-Log "  File ${fileRegId}: COMPLETED ($fileSttsText)" "SUCCESS"
                     } else {
-                        Write-Log "  File ${fileRegId}: updated (stall: $newStallCount)" "DEBUG"
+                        Write-Log "  File ${fileRegId}: updated (File_Registry: $fileSttsText, stall: $newStallCount)" "DEBUG"
                     }
                 } else {
                     Write-Log "  File ${fileRegId}: update failed" "ERROR"
@@ -704,7 +746,9 @@ function Step-UpdateIncompleteFiles {
 function Step-EvaluateAlerts {
     <#
     .SYNOPSIS
-        Evaluates 3 alert conditions on tracked BDL files.
+        Evaluates 2 alert conditions on tracked BDL files.
+        CHECK 1: FAILED (completed_status = 'FAILED')
+        CHECK 2: Stalled Processing (stall_poll_count >= threshold)
         Master switch: bdl_alerting_enabled must be 1 for alerts to fire.
     #>
     param([bool]$PreviewOnly = $true)
@@ -730,89 +774,45 @@ function Step-EvaluateAlerts {
         }
 
         # ══════════════════════════════════════════════════════════════════
-        # CHECK 1: Stage Failed (completed_status = 'STAGEFAILED')
+        # CHECK 1: Failed (completed_status = 'FAILED')
+        # Covers both stage failures and import failures
         # ══════════════════════════════════════════════════════════════════
-        $routing = $Script:Config.BDL_Alert_StageFailed
+        $routing = $Script:Config.BDL_Alert_Failed
 
-        $stageFailures = Get-SqlData -Query @"
-            SELECT file_registry_id, filename, entity_type, total_record_count,
-                   error_message, file_created_dttm, alert_count
+        $failures = Get-SqlData -Query @"
+            SELECT file_registry_id, file_name, entity_type, total_record_count,
+                   staging_success_count, staging_failed_count,
+                   import_success_count, import_failed_count,
+                   error_message, file_created_dttm, bdl_log_status, alert_count
             FROM BatchOps.BDL_BatchTracking
-            WHERE is_complete = 1 AND completed_status = 'STAGEFAILED' AND alert_count = 0
+            WHERE is_complete = 1 AND completed_status = 'FAILED' AND alert_count = 0
 "@
 
-        if ($stageFailures) {
-            foreach ($file in @($stageFailures)) {
+        if ($failures) {
+            foreach ($file in @($failures)) {
                 $alertsDetected++
                 $fileRegId = $file.file_registry_id
                 $filenameDisplay = if ($file.filename -isnot [DBNull]) { $file.filename } else { "File $fileRegId" }
-                Write-Log "  ALERT: Stage failed - file $fileRegId ($filenameDisplay)" "WARN"
+                Write-Log "  ALERT: Failed - file $fileRegId ($filenameDisplay)" "WARN"
 
                 if ($Script:Config.BDL_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
                     $entityType = if ($file.entity_type -isnot [DBNull]) { $file.entity_type } else { 'Unknown' }
                     $totalRecs = if ($file.total_record_count -isnot [DBNull]) { $file.total_record_count } else { 'N/A' }
-                    $errMsg = if ($file.error_message -isnot [DBNull]) { $file.error_message } else { 'No error details available' }
-                    $triggerType = 'BDL_StageFailed'; $triggerValue = "$fileRegId"; $cascadingChild = 'BDL Import Failure'
-                    $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                    $createdTime = if ($file.file_created_dttm -isnot [DBNull]) { $file.file_created_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
-
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Jira.RequestLog WHERE Trigger_Type = '$triggerType' AND Trigger_Value = '$triggerValue' AND StatusCode = 201 AND TicketKey IS NOT NULL AND TicketKey != 'Email'"
-                        if (-not $jiraDedup) {
-                            $jiraSummary = ("BDL Stage Failed: $filenameDisplay") -replace "'", "''"
-                            $jiraDesc = ("BDL File Stage Failed`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nCreated: $createdTime`n`nError: $errMsg`n`nAction: Review the BDL file for XML validation errors or unconfigured entity types.`n`nDetection Date: $detectionTime") -replace "'", "''"
-                            Invoke-SqlNonQuery -Query "EXEC Jira.sp_QueueTicket @SourceModule = 'BatchOps', @ProjectKey = '$jiraProjectKey', @Summary = N'$jiraSummary', @Description = N'$jiraDesc', @IssueType = '$jiraIssueType', @Priority = '$jiraPriority', @EmailRecipients = '$jiraEmailRecipients', @CascadingField_ID = '$jiraCascadingFieldId', @CascadingField_ParentValue = '$jiraCascadingParent', @CascadingField_ChildValue = '$cascadingChild', @CustomField_ID = '$jiraCustomField1Id', @CustomField_Value = '$jiraCustomField1Value', @CustomField2_ID = '$jiraCustomField2Id', @CustomField2_Value = '$jiraCustomField2Value', @DueDate = '$jiraDueDate', @TriggerType = '$triggerType', @TriggerValue = '$triggerValue'" | Out-Null
-                            Write-Log "    Jira ticket queued for file $fileRegId" "SUCCESS"
-                        } else { Write-Log "    Jira dedup: ticket exists for $triggerType/$triggerValue" "INFO" }
-                    }
-                    if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Teams.RequestLog WHERE trigger_type = '$triggerType' AND trigger_value = '$triggerValue' AND status_code = 200"
-                        if (-not $teamsDedup) {
-                            $teamsTitleSafe = ("{{FIRE}} BDL Stage Failed: $filenameDisplay") -replace "'", "''"
-                            $teamsMessageSafe = ("**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**Created:** $createdTime`n`n**Error:** $errMsg`n`nAction: Review the BDL file for XML validation errors or unconfigured entity types.`n`n**Detection:** $detectionTime") -replace "'", "''"
-                            Invoke-SqlNonQuery -Query "INSERT INTO Teams.AlertQueue (source_module, alert_category, title, message, color, trigger_type, trigger_value, status, created_dttm) VALUES ('BatchOps', 'CRITICAL', N'$teamsTitleSafe', N'$teamsMessageSafe', 'attention', '$triggerType', '$triggerValue', 'Pending', GETDATE())" | Out-Null
-                            Write-Log "    Teams alert queued for file $fileRegId" "SUCCESS"
-                        } else { Write-Log "    Teams dedup: alert exists for $triggerType/$triggerValue" "INFO" }
-                    }
-                    Invoke-SqlNonQuery -Query "UPDATE BatchOps.BDL_BatchTracking SET alert_count = alert_count + 1 WHERE file_registry_id = $fileRegId" | Out-Null
-                    $alertsFired++
-                }
-            }
-        }
-
-        # ══════════════════════════════════════════════════════════════════
-        # CHECK 2: Import Failed (completed_status = 'IMPORT_FAILED')
-        # ══════════════════════════════════════════════════════════════════
-        $routing = $Script:Config.BDL_Alert_ImportFailed
-
-        $importFailures = Get-SqlData -Query @"
-            SELECT file_registry_id, filename, entity_type, total_record_count,
-                   staging_success_count, error_message, file_created_dttm, alert_count
-            FROM BatchOps.BDL_BatchTracking
-            WHERE is_complete = 1 AND completed_status = 'IMPORT_FAILED' AND alert_count = 0
-"@
-
-        if ($importFailures) {
-            foreach ($file in @($importFailures)) {
-                $alertsDetected++
-                $fileRegId = $file.file_registry_id
-                $filenameDisplay = if ($file.filename -isnot [DBNull]) { $file.filename } else { "File $fileRegId" }
-                Write-Log "  ALERT: Import failed - file $fileRegId ($filenameDisplay)" "WARN"
-
-                if ($Script:Config.BDL_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
-                    $entityType = if ($file.entity_type -isnot [DBNull]) { $file.entity_type } else { 'Unknown' }
-                    $totalRecs = if ($file.total_record_count -isnot [DBNull]) { $file.total_record_count } else { 'N/A' }
+                    $fileStatus = if ($file.bdl_log_status -isnot [DBNull]) { $file.bdl_log_status } else { 'Unknown' }
                     $stagedCount = if ($file.staging_success_count -isnot [DBNull]) { $file.staging_success_count } else { 'N/A' }
+                    $stageFailed = if ($file.staging_failed_count -isnot [DBNull]) { $file.staging_failed_count } else { 'N/A' }
+                    $importSuccess = if ($file.import_success_count -isnot [DBNull]) { $file.import_success_count } else { 'N/A' }
+                    $importFailed = if ($file.import_failed_count -isnot [DBNull]) { $file.import_failed_count } else { 'N/A' }
                     $errMsg = if ($file.error_message -isnot [DBNull]) { $file.error_message } else { 'No error details available' }
-                    $triggerType = 'BDL_ImportFailed'; $triggerValue = "$fileRegId"; $cascadingChild = 'BDL Import Failure'
+                    $triggerType = 'BDL_Failed'; $triggerValue = "$fileRegId"; $cascadingChild = 'BDL Import Failure'
                     $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $createdTime = if ($file.file_created_dttm -isnot [DBNull]) { $file.file_created_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
 
                     if ($routing -band 2) {
                         $jiraDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Jira.RequestLog WHERE Trigger_Type = '$triggerType' AND Trigger_Value = '$triggerValue' AND StatusCode = 201 AND TicketKey IS NOT NULL AND TicketKey != 'Email'"
                         if (-not $jiraDedup) {
-                            $jiraSummary = ("BDL Import Failed: $filenameDisplay") -replace "'", "''"
-                            $jiraDesc = ("BDL File Import Failed`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nRecords Staged: $stagedCount`nCreated: $createdTime`n`nError: $errMsg`n`nAction: Review import processing errors in Debt Manager.`n`nDetection Date: $detectionTime") -replace "'", "''"
+                            $jiraSummary = ("BDL Failed: $filenameDisplay") -replace "'", "''"
+                            $jiraDesc = ("BDL File Failed`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nLast BDL Status: $fileStatus`nRecords Staged: $stagedCount (Failed: $stageFailed)`nImport Success: $importSuccess (Failed: $importFailed)`nCreated: $createdTime`n`nError: $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`nDetection Date: $detectionTime") -replace "'", "''"
                             Invoke-SqlNonQuery -Query "EXEC Jira.sp_QueueTicket @SourceModule = 'BatchOps', @ProjectKey = '$jiraProjectKey', @Summary = N'$jiraSummary', @Description = N'$jiraDesc', @IssueType = '$jiraIssueType', @Priority = '$jiraPriority', @EmailRecipients = '$jiraEmailRecipients', @CascadingField_ID = '$jiraCascadingFieldId', @CascadingField_ParentValue = '$jiraCascadingParent', @CascadingField_ChildValue = '$cascadingChild', @CustomField_ID = '$jiraCustomField1Id', @CustomField_Value = '$jiraCustomField1Value', @CustomField2_ID = '$jiraCustomField2Id', @CustomField2_Value = '$jiraCustomField2Value', @DueDate = '$jiraDueDate', @TriggerType = '$triggerType', @TriggerValue = '$triggerValue'" | Out-Null
                             Write-Log "    Jira ticket queued for file $fileRegId" "SUCCESS"
                         } else { Write-Log "    Jira dedup: ticket exists for $triggerType/$triggerValue" "INFO" }
@@ -820,8 +820,8 @@ function Step-EvaluateAlerts {
                     if ($routing -band 1) {
                         $teamsDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Teams.RequestLog WHERE trigger_type = '$triggerType' AND trigger_value = '$triggerValue' AND status_code = 200"
                         if (-not $teamsDedup) {
-                            $teamsTitleSafe = ("{{FIRE}} BDL Import Failed: $filenameDisplay") -replace "'", "''"
-                            $teamsMessageSafe = ("**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**Records Staged:** $stagedCount`n**Created:** $createdTime`n`n**Error:** $errMsg`n`nAction: Review import processing errors in Debt Manager.`n`n**Detection:** $detectionTime") -replace "'", "''"
+                            $teamsTitleSafe = ("{{FIRE}} BDL Failed: $filenameDisplay") -replace "'", "''"
+                            $teamsMessageSafe = ("**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**Last BDL Status:** $fileStatus`n**Records Staged:** $stagedCount (Failed: $stageFailed)`n**Import Success:** $importSuccess (Failed: $importFailed)`n**Created:** $createdTime`n`n**Error:** $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`n**Detection:** $detectionTime") -replace "'", "''"
                             Invoke-SqlNonQuery -Query "INSERT INTO Teams.AlertQueue (source_module, alert_category, title, message, color, trigger_type, trigger_value, status, created_dttm) VALUES ('BatchOps', 'CRITICAL', N'$teamsTitleSafe', N'$teamsMessageSafe', 'attention', '$triggerType', '$triggerValue', 'Pending', GETDATE())" | Out-Null
                             Write-Log "    Teams alert queued for file $fileRegId" "SUCCESS"
                         } else { Write-Log "    Teams dedup: alert exists for $triggerType/$triggerValue" "INFO" }
@@ -833,15 +833,16 @@ function Step-EvaluateAlerts {
         }
 
         # ══════════════════════════════════════════════════════════════════
-        # CHECK 3: Stalled Processing (stall_poll_count >= threshold)
+        # CHECK 2: Stalled Processing (stall_poll_count >= threshold)
         # Re-alertable per stall episode using composite trigger
         # ══════════════════════════════════════════════════════════════════
         $routing = $Script:Config.BDL_Alert_Stall
         $stallThreshold = $Script:Config.BDL_StallPollThreshold
 
         $stalledFiles = Get-SqlData -Query @"
-            SELECT file_registry_id, filename, entity_type, total_record_count,
-                   file_status, file_status_code, partition_count, partitions_completed,
+            SELECT file_registry_id, file_name, entity_type, total_record_count,
+                   bdl_log_status, bdl_log_status_code, file_registry_status_code, file_registry_status,
+                   partition_count, partitions_completed,
                    stall_poll_count, last_log_id, last_log_dttm, file_created_dttm, alert_count
             FROM BatchOps.BDL_BatchTracking
             WHERE is_complete = 0 AND stall_poll_count >= $stallThreshold AND alert_count = 0
@@ -860,7 +861,8 @@ function Step-EvaluateAlerts {
                     $totalRecs = if ($file.total_record_count -isnot [DBNull]) { $file.total_record_count } else { 'N/A' }
                     $partCount = if ($file.partition_count -isnot [DBNull]) { $file.partition_count } else { 'N/A' }
                     $partCompleted = if ($file.partitions_completed -isnot [DBNull]) { $file.partitions_completed } else { 'N/A' }
-                    $fileStatus = if ($file.file_status -isnot [DBNull]) { $file.file_status } else { 'Unknown' }
+                    $fileStatus = if ($file.bdl_log_status -isnot [DBNull]) { $file.bdl_log_status } else { 'Unknown' }
+                    $fileSttsCode = if ($file.file_registry_status_code -isnot [DBNull]) { $file.file_registry_status_code } else { 'N/A' }
                     $lastLogId = $file.last_log_id
                     $lastLogTime = if ($file.last_log_dttm -isnot [DBNull]) { $file.last_log_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
                     $triggerType = 'BDL_Stall'; $triggerValue = "${fileRegId}_${lastLogId}"; $cascadingChild = 'BDL Import Failure'
@@ -871,7 +873,7 @@ function Step-EvaluateAlerts {
                         $jiraDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Jira.RequestLog WHERE Trigger_Type = '$triggerType' AND Trigger_Value = '$triggerValue' AND StatusCode = 201 AND TicketKey IS NOT NULL AND TicketKey != 'Email'"
                         if (-not $jiraDedup) {
                             $jiraSummary = ("BDL Processing Stalled: $filenameDisplay") -replace "'", "''"
-                            $jiraDesc = ("BDL File Processing Stalled`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nFile Status: $fileStatus`nPartitions: $partCompleted of $partCount completed`nStalled: $stallDuration with no partition activity`nLast Activity: $lastLogTime`nCreated: $createdTime`n`nAction: Check BDL processing status in Debt Manager.`n`nDetection Date: $detectionTime") -replace "'", "''"
+                            $jiraDesc = ("BDL File Processing Stalled`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nBDL Status: $fileStatus`nFile Registry Status: $fileSttsCode`nPartitions: $partCompleted of $partCount completed`nStalled: $stallDuration with no partition activity`nLast Activity: $lastLogTime`nCreated: $createdTime`n`nAction: Check BDL processing status in Debt Manager.`n`nDetection Date: $detectionTime") -replace "'", "''"
                             Invoke-SqlNonQuery -Query "EXEC Jira.sp_QueueTicket @SourceModule = 'BatchOps', @ProjectKey = '$jiraProjectKey', @Summary = N'$jiraSummary', @Description = N'$jiraDesc', @IssueType = '$jiraIssueType', @Priority = '$jiraPriority', @EmailRecipients = '$jiraEmailRecipients', @CascadingField_ID = '$jiraCascadingFieldId', @CascadingField_ParentValue = '$jiraCascadingParent', @CascadingField_ChildValue = '$cascadingChild', @CustomField_ID = '$jiraCustomField1Id', @CustomField_Value = '$jiraCustomField1Value', @CustomField2_ID = '$jiraCustomField2Id', @CustomField2_Value = '$jiraCustomField2Value', @DueDate = '$jiraDueDate', @TriggerType = '$triggerType', @TriggerValue = '$triggerValue'" | Out-Null
                             Write-Log "    Jira ticket queued for file $fileRegId" "SUCCESS"
                         } else { Write-Log "    Jira dedup: ticket exists for $triggerType/$triggerValue" "INFO" }
@@ -880,7 +882,7 @@ function Step-EvaluateAlerts {
                         $teamsDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Teams.RequestLog WHERE trigger_type = '$triggerType' AND trigger_value = '$triggerValue' AND status_code = 200"
                         if (-not $teamsDedup) {
                             $teamsTitleSafe = ("{{WARN}} BDL Processing Stalled: $filenameDisplay") -replace "'", "''"
-                            $teamsMessageSafe = ("**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**File Status:** $fileStatus`n**Partitions:** $partCompleted of $partCount completed`n**Stalled:** $stallDuration with no partition activity`n**Last Activity:** $lastLogTime`n`nAction: Check BDL processing status in Debt Manager.`n`n**Detection:** $detectionTime") -replace "'", "''"
+                            $teamsMessageSafe = ("**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**BDL Status:** $fileStatus`n**File Registry Status:** $fileSttsCode`n**Partitions:** $partCompleted of $partCount completed`n**Stalled:** $stallDuration with no partition activity`n**Last Activity:** $lastLogTime`n`nAction: Check BDL processing status in Debt Manager.`n`n**Detection:** $detectionTime") -replace "'", "''"
                             Invoke-SqlNonQuery -Query "INSERT INTO Teams.AlertQueue (source_module, alert_category, title, message, color, trigger_type, trigger_value, status, created_dttm) VALUES ('BatchOps', 'WARNING', N'$teamsTitleSafe', N'$teamsMessageSafe', 'warning', '$triggerType', '$triggerValue', 'Pending', GETDATE())" | Out-Null
                             Write-Log "    Teams alert queued for file $fileRegId" "SUCCESS"
                         } else { Write-Log "    Teams dedup: alert exists for $triggerType/$triggerValue" "INFO" }
