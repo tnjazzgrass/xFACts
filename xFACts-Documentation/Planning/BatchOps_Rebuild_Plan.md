@@ -36,12 +36,32 @@ Outstanding bugs, enhancements, and deferred items for NB, PMT, and BDL are trac
 |------|-------|--------|
 | DM concurrency caps | Investigate all DM processing thread caps via env_prfl_cnfg_ovrrd and config_item tables. PMT import override currently set to 2 (default 5). Determine caps for NB upload, BDL, and other batch types. Findings impact stall detection logic across all collectors. | Open |
 | Notice processing tables | Identify tables for detecting active notice processing. dcmnt_rqst is the main table but in-flight detection needs further research. Needed for Send-OpenBatchSummary expansion. | Open |
-| Remaining active BDL files | After fixing the active batches query terminal status logic (April 5), 7 BDL files remain in non-terminal states within the 3-day lookback window. These may be legitimately stuck files or edge cases in the BDL lifecycle not yet accounted for. Requires investigation with Matt and the team to determine root cause and whether additional status exclusions or handling is needed. | Open |
 | Shared Send-TeamsAlert migration | Backlog item to migrate NB, PMT, and BDL collectors from inline `INSERT INTO Teams.AlertQueue` to the shared `Send-TeamsAlert` function in `xFACts-OrchestratorFunctions`. All three currently use the inline pattern consistently. Needs investigation to confirm scope and verify PMT collector pattern. | Open |
 
 ---
 
 ## Resolved Investigations
+
+### April 7, 2026
+
+**File_Registry Terminal Detection Refactoring**
+Investigation of 16 BDL files stuck in PROCESSING or STAGED status in BDL_BatchTracking revealed that bdl_log file-level rows do not reliably reflect terminal state. Files can complete processing in DM without receiving IMPORTED (12) rows in bdl_log, and files that DM marks as FAILED (file_stts_cd = 6) may still show IMPORTED in bdl_log. Root cause: the collector relied entirely on bdl_log status codes for terminal detection, but File_Registry.file_stts_cd is the authoritative source DM uses to record file outcomes.
+
+Fix: Terminal detection switched from bdl_log status codes to File_Registry.file_stts_cd. Terminal statuses: PROCESSED (5), FAILED (6), CANCELED (7), PARTIALLY_PROCESSED (8). The file_registry_status_code and file_registry_status columns added to BDL_BatchTracking and updated each polling cycle. completed_dttm sourced from File_Registry.upsrt_dttm. Columns renamed for clarity: file_status_code → bdl_log_status_code, file_status → bdl_log_status. The filename column renamed to file_name to follow naming conventions.
+
+Broader audit revealed 104 ABANDONED files were actually PROCESSED or PARTIALLY_PROCESSED in File_Registry — the ABANDONED classification from the historical backfill was incorrect. Additionally, 263 files classified as IMPORTED were actually FAILED in File_Registry. All 5,858 tracked files corrected via bulk UPDATE joining to File_Registry.
+
+**completed_status Vocabulary Alignment**
+completed_status values aligned with DM's Ref_File_Stts_Cd terminology. Old values (IMPORTED, STAGEFAILED, IMPORT_FAILED, ABANDONED) replaced with DM values (PROCESSED, PARTIALLY_PROCESSED, FAILED, CANCELED). ABANDONED status retired entirely. RETRY added for 4 historical edge cases (file_stts_cd = 11) manually marked complete.
+
+**Alert Consolidation**
+STAGEFAILED and IMPORT_FAILED alert conditions consolidated into single FAILED check. Trigger type changed from BDL_StageFailed/BDL_ImportFailed to BDL_Failed. GlobalConfig: bdl_alert_stagefailed_routing and bdl_alert_import_failed_routing deactivated, replaced by bdl_alert_failed_routing.
+
+**Active Batches Display Fix**
+Control Center active batches BDL query switched from bdl_log-based terminal exclusion (bdl_prcss_stss_cd NOT IN 12, 13, 14) to File_Registry-based exclusion (file_stts_cd NOT IN 5, 6, 7, 8). Status badge now shows File_Registry status (PROCESSING) instead of bdl_log status (STAGED/PROCESSING). Progress bar now displays for STAGED files with active partitions, not just PROCESSING files.
+
+**Remaining active BDL files (from April 5)**
+The 7 files remaining after the April 5 query fix were a subset of the 16 files investigated in this session. All resolved by the File_Registry terminal detection refactoring — every one was PROCESSED or PARTIALLY_PROCESSED in File_Registry.
 
 ### April 5, 2026
 
@@ -109,6 +129,8 @@ Three distinct lifecycle paths confirmed against historical data:
 - 7 historical occurrences
 - File content was parsed and staged successfully but import processing failed
 - Some historical cases show a second PROCESSING row before IMPORT_FAILED (DM retry behavior)
+
+**Important:** These lifecycle paths describe bdl_log behavior. bdl_log does not reliably record all terminal transitions — some files complete processing without receiving STAGED or IMPORTED rows. File_Registry.file_stts_cd is the authoritative source for terminal state. See Resolved Investigations (April 7, 2026).
 
 ### BDL Status Codes (Confirmed)
 
@@ -269,7 +291,7 @@ Collector terminal statuses: 4 (POSTED), 6 (FAILED), 11 (IMPORTFAILED), 27 (REVE
 
 **Data source architecture:** The BDL collector reads from five DM source tables in two bulk queries (one for Collect, five for Update). This differs from NB (one header table + one log table) and PMT (one header table + one log table + one journal table) because BDL has no dedicated header table — file metadata is distributed across `bdl_log`, `File_Registry`, `file_rgstry_dtl`, and `file_rgstry_cstm_dtl`.
 
-**Active batches live query architecture:** NB and PMT active batches query their respective batch header tables directly (`new_bsnss_btch`, `cnsmr_pymnt_btch`) where current status is a column on the row. BDL has no header table — status is derived from `bdl_log` entries using a CTE with `ROW_NUMBER` to find the most recent file-level log entry. Terminal status exclusion must happen in the outer WHERE (after ranking), not inside the CTE (before ranking), to avoid the ROW_NUMBER falling back to non-terminal statuses when the terminal entry is filtered out.
+**Active batches live query architecture:** NB and PMT active batches query their respective batch header tables directly (`new_bsnss_btch`, `cnsmr_pymnt_btch`) where current status is a column on the row. BDL uses a CTE against `bdl_log` for progress display (partition counts, bdl_log status text) but determines whether a file is still active via `File_Registry.file_stts_cd`. Files with terminal File_Registry status (5=PROCESSED, 6=FAILED, 7=CANCELED, 8=PARTIALLY_PROCESSED) are excluded from the active view. The Control Center displays the File_Registry status as the primary badge, with partition progress from bdl_log shown alongside.
 
 **Stall detection approach:** Unlike NB (which monitors `new_bsnss_log` for merge activity) and PMT (which switches between `cnsmr_pymnt_btch_log` and `cnsmr_pymnt_jrnl` based on lifecycle phase), the BDL collector uses partition-level rows in `bdl_log` itself as the activity indicator. The max `bdl_log_id` across partition rows for a file serves as the stall detection watermark.
 
@@ -336,4 +358,4 @@ BDL files originated from the xFACts BDL Import tool carry a `file_registry_id` 
 | BDL structure doesn't fit tracking model | ~~Low~~ | ~~Medium~~ | **Resolved** — investigation confirmed BDL fits the tracking model. `file_registry_id` as grouping key, partition rows for progress, `file_rgstry_dtl`/`file_rgstry_cstm_dtl` for summary counts. |
 | Source table schema changes (DM upgrades) | Low | High | Collectors read specific columns, not SELECT *. Document expected schema per collector. |
 | DM concurrency caps create false positive stall alerts | Medium | Medium | Full investigation before implementing stall detection. Currently deferred for PMT; BDL uses partition-based stall detection which is less sensitive to concurrency constraints. |
-| Remaining active BDL files | Medium | Low | 7 files in non-terminal states after query fix. May be legitimately stuck or edge cases. Requires team investigation. Consider `bdl_abandon_days` GlobalConfig setting for automatic ABANDONED classification of ancient incomplete files. |
+| Remaining active BDL files | ~~Medium~~ | ~~Low~~ | **Resolved** — all files were PROCESSED or PARTIALLY_PROCESSED in File_Registry. Terminal detection refactored to use File_Registry.file_stts_cd instead of bdl_log. See Resolved Investigations (April 7, 2026). |
