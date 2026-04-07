@@ -102,18 +102,12 @@ function pmtStatusBadgeClass(batchCode) {
     return 'info';
 }
 
-var bdlStatusMap = {
-    'PROCESSING': 'Processing', 'STAGED': 'Staged', 'IMPORTED': 'Imported',
-    'STAGEFAILED': 'Stage Failed', 'IMPORT_FAILED': 'Import Failed',
-    'DELETING': 'Deleting', 'DELETED': 'Deleted'
-};
-
-function bdlStatusBadgeClass(statusCode) {
-    // BDL status codes: PROCESSING (2), STAGED (10), STAGEFAILED (8), IMPORT_FAILED (11), IMPORTED (12)
-    if (statusCode === 8 || statusCode === 11) return 'failed';
-    if (statusCode === 2) return 'active';
-    if (statusCode === 10) return 'waiting';
-    if (statusCode === 12) return 'processing';
+function bdlStatusBadgeClass(fileRegistryCode) {
+    // File_Registry status codes from Ref_File_Stts_Cd
+    if (fileRegistryCode === 6 || fileRegistryCode === 7) return 'failed';
+    if (fileRegistryCode === 8) return 'warning';
+    if (fileRegistryCode === 5) return 'processing';
+    if (fileRegistryCode === 4 || fileRegistryCode === 10 || fileRegistryCode === 11) return 'active';
     return 'info';
 }
 
@@ -629,11 +623,12 @@ function renderActiveBatches(data) {
         html += '</tr>';
     });
     
-    // BDL files
+	// BDL files
     filteredBDL.forEach(function(b) {
-        var statusDisplay = friendlyStatus(b.batch_status, bdlStatusMap);
+        var statusDisplay = b.file_registry_status || 'Unknown';
         var ageDisplay = formatAge(safeInt(b.age_minutes));
-        var statusCode = safeInt(b.file_status_code);
+        var statusCode = safeInt(b.bdl_log_status_code);
+        var fileRegCode = safeInt(b.file_registry_status_code);
         var totalRecords = safeInt(b.total_record_count);
         var countDisplay = totalRecords > 0 ? totalRecords.toLocaleString() : '-';
         
@@ -658,10 +653,20 @@ function renderActiveBatches(data) {
             } else {
                 activityHtml = '<span class="activity-label processing">Processing</span>';
             }
-        } else if (statusCode === 10) {
-            // STAGED — waiting for import
-            activityHtml = '<span class="activity-label waiting">Awaiting Import</span>';
+            } else if (statusCode === 10) {
+        // STAGED — check for partition progress (import may be actively running)
+        var partCount = safeInt(b.partition_count);
+        var partCompleted = safeInt(b.partitions_completed);
+        if (partCount > 0 && partCompleted > 0) {
+            var pct = Math.min(100, Math.round((partCompleted / partCount) * 100));
+            activityHtml = '<div class="progress-bar-container">';
+            activityHtml += '<div class="progress-bar" style="width:' + pct + '%"></div>';
+            activityHtml += '<span class="progress-text">' + partCompleted + '/' + partCount + ' partitions (' + pct + '%)</span>';
+            activityHtml += '</div>';
         } else {
+            activityHtml = '<span class="activity-label waiting">Awaiting Import</span>';
+        }
+		} else {
             activityHtml = '<span class="activity-label info">' + escapeHtml(statusDisplay) + '</span>';
         }
         
@@ -674,7 +679,7 @@ function renderActiveBatches(data) {
         html += '<td class="batch-name-cell">' + escapeHtml(nameDisplay);
         if (entityType) html += ' <span class="bdl-entity-label">' + escapeHtml(entityType) + '</span>';
         html += '</td>';
-        html += '<td class="status-cell"><span class="status-badge ' + bdlStatusBadgeClass(statusCode) + '">' + escapeHtml(statusDisplay) + '</span></td>';
+        html += '<td class="status-cell"><span class="status-badge ' + bdlStatusBadgeClass(fileRegCode) + '">' + escapeHtml(statusDisplay) + '</span></td>';
         html += '<td class="activity-cell">' + activityHtml + '</td>';
         html += '<td class="count-cell">' + countDisplay + '</td>';
         html += '<td class="age-cell">' + ageDisplay + '</td>';
@@ -893,7 +898,7 @@ function getBatchOutcome(b) {
                          'POST_RELEASE_LINK_COMPLETE'];
         return (nbSuccess.indexOf(cs) >= 0) ? 'success' : 'failed';
     } else if (isBDL) {
-        return (cs === 'IMPORTED') ? 'success' : 'failed';
+        return (cs === 'PROCESSED' || cs === 'PARTIALLY_PROCESSED') ? 'success' : 'failed';
     } else {
         return (cs === 'POSTED') ? 'success' : 'failed';
     }
