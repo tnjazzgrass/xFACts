@@ -137,16 +137,13 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
 "@
         
         # Active BDL files - direct from DM source tables
-        # BDL lifecycle: PROCESSING (2) -> STAGED (10) -> IMPORTED (12)
-        # BDL status lives in bdl_log (no batch table with status column like NB/PMT).
-        # CurrentStatus CTE finds the true latest file-level status from all log entries,
-        # then the outer WHERE excludes files whose latest status is terminal.
-        # Terminal: IMPORTED (12), DELETING (13), DELETED (14)
-        # Keeps: PROCESSING (2), STAGED (10), STAGEFAILED (8), IMPORT_FAILED (11)
-        # Uses file-level log entries (sub_entty_nm_txt IS NULL) for status,
-        # partition-level entries (sub_entty_nm_txt IS NOT NULL) for progress
+        # Terminal detection via File_Registry.file_stts_cd (authoritative):
+        #   5 = PROCESSED, 6 = FAILED, 7 = CANCELED, 8 = PARTIALLY_PROCESSED
+        # bdl_log used for progress info (partition counts) and timing only.
+        # CurrentBDLStatus CTE finds the latest file-level bdl_log entry for display,
+        # File_Registry.file_stts_cd determines whether the file is still active.
         $bdlBatches = Invoke-CRS5ReadQuery -Query @"
-            ;WITH CurrentStatus AS (
+            ;WITH CurrentBDLStatus AS (
                 SELECT
                     bl.file_registry_id,
                     bl.bdl_prcss_stss_cd,
@@ -156,6 +153,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
                 FROM dbo.bdl_log bl
                 INNER JOIN dbo.ref_entty_async_stts_cd s ON bl.bdl_prcss_stss_cd = s.entty_async_stts_cd
                 WHERE bl.sub_entty_nm_txt IS NULL
+                  AND bl.bdl_prcss_stss_cd NOT IN (13, 14, 15)
                   AND bl.crtd_dttm >= DATEADD(DAY, -3, GETDATE())
             ),
             EntityType AS (
@@ -179,20 +177,23 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
                 cs.file_registry_id AS batch_id,
                 fr.file_name_full_txt AS batch_name,
                 cs.status_text AS batch_status,
-                cs.bdl_prcss_stss_cd AS file_status_code,
+                cs.bdl_prcss_stss_cd AS bdl_log_status_code,
+                fr.file_stts_cd AS file_registry_status_code,
+                frs.file_stts_val_txt AS file_registry_status,
                 fr.file_crt_dttm AS batch_created_dttm,
                 DATEDIFF(MINUTE, fr.file_crt_dttm, GETDATE()) AS age_minutes,
                 frd.file_rgstry_dtl_rec_ttl_cnt AS total_record_count,
                 et.sub_entty_nm_txt AS entity_type,
                 pp.partition_count,
                 pp.partitions_completed
-            FROM CurrentStatus cs
+            FROM CurrentBDLStatus cs
             INNER JOIN dbo.File_Registry fr ON cs.file_registry_id = fr.File_registry_id
+            INNER JOIN dbo.Ref_File_Stts_Cd frs ON fr.file_stts_cd = frs.file_stts_cd
             LEFT JOIN dbo.file_rgstry_dtl frd ON cs.file_registry_id = frd.file_registry_id
             LEFT JOIN EntityType et ON cs.file_registry_id = et.file_registry_id AND et.rn = 1
             LEFT JOIN PartitionProgress pp ON cs.file_registry_id = pp.file_registry_id
             WHERE cs.rn = 1
-              AND cs.bdl_prcss_stss_cd NOT IN (12, 13, 14)    -- Exclude terminal: IMPORTED, DELETING, DELETED
+              AND fr.file_stts_cd NOT IN (5, 6, 7, 8)    -- Exclude terminal: PROCESSED, FAILED, CANCELED, PARTIALLY_PROCESSED
             ORDER BY fr.file_crt_dttm DESC
 "@
         
@@ -253,12 +254,12 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentic
 "@
         
         # BDL files created today
-        # Success = IMPORTED; Failed = STAGEFAILED or IMPORT_FAILED
+        # Success = PROCESSED or PARTIALLY_PROCESSED; Failed = FAILED or CANCELED
         $bdlToday = Invoke-XFActsQuery -Query @"
             SELECT
                 COUNT(*) AS total,
-                SUM(CASE WHEN is_complete = 1 AND completed_status = 'IMPORTED' THEN 1 ELSE 0 END) AS completed,
-                SUM(CASE WHEN is_complete = 1 AND completed_status IN ('STAGEFAILED', 'IMPORT_FAILED') THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN is_complete = 1 AND completed_status IN ('PROCESSED', 'PARTIALLY_PROCESSED') THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN is_complete = 1 AND completed_status IN ('FAILED', 'CANCELED') THEN 1 ELSE 0 END) AS failed,
                 SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,
                 SUM(ISNULL(total_record_count, 0)) AS total_records
             FROM BatchOps.BDL_BatchTracking
@@ -344,8 +345,8 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 
                     YEAR(file_created_dttm) AS [year],
                     MONTH(file_created_dttm) AS [month],
                     COUNT(*) AS total_batches,
-                    SUM(CASE WHEN is_complete = 1 AND completed_status = 'IMPORTED' THEN 1 ELSE 0 END) AS completed,
-                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('STAGEFAILED', 'IMPORT_FAILED') THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('PROCESSED', 'PARTIALLY_PROCESSED') THEN 1 ELSE 0 END) AS completed,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('FAILED', 'CANCELED') THEN 1 ELSE 0 END) AS failed,
                     SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,
                     SUM(ISNULL(total_record_count, 0)) AS total_records,
                     AVG(CASE WHEN completed_dttm IS NOT NULL THEN DATEDIFF(MINUTE, file_created_dttm, completed_dttm) END) AS avg_total_minutes
@@ -437,8 +438,8 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentic
                     'BDL' AS batch_type,
                     CAST(file_created_dttm AS DATE) AS batch_date,
                     COUNT(*) AS total_batches,
-                    SUM(CASE WHEN is_complete = 1 AND completed_status = 'IMPORTED' THEN 1 ELSE 0 END) AS completed,
-                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('STAGEFAILED', 'IMPORT_FAILED') THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('PROCESSED', 'PARTIALLY_PROCESSED') THEN 1 ELSE 0 END) AS completed,
+                    SUM(CASE WHEN is_complete = 1 AND completed_status IN ('FAILED', 'CANCELED') THEN 1 ELSE 0 END) AS failed,
                     SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,
                     SUM(ISNULL(total_record_count, 0)) AS total_records,
                     AVG(DATEDIFF(MINUTE, file_created_dttm, staged_dttm)) AS avg_upload_to_release_min,
@@ -546,10 +547,12 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-day' -Authenticat
                 SELECT
                     'BDL' AS batch_type,
                     file_registry_id AS batch_id,
-                    filename AS batch_name,
+                    file_name AS batch_name,
                     entity_type,
-                    file_status AS batch_status,
-                    file_status_code,
+                    bdl_log_status AS batch_status,
+                    bdl_log_status_code,
+                    file_registry_status_code,
+                    file_registry_status,
                     is_complete,
                     completed_status,
                     file_created_dttm AS batch_created_dttm,
