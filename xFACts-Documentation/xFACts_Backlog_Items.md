@@ -154,8 +154,8 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 Modules not yet started. No schema, no tables, no CC pages.
 
-### Sterling
+### B2B
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Build | Sterling schema and foundation tables | High | Create schema, Process_Config, Alert_History, Execution_Log. Failure detection, missing process detection, volume anomaly detection. Integration team input needed. |
+| Build | B2B schema and foundation tables | High | Create schema, Process_Config, Alert_History, Execution_Log. Failure detection, missing process detection, volume anomaly detection. Integration team input needed. Refer to the B2B Planning document for details.|
