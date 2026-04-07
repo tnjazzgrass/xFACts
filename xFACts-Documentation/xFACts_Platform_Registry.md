@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-06 14:46:46
+Generated: 2026-04-07 10:03:58
 
 ## Module Registry
 
@@ -392,8 +392,7 @@ Generated: 2026-04-06 14:46:46
 
 | module_name | category | setting_name | setting_value | data_type | description |
 | --- | --- | --- | --- | --- | --- |
-| BatchOps | BDL | bdl_alert_import_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file fails import processing |
-| BatchOps | BDL | bdl_alert_stagefailed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file fails staging validation |
+| BatchOps | BDL | bdl_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file reaches FAILED status in File_Registry |
 | BatchOps | BDL | bdl_alert_stall_routing | 1 | ALERT_MODE | Alert destination(s) when BDL partition processing stalls |
 | BatchOps | BDL | bdl_alerting_enabled | 0 | BIT | Master on/off switch for all BDL batch alerting |
 | BatchOps | BDL | bdl_lookback_days | 7 | INT | How many days back xFACts checks DM for BDL file collection |
