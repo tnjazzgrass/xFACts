@@ -11,6 +11,15 @@
 #   GET  /api/client-relations/regf-queue  - Reg F compliance queue (cached)
 #
 # Version: Tracked in dbo.System_Metadata (component: DeptOps.ClientRelations)
+#
+# CHANGELOG
+# ---------
+# 2026-04-07  Replaced query with corrected version matching sp_DM_RegFWorkgroupDaily
+#             Fixed rslt_cd filter (906, was incorrectly 236 in original SP)
+#             Replaced OUTER APPLY TOP 1 with CTE_B MAX() set-based approach
+#             Added actn_cd = 228 filter to AR log subquery
+#             Removed cnsmr_accnt_ar_mssg_txt LIKE filter (actn_cd + rslt_cd sufficient)
+#             Performance: ~1 second (was ~30 seconds)
 # ============================================================================
 
 # ============================================================================
@@ -24,14 +33,14 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
         
         $results = Get-CachedResult -CacheKey 'regf_queue' -ForceRefresh:$forceRefresh -ScriptBlock {
             Invoke-CRS5ReadQuery -Query @"
-                ;WITH cte AS
+                ;WITH CTE_A AS
                 (
                 SELECT
                      CAST(cat.cnsmr_accnt_tag_assgn_dt AS date) AS [RejectDate]
                     ,tt.tag_shrt_nm AS Company
                     ,c.cnsmr_id AS ConsumerID
                     ,c.cnsmr_idntfr_agncy_id AS ConsumerNumber
-                    ,c.cnsmr_nm_lst_txt + ', ' + c.cnsmr_nm_frst_txt AS ConsumerName
+                    ,c.cnsmr_nm_lst_txt + ' ' + c.cnsmr_nm_frst_txt AS ConsumerName
                     ,ca.new_bsnss_btch_id AS NewBusinessBatch
                     ,ca.cnsmr_accnt_idntfr_agncy_id AS ConsumerAccountNumber
                     ,ca.cnsmr_accnt_crdtr_rfrnc_id_txt AS CreditorReference
@@ -88,27 +97,38 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
                             CHARINDEX(',', SUBSTRING(cnsmr_accnt_ar_mssg_txt, 55, 15) + ',') - 1
                         ))) AS BalAtDOS
                     FROM dbo.cnsmr_accnt_ar_log
-                    WHERE rslt_cd = 906
-                    AND NOT EXISTS (
-                        SELECT 1 FROM dbo.UDEFCREDITORTRANHIST uch 
-                        WHERE uch.cnsmr_accnt_id = cnsmr_accnt_ar_log.cnsmr_accnt_id
-                    )
+                    WHERE actn_cd = 228
+                      AND rslt_cd = 906
+                      AND cnsmr_accnt_id NOT IN (SELECT cnsmr_accnt_id FROM dbo.UDEFCREDITORTRANHIST)
                 ) b ON ca.cnsmr_accnt_id = b.cnsmr_accnt_id
                 WHERE w.wrkgrp_shrt_nm = 'WFACRFNC'
-                AND t.tag_shrt_nm = 'TA_RFNC'
+                  AND t.tag_shrt_nm = 'TA_RFNC'
+                )
+                ,CTE_B AS
+                (
+                SELECT
+                    dr.dcmnt_rqst_send_to_entty_id AS ConsumerID,
+                    MAX(dr.dcmnt_rqst_id) AS MaxReq
+                FROM dbo.dcmnt_rqst dr
+                INNER JOIN dbo.dcmnt_tmplt_vrsn dtv ON dtv.dcmnt_tmplt_vrsn_id = dr.dcmnt_tmplt_vrsn_id
+                INNER JOIN dbo.dcmnt_tmplt dt ON dt.dcmnt_tmplt_id = dtv.dcmnt_tmplt_id
+                INNER JOIN dbo.dcmnt_grp dg ON dg.dcmnt_grp_id = dt.dcmnt_grp_id
+                WHERE dg.dcmnt_grp_shrt_nm = 'DGBVAL'
+                  AND dcmnt_rqst_send_to_entty_id IN (SELECT ConsumerID FROM CTE_A)
+                GROUP BY dr.dcmnt_rqst_send_to_entty_id
                 )
                 SELECT DISTINCT
-                     ltr.dcmnt_tmplt_shrt_nm AS Letter
+                     dt.dcmnt_tmplt_shrt_nm AS Letter
                     ,CASE
-                        WHEN ltr.dcmnt_rqst_dt IS NOT NULL
-                            THEN CAST(ltr.dcmnt_rqst_dt AS date)
+                        WHEN dr.dcmnt_rqst_dt IS NOT NULL
+                            THEN CAST(dr.dcmnt_rqst_dt AS date)
                         ELSE CAST(a.RejectDate AS date)
-                     END AS QueueDate
+                     END AS RejectDate
                     ,CASE
-                        WHEN ltr.dcmnt_rqst_dt IS NOT NULL
+                        WHEN dr.dcmnt_rqst_dt IS NOT NULL
                             THEN 'Letter Requested'
                         ELSE 'Other Reason'
-                     END AS QueueReason
+                     END AS RejectReason
                     ,a.ConsumerNumber
                     ,a.ConsumerName
                     ,a.Company
@@ -128,30 +148,23 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
                     ,a.CurrentAccountBalanceInDM
                     ,a.CalculatedPaymentsMade
                     ,a.RejectionReason
-                FROM cte a
-                OUTER APPLY (
-                    SELECT TOP 1
-                        dr.dcmnt_rqst_dt,
-                        dt.dcmnt_tmplt_shrt_nm
-                    FROM dbo.dcmnt_rqst dr
-                    INNER JOIN dbo.dcmnt_tmplt_vrsn dtv ON dtv.dcmnt_tmplt_vrsn_id = dr.dcmnt_tmplt_vrsn_id
-                    INNER JOIN dbo.dcmnt_tmplt dt ON dt.dcmnt_tmplt_id = dtv.dcmnt_tmplt_id
-                    INNER JOIN dbo.dcmnt_grp dg ON dg.dcmnt_grp_id = dt.dcmnt_grp_id
-                    WHERE dg.dcmnt_grp_shrt_nm = 'DGBVAL'
-                      AND dr.dcmnt_rqst_send_to_entty_id = a.ConsumerID
-                    ORDER BY dr.dcmnt_rqst_id DESC
-                ) ltr
-                ORDER BY QueueDate ASC
+                FROM CTE_A a
+                LEFT JOIN CTE_B b ON b.ConsumerID = a.ConsumerID
+                LEFT JOIN dbo.dcmnt_rqst dr ON dr.dcmnt_rqst_id = b.MaxReq
+                LEFT JOIN dbo.dcmnt_tmplt_vrsn dtv ON dtv.dcmnt_tmplt_vrsn_id = dr.dcmnt_tmplt_vrsn_id
+                LEFT JOIN dbo.dcmnt_tmplt dt ON dt.dcmnt_tmplt_id = dtv.dcmnt_tmplt_id
+                ORDER BY Letter DESC, RejectDate ASC
 "@
         }
         
         # Build response - return flat rows, JS handles consumer grouping
-        $rows = @()
+        # Uses ArrayList to avoid O(n²) array copy on every += append
+        $rows = [System.Collections.ArrayList]::new()
         foreach ($row in $results) {
-            $rows += @{
+            $rows.Add(@{
                 letter               = if ($row.Letter -is [DBNull]) { $null } else { $row.Letter }
-                queue_date           = if ($row.QueueDate -is [DBNull]) { $null } else { ([DateTime]$row.QueueDate).ToString("M/d/yyyy") }
-                queue_reason         = if ($row.QueueReason -is [DBNull]) { $null } else { $row.QueueReason }
+                queue_date           = if ($row.RejectDate -is [DBNull]) { $null } else { ([DateTime]$row.RejectDate).ToString("M/d/yyyy") }
+                queue_reason         = if ($row.RejectReason -is [DBNull]) { $null } else { $row.RejectReason }
                 consumer_number      = if ($row.ConsumerNumber -is [DBNull]) { $null } else { $row.ConsumerNumber }
                 consumer_name        = if ($row.ConsumerName -is [DBNull]) { $null } else { $row.ConsumerName }
                 company              = if ($row.Company -is [DBNull]) { $null } else { $row.Company }
@@ -171,11 +184,11 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
                 current_balance      = if ($row.CurrentAccountBalanceInDM -is [DBNull]) { $null } else { $row.CurrentAccountBalanceInDM }
                 calculated_payments  = if ($row.CalculatedPaymentsMade -is [DBNull]) { $null } else { $row.CalculatedPaymentsMade }
                 rejection_reason     = if ($row.RejectionReason -is [DBNull]) { $null } else { $row.RejectionReason }
-            }
+            }) | Out-Null
         }
         
         Write-PodeJsonResponse -Value @{
-            rows      = $rows
+            rows      = @($rows)
             count     = $rows.Count
             timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
