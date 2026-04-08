@@ -62,14 +62,14 @@ function Invoke-XFActsQuery {
         $dataset = New-Object System.Data.DataSet
         $adapter.Fill($dataset) | Out-Null
         
-        $results = @()
+        $results = [System.Collections.ArrayList]::new()
         if ($dataset.Tables.Count -gt 0) {
             foreach ($row in $dataset.Tables[0].Rows) {
                 $obj = @{}
                 foreach ($col in $dataset.Tables[0].Columns) {
                     $obj[$col.ColumnName] = $row[$col.ColumnName]
                 }
-                $results += $obj
+                $results.Add($obj) | Out-Null
             }
         }
         return ,$results
@@ -1237,14 +1237,14 @@ function Invoke-CRS5ReadQuery {
         $dataset = New-Object System.Data.DataSet
         $adapter.Fill($dataset) | Out-Null
         
-        $results = @()
+        $results = [System.Collections.ArrayList]::new()
         if ($dataset.Tables.Count -gt 0) {
             foreach ($row in $dataset.Tables[0].Rows) {
                 $obj = @{}
                 foreach ($col in $dataset.Tables[0].Columns) {
                     $obj[$col.ColumnName] = $row[$col.ColumnName]
                 }
-                $results += $obj
+                $results.Add($obj) | Out-Null
             }
         }
         return ,$results
@@ -1555,14 +1555,14 @@ function Invoke-AGReadQuery {
         $dataset = New-Object System.Data.DataSet
         $adapter.Fill($dataset) | Out-Null
         
-        $results = @()
+        $results = [System.Collections.ArrayList]::new()
         if ($dataset.Tables.Count -gt 0) {
             foreach ($row in $dataset.Tables[0].Rows) {
                 $obj = @{}
                 foreach ($col in $dataset.Tables[0].Columns) {
                     $obj[$col.ColumnName] = $row[$col.ColumnName]
                 }
-                $results += $obj
+                $results.Add($obj) | Out-Null
             }
         }
         return ,$results
