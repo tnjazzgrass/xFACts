@@ -1670,7 +1670,7 @@ function Build-BDLXml {
 
     # ── Get entity format info ──────────────────────────────────────
     $formatInfo = Invoke-XFActsQuery -Query @"
-        SELECT f.format_id, f.entity_type, f.type_name, f.folder
+        SELECT f.format_id, f.entity_type, f.type_name, f.folder, f.batch_abbreviation
         FROM Tools.Catalog_BDLFormatRegistry f
         WHERE f.entity_type = @entityType
           AND f.is_active = 1
@@ -1681,6 +1681,7 @@ function Build-BDLXml {
     }
     $typeName = $formatInfo[0].type_name
     $folder = $formatInfo[0].folder
+    $batchAbbrev = if ($formatInfo[0].batch_abbreviation -and $formatInfo[0].batch_abbreviation -isnot [System.DBNull]) { $formatInfo[0].batch_abbreviation } else { $EntityType.Substring(0, [Math]::Min($EntityType.Length, 14)) }
 
     # ── Get wrapper info from catalog ───────────────────────────────
     # This query finds the operational_transaction_data wrapper that
@@ -1752,7 +1753,9 @@ function Build-BDLXml {
     [void]$sb.AppendLine('  <header>')
     [void]$sb.AppendLine('    <sender_id_txt>Organization</sender_id_txt>')
     [void]$sb.AppendLine('    <target_id_txt>FAC Debt Manager</target_id_txt>')
-    [void]$sb.AppendLine("    <batch_id_txt>xFACts_${EntityType}_${timestamp}</batch_id_txt>")
+    $batchTimestamp = (Get-Date).ToString('yyyyMMddHHmmss')
+    [void]$sb.AppendLine("    <batch_id_txt>XF_${batchAbbrev}_${batchTimestamp}</batch_id_txt>")
+    [void]$sb.AppendLine('    <communication_reference_id_txt>Organization</communication_reference_id_txt>')
     [void]$sb.AppendLine("    <operational_transaction_type>${operationalTransactionType}</operational_transaction_type>")
     [void]$sb.AppendLine("    <total_count>${rowCount}</total_count>")
     $creationDate = (Get-Date).ToString('yyyy-MM-dd') + 'T' + (Get-Date).ToString('HH:mm') + ':00'
