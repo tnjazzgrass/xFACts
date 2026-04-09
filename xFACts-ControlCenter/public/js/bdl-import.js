@@ -1,44 +1,50 @@
 /* ============================================================================
-   bdl-import.js — BDL Import Wizard
+   bdl-import.js — BDL Import Wizard (5-Step)
    Location: E:\xFACts-ControlCenter\public\js\bdl-import.js
-   Steps: Environment → Entity Type → Upload → Map Columns → Validate → Execute
+   Steps: Environment → Upload File → Select Entities → Map & Validate → Execute
    Version: Tracked in dbo.System_Metadata (component: ControlCenter.BDLImport)
 
    CHANGELOG
    ---------
+   2026-04-08  Consolidated to 5-step wizard
+               Steps 2/3 swapped: Upload File precedes Entity Type selection
+               Entity Type selection converted to multi-select with toggle cards
+               Map & Validate combined into single step with per-entity loop
+               Execute step uses tabbed per-entity summary with single Submit All
+               Per-entity state management (entityStates array)
    2026-04-06  Replaced all native alert/confirm dialogs with shared styled modals
-               XML preview auto-loads on section expand (no extra button)
-               XML preview section header more prominent
+               XML preview auto-loads on section expand
                Added Promote to Production flow with cooldown timer
-               Added PROD advisory modal on direct environment selection
-               Back button hidden after successful submission
-               Unlocked STAGE and PROD environments
-               Row count on Step 6 reflects non-skipped rows
    ============================================================================ */
 
 var BDL = (function () {
     'use strict';
 
-    var currentStep = 1, totalSteps = 6;
-    var stepComplete = [false, false, false, false, false, false];
-    var selectedEnvironment = null, selectedEntity = null, entityFields = null, entityWrapper = null;
-    var uploadedFile = null, parsedFileData = null, columnMapping = null;
-    var validationResult = null, stagingContext = null;
-    var stagedMapping = null; // tracks the mapping used when staging was created
+    var currentStep = 1, totalSteps = 5;
+    var stepComplete = [false, false, false, false, false];
+    var selectedEnvironment = null;
+
+    // Multi-select entity state
+    var selectedEntities = [];
+    var entityStates = [];        // parallel array: per-entity mapping/validation state
+    var currentEntityIndex = 0;   // which entity we're working on in the loop
+
+    // Convenience accessors for current entity context
+    function curState() { return entityStates[currentEntityIndex] || null; }
+    function curEntity() { var s = curState(); return s ? s.entity : null; }
+
+    var uploadedFile = null, parsedFileData = null;
     var allEntities = [], MAX_PREVIEW_ROWS = 10;
     var executeInProgress = false;
-    var revalidating = false; // prevents interaction during re-validate cycle
-    var entityTemplates = []; // cached templates for the selected entity type
-    var activeTemplateId = null; // template currently applied to the mapping
+    var revalidating = false;
+    var entityTemplates = [];
+    var activeTemplateId = null;
 
     // Promote to Production state
     var promoteData = null;
     var promoteCountdownTimer = null;
     var promoteSecondsRemaining = 0;
     var promoteReady = false;
-
-    // XML preview state
-    var xmlPreviewLoaded = false;
 
     function init() { loadEnvironments(); checkStagingCleanup(); }
 
@@ -61,39 +67,41 @@ var BDL = (function () {
         }).catch(function (err) { banner.innerHTML = '<span class="cleanup-text" style="color:#f48771;">Cleanup failed: ' + err.message + '</span>'; });
     }
 
+    // ── Step Navigation ──────────────────────────────────────────────────
     function goToStep(step) { if (step > currentStep || (step < currentStep && !stepComplete[step - 1] && step !== currentStep)) return; showStep(step); }
+
     function nextStep() {
         if (currentStep < totalSteps && stepComplete[currentStep - 1]) {
-            if (currentStep === 4) { handleStepFourNext(); return; }
-            if (currentStep === 5) { showStep(6); renderExecuteReview(); return; }
+            if (currentStep === 3) {
+                // Moving from entity selection to map & validate
+                initEntityStates();
+                currentEntityIndex = 0;
+                loadCurrentEntityFields(function () {
+                    showStep(4);
+                    renderMapValidatePanel();
+                });
+                return;
+            }
+            if (currentStep === 4) {
+                // All entities validated — move to execute
+                showStep(5);
+                renderExecuteReview();
+                return;
+            }
             showStep(currentStep + 1);
         }
     }
-    function prevStep() { if (currentStep > 1) showStep(currentStep - 1); }
 
-    function handleStepFourNext() {
-        if (stagingContext && stagedMapping && mappingsAreEqual(columnMapping, stagedMapping)) {
-            showStep(5);
-            runValidation();
-        } else if (stagingContext) {
-            var oldTable = stagingContext.staging_table;
-            stagingContext = null;
-            stagedMapping = null;
-            stageData(function () { runValidation(); }, oldTable);
-        } else {
-            stageData(function () { runValidation(); });
+    function prevStep() {
+        if (currentStep === 4 && currentEntityIndex > 0) {
+            // Navigate back to previous entity within the loop
+            currentEntityIndex--;
+            loadCurrentEntityFields(function () {
+                renderMapValidatePanel();
+            });
+            return;
         }
-    }
-
-    function mappingsAreEqual(a, b) {
-        if (!a || !b) return false;
-        var aKeys = Object.keys(a).sort();
-        var bKeys = Object.keys(b).sort();
-        if (aKeys.length !== bKeys.length) return false;
-        for (var i = 0; i < aKeys.length; i++) {
-            if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[bKeys[i]]) return false;
-        }
-        return true;
+        if (currentStep > 1) showStep(currentStep - 1);
     }
 
     function showStep(step) {
@@ -101,8 +109,7 @@ var BDL = (function () {
         var tp = document.getElementById('panel-' + step), ti = document.getElementById('step-ind-' + step);
         if (tp) tp.classList.add('active'); if (ti) ti.classList.add('active');
         currentStep = step; updateGuidePanel(); updateStepperUI(); updateNavButtons();
-        if (step === 2 && allEntities.length === 0) loadEntities();
-        if (step === 4 && parsedFileData && entityFields) renderMapping();
+        if (step === 3 && allEntities.length === 0) loadEntities();
     }
 
     function updateStepperUI() {
@@ -115,43 +122,47 @@ var BDL = (function () {
             if (conn) { if (stepComplete[i - 1]) conn.classList.add('completed'); else conn.classList.remove('completed'); }
         }
     }
+
     function updateGuidePanel() {
         for (var g = 1; g <= totalSteps; g++) {
             var gt = document.getElementById('guide-text-' + g);
-            if (gt) {
-                if (g === currentStep) { gt.classList.remove('hidden'); }
-                else { gt.classList.add('hidden'); }
-            }
+            if (gt) { if (g === currentStep) gt.classList.remove('hidden'); else gt.classList.add('hidden'); }
         }
         updateTemplateSectionState();
     }
+
     function updateNavButtons() {
         var back = document.getElementById('btn-back'), next = document.getElementById('btn-next');
-        back.disabled = (currentStep === 1);
 
-        // Hide back button on Step 6 after successful submission
-        if (currentStep === 6 && stepComplete[5]) {
+        // Back button
+        if (currentStep === 1) {
+            back.disabled = true;
+        } else if (currentStep === 4 && currentEntityIndex > 0) {
+            back.disabled = false; // can go to previous entity
+        } else {
+            back.disabled = (currentStep === 1);
+        }
+
+        if (currentStep === 5 && stepComplete[4]) {
             back.style.display = 'none';
         } else {
             back.style.display = '';
         }
 
-        if (currentStep === 6) {
+        // Next button
+        if (currentStep === 5) {
             next.style.display = 'none';
         } else {
             next.style.display = '';
             next.disabled = !stepComplete[currentStep - 1];
             next.innerHTML = 'Next &#8594;';
             next.classList.remove('btn-execute');
-            if (stepComplete[currentStep - 1]) {
-                next.classList.add('btn-next');
-            } else {
-                next.classList.remove('btn-next');
-            }
+            if (stepComplete[currentStep - 1]) next.classList.add('btn-next');
+            else next.classList.remove('btn-next');
         }
     }
 
-    // ── Step 1 ───────────────────────────────────────────────────────────
+    // ── Step 1: Environment ──────────────────────────────────────────────
     function loadEnvironments() {
         fetch('/api/bdl-import/environments').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function (data) { renderEnvironments(data.environments || []); })
@@ -160,18 +171,13 @@ var BDL = (function () {
     function renderEnvironments(envs) {
         var c = document.getElementById('env-cards');
         if (!envs.length) { c.innerHTML = '<div class="placeholder-message">No environments configured.</div>'; return; }
-        var h = ''; envs.forEach(function (env) { var locked = false; h += '<div class="env-card' + (locked ? ' env-locked' : '') + '" data-env="' + env.environment + '"' + (locked ? '' : ' onclick="BDL.selectEnvironment(this,' + env.config_id + ')"') + '><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div>' + (locked ? '<div class="env-locked-label">Coming Soon</div>' : '') + '</div>'; });
+        var h = ''; envs.forEach(function (env) { h += '<div class="env-card" data-env="' + env.environment + '" onclick="BDL.selectEnvironment(this,' + env.config_id + ')"><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div></div>'; });
         c.innerHTML = h; c._envData = envs;
     }
     function selectEnvironment(card, configId) {
         var envData = (document.getElementById('env-cards')._envData || []).find(function (e) { return e.config_id === configId; });
         if (!envData) return;
-
-        if (envData.environment === 'PROD') {
-            showProdAdvisoryModal(card, envData);
-            return;
-        }
-
+        if (envData.environment === 'PROD') { showProdAdvisoryModal(card, envData); return; }
         applyEnvironmentSelection(card, envData);
     }
     function applyEnvironmentSelection(card, envData) {
@@ -179,83 +185,19 @@ var BDL = (function () {
         selectedEnvironment = envData;
         stepComplete[0] = true; updateNavButtons(); updateStepperUI(); resetFromStep(2);
     }
-
-    // ── PROD Advisory Modal ──────────────────────────────────────────────
     function showProdAdvisoryModal(card, envData) {
         var existing = document.getElementById('prod-advisory-modal');
         if (existing) existing.remove();
-
         var modal = document.createElement('div');
         modal.id = 'prod-advisory-modal';
         modal.className = 'xf-modal-overlay';
-        modal.innerHTML = '<div class="xf-modal">'
-            + '<div class="xf-modal-header">'
-            + '<span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span>'
-            + '<span>Production Environment</span>'
-            + '</div>'
-            + '<div class="xf-modal-body">'
-            + '<p>You are about to target <strong>Production</strong> directly.</p>'
-            + '<p>If you haven\'t validated this data in a test environment first, consider running a test import on TEST or STAGE before loading to Production.</p>'
-            + '</div>'
-            + '<div class="xf-modal-actions">'
-            + '<button class="xf-modal-btn-cancel" id="prod-advisory-back">Go Back</button>'
-            + '<button class="xf-modal-btn-primary" id="prod-advisory-continue">Continue to Production</button>'
-            + '</div>'
-            + '</div>';
-
+        modal.innerHTML = '<div class="xf-modal"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span><span>Production Environment</span></div><div class="xf-modal-body"><p>You are about to target <strong>Production</strong> directly.</p><p>If you haven\'t validated this data in a test environment first, consider running a test import on TEST or STAGE before loading to Production.</p></div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" id="prod-advisory-back">Go Back</button><button class="xf-modal-btn-primary" id="prod-advisory-continue">Continue to Production</button></div></div>';
         document.body.appendChild(modal);
-
         document.getElementById('prod-advisory-back').onclick = function () { modal.remove(); };
-        document.getElementById('prod-advisory-continue').onclick = function () {
-            modal.remove();
-            applyEnvironmentSelection(card, envData);
-        };
+        document.getElementById('prod-advisory-continue').onclick = function () { modal.remove(); applyEnvironmentSelection(card, envData); };
     }
 
-    // ── Step 2 ───────────────────────────────────────────────────────────
-    function loadEntities() {
-        var grid = document.getElementById('entity-grid'); grid.innerHTML = '<div class="loading">Loading entity types...</div>';
-        fetch('/api/bdl-import/entities').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-            .then(function (data) { allEntities = data.entities || []; renderEntities(allEntities); })
-            .catch(function (err) { grid.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to load: ' + err.message + '</div>'; });
-    }
-    function renderEntities(entities) {
-        var grid = document.getElementById('entity-grid');
-        if (!entities.length) { grid.innerHTML = '<div class="placeholder-message">No entity types available.</div>'; return; }
-        var h = ''; entities.forEach(function (ent) {
-            var dn = formatEntityName(ent.entity_type), folder = ent.folder || 'root', sel = (selectedEntity && selectedEntity.entity_type === ent.entity_type) ? ' selected' : '';
-            h += '<div class="entity-card' + sel + '" onclick="BDL.selectEntity(\'' + ent.entity_type + '\')"><div class="entity-name">' + dn + '</div><div class="entity-meta"><span class="entity-folder">' + folder + '</span><span class="entity-fields">' + ent.element_count + ' fields</span></div></div>';
-        }); grid.innerHTML = h;
-    }
-    function selectEntity(entityType) {
-        selectedEntity = allEntities.find(function (e) { return e.entity_type === entityType; });
-        renderEntities(allEntities.filter(function (e) { var s = document.getElementById('entity-search').value.toLowerCase(); if (!s) return true; return e.entity_type.toLowerCase().indexOf(s) !== -1 || (e.folder || '').toLowerCase().indexOf(s) !== -1; }));
-        loadEntityFields(entityType); stepComplete[1] = true; updateNavButtons(); updateStepperUI(); resetFromStep(3);
-    }
-    function loadEntityFields(entityType) {
-        fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(entityType)).then(function (r) { return r.json(); })
-            .then(function (data) { entityFields = data.fields || []; entityWrapper = data.wrapper || []; }).catch(function (err) { console.error('Failed to load entity fields:', err); });
-        loadTemplates(entityType);
-    }
-    function filterEntities(value) {
-        var filtered = allEntities.filter(function (e) { if (!value) return true; var s = value.toLowerCase(); return e.entity_type.toLowerCase().indexOf(s) !== -1 || (e.folder || '').toLowerCase().indexOf(s) !== -1 || formatEntityName(e.entity_type).toLowerCase().indexOf(s) !== -1; });
-        renderEntities(filtered);
-    }
-    function formatEntityName(et) { return et.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(' '); }
-
-    function getFieldDisplayName(f) {
-        return (f.display_name && f.display_name !== '') ? f.display_name : f.element_name;
-    }
-    function getFieldDisplayNameByElement(elementName) {
-        if (!entityFields) return elementName;
-        var f = entityFields.find(function (fld) { return fld.element_name === elementName; });
-        return f ? getFieldDisplayName(f) : elementName;
-    }
-    function hasDisplayName(f) {
-        return f.display_name && f.display_name !== '';
-    }
-
-    // ── Step 3 ───────────────────────────────────────────────────────────
+    // ── Step 2: Upload File ──────────────────────────────────────────────
     function dragOver(e) { e.preventDefault(); e.stopPropagation(); document.getElementById('upload-zone').classList.add('drag-over'); }
     function dragLeave(e) { e.preventDefault(); e.stopPropagation(); document.getElementById('upload-zone').classList.remove('drag-over'); }
     function fileDrop(e) { e.preventDefault(); e.stopPropagation(); document.getElementById('upload-zone').classList.remove('drag-over'); if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]); }
@@ -275,7 +217,7 @@ var BDL = (function () {
             parsedFileData = { headers: headers, rows: rows, rowCount: lines.length - 1 };
             showFileInfo(file, parsedFileData); renderFilePreview(parsedFileData);
             document.getElementById('upload-prompt').style.display = 'none';
-            stepComplete[2] = true; updateNavButtons(); updateStepperUI();
+            stepComplete[1] = true; updateNavButtons(); updateStepperUI(); resetFromStep(3);
         }; reader.readAsText(file);
     }
     function parseCSVLine(line) {
@@ -297,7 +239,7 @@ var BDL = (function () {
                 parsedFileData = { headers: headers, rows: rows, rowCount: totalRows };
                 showFileInfo(file, parsedFileData); renderFilePreview(parsedFileData);
                 document.getElementById('upload-prompt').style.display = 'none';
-                stepComplete[2] = true; updateNavButtons(); updateStepperUI();
+                stepComplete[1] = true; updateNavButtons(); updateStepperUI(); resetFromStep(3);
             } catch (err) { showAlert(err.message, { title: 'Excel Parse Error', icon: '&#10005;', iconColor: '#f48771' }); }
         }; reader.readAsArrayBuffer(file);
     }
@@ -321,30 +263,144 @@ var BDL = (function () {
         document.getElementById('file-preview').innerHTML = '<div class="file-info" id="file-info"></div><div class="preview-table-wrap"><table class="preview-table" id="preview-table"></table></div>';
         document.getElementById('file-input').value = '';
         document.getElementById('upload-prompt').style.display = '';
-        stepComplete[2] = false; resetFromStep(4); updateNavButtons(); updateStepperUI();
+        stepComplete[1] = false; resetFromStep(3); updateNavButtons(); updateStepperUI();
     }
 
-    // ── Step 4 ───────────────────────────────────────────────────────────
-    function renderMapping() {
-        var area = document.getElementById('mapping-area');
-        if (!parsedFileData || !entityFields) { area.innerHTML = '<div class="placeholder-message">Complete previous steps.</div>'; return; }
+    // ── Step 3: Entity Type Selection (Multi-Select) ─────────────────────
+    function loadEntities() {
+        var grid = document.getElementById('entity-grid'); grid.innerHTML = '<div class="loading">Loading entity types...</div>';
+        fetch('/api/bdl-import/entities').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (data) { allEntities = data.entities || []; renderEntities(allEntities); })
+            .catch(function (err) { grid.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to load: ' + err.message + '</div>'; });
+    }
+    function renderEntities(entities) {
+        var grid = document.getElementById('entity-grid');
+        if (!entities.length) { grid.innerHTML = '<div class="placeholder-message">No entity types available.</div>'; return; }
+        var h = ''; entities.forEach(function (ent) {
+            var dn = formatEntityName(ent.entity_type), folder = ent.folder || 'root';
+            var isSelected = selectedEntities.some(function (se) { return se.entity_type === ent.entity_type; });
+            h += '<div class="entity-card' + (isSelected ? ' selected' : '') + '" onclick="BDL.toggleEntity(\'' + ent.entity_type + '\')"><div class="entity-name">' + dn + '</div><div class="entity-meta"><span class="entity-folder">' + folder + '</span><span class="entity-fields">' + ent.element_count + ' fields</span></div></div>';
+        }); grid.innerHTML = h;
+        updateEntitySelectionBanner();
+    }
+    function toggleEntity(entityType) {
+        var idx = -1;
+        for (var i = 0; i < selectedEntities.length; i++) { if (selectedEntities[i].entity_type === entityType) { idx = i; break; } }
+        if (idx !== -1) selectedEntities.splice(idx, 1);
+        else { var ent = allEntities.find(function (e) { return e.entity_type === entityType; }); if (ent) selectedEntities.push(ent); }
+        var searchVal = document.getElementById('entity-search').value.toLowerCase();
+        var filtered = allEntities.filter(function (e) { if (!searchVal) return true; return e.entity_type.toLowerCase().indexOf(searchVal) !== -1 || (e.folder || '').toLowerCase().indexOf(searchVal) !== -1; });
+        renderEntities(filtered);
+        stepComplete[2] = selectedEntities.length > 0;
+        updateNavButtons(); updateStepperUI(); resetFromStep(4);
+    }
+    function updateEntitySelectionBanner() {
+        var countEl = document.getElementById('entity-select-count');
+        if (!countEl) return;
+        var count = selectedEntities.length;
+        if (count === 0) { countEl.textContent = ''; countEl.className = 'entity-banner-count'; }
+        else { countEl.textContent = count + ' selected'; countEl.className = 'entity-banner-count entity-banner-count-active'; }
+    }
+    function filterEntities(value) {
+        var filtered = allEntities.filter(function (e) { if (!value) return true; var s = value.toLowerCase(); return e.entity_type.toLowerCase().indexOf(s) !== -1 || (e.folder || '').toLowerCase().indexOf(s) !== -1 || formatEntityName(e.entity_type).toLowerCase().indexOf(s) !== -1; });
+        renderEntities(filtered);
+    }
+    function formatEntityName(et) { return et.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(' '); }
+
+    // ── Per-Entity State Management ──────────────────────────────────────
+    function initEntityStates() {
+        entityStates = selectedEntities.map(function (ent) {
+            return {
+                entity: ent,
+                fields: null,
+                wrapper: null,
+                columnMapping: {},
+                stagingContext: null,
+                stagedMapping: null,
+                validationResult: null,
+                validated: false,
+                xmlPreviewLoaded: false
+            };
+        });
+    }
+
+    function loadCurrentEntityFields(callback) {
+        var state = curState();
+        if (!state) { if (callback) callback(); return; }
+        if (state.fields) { if (callback) callback(); return; } // already loaded
+        fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(state.entity.entity_type))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state.fields = data.fields || [];
+                state.wrapper = data.wrapper || [];
+                loadTemplates(state.entity.entity_type);
+                if (callback) callback();
+            })
+            .catch(function (err) { console.error('Failed to load entity fields:', err); if (callback) callback(); });
+    }
+
+    // Field helpers that work against current entity state
+    function getFieldDisplayName(f) { return (f.display_name && f.display_name !== '') ? f.display_name : f.element_name; }
+    function getFieldDisplayNameByElement(elementName) {
+        var state = curState(); if (!state || !state.fields) return elementName;
+        var f = state.fields.find(function (fld) { return fld.element_name === elementName; });
+        return f ? getFieldDisplayName(f) : elementName;
+    }
+    function hasDisplayName(f) { return f.display_name && f.display_name !== ''; }
+
+    // ── Step 4: Map & Validate (per-entity loop) ─────────────────────────
+
+    function renderMapValidatePanel() {
+        var area = document.getElementById('map-validate-area');
+        var state = curState();
+        if (!state || !state.fields || !parsedFileData) {
+            area.innerHTML = '<div class="placeholder-message">Complete previous steps.</div>';
+            return;
+        }
+
+        // If already validated, show validation results; otherwise show mapping
+        if (state.validated) {
+            renderMapValidateValidated(area, state);
+        } else if (state.stagingContext && state.validationResult) {
+            // Staged and validated but has issues — show validation
+            renderMapValidateValidation(area, state);
+        } else {
+            renderMapValidateMapping(area, state);
+        }
+
+        updateStep4Completion();
+        updateNavButtons();
+    }
+
+    function renderMapValidateMapping(area, state) {
+        // Route to fixed-value UI if action_type indicates it
+        if (state.entity.action_type === 'FIXED_VALUE') {
+            renderFixedValueMapping(area, state);
+            return;
+        }
+
+        var entityFields = state.fields;
+        var columnMapping = state.columnMapping;
         var visibleFields = entityFields.filter(function (f) { return f.is_visible !== 0 && f.is_visible !== false; });
-        var isAcct = selectedEntity && selectedEntity.folder && selectedEntity.folder.indexOf('account') !== -1;
+        var isAcct = state.entity.folder && state.entity.folder.indexOf('account') !== -1;
         var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
         var idField = visibleFields.find(function (f) { return f.element_name === idElemName; });
         var mappableFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
-        if (!columnMapping) { columnMapping = {}; }
+
         var prevIdIdx = '';
-        if (columnMapping) {
-            for (var k in columnMapping) {
-                if (columnMapping[k] === idElemName) {
-                    var hIdx = parsedFileData.headers.indexOf(k);
-                    if (hIdx !== -1) prevIdIdx = String(hIdx);
-                    break;
-                }
+        for (var k in columnMapping) {
+            if (columnMapping[k] === idElemName) {
+                var hIdx = parsedFileData.headers.indexOf(k);
+                if (hIdx !== -1) prevIdIdx = String(hIdx);
+                break;
             }
         }
+
         var html = '';
+
+        // Progress banner
+        html += renderEntityProgressBanner('mapping');
+
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
@@ -352,11 +408,10 @@ var BDL = (function () {
             parsedFileData.headers.forEach(function (header, idx) { var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : ''; var sel = (String(idx) === prevIdIdx) ? ' selected' : ''; html += '<option value="' + idx + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>'; });
             html += '</select><span class="identifier-target">&#8594; <code>' + idField.element_name + '</code></span></div></div>';
         }
+
         var disabledClass = (idField && !idSelected) ? ' mapping-disabled' : '';
         html += '<div class="mapping-panels-wrap' + disabledClass + '" id="mapping-panels-wrap">';
-        if (idField && !idSelected) {
-            html += '<div class="mapping-disabled-msg">Select the identifier column above to begin mapping</div>';
-        }
+        if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to begin mapping</div>';
         html += '<div class="mapping-panels">';
         html += '<div class="mapping-panel panel-source"><div class="panel-header">Source Columns</div><div class="panel-list" id="source-list"></div></div>';
         html += '<div class="mapping-panel panel-target"><div class="panel-header">BDL Fields</div><div class="panel-list" id="target-list"></div></div>';
@@ -364,13 +419,417 @@ var BDL = (function () {
         html += '<div class="mapped-section"><div class="panel-header">Mapped</div><div class="mapped-list" id="mapped-list"></div></div>';
         html += '<div id="mapping-warnings" class="mapping-warnings"></div>';
         html += '</div>';
-        area.innerHTML = html; area._mappableFields = mappableFields; area._identifierField = idField; area._identifierElementName = idElemName; area._selectedSource = null;
+
+        // Validate button (replaces Next for within-step progression)
+        html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()" disabled>Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
+
+        area.innerHTML = html;
+        area._mappableFields = mappableFields;
+        area._identifierField = idField;
+        area._identifierElementName = idElemName;
+        area._selectedSource = null;
         refreshMappingPanels();
     }
+
+    function renderFixedValueMapping(area, state) {
+        var entityFields = state.fields;
+        var columnMapping = state.columnMapping;
+        var visibleFields = entityFields.filter(function (f) { return f.is_visible !== 0 && f.is_visible !== false; });
+        var isAcct = state.entity.folder && state.entity.folder.indexOf('account') !== -1;
+        var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
+        var idField = visibleFields.find(function (f) { return f.element_name === idElemName; });
+        var valueFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
+
+        // Restore previous identifier selection
+        var prevIdIdx = '';
+        for (var k in columnMapping) {
+            if (columnMapping[k] === idElemName) {
+                var hIdx = parsedFileData.headers.indexOf(k);
+                if (hIdx !== -1) prevIdIdx = String(hIdx);
+                break;
+            }
+        }
+
+        var html = renderEntityProgressBanner('mapping');
+
+        // Fixed-value type indicator
+        html += '<div class="fixed-value-banner"><span class="fixed-value-icon">&#9998;</span> <strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</strong> uses fixed values — enter the values to apply to all rows below.</div>';
+
+        // Identifier selector (same as file-mapped)
+        var idSelected = (prevIdIdx !== '');
+        if (idField) {
+            var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
+            html += '<div class="mapping-identifier ' + idStateClass + '"><div class="identifier-label"><span class="identifier-icon">&#128273;</span><strong>Consumer Identifier</strong><span class="identifier-note">Which column contains the DM Agency ID?</span></div><div class="identifier-select"><select id="identifier-column" onchange="BDL.fixedValueIdentifierChanged()" class="identifier-dropdown"><option value="">— Select identifier column —</option>';
+            parsedFileData.headers.forEach(function (header, idx) {
+                var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : '';
+                var sel = (String(idx) === prevIdIdx) ? ' selected' : '';
+                html += '<option value="' + idx + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>';
+            });
+            html += '</select><span class="identifier-target">&#8594; <code>' + idField.element_name + '</code></span></div></div>';
+        }
+
+        // Value entry fields
+        var disabledClass = (idField && !idSelected) ? ' mapping-disabled' : '';
+        html += '<div class="fixed-value-fields' + disabledClass + '" id="fixed-value-fields">';
+        if (idField && !idSelected) {
+            html += '<div class="mapping-disabled-msg">Select the identifier column above to enter values</div>';
+        }
+
+        valueFields.forEach(function (f) {
+            var fieldId = 'fv-' + f.element_name.replace(/[^a-zA-Z0-9]/g, '');
+            var existingVal = state.columnMapping['__fixed__' + f.element_name] || '';
+            var displayName = hasDisplayName(f) ? f.display_name : f.element_name;
+            var reqLabel = f.is_import_required ? ' <span class="chip-required-label">required</span>' : '';
+
+            html += '<div class="fixed-value-row">';
+            html += '<div class="fixed-value-label">' + escapeHtml(displayName) + reqLabel;
+            if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
+            if (f.field_description) html += '<div class="fixed-value-desc">' + escapeHtml(f.field_description.substring(0, 120)) + '</div>';
+            html += '</div>';
+            html += '<div class="fixed-value-input">';
+
+            if (f.lookup_table) {
+                // Typeahead input for lookup fields
+                html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueSearch(\'' + f.element_name + '\',this)" autocomplete="off">';
+                html += '<div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
+            } else {
+                html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueChanged(\'' + f.element_name + '\',this)">';
+            }
+
+            var meta = buildFieldMeta(f);
+            if (meta) html += '<div class="fixed-value-meta">' + meta + '</div>';
+            html += '</div></div>';
+        });
+
+        html += '</div>';
+
+        // Validate button
+        html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()">Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
+
+        area.innerHTML = html;
+
+        // Store reference data for identifier change handler
+        area._identifierField = idField;
+        area._identifierElementName = idElemName;
+        area._valueFields = valueFields;
+
+        checkFixedValueComplete(state);
+    }
+
+    function fixedValueIdentifierChanged() {
+        var area = document.getElementById('map-validate-area');
+        var idSel = document.getElementById('identifier-column');
+        var idElem = area._identifierElementName;
+        var state = curState();
+        if (!state) return;
+        var cm = state.columnMapping;
+
+        // Remove old identifier mapping
+        for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
+        // Set new one
+        if (idSel.value !== '') cm[parsedFileData.headers[parseInt(idSel.value)]] = idElem;
+
+        var idSection = document.querySelector('.mapping-identifier');
+        var fieldsWrap = document.getElementById('fixed-value-fields');
+        if (idSel.value !== '') {
+            if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); }
+            if (fieldsWrap) { fieldsWrap.classList.remove('mapping-disabled'); var msg = fieldsWrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); }
+        } else {
+            if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); }
+            if (fieldsWrap) fieldsWrap.classList.add('mapping-disabled');
+        }
+        checkFixedValueComplete(state);
+    }
+
+    function fixedValueChanged(elementName, input) {
+        var state = curState(); if (!state) return;
+        var val = input.value.trim();
+        if (val) state.columnMapping['__fixed__' + elementName] = val;
+        else delete state.columnMapping['__fixed__' + elementName];
+        checkFixedValueComplete(state);
+    }
+
+    function fixedValueSearch(elementName, input) {
+        var state = curState(); if (!state) return;
+        var val = input.value.trim();
+        if (val) state.columnMapping['__fixed__' + elementName] = val;
+        else delete state.columnMapping['__fixed__' + elementName];
+
+        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var sugEl = document.getElementById('sug-' + fieldId);
+        if (!sugEl) return;
+
+        if (val.length < 2) { sugEl.innerHTML = ''; return; }
+
+        // Find the field's lookup table from state.fields
+        var field = state.fields.find(function (f) { return f.element_name === elementName; });
+        if (!field || !field.lookup_table) return;
+
+        // Query the validate endpoint's lookup data (cached from entity field load)
+        // For now, use a simple fetch to the entity-fields endpoint which has lookup info
+        // We'll search against the validation lookup values
+        if (!state._lookupCache) state._lookupCache = {};
+        if (state._lookupCache[elementName]) {
+            renderSuggestions(sugEl, state._lookupCache[elementName], val, elementName, input);
+            return;
+        }
+
+        // Fetch lookup values from the validate infrastructure
+        fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(state.entity.entity_type))
+            .then(function (r) { return r.json(); })
+            .then(function () {
+                // We don't have lookup values from entity-fields — we need them from the DM database
+                // For now, mark as needing lookup at validation time
+                sugEl.innerHTML = '<div class="suggestion-hint">Value will be validated against ' + escapeHtml(field.lookup_table) + '</div>';
+            });
+
+        checkFixedValueComplete(state);
+    }
+
+    function renderSuggestions(sugEl, values, searchVal, elementName, input) {
+        var upper = searchVal.toUpperCase();
+        var matches = values.filter(function (v) { return String(v).toUpperCase().indexOf(upper) !== -1; }).slice(0, 10);
+        if (matches.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
+        var html = '';
+        matches.forEach(function (v) {
+            html += '<div class="suggestion-item" onclick="BDL.selectFixedValue(\'' + elementName + '\',\'' + escapeHtml(String(v)).replace(/'/g, "\\'") + '\')">' + escapeHtml(String(v)) + '</div>';
+        });
+        sugEl.innerHTML = html;
+    }
+
+    function selectFixedValue(elementName, value) {
+        var state = curState(); if (!state) return;
+        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var input = document.getElementById(fieldId);
+        if (input) input.value = value;
+        state.columnMapping['__fixed__' + elementName] = value;
+        var sugEl = document.getElementById('sug-' + fieldId);
+        if (sugEl) sugEl.innerHTML = '';
+        checkFixedValueComplete(state);
+    }
+
+    function checkFixedValueComplete(state) {
+        if (!state) return;
+        var area = document.getElementById('map-validate-area');
+        var idField = area ? area._identifierField : null;
+
+        // Check identifier is selected
+        var hasIdentifier = false;
+        for (var k in state.columnMapping) {
+            if (state.columnMapping[k] === (area ? area._identifierElementName : '')) { hasIdentifier = true; break; }
+        }
+
+        // Check required fields have values
+        var requiredMet = true;
+        if (area && area._valueFields) {
+            area._valueFields.forEach(function (f) {
+                if (f.is_import_required && !state.columnMapping['__fixed__' + f.element_name]) {
+                    requiredMet = false;
+                }
+            });
+        }
+
+        var valBtn = document.getElementById('btn-validate-entity');
+        if (valBtn) valBtn.disabled = !(hasIdentifier && requiredMet);
+    }
+
+    function renderMapValidateValidation(area, state) {
+        var html = renderEntityProgressBanner('validating');
+        // Re-render validation results into the area
+        var warnings = state.validationResult.warnings;
+        var serverData = state.validationResult.serverData;
+        html += buildValidationResultsHtml(warnings, serverData);
+        area.innerHTML = html;
+    }
+
+    function renderMapValidateValidated(area, state) {
+        var html = renderEntityProgressBanner('complete');
+        html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + ' — Mapping and validation complete</strong><div class="validation-detail">' + (state.stagingContext ? state.stagingContext.row_count.toLocaleString() + ' rows staged' : '') + '</div></div></div>';
+        html += '<div class="map-validate-actions">';
+        html += '<button class="nav-btn" onclick="BDL.revalidateCurrentEntity()">Re-validate</button>';
+        if (currentEntityIndex < entityStates.length - 1) {
+            html += '<button class="execute-btn" onclick="BDL.advanceToNextEntity()">Continue to ' + escapeHtml(formatEntityName(entityStates[currentEntityIndex + 1].entity.entity_type)) + ' &#8594;</button>';
+        }
+        html += '</div>';
+        area.innerHTML = html;
+    }
+
+    function renderEntityProgressBanner(phase) {
+        var total = entityStates.length;
+        if (total <= 1 && phase !== 'complete') return '';
+        var current = currentEntityIndex + 1;
+        var entityName = formatEntityName(curEntity().entity_type);
+
+        var html = '<div class="mapping-progress-banner"><div class="progress-banner-top">';
+
+        // Entity progress dots
+        for (var i = 0; i < total; i++) {
+            var dotClass = 'progress-dot';
+            if (i < currentEntityIndex || (i === currentEntityIndex && phase === 'complete')) dotClass += ' progress-dot-done';
+            else if (i === currentEntityIndex) dotClass += ' progress-dot-active';
+            html += '<span class="' + dotClass + '" title="' + escapeHtml(formatEntityName(entityStates[i].entity.entity_type)) + '">' + (i + 1) + '</span>';
+            if (i < total - 1) html += '<span class="progress-dot-line' + (i < currentEntityIndex ? ' progress-dot-line-done' : '') + '"></span>';
+        }
+        html += '</div>';
+
+        if (phase === 'mapping') html += '<div class="progress-banner-label">Mapping ' + current + ' of ' + total + ': <strong>' + escapeHtml(entityName) + '</strong></div>';
+        else if (phase === 'validating') html += '<div class="progress-banner-label">Validating ' + current + ' of ' + total + ': <strong>' + escapeHtml(entityName) + '</strong></div>';
+        else if (phase === 'complete') html += '<div class="progress-banner-label">Complete ' + current + ' of ' + total + ': <strong>' + escapeHtml(entityName) + '</strong> &#10003;</div>';
+
+        html += '</div>';
+        return html;
+    }
+
+    function validateCurrentEntity() {
+        var state = curState();
+        if (!state || Object.keys(state.columnMapping).length === 0) return;
+
+        var area = document.getElementById('map-validate-area');
+
+        // Stage first if needed
+        if (state.stagingContext && state.stagedMapping && mappingsAreEqual(state.columnMapping, state.stagedMapping)) {
+            runEntityValidation(state);
+        } else if (state.stagingContext) {
+            var oldTable = state.stagingContext.staging_table;
+            state.stagingContext = null;
+            state.stagedMapping = null;
+            stageEntityData(state, function () { runEntityValidation(state); }, oldTable);
+        } else {
+            stageEntityData(state, function () { runEntityValidation(state); });
+        }
+    }
+
+    function stageEntityData(state, onComplete, dropExistingTable) {
+        var area = document.getElementById('map-validate-area');
+        area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">' + (dropExistingTable ? 'Mapping changed — re-staging data...' : 'Reading full file and staging...') + '</div>';
+
+        var ext = '.' + uploadedFile.name.split('.').pop().toLowerCase();
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            var allRows;
+            try { if (ext === '.csv' || ext === '.txt') allRows = parseCSVAllRows(e.target.result); else allRows = parseExcelAllRows(e.target.result); }
+            catch (err) { area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Failed to read file: ' + err.message + '</div>'; return; }
+
+            area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Staging ' + allRows.length.toLocaleString() + ' rows for ' + formatEntityName(state.entity.entity_type) + '...</div>';
+
+            // Separate file-mapped columns from fixed values
+            var fileMapping = {};
+            var fixedValues = {};
+            Object.keys(state.columnMapping).forEach(function (k) {
+                if (k.indexOf('__fixed__') === 0) {
+                    fixedValues[k.replace('__fixed__', '')] = state.columnMapping[k];
+                } else {
+                    fileMapping[k] = state.columnMapping[k];
+                }
+            });
+
+            var stageBody = { entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, mapping: fileMapping, headers: parsedFileData.headers, rows: allRows };
+            if (Object.keys(fixedValues).length > 0) stageBody.fixed_values = fixedValues;
+            if (dropExistingTable) stageBody.drop_existing = dropExistingTable;
+
+            fetch('/api/bdl-import/stage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stageBody) })
+            .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+            .then(function (data) {
+                state.stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] };
+                state.stagedMapping = JSON.parse(JSON.stringify(state.columnMapping));
+                if (onComplete) onComplete();
+            })
+            .catch(function (err) { area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Staging failed: ' + err.message + '</div>'; });
+        };
+        if (ext === '.csv' || ext === '.txt') reader.readAsText(uploadedFile); else reader.readAsArrayBuffer(uploadedFile);
+    }
+
+    function runEntityValidation(state) {
+        var area = document.getElementById('map-validate-area');
+        area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Validating ' + formatEntityName(state.entity.entity_type) + ' against ' + state.stagingContext.environment + '...</div>';
+        revalidating = true;
+
+        fetch('/api/bdl-import/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id }) })
+        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+        .then(function (serverData) {
+            revalidating = false;
+            serverData.staging_table = state.stagingContext.staging_table;
+            var warnings = validateStagedRows(serverData, state);
+            state.validationResult = { warnings: warnings, serverData: serverData };
+            if (serverData.row_count !== undefined) state.stagingContext.row_count = serverData.row_count;
+            if (serverData.skipped_count !== undefined) state.stagingContext.skipped_count = serverData.skipped_count;
+
+            var hasActionable = warnings.some(function (w) { return w.type === 'required_empty' || w.type === 'lookup_invalid'; });
+            state.validated = !hasActionable;
+
+            if (state.validated && entityStates.length > 1 && currentEntityIndex < entityStates.length - 1) {
+                // Show transition modal before advancing
+                showEntityTransition(state.entity.entity_type, entityStates[currentEntityIndex + 1].entity.entity_type);
+            } else {
+                renderMapValidatePanel();
+            }
+        })
+        .catch(function (err) {
+            revalidating = false;
+            area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Validation failed: ' + err.message + '</div>';
+        });
+    }
+
+    function showEntityTransition(completedType, nextType) {
+        var existing = document.getElementById('entity-transition-modal');
+        if (existing) existing.remove();
+
+        var modal = document.createElement('div');
+        modal.id = 'entity-transition-modal';
+        modal.className = 'xf-modal-overlay';
+        modal.innerHTML = '<div class="xf-modal"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#4ec9b0">&#10003;</span><span>' + escapeHtml(formatEntityName(completedType)) + ' Complete</span></div><div class="xf-modal-body"><p>Mapping and validation passed.</p><p>Moving to <strong>' + escapeHtml(formatEntityName(nextType)) + '</strong>...</p></div></div>';
+        document.body.appendChild(modal);
+
+        setTimeout(function () {
+            modal.remove();
+            renderMapValidatePanel();
+        }, 1500);
+    }
+
+    function advanceToNextEntity() {
+        if (currentEntityIndex < entityStates.length - 1) {
+            currentEntityIndex++;
+            loadCurrentEntityFields(function () {
+                loadTemplates(curEntity().entity_type);
+                renderMapValidatePanel();
+            });
+        }
+    }
+
+    function revalidateCurrentEntity() {
+        var state = curState();
+        if (!state) return;
+        state.validated = false;
+        state.validationResult = null;
+        renderMapValidateMapping(document.getElementById('map-validate-area'), state);
+    }
+
+    function updateStep4Completion() {
+        // Step 4 is complete when ALL entities are validated
+        var allDone = entityStates.length > 0 && entityStates.every(function (s) { return s.validated; });
+        stepComplete[3] = allDone;
+        updateStepperUI();
+    }
+
+    function mappingsAreEqual(a, b) {
+        if (!a || !b) return false;
+        var aKeys = Object.keys(a).sort(), bKeys = Object.keys(b).sort();
+        if (aKeys.length !== bKeys.length) return false;
+        for (var i = 0; i < aKeys.length; i++) { if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[bKeys[i]]) return false; }
+        return true;
+    }
+
+    // ── Mapping Panel Internals ──────────────────────────────────────────
     function refreshMappingPanels() {
-        var area = document.getElementById('mapping-area'), mf = area._mappableFields, idColIdx = null;
+        var area = document.getElementById('map-validate-area');
+        var state = curState();
+        if (!state) return;
+        var mf = area._mappableFields, columnMapping = state.columnMapping;
+        var idColIdx = null;
         var idSel = document.getElementById('identifier-column'); if (idSel && idSel.value !== '') idColIdx = parseInt(idSel.value);
         var mSrc = Object.keys(columnMapping), mTgt = Object.values(columnMapping);
+
         var srcList = document.getElementById('source-list'), srcH = '';
         parsedFileData.headers.forEach(function (header, idx) {
             if (idx === idColIdx || mSrc.indexOf(header) !== -1) return;
@@ -379,131 +838,77 @@ var BDL = (function () {
             srcH += '<div class="mapping-chip source-chip' + selCls + '" draggable="true" data-source="' + escapeHtml(header) + '" data-idx="' + idx + '" ondragstart="BDL.chipDragStart(event)" onclick="BDL.sourceClick(\'' + escapeHtml(header).replace(/'/g, "\\'") + '\')">';
             srcH += '<div class="chip-name">' + escapeHtml(header) + '</div>'; if (sample) srcH += '<div class="chip-sample">' + escapeHtml(sample) + '</div>'; srcH += '</div>';
         }); srcList.innerHTML = srcH || '<div class="panel-empty">All columns mapped</div>';
+
         var tgtList = document.getElementById('target-list'), tgtH = '';
         mf.forEach(function (f) {
             if (mTgt.indexOf(f.element_name) !== -1) return;
             var rc = f.is_import_required ? ' chip-required' : '';
             tgtH += '<div class="mapping-chip target-chip' + rc + '" data-element="' + f.element_name + '" ondragover="BDL.chipDragOver(event)" ondrop="BDL.chipDrop(event)" onclick="BDL.targetClick(\'' + f.element_name + '\')">';
-            if (hasDisplayName(f)) {
-                tgtH += '<div class="chip-name">' + escapeHtml(f.display_name) + '</div>';
-                tgtH += '<div class="chip-element">' + f.element_name + '</div>';
-            } else {
-                tgtH += '<div class="chip-name chip-name-technical">' + f.element_name + '</div>';
-            }
+            if (hasDisplayName(f)) { tgtH += '<div class="chip-name">' + escapeHtml(f.display_name) + '</div><div class="chip-element">' + f.element_name + '</div>'; }
+            else { tgtH += '<div class="chip-name chip-name-technical">' + f.element_name + '</div>'; }
             if (f.field_description) tgtH += '<div class="chip-desc">' + escapeHtml(f.field_description.substring(0, 80)) + '</div>';
             var meta = buildFieldMeta(f); if (meta) tgtH += '<div class="chip-meta">' + meta + '</div>'; tgtH += '</div>';
         }); tgtList.innerHTML = tgtH || '<div class="panel-empty">All fields mapped</div>';
+
         var mapList = document.getElementById('mapped-list'), mapH = '', mKeys = Object.keys(columnMapping);
-        if (!mKeys.length) { mapH = '<div class="panel-empty">Click a source column, then click a BDL field to pair them. Or drag and drop between panels.</div>'; }
+        if (!mKeys.length) { mapH = '<div class="panel-empty">Click a source column, then click a BDL field to pair them. Or drag and drop.</div>'; }
         else {
             mKeys.forEach(function (sc) {
-                var te = columnMapping[sc];
-                var displayName = getFieldDisplayNameByElement(te);
+                var te = columnMapping[sc], displayName = getFieldDisplayNameByElement(te);
                 mapH += '<div class="mapped-pair"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>';
-                if (displayName !== te) {
-                    mapH += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>';
-                } else {
-                    mapH += '<span class="pair-target">' + te + '</span>';
-                }
+                if (displayName !== te) mapH += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>';
+                else mapH += '<span class="pair-target">' + te + '</span>';
                 mapH += '<span class="pair-remove" onclick="BDL.unmapPair(\'' + escapeHtml(sc).replace(/'/g, "\\'") + '\')" title="Remove mapping">&#10005;</span></div>';
             });
         }
-        mapList.innerHTML = mapH; checkMappingComplete();
+        mapList.innerHTML = mapH;
+        checkMappingComplete();
     }
+
     function buildFieldMeta(f) { var p = []; if (f.data_type) p.push(f.data_type); if (f.max_length) p.push('max ' + f.max_length); if (f.lookup_table) p.push('&#128270; ' + f.lookup_table); if (f.is_import_required) p.push('required'); return p.join(' \u00b7 '); }
     function isMappingDisabled() { var wrap = document.getElementById('mapping-panels-wrap'); return wrap && wrap.classList.contains('mapping-disabled'); }
-    function sourceClick(h) { if (isMappingDisabled()) return; var a = document.getElementById('mapping-area'); a._selectedSource = (a._selectedSource === h) ? null : h; refreshMappingPanels(); }
-    function targetClick(el) { if (isMappingDisabled()) return; var a = document.getElementById('mapping-area'); if (!a._selectedSource) return; columnMapping[a._selectedSource] = el; a._selectedSource = null; refreshMappingPanels(); }
+    function sourceClick(h) { if (isMappingDisabled()) return; var a = document.getElementById('map-validate-area'); a._selectedSource = (a._selectedSource === h) ? null : h; refreshMappingPanels(); }
+    function targetClick(el) { if (isMappingDisabled()) return; var a = document.getElementById('map-validate-area'); if (!a._selectedSource) return; curState().columnMapping[a._selectedSource] = el; a._selectedSource = null; refreshMappingPanels(); }
     function chipDragStart(e) { if (isMappingDisabled()) { e.preventDefault(); return; } var s = e.target.closest('.source-chip'); if (!s) return; e.dataTransfer.setData('text/plain', s.dataset.source); e.dataTransfer.effectAllowed = 'link'; s.classList.add('dragging'); }
     function chipDragOver(e) { if (isMappingDisabled()) return; e.preventDefault(); e.dataTransfer.dropEffect = 'link'; var t = e.target.closest('.target-chip'); if (t) t.classList.add('drag-hover'); }
-    function chipDrop(e) { if (isMappingDisabled()) return; e.preventDefault(); var sh = e.dataTransfer.getData('text/plain'), t = e.target.closest('.target-chip'); if (!t || !sh) return; columnMapping[sh] = t.dataset.element; document.getElementById('mapping-area')._selectedSource = null; refreshMappingPanels(); }
-    function unmapPair(sc) { delete columnMapping[sc]; refreshMappingPanels(); }
+    function chipDrop(e) { if (isMappingDisabled()) return; e.preventDefault(); var sh = e.dataTransfer.getData('text/plain'), t = e.target.closest('.target-chip'); if (!t || !sh) return; curState().columnMapping[sh] = t.dataset.element; document.getElementById('map-validate-area')._selectedSource = null; refreshMappingPanels(); }
+    function unmapPair(sc) { delete curState().columnMapping[sc]; refreshMappingPanels(); }
+
     function identifierChanged() {
-        var a = document.getElementById('mapping-area'), idSel = document.getElementById('identifier-column'), idElem = a._identifierElementName;
-        for (var k in columnMapping) { if (columnMapping[k] === idElem) delete columnMapping[k]; }
-        if (idSel.value !== '') { columnMapping[parsedFileData.headers[parseInt(idSel.value)]] = idElem; }
-        var idSection = document.querySelector('.mapping-identifier');
-        var wrap = document.getElementById('mapping-panels-wrap');
+        var a = document.getElementById('map-validate-area'), idSel = document.getElementById('identifier-column'), idElem = a._identifierElementName;
+        var cm = curState().columnMapping;
+        for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
+        if (idSel.value !== '') cm[parsedFileData.headers[parseInt(idSel.value)]] = idElem;
+        var idSection = document.querySelector('.mapping-identifier'), wrap = document.getElementById('mapping-panels-wrap');
         if (idSel.value !== '') {
             if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); }
             if (wrap) { wrap.classList.remove('mapping-disabled'); var msg = wrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); }
         } else {
             if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); }
-            if (wrap) { wrap.classList.add('mapping-disabled'); }
+            if (wrap) wrap.classList.add('mapping-disabled');
         }
         refreshMappingPanels();
     }
+
     function checkMappingComplete() {
-        var mc = Object.keys(columnMapping).length, area = document.getElementById('mapping-area');
+        var state = curState(); if (!state) return;
+        var area = document.getElementById('map-validate-area');
+        var mc = Object.keys(state.columnMapping).length;
         var mf = area ? area._mappableFields || [] : [], idF = area ? area._identifierField : null;
         var allReq = mf.filter(function (f) { return f.is_import_required; }); if (idF) allReq.push(idF);
-        var mapped = Object.values(columnMapping), unmReq = allReq.filter(function (f) { return mapped.indexOf(f.element_name) === -1; });
+        var mapped = Object.values(state.columnMapping), unmReq = allReq.filter(function (f) { return mapped.indexOf(f.element_name) === -1; });
         var wd = document.getElementById('mapping-warnings');
         if (wd) {
-            if (unmReq.length > 0) { wd.innerHTML = '<div class="warning-box"><strong>&#9888; Unmapped required fields:</strong> ' + unmReq.map(function (f) { return '<code>' + getFieldDisplayName(f) + '</code>'; }).join(', ') + '<br><span style="font-size:11px;color:#888;">These will be added to the staging table. You must provide values during validation.</span></div>'; }
-            else if (mc > 0) { wd.innerHTML = '<div class="success-box">&#10003; All required fields mapped</div>'; }
-            else { wd.innerHTML = ''; }
+            if (unmReq.length > 0) wd.innerHTML = '<div class="warning-box"><strong>&#9888; Unmapped required fields:</strong> ' + unmReq.map(function (f) { return '<code>' + getFieldDisplayName(f) + '</code>'; }).join(', ') + '<br><span style="font-size:11px;color:#888;">These will be added to the staging table. You must provide values during validation.</span></div>';
+            else if (mc > 0) wd.innerHTML = '<div class="success-box">&#10003; All required fields mapped</div>';
+            else wd.innerHTML = '';
         }
-        stepComplete[3] = mc > 0; updateNavButtons(); updateStepperUI();
+        // Enable/disable validate button
+        var valBtn = document.getElementById('btn-validate-entity');
+        if (valBtn) valBtn.disabled = (mc === 0);
     }
 
-    // ── Step 5 ───────────────────────────────────────────────────────────
-    function stageData(onComplete, dropExistingTable) {
-        showStep(5);
-        var area = document.getElementById('validation-area');
-        area.innerHTML = '<div class="loading">' + (dropExistingTable ? 'Mapping changed — re-staging data...' : 'Reading full file...') + '</div>';
-        var ext = '.' + uploadedFile.name.split('.').pop().toLowerCase();
-        var reader = new FileReader();
-        reader.onload = function (e) {
-            var allRows;
-            try { if (ext === '.csv' || ext === '.txt') allRows = parseCSVAllRows(e.target.result); else allRows = parseExcelAllRows(e.target.result); }
-            catch (err) { area.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to read file: ' + err.message + '</div>'; return; }
-            area.innerHTML = '<div class="loading">Staging ' + allRows.length.toLocaleString() + ' rows to server...</div>';
-            var stageBody = { entity_type: selectedEntity.entity_type, config_id: selectedEnvironment.config_id, mapping: columnMapping, headers: parsedFileData.headers, rows: allRows };
-            if (dropExistingTable) { stageBody.drop_existing = dropExistingTable; }
-            fetch('/api/bdl-import/stage', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(stageBody) })
-            .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-            .then(function (data) {
-                stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] };
-                stagedMapping = JSON.parse(JSON.stringify(columnMapping));
-                if (onComplete) onComplete();
-            })
-            .catch(function (err) { area.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Staging failed: ' + err.message + '</div>'; });
-        };
-        if (ext === '.csv' || ext === '.txt') reader.readAsText(uploadedFile); else reader.readAsArrayBuffer(uploadedFile);
-    }
-
-    function runValidation() {
-        var area = document.getElementById('validation-area');
-        area.innerHTML = '<div class="loading">Validating against ' + stagingContext.environment + '...</div>';
-        revalidating = true;
-        fetch('/api/bdl-import/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: stagingContext.staging_table, entity_type: selectedEntity.entity_type, config_id: selectedEnvironment.config_id }) })
-        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-        .then(function (serverData) {
-            revalidating = false;
-            serverData.staging_table = stagingContext.staging_table;
-            var warnings = validateStagedRows(serverData);
-            validationResult = { warnings: warnings, serverData: serverData };
-            // Update staging context with accurate non-skipped row count
-            if (serverData.row_count !== undefined) {
-                stagingContext.row_count = serverData.row_count;
-            }
-            if (serverData.skipped_count !== undefined) {
-                stagingContext.skipped_count = serverData.skipped_count;
-            }
-            renderValidationResults(warnings, serverData);
-            var hasRequiredEmpty = warnings.some(function (w) { return w.type === 'required_empty'; });
-            stepComplete[4] = !hasRequiredEmpty;
-            updateNavButtons(); updateStepperUI();
-        })
-        .catch(function (err) {
-            revalidating = false;
-            area.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Validation failed: ' + err.message + '</div>';
-        });
-    }
-
+    // ── Validation Logic ─────────────────────────────────────────────────
     function parseCSVAllRows(text) { var lines = text.split(/\r?\n/).filter(function (l) { return l.trim(); }), rows = []; for (var i = 1; i < lines.length; i++) rows.push(parseCSVLine(lines[i])); return rows; }
     function parseExcelAllRows(buffer) {
         var d = new Uint8Array(buffer), wb = XLSX.read(d, { type: 'array' }), sh = wb.Sheets[wb.SheetNames[0]], range = XLSX.utils.decode_range(sh['!ref']), rows = [];
@@ -511,14 +916,14 @@ var BDL = (function () {
         return rows;
     }
 
-    function validateStagedRows(serverData) {
+    function validateStagedRows(serverData, state) {
         var warnings = [], columns = serverData.columns || [], rows = serverData.rows || [];
         var lookups = serverData.lookups || {}, lookupErrors = serverData.lookup_errors || {};
+        var entityFields = state.fields;
+        var columnMapping = state.columnMapping;
         var fieldMap = {}; entityFields.forEach(function (f) { fieldMap[f.element_name] = f; });
         var colIndex = {}; columns.forEach(function (col, idx) { colIndex[col] = idx; });
-        Object.keys(lookupErrors).forEach(function (en) {
-            warnings.push({ type: 'lookup_error', field: en, message: lookupErrors[en], rowCount: 0, samples: [] });
-        });
+        Object.keys(lookupErrors).forEach(function (en) { warnings.push({ type: 'lookup_error', field: en, message: lookupErrors[en], rowCount: 0, samples: [] }); });
         var MAX_SAMPLES = 5;
         columns.forEach(function (colName) {
             var field = fieldMap[colName]; if (!field) return;
@@ -549,78 +954,65 @@ var BDL = (function () {
         return warnings;
     }
 
-    // ── Validation Results ────────────────────────────────────────────────
-    function renderValidationResults(warnings, serverData) {
-        var area = document.getElementById('validation-area'), html = '';
+    function buildValidationResultsHtml(warnings, serverData) {
+        var html = '';
         var rc = serverData.row_count || 0, skipped = serverData.skipped_count || 0;
         var actionableWarnings = warnings.filter(function (w) { return w.type === 'required_empty' || w.type === 'lookup_invalid'; });
         var infoWarnings = warnings.filter(function (w) { return w.type !== 'required_empty' && w.type !== 'lookup_invalid'; });
         var rowSummary = rc.toLocaleString() + ' rows validated' + (skipped > 0 ? ', ' + skipped.toLocaleString() + ' skipped' : '');
+
         if (!warnings.length) {
             html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>Validation passed</strong><div class="validation-detail">' + rowSummary + '. No issues found.</div></div></div>';
         } else if (actionableWarnings.length > 0) {
-            html += '<div class="validation-summary validation-block"><span class="validation-icon">&#9888;</span><div><strong>' + actionableWarnings.length + ' issue' + (actionableWarnings.length > 1 ? 's' : '') + ' found during validation</strong><div class="validation-detail">' + rowSummary + '. Click each issue below to review and resolve before proceeding.</div></div></div>';
+            html += '<div class="validation-summary validation-block"><span class="validation-icon">&#9888;</span><div><strong>' + actionableWarnings.length + ' issue' + (actionableWarnings.length > 1 ? 's' : '') + ' found</strong><div class="validation-detail">' + rowSummary + '. Resolve issues below.</div></div></div>';
         } else {
-            html += '<div class="validation-summary validation-warn"><span class="validation-icon">&#9888;</span><div><strong>' + infoWarnings.length + ' warning' + (infoWarnings.length > 1 ? 's' : '') + '</strong><div class="validation-detail">' + rowSummary + '. Review warnings below — you may proceed.</div></div></div>';
+            html += '<div class="validation-summary validation-warn"><span class="validation-icon">&#9888;</span><div><strong>' + infoWarnings.length + ' warning' + (infoWarnings.length > 1 ? 's' : '') + '</strong><div class="validation-detail">' + rowSummary + '. You may proceed.</div></div></div>';
         }
+
         if (actionableWarnings.length > 0) {
             html += '<div class="validation-cards" id="validation-cards">';
             var typeLabels = { required_empty: 'Required Value Missing', lookup_invalid: 'Invalid Lookup Value' };
             actionableWarnings.forEach(function (w, idx) {
-                var cardId = 'vcard-' + idx;
-                var fieldDisplay = getFieldDisplayNameByElement(w.field);
+                var cardId = 'vcard-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field);
                 html += '<div class="val-card" id="' + cardId + '"><div class="val-card-header" onclick="BDL.toggleValidationCard(\'' + cardId + '\')"><div class="val-card-header-left"><span class="val-card-field">';
-                if (fieldDisplay !== w.field) { html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; } else { html += '<code class="val-target">' + w.field + '</code>'; }
+                if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>';
                 html += '</span><span class="val-badge">' + typeLabels[w.type] + '</span></div><div class="val-card-header-right"><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-card-chevron" id="chevron-' + cardId + '">&#9654;</span></div></div>';
                 html += '<div class="val-card-body" id="body-' + cardId + '" style="display:none;">';
-                if (w.type === 'required_empty') { html += renderRequiredEmptyActions(w, cardId); }
-                else if (w.type === 'lookup_invalid') { html += renderLookupInvalidActions(w, cardId, serverData); }
+                if (w.type === 'required_empty') html += renderRequiredEmptyActions(w);
+                else if (w.type === 'lookup_invalid') html += renderLookupInvalidActions(w, cardId, serverData);
                 html += '</div></div>';
             });
             html += '</div>';
         }
+
         if (infoWarnings.length > 0) {
             html += '<div class="validation-info-section"><div class="validation-info-header">Warnings (' + infoWarnings.length + ')</div>';
             infoWarnings.forEach(function (w, idx) {
-                var infoId = 'vinfo-' + idx;
-                var fieldDisplay = getFieldDisplayNameByElement(w.field);
+                var infoId = 'vinfo-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field);
                 var typeLabel = { max_length: 'Max Length', data_type: 'Data Type', lookup_error: 'Lookup Discovery' }[w.type] || w.type;
                 html += '<div class="val-info-card" id="' + infoId + '"><div class="val-info-header" onclick="BDL.toggleInfoCard(\'' + infoId + '\')"><span class="val-card-field">';
-                if (fieldDisplay !== w.field) { html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; } else { html += '<code class="val-target">' + w.field + '</code>'; }
+                if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>';
                 html += '</span><span class="val-badge val-badge-info">' + typeLabel + '</span><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-info-chevron" id="chevron-' + infoId + '">&#9654;</span></div>';
                 html += '<div class="val-info-body" id="body-' + infoId + '" style="display:none;"><div class="val-card-message">' + escapeHtml(w.message) + '</div>';
-                if (w.samples && w.samples.length > 0) {
-                    html += '<div class="validation-samples">';
-                    w.samples.forEach(function (s) { html += '<span class="val-sample">Row ' + s.row + ': <code>' + escapeHtml(String(s.value)) + '</code>'; if (s.length) html += ' (' + s.length + ' chars)'; html += '</span>'; });
-                    html += '</div>';
-                }
+                if (w.samples && w.samples.length > 0) { html += '<div class="validation-samples">'; w.samples.forEach(function (s) { html += '<span class="val-sample">Row ' + s.row + ': <code>' + escapeHtml(String(s.value)) + '</code>'; if (s.length) html += ' (' + s.length + ' chars)'; html += '</span>'; }); html += '</div>'; }
                 html += '</div></div>';
             });
             html += '</div>';
         }
-        html += '<div class="validation-context">Staged to <strong>' + escapeHtml(serverData.staging_table) + '</strong> &middot; Validated against <strong>' + escapeHtml(serverData.environment) + '</strong> (' + escapeHtml(serverData.db_instance) + ')';
-        var lc = Object.keys(serverData.lookups || {}).length; if (lc > 0) html += ' &middot; ' + lc + ' lookup table(s) queried';
-        html += '</div>';
-        area.innerHTML = html;
+        return html;
     }
 
-    function renderRequiredEmptyActions(w, cardId) {
+    function renderRequiredEmptyActions(w) {
         var sf = w.field.replace(/'/g, "\\'");
         var rid = 'fill-' + w.field.replace(/[^a-zA-Z0-9]/g, '');
+        var state = curState();
         var html = '<div class="lookup-replace-table"><div class="lookup-replace-header"><span class="lrh-count">Rows</span><span class="lrh-value">Current</span><span class="lrh-action">Action</span></div>';
         html += '<div class="lookup-replace-row" id="row-' + rid + '"><span class="lrr-count">' + w.rowCount.toLocaleString() + '</span><span class="lrr-value"><code>(empty)</code></span><span class="lrr-action">';
-        if (w.hasLookup && w.lookupValues) {
-            html += '<select id="' + rid + '" class="replace-select"><option value="">— Select value —</option>';
-            w.lookupValues.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
-            html += '</select>';
-        } else {
-            html += '<input type="text" id="' + rid + '" class="replace-input" placeholder="Enter value...">';
-        }
+        if (w.hasLookup && w.lookupValues) { html += '<select id="' + rid + '" class="replace-select"><option value="">— Select value —</option>'; w.lookupValues.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; }); html += '</select>'; }
+        else { html += '<input type="text" id="' + rid + '" class="replace-input" placeholder="Enter value...">'; }
         html += ' <button class="replace-btn" onclick="BDL.fillEmpty(\'' + sf + '\',\'' + rid + '\')">Fill</button>';
-        var fieldObj = entityFields.find(function(ff) { return ff.element_name === w.field; });
-        if (!fieldObj || !fieldObj.is_not_nullifiable) {
-            html += ' <button class="skip-btn" onclick="BDL.skipRows(\'' + sf + '\',\'\',\'row-' + rid + '\')">Skip Rows</button>';
-        }
+        var fieldObj = state.fields.find(function(ff) { return ff.element_name === w.field; });
+        if (!fieldObj || !fieldObj.is_not_nullifiable) html += ' <button class="skip-btn" onclick="BDL.skipRows(\'' + sf + '\',\'\',\'row-' + rid + '\')">Skip Rows</button>';
         html += '</span></div></div>';
         return html;
     }
@@ -634,8 +1026,7 @@ var BDL = (function () {
             var info = w.uniqueValues[key], sf2 = w.field.replace(/'/g, "\\'"), sd = info.display.replace(/'/g, "\\'");
             var rid2 = 'replace-' + w.field.replace(/[^a-zA-Z0-9]/g, '') + '-' + key.replace(/[^a-zA-Z0-9]/g, '');
             html += '<div class="lookup-replace-row" id="row-' + rid2 + '" data-resolved="false"><span class="lrr-count">' + info.count.toLocaleString() + '</span><span class="lrr-value"><code>' + escapeHtml(info.display) + '</code></span><span class="lrr-action">';
-            html += '<select id="' + rid2 + '" class="replace-select"><option value="">— Replace with —</option>';
-            vv.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
+            html += '<select id="' + rid2 + '" class="replace-select"><option value="">— Replace with —</option>'; vv.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
             html += '</select> <button class="replace-btn" onclick="BDL.applyReplacement(\'' + sf2 + '\',\'' + sd + '\',\'' + rid2 + '\')">Replace</button> <button class="skip-btn" onclick="BDL.skipRows(\'' + sf2 + '\',\'' + sd + '\',\'row-' + rid2 + '\')">Skip</button>';
             html += '</span></div>';
         });
@@ -647,19 +1038,15 @@ var BDL = (function () {
         if (revalidating) return;
         var cards = document.querySelectorAll('.val-card');
         cards.forEach(function (card) {
-            var body = document.getElementById('body-' + card.id);
-            var chevron = document.getElementById('chevron-' + card.id);
+            var body = document.getElementById('body-' + card.id), chevron = document.getElementById('chevron-' + card.id);
             if (card.id === cardId) {
                 if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; card.classList.add('val-card-expanded'); }
                 else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded'); }
-            } else {
-                if (body) body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded');
-            }
+            } else { if (body) body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded'); }
         });
     }
     function toggleInfoCard(infoId) {
-        var body = document.getElementById('body-' + infoId);
-        var chevron = document.getElementById('chevron-' + infoId);
+        var body = document.getElementById('body-' + infoId), chevron = document.getElementById('chevron-' + infoId);
         if (!body) return;
         if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; }
         else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; }
@@ -670,158 +1057,128 @@ var BDL = (function () {
         var totalValues = parseInt(table.dataset.totalValues) || 0;
         var resolvedRows = table.querySelectorAll('.lookup-replace-row[data-resolved="true"]');
         table.dataset.resolved = String(resolvedRows.length);
-        if (resolvedRows.length >= totalValues) { triggerCascadingRevalidate(); }
+        if (resolvedRows.length >= totalValues) triggerCascadingRevalidate();
     }
     function triggerCascadingRevalidate() {
         if (revalidating) return;
         revalidating = true;
-        document.getElementById('validation-area').innerHTML = '<div class="loading">Applying changes and re-validating...</div>';
-        setTimeout(function () { runValidation(); }, 200);
+        var area = document.getElementById('map-validate-area');
+        area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Applying changes and re-validating...</div>';
+        setTimeout(function () { runEntityValidation(curState()); }, 200);
     }
 
     function applyReplacement(field, oldValue, selectId) {
         if (revalidating) return;
+        var state = curState(); if (!state) return;
         var sel = document.getElementById(selectId); if (!sel || !sel.value) { showAlert('Please select a replacement value.', { title: 'Selection Required', icon: '&#9432;', iconColor: '#569cd6' }); return; }
         var newVal = sel.value, btn = sel.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true;
         var skipBtn = sel.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true;
         fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: stagingContext.staging_table, field: field, old_value: oldValue, new_value: newVal }) })
+            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, old_value: oldValue, new_value: newVal }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
         .then(function (data) {
             var row = document.getElementById(selectId).closest('.lookup-replace-row');
-            if (row) {
-                row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>' + escapeHtml(oldValue) + '</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Replaced</span>';
-                row.dataset.resolved = 'true';
-                checkLookupCardComplete(row);
-            }
+            if (row) { row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>' + escapeHtml(oldValue) + '</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Replaced</span>'; row.dataset.resolved = 'true'; checkLookupCardComplete(row); }
         }).catch(function (err) { showAlert(err.message, { title: 'Replacement Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
     }
 
     function fillEmpty(field, inputId) {
         if (revalidating) return;
-        var input = document.getElementById(inputId);
-        var newVal = input ? input.value : '';
+        var state = curState(); if (!state) return;
+        var input = document.getElementById(inputId), newVal = input ? input.value : '';
         if (!newVal) { showAlert('Please enter or select a value.', { title: 'Value Required', icon: '&#9432;', iconColor: '#569cd6' }); return; }
         var btn = input.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true;
         var skipBtn = input.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true;
         fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: stagingContext.staging_table, field: field, old_value: '', new_value: newVal }) })
+            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, old_value: '', new_value: newVal }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
         .then(function (data) {
             var row = document.getElementById(inputId).closest('.lookup-replace-row');
-            if (row) {
-                row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>(empty)</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Filled</span>';
-            }
+            if (row) row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>(empty)</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Filled</span>';
             triggerCascadingRevalidate();
         }).catch(function (err) { showAlert(err.message, { title: 'Fill Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
     }
 
     function skipRows(field, value, rowElementId) {
         if (revalidating) return;
+        var state = curState(); if (!state) return;
         var rowEl = document.getElementById(rowElementId);
-        if (rowEl) { rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = true; }); }
+        if (rowEl) rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
         fetch('/api/bdl-import/skip-rows', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: stagingContext.staging_table, field: field, value: value }) })
+            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, value: value }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
         .then(function (data) {
             var row = document.getElementById(rowElementId);
             if (row) {
                 row.innerHTML = '<span class="lrr-count">' + data.rows_skipped + '</span><span class="lrr-value"><code>' + escapeHtml(value || '(empty)') + '</code></span><span class="lrr-action skip-done">&#10005; Skipped (' + data.rows_skipped + ' rows)</span>';
                 if (row.dataset.resolved !== undefined) { row.dataset.resolved = 'true'; checkLookupCardComplete(row); }
-                else { triggerCascadingRevalidate(); }
+                else triggerCascadingRevalidate();
             }
-        }).catch(function (err) {
-            showAlert(err.message, { title: 'Skip Failed', icon: '&#10005;', iconColor: '#f48771' });
-            if (rowEl) { rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); }
-        });
+        }).catch(function (err) { showAlert(err.message, { title: 'Skip Failed', icon: '&#10005;', iconColor: '#f48771' }); if (rowEl) rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); });
     }
 
-    function revalidate() { validationResult = null; runValidation(); }
-
-    // ── Step 6: Review & Execute ─────────────────────────────────────────
+    // ── Step 5: Execute (Tabbed) ─────────────────────────────────────────
     function renderExecuteReview() {
         var area = document.getElementById('execute-area');
         var envName = selectedEnvironment ? selectedEnvironment.environment : '?';
-        var entityName = formatEntityName(selectedEntity ? selectedEntity.entity_type : '?');
-        var fileName = uploadedFile ? uploadedFile.name : '?';
-        var mappedCount = columnMapping ? Object.keys(columnMapping).length : 0;
-        var rowCount = stagingContext ? stagingContext.row_count : 0;
-        var skippedRows = stagingContext && stagingContext.skipped_count ? stagingContext.skipped_count : 0;
-
         clearPromoteState();
-        xmlPreviewLoaded = false;
 
         var html = '';
-        html += '<div class="execute-summary">';
-        html += '<div class="execute-summary-header">Import Summary</div>';
-        html += '<div class="execute-summary-grid">';
-        html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
-        html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value">' + entityName + ' <code class="summary-code">' + escapeHtml(selectedEntity.entity_type) + '</code></span></div>';
-        html += '<div class="summary-item"><span class="summary-label">Source File</span><span class="summary-value">' + escapeHtml(fileName) + '</span></div>';
-        html += '<div class="summary-item"><span class="summary-label">Rows to Import</span><span class="summary-value">' + rowCount.toLocaleString() + (skippedRows > 0 ? ' <span style="color:#888;font-size:11px;">(' + skippedRows + ' skipped)</span>' : '') + '</span></div>';
-        html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>';
-        html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(stagingContext.staging_table) + '</code></span></div>';
-        html += '</div></div>';
 
-        // Jira Ticket Link
+        // Jira Ticket (shared across all entities)
         html += '<div class="execute-ticket">';
-        html += '<div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional)</span></div>';
-        html += '<div class="ticket-description">Link this import to a Jira ticket by entering the ticket number below. This creates a companion AR log entry on each imported record in Debt Manager, providing an audit trail back to the originating ticket.</div>';
+        html += '<div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional — applies to all imports)</span></div>';
         html += '<div class="ticket-fields">';
-        html += '<div class="ticket-field-row"><label class="ticket-label" for="jira-ticket">Ticket</label>';
-        var ticketVal = (promoteData && promoteData.jiraTicket) ? escapeHtml(promoteData.jiraTicket) : '';
-        var arMsgVal = (promoteData && promoteData.arMessage) ? escapeHtml(promoteData.arMessage) : '';
-        html += '<input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" value="' + ticketVal + '" oninput="BDL.ticketChanged()"></div>';
-        html += '<div class="ticket-field-row" id="ar-message-row" style="' + (ticketVal ? '' : 'display:none;') + '"><label class="ticket-label" for="ar-message">AR Message</label>';
-        html += '<input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message that will appear in DM AR log" value="' + arMsgVal + '"></div>';
+        html += '<div class="ticket-field-row"><label class="ticket-label" for="jira-ticket">Ticket</label><input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" oninput="BDL.ticketChanged()"></div>';
+        html += '<div class="ticket-field-row" id="ar-message-row" style="display:none;"><label class="ticket-label" for="ar-message">AR Message</label><input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message for DM AR log"></div>';
         html += '</div></div>';
 
-        // Column Mapping
-        html += '<div class="execute-mapping">';
-        html += '<div class="execute-section-header" onclick="BDL.toggleSection(\'mapping-ref\')">Column Mapping <span class="section-toggle" id="toggle-mapping-ref">&#9660;</span></div>';
-        html += '<div class="execute-section-body" id="mapping-ref">';
-        var mKeys = Object.keys(columnMapping);
-        mKeys.forEach(function (sc) {
-            var te = columnMapping[sc];
-            var displayName = getFieldDisplayNameByElement(te);
-            html += '<div class="execute-map-row"><span class="exec-map-source">' + escapeHtml(sc) + '</span><span class="exec-map-arrow">&#8594;</span>';
-            if (displayName !== te) { html += '<span class="exec-map-target">' + escapeHtml(displayName) + ' <code>' + te + '</code></span>'; }
-            else { html += '<span class="exec-map-target"><code>' + te + '</code></span>'; }
+        // Entity tabs
+        html += '<div class="execute-tabs" id="execute-tabs">';
+        entityStates.forEach(function (state, idx) {
+            var activeClass = idx === 0 ? ' execute-tab-active' : '';
+            html += '<div class="execute-tab' + activeClass + '" id="exec-tab-' + idx + '" onclick="BDL.switchExecuteTab(' + idx + ')">' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</div>';
+        });
+        html += '</div>';
+
+        // Tab content
+        entityStates.forEach(function (state, idx) {
+            var visClass = idx === 0 ? '' : ' hidden';
+            var entityName = formatEntityName(state.entity.entity_type);
+            var mappedCount = Object.keys(state.columnMapping).length;
+            var rowCount = state.stagingContext ? state.stagingContext.row_count : 0;
+            var skipped = state.stagingContext && state.stagingContext.skipped_count ? state.stagingContext.skipped_count : 0;
+
+            html += '<div class="execute-tab-content' + visClass + '" id="exec-content-' + idx + '">';
+            html += '<div class="execute-summary"><div class="execute-summary-header">' + escapeHtml(entityName) + '</div>';
+            html += '<div class="execute-summary-grid">';
+            html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.entity.entity_type) + '</code></span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Rows</span><span class="summary-value">' + rowCount.toLocaleString() + (skipped > 0 ? ' <span style="color:#888;font-size:11px;">(' + skipped + ' skipped)</span>' : '') + '</span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.stagingContext.staging_table) + '</code></span></div>';
+            html += '</div></div>';
+            html += '<div class="execute-result hidden" id="exec-result-' + idx + '"></div>';
             html += '</div>';
         });
-        html += '</div></div>';
-
-        // XML Preview (auto-loads on expand)
-        html += '<div class="execute-preview execute-preview-prominent">';
-        html += '<div class="execute-section-header execute-xml-header" onclick="BDL.toggleXmlPreview()">&#128196; Click here for XML output preview <span class="section-toggle" id="toggle-xml-preview">&#9654;</span></div>';
-        html += '<div class="execute-section-body collapsed" id="xml-preview"><div id="xml-preview-content"></div></div></div>';
 
         // Execute Actions
         html += '<div class="execute-actions" id="execute-actions">';
-        if (envName === 'PROD') {
-            html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>';
-        }
-        html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeImport()">Submit BDL Import</button>';
+        if (envName === 'PROD') html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>';
+        html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeAll()">Submit All (' + entityStates.length + ' BDL' + (entityStates.length > 1 ? 's' : '') + ')</button>';
         html += '</div>';
         html += '<div class="execute-progress hidden" id="execute-progress"></div>';
-        html += '<div class="execute-result hidden" id="execute-result"></div>';
-        html += '<div class="promote-area hidden" id="promote-area"></div>';
 
         area.innerHTML = html;
     }
 
-    function toggleXmlPreview() {
-        var body = document.getElementById('xml-preview');
-        var toggle = document.getElementById('toggle-xml-preview');
-        if (!body) return;
-        if (body.classList.contains('collapsed')) {
-            body.classList.remove('collapsed');
-            if (toggle) toggle.innerHTML = '&#9660;';
-            if (!xmlPreviewLoaded) { loadXmlPreview(); }
-        } else {
-            body.classList.add('collapsed');
-            if (toggle) toggle.innerHTML = '&#9654;';
-        }
+    function switchExecuteTab(idx) {
+        entityStates.forEach(function (_, i) {
+            var tab = document.getElementById('exec-tab-' + i);
+            var content = document.getElementById('exec-content-' + i);
+            if (i === idx) { tab.classList.add('execute-tab-active'); content.classList.remove('hidden'); }
+            else { tab.classList.remove('execute-tab-active'); content.classList.add('hidden'); }
+        });
     }
 
     function ticketChanged() {
@@ -831,103 +1188,26 @@ var BDL = (function () {
         var ticket = ticketInput ? ticketInput.value.trim() : '';
         if (ticket) {
             messageRow.style.display = '';
-            if (!messageInput.dataset.userEdited) {
-                var entityType = selectedEntity ? selectedEntity.entity_type : '';
-                messageInput.value = ticket + ': ' + entityType + ' update via BDL Import';
-            }
-        } else {
-            messageRow.style.display = 'none';
-            messageInput.value = '';
-            messageInput.dataset.userEdited = '';
-        }
-    }
-    function markMessageEdited() { var messageInput = document.getElementById('ar-message'); if (messageInput) messageInput.dataset.userEdited = '1'; }
-
-    function toggleSection(sectionId) {
-        var body = document.getElementById(sectionId);
-        var toggle = document.getElementById('toggle-' + sectionId);
-        if (!body) return;
-        if (body.classList.contains('collapsed')) { body.classList.remove('collapsed'); if (toggle) toggle.innerHTML = '&#9660;'; }
-        else { body.classList.add('collapsed'); if (toggle) toggle.innerHTML = '&#9654;'; }
+            if (!messageInput.dataset.userEdited) messageInput.value = ticket + ': BDL update via BDL Import';
+        } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; }
     }
 
-    function loadXmlPreview() {
-        var content = document.getElementById('xml-preview-content');
-        content.innerHTML = '<div class="loading">Building XML preview...</div>';
-        fetch('/api/bdl-import/build-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: stagingContext.staging_table, entity_type: selectedEntity.entity_type, config_id: selectedEnvironment.config_id }) })
-        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-        .then(function (data) {
-            xmlPreviewLoaded = true;
-            var sizeKB = (data.full_size_bytes / 1024).toFixed(1);
-            var header = '<div class="xml-preview-header">';
-            header += '<span class="xml-filename">' + escapeHtml(data.xml_filename) + '</span>';
-            header += '<span class="xml-meta">' + data.row_count.toLocaleString() + ' rows &middot; ' + sizeKB + ' KB';
-            if (data.truncated) header += ' &middot; <em>preview truncated</em>';
-            header += '</span><button class="xml-copy-btn" onclick="BDL.copyXmlPreview()" title="Copy XML to clipboard">&#128203; Copy</button></div>';
-            content.innerHTML = header + '<pre class="xml-preview-code">' + highlightXml(data.xml) + '</pre>';
-        })
-        .catch(function (err) {
-            content.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to build preview: ' + err.message + '</div>';
-        });
-    }
-	
-	function copyXmlPreview() {
-		var pre = document.querySelector('.xml-preview-code');
-		if (!pre) return;
-		var text = pre.textContent;
-		var ta = document.createElement('textarea');
-		ta.value = text;
-		ta.style.position = 'fixed';
-		ta.style.opacity = '0';
-		document.body.appendChild(ta);
-		ta.select();
-		document.execCommand('copy');
-		document.body.removeChild(ta);
-		var btn = document.querySelector('.xml-copy-btn');
-		if (btn) { var orig = btn.innerHTML; btn.innerHTML = '&#10003; Copied'; setTimeout(function () { btn.innerHTML = orig; }, 1500); }
-    }
-
-    function highlightXml(xml) {
-        var s = xml.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        s = s.replace(/(&lt;\?xml\b)(.*?)(\?&gt;)/g, '<span class="xml-decl">$1$2$3</span>');
-        s = s.replace(/(&lt;!--)([\s\S]*?)(--&gt;)/g, '<span class="xml-comment">$1$2$3</span>');
-        s = s.replace(/(&lt;\/)([\w_:-]+)(&gt;)/g, '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
-        s = s.replace(/(&lt;)([\w_:-]+)(\/&gt;)/g, '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span><span class="xml-bracket">$3</span>');
-        s = s.replace(/(&lt;)([\w_:-]+)((?:\s+[\w_:-]+=&quot;[^&]*?&quot;)*\s*\/?)(&gt;)/g,
-            function (match, lt, tagName, attrs, gt) {
-                var coloredAttrs = attrs.replace(/([\w_:-]+)(=)(&quot;)(.*?)(&quot;)/g,
-                    '<span class="xml-attr-name">$1</span><span class="xml-bracket">$2</span><span class="xml-attr-val">$3$4$5</span>');
-                return '<span class="xml-bracket">' + lt + '</span><span class="xml-tag">' + tagName + '</span>' + coloredAttrs + '<span class="xml-bracket">' + gt + '</span>';
-            });
-        s = s.replace(/(<\/span>)([^<]+)(<span class="xml-bracket">&lt;)/g,
-            function (match, closeSpan, text, openSpan) {
-                if (text.trim() === '') return match;
-                return closeSpan + '<span class="xml-value">' + text + '</span>' + openSpan;
-            });
-        return s;
-    }
-
-    function executeImport() {
+    function executeAll() {
         if (executeInProgress) return;
         var envName = selectedEnvironment.environment;
         var jiraTicket = (document.getElementById('jira-ticket') || {}).value || '';
         jiraTicket = jiraTicket.trim();
+        var count = entityStates.length;
 
-        var bodyHtml = '<p>Submit BDL import to <strong class="summary-env-' + envName.toLowerCase() + '">' + envName + '</strong>?</p>'
-            + '<p style="font-size:12px;color:#999;">Entity: ' + escapeHtml(selectedEntity.entity_type) + '<br>'
-            + 'Rows: ' + stagingContext.row_count.toLocaleString()
-            + (jiraTicket ? '<br>Jira Ticket: ' + escapeHtml(jiraTicket) + ' (AR log will be created)' : '')
-            + '</p>';
-        if (envName === 'PROD') {
-            bodyHtml += '<p style="color:#f48771;font-weight:600;">This is a PRODUCTION import and cannot be undone.</p>';
-        }
+        var bodyHtml = '<p>Submit ' + count + ' BDL import' + (count > 1 ? 's' : '') + ' to <strong class="summary-env-' + envName.toLowerCase() + '">' + envName + '</strong>?</p>';
+        entityStates.forEach(function (s) { bodyHtml += '<p style="font-size:12px;color:#999;">' + escapeHtml(formatEntityName(s.entity.entity_type)) + ': ' + s.stagingContext.row_count.toLocaleString() + ' rows</p>'; });
+        if (envName === 'PROD') bodyHtml += '<p style="color:#f48771;font-weight:600;">This is a PRODUCTION import and cannot be undone.</p>';
 
         showConfirm(bodyHtml, {
-            title: 'Submit BDL Import',
+            title: 'Submit BDL Import' + (count > 1 ? 's' : ''),
             icon: envName === 'PROD' ? '&#9888;' : '&#9654;',
             iconColor: envName === 'PROD' ? '#f48771' : '#4ec9b0',
-            confirmLabel: 'Submit Import',
+            confirmLabel: 'Submit ' + (count > 1 ? 'All' : 'Import'),
             cancelLabel: 'Cancel',
             confirmClass: envName === 'PROD' ? 'xf-modal-btn-danger' : 'xf-modal-btn-primary',
             html: true
@@ -936,213 +1216,69 @@ var BDL = (function () {
             executeInProgress = true;
             var execBtn = document.getElementById('btn-execute-import');
             if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; }
-            var progress = document.getElementById('execute-progress');
-            progress.classList.remove('hidden');
-            progress.innerHTML = renderProgressSteps('building');
-            var mappingJson = JSON.stringify(columnMapping);
-            var requestBody = {
-                staging_table: stagingContext.staging_table,
-                entity_type: selectedEntity.entity_type,
-                config_id: selectedEnvironment.config_id,
-                source_filename: uploadedFile ? uploadedFile.name : 'unknown',
-                column_mapping: mappingJson
-            };
-            if (jiraTicket) {
-                requestBody.jira_ticket = jiraTicket;
-                var arMessage = (document.getElementById('ar-message') || {}).value || '';
-                if (arMessage.trim()) requestBody.ar_message = arMessage.trim();
-            }
-            fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            })
-            .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
-            .then(function (data) {
-                executeInProgress = false;
-                if (data._httpStatus >= 400 || data.error) {
-                    progress.innerHTML = renderProgressSteps('failed');
-                    var result = document.getElementById('execute-result');
-                    result.classList.remove('hidden');
-                    result.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Import Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>';
-                    if (execBtn) { execBtn.disabled = false; execBtn.textContent = 'Retry Submit'; }
-                } else {
-                    progress.innerHTML = renderProgressSteps('submitted');
-                    var result = document.getElementById('execute-result');
-                    result.classList.remove('hidden');
-                    var resultHtml = '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>BDL Import Submitted</strong><div class="result-detail">' + escapeHtml(data.message) + '</div><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: <strong>' + data.file_registry_id + '</strong> &middot; Log ID: ' + data.log_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>';
-                    if (data.ar_log) {
-                        if (data.ar_log.success) {
-                            resultHtml += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log Submitted</strong><div class="result-detail">Jira ticket link created for ' + data.ar_log.row_count.toLocaleString() + ' records.</div><div class="result-meta">File: <code>' + escapeHtml(data.ar_log.xml_filename) + '</code> &middot; Registry ID: <strong>' + data.ar_log.file_registry_id + '</strong> &middot; Log ID: ' + data.ar_log.log_id + '</div></div></div>';
-                        } else {
-                            resultHtml += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log Failed</strong><div class="result-detail">The primary import succeeded, but the AR log could not be submitted: ' + escapeHtml(data.ar_log.error) + '</div><div class="result-meta">The import data is in Debt Manager. The Jira ticket link was not created.</div></div></div>';
-                        }
-                    }
-                    result.innerHTML = resultHtml;
-                    var actions = document.getElementById('execute-actions');
-                    if (actions) actions.classList.add('hidden');
-                    stepComplete[5] = true;
-                    updateStepperUI();
-                    updateNavButtons();
-                    if (envName !== 'PROD' && data.promote_cooldown_seconds && data.prod_config_id) {
-                        promoteData = {
-                            cooldownSeconds: data.promote_cooldown_seconds,
-                            prodConfigId: data.prod_config_id,
-                            jiraTicket: jiraTicket,
-                            arMessage: (document.getElementById('ar-message') || {}).value || '',
-                            testEnvironment: envName
-                        };
-                        showPromoteCard();
-                    }
-                }
-            })
-            .catch(function (err) {
-                executeInProgress = false;
-                progress.innerHTML = renderProgressSteps('failed');
-                var result = document.getElementById('execute-result');
-                result.classList.remove('hidden');
-                result.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
-                if (execBtn) { execBtn.disabled = false; execBtn.textContent = 'Retry Submit'; }
-            });
+            executeSequential(0, jiraTicket);
         });
     }
 
-    function renderProgressSteps(currentPhase) {
-        var phases = [
-            { key: 'building',   label: 'Building XML' },
-            { key: 'writing',    label: 'Writing File' },
-            { key: 'registered', label: 'Registering with DM' },
-            { key: 'submitted',  label: 'Triggering Import' }
-        ];
-        var phaseOrder = { building: 0, writing: 1, registered: 2, submitted: 3, failed: -1 };
-        var currentIdx = phaseOrder[currentPhase] !== undefined ? phaseOrder[currentPhase] : -1;
-        var isFailed = (currentPhase === 'failed');
-        var html = '<div class="progress-steps">';
-        phases.forEach(function (p, idx) {
-            var cls = 'progress-step';
-            if (isFailed) { cls += (idx <= Math.max(currentIdx, 0)) ? ' progress-failed' : ''; }
-            else if (idx < currentIdx) { cls += ' progress-complete'; }
-            else if (idx === currentIdx) { cls += (currentPhase === 'submitted') ? ' progress-complete' : ' progress-active'; }
-            var icon = '';
-            if (isFailed && idx === Math.max(currentIdx, 0)) icon = '&#10006;';
-            else if (idx < currentIdx || (currentPhase === 'submitted' && idx === currentIdx)) icon = '&#10003;';
-            else if (idx === currentIdx && !isFailed) icon = '&#9679;';
-            else icon = '&#9675;';
-            html += '<div class="' + cls + '"><span class="progress-icon">' + icon + '</span><span class="progress-label">' + p.label + '</span></div>';
-            if (idx < phases.length - 1) html += '<div class="progress-connector' + (idx < currentIdx ? ' progress-connector-done' : '') + '"></div>';
-        });
-        html += '</div>';
-        return html;
-    }
-
-    // ── Promote to Production ────────────────────────────────────────────
-    function clearPromoteState() {
-        if (promoteCountdownTimer) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; }
-        promoteData = null;
-        promoteSecondsRemaining = 0;
-        promoteReady = false;
-    }
-
-    function showPromoteCard() {
-        var area = document.getElementById('promote-area');
-        if (!area || !promoteData) return;
-        promoteSecondsRemaining = promoteData.cooldownSeconds;
-        promoteReady = false;
-        var html = '<div class="promote-card" id="promote-card" onclick="BDL.promoteClicked()">';
-        html += '<div class="promote-card-header"><span class="promote-card-icon">&#9650;</span><span class="promote-card-title">Promote to Production</span></div>';
-        html += '<div class="promote-card-timer" id="promote-timer">' + formatCountdown(promoteSecondsRemaining) + '</div>';
-        html += '<div class="promote-card-hint" id="promote-hint">Verify your data in Debt Manager before promoting</div>';
-        html += '</div>';
-        area.innerHTML = html;
-        area.classList.remove('hidden');
-        promoteCountdownTimer = setInterval(function () {
-            promoteSecondsRemaining--;
-            var timerEl = document.getElementById('promote-timer');
-            var hintEl = document.getElementById('promote-hint');
-            var cardEl = document.getElementById('promote-card');
-            if (promoteSecondsRemaining <= 0) {
-                clearInterval(promoteCountdownTimer);
-                promoteCountdownTimer = null;
-                promoteReady = true;
-                if (timerEl) timerEl.textContent = 'Ready';
-                if (hintEl) hintEl.textContent = 'Click to promote this import to Production';
-                if (cardEl) cardEl.classList.add('promote-ready');
-            } else {
-                if (timerEl) timerEl.textContent = formatCountdown(promoteSecondsRemaining);
-            }
-        }, 1000);
-    }
-
-    function formatCountdown(seconds) {
-        var m = Math.floor(seconds / 60);
-        var s = seconds % 60;
-        return m + ':' + (s < 10 ? '0' : '') + s;
-    }
-
-    function promoteClicked() {
-        if (!promoteData) return;
-        if (!promoteReady) {
-            var hintEl = document.getElementById('promote-hint');
-            if (hintEl) {
-                hintEl.textContent = 'This was just submitted to ' + promoteData.testEnvironment + '. Please confirm the data looks correct in Debt Manager before promoting.';
-                hintEl.classList.add('promote-hint-flash');
-                setTimeout(function () { hintEl.classList.remove('promote-hint-flash'); }, 2000);
-            }
+    function executeSequential(idx, jiraTicket) {
+        if (idx >= entityStates.length) {
+            // All done
+            executeInProgress = false;
+            var actions = document.getElementById('execute-actions');
+            if (actions) actions.classList.add('hidden');
+            stepComplete[4] = true;
+            updateStepperUI(); updateNavButtons();
             return;
         }
-        showPromoteConfirmModal();
-    }
 
-    function showPromoteConfirmModal() {
-        var existing = document.getElementById('promote-confirm-modal');
-        if (existing) existing.remove();
-        var modal = document.createElement('div');
-        modal.id = 'promote-confirm-modal';
-        modal.className = 'xf-modal-overlay';
-        modal.innerHTML = '<div class="xf-modal">'
-            + '<div class="xf-modal-header"><span class="xf-modal-icon" style="color:#4ec9b0">&#9650;</span><span>Promote to Production</span></div>'
-            + '<div class="xf-modal-body">'
-            + '<p>You are about to submit this same data to <strong>Production</strong>.</p>'
-            + '<p>The XML will be rebuilt from your existing staging table and submitted through the Production DM API.</p>'
-            + '<p style="color:#f48771;font-weight:600;">This action cannot be undone.</p>'
-            + '</div>'
-            + '<div class="xf-modal-actions">'
-            + '<button class="xf-modal-btn-cancel" id="promote-confirm-cancel">Cancel</button>'
-            + '<button class="xf-modal-btn-danger" id="promote-confirm-go">Promote to Production</button>'
-            + '</div></div>';
-        document.body.appendChild(modal);
-        document.getElementById('promote-confirm-cancel').onclick = function () { modal.remove(); };
-        document.getElementById('promote-confirm-go').onclick = function () { modal.remove(); executePromote(); };
-    }
+        var state = entityStates[idx];
+        var resultEl = document.getElementById('exec-result-' + idx);
+        var tabEl = document.getElementById('exec-tab-' + idx);
 
-    function executePromote() {
-        if (!promoteData || !stagingContext) return;
-        fetch('/api/bdl-import/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: stagingContext.staging_table, entity_type: selectedEntity.entity_type, config_id: promoteData.prodConfigId })
-        })
-        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-        .then(function () {
-            var envCards = document.getElementById('env-cards');
-            var envData = (envCards._envData || []).find(function (e) { return e.config_id === promoteData.prodConfigId; });
-            if (!envData) { envData = { config_id: promoteData.prodConfigId, environment: 'PROD', server_name: 'Production' }; }
-            selectedEnvironment = envData;
-            var savedJiraTicket = promoteData.jiraTicket;
-            var savedArMessage = promoteData.arMessage;
-            clearPromoteState();
-            promoteData = { jiraTicket: savedJiraTicket, arMessage: savedArMessage };
-            stepComplete[5] = false;
-            renderExecuteReview();
-            promoteData = null;
+        // Switch to this tab
+        switchExecuteTab(idx);
+
+        // Show progress on tab
+        if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#dcdcaa;">&#8943;</span>';
+
+        var arMessage = (document.getElementById('ar-message') || {}).value || '';
+        var requestBody = {
+            staging_table: state.stagingContext.staging_table,
+            entity_type: state.entity.entity_type,
+            config_id: selectedEnvironment.config_id,
+            source_filename: uploadedFile ? uploadedFile.name : 'unknown',
+            column_mapping: JSON.stringify(state.columnMapping)
+        };
+        if (jiraTicket) {
+            requestBody.jira_ticket = jiraTicket;
+            if (arMessage.trim()) requestBody.ar_message = arMessage.trim().replace('BDL update', state.entity.entity_type + ' update');
+        }
+
+        fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) })
+        .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
+        .then(function (data) {
+            if (data._httpStatus >= 400 || data.error) {
+                resultEl.classList.remove('hidden');
+                resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Import Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>';
+                if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>';
+            } else {
+                resultEl.classList.remove('hidden');
+                var rh = '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>Submitted</strong><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: ' + data.file_registry_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>';
+                if (data.ar_log) {
+                    if (data.ar_log.success) rh += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log</strong><div class="result-meta">' + data.ar_log.row_count.toLocaleString() + ' records linked</div></div></div>';
+                    else rh += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log Failed</strong><div class="result-detail">' + escapeHtml(data.ar_log.error) + '</div></div></div>';
+                }
+                resultEl.innerHTML = rh;
+                if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#4ec9b0;">&#10003;</span>';
+            }
+            // Continue to next entity regardless of success/failure
+            executeSequential(idx + 1, jiraTicket);
         })
         .catch(function (err) {
-            var errMsg = err.message || '';
-            if (errMsg.indexOf('not found') !== -1) {
-                showAlert('The staging table no longer exists (it may have been cleaned up). You will need to start a new import.', {
-                    title: 'Staging Table Expired', icon: '&#9888;', iconColor: '#dcdcaa'
-                }).then(function () { resetFromStep(1); showStep(1); });
-            } else {
-                showAlert(errMsg, { title: 'Verification Failed', icon: '&#10005;', iconColor: '#f48771' });
-            }
+            resultEl.classList.remove('hidden');
+            resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
+            if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>';
+            executeSequential(idx + 1, jiraTicket);
         });
     }
 
@@ -1157,218 +1293,133 @@ var BDL = (function () {
             .then(function (data) { entityTemplates = data.templates || []; renderTemplateList(); })
             .catch(function () { list.innerHTML = '<div class="template-empty">Failed to load templates.</div>'; });
     }
-
     function renderTemplateList() {
         var list = document.getElementById('template-list');
         if (!list) return;
         if (!entityTemplates.length) { list.innerHTML = '<div class="template-empty">No saved templates for this entity type.</div>'; return; }
-        var isStep4 = (currentStep === 4);
         var html = '';
         entityTemplates.forEach(function (t) {
             var mapping = {}; try { mapping = JSON.parse(t.column_mapping); } catch (e) {}
             var fieldCount = Object.keys(mapping).length;
             var matchInfo = '';
-            if (isStep4 && parsedFileData) {
-                var matchCount = countTemplateMatches(mapping);
-                matchInfo = '<span class="template-match">' + matchCount + ' of ' + fieldCount + ' fields match your file</span>';
-            }
-            var creator = t.created_by || '';
-            if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
+            if (currentStep === 4 && parsedFileData) { var mc = countTemplateMatches(mapping); matchInfo = '<span class="template-match">' + mc + ' of ' + fieldCount + ' fields match</span>'; }
+            var creator = t.created_by || ''; if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
             var activeCls = (activeTemplateId === t.template_id) ? ' template-card-active' : '';
-            html += '<div class="template-card' + activeCls + '" onclick="BDL.previewTemplate(' + t.template_id + ')">';
-            html += '<div class="template-card-name">' + escapeHtml(t.template_name) + '</div>';
+            html += '<div class="template-card' + activeCls + '" onclick="BDL.previewTemplate(' + t.template_id + ')"><div class="template-card-name">' + escapeHtml(t.template_name) + '</div>';
             if (t.description) html += '<div class="template-card-desc">' + escapeHtml(t.description) + '</div>';
-            html += '<div class="template-card-meta">' + fieldCount + ' fields &middot; ' + escapeHtml(creator) + (matchInfo ? ' &middot; ' + matchInfo : '') + '</div>';
-            html += '</div>';
+            html += '<div class="template-card-meta">' + fieldCount + ' fields &middot; ' + escapeHtml(creator) + (matchInfo ? ' &middot; ' + matchInfo : '') + '</div></div>';
         });
         list.innerHTML = html;
     }
-
     function countTemplateMatches(mapping) {
         if (!parsedFileData) return 0;
-        var count = 0;
-        var fileHeaders = parsedFileData.headers.map(function (h) { return h.toUpperCase(); });
-        Object.keys(mapping).forEach(function (sourceCol) { if (fileHeaders.indexOf(sourceCol.toUpperCase()) !== -1) count++; });
+        var count = 0, fh = parsedFileData.headers.map(function (h) { return h.toUpperCase(); });
+        Object.keys(mapping).forEach(function (sc) { if (fh.indexOf(sc.toUpperCase()) !== -1) count++; });
         return count;
     }
-
     function updateTemplateSectionState() {
         var saveArea = document.getElementById('template-save-area');
+        var state = curState();
         if (saveArea) {
-            if (currentStep === 4 && columnMapping && Object.keys(columnMapping).length > 0) { saveArea.classList.remove('hidden'); }
-            else { saveArea.classList.add('hidden'); }
+            if (currentStep === 4 && state && Object.keys(state.columnMapping).length > 0) saveArea.classList.remove('hidden');
+            else saveArea.classList.add('hidden');
         }
         if (entityTemplates.length > 0) renderTemplateList();
     }
-
     function previewTemplate(templateId) {
         var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
         if (!template) return;
         var mapping = {}; try { mapping = JSON.parse(template.column_mapping); } catch (e) {}
         var mappingKeys = Object.keys(mapping);
-        var slideout = document.getElementById('template-slideout');
-        var overlay = document.getElementById('template-slideout-overlay');
-        var title = document.getElementById('template-slideout-title');
-        var body = document.getElementById('template-slideout-body');
-        title.textContent = template.template_name;
-        var html = '';
-        var creator = template.created_by || '';
-        if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
-        html += '<div class="slideout-meta">';
-        if (template.description) html += '<div class="slideout-desc">' + escapeHtml(template.description) + '</div>';
-        html += '<div class="slideout-creator">Created by <strong>' + escapeHtml(creator) + '</strong></div>';
-        html += '</div>';
-        if (parsedFileData && currentStep === 4) {
-            var matchCount = countTemplateMatches(mapping);
-            var matchClass = (matchCount === mappingKeys.length) ? 'slideout-match-full' : (matchCount > 0 ? 'slideout-match-partial' : 'slideout-match-none');
-            html += '<div class="slideout-match-summary ' + matchClass + '">' + matchCount + ' of ' + mappingKeys.length + ' mapped columns found in your file</div>';
-        }
-        html += '<div class="slideout-mappings-header">Column Mappings (' + mappingKeys.length + ')</div>';
-        html += '<div class="slideout-mappings">';
+        var slideout = document.getElementById('template-slideout'), overlay = document.getElementById('template-slideout-overlay');
+        document.getElementById('template-slideout-title').textContent = template.template_name;
+        var html = '', creator = template.created_by || ''; if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
+        html += '<div class="slideout-meta">'; if (template.description) html += '<div class="slideout-desc">' + escapeHtml(template.description) + '</div>'; html += '<div class="slideout-creator">Created by <strong>' + escapeHtml(creator) + '</strong></div></div>';
+        if (parsedFileData && currentStep === 4) { var mc = countTemplateMatches(mapping); var matchClass = (mc === mappingKeys.length) ? 'slideout-match-full' : (mc > 0 ? 'slideout-match-partial' : 'slideout-match-none'); html += '<div class="slideout-match-summary ' + matchClass + '">' + mc + ' of ' + mappingKeys.length + ' mapped columns found in your file</div>'; }
+        html += '<div class="slideout-mappings-header">Column Mappings (' + mappingKeys.length + ')</div><div class="slideout-mappings">';
         var fileHeaders = parsedFileData ? parsedFileData.headers.map(function (h) { return h.toUpperCase(); }) : [];
         mappingKeys.forEach(function (sourceCol) {
-            var elementName = mapping[sourceCol];
-            var displayName = getFieldDisplayNameByElement(elementName);
+            var elementName = mapping[sourceCol], displayName = getFieldDisplayNameByElement(elementName);
             var matched = fileHeaders.indexOf(sourceCol.toUpperCase()) !== -1;
-            var matchCls = parsedFileData ? (matched ? ' slideout-pair-match' : ' slideout-pair-miss') : '';
-            html += '<div class="slideout-pair' + matchCls + '"><span class="slideout-pair-source">' + escapeHtml(sourceCol) + '</span><span class="slideout-pair-arrow">&#8594;</span>';
-            if (displayName !== elementName) { html += '<span class="slideout-pair-target">' + escapeHtml(displayName) + ' <code>' + elementName + '</code></span>'; }
-            else { html += '<span class="slideout-pair-target"><code>' + elementName + '</code></span>'; }
-            if (parsedFileData) { html += '<span class="slideout-pair-status">' + (matched ? '&#10003;' : '&#10005;') + '</span>'; }
+            html += '<div class="slideout-pair' + (parsedFileData ? (matched ? ' slideout-pair-match' : ' slideout-pair-miss') : '') + '"><span class="slideout-pair-source">' + escapeHtml(sourceCol) + '</span><span class="slideout-pair-arrow">&#8594;</span>';
+            if (displayName !== elementName) html += '<span class="slideout-pair-target">' + escapeHtml(displayName) + ' <code>' + elementName + '</code></span>';
+            else html += '<span class="slideout-pair-target"><code>' + elementName + '</code></span>';
+            if (parsedFileData) html += '<span class="slideout-pair-status">' + (matched ? '&#10003;' : '&#10005;') + '</span>';
             html += '</div>';
         });
         html += '</div>';
-        if (currentStep === 4 && parsedFileData) {
-            html += '<div class="slideout-actions"><button class="replace-btn" onclick="BDL.applyTemplate(' + templateId + ')">Apply Template</button></div>';
-        }
-        var currentUser = 'FAC\\' + (window.userTier || '');
-        var isCreator = (template.created_by === currentUser);
-        if (isCreator || window.isAdmin) {
-            html += '<div class="slideout-danger"><button class="slideout-delete-btn" onclick="BDL.deleteTemplate(' + templateId + ')">Delete Template</button></div>';
-        }
-        body.innerHTML = html;
-        slideout.classList.add('open');
-        overlay.classList.add('open');
+        if (currentStep === 4 && parsedFileData) html += '<div class="slideout-actions"><button class="replace-btn" onclick="BDL.applyTemplate(' + templateId + ')">Apply Template</button></div>';
+        if (window.isAdmin) html += '<div class="slideout-danger"><button class="slideout-delete-btn" onclick="BDL.deleteTemplate(' + templateId + ')">Delete Template</button></div>';
+        document.getElementById('template-slideout-body').innerHTML = html;
+        slideout.classList.add('open'); overlay.classList.add('open');
     }
-
-    function closeTemplatePreview() {
-        var slideout = document.getElementById('template-slideout');
-        var overlay = document.getElementById('template-slideout-overlay');
-        slideout.classList.remove('open');
-        overlay.classList.remove('open');
-    }
-
+    function closeTemplatePreview() { document.getElementById('template-slideout').classList.remove('open'); document.getElementById('template-slideout-overlay').classList.remove('open'); }
     function applyTemplate(templateId) {
         var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
-        if (!template || !parsedFileData) return;
+        var state = curState();
+        if (!template || !parsedFileData || !state) return;
         var templateMapping = {}; try { templateMapping = JSON.parse(template.column_mapping); } catch (e) { return; }
-        var fileHeaderMap = {};
-        parsedFileData.headers.forEach(function (h) { fileHeaderMap[h.toUpperCase()] = h; });
-        columnMapping = {};
-        Object.keys(templateMapping).forEach(function (sourceCol) {
-            var actualHeader = fileHeaderMap[sourceCol.toUpperCase()];
-            if (actualHeader) { columnMapping[actualHeader] = templateMapping[sourceCol]; }
-        });
+        var fileHeaderMap = {}; parsedFileData.headers.forEach(function (h) { fileHeaderMap[h.toUpperCase()] = h; });
+        state.columnMapping = {};
+        Object.keys(templateMapping).forEach(function (sourceCol) { var actualHeader = fileHeaderMap[sourceCol.toUpperCase()]; if (actualHeader) state.columnMapping[actualHeader] = templateMapping[sourceCol]; });
         activeTemplateId = templateId;
         closeTemplatePreview();
-        renderMapping();
+        renderMapValidateMapping(document.getElementById('map-validate-area'), state);
         renderTemplateList();
     }
-
     function showSaveTemplate() {
-        if (!columnMapping || Object.keys(columnMapping).length === 0) return;
+        var state = curState();
+        if (!state || Object.keys(state.columnMapping).length === 0) return;
         var modal = document.getElementById('template-modal-overlay');
-        var nameInput = document.getElementById('save-template-name');
-        var descInput = document.getElementById('save-template-desc');
-        var status = document.getElementById('save-template-status');
-        nameInput.value = ''; descInput.value = '';
-        status.classList.add('hidden'); status.textContent = '';
-        var preview = document.getElementById('save-template-preview');
-        var mKeys = Object.keys(columnMapping);
-        var html = '<div class="template-modal-preview-header">' + mKeys.length + ' field mapping(s) will be saved:</div>';
-        mKeys.forEach(function (sc) {
-            var te = columnMapping[sc]; var displayName = getFieldDisplayNameByElement(te);
-            html += '<div class="template-modal-preview-row"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>';
-            if (displayName !== te) { html += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>'; }
-            else { html += '<span class="pair-target">' + te + '</span>'; }
-            html += '</div>';
-        });
-        preview.innerHTML = html;
-        modal.classList.remove('hidden');
-        nameInput.focus();
+        var nameInput = document.getElementById('save-template-name'), descInput = document.getElementById('save-template-desc'), status = document.getElementById('save-template-status');
+        nameInput.value = ''; descInput.value = ''; status.classList.add('hidden');
+        var preview = document.getElementById('save-template-preview'), mKeys = Object.keys(state.columnMapping);
+        var html = '<div class="template-modal-preview-header">' + mKeys.length + ' mapping(s):</div>';
+        mKeys.forEach(function (sc) { var te = state.columnMapping[sc], dn = getFieldDisplayNameByElement(te); html += '<div class="template-modal-preview-row"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span><span class="pair-target">' + (dn !== te ? escapeHtml(dn) + ' <span class="pair-element">' + te + '</span>' : te) + '</span></div>'; });
+        preview.innerHTML = html; modal.classList.remove('hidden'); nameInput.focus();
     }
-
     function closeSaveTemplate() { document.getElementById('template-modal-overlay').classList.add('hidden'); }
-
     function saveTemplate() {
-        var nameInput = document.getElementById('save-template-name');
-        var descInput = document.getElementById('save-template-desc');
-        var status = document.getElementById('save-template-status');
+        var state = curState(); if (!state) return;
+        var nameInput = document.getElementById('save-template-name'), descInput = document.getElementById('save-template-desc'), status = document.getElementById('save-template-status');
         var name = nameInput.value.trim();
         if (!name) { nameInput.focus(); nameInput.style.borderColor = '#f48771'; return; }
         nameInput.style.borderColor = '';
-        fetch('/api/bdl-import/templates', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity_type: selectedEntity.entity_type, template_name: name, description: descInput.value.trim() || null, column_mapping: JSON.stringify(columnMapping) })
-        })
+        fetch('/api/bdl-import/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity_type: state.entity.entity_type, template_name: name, description: descInput.value.trim() || null, column_mapping: JSON.stringify(state.columnMapping) }) })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
         .then(function (data) {
-            if (data._httpStatus >= 400 || data.error) {
-                status.textContent = data.error || 'Failed to save template.';
-                status.className = 'template-modal-status template-modal-error';
-                status.classList.remove('hidden');
-            } else {
-                status.textContent = 'Template saved!';
-                status.className = 'template-modal-status template-modal-success';
-                status.classList.remove('hidden');
-                activeTemplateId = data.template_id;
-                setTimeout(function () { closeSaveTemplate(); loadTemplates(selectedEntity.entity_type); }, 1000);
-            }
-        })
-        .catch(function (err) {
-            status.textContent = 'Error: ' + err.message;
-            status.className = 'template-modal-status template-modal-error';
-            status.classList.remove('hidden');
-        });
+            if (data._httpStatus >= 400 || data.error) { status.textContent = data.error || 'Failed.'; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); }
+            else { status.textContent = 'Saved!'; status.className = 'template-modal-status template-modal-success'; status.classList.remove('hidden'); activeTemplateId = data.template_id; setTimeout(function () { closeSaveTemplate(); loadTemplates(state.entity.entity_type); }, 1000); }
+        }).catch(function (err) { status.textContent = 'Error: ' + err.message; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); });
     }
-
     function deleteTemplate(templateId) {
         var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
         if (!template) return;
-        showConfirm('Delete template "' + template.template_name + '"? This cannot be undone.', {
-            title: 'Delete Template',
-            icon: '&#128465;',
-            iconColor: '#f48771',
-            confirmLabel: 'Delete',
-            cancelLabel: 'Keep',
-            confirmClass: 'xf-modal-btn-danger'
-        }).then(function (confirmed) {
+        showConfirm('Delete template "' + template.template_name + '"?', { title: 'Delete Template', icon: '&#128465;', iconColor: '#f48771', confirmLabel: 'Delete', cancelLabel: 'Keep', confirmClass: 'xf-modal-btn-danger' })
+        .then(function (confirmed) {
             if (!confirmed) return;
-            fetch('/api/bdl-import/templates/' + templateId, { method: 'DELETE' })
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (data.success) {
-                        if (activeTemplateId === templateId) activeTemplateId = null;
-                        closeTemplatePreview();
-                        loadTemplates(selectedEntity.entity_type);
-                    } else {
-                        showAlert(data.error || 'Failed to delete template.', { title: 'Delete Failed', icon: '&#10005;', iconColor: '#f48771' });
-                    }
-                })
-                .catch(function (err) { showAlert(err.message, { title: 'Error', icon: '&#10005;', iconColor: '#f48771' }); });
+            var state = curState();
+            fetch('/api/bdl-import/templates/' + templateId, { method: 'DELETE' }).then(function (r) { return r.json(); })
+            .then(function (data) { if (data.success) { if (activeTemplateId === templateId) activeTemplateId = null; closeTemplatePreview(); if (state) loadTemplates(state.entity.entity_type); } else showAlert(data.error || 'Failed.', { title: 'Delete Failed', icon: '&#10005;', iconColor: '#f48771' }); })
+            .catch(function (err) { showAlert(err.message, { title: 'Error', icon: '&#10005;', iconColor: '#f48771' }); });
         });
     }
 
+    // ── Reset ─────────────────────────────────────────────────────────────
     function resetFromStep(step) {
         for (var i = step - 1; i < totalSteps; i++) stepComplete[i] = false;
-        if (step <= 3) { uploadedFile = null; parsedFileData = null; columnMapping = null; stagingContext = null; stagedMapping = null; }
-        if (step <= 2) { entityTemplates = []; activeTemplateId = null; }
-        if (step <= 5 && step > 3) { validationResult = null; }
-        if (step <= 4 && step > 3) { validationResult = null; activeTemplateId = null; }
+        if (step <= 2) { uploadedFile = null; parsedFileData = null; }
+        if (step <= 3) { selectedEntities = []; entityStates = []; currentEntityIndex = 0; entityTemplates = []; activeTemplateId = null; }
+        if (step <= 4) { entityStates = []; currentEntityIndex = 0; activeTemplateId = null; }
         executeInProgress = false;
-        xmlPreviewLoaded = false;
         clearPromoteState();
         updateStepperUI(); updateNavButtons();
+    }
+
+    function clearPromoteState() {
+        if (promoteCountdownTimer) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; }
+        promoteData = null; promoteSecondsRemaining = 0; promoteReady = false;
     }
 
     function escapeHtml(str) { if (!str) return ''; var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
@@ -1376,19 +1427,20 @@ var BDL = (function () {
     return {
         init: init, goToStep: goToStep, nextStep: nextStep, prevStep: prevStep,
         selectEnvironment: selectEnvironment,
-        selectEntity: selectEntity, filterEntities: filterEntities,
+        toggleEntity: toggleEntity, filterEntities: filterEntities,
         dragOver: dragOver, dragLeave: dragLeave, fileDrop: fileDrop, fileSelected: fileSelected, removeFile: removeFile,
         sourceClick: sourceClick, targetClick: targetClick, chipDragStart: chipDragStart, chipDragOver: chipDragOver, chipDrop: chipDrop,
         unmapPair: unmapPair, identifierChanged: identifierChanged,
-        revalidate: revalidate, applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows,
+        validateCurrentEntity: validateCurrentEntity, advanceToNextEntity: advanceToNextEntity, revalidateCurrentEntity: revalidateCurrentEntity,
+        fixedValueIdentifierChanged: fixedValueIdentifierChanged, fixedValueChanged: fixedValueChanged, fixedValueSearch: fixedValueSearch, selectFixedValue: selectFixedValue,
+        applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows,
         runCleanup: runCleanup,
         toggleValidationCard: toggleValidationCard, toggleInfoCard: toggleInfoCard,
-		toggleSection: toggleSection, toggleXmlPreview: toggleXmlPreview, copyXmlPreview: copyXmlPreview, executeImport: executeImport,
+        switchExecuteTab: switchExecuteTab, executeAll: executeAll,
         ticketChanged: ticketChanged,
         previewTemplate: previewTemplate, closeTemplatePreview: closeTemplatePreview,
         applyTemplate: applyTemplate, showSaveTemplate: showSaveTemplate,
-        closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate,
-        promoteClicked: promoteClicked
+        closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate
     };
 })();
 document.addEventListener('DOMContentLoaded', BDL.init);
