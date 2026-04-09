@@ -1650,7 +1650,26 @@
                                            "length":  "20",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "(\u0027FILE_MAPPED\u0027)"
+                                           "default":  "(\u0027FILE_MAPPED\u0027)",
+                                           "description":  "Controls which mapping UI is rendered for each entity type in the BDL Import wizard. FILE_MAPPED uses column-to-field drag-and-drop mapping panels. FIXED_VALUE presents direct value entry fields where the user enters uniform values applied to all rows (used for tagging operations). HYBRID is reserved for future entities requiring a mix of both approaches. CHECK constraint enforces valid values. Defaults to FILE_MAPPED."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "entity_key",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Identifies which DM identifier field drives the import for this entity type. CONSUMER entities use cnsmr_idntfr_agncy_id as the key. ACCOUNT entities use cnsmr_accnt_idntfr_agncy_id. OTHER covers specialized entities that do not fit either pattern. Used by the BDL Import wizard to group entity type cards into visual sections on the selection screen. NULL for wrapper and deferred entity types not yet classified."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "batch_abbreviation",
+                                           "dataType":  "varchar",
+                                           "length":  "14",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Short abbreviation used in the BDL XML batch_id_txt header element. The batch_id_txt value is constructed as XF_{abbreviation}_{yyyyMMddHHmmss} and must not exceed 32 characters, which is the column limit on the DM file_rgstry_dtl.btch_idntfr_txt column. Maximum 14 characters. Editable through the admin catalog modal. Falls back to a truncated entity_type if NULL."
                                        }
                                    ],
                        "indexes":  [
@@ -1684,6 +1703,10 @@
                                                 {
                                                     "name":  "CK_Catalog_BDLFormatRegistry_action_type",
                                                     "definition":  "([action_type]=\u0027HYBRID\u0027 OR [action_type]=\u0027FIXED_VALUE\u0027 OR [action_type]=\u0027FILE_MAPPED\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Catalog_BDLFormatRegistry_entity_key",
+                                                    "definition":  "([entity_key]=\u0027OTHER\u0027 OR [entity_key]=\u0027ACCOUNT\u0027 OR [entity_key]=\u0027CONSUMER\u0027)"
                                                 }
                                             ],
                        "designNotes":  [
@@ -1701,8 +1724,51 @@
                                                "topic":  "Nullify Fields Support",
                                                "note":  "Entities with has_nullify_fields = 1 support the BDL nullification mechanism — a way to explicitly clear field values during update operations. The nullify_fields structural element itself is excluded from the element registry since it is not a data element.",
                                                "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Batch ID Construction",
+                                               "note":  "The BDL XML batch_id_txt header element maps to DM file_rgstry_dtl.btch_idntfr_txt, which is VARCHAR(32). Build-BDLXml constructs this value as XF_{batch_abbreviation}_{yyyyMMddHHmmss}, using the batch_abbreviation column to keep the total within the 32-character limit. If batch_abbreviation is NULL, the entity_type is truncated to 14 characters as a fallback.",
+                                               "sortOrder":  4
                                            }
                                        ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "action_type",
+                                                "value":  "FILE_MAPPED",
+                                                "meaning":  "Default. User maps source file columns to BDL fields via drag-and-drop panels. Used for entity types where field values come from the uploaded file.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "entity_key",
+                                                "value":  "CONSUMER",
+                                                "meaning":  "Entity uses cnsmr_idntfr_agncy_id as the import key. Displayed in the Consumer section of the entity selection grid.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "entity_key",
+                                                "value":  "ACCOUNT",
+                                                "meaning":  "Entity uses cnsmr_accnt_idntfr_agncy_id as the import key. Displayed in the Account section of the entity selection grid.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "action_type",
+                                                "value":  "FIXED_VALUE",
+                                                "meaning":  "User enters values directly rather than mapping from file columns. The identifier comes from the file, but payload values are entered by the user and applied uniformly to every row. Used for tagging operations.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "action_type",
+                                                "value":  "HYBRID",
+                                                "meaning":  "Reserved for future use. Combination of file-mapped and manually entered fields.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "entity_key",
+                                                "value":  "OTHER",
+                                                "meaning":  "Specialized entity that does not fit the consumer or account key pattern. Displayed in the Other section of the entity selection grid.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
                        "queries":  [
                                        {
                                            "name":  "All BDL data entities",
