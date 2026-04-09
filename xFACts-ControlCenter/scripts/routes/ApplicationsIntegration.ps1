@@ -5,10 +5,11 @@
 # Departmental dashboard for the Applications & Integration team.
 # Components:
 #   - BDL Import: Card linking to the BDL Import workflow page
+#   - BDL Content Management: Admin-only catalog maintenance (slide-up panel)
 #   - Future: Additional toolkit functions migrated from Access DB
 #
 # CSS: /css/applications-integration.css
-# JS:  (none currently — static page with card links)
+# JS:  /js/applications-integration.js
 #
 # Version: Tracked in dbo.System_Metadata (component: DeptOps.ApplicationsIntegration)
 # ============================================================================
@@ -27,6 +28,66 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
     $adminGear = if ($ctx.IsAdmin) {
         '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
     } else { '' }
+    
+    # --- Admin-only sections ---
+    $adminSection = ''
+    $adminPanelHtml = ''
+    if ($ctx.IsAdmin) {
+        $adminSection = @'
+    <!-- ================================================================ -->
+    <!-- ADMIN TOOLS (Admin-only)                                         -->
+    <!-- ================================================================ -->
+    <div class="section" id="admin-section">
+        <div class="section-header">
+            <h2>Administration</h2>
+            <span class="section-subtitle">Catalog management and configuration</span>
+        </div>
+        <div class="section-body">
+            <div class="tool-cards">
+                <div class="tool-card admin-tool" onclick="BdlCatalog.open()">
+                    <div class="tool-icon">&#128218;</div>
+                    <div class="tool-label">BDL Content Management</div>
+                    <div class="tool-status admin-badge">Entity Types &amp; Field Settings</div>
+                </div>
+            </div>
+        </div>
+    </div>
+'@
+
+        $adminPanelHtml = @'
+    <!-- ================================================================ -->
+    <!-- BDL CATALOG MANAGEMENT — Slide-Up Panel (Tier 1: Format List)    -->
+    <!-- ================================================================ -->
+    <div id="bdlcat-backdrop" class="bdlcat-backdrop" onclick="BdlCatalog.close()"></div>
+    <div id="bdlcat-panel" class="bdlcat-panel">
+        <div class="bdlcat-handle" onclick="BdlCatalog.close()">
+            <div class="bdlcat-handle-bar"></div>
+        </div>
+        <div class="bdlcat-header">
+            <div class="bdlcat-header-left">
+                <h2 class="bdlcat-title">BDL Content Management</h2>
+                <span id="bdlcat-count" class="bdlcat-count"></span>
+            </div>
+            <button class="bdlcat-close" onclick="BdlCatalog.close()">&times;</button>
+        </div>
+        <div id="bdlcat-status" class="bdlcat-status"></div>
+        <div id="bdlcat-body" class="bdlcat-body"></div>
+    </div>
+
+    <!-- ================================================================ -->
+    <!-- BDL CATALOG MANAGEMENT — Detail Slideout (Tier 2: Elements)      -->
+    <!-- ================================================================ -->
+    <div id="bdlcat-detail" class="bdlcat-detail">
+        <div class="bdlcat-detail-header">
+            <button class="bdlcat-detail-back" onclick="BdlCatalog.closeDetail()" title="Back to format list">&#9664;</button>
+            <h3 id="bdlcat-detail-title" class="bdlcat-detail-title"></h3>
+            <span id="bdlcat-detail-count" class="bdlcat-detail-count"></span>
+        </div>
+        <div id="bdlcat-detail-status" class="bdlcat-detail-status"></div>
+        <div id="bdlcat-detail-body" class="bdlcat-detail-body"></div>
+    </div>
+'@
+    }
     
     # IT users always get the full nav
     $navHtml = @'
@@ -58,6 +119,7 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
 <html>
 <head>
     <title>Applications & Integration - xFACts Control Center</title>
+    <link rel="stylesheet" href="/css/engine-events.css">
     <link rel="stylesheet" href="/css/applications-integration.css">
 </head>
 <body>
@@ -116,6 +178,12 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
         </div>
     </div>
     
+    $adminSection
+    
+    $adminPanelHtml
+    
+    <script src="/js/engine-events.js"></script>
+    <script src="/js/applications-integration.js"></script>
 </body>
 </html>
 "@
