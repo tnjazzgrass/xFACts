@@ -50,7 +50,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLo
         if ($access.Tier -eq 'admin') {
             $results = Invoke-XFActsQuery -Query @"
                 SELECT f.entity_type, f.type_name, f.folder, f.element_count,
-                       f.has_parent_ref, f.has_nullify_fields
+                       f.has_parent_ref, f.has_nullify_fields, f.action_type
                 FROM Tools.Catalog_BDLFormatRegistry f
                 WHERE f.is_active = 1
                   AND f.entity_type IS NOT NULL
@@ -70,7 +70,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLo
             
             $results = Invoke-XFActsQuery -Query @"
                 SELECT f.entity_type, f.type_name, f.folder, f.element_count,
-                       f.has_parent_ref, f.has_nullify_fields
+                       f.has_parent_ref, f.has_nullify_fields, f.action_type
                 FROM Tools.Catalog_BDLFormatRegistry f
                 INNER JOIN Tools.AccessConfig ac 
                     ON ac.item_key = f.entity_type
@@ -181,6 +181,8 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
 # POST /api/bdl-import/stage
 # Creates a staging table and inserts all rows from the uploaded file.
 # Optional: drop_existing parameter drops a prior staging table before creating.
+# Optional: fixed_values parameter applies uniform values to all rows (for
+#           FIXED_VALUE entity types like tags).
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -190,25 +192,29 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
         $mapping = $body.mapping
         $headers = $body.headers
         $rows = $body.rows
-
-        if (-not $entityType -or -not $configId -or -not $mapping -or -not $headers -or -not $rows) {
-            Write-PodeJsonResponse -Value @{ error = 'Missing required fields: entity_type, config_id, mapping, headers, rows' } -StatusCode 400
+        $fixedValues = $body.fixed_values
+ 
+        if (-not $entityType -or -not $configId -or -not $headers -or -not $rows) {
+            Write-PodeJsonResponse -Value @{ error = 'Missing required fields: entity_type, config_id, headers, rows' } -StatusCode 400
             return
         }
-
+ 
+        # mapping may be empty for pure FIXED_VALUE entities (only identifier mapped)
+        if (-not $mapping) { $mapping = [PSCustomObject]@{} }
+ 
         $serverConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance, environment
             FROM Tools.ServerConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
-
+ 
         if (-not $serverConfig -or $serverConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
-
+ 
         $environment = $serverConfig[0].environment
-
+ 
         # ── Drop existing staging table if re-staging ───────────────────
         $dropExisting = $body.drop_existing
         if ($dropExisting) {
@@ -222,10 +228,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 Invoke-XFActsNonQuery -Query "DROP TABLE $safeDrop;"
             }
         }
-
+ 
         $username = $WebEvent.Auth.User.Username
         if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
-
+ 
         $fieldMeta = Invoke-XFActsQuery -Query @"
             SELECT e.element_name, e.data_type, e.max_length, e.lookup_table, e.is_import_required
             FROM Tools.Catalog_BDLElementRegistry e
@@ -233,29 +239,29 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             WHERE f.entity_type = @entityType
               AND e.is_visible = 1
 "@ -Parameters @{ entityType = $entityType }
-
+ 
         $fieldMetaMap = @{}
         foreach ($f in $fieldMeta) { $fieldMetaMap[$f.element_name] = $f }
-
+ 
         $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
         $tableName = "BDL_${entityType}_${username}_${timestamp}"
         $fullTableName = "Staging.[$tableName]"
-
+ 
         $mappingHash = @{}
         foreach ($key in $mapping.PSObject.Properties) { $mappingHash[$key.Name] = $key.Value }
-
+ 
         $mappedElementNames = @{}
         foreach ($val in $mappingHash.Values) { $mappedElementNames[$val] = $true }
-
+ 
         # ── Build CREATE TABLE DDL ──────────────────────────────────────
         $colDefs = @()
         $colDefs += '    [_row_number] INT IDENTITY(1,1)'
         $colDefs += '    [_skip] BIT NOT NULL DEFAULT 0'
-
+ 
         $mappedColumns = @()
         $unmappedColumns = @()
         $requiredExtraColumns = @()
-
+ 
         for ($i = 0; $i -lt $headers.Count; $i++) {
             $header = $headers[$i]
             if ($mappingHash.ContainsKey($header)) {
@@ -289,7 +295,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 $unmappedColumns += @{ headerIndex = $i; columnName = "${safeName}_unmapped" }
             }
         }
-
+ 
         foreach ($f in $fieldMeta) {
             if ($f.is_import_required -and -not $mappedElementNames.ContainsKey($f.element_name)) {
                 $bdlType = if ($f.data_type -and $f.data_type -isnot [System.DBNull]) { $f.data_type.ToLower() } else { '' }
@@ -306,32 +312,32 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     'dateTime' { $sqlType = 'VARCHAR(50)' }
                     default    { $sqlType = if ($maxLen) { "VARCHAR($maxLen)" } else { 'VARCHAR(MAX)' } }
                 }
-
+ 
                 $colDefs += "    [$($f.element_name)] $sqlType NULL"
                 $requiredExtraColumns += @{ elementName = $f.element_name; sqlType = $sqlType }
             }
         }
-
+ 
         $createDdl = "CREATE TABLE $fullTableName (`n" + ($colDefs -join ",`n") + "`n);"
         Invoke-XFActsNonQuery -Query $createDdl
-
+ 
         # ── Bulk INSERT rows ────────────────────────────────────────────
         $allInsertColumns = @()
         foreach ($mc in $mappedColumns) { $allInsertColumns += "[$($mc.elementName)]" }
         foreach ($uc in $unmappedColumns) { $allInsertColumns += "[$($uc.columnName)]" }
         $columnList = $allInsertColumns -join ', '
-
+ 
         $allColumnIndices = @()
         foreach ($mc in $mappedColumns) { $allColumnIndices += $mc.headerIndex }
         foreach ($uc in $unmappedColumns) { $allColumnIndices += $uc.headerIndex }
-
+ 
         $batchSize = 500
         $totalRows = $rows.Count
         
         for ($batchStart = 0; $batchStart -lt $totalRows; $batchStart += $batchSize) {
             $batchEnd = [Math]::Min($batchStart + $batchSize, $totalRows)
             $valuesClauses = @()
-
+ 
             for ($r = $batchStart; $r -lt $batchEnd; $r++) {
                 $row = $rows[$r]
                 $vals = @()
@@ -342,13 +348,57 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 }
                 $valuesClauses += "(" + ($vals -join ', ') + ")"
             }
-
+ 
             $insertSql = "INSERT INTO $fullTableName ($columnList) VALUES`n" + ($valuesClauses -join ",`n")
             Invoke-XFActsNonQuery -Query $insertSql
         }
-
+ 
+        # ── Apply fixed values (for FIXED_VALUE entity types) ──────────
+        if ($fixedValues) {
+            foreach ($prop in $fixedValues.PSObject.Properties) {
+                $fvElementName = $prop.Name
+                $fvValue = $prop.Value
+ 
+                # Check if column exists in staging table
+                $colExists = Invoke-XFActsQuery -Query @"
+                    SELECT 1 FROM sys.columns c
+                    INNER JOIN sys.tables t ON t.object_id = c.object_id
+                    INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                    WHERE s.name = 'Staging' AND t.name = @tableName AND c.name = @colName
+"@ -Parameters @{ tableName = $tableName; colName = $fvElementName }
+ 
+                if (-not $colExists -or $colExists.Count -eq 0) {
+                    # Column doesn't exist — add it with appropriate type
+                    $fvMeta = $fieldMetaMap[$fvElementName]
+                    $fvSqlType = 'VARCHAR(MAX)'
+                    if ($fvMeta) {
+                        $fvBdlType = if ($fvMeta.data_type -and $fvMeta.data_type -isnot [System.DBNull]) { $fvMeta.data_type.ToLower() } else { '' }
+                        $fvMaxLen = $fvMeta.max_length
+                        switch ($fvBdlType) {
+                            'string'   { $fvSqlType = if ($fvMaxLen) { "VARCHAR($fvMaxLen)" } else { 'VARCHAR(MAX)' } }
+                            'int'      { $fvSqlType = 'VARCHAR(20)' }
+                            'long'     { $fvSqlType = 'VARCHAR(20)' }
+                            'short'    { $fvSqlType = 'VARCHAR(10)' }
+                            'decimal'  { $fvSqlType = 'VARCHAR(30)' }
+                            'boolean'  { $fvSqlType = 'VARCHAR(10)' }
+                            'dateTime' { $fvSqlType = 'VARCHAR(50)' }
+                            default    { $fvSqlType = if ($fvMaxLen) { "VARCHAR($fvMaxLen)" } else { 'VARCHAR(MAX)' } }
+                        }
+                    }
+                    $safeCol = "[$fvElementName]"
+                    Invoke-XFActsNonQuery -Query "ALTER TABLE $fullTableName ADD $safeCol $fvSqlType NULL"
+                }
+ 
+                # Update all non-skipped rows with the fixed value
+                $safeCol = "[$fvElementName]"
+                Invoke-XFActsNonQuery -Query @"
+                    UPDATE $fullTableName SET $safeCol = @fixedVal WHERE _skip = 0
+"@ -Parameters @{ fixedVal = $fvValue }
+            }
+        }
+ 
         $reqExtraNames = @($requiredExtraColumns | ForEach-Object { $_.elementName })
-
+ 
         Write-PodeJsonResponse -Value @{
             staging_table         = $tableName
             row_count             = $totalRows
