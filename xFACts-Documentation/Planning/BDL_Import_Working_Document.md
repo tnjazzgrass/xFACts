@@ -1,15 +1,17 @@
 # BDL Import Module -- Working Document
 
-**Status:** In development -- Steps 1-6 functional, end-to-end tested on TEST and PROD  
+**Status:** In development -- 5-step wizard functional for single FILE_MAPPED entities, multi-entity selection and per-entity loop implemented, FIXED_VALUE mapping UI in progress  
 **Audience:** Dirk, Matt, Brandon, Claude  
-**Last Updated:** April 6, 2026  
+**Last Updated:** April 9, 2026  
 **Replaces:** `BDL_Import_Module_Design.md`, `BDL_Catalog_Reload_Instructions.md`, `xFACts_Questions_For_Matt.md`
 
 ---
 
 ## Overview
 
-A Control Center page (`/bdl-import`) that allows authorized users to upload a vendor data file, map its columns to BDL fields via click-to-pair or drag-and-drop, validate the data against DM reference tables, preview the generated XML, and trigger a BDL import into Debt Manager. Accessible via card links from the Applications & Integration page (IT team) and the Business Intelligence page (BI team). RBAC controls page access; `Tools.AccessConfig` controls entity-level access per department; `Tools.AccessFieldConfig` controls field-level access per department (strict whitelist).
+A Control Center page (`/bdl-import`) that allows authorized users to upload a vendor data file, select one or more BDL entity types, map columns to BDL fields (or enter fixed values for tag-type entities), validate the data against DM reference tables, preview generated XML, and trigger BDL imports into Debt Manager. Multi-entity selection is supported — the system walks through mapping and validation for each entity independently using the same uploaded file.
+
+Accessible via card links from the Applications & Integration page (IT team) and the Business Intelligence page (BI team). RBAC controls page access; `Tools.AccessConfig` controls entity-level access per department; `Tools.AccessFieldConfig` controls field-level access per department (strict whitelist).
 
 ---
 
@@ -23,10 +25,13 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - `Tools.AccessConfig` -- department-scoped entity access control (BI seeded with PHONE only)
 - `Tools.AccessFieldConfig` -- field-level whitelist, child of AccessConfig. Strict whitelist: no child rows = zero field access. Admin tier bypasses entirely. BI seeded with `is_import_required` PHONE fields.
 - `Tools.BDL_ImportLog` -- import execution audit trail with lifecycle status tracking, `column_mapping` JSON, `value_changes` column for replacement audit, `file_registry_id` from DM API, `parent_log_id` self-referential FK for linking AR log companion rows to their parent primary import, and `staging_table` column for test-to-prod correlation tracking
-- `Tools.BDL_ImportTemplate` -- saved column mapping templates for vendor-specific file layouts. Columns: `template_id` (PK), `entity_type`, `template_name`, `description`, `column_mapping` (JSON), `is_active`, audit columns. Unique constraint on `entity_type + template_name`. Object_Registry and Object_Metadata baselines created.
+- `Tools.BDL_ImportTemplate` -- saved column mapping templates for vendor-specific file layouts. Columns: `template_id` (PK), `entity_type`, `template_name`, `description`, `column_mapping` (JSON), `is_active`, audit columns. Unique constraint on `entity_type + template_name`.
+- `Tools.Catalog_BDLFormatRegistry` -- `action_type VARCHAR(20)` column added (April 9). Values: FILE_MAPPED (default), FIXED_VALUE, HYBRID. CHECK constraint enforced. CONSUMER_TAG and ACCOUNT_TAG set to FIXED_VALUE.
 - `Staging` schema -- created for temporary import staging tables (not registered in xFACts platform, invisible to documentation pipeline)
 - `AVG-STAGE-LSNR` added to `dbo.ServerRegistry` (AG_LISTENER, STAGE, DMSTAGEAG, is_active=0)
 - `Tools.Operations` component -- registered and baselined
+
+**NOTE:** `Tools.BDL_ActionRegistry` was designed, created, seeded, and then rolled back entirely during the April 9 session. Matt's feedback led to a simpler approach using entity types directly with multi-select cards instead of a separate action abstraction layer. Object_Registry and Object_Metadata rows for this table were also removed.
 
 **DM API Integration (fully operational):**
 - `dbo.CredentialServices` row for `DM_REST_API`
@@ -40,18 +45,18 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - Uses CC/CC (clerical comment) action/result codes across all entity types -- internal codes that do not appear on client export notes
 - Mirrors Matt's legacy VBA companion AR Event file pattern exactly
 - Identifier element auto-detected: `cnsmr_idntfr_agncy_id` for consumer-level entities, `cnsmr_accnt_idntfr_agncy_id` for account-level
-- `cnsmr_accnt_ar_log_crt_usr_nm` set to the logged-in Windows username (not the API service account)
 - AR log BDL is built and submitted as a separate file through the full register -> import cycle after the primary BDL succeeds
 - AR log failure does NOT roll back the primary import
 - AR log row in `BDL_ImportLog` uses `parent_log_id` to link back to the primary import row
-- Default AR message format: `"{ticket}: {entity_type} update via BDL Import"` -- editable by the user on Step 6
-- Jira ticket field and AR message field are optional on Step 6; if left blank, no AR log is generated (current behavior preserved)
+- Default AR message format: `"{ticket}: {entity_type} update via BDL Import"` -- editable by the user
+- Jira ticket field and AR message field are optional; if left blank, no AR log is generated
 
 **Catalog enrichment:**
 - `format_id` integer FK added to `Catalog_BDLElementRegistry` and `Catalog_CDLElementRegistry` (replaces composite FK)
 - `is_visible` and `is_import_required` columns on both element registry tables
 - `display_name VARCHAR(100)` on both element registry tables -- human-readable field names for mapping UI
 - `is_active BIT` on both format registry tables -- controls entity availability
+- `action_type VARCHAR(20)` on `Catalog_BDLFormatRegistry` -- controls mapping experience (FILE_MAPPED, FIXED_VALUE, HYBRID)
 - Field descriptions enriched from SchemaSpy DM database column comments (682 verified descriptions)
 - `is_not_nullifiable` and `is_primary_id` populated from Excel interface definition
 - `table_column` and `lookup_table` populated from Excel interface definition
@@ -66,35 +71,35 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 - `Get-ServiceCredentials` in `xFACts-Helpers.psm1` -- two-tier decryption for DM API credentials
 
 **Control Center pages:**
-- `BDLImport.ps1` / `BDLImport-API.ps1` / `bdl-import.js` / `bdl-import.css` -- BDL Import wizard page
+- `BDLImport.ps1` / `BDLImport-API.ps1` / `bdl-import.js` / `bdl-import.css` -- BDL Import wizard page (5-step layout)
 - Two-column layout: 65% left (stepper bar + action panels) / 35% right (compact step guide + template section)
 - Shared `engine-events.css` linked for slideout panel pattern, shared visual standards, and styled modal system (`xf-modal-*` classes)
-- Shared `engine-events.js` linked for `showAlert()` and `showConfirm()` styled modal functions -- BDL Import is the reference implementation; no native `alert()` or `confirm()` calls remain on this page
-- `ApplicationsIntegration.ps1` / `applications-integration.css` -- Apps/Int departmental page under `DeptOps.ApplicationsIntegration`
+- Shared `engine-events.js` linked for `showAlert()` and `showConfirm()` styled modal functions
+- `ApplicationsIntegration.ps1` / `ApplicationsIntegration-API.ps1` / `applications-integration.js` / `applications-integration.css` -- Apps/Int departmental page with BDL Content Management admin modal
 - BI page updated: BDL Import card now links to `/bdl-import`
 - SheetJS `xlsx.full.min.js` v0.20.3 hosted locally for client-side Excel parsing
+
+**BDL Content Management Admin Modal (Apps/Int page):**
+- Two-tier slide-up/slideout panel, admin-only access
+- Format list with active/inactive grouping, FIXED VALUE and HYBRID badges
+- Element grid with inline edit (display_name, field_description as click-to-edit; is_visible, is_import_required as toggles)
+- Format-level is_active toggle with confirmation
+- `/api/apps-int/bdl-format/update` endpoint for editing format fields (action_type)
 
 **RBAC:**
 - BDL Import page: Admin (wildcard), PowerUser/StandardUser = admin tier, ReadOnly = view, DeptStaff/DeptManager = operate
 - Admin tier on BDL Import = unrestricted entity and field access (bypasses AccessConfig and AccessFieldConfig)
 - Operate tier on BDL Import = entities filtered by AccessConfig, fields filtered by AccessFieldConfig (strict whitelist)
-- **Middleware fix applied:** `Get-UserPageTier` in `xFACts-Helpers.psm1` updated so department-scoped roles are honored on non-departmental pages when an explicit permission row exists.
-- **DBNull handling:** API endpoints use `-isnot [System.DBNull]` check when extracting department scope from RBAC context.
+- Middleware fix applied: `Get-UserPageTier` honors department-scoped roles on non-departmental pages
+- DBNull handling: API endpoints use `-isnot [System.DBNull]` check when extracting department scope
 
-### What's Functional (Steps 1-6)
+### What's Functional (5-Step Wizard)
 
-1. **Select Environment** -- Cards for TEST, STAGE, PROD loaded from `Tools.ServerConfig`. Environment-specific accent colors. All environments unlocked. Selecting PROD shows a styled advisory modal recommending test environment validation first, with Go Back / Continue to Production buttons.
-2. **Select Entity Type** -- Grid of available entities filtered by `is_active = 1` and RBAC tier/department. Searchable. Admin sees all active; department users see only AccessConfig-granted entities. Template count preview shown in right column when entity is selected.
-3. **Upload File** -- Drag-and-drop or browse. CSV, TXT, XLSX, XLS supported via client-side parsing (SheetJS for Excel). Preview renders inside the drop zone replacing the upload prompt. Row count warning above 250K.
-4. **Map Columns** -- Identifier field (consumer or account agency ID) must be selected first -- mapping panels are disabled with red border highlight until identifier is chosen. Once selected, identifier border turns green and two-column layout (Source | BDL Fields) activates with click-to-pair and drag-and-drop. Mapped pairs displayed in a spanning section below. Display names shown when populated. Templates can be loaded from the right column to pre-populate mappings. "Save Current Mapping as Template" button available when mappings exist.
-5. **Validate** -- Two-phase: stage (one-time) then validate (repeatable with cascading re-validate).
-   - **Stage:** Reads full file, creates `Staging.BDL_{entity}_{user}_{timestamp}` table. Supports `drop_existing` parameter for re-staging when mapping changes on back navigation.
-   - **Validate:** Accordion-style issue cards. Actionable issues (required empty, invalid lookup) shown as collapsed cards -- click to expand and resolve. One card expandable at a time. Required empty: fill or skip triggers immediate re-validate. Lookup invalid: all unique values resolved per element, then auto re-validate. Cascading effect: skipping rows for one field removes those rows from subsequent lookup/required checks.
-   - Informational warnings (max length, data type) shown in separate collapsible section with no action controls.
-   - Next button muted/gray when issues exist, colored blue when validation passes.
-   - **Re-validate button removed** -- cascading auto-revalidation after each fill/skip action renders the manual button obsolete.
-   - **Staging cleanup:** Banner on page load if tables older than 48 hours found. One-click cleanup drops them.
-6. **Review & Execute** -- Summary display showing environment, entity type, source file, row count (reflects non-skipped rows with skipped count annotation), mapped fields, and staging table. Optional Jira ticket input with editable AR message (defaults to `"{ticket}: {ENTITY_TYPE} update via BDL Import"`). Collapsible column mapping reference. Collapsible XML preview with syntax highlighting -- auto-loads on first expand (no separate "Load Preview" button), with Copy to Clipboard button for external review. Styled confirmation modal (environment-aware: danger button for PROD, standard for non-PROD) replaces native confirm dialog. Progress visualization. Success/failure result cards. When a Jira ticket is provided, a companion AR log BDL is built and submitted after the primary import succeeds, with its own result card shown below the primary result. Back button hidden after successful submission. Promote to Production card appears after successful non-PROD imports (see Architecture Decisions).
+1. **Select Environment** -- Cards for TEST, STAGE, PROD loaded from `Tools.ServerConfig`. Environment-specific accent colors. All environments unlocked. Selecting PROD shows a styled advisory modal.
+2. **Upload File** -- Drag-and-drop or browse. CSV, TXT, XLSX, XLS supported via client-side parsing. Preview renders inside the drop zone. Row count warning above 250K.
+3. **Select Entity Types** -- Multi-select grid with toggle cards. Instruction banner with selected count. Searchable. Admin sees all active; department users see only AccessConfig-granted entities.
+4. **Map & Validate** -- Per-entity loop with progress dots and transition modals. For FILE_MAPPED entities: identifier gating, two-column mapping panels, drag-and-drop. For FIXED_VALUE entities: identifier selector + direct value entry fields (in progress). Each entity stages and validates independently. Step complete when all entities pass validation.
+5. **Execute** -- Tabbed per-entity summary cards. Single Jira ticket field (applies to all). "Submit All" button processes entities sequentially. Per-tab success/failure indicators.
 
 ### End-to-End Test Results
 
@@ -108,157 +113,177 @@ A Control Center page (`/bdl-import`) that allows authorized users to upload a v
 **April 4, 2026 (TEST - AR Log):**
 - **Test 4 (Dirk):** 395-row file with Jira ticket link -> primary BDL submitted successfully, AR log companion BDL submitted successfully. Both files processed in DM with 395 records each.
 
+**April 9, 2026 (TEST - Multi-Entity):**
+- **Test 5 (Dirk):** Multi-entity selection (3 entities). First entity (PHONE, FILE_MAPPED) mapped and validated successfully through the new per-entity loop. Second entity (CONSUMER_TAG, FIXED_VALUE) showed FILE_MAPPED mapping UI instead of fixed-value UI — identified as the trigger for building the `action_type` column and fixed-value rendering logic. Third entity not reached.
+
 ---
 
 ## Architecture Decisions (Resolved)
 
+### 5-Step Wizard (consolidated from 6)
+- Steps 2 and 3 swapped: Upload File precedes Entity Type selection (users should see their data before picking what to do with it)
+- Old Steps 4 (Map) and 5 (Validate) merged into a single "Map & Validate" step with per-entity loop
+- Step count reduced from 6 to 5: Environment → Upload File → Select Entities → Map & Validate → Execute
+
+### Multi-Entity Selection
+- Entity cards are toggle-selectable (click to select/deselect) instead of single-select
+- `selectedEntities[]` array holds all selected entities; `entityStates[]` array holds per-entity state
+- Each entity state independently tracks: fields, columnMapping, stagingContext, stagedMapping, validationResult, validated flag
+- Step 3 completes when at least one entity is selected
+
+### Per-Entity Map & Validate Loop
+- Map → validate per entity (Brandon's recommendation) — safer than mapping all first then validating all
+- Progress dots with connecting lines show position in entity sequence
+- 1.5-second transition modal between entities ("Phone Complete ✓ — Moving to Consumer Tag...") for visual breathing room
+- Back button navigates through entities in reverse; entity 1 back → Step 3
+- All entity states preserved on back navigation — nothing lost
+- Step 4 complete only when ALL entities pass validation
+
+### action_type on Catalog_BDLFormatRegistry
+- `action_type VARCHAR(20)` with CHECK constraint: FILE_MAPPED (default), FIXED_VALUE, HYBRID
+- Determines which mapping UI is rendered for each entity type
+- Manageable through the admin catalog modal on the Apps/Int page
+- FILE_MAPPED: full column mapping panels with drag-and-drop (existing behavior)
+- FIXED_VALUE: simplified panel with identifier selector + value entry fields
+- HYBRID: reserved for future — combination of mapped and fixed fields
+
+### Fixed-Value Staging Pipeline
+- Fixed values stored in `columnMapping` with `__fixed__` prefix keys (e.g., `__fixed__cnsmr_tag_val_txt`)
+- Stage request separates `mapping` (file-to-column) from `fixed_values` (user-entered)
+- Server adds columns for fixed values (ALTER TABLE if needed) and UPDATEs all rows with those values
+- Validation runs normally against the staged data — same validation infrastructure as FILE_MAPPED
+
+### Tabbed Execute
+- One tab per entity type with individual summary card
+- Single Jira ticket field above tabs (applies to all imports)
+- `executeSequential()` processes each entity one at a time, auto-switching tabs
+- Tab labels get ✓ or ✗ indicators as each completes
+- Each entity submits independently — one failure does not halt others
+
+### BDL_ActionRegistry — Built and Rolled Back
+- Table was designed and built to map user-friendly action names to entity types
+- After discussion with Matt, the approach was simplified — users select entity types directly
+- Table and all related Object_Registry/Object_Metadata rows were cleaned up
+- AccessConfig `item_key` stayed as entity_type (no migration to action_key)
+
 ### Template System
 - `Tools.BDL_ImportTemplate` stores reusable column mappings as JSON per entity type
 - Templates visible to all users; creator or admin can update/delete (soft delete via `is_active = 0`)
-- Template preview via shared slideout panel (`slide-panel` from engine-events.css) showing field-by-field matching against current file
-- Case-insensitive header matching when applying -- only columns present in both template and file are mapped; unmatched fields left for manual pairing
-- Match count displayed in template list and slideout preview ("3 of 5 fields match your file")
-- Save modal with name, optional description, and mapping preview
+- Template preview via shared slideout panel showing field-by-field matching against current file
+- Case-insensitive header matching when applying
+- Templates load for the current entity in the multi-entity loop
 
 ### Back Navigation and Staging Reuse
-- Column mapping preserved on back navigation to Step 4 (not reset to empty)
+- Column mapping preserved on back navigation (not reset to empty)
 - Identifier dropdown selection restored on re-render
-- On Step 4 -> Step 5 transition: if mapping unchanged from what was staged, existing staging table is reused (no re-stage). If mapping changed, old staging table is dropped via `drop_existing` parameter and new one created. Prevents accumulation of orphan staging tables.
+- If mapping unchanged from what was staged, existing staging table is reused (no re-stage). If mapping changed, old staging table is dropped via `drop_existing` parameter.
 
 ### Cascading Validation
 - Validation issues presented as accordion cards -- one expandable at a time
 - Required empty and lookup invalid are actionable (fill/replace/skip controls)
-- Max length and data type are informational only (no action controls)
-- After each fill or skip action on a required empty field, auto re-validate fires immediately
-- After all unique values for a lookup invalid field are resolved (replaced or skipped), auto re-validate fires
-- Cascading effect: skipping rows with empty phone numbers removes those same rows from phone type and phone status lookup checks
-- User interaction disabled during re-validate cycle to prevent race conditions
-- Manual re-validate button removed -- cascading auto-revalidation makes it obsolete
+- Max length and data type are informational only
+- Auto re-validate fires after each fill/skip action
+- Cascading effect: skipping rows for one field removes those rows from subsequent checks
+- User interaction disabled during re-validate cycle
 
 ### AR Log Companion Pattern
-- When a Jira ticket is provided during import execution, the system generates two separate BDL files: the primary data file and a companion CONSUMER_ACCOUNT_AR_LOG file
-- The AR log creates a clerical comment (CC/CC action/result codes) on each imported record, linking it back to the originating Jira ticket via `cnsmr_accnt_ar_mssg_txt`
-- This mirrors the legacy VBA toolkit pattern where update operations (phone, address, account, consumer) always produced a companion AR Event file
-- CC/CC codes are internal clerical comments that do not appear on client export notes files; CO/CO is the standard comment code that does -- CC/CC is used across all entity types for BDL Import
-- The two files are registered and imported through the DM API independently as separate BDL imports
-- `parent_log_id` on `BDL_ImportLog` links the AR log row to its parent primary import row -- this is an internal xFACts relationship for audit trail purposes; on the DM side each file has its own `file_registry_id` and processes independently
-- AR log failure does not roll back the primary import -- the primary data is already in DM
-- `cnsmr_accnt_ar_log_crt_usr_nm` is set to the logged-in Windows username, providing visibility into who ran the BDL (vs. the API service account `apiuser` that appears on the import itself)
-- Default message format: `"{ticket}: {ENTITY_TYPE} update via BDL Import"` -- editable by the user before submission
+- When a Jira ticket is provided, generates two separate BDL files per entity: primary data + companion CONSUMER_ACCOUNT_AR_LOG
+- CC/CC action/result codes — internal clerical comments that do not appear on client export notes
+- `parent_log_id` on `BDL_ImportLog` links AR log row to primary import row
+- AR log failure does not roll back primary import
 
 ### Identifier Field Gating
-- Mapping panels (source columns, BDL fields, mapped pairs) are disabled and dimmed until the identifier column is selected
-- Identifier section has red border when unselected, green border when confirmed
-- Centered overlay message "Select the identifier column above to begin mapping" shown on dimmed panels
-- Click, drag, and drop interactions blocked via `isMappingDisabled()` guard on all interaction handlers
+- Mapping panels disabled and dimmed until identifier column is selected
+- Red border when unselected, green border when confirmed
+- Applies to both FILE_MAPPED and FIXED_VALUE entity types
 
 ### Promote to Production
-- After a successful non-PROD import, a Promote to Production card appears on Step 6 with a GlobalConfig-driven countdown timer (`bdl_promote_cooldown_seconds` = 120 seconds, module `Tools`, category `Operations`)
-- During countdown: card shows timer in monospaced font, clicking shows informational flash message encouraging data verification in DM
-- After countdown expires: card transitions to "Ready" state with teal accent, clicking opens a styled confirmation modal with danger button
-- On confirm: validates staging table still exists, switches `selectedEnvironment` to PROD, re-renders Step 6 with PROD targeting, Jira ticket fields pre-populated from the test run (editable)
-- Data source: rebuilds XML from existing staging table -- does NOT re-read the original file
-- If staging table expired: shows styled alert and redirects to Step 1
-- Test-to-prod correlation: `staging_table` column on `BDL_ImportLog` tracks the relationship -- same staging table name appearing on TEST and PROD rows indicates the tested-first path
-- `parent_log_id` is NOT for test-to-prod linking -- it links AR log companion rows to their parent primary import only
-- API returns `promote_cooldown_seconds` and `prod_config_id` in the execute response for non-PROD environments
+- After successful non-PROD import, Promote to Production card appears with GlobalConfig-driven countdown timer
+- State variables preserved but not fully wired in the new tabbed execute (follow-up item)
 
 ### Styled Modal System
-- All native `alert()` and `confirm()` dialogs replaced with shared styled modals from `engine-events.js` (`showAlert()` and `showConfirm()`)
-- CSS classes use `xf-modal-*` prefix, defined in `engine-events.css` with self-contained `xfModalFadeIn` animation
-- `showAlert()` returns a Promise (resolves on OK click); `showConfirm()` returns a Promise resolving true/false
-- Options: `title`, `icon` (HTML entity), `iconColor`, `buttonLabel`/`confirmLabel`/`cancelLabel`, `confirmClass` (supports `xf-modal-btn-danger` for destructive actions), `html` (boolean for rich HTML body content)
-- `_escapeModalText()` private helper keeps the shared module self-contained (no dependency on page-specific `escapeHtml`)
-- BDL Import is the reference implementation -- all other CC pages should migrate to this pattern as they are touched
-- Development Guidelines should be updated to prohibit native `alert()`, `confirm()`, and `prompt()` on all CC pages
+- All native dialogs replaced with `showAlert()`/`showConfirm()` from `engine-events.js`
+- BDL Import is the reference implementation
+- Development Guidelines Section 5.10 updated with shared modal function documentation and BOLO for legacy native dialogs on other pages
 
 ### Guide Panel
-- Compact tip panel in upper right column -- no step circles (redundant with stepper bar), no hide/show toggle
-- Content updates automatically based on current step
-- Fixed height, always visible
+- Compact tip panel in upper right column
+- Content updates automatically based on current step (5 steps)
 
 ### Server Configuration
-- `tools_enabled` on ServerRegistry = "this server participates in Tools operations" (master switch)
-- `Tools.ServerConfig` = per-environment operational config (API URLs, dmfs paths, pipeline folder names, `db_instance` for database targeting)
-- `db_instance` stores the database server/listener per environment (AVG-PROD-LSNR, AVG-STAGE-LSNR, DM-TEST-APP)
-- Environment selection is UI-driven per import, no GlobalConfig default
+- `tools_enabled` on ServerRegistry = master switch for Tools server participation
+- `Tools.ServerConfig` = per-environment operational config
+- `db_instance` stores the database server/listener per environment
 
 ### DM API Authentication
-- Credentials stored in `dbo.Credentials` under `ServiceName = 'DM_REST_API'` with three config keys: `Username`, `Password`, `AuthHeader`
+- Credentials stored in `dbo.Credentials` under `ServiceName = 'DM_REST_API'`
 - Two-tier encryption: master passphrase -> service passphrase -> credential values
-- `AuthHeader` stores the complete `Basic <base64>` string as-is from Matt's legacy toolkit
-- **Extra character note:** The base64-decoded AuthHeader value has one extra trailing character compared to the stored password. Always use `AuthHeader` directly.
+- `AuthHeader` stores complete `Basic <base64>` string
 
 ### XML Construction
-- XML built entirely from catalog data -- no XSD files needed at runtime
+- XML built entirely from catalog data
 - Mirrors Matt's VBA XML structure exactly
-- File extension is `.txt` (not `.xml`) -- matches Matt's convention
-- File written with BOM-less UTF-8 encoding
+- File extension is `.txt`
+- BOM-less UTF-8 encoding
 
 ### communication_reference_id_txt Header Element
-- Present in Matt's VBA for some entity types (PostPhnUpdts, PostAddrUpdts, PostAccntUpdts, PostCnsmrUpdts) but not others (PostAccntTags, PostCnsmrTags, PostRegFUDPs)
-- Always hardcoded to `"Organization"` in the VBA
-- PHONE import into PROD succeeded without it -- appears to be optional/informational
-- **Decision:** Not included in xFACts XML output. If DM requires it for specific entity types in the future, it can be added as a catalog-driven header element.
+- Present in Matt's VBA for some entity types but not others
+- Always hardcoded to `"Organization"`
+- PHONE import succeeded without it
+- **Decision:** Not included. Can be added as catalog-driven header element if needed.
 
 ### Access Control (Three Layers)
 1. **RBAC page access** -- `RBAC_PermissionMapping` controls who can see the page
-2. **Entity access** -- `Tools.AccessConfig` controls which BDL entity types a department can use. Admin tier bypasses.
-3. **Field access** -- `Tools.AccessFieldConfig` controls which fields a department can see/use. Strict whitelist. Admin tier bypasses.
+2. **Entity access** -- `Tools.AccessConfig` controls which BDL entity types a department can use
+3. **Field access** -- `Tools.AccessFieldConfig` controls which fields a department can see/use
 
 ### Staging Architecture
-- Tables created in `Staging` schema -- not registered in xFACts platform
+- Tables created in `Staging` schema
 - Table naming: `Staging.BDL_{entity}_{username}_{timestamp}`
-- All columns stored as VARCHAR regardless of BDL data type
+- All columns stored as VARCHAR
 - Bulk INSERT in batches of 500 rows
-- Staging is one-time per import; validation is repeatable against existing table
-- Re-staging on mapping change drops old table atomically via `drop_existing` parameter on stage endpoint
+- Fixed-value columns added via ALTER TABLE and populated via UPDATE after bulk insert
+- Re-staging drops old table atomically via `drop_existing` parameter
 
 ### Import Lifecycle
 - Status progression: BUILDING -> REGISTERED -> SUBMITTED / FAILED
-- Failed imports require a new file with a new filename
-- Column mapping captured as JSON in `BDL_ImportLog.column_mapping` for audit trail
-- `template_id` column links to `BDL_ImportTemplate` when a template-based import is executed
-- Import completion tracking (processed count, error count, DM status) is deferred to the BatchOps BDL monitoring collector -- see Next Steps
+- Column mapping captured as JSON in `BDL_ImportLog.column_mapping`
+- Completion tracking deferred to BatchOps BDL monitoring collector
 
 ### RBAC Middleware: Department-Scoped Roles on Shared Pages
-- **Problem:** Department-scoped roles were silently ignored on non-departmental pages like `/bdl-import`.
-- **Fix:** Modified scope check in `Get-UserPageTier` -- explicit permission rows are always honored regardless of department scope.
-- **Impact:** Platform-wide.
+- Fix: explicit permission rows always honored regardless of department scope
 
 ### Identifier Handling
-- Consumer-level imports use `cnsmr_idntfr_agncy_id` as the identifier
-- Account-level imports use `cnsmr_accnt_idntfr_agncy_id`
-- Other identifier fields hidden via `is_visible = 0` -- only agncy_id works reliably per Matt
-- Identifier must be selected before column mapping is enabled (gating behavior)
+- Consumer-level: `cnsmr_idntfr_agncy_id`
+- Account-level: `cnsmr_accnt_idntfr_agncy_id`
+- Only agncy_id works reliably per Matt
+- Identifier must be selected before mapping is enabled
 
 ---
 
-## Matt's Answers (From Session)
+## Matt's Answers (From Sessions)
 
 ### Before Build (All Answered)
-
-1. **DM API Credentials:** Confirmed. Matt's toolkit uses `APIDeets` table with `uName`, `pwd`, `auth` fields. Auth is Basic auth with a pre-built `Authorization` header. Token never expires. Credentials now stored in `dbo.Credentials` under `DM_REST_API` service. Verified working via Postman and end-to-end test.
-2. **dmfs File Paths:** Confirmed correct. Paths now stored in `Tools.ServerConfig`. Service account has write access (confirmed via successful file write to `\\dm-test-app\e$\dmfs\import\bdl\`).
-3. **First Entity Types:** Phone, Consumer Tags, Account Tags recommended. **PHONE entity fully configured and tested end-to-end.**
-4. **Legacy Toolkit:** Unmapped functions are dead code from an earlier version.
+1. **DM API Credentials:** Confirmed. Auth is Basic auth with pre-built Authorization header.
+2. **dmfs File Paths:** Confirmed correct. Stored in Tools.ServerConfig.
+3. **First Entity Types:** Phone, Consumer Tags, Account Tags recommended.
+4. **Legacy Toolkit:** Unmapped functions are dead code.
 
 ### During Build (All Answered)
-
 5. **Companion File Pattern:** Can be combined into single BDL file.
 6. **Concurrent Imports:** Fine, but don't overwhelm DM.
-7. **File Size / Row Limits:** Practical limit ~250K rows. Timeouts above 300-350K.
+7. **File Size / Row Limits:** Practical limit ~250K rows.
 8. **Error Recovery:** New file with new name required.
 9. **Catalog Data Quality:** Duplicate Case Tag/Case History are documentation issue.
+10. **`is_not_nullifiable` is NOT "required for import."** Only `is_import_required` used for required field checks.
+11. **`cnsmr_phn_qlty_score_nmbr` is required by the XSD.** Without it, BDL runs but silently does nothing.
+12. **`is_not_nullifiable` repurposed for validation UI skip logic.** Controls whether Skip button appears.
 
-### Key Learnings from Matt (April 1)
-
-10. **`is_not_nullifiable` is NOT "required for import."** It means "cannot be included in nullify_fields during update operations." Completely different from import requirements. Only `is_import_required` should be used for required field checks.
-11. **`cnsmr_phn_qlty_score_nmbr` is required by the XSD.** Without it, the BDL runs but silently does nothing — no insert, no update, no error. This is why `is_import_required` exists and why required fields are a hard block.
-
-### Key Learning (April 3)
-
-12. **`is_not_nullifiable` repurposed for validation UI skip logic.** Fields with `is_not_nullifiable = 1` that are also `is_import_required = 1` get Fill only (no Skip button). Fields with `is_not_nullifiable = 0` that are `is_import_required = 1` get both Fill and Skip. This maps correctly: quality score (not-nullifiable, must fill) vs phone number (nullifiable, can skip row). Confirmed by cross-referencing all PHONE entity fields.
+### Multi-Entity Session (April 9)
+13. **Multi-tag same file:** Possible — repeating pattern with sequential seq_no, NOT contained in same entry.
+14. **Consumer + Account mix:** Theoretically possible but no current processes do it.
+15. **Tag case sensitivity:** Not case sensitive.
+16. **Same source column mapped to multiple BDLs:** Pending — checking with Brandon.
 
 ---
 
@@ -291,7 +316,7 @@ Body: (empty)
 ```
 
 ### DM File Registry Status Progression
-After registration, DM processes the file asynchronously: NEW (1) → UPDATING (2) → READY (3) → PROCESSING (4) → PROCESSED (5). If the file content is invalid (e.g., XML parse error), it goes directly to FAILED (6). The bdlimport trigger requires the file to be in READY status — in practice, DM reaches READY before the trigger call completes.
+After registration, DM processes the file asynchronously: NEW (1) → UPDATING (2) → READY (3) → PROCESSING (4) → PROCESSED (5). If content is invalid, goes to FAILED (6).
 
 ### XML Structure (Catalog-Driven)
 
@@ -328,19 +353,19 @@ After registration, DM processes the file asynchronously: NEW (1) → UPDATING (
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/bdl-import/environments` | Available environments from ServerConfig |
-| GET | `/api/bdl-import/entities` | Available entity types (RBAC + is_active filtered) |
+| GET | `/api/bdl-import/entities` | Available entity types with `action_type` (RBAC + is_active filtered) |
 | GET | `/api/bdl-import/entity-fields?entity_type=X` | BDL fields for an entity (admin: all visible; dept: AccessFieldConfig whitelist) |
-| POST | `/api/bdl-import/stage` | Create staging table and insert all rows. Optional `drop_existing` drops prior table. |
+| POST | `/api/bdl-import/stage` | Create staging table, insert rows, apply fixed values. Optional `drop_existing`, `fixed_values`. |
 | POST | `/api/bdl-import/validate` | Read staging table + fetch lookups from DM (repeatable) |
-| POST | `/api/bdl-import/replace-values` | Mass-replace values in staging table column (handles empty->value) |
-| POST | `/api/bdl-import/skip-rows` | Mark rows as skipped in staging table (handles empty match) |
+| POST | `/api/bdl-import/replace-values` | Mass-replace values in staging table column |
+| POST | `/api/bdl-import/skip-rows` | Mark rows as skipped in staging table |
 | GET | `/api/bdl-import/staging-cleanup` | Check for expired staging tables (>48 hours) |
 | POST | `/api/bdl-import/staging-cleanup` | Drop expired staging tables |
-| GET | `/api/bdl-import/history` | Recent import history from BDL_ImportLog (includes parent_log_id) |
-| POST | `/api/bdl-import/build-preview` | Build XML and return for preview (no file write or API calls) |
-| POST | `/api/bdl-import/execute` | Full pipeline: build XML -> write to dmfs -> register -> trigger import. Optionally builds and submits companion AR log BDL when `jira_ticket` is provided. |
+| GET | `/api/bdl-import/history` | Recent import history from BDL_ImportLog |
+| POST | `/api/bdl-import/build-preview` | Build XML and return for preview |
+| POST | `/api/bdl-import/execute` | Full pipeline: build XML -> write -> register -> trigger. Optional AR log. |
 | GET | `/api/bdl-import/templates?entity_type=X` | List saved templates for an entity type |
-| POST | `/api/bdl-import/templates` | Save a new template (duplicate name check) |
+| POST | `/api/bdl-import/templates` | Save a new template |
 | PUT | `/api/bdl-import/templates/:id` | Update a template (creator or admin only) |
 | DELETE | `/api/bdl-import/templates/:id` | Deactivate a template (creator or admin only) |
 
@@ -348,42 +373,40 @@ After registration, DM processes the file asynchronously: NEW (1) → UPDATING (
 
 ## Next Steps
 
-### Immediate (Next Session)
+### Immediate (Resume Point)
 
-1. **Development Guidelines update** -- Add prohibition on native `alert()`, `confirm()`, and `prompt()` across all CC pages (Section 5.10 Modals and Slideouts area). Reference BDL Import as the implementation model for the shared `showAlert()`/`showConfirm()` pattern.
+1. **BDLImport-API.ps1 section replacements** -- Two blocks to replace: entities endpoint (add `f.action_type` to both queries), stage endpoint (add `$fixedValues` extraction and fixed-value processing block). Replacement code produced, awaiting deployment.
 
-2. **Step guide text refinement** -- Update the right-column guidance text for each step based on user feedback. Content is in `BDLImport.ps1` HTML.
+2. **Fixed-value end-to-end test** -- Test CONSUMER_TAG through the full pipeline with the new UI. Verify: identifier selection, value entry, staging with ALTER TABLE + UPDATE, validation against DM lookup tables, XML generation, execute.
 
-3. **Template UX refinement** -- Gather user feedback on the template workflow (browse, preview, apply, save). Iterate on visual design and interaction patterns as needed.
+3. **Typeahead lookup for fixed-value fields** -- Currently shows a hint ("Value will be validated against [table]"). Needs actual lookup values surfaced in the fixed-value UI. The validation infrastructure already queries DM lookup tables — need to reuse that data source.
 
-4. **Version bumps** -- Deferred from April 6 session (see Outstanding Items below).
+4. **Version bumps** -- Deferred from both April 6 and April 9 sessions. Multiple components touched: Tools.Operations (action_type column, BDL_ActionRegistry rollback), ControlCenter.BDLImport (5-step consolidation, multi-select, per-entity loop, fixed-value UI, tabbed execute), DeptOps.ApplicationsIntegration (API file, JS file, CSS badges).
 
-### Deferred Items (from April 6 session)
+### Follow-Up Items
 
-- **Template save/recall UI/API** -- Save current mapping as named template; recall and apply in future sessions
-- **Guide panel redesign** -- Right-column step guidance content refresh
-- **Back-button mapping preservation** -- Mapping state preserved on back navigation but dropdown selections may need attention
-- **Cascading validation after skip/fill** -- Works but edge cases may exist with complex multi-field skip scenarios
-- **`communication_reference_id_txt` header verification** -- Confirm with Matt whether any entity types require this header element
-- **Brandon WebSocket 1006 closure** -- Investigate intermittent WebSocket closure on BDL Import page (may be related to long-running staging operations)
+- **Multi-tag "Add Another" pattern** -- Entering multiple tag values for the same entity, generating one row per consumer per tag with sequential `seq_no`
+- **Promote to Production** -- State variables preserved but not fully wired in the new tabbed execute
+- **HYBRID action_type UI** -- Reserved but not yet implemented
+- **Same source column in multiple BDLs** -- Pending Brandon's input on whether this is a real scenario
+- **Step guide text refinement** -- Right-column guidance for each step
+- **Template UX refinement** -- User feedback on template workflow
+- **Object_Metadata for action_type** -- Column description on Catalog_BDLFormatRegistry
 
 ### Phase 2
 
 - Import history view on the BDL Import page
 - Admin UI for AccessFieldConfig management
-- Admin UI for `is_active` toggle on format tables
 - `display_name` enrichment across additional entity elements
 - Staging table resume/review capability
-- Post-import staging table viewer
-- **BatchOps BDL monitoring collector** -- Pulls BDL processing results from DM's logging tables (file_registry tables, processing status, record counts, errors). Writes completion status back to `Tools.BDL_ImportLog` via `file_registry_id` join. This is already on the BatchOps roadmap as the final monitoring component -- building it also solves the BDL Import completion tracking gap. Cross-module: collector lives in BatchOps, write-back targets Tools schema.
+- **BatchOps BDL monitoring collector** -- Pulls BDL processing results from DM. Writes completion status back to `Tools.BDL_ImportLog` via `file_registry_id`. Cross-module: collector lives in BatchOps, write-back targets Tools schema.
 
 ### Future Enhancements
 
-- **Catalog field defaults and guidance** -- Add `default_value VARCHAR(100)` and `input_guidance VARCHAR(200)` columns to `Catalog_BDLElementRegistry`. `default_value` pre-populates the fill input (user-selectable, not auto-applied). `input_guidance` provides hint text near input controls. Requires DDL change and Matt review for population.
+- **Catalog field defaults and guidance** -- `default_value` and `input_guidance` columns on `Catalog_BDLElementRegistry`
 - Payment Import pipeline (separate XML schema and API flow)
-- Scheduled Job Triggers (configuration-driven panel)
-- Consumer CRUD Operations (individual UI forms)
 - CDL Import pipeline
+- Consumer/Account CRUD Operations
 - DM Monitoring Dashboard widgets
 - New Business Import pipeline
 
@@ -392,21 +415,15 @@ After registration, DM processes the file asynchronously: NEW (1) → UPDATING (
 ## Catalog Table Reference
 
 ### Tools.Catalog_BDLFormatRegistry
-One row per BDL entity type. Parent table. Key columns: `format_id` (PK), `entity_type`, `type_name`, `folder`, `element_count`, `has_nullify_fields`, `is_active`.
+One row per BDL entity type. Parent table. Key columns: `format_id` (PK), `entity_type`, `type_name`, `folder`, `element_count`, `has_nullify_fields`, `is_active`, `action_type`.
 
 ### Tools.Catalog_BDLElementRegistry
 One row per element within each entity type. Child table via `format_id` FK. Key columns: `element_name`, `display_name`, `data_type`, `max_length`, `table_column`, `lookup_table`, `is_not_nullifiable`, `is_primary_id`, `is_visible`, `is_import_required`, `field_description`.
 
-### Enrichment Sources
-- **XSD schema definitions:** `element_name`, `data_type`, `is_required`, `max_length`, `sort_order`
-- **Excel interface definition:** `table_column`, `lookup_table`, `is_not_nullifiable`, `is_primary_id`, `field_description` (partial)
-- **SchemaSpy DM database:** `field_description` (authoritative — 682 verified descriptions)
-- **Manual curation:** `is_visible`, `is_import_required` (populated with Matt during entity review), `display_name` (friendly field names for UI)
-
 ### Three "Required" Columns (Disambiguation)
 - `is_required` — XSD `minOccurs`. Almost always 0. Not useful for import decisions.
-- `is_not_nullifiable` — From Excel spec. Means "cannot be included in nullify_fields during update operations." **NOT the same as required for import.** Also repurposed for validation UI: controls whether Skip button appears on required empty fields.
-- `is_import_required` — Practical requirement from operational experience. Set by Matt. Means "you must provide this field for the import to succeed." **This is the only flag used for required field validation and hard blocks.**
+- `is_not_nullifiable` — From Excel spec. Means "cannot be included in nullify_fields." Also controls Skip button visibility on required empty fields.
+- `is_import_required` — Practical requirement from operational experience. Set by Matt. **This is the only flag used for required field validation and hard blocks.**
 
 ---
 
@@ -419,22 +436,28 @@ One row per element within each entity type. Child table via `format_id` FK. Key
 | AccessConfig | Table | Department-scoped tool/entity access control |
 | AccessFieldConfig | Table | Field-level whitelist, child of AccessConfig |
 | BDL_ImportLog | Table | Import execution audit trail (incl. parent_log_id for AR log linking) |
-| BDL_ImportTemplate | Table | Saved column mapping templates (incl. description column) |
-| BDLImport.ps1 | Route | BDL Import CC page route (two-column layout) |
-| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, AR log execute) |
-| bdl-import.js | JavaScript | BDL Import CC client-side logic |
-| bdl-import.css | CSS | BDL Import CC styles |
+| BDL_ImportTemplate | Table | Saved column mapping templates |
+
+### ControlCenter.BDLImport Component
+| Object | Type | Description |
+|--------|------|-------------|
+| BDLImport.ps1 | Route | BDL Import CC page route (5-step layout) |
+| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, AR log, fixed_values staging) |
+| bdl-import.js | JavaScript | BDL Import CC client-side logic (multi-entity, per-entity state, fixed-value UI) |
+| bdl-import.css | CSS | BDL Import CC styles (consolidated, 561 lines) |
 
 ### ControlCenter.Shared Component
 | Object | Type | Description |
 |--------|------|-------------|
-| xFACts-Helpers.psm1 | Module | Shared helper functions (incl. Invoke-XFActsNonQuery, Build-BDLXml, Build-ARLogXml, Get-ServiceCredentials) |
+| xFACts-Helpers.psm1 | Module | Shared helpers (Invoke-XFActsNonQuery, Build-BDLXml, Build-ARLogXml, Get-ServiceCredentials) |
 
 ### DeptOps.ApplicationsIntegration Component
 | Object | Type | Description |
 |--------|------|-------------|
-| ApplicationsIntegration.ps1 | Route | Apps/Int CC page route |
-| applications-integration.css | CSS | Apps/Int CC styles |
+| ApplicationsIntegration.ps1 | Route | Apps/Int CC page route (admin modal HTML) |
+| ApplicationsIntegration-API.ps1 | API | Apps/Int CC API endpoints (BDL catalog management, format update) |
+| applications-integration.js | JavaScript | Apps/Int CC client-side logic (BdlCatalog module) |
+| applications-integration.css | CSS | Apps/Int CC styles (catalog modal, badges) |
 
 ### Credential Infrastructure
 | Object | Location | Description |
@@ -443,33 +466,3 @@ One row per element within each entity type. Child table via `format_id` FK. Key
 | Username | dbo.Credentials | DM API username (apiuser), encrypted |
 | Password | dbo.Credentials | DM API password, encrypted |
 | AuthHeader | dbo.Credentials | Complete Basic auth header string, encrypted |
-
----
-
-## Outstanding Items for Object_Registry and System_Metadata
-
-**DDL deployed this session (April 6):**
-- `ALTER TABLE Tools.BDL_ImportLog ADD staging_table VARCHAR(200) NULL` -- test-to-prod correlation tracking
-- `ALTER TABLE dbo.ServerRegistry ADD CONSTRAINT CK_ServerRegistry_environment_is_active CHECK (environment = 'PROD' OR is_active = 0)` -- enforces non-PROD servers cannot be active
-- `INSERT INTO dbo.GlobalConfig` -- `bdl_promote_cooldown_seconds` (120, INT, Tools/Operations)
-
-**Object_Metadata entries completed this session (April 6):**
-- `staging_table` column description on `BDL_ImportLog`
-- `is_active` column description updated on `ServerRegistry` (metadata_id 662) -- now references orchestrator enrollment
-- `environment` column description updated on `ServerRegistry` (metadata_id 658) -- references CHECK constraint
-- Environment status_values renamed: QA→TEST, UAT→STAGE with updated descriptions
-- `is_active` status_values added: 1 = enrolled (PROD only), 0 = registered but not enrolled
-- Design note added: "Environment-Based Activation Constraint"
-
-**Object_Registry entries completed prior session (April 4):**
-- `BDL_ImportTemplate` table -- registered with Object_Metadata baselines, column descriptions, data flow, design notes, and relationship notes
-
-**Object_Metadata entries completed prior session (April 4):**
-- `parent_log_id` column description on `BDL_ImportLog`
-- `AR Log Companion Pattern` design note on `BDL_ImportLog`
-
-**System_Metadata version bumps needed (end of session -- DEFERRED from April 6):**
-- **Module: Tools -> Component: Tools.Operations** -- `staging_table` column on BDL_ImportLog, promote cooldown GlobalConfig entry
-- **Module: ControlCenter -> Component: ControlCenter.BDLImport** -- Styled modals (all alert/confirm replaced), XML preview auto-load with copy button, promote to production flow, PROD advisory modal, environment unlock, back button hide on success, row count shows non-skipped
-- **Module: ControlCenter -> Component: ControlCenter.Shared** -- `showAlert()` and `showConfirm()` added to engine-events.js, `xf-modal-*` CSS added to engine-events.css, `_escapeModalText()` helper, `xfModalFadeIn` animation
-- **Module: ServerOps -> Component: ServerOps.ServerHealth** -- ServerRegistry CHECK constraint (environment/is_active)
