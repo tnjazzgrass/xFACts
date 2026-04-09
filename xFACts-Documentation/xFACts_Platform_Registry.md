@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-08 08:36:13
+Generated: 2026-04-09 05:47:37
 
 ## Module Registry
 
@@ -94,7 +94,9 @@ Generated: 2026-04-08 08:36:13
 | ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1 | Control Center Pode server entry point |
 | ControlCenter.Shared | engine-events.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\engine-events.css | Shared engine event styles |
 | ControlCenter.Shared | engine-events.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\engine-events.js | Shared engine event stream client |
+| DeptOps.ApplicationsIntegration | ApplicationsIntegration-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration-API.ps1 | Applications & Integration CC API endpoints — BDL catalog management |
 | DeptOps.ApplicationsIntegration | applications-integration.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\applications-integration.css | Applications & Integration CC styles |
+| DeptOps.ApplicationsIntegration | applications-integration.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\applications-integration.js | Applications & Integration CC client-side logic — BDL catalog management panels |
 | DeptOps.ApplicationsIntegration | ApplicationsIntegration.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration.ps1 | Applications & Integration CC page route |
 | DeptOps.BusinessIntelligence | BusinessIntelligence-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BusinessIntelligence-API.ps1 | Business Intelligence CC API endpoints |
 | DeptOps.BusinessIntelligence | business-intelligence.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\business-intelligence.css | Business Intelligence CC styles |
@@ -409,8 +411,8 @@ Generated: 2026-04-08 08:36:13
 | BatchOps | NB | nb_lookback_days | 7 | INT | How many days back xFACts checks DM for new business batch collection |
 | BatchOps | NB | nb_queue_wait_minutes | 300 | INT | Minutes a batch can wait in merge queue before alerting |
 | BatchOps | NB | nb_queue_wait_no_merge_minutes | 1440 | INT | Minutes a non-auto-merge batch can wait before alerting |
-| BatchOps | NB | nb_release_merge_skip_stall_threshold | 6 | INT | Consecutive idle polls before release-merge stall alert |
-| BatchOps | NB | nb_stall_poll_threshold | 6 | INT | Consecutive idle polls before merge stall alert |
+| BatchOps | NB | nb_release_merge_skip_stall_threshold | 24 | INT | Consecutive idle polls before release-merge stall alert |
+| BatchOps | NB | nb_stall_poll_threshold | 24 | INT | Consecutive idle polls before merge stall alert |
 | BatchOps | NB | nb_unreleased_minutes | 480 | INT | Minutes unreleased before alerting (manual release required) |
 | BatchOps | NB | nb_upload_stall_minutes | 120 | INT | Minutes in uploading status before upload stall alert |
 | BatchOps | PMT | pmt_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a payment batch fails |
