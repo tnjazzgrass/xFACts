@@ -2,13 +2,19 @@
 # xFACts Control Center - BDL Import Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1
 # 
-# Guided BDL Import workflow: environment selection, entity type picker,
-# file upload, column mapping, validation, and import execution.
+# Guided BDL Import workflow (5 steps):
+#   1. Environment  2. Upload File  3. Select Entities (multi-select)
+#   4. Map & Validate (per-entity loop)  5. Execute (tabbed summary)
 #
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.BDLImport)
 #
 # CHANGELOG
 # ---------
+# 2026-04-08  Consolidated to 5-step wizard with step swap and multi-select
+#             Steps 4/5 merged into Map & Validate with per-entity loop
+#             Step 5 (Execute) uses tabbed per-entity summary
+# 2026-04-06  Replaced all native alert/confirm dialogs with shared styled modals
+#             Added Promote to Production flow with cooldown timer
 # 2026-04-04  Simplified guide panel — removed step circles and compact toggle
 # ============================================================================
 
@@ -86,7 +92,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
         <!-- LEFT COLUMN: Stepper + Action Panels -->
         <div class="bdl-main">
             
-            <!-- STEPPER BAR -->
+            <!-- STEPPER BAR (5 steps) -->
             <div class="stepper">
                 <div class="step active" id="step-ind-1" onclick="BDL.goToStep(1)">
                     <div class="step-number" id="step-num-1">1</div>
@@ -95,26 +101,21 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                 <div class="step-connector" id="conn-1"></div>
                 <div class="step" id="step-ind-2" onclick="BDL.goToStep(2)">
                     <div class="step-number" id="step-num-2">2</div>
-                    <div class="step-label">Entity Type</div>
+                    <div class="step-label">Upload File</div>
                 </div>
                 <div class="step-connector" id="conn-2"></div>
                 <div class="step" id="step-ind-3" onclick="BDL.goToStep(3)">
                     <div class="step-number" id="step-num-3">3</div>
-                    <div class="step-label">Upload File</div>
+                    <div class="step-label">Select Entities</div>
                 </div>
                 <div class="step-connector" id="conn-3"></div>
                 <div class="step" id="step-ind-4" onclick="BDL.goToStep(4)">
                     <div class="step-number" id="step-num-4">4</div>
-                    <div class="step-label">Map Columns</div>
+                    <div class="step-label">Map &amp; Validate</div>
                 </div>
                 <div class="step-connector" id="conn-4"></div>
                 <div class="step" id="step-ind-5" onclick="BDL.goToStep(5)">
                     <div class="step-number" id="step-num-5">5</div>
-                    <div class="step-label">Validate</div>
-                </div>
-                <div class="step-connector" id="conn-5"></div>
-                <div class="step" id="step-ind-6" onclick="BDL.goToStep(6)">
-                    <div class="step-number" id="step-num-6">6</div>
                     <div class="step-label">Execute</div>
                 </div>
             </div>
@@ -128,20 +129,8 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                 </div>
             </div>
             
-            <!-- STEP 2: Entity Type Selection -->
+            <!-- STEP 2: File Upload -->
             <div class="step-panel" id="panel-2">
-                <div class="step-content">
-                    <div class="entity-search">
-                        <input type="text" id="entity-search" placeholder="Filter entity types..." oninput="BDL.filterEntities(this.value)">
-                    </div>
-                    <div class="entity-grid" id="entity-grid">
-                        <div class="loading">Loading entity types...</div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- STEP 3: File Upload -->
-            <div class="step-panel" id="panel-3">
                 <div class="step-content">
                     <div class="upload-zone" id="upload-zone" 
                          ondragover="BDL.dragOver(event)" 
@@ -167,29 +156,36 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                 </div>
             </div>
             
-            <!-- STEP 4: Column Mapping -->
+            <!-- STEP 3: Entity Type Selection (Multi-Select) -->
+            <div class="step-panel" id="panel-3">
+                <div class="step-content">
+                    <div class="entity-select-banner" id="entity-select-banner">
+                        <span class="entity-banner-text">Click entity types to select them for import. You can select multiple.</span>
+                        <span class="entity-banner-count" id="entity-select-count"></span>
+                    </div>
+                    <div class="entity-search">
+                        <input type="text" id="entity-search" placeholder="Filter entity types..." oninput="BDL.filterEntities(this.value)">
+                    </div>
+                    <div class="entity-grid" id="entity-grid">
+                        <div class="loading">Loading entity types...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- STEP 4: Map & Validate (per-entity loop) -->
             <div class="step-panel" id="panel-4">
                 <div class="step-content">
-                    <div id="mapping-area">
-                        <div class="placeholder-message">Complete previous steps to begin column mapping.</div>
+                    <div id="map-validate-area">
+                        <div class="placeholder-message">Complete previous steps to begin.</div>
                     </div>
                 </div>
             </div>
             
-            <!-- STEP 5: Validation -->
+            <!-- STEP 5: Execute (tabbed per-entity summary) -->
             <div class="step-panel" id="panel-5">
                 <div class="step-content">
-                    <div id="validation-area">
-                        <div class="placeholder-message">Complete column mapping to run validation.</div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- STEP 6: Review & Execute -->
-            <div class="step-panel" id="panel-6">
-                <div class="step-content">
                     <div id="execute-area">
-                        <div class="placeholder-message">Complete validation to review and execute.</div>
+                        <div class="placeholder-message">Complete mapping and validation to review and execute.</div>
                     </div>
                 </div>
             </div>
@@ -210,29 +206,24 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                     <p class="guide-tip">Use Test for initial validation of new file formats. Production imports should be verified on Test first.</p>
                 </div>
                 <div class="guide-text hidden" id="guide-text-2">
-                    <h4>Select Entity Type</h4>
-                    <p>Choose the type of data you are importing. Each entity type has its own set of fields available for mapping.</p>
-                    <p class="guide-tip">The entity type determines which BDL fields are available for column mapping in the next step.</p>
-                </div>
-                <div class="guide-text hidden" id="guide-text-3">
                     <h4>Upload Data File</h4>
                     <p>Upload a CSV or Excel file containing the data to import. The first row should contain column headers. A preview of the first few rows will be displayed.</p>
                     <p class="guide-tip">Maximum recommended size is 250,000 rows per import.</p>
                 </div>
+                <div class="guide-text hidden" id="guide-text-3">
+                    <h4>Select Entity Types</h4>
+                    <p>Choose the type(s) of data you want to import from this file. Click a card to select it, click again to deselect. You can select multiple entity types if this file contains data for more than one BDL operation.</p>
+                    <p class="guide-tip">Each selected entity type will have its own mapping and validation cycle in the next step.</p>
+                </div>
                 <div class="guide-text hidden" id="guide-text-4">
-                    <h4>Map Columns</h4>
-                    <p>Pair each column from your file to the corresponding BDL field. Required fields must be mapped or will need values during validation.</p>
-                    <p class="guide-tip">Click a source column, then click a BDL field to pair them. Or drag and drop between panels.</p>
+                    <h4>Map &amp; Validate</h4>
+                    <p>For each selected entity type, map columns from your file to BDL fields, then validate the data. Issues are presented one at a time — resolve each before moving to the next entity.</p>
+                    <p class="guide-tip">Each entity is mapped and validated independently. Progress is preserved if you navigate back.</p>
                 </div>
                 <div class="guide-text hidden" id="guide-text-5">
-                    <h4>Validate Data</h4>
-                    <p>Rows are checked against field requirements: data types, lengths, required values, and lookup tables. Issues are presented one at a time — resolve each to continue.</p>
-                    <p class="guide-tip">Skipping rows with empty required fields will automatically clear related lookup issues for those same rows.</p>
-                </div>
-                <div class="guide-text hidden" id="guide-text-6">
                     <h4>Review &amp; Execute</h4>
-                    <p>Review the import summary and preview the generated XML. Once confirmed, the system builds the file, registers it with DM, and triggers the import.</p>
-                    <p class="guide-tip">This action cannot be undone. Failed imports require a new file with a new filename.</p>
+                    <p>Review the import summary for each entity type. Once confirmed, the system builds files, registers them with DM, and triggers the imports.</p>
+                    <p class="guide-tip">Each entity type is submitted independently. If one fails, the others are unaffected.</p>
                 </div>
             </div>
             <div class="template-section" id="template-section">
@@ -248,7 +239,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
         
     </div>
     
-    <!-- Template Preview Slideout (uses shared slide-panel from engine-events.css) -->
+    <!-- Template Preview Slideout -->
     <div class="slide-panel-overlay" id="template-slideout-overlay" onclick="BDL.closeTemplatePreview()"></div>
     <div class="slide-panel" id="template-slideout">
         <div class="slide-panel-header">
