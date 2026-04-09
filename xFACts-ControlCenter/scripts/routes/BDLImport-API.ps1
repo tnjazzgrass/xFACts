@@ -50,7 +50,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLo
         if ($access.Tier -eq 'admin') {
             $results = Invoke-XFActsQuery -Query @"
                 SELECT f.entity_type, f.type_name, f.folder, f.element_count,
-                       f.has_parent_ref, f.has_nullify_fields, f.action_type
+                       f.has_parent_ref, f.has_nullify_fields, f.action_type, f.entity_key
                 FROM Tools.Catalog_BDLFormatRegistry f
                 WHERE f.is_active = 1
                   AND f.entity_type IS NOT NULL
@@ -70,7 +70,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLo
             
             $results = Invoke-XFActsQuery -Query @"
                 SELECT f.entity_type, f.type_name, f.folder, f.element_count,
-                       f.has_parent_ref, f.has_nullify_fields, f.action_type
+                       f.has_parent_ref, f.has_nullify_fields, f.action_type, f.entity_key
                 FROM Tools.Catalog_BDLFormatRegistry f
                 INNER JOIN Tools.AccessConfig ac 
                     ON ac.item_key = f.entity_type
@@ -556,6 +556,93 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
             environment   = $environment
             db_instance   = $dbInstance
         }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# GET /api/bdl-import/lookup-search
+# Typeahead search against DM lookup tables for FIXED_VALUE entity fields.
+# Discovers active flag and description columns dynamically via
+# INFORMATION_SCHEMA. Returns top 10 matching values with descriptions
+# when a _nm column is available.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $lookupTable = $WebEvent.Query['lookup_table']
+        $elementName = $WebEvent.Query['element_name']
+        $search = $WebEvent.Query['search']
+        $configId = $WebEvent.Query['config_id']
+
+        if (-not $lookupTable -or -not $elementName -or -not $search -or -not $configId) {
+            Write-PodeJsonResponse -Value @{ error = 'lookup_table, element_name, search, and config_id are required' } -StatusCode 400
+            return
+        }
+
+        if ($search.Length -lt 2) {
+            Write-PodeJsonResponse -Value @{ values = @() }
+            return
+        }
+
+        $serverConfig = Invoke-XFActsQuery -Query @"
+            SELECT db_instance
+            FROM Tools.ServerConfig
+            WHERE config_id = @configId AND is_active = 1
+"@ -Parameters @{ configId = $configId }
+
+        if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
+            return
+        }
+
+        $dbInstance = $serverConfig[0].db_instance
+
+        # Discover columns dynamically
+        $columns = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @tableName
+            ORDER BY ORDINAL_POSITION
+"@ -Parameters @{ tableName = $lookupTable }
+
+        $colNames = @($columns | ForEach-Object { $_.COLUMN_NAME })
+
+        # Verify the element_name column exists in the lookup table
+        if ($colNames -notcontains $elementName) {
+            Write-PodeJsonResponse -Value @{ error = "Column '$elementName' not found in table '$lookupTable'" } -StatusCode 404
+            return
+        }
+
+        $actvColumn = $colNames | Where-Object { $_ -like '*_actv_flg' } | Select-Object -First 1
+        $descColumn = $colNames | Where-Object { $_ -like '*_nm' -and $_ -ne $elementName } | Select-Object -First 1
+
+        # Build and execute the search query
+        $safeElement = "[$elementName]"
+        $safeTable = "dbo.[$lookupTable]"
+        $selectColumns = "$safeElement AS val"
+        if ($descColumn) { $selectColumns += ", [$descColumn] AS description" }
+
+        $whereClause = "$safeElement LIKE @searchPattern"
+        if ($actvColumn) { $whereClause += " AND [$actvColumn] = 'Y'" }
+
+        $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
+            SELECT DISTINCT TOP 10 $selectColumns
+            FROM $safeTable
+            WHERE $whereClause
+            ORDER BY $safeElement
+"@ -Parameters @{ searchPattern = "%$search%" }
+
+        $results = @($values | ForEach-Object {
+            $item = @{ value = $_.val }
+            if ($descColumn -and $_.description -and $_.description -isnot [System.DBNull]) {
+                $item.description = $_.description
+            }
+            $item
+        })
+
+        Write-PodeJsonResponse -Value @{ values = @($results) }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
