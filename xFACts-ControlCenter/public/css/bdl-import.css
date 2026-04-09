@@ -156,19 +156,35 @@ a { color: #9cdcfe; }
 .entity-banner-text { font-size: 12px; color: #888; }
 .entity-banner-count { font-size: 12px; color: #555; font-weight: 600; }
 .entity-banner-count-active { color: #4ec9b0; }
-.entity-search { margin-bottom: 12px; }
-.entity-search input { width: 100%; max-width: 300px; padding: 8px 12px; background: #1e1e1e; border: 1px solid #404040; border-radius: 4px; color: #d4d4d4; font-size: 13px; outline: none; transition: border-color 0.2s; }
-.entity-search input:focus { border-color: #569cd6; }
-.entity-search input::placeholder { color: #666; }
-.entity-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
-.entity-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 6px; padding: 10px 14px; cursor: pointer; transition: all 0.2s ease; }
+.entity-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.entity-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 6px; padding: 10px 14px; cursor: pointer; transition: all 0.2s ease; position: relative; }
 .entity-card:hover { border-color: #569cd6; background: #333; }
 .entity-card.selected { border-color: #4ec9b0; background: rgba(78, 201, 176, 0.08); }
-.entity-card .entity-name { font-size: 13px; font-weight: 600; color: #d4d4d4; margin-bottom: 3px; }
+.entity-card .entity-name { font-size: 13px; font-weight: 600; color: #d4d4d4; margin-bottom: 3px; padding-right: 24px; }
 .entity-card.selected .entity-name { color: #4ec9b0; }
 .entity-card .entity-meta { font-size: 11px; color: #888; }
 .entity-card .entity-folder { display: inline-block; background: #1e1e1e; padding: 2px 6px; border-radius: 3px; font-size: 10px; color: #888; margin-right: 6px; }
 .entity-card .entity-fields { font-size: 10px; color: #666; }
+
+/* Entity Key Section Headers */
+.entity-section { margin-bottom: 16px; }
+.entity-section:last-child { margin-bottom: 0; }
+.entity-section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 0 2px; }
+.entity-section-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #569cd6; white-space: nowrap; }
+.entity-section-line { flex: 1; height: 1px; background: #404040; }
+.entity-section-count { font-size: 10px; color: #555; white-space: nowrap; }
+
+/* Field Info Icon on Entity Cards */
+.entity-info-btn { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #555; background: transparent; color: #666; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; line-height: 1; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
+.entity-info-btn:hover { border-color: #9cdcfe; color: #9cdcfe; background: rgba(86, 156, 214, 0.1); }
+
+/* Field Info Modal Content */
+.field-info-list { display: flex; flex-direction: column; gap: 4px; max-height: 400px; overflow-y: auto; padding: 4px 0; }
+.field-info-item { padding: 6px 10px; background: #1e1e1e; border: 1px solid #333; border-radius: 4px; }
+.field-info-name { font-size: 13px; color: #d4d4d4; font-weight: 500; }
+.field-info-desc { font-size: 11px; color: #888; margin-top: 2px; line-height: 1.4; }
+.field-info-empty { color: #555; font-size: 12px; text-align: center; padding: 20px 10px; font-style: italic; }
+.field-info-loading { color: #888; font-size: 12px; text-align: center; padding: 20px 10px; }
 
 /* ============================================================================
    STEP 4: MAP & VALIDATE — Per-Entity Loop
@@ -274,8 +290,10 @@ a { color: #9cdcfe; }
 /* Lookup Suggestions Dropdown */
 .fixed-value-suggestions { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: #1e1e1e; border: 1px solid #555; border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .fixed-value-suggestions:empty { display: none; }
-.suggestion-item { padding: 6px 10px; font-size: 12px; color: #d4d4d4; cursor: pointer; transition: background 0.1s; }
+.suggestion-item { padding: 6px 10px; font-size: 12px; color: #d4d4d4; cursor: pointer; transition: background 0.1s; display: flex; align-items: baseline; gap: 8px; }
 .suggestion-item:hover { background: #2d2d2d; }
+.suggestion-value { font-weight: 500; white-space: nowrap; }
+.suggestion-desc { font-size: 11px; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggestion-hint { padding: 6px 10px; font-size: 11px; color: #888; font-style: italic; }
 .suggestion-none { padding: 6px 10px; font-size: 11px; color: #666; font-style: italic; }
 
