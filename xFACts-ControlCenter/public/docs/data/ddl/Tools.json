@@ -1642,6 +1642,15 @@
                                            "identity":  false,
                                            "default":  "((1))",
                                            "description":  "Whether this entity type is active and available for use. 1 = active (default), 0 = deactivated. Deactivated entities do not appear in entity selection for any user including admin. Deactivation cascades naturally through query filtering — AccessConfig and AccessFieldConfig rows referencing a deactivated entity become unreachable without requiring updates to those tables."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "action_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027FILE_MAPPED\u0027)"
                                        }
                                    ],
                        "indexes":  [
@@ -1671,6 +1680,12 @@
                                            "keyColumns":  "spec_version, type_name"
                                        }
                                    ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_Catalog_BDLFormatRegistry_action_type",
+                                                    "definition":  "([action_type]=\u0027HYBRID\u0027 OR [action_type]=\u0027FIXED_VALUE\u0027 OR [action_type]=\u0027FILE_MAPPED\u0027)"
+                                                }
+                                            ],
                        "designNotes":  [
                                            {
                                                "topic":  "Folder Column as Hierarchy Indicator",
