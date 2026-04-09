@@ -6,6 +6,8 @@
 
    CHANGELOG
    ---------
+   2026-04-09  Entity selection grouped by entity_key (CONSUMER/ACCOUNT/OTHER)
+               Field info modal on entity cards (on-demand field list via ℹ icon)
    2026-04-08  Consolidated to 5-step wizard
                Steps 2/3 swapped: Upload File precedes Entity Type selection
                Entity Type selection converted to multi-select with toggle cards
@@ -26,10 +28,9 @@ var BDL = (function () {
 
     // Multi-select entity state
     var selectedEntities = [];
-    var entityStates = [];        // parallel array: per-entity mapping/validation state
-    var currentEntityIndex = 0;   // which entity we're working on in the loop
+    var entityStates = [];
+    var currentEntityIndex = 0;
 
-    // Convenience accessors for current entity context
     function curState() { return entityStates[currentEntityIndex] || null; }
     function curEntity() { var s = curState(); return s ? s.entity : null; }
 
@@ -40,7 +41,6 @@ var BDL = (function () {
     var entityTemplates = [];
     var activeTemplateId = null;
 
-    // Promote to Production state
     var promoteData = null;
     var promoteCountdownTimer = null;
     var promoteSecondsRemaining = 0;
@@ -73,7 +73,6 @@ var BDL = (function () {
     function nextStep() {
         if (currentStep < totalSteps && stepComplete[currentStep - 1]) {
             if (currentStep === 3) {
-                // Moving from entity selection to map & validate
                 initEntityStates();
                 currentEntityIndex = 0;
                 loadCurrentEntityFields(function () {
@@ -83,7 +82,6 @@ var BDL = (function () {
                 return;
             }
             if (currentStep === 4) {
-                // All entities validated — move to execute
                 showStep(5);
                 renderExecuteReview();
                 return;
@@ -94,7 +92,6 @@ var BDL = (function () {
 
     function prevStep() {
         if (currentStep === 4 && currentEntityIndex > 0) {
-            // Navigate back to previous entity within the loop
             currentEntityIndex--;
             loadCurrentEntityFields(function () {
                 renderMapValidatePanel();
@@ -133,26 +130,12 @@ var BDL = (function () {
 
     function updateNavButtons() {
         var back = document.getElementById('btn-back'), next = document.getElementById('btn-next');
-
-        // Back button
-        if (currentStep === 1) {
-            back.disabled = true;
-        } else if (currentStep === 4 && currentEntityIndex > 0) {
-            back.disabled = false; // can go to previous entity
-        } else {
-            back.disabled = (currentStep === 1);
-        }
-
-        if (currentStep === 5 && stepComplete[4]) {
-            back.style.display = 'none';
-        } else {
-            back.style.display = '';
-        }
-
-        // Next button
-        if (currentStep === 5) {
-            next.style.display = 'none';
-        } else {
+        if (currentStep === 1) { back.disabled = true; }
+        else if (currentStep === 4 && currentEntityIndex > 0) { back.disabled = false; }
+        else { back.disabled = (currentStep === 1); }
+        if (currentStep === 5 && stepComplete[4]) { back.style.display = 'none'; } else { back.style.display = ''; }
+        if (currentStep === 5) { next.style.display = 'none'; }
+        else {
             next.style.display = '';
             next.disabled = !stepComplete[currentStep - 1];
             next.innerHTML = 'Next &#8594;';
@@ -266,31 +249,99 @@ var BDL = (function () {
         stepComplete[1] = false; resetFromStep(3); updateNavButtons(); updateStepperUI();
     }
 
-    // ── Step 3: Entity Type Selection (Multi-Select) ─────────────────────
+    // ── Step 3: Entity Type Selection (Multi-Select, Grouped) ────────────
     function loadEntities() {
         var grid = document.getElementById('entity-grid'); grid.innerHTML = '<div class="loading">Loading entity types...</div>';
         fetch('/api/bdl-import/entities').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function (data) { allEntities = data.entities || []; renderEntities(allEntities); })
             .catch(function (err) { grid.innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to load: ' + err.message + '</div>'; });
     }
+
     function renderEntities(entities) {
         var grid = document.getElementById('entity-grid');
         if (!entities.length) { grid.innerHTML = '<div class="placeholder-message">No entity types available.</div>'; return; }
-        var h = ''; entities.forEach(function (ent) {
-            var dn = formatEntityName(ent.entity_type), folder = ent.folder || 'root';
-            var isSelected = selectedEntities.some(function (se) { return se.entity_type === ent.entity_type; });
-            h += '<div class="entity-card' + (isSelected ? ' selected' : '') + '" onclick="BDL.toggleEntity(\'' + ent.entity_type + '\')"><div class="entity-name">' + dn + '</div><div class="entity-meta"><span class="entity-folder">' + folder + '</span><span class="entity-fields">' + ent.element_count + ' fields</span></div></div>';
-        }); grid.innerHTML = h;
+
+        // Group by entity_key with defined order
+        var sectionOrder = ['CONSUMER', 'ACCOUNT', 'OTHER'];
+        var sectionLabels = { CONSUMER: 'Consumer', ACCOUNT: 'Account', OTHER: 'Other' };
+        var groups = {};
+        entities.forEach(function (ent) {
+            var key = ent.entity_key || 'OTHER';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(ent);
+        });
+
+        var h = '';
+        sectionOrder.forEach(function (key) {
+            if (!groups[key] || groups[key].length === 0) return;
+            var label = sectionLabels[key] || key;
+            var count = groups[key].length;
+
+            h += '<div class="entity-section">';
+            h += '<div class="entity-section-header"><span class="entity-section-label">' + escapeHtml(label) + '</span><span class="entity-section-line"></span><span class="entity-section-count">' + count + '</span></div>';
+            h += '<div class="entity-cards">';
+            groups[key].forEach(function (ent) {
+                var dn = formatEntityName(ent.entity_type), folder = ent.folder || 'root';
+                var isSelected = selectedEntities.some(function (se) { return se.entity_type === ent.entity_type; });
+                var safeType = ent.entity_type.replace(/'/g, "\\'");
+                h += '<div class="entity-card' + (isSelected ? ' selected' : '') + '" onclick="BDL.toggleEntity(\'' + safeType + '\')">';
+                h += '<button class="entity-info-btn" onclick="event.stopPropagation(); BDL.showFieldInfo(\'' + safeType + '\', \'' + escapeHtml(dn).replace(/'/g, "\\'") + '\')" title="View available fields">i</button>';
+                h += '<div class="entity-name">' + dn + '</div>';
+                h += '<div class="entity-meta"><span class="entity-folder">' + folder + '</span><span class="entity-fields">' + ent.element_count + ' fields</span></div>';
+                h += '</div>';
+            });
+            h += '</div></div>';
+        });
+
+        grid.innerHTML = h;
         updateEntitySelectionBanner();
     }
+
+    function showFieldInfo(entityType, entityName) {
+        var existing = document.getElementById('field-info-modal');
+        if (existing) existing.remove();
+
+        var modal = document.createElement('div');
+        modal.id = 'field-info-modal';
+        modal.className = 'xf-modal-overlay';
+        modal.innerHTML = '<div class="xf-modal" style="max-width:480px;"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#9cdcfe">&#9432;</span><span>Available Fields</span></div><div class="xf-modal-body"><div class="field-info-loading">Loading fields for ' + escapeHtml(entityName) + '...</div></div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" id="field-info-close">Close</button></div></div>';
+        document.body.appendChild(modal);
+        document.getElementById('field-info-close').onclick = function () { modal.remove(); };
+        modal.onclick = function (e) { if (e.target === modal) modal.remove(); };
+
+        fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(entityType))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var fields = data.fields || [];
+                var body = modal.querySelector('.xf-modal-body');
+                if (!fields.length) {
+                    body.innerHTML = '<div class="field-info-empty">No fields available for this entity type.</div>';
+                    return;
+                }
+                var html = '<div class="field-info-list">';
+                fields.forEach(function (f) {
+                    var displayName = (f.display_name && f.display_name !== '') ? f.display_name : f.element_name;
+                    html += '<div class="field-info-item"><div class="field-info-name">' + escapeHtml(displayName) + '</div>';
+                    if (f.field_description && f.field_description.length > 0) {
+                        html += '<div class="field-info-desc">' + escapeHtml(f.field_description) + '</div>';
+                    }
+                    html += '</div>';
+                });
+                html += '</div>';
+                body.innerHTML = html;
+            })
+            .catch(function (err) {
+                var body = modal.querySelector('.xf-modal-body');
+                body.innerHTML = '<div class="field-info-empty" style="color:#f48771;">Failed to load fields: ' + escapeHtml(err.message) + '</div>';
+            });
+    }
+
     function toggleEntity(entityType) {
         var idx = -1;
         for (var i = 0; i < selectedEntities.length; i++) { if (selectedEntities[i].entity_type === entityType) { idx = i; break; } }
         if (idx !== -1) selectedEntities.splice(idx, 1);
         else { var ent = allEntities.find(function (e) { return e.entity_type === entityType; }); if (ent) selectedEntities.push(ent); }
-        var searchVal = document.getElementById('entity-search').value.toLowerCase();
-        var filtered = allEntities.filter(function (e) { if (!searchVal) return true; return e.entity_type.toLowerCase().indexOf(searchVal) !== -1 || (e.folder || '').toLowerCase().indexOf(searchVal) !== -1; });
-        renderEntities(filtered);
+        renderEntities(allEntities);
         stepComplete[2] = selectedEntities.length > 0;
         updateNavButtons(); updateStepperUI(); resetFromStep(4);
     }
@@ -301,25 +352,15 @@ var BDL = (function () {
         if (count === 0) { countEl.textContent = ''; countEl.className = 'entity-banner-count'; }
         else { countEl.textContent = count + ' selected'; countEl.className = 'entity-banner-count entity-banner-count-active'; }
     }
-    function filterEntities(value) {
-        var filtered = allEntities.filter(function (e) { if (!value) return true; var s = value.toLowerCase(); return e.entity_type.toLowerCase().indexOf(s) !== -1 || (e.folder || '').toLowerCase().indexOf(s) !== -1 || formatEntityName(e.entity_type).toLowerCase().indexOf(s) !== -1; });
-        renderEntities(filtered);
-    }
     function formatEntityName(et) { return et.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(' '); }
 
     // ── Per-Entity State Management ──────────────────────────────────────
     function initEntityStates() {
         entityStates = selectedEntities.map(function (ent) {
             return {
-                entity: ent,
-                fields: null,
-                wrapper: null,
-                columnMapping: {},
-                stagingContext: null,
-                stagedMapping: null,
-                validationResult: null,
-                validated: false,
-                xmlPreviewLoaded: false
+                entity: ent, fields: null, wrapper: null, columnMapping: {},
+                stagingContext: null, stagedMapping: null, validationResult: null,
+                validated: false, xmlPreviewLoaded: false
             };
         });
     }
@@ -327,7 +368,7 @@ var BDL = (function () {
     function loadCurrentEntityFields(callback) {
         var state = curState();
         if (!state) { if (callback) callback(); return; }
-        if (state.fields) { if (callback) callback(); return; } // already loaded
+        if (state.fields) { if (callback) callback(); return; }
         fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(state.entity.entity_type))
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -339,7 +380,6 @@ var BDL = (function () {
             .catch(function (err) { console.error('Failed to load entity fields:', err); if (callback) callback(); });
     }
 
-    // Field helpers that work against current entity state
     function getFieldDisplayName(f) { return (f.display_name && f.display_name !== '') ? f.display_name : f.element_name; }
     function getFieldDisplayNameByElement(elementName) {
         var state = curState(); if (!state || !state.fields) return elementName;
@@ -347,6 +387,7 @@ var BDL = (function () {
         return f ? getFieldDisplayName(f) : elementName;
     }
     function hasDisplayName(f) { return f.display_name && f.display_name !== ''; }
+
 
     // ── Step 4: Map & Validate (per-entity loop) ─────────────────────────
 
@@ -357,28 +398,15 @@ var BDL = (function () {
             area.innerHTML = '<div class="placeholder-message">Complete previous steps.</div>';
             return;
         }
-
-        // If already validated, show validation results; otherwise show mapping
-        if (state.validated) {
-            renderMapValidateValidated(area, state);
-        } else if (state.stagingContext && state.validationResult) {
-            // Staged and validated but has issues — show validation
-            renderMapValidateValidation(area, state);
-        } else {
-            renderMapValidateMapping(area, state);
-        }
-
+        if (state.validated) { renderMapValidateValidated(area, state); }
+        else if (state.stagingContext && state.validationResult) { renderMapValidateValidation(area, state); }
+        else { renderMapValidateMapping(area, state); }
         updateStep4Completion();
         updateNavButtons();
     }
 
     function renderMapValidateMapping(area, state) {
-        // Route to fixed-value UI if action_type indicates it
-        if (state.entity.action_type === 'FIXED_VALUE') {
-            renderFixedValueMapping(area, state);
-            return;
-        }
-
+        if (state.entity.action_type === 'FIXED_VALUE') { renderFixedValueMapping(area, state); return; }
         var entityFields = state.fields;
         var columnMapping = state.columnMapping;
         var visibleFields = entityFields.filter(function (f) { return f.is_visible !== 0 && f.is_visible !== false; });
@@ -386,21 +414,10 @@ var BDL = (function () {
         var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
         var idField = visibleFields.find(function (f) { return f.element_name === idElemName; });
         var mappableFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
-
         var prevIdIdx = '';
-        for (var k in columnMapping) {
-            if (columnMapping[k] === idElemName) {
-                var hIdx = parsedFileData.headers.indexOf(k);
-                if (hIdx !== -1) prevIdIdx = String(hIdx);
-                break;
-            }
-        }
-
+        for (var k in columnMapping) { if (columnMapping[k] === idElemName) { var hIdx = parsedFileData.headers.indexOf(k); if (hIdx !== -1) prevIdIdx = String(hIdx); break; } }
         var html = '';
-
-        // Progress banner
         html += renderEntityProgressBanner('mapping');
-
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
@@ -408,7 +425,6 @@ var BDL = (function () {
             parsedFileData.headers.forEach(function (header, idx) { var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : ''; var sel = (String(idx) === prevIdIdx) ? ' selected' : ''; html += '<option value="' + idx + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>'; });
             html += '</select><span class="identifier-target">&#8594; <code>' + idField.element_name + '</code></span></div></div>';
         }
-
         var disabledClass = (idField && !idSelected) ? ' mapping-disabled' : '';
         html += '<div class="mapping-panels-wrap' + disabledClass + '" id="mapping-panels-wrap">';
         if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to begin mapping</div>';
@@ -419,10 +435,7 @@ var BDL = (function () {
         html += '<div class="mapped-section"><div class="panel-header">Mapped</div><div class="mapped-list" id="mapped-list"></div></div>';
         html += '<div id="mapping-warnings" class="mapping-warnings"></div>';
         html += '</div>';
-
-        // Validate button (replaces Next for within-step progression)
         html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()" disabled>Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
-
         area.innerHTML = html;
         area._mappableFields = mappableFields;
         area._identifierField = idField;
@@ -439,80 +452,44 @@ var BDL = (function () {
         var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
         var idField = visibleFields.find(function (f) { return f.element_name === idElemName; });
         var valueFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
-
-        // Restore previous identifier selection
         var prevIdIdx = '';
-        for (var k in columnMapping) {
-            if (columnMapping[k] === idElemName) {
-                var hIdx = parsedFileData.headers.indexOf(k);
-                if (hIdx !== -1) prevIdIdx = String(hIdx);
-                break;
-            }
-        }
-
+        for (var k in columnMapping) { if (columnMapping[k] === idElemName) { var hIdx = parsedFileData.headers.indexOf(k); if (hIdx !== -1) prevIdIdx = String(hIdx); break; } }
         var html = renderEntityProgressBanner('mapping');
-
-        // Fixed-value type indicator
         html += '<div class="fixed-value-banner"><span class="fixed-value-icon">&#9998;</span> <strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</strong> uses fixed values — enter the values to apply to all rows below.</div>';
-
-        // Identifier selector (same as file-mapped)
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
             html += '<div class="mapping-identifier ' + idStateClass + '"><div class="identifier-label"><span class="identifier-icon">&#128273;</span><strong>Consumer Identifier</strong><span class="identifier-note">Which column contains the DM Agency ID?</span></div><div class="identifier-select"><select id="identifier-column" onchange="BDL.fixedValueIdentifierChanged()" class="identifier-dropdown"><option value="">— Select identifier column —</option>';
-            parsedFileData.headers.forEach(function (header, idx) {
-                var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : '';
-                var sel = (String(idx) === prevIdIdx) ? ' selected' : '';
-                html += '<option value="' + idx + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>';
-            });
+            parsedFileData.headers.forEach(function (header, idx) { var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : ''; var sel = (String(idx) === prevIdIdx) ? ' selected' : ''; html += '<option value="' + idx + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>'; });
             html += '</select><span class="identifier-target">&#8594; <code>' + idField.element_name + '</code></span></div></div>';
         }
-
-        // Value entry fields
         var disabledClass = (idField && !idSelected) ? ' mapping-disabled' : '';
         html += '<div class="fixed-value-fields' + disabledClass + '" id="fixed-value-fields">';
-        if (idField && !idSelected) {
-            html += '<div class="mapping-disabled-msg">Select the identifier column above to enter values</div>';
-        }
-
+        if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to enter values</div>';
         valueFields.forEach(function (f) {
             var fieldId = 'fv-' + f.element_name.replace(/[^a-zA-Z0-9]/g, '');
             var existingVal = state.columnMapping['__fixed__' + f.element_name] || '';
             var displayName = hasDisplayName(f) ? f.display_name : f.element_name;
             var reqLabel = f.is_import_required ? ' <span class="chip-required-label">required</span>' : '';
-
-            html += '<div class="fixed-value-row">';
-            html += '<div class="fixed-value-label">' + escapeHtml(displayName) + reqLabel;
+            html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(displayName) + reqLabel;
             if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
             if (f.field_description) html += '<div class="fixed-value-desc">' + escapeHtml(f.field_description.substring(0, 120)) + '</div>';
-            html += '</div>';
-            html += '<div class="fixed-value-input">';
-
+            html += '</div><div class="fixed-value-input">';
             if (f.lookup_table) {
-                // Typeahead input for lookup fields
                 html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueSearch(\'' + f.element_name + '\',this)" autocomplete="off">';
                 html += '<div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
             } else {
                 html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueChanged(\'' + f.element_name + '\',this)">';
             }
-
-            var meta = buildFieldMeta(f);
-            if (meta) html += '<div class="fixed-value-meta">' + meta + '</div>';
+            var meta = buildFieldMeta(f); if (meta) html += '<div class="fixed-value-meta">' + meta + '</div>';
             html += '</div></div>';
         });
-
         html += '</div>';
-
-        // Validate button
         html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()">Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
-
         area.innerHTML = html;
-
-        // Store reference data for identifier change handler
         area._identifierField = idField;
         area._identifierElementName = idElemName;
         area._valueFields = valueFields;
-
         checkFixedValueComplete(state);
     }
 
@@ -520,15 +497,10 @@ var BDL = (function () {
         var area = document.getElementById('map-validate-area');
         var idSel = document.getElementById('identifier-column');
         var idElem = area._identifierElementName;
-        var state = curState();
-        if (!state) return;
+        var state = curState(); if (!state) return;
         var cm = state.columnMapping;
-
-        // Remove old identifier mapping
         for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
-        // Set new one
         if (idSel.value !== '') cm[parsedFileData.headers[parseInt(idSel.value)]] = idElem;
-
         var idSection = document.querySelector('.mapping-identifier');
         var fieldsWrap = document.getElementById('fixed-value-fields');
         if (idSel.value !== '') {
@@ -549,50 +521,59 @@ var BDL = (function () {
         checkFixedValueComplete(state);
     }
 
+    var searchDebounceTimer = null;
+
     function fixedValueSearch(elementName, input) {
         var state = curState(); if (!state) return;
         var val = input.value.trim();
         if (val) state.columnMapping['__fixed__' + elementName] = val;
         else delete state.columnMapping['__fixed__' + elementName];
-
         var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
         var sugEl = document.getElementById('sug-' + fieldId);
         if (!sugEl) return;
-
-        if (val.length < 2) { sugEl.innerHTML = ''; return; }
-
-        // Find the field's lookup table from state.fields
+        if (val.length < 2) { sugEl.innerHTML = ''; checkFixedValueComplete(state); return; }
         var field = state.fields.find(function (f) { return f.element_name === elementName; });
-        if (!field || !field.lookup_table) return;
+        if (!field || !field.lookup_table) { checkFixedValueComplete(state); return; }
 
-        // Query the validate endpoint's lookup data (cached from entity field load)
-        // For now, use a simple fetch to the entity-fields endpoint which has lookup info
-        // We'll search against the validation lookup values
+        // Check cache first (keyed by element + search term)
         if (!state._lookupCache) state._lookupCache = {};
-        if (state._lookupCache[elementName]) {
-            renderSuggestions(sugEl, state._lookupCache[elementName], val, elementName, input);
+        var cacheKey = elementName + '::' + val.toLowerCase();
+        if (state._lookupCache[cacheKey]) {
+            renderSuggestions(sugEl, state._lookupCache[cacheKey], elementName);
+            checkFixedValueComplete(state);
             return;
         }
 
-        // Fetch lookup values from the validate infrastructure
-        fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(state.entity.entity_type))
-            .then(function (r) { return r.json(); })
-            .then(function () {
-                // We don't have lookup values from entity-fields — we need them from the DM database
-                // For now, mark as needing lookup at validation time
-                sugEl.innerHTML = '<div class="suggestion-hint">Value will be validated against ' + escapeHtml(field.lookup_table) + '</div>';
-            });
-
+        // Debounce: wait 300ms after last keystroke before fetching
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
+        searchDebounceTimer = setTimeout(function () {
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) +
+                  '&element_name=' + encodeURIComponent(elementName) +
+                  '&search=' + encodeURIComponent(val) +
+                  '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; }
+                    var values = data.values || [];
+                    state._lookupCache[cacheKey] = values;
+                    renderSuggestions(sugEl, values, elementName);
+                })
+                .catch(function (err) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
+        }, 300);
         checkFixedValueComplete(state);
     }
 
-    function renderSuggestions(sugEl, values, searchVal, elementName, input) {
-        var upper = searchVal.toUpperCase();
-        var matches = values.filter(function (v) { return String(v).toUpperCase().indexOf(upper) !== -1; }).slice(0, 10);
-        if (matches.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
+    function renderSuggestions(sugEl, values, elementName) {
+        if (values.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
         var html = '';
-        matches.forEach(function (v) {
-            html += '<div class="suggestion-item" onclick="BDL.selectFixedValue(\'' + elementName + '\',\'' + escapeHtml(String(v)).replace(/'/g, "\\'") + '\')">' + escapeHtml(String(v)) + '</div>';
+        values.forEach(function (item) {
+            var val = item.value || item;
+            var safeVal = escapeHtml(String(val)).replace(/'/g, "\\'");
+            html += '<div class="suggestion-item" onclick="BDL.selectFixedValue(\'' + elementName + '\',\'' + safeVal + '\')">';
+            html += '<span class="suggestion-value">' + escapeHtml(String(val)) + '</span>';
+            if (item.description) html += '<span class="suggestion-desc">' + escapeHtml(item.description) + '</span>';
+            html += '</div>';
         });
         sugEl.innerHTML = html;
     }
@@ -611,31 +592,16 @@ var BDL = (function () {
     function checkFixedValueComplete(state) {
         if (!state) return;
         var area = document.getElementById('map-validate-area');
-        var idField = area ? area._identifierField : null;
-
-        // Check identifier is selected
         var hasIdentifier = false;
-        for (var k in state.columnMapping) {
-            if (state.columnMapping[k] === (area ? area._identifierElementName : '')) { hasIdentifier = true; break; }
-        }
-
-        // Check required fields have values
+        for (var k in state.columnMapping) { if (state.columnMapping[k] === (area ? area._identifierElementName : '')) { hasIdentifier = true; break; } }
         var requiredMet = true;
-        if (area && area._valueFields) {
-            area._valueFields.forEach(function (f) {
-                if (f.is_import_required && !state.columnMapping['__fixed__' + f.element_name]) {
-                    requiredMet = false;
-                }
-            });
-        }
-
+        if (area && area._valueFields) { area._valueFields.forEach(function (f) { if (f.is_import_required && !state.columnMapping['__fixed__' + f.element_name]) requiredMet = false; }); }
         var valBtn = document.getElementById('btn-validate-entity');
         if (valBtn) valBtn.disabled = !(hasIdentifier && requiredMet);
     }
 
     function renderMapValidateValidation(area, state) {
         var html = renderEntityProgressBanner('validating');
-        // Re-render validation results into the area
         var warnings = state.validationResult.warnings;
         var serverData = state.validationResult.serverData;
         html += buildValidationResultsHtml(warnings, serverData);
@@ -647,9 +613,7 @@ var BDL = (function () {
         html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + ' — Mapping and validation complete</strong><div class="validation-detail">' + (state.stagingContext ? state.stagingContext.row_count.toLocaleString() + ' rows staged' : '') + '</div></div></div>';
         html += '<div class="map-validate-actions">';
         html += '<button class="nav-btn" onclick="BDL.revalidateCurrentEntity()">Re-validate</button>';
-        if (currentEntityIndex < entityStates.length - 1) {
-            html += '<button class="execute-btn" onclick="BDL.advanceToNextEntity()">Continue to ' + escapeHtml(formatEntityName(entityStates[currentEntityIndex + 1].entity.entity_type)) + ' &#8594;</button>';
-        }
+        if (currentEntityIndex < entityStates.length - 1) html += '<button class="execute-btn" onclick="BDL.advanceToNextEntity()">Continue to ' + escapeHtml(formatEntityName(entityStates[currentEntityIndex + 1].entity.entity_type)) + ' &#8594;</button>';
         html += '</div>';
         area.innerHTML = html;
     }
@@ -659,10 +623,7 @@ var BDL = (function () {
         if (total <= 1 && phase !== 'complete') return '';
         var current = currentEntityIndex + 1;
         var entityName = formatEntityName(curEntity().entity_type);
-
         var html = '<div class="mapping-progress-banner"><div class="progress-banner-top">';
-
-        // Entity progress dots
         for (var i = 0; i < total; i++) {
             var dotClass = 'progress-dot';
             if (i < currentEntityIndex || (i === currentEntityIndex && phase === 'complete')) dotClass += ' progress-dot-done';
@@ -671,11 +632,9 @@ var BDL = (function () {
             if (i < total - 1) html += '<span class="progress-dot-line' + (i < currentEntityIndex ? ' progress-dot-line-done' : '') + '"></span>';
         }
         html += '</div>';
-
         if (phase === 'mapping') html += '<div class="progress-banner-label">Mapping ' + current + ' of ' + total + ': <strong>' + escapeHtml(entityName) + '</strong></div>';
         else if (phase === 'validating') html += '<div class="progress-banner-label">Validating ' + current + ' of ' + total + ': <strong>' + escapeHtml(entityName) + '</strong></div>';
         else if (phase === 'complete') html += '<div class="progress-banner-label">Complete ' + current + ' of ' + total + ': <strong>' + escapeHtml(entityName) + '</strong> &#10003;</div>';
-
         html += '</div>';
         return html;
     }
@@ -683,57 +642,30 @@ var BDL = (function () {
     function validateCurrentEntity() {
         var state = curState();
         if (!state || Object.keys(state.columnMapping).length === 0) return;
-
-        var area = document.getElementById('map-validate-area');
-
-        // Stage first if needed
-        if (state.stagingContext && state.stagedMapping && mappingsAreEqual(state.columnMapping, state.stagedMapping)) {
-            runEntityValidation(state);
-        } else if (state.stagingContext) {
-            var oldTable = state.stagingContext.staging_table;
-            state.stagingContext = null;
-            state.stagedMapping = null;
-            stageEntityData(state, function () { runEntityValidation(state); }, oldTable);
-        } else {
-            stageEntityData(state, function () { runEntityValidation(state); });
-        }
+        if (state.stagingContext && state.stagedMapping && mappingsAreEqual(state.columnMapping, state.stagedMapping)) { runEntityValidation(state); }
+        else if (state.stagingContext) { var oldTable = state.stagingContext.staging_table; state.stagingContext = null; state.stagedMapping = null; stageEntityData(state, function () { runEntityValidation(state); }, oldTable); }
+        else { stageEntityData(state, function () { runEntityValidation(state); }); }
     }
 
     function stageEntityData(state, onComplete, dropExistingTable) {
         var area = document.getElementById('map-validate-area');
         area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">' + (dropExistingTable ? 'Mapping changed — re-staging data...' : 'Reading full file and staging...') + '</div>';
-
         var ext = '.' + uploadedFile.name.split('.').pop().toLowerCase();
         var reader = new FileReader();
         reader.onload = function (e) {
             var allRows;
             try { if (ext === '.csv' || ext === '.txt') allRows = parseCSVAllRows(e.target.result); else allRows = parseExcelAllRows(e.target.result); }
             catch (err) { area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Failed to read file: ' + err.message + '</div>'; return; }
-
             area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Staging ' + allRows.length.toLocaleString() + ' rows for ' + formatEntityName(state.entity.entity_type) + '...</div>';
-
-            // Separate file-mapped columns from fixed values
             var fileMapping = {};
             var fixedValues = {};
-            Object.keys(state.columnMapping).forEach(function (k) {
-                if (k.indexOf('__fixed__') === 0) {
-                    fixedValues[k.replace('__fixed__', '')] = state.columnMapping[k];
-                } else {
-                    fileMapping[k] = state.columnMapping[k];
-                }
-            });
-
+            Object.keys(state.columnMapping).forEach(function (k) { if (k.indexOf('__fixed__') === 0) fixedValues[k.replace('__fixed__', '')] = state.columnMapping[k]; else fileMapping[k] = state.columnMapping[k]; });
             var stageBody = { entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, mapping: fileMapping, headers: parsedFileData.headers, rows: allRows };
             if (Object.keys(fixedValues).length > 0) stageBody.fixed_values = fixedValues;
             if (dropExistingTable) stageBody.drop_existing = dropExistingTable;
-
             fetch('/api/bdl-import/stage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stageBody) })
             .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-            .then(function (data) {
-                state.stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] };
-                state.stagedMapping = JSON.parse(JSON.stringify(state.columnMapping));
-                if (onComplete) onComplete();
-            })
+            .then(function (data) { state.stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] }; state.stagedMapping = JSON.parse(JSON.stringify(state.columnMapping)); if (onComplete) onComplete(); })
             .catch(function (err) { area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Staging failed: ' + err.message + '</div>'; });
         };
         if (ext === '.csv' || ext === '.txt') reader.readAsText(uploadedFile); else reader.readAsArrayBuffer(uploadedFile);
@@ -743,7 +675,6 @@ var BDL = (function () {
         var area = document.getElementById('map-validate-area');
         area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Validating ' + formatEntityName(state.entity.entity_type) + ' against ' + state.stagingContext.environment + '...</div>';
         revalidating = true;
-
         fetch('/api/bdl-import/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
@@ -754,82 +685,40 @@ var BDL = (function () {
             state.validationResult = { warnings: warnings, serverData: serverData };
             if (serverData.row_count !== undefined) state.stagingContext.row_count = serverData.row_count;
             if (serverData.skipped_count !== undefined) state.stagingContext.skipped_count = serverData.skipped_count;
-
             var hasActionable = warnings.some(function (w) { return w.type === 'required_empty' || w.type === 'lookup_invalid'; });
             state.validated = !hasActionable;
-
-            if (state.validated && entityStates.length > 1 && currentEntityIndex < entityStates.length - 1) {
-                // Show transition modal before advancing
-                showEntityTransition(state.entity.entity_type, entityStates[currentEntityIndex + 1].entity.entity_type);
-            } else {
-                renderMapValidatePanel();
-            }
+            if (state.validated && entityStates.length > 1 && currentEntityIndex < entityStates.length - 1) { showEntityTransition(state.entity.entity_type, entityStates[currentEntityIndex + 1].entity.entity_type); }
+            else { renderMapValidatePanel(); }
         })
-        .catch(function (err) {
-            revalidating = false;
-            area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Validation failed: ' + err.message + '</div>';
-        });
+        .catch(function (err) { revalidating = false; area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Validation failed: ' + err.message + '</div>'; });
     }
 
     function showEntityTransition(completedType, nextType) {
-        var existing = document.getElementById('entity-transition-modal');
-        if (existing) existing.remove();
-
-        var modal = document.createElement('div');
-        modal.id = 'entity-transition-modal';
-        modal.className = 'xf-modal-overlay';
+        var existing = document.getElementById('entity-transition-modal'); if (existing) existing.remove();
+        var modal = document.createElement('div'); modal.id = 'entity-transition-modal'; modal.className = 'xf-modal-overlay';
         modal.innerHTML = '<div class="xf-modal"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#4ec9b0">&#10003;</span><span>' + escapeHtml(formatEntityName(completedType)) + ' Complete</span></div><div class="xf-modal-body"><p>Mapping and validation passed.</p><p>Moving to <strong>' + escapeHtml(formatEntityName(nextType)) + '</strong>...</p></div></div>';
         document.body.appendChild(modal);
-
-        setTimeout(function () {
-            modal.remove();
-            renderMapValidatePanel();
-        }, 1500);
+        setTimeout(function () { modal.remove(); renderMapValidatePanel(); }, 1500);
     }
 
     function advanceToNextEntity() {
-        if (currentEntityIndex < entityStates.length - 1) {
-            currentEntityIndex++;
-            loadCurrentEntityFields(function () {
-                loadTemplates(curEntity().entity_type);
-                renderMapValidatePanel();
-            });
-        }
+        if (currentEntityIndex < entityStates.length - 1) { currentEntityIndex++; loadCurrentEntityFields(function () { loadTemplates(curEntity().entity_type); renderMapValidatePanel(); }); }
     }
 
-    function revalidateCurrentEntity() {
-        var state = curState();
-        if (!state) return;
-        state.validated = false;
-        state.validationResult = null;
-        renderMapValidateMapping(document.getElementById('map-validate-area'), state);
-    }
+    function revalidateCurrentEntity() { var state = curState(); if (!state) return; state.validated = false; state.validationResult = null; renderMapValidateMapping(document.getElementById('map-validate-area'), state); }
 
-    function updateStep4Completion() {
-        // Step 4 is complete when ALL entities are validated
-        var allDone = entityStates.length > 0 && entityStates.every(function (s) { return s.validated; });
-        stepComplete[3] = allDone;
-        updateStepperUI();
-    }
+    function updateStep4Completion() { var allDone = entityStates.length > 0 && entityStates.every(function (s) { return s.validated; }); stepComplete[3] = allDone; updateStepperUI(); }
 
-    function mappingsAreEqual(a, b) {
-        if (!a || !b) return false;
-        var aKeys = Object.keys(a).sort(), bKeys = Object.keys(b).sort();
-        if (aKeys.length !== bKeys.length) return false;
-        for (var i = 0; i < aKeys.length; i++) { if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[bKeys[i]]) return false; }
-        return true;
-    }
+    function mappingsAreEqual(a, b) { if (!a || !b) return false; var aKeys = Object.keys(a).sort(), bKeys = Object.keys(b).sort(); if (aKeys.length !== bKeys.length) return false; for (var i = 0; i < aKeys.length; i++) { if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[bKeys[i]]) return false; } return true; }
 
     // ── Mapping Panel Internals ──────────────────────────────────────────
     function refreshMappingPanels() {
         var area = document.getElementById('map-validate-area');
-        var state = curState();
-        if (!state) return;
+        var state = curState(); if (!state) return;
         var mf = area._mappableFields, columnMapping = state.columnMapping;
         var idColIdx = null;
         var idSel = document.getElementById('identifier-column'); if (idSel && idSel.value !== '') idColIdx = parseInt(idSel.value);
         var mSrc = Object.keys(columnMapping), mTgt = Object.values(columnMapping);
-
         var srcList = document.getElementById('source-list'), srcH = '';
         parsedFileData.headers.forEach(function (header, idx) {
             if (idx === idColIdx || mSrc.indexOf(header) !== -1) return;
@@ -838,7 +727,6 @@ var BDL = (function () {
             srcH += '<div class="mapping-chip source-chip' + selCls + '" draggable="true" data-source="' + escapeHtml(header) + '" data-idx="' + idx + '" ondragstart="BDL.chipDragStart(event)" onclick="BDL.sourceClick(\'' + escapeHtml(header).replace(/'/g, "\\'") + '\')">';
             srcH += '<div class="chip-name">' + escapeHtml(header) + '</div>'; if (sample) srcH += '<div class="chip-sample">' + escapeHtml(sample) + '</div>'; srcH += '</div>';
         }); srcList.innerHTML = srcH || '<div class="panel-empty">All columns mapped</div>';
-
         var tgtList = document.getElementById('target-list'), tgtH = '';
         mf.forEach(function (f) {
             if (mTgt.indexOf(f.element_name) !== -1) return;
@@ -849,18 +737,9 @@ var BDL = (function () {
             if (f.field_description) tgtH += '<div class="chip-desc">' + escapeHtml(f.field_description.substring(0, 80)) + '</div>';
             var meta = buildFieldMeta(f); if (meta) tgtH += '<div class="chip-meta">' + meta + '</div>'; tgtH += '</div>';
         }); tgtList.innerHTML = tgtH || '<div class="panel-empty">All fields mapped</div>';
-
         var mapList = document.getElementById('mapped-list'), mapH = '', mKeys = Object.keys(columnMapping);
         if (!mKeys.length) { mapH = '<div class="panel-empty">Click a source column, then click a BDL field to pair them. Or drag and drop.</div>'; }
-        else {
-            mKeys.forEach(function (sc) {
-                var te = columnMapping[sc], displayName = getFieldDisplayNameByElement(te);
-                mapH += '<div class="mapped-pair"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>';
-                if (displayName !== te) mapH += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>';
-                else mapH += '<span class="pair-target">' + te + '</span>';
-                mapH += '<span class="pair-remove" onclick="BDL.unmapPair(\'' + escapeHtml(sc).replace(/'/g, "\\'") + '\')" title="Remove mapping">&#10005;</span></div>';
-            });
-        }
+        else { mKeys.forEach(function (sc) { var te = columnMapping[sc], displayName = getFieldDisplayNameByElement(te); mapH += '<div class="mapped-pair"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>'; if (displayName !== te) mapH += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>'; else mapH += '<span class="pair-target">' + te + '</span>'; mapH += '<span class="pair-remove" onclick="BDL.unmapPair(\'' + escapeHtml(sc).replace(/'/g, "\\'") + '\')" title="Remove mapping">&#10005;</span></div>'; }); }
         mapList.innerHTML = mapH;
         checkMappingComplete();
     }
@@ -880,13 +759,8 @@ var BDL = (function () {
         for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
         if (idSel.value !== '') cm[parsedFileData.headers[parseInt(idSel.value)]] = idElem;
         var idSection = document.querySelector('.mapping-identifier'), wrap = document.getElementById('mapping-panels-wrap');
-        if (idSel.value !== '') {
-            if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); }
-            if (wrap) { wrap.classList.remove('mapping-disabled'); var msg = wrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); }
-        } else {
-            if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); }
-            if (wrap) wrap.classList.add('mapping-disabled');
-        }
+        if (idSel.value !== '') { if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); } if (wrap) { wrap.classList.remove('mapping-disabled'); var msg = wrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); } }
+        else { if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); } if (wrap) wrap.classList.add('mapping-disabled'); }
         refreshMappingPanels();
     }
 
@@ -903,24 +777,18 @@ var BDL = (function () {
             else if (mc > 0) wd.innerHTML = '<div class="success-box">&#10003; All required fields mapped</div>';
             else wd.innerHTML = '';
         }
-        // Enable/disable validate button
         var valBtn = document.getElementById('btn-validate-entity');
         if (valBtn) valBtn.disabled = (mc === 0);
     }
 
     // ── Validation Logic ─────────────────────────────────────────────────
     function parseCSVAllRows(text) { var lines = text.split(/\r?\n/).filter(function (l) { return l.trim(); }), rows = []; for (var i = 1; i < lines.length; i++) rows.push(parseCSVLine(lines[i])); return rows; }
-    function parseExcelAllRows(buffer) {
-        var d = new Uint8Array(buffer), wb = XLSX.read(d, { type: 'array' }), sh = wb.Sheets[wb.SheetNames[0]], range = XLSX.utils.decode_range(sh['!ref']), rows = [];
-        for (var r = 1; r <= range.e.r; r++) { var rd = []; for (var c = range.s.c; c <= range.e.c; c++) { var cell = sh[XLSX.utils.encode_cell({ r: r, c: c })]; rd.push(cell ? String(cell.v) : ''); } rows.push(rd); }
-        return rows;
-    }
+    function parseExcelAllRows(buffer) { var d = new Uint8Array(buffer), wb = XLSX.read(d, { type: 'array' }), sh = wb.Sheets[wb.SheetNames[0]], range = XLSX.utils.decode_range(sh['!ref']), rows = []; for (var r = 1; r <= range.e.r; r++) { var rd = []; for (var c = range.s.c; c <= range.e.c; c++) { var cell = sh[XLSX.utils.encode_cell({ r: r, c: c })]; rd.push(cell ? String(cell.v) : ''); } rows.push(rd); } return rows; }
 
     function validateStagedRows(serverData, state) {
         var warnings = [], columns = serverData.columns || [], rows = serverData.rows || [];
         var lookups = serverData.lookups || {}, lookupErrors = serverData.lookup_errors || {};
-        var entityFields = state.fields;
-        var columnMapping = state.columnMapping;
+        var entityFields = state.fields, columnMapping = state.columnMapping;
         var fieldMap = {}; entityFields.forEach(function (f) { fieldMap[f.element_name] = f; });
         var colIndex = {}; columns.forEach(function (col, idx) { colIndex[col] = idx; });
         Object.keys(lookupErrors).forEach(function (en) { warnings.push({ type: 'lookup_error', field: en, message: lookupErrors[en], rowCount: 0, samples: [] }); });
@@ -929,15 +797,12 @@ var BDL = (function () {
             var field = fieldMap[colName]; if (!field) return;
             var ci = colIndex[colName];
             var emptyCount = 0, lenErrs = { items: [], total: 0 }, typeErrs = { items: [], total: 0 }, lookupMiss = { total: 0, uv: {} };
-            var isReq = field.is_import_required;
-            var maxLen = field.max_length, dt = (field.data_type || '').toLowerCase();
+            var isReq = field.is_import_required, maxLen = field.max_length, dt = (field.data_type || '').toLowerCase();
             var lookupSet = lookups[colName] ? lookups[colName].values : null, lookupMap = null;
             if (lookupSet) { lookupMap = {}; lookupSet.forEach(function (v) { lookupMap[String(v).toUpperCase()] = true; }); }
-            var sourceCol = null;
-            Object.keys(columnMapping).forEach(function (sc) { if (columnMapping[sc] === colName) sourceCol = sc; });
+            var sourceCol = null; Object.keys(columnMapping).forEach(function (sc) { if (columnMapping[sc] === colName) sourceCol = sc; });
             for (var i = 0; i < rows.length; i++) {
-                var val = rows[i][ci]; if (val === undefined || val === null) val = '';
-                var tr = val.trim();
+                var val = rows[i][ci]; if (val === undefined || val === null) val = ''; var tr = val.trim();
                 if (isReq && tr === '') { emptyCount++; continue; }
                 if (tr === '') continue;
                 if (maxLen && tr.length > maxLen) { lenErrs.total++; if (lenErrs.items.length < MAX_SAMPLES) lenErrs.items.push({ row: i + 1, value: tr.substring(0, 50), length: tr.length }); }
@@ -955,456 +820,88 @@ var BDL = (function () {
     }
 
     function buildValidationResultsHtml(warnings, serverData) {
-        var html = '';
-        var rc = serverData.row_count || 0, skipped = serverData.skipped_count || 0;
+        var html = '', rc = serverData.row_count || 0, skipped = serverData.skipped_count || 0;
         var actionableWarnings = warnings.filter(function (w) { return w.type === 'required_empty' || w.type === 'lookup_invalid'; });
         var infoWarnings = warnings.filter(function (w) { return w.type !== 'required_empty' && w.type !== 'lookup_invalid'; });
         var rowSummary = rc.toLocaleString() + ' rows validated' + (skipped > 0 ? ', ' + skipped.toLocaleString() + ' skipped' : '');
-
-        if (!warnings.length) {
-            html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>Validation passed</strong><div class="validation-detail">' + rowSummary + '. No issues found.</div></div></div>';
-        } else if (actionableWarnings.length > 0) {
-            html += '<div class="validation-summary validation-block"><span class="validation-icon">&#9888;</span><div><strong>' + actionableWarnings.length + ' issue' + (actionableWarnings.length > 1 ? 's' : '') + ' found</strong><div class="validation-detail">' + rowSummary + '. Resolve issues below.</div></div></div>';
-        } else {
-            html += '<div class="validation-summary validation-warn"><span class="validation-icon">&#9888;</span><div><strong>' + infoWarnings.length + ' warning' + (infoWarnings.length > 1 ? 's' : '') + '</strong><div class="validation-detail">' + rowSummary + '. You may proceed.</div></div></div>';
-        }
-
-        if (actionableWarnings.length > 0) {
-            html += '<div class="validation-cards" id="validation-cards">';
-            var typeLabels = { required_empty: 'Required Value Missing', lookup_invalid: 'Invalid Lookup Value' };
-            actionableWarnings.forEach(function (w, idx) {
-                var cardId = 'vcard-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field);
-                html += '<div class="val-card" id="' + cardId + '"><div class="val-card-header" onclick="BDL.toggleValidationCard(\'' + cardId + '\')"><div class="val-card-header-left"><span class="val-card-field">';
-                if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>';
-                html += '</span><span class="val-badge">' + typeLabels[w.type] + '</span></div><div class="val-card-header-right"><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-card-chevron" id="chevron-' + cardId + '">&#9654;</span></div></div>';
-                html += '<div class="val-card-body" id="body-' + cardId + '" style="display:none;">';
-                if (w.type === 'required_empty') html += renderRequiredEmptyActions(w);
-                else if (w.type === 'lookup_invalid') html += renderLookupInvalidActions(w, cardId, serverData);
-                html += '</div></div>';
-            });
-            html += '</div>';
-        }
-
-        if (infoWarnings.length > 0) {
-            html += '<div class="validation-info-section"><div class="validation-info-header">Warnings (' + infoWarnings.length + ')</div>';
-            infoWarnings.forEach(function (w, idx) {
-                var infoId = 'vinfo-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field);
-                var typeLabel = { max_length: 'Max Length', data_type: 'Data Type', lookup_error: 'Lookup Discovery' }[w.type] || w.type;
-                html += '<div class="val-info-card" id="' + infoId + '"><div class="val-info-header" onclick="BDL.toggleInfoCard(\'' + infoId + '\')"><span class="val-card-field">';
-                if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>';
-                html += '</span><span class="val-badge val-badge-info">' + typeLabel + '</span><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-info-chevron" id="chevron-' + infoId + '">&#9654;</span></div>';
-                html += '<div class="val-info-body" id="body-' + infoId + '" style="display:none;"><div class="val-card-message">' + escapeHtml(w.message) + '</div>';
-                if (w.samples && w.samples.length > 0) { html += '<div class="validation-samples">'; w.samples.forEach(function (s) { html += '<span class="val-sample">Row ' + s.row + ': <code>' + escapeHtml(String(s.value)) + '</code>'; if (s.length) html += ' (' + s.length + ' chars)'; html += '</span>'; }); html += '</div>'; }
-                html += '</div></div>';
-            });
-            html += '</div>';
-        }
+        if (!warnings.length) html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>Validation passed</strong><div class="validation-detail">' + rowSummary + '. No issues found.</div></div></div>';
+        else if (actionableWarnings.length > 0) html += '<div class="validation-summary validation-block"><span class="validation-icon">&#9888;</span><div><strong>' + actionableWarnings.length + ' issue' + (actionableWarnings.length > 1 ? 's' : '') + ' found</strong><div class="validation-detail">' + rowSummary + '. Resolve issues below.</div></div></div>';
+        else html += '<div class="validation-summary validation-warn"><span class="validation-icon">&#9888;</span><div><strong>' + infoWarnings.length + ' warning' + (infoWarnings.length > 1 ? 's' : '') + '</strong><div class="validation-detail">' + rowSummary + '. You may proceed.</div></div></div>';
+        if (actionableWarnings.length > 0) { html += '<div class="validation-cards" id="validation-cards">'; var typeLabels = { required_empty: 'Required Value Missing', lookup_invalid: 'Invalid Lookup Value' }; actionableWarnings.forEach(function (w, idx) { var cardId = 'vcard-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field); html += '<div class="val-card" id="' + cardId + '"><div class="val-card-header" onclick="BDL.toggleValidationCard(\'' + cardId + '\')"><div class="val-card-header-left"><span class="val-card-field">'; if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>'; html += '</span><span class="val-badge">' + typeLabels[w.type] + '</span></div><div class="val-card-header-right"><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-card-chevron" id="chevron-' + cardId + '">&#9654;</span></div></div>'; html += '<div class="val-card-body" id="body-' + cardId + '" style="display:none;">'; if (w.type === 'required_empty') html += renderRequiredEmptyActions(w); else if (w.type === 'lookup_invalid') html += renderLookupInvalidActions(w, cardId, serverData); html += '</div></div>'; }); html += '</div>'; }
+        if (infoWarnings.length > 0) { html += '<div class="validation-info-section"><div class="validation-info-header">Warnings (' + infoWarnings.length + ')</div>'; infoWarnings.forEach(function (w, idx) { var infoId = 'vinfo-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field); var typeLabel = { max_length: 'Max Length', data_type: 'Data Type', lookup_error: 'Lookup Discovery' }[w.type] || w.type; html += '<div class="val-info-card" id="' + infoId + '"><div class="val-info-header" onclick="BDL.toggleInfoCard(\'' + infoId + '\')"><span class="val-card-field">'; if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>'; html += '</span><span class="val-badge val-badge-info">' + typeLabel + '</span><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-info-chevron" id="chevron-' + infoId + '">&#9654;</span></div>'; html += '<div class="val-info-body" id="body-' + infoId + '" style="display:none;"><div class="val-card-message">' + escapeHtml(w.message) + '</div>'; if (w.samples && w.samples.length > 0) { html += '<div class="validation-samples">'; w.samples.forEach(function (s) { html += '<span class="val-sample">Row ' + s.row + ': <code>' + escapeHtml(String(s.value)) + '</code>'; if (s.length) html += ' (' + s.length + ' chars)'; html += '</span>'; }); html += '</div>'; } html += '</div></div>'; }); html += '</div>'; }
         return html;
     }
 
-    function renderRequiredEmptyActions(w) {
-        var sf = w.field.replace(/'/g, "\\'");
-        var rid = 'fill-' + w.field.replace(/[^a-zA-Z0-9]/g, '');
-        var state = curState();
-        var html = '<div class="lookup-replace-table"><div class="lookup-replace-header"><span class="lrh-count">Rows</span><span class="lrh-value">Current</span><span class="lrh-action">Action</span></div>';
-        html += '<div class="lookup-replace-row" id="row-' + rid + '"><span class="lrr-count">' + w.rowCount.toLocaleString() + '</span><span class="lrr-value"><code>(empty)</code></span><span class="lrr-action">';
-        if (w.hasLookup && w.lookupValues) { html += '<select id="' + rid + '" class="replace-select"><option value="">— Select value —</option>'; w.lookupValues.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; }); html += '</select>'; }
-        else { html += '<input type="text" id="' + rid + '" class="replace-input" placeholder="Enter value...">'; }
-        html += ' <button class="replace-btn" onclick="BDL.fillEmpty(\'' + sf + '\',\'' + rid + '\')">Fill</button>';
-        var fieldObj = state.fields.find(function(ff) { return ff.element_name === w.field; });
-        if (!fieldObj || !fieldObj.is_not_nullifiable) html += ' <button class="skip-btn" onclick="BDL.skipRows(\'' + sf + '\',\'\',\'row-' + rid + '\')">Skip Rows</button>';
-        html += '</span></div></div>';
-        return html;
-    }
+    function renderRequiredEmptyActions(w) { var sf = w.field.replace(/'/g, "\\'"); var rid = 'fill-' + w.field.replace(/[^a-zA-Z0-9]/g, ''); var state = curState(); var html = '<div class="lookup-replace-table"><div class="lookup-replace-header"><span class="lrh-count">Rows</span><span class="lrh-value">Current</span><span class="lrh-action">Action</span></div>'; html += '<div class="lookup-replace-row" id="row-' + rid + '"><span class="lrr-count">' + w.rowCount.toLocaleString() + '</span><span class="lrr-value"><code>(empty)</code></span><span class="lrr-action">'; if (w.hasLookup && w.lookupValues) { html += '<select id="' + rid + '" class="replace-select"><option value="">— Select value —</option>'; w.lookupValues.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; }); html += '</select>'; } else { html += '<input type="text" id="' + rid + '" class="replace-input" placeholder="Enter value...">'; } html += ' <button class="replace-btn" onclick="BDL.fillEmpty(\'' + sf + '\',\'' + rid + '\')">Fill</button>'; var fieldObj = state.fields.find(function(ff) { return ff.element_name === w.field; }); if (!fieldObj || !fieldObj.is_not_nullifiable) html += ' <button class="skip-btn" onclick="BDL.skipRows(\'' + sf + '\',\'\',\'row-' + rid + '\')">Skip Rows</button>'; html += '</span></div></div>'; return html; }
 
-    function renderLookupInvalidActions(w, cardId, serverData) {
-        var vv = serverData.lookups && serverData.lookups[w.field] ? serverData.lookups[w.field].values : [];
-        var uniqueKeys = Object.keys(w.uniqueValues);
-        var html = '<div class="lookup-replace-table" data-card="' + cardId + '" data-total-values="' + uniqueKeys.length + '" data-resolved="0">';
-        html += '<div class="lookup-replace-header"><span class="lrh-count">Count</span><span class="lrh-value">File Value</span><span class="lrh-action">Action</span></div>';
-        uniqueKeys.forEach(function (key) {
-            var info = w.uniqueValues[key], sf2 = w.field.replace(/'/g, "\\'"), sd = info.display.replace(/'/g, "\\'");
-            var rid2 = 'replace-' + w.field.replace(/[^a-zA-Z0-9]/g, '') + '-' + key.replace(/[^a-zA-Z0-9]/g, '');
-            html += '<div class="lookup-replace-row" id="row-' + rid2 + '" data-resolved="false"><span class="lrr-count">' + info.count.toLocaleString() + '</span><span class="lrr-value"><code>' + escapeHtml(info.display) + '</code></span><span class="lrr-action">';
-            html += '<select id="' + rid2 + '" class="replace-select"><option value="">— Replace with —</option>'; vv.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
-            html += '</select> <button class="replace-btn" onclick="BDL.applyReplacement(\'' + sf2 + '\',\'' + sd + '\',\'' + rid2 + '\')">Replace</button> <button class="skip-btn" onclick="BDL.skipRows(\'' + sf2 + '\',\'' + sd + '\',\'row-' + rid2 + '\')">Skip</button>';
-            html += '</span></div>';
-        });
-        html += '</div>';
-        return html;
-    }
+    function renderLookupInvalidActions(w, cardId, serverData) { var vv = serverData.lookups && serverData.lookups[w.field] ? serverData.lookups[w.field].values : []; var uniqueKeys = Object.keys(w.uniqueValues); var html = '<div class="lookup-replace-table" data-card="' + cardId + '" data-total-values="' + uniqueKeys.length + '" data-resolved="0">'; html += '<div class="lookup-replace-header"><span class="lrh-count">Count</span><span class="lrh-value">File Value</span><span class="lrh-action">Action</span></div>'; uniqueKeys.forEach(function (key) { var info = w.uniqueValues[key], sf2 = w.field.replace(/'/g, "\\'"), sd = info.display.replace(/'/g, "\\'"); var rid2 = 'replace-' + w.field.replace(/[^a-zA-Z0-9]/g, '') + '-' + key.replace(/[^a-zA-Z0-9]/g, ''); html += '<div class="lookup-replace-row" id="row-' + rid2 + '" data-resolved="false"><span class="lrr-count">' + info.count.toLocaleString() + '</span><span class="lrr-value"><code>' + escapeHtml(info.display) + '</code></span><span class="lrr-action">'; html += '<select id="' + rid2 + '" class="replace-select"><option value="">— Replace with —</option>'; vv.forEach(function (v) { html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; }); html += '</select> <button class="replace-btn" onclick="BDL.applyReplacement(\'' + sf2 + '\',\'' + sd + '\',\'' + rid2 + '\')">Replace</button> <button class="skip-btn" onclick="BDL.skipRows(\'' + sf2 + '\',\'' + sd + '\',\'row-' + rid2 + '\')">Skip</button>'; html += '</span></div>'; }); html += '</div>'; return html; }
 
-    function toggleValidationCard(cardId) {
-        if (revalidating) return;
-        var cards = document.querySelectorAll('.val-card');
-        cards.forEach(function (card) {
-            var body = document.getElementById('body-' + card.id), chevron = document.getElementById('chevron-' + card.id);
-            if (card.id === cardId) {
-                if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; card.classList.add('val-card-expanded'); }
-                else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded'); }
-            } else { if (body) body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded'); }
-        });
-    }
-    function toggleInfoCard(infoId) {
-        var body = document.getElementById('body-' + infoId), chevron = document.getElementById('chevron-' + infoId);
-        if (!body) return;
-        if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; }
-        else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; }
-    }
-    function checkLookupCardComplete(rowElement) {
-        var table = rowElement.closest('.lookup-replace-table');
-        if (!table) return;
-        var totalValues = parseInt(table.dataset.totalValues) || 0;
-        var resolvedRows = table.querySelectorAll('.lookup-replace-row[data-resolved="true"]');
-        table.dataset.resolved = String(resolvedRows.length);
-        if (resolvedRows.length >= totalValues) triggerCascadingRevalidate();
-    }
-    function triggerCascadingRevalidate() {
-        if (revalidating) return;
-        revalidating = true;
-        var area = document.getElementById('map-validate-area');
-        area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Applying changes and re-validating...</div>';
-        setTimeout(function () { runEntityValidation(curState()); }, 200);
-    }
+    function toggleValidationCard(cardId) { if (revalidating) return; var cards = document.querySelectorAll('.val-card'); cards.forEach(function (card) { var body = document.getElementById('body-' + card.id), chevron = document.getElementById('chevron-' + card.id); if (card.id === cardId) { if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; card.classList.add('val-card-expanded'); } else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded'); } } else { if (body) body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; card.classList.remove('val-card-expanded'); } }); }
+    function toggleInfoCard(infoId) { var body = document.getElementById('body-' + infoId), chevron = document.getElementById('chevron-' + infoId); if (!body) return; if (body.style.display === 'none') { body.style.display = 'block'; if (chevron) chevron.innerHTML = '&#9660;'; } else { body.style.display = 'none'; if (chevron) chevron.innerHTML = '&#9654;'; } }
+    function checkLookupCardComplete(rowElement) { var table = rowElement.closest('.lookup-replace-table'); if (!table) return; var totalValues = parseInt(table.dataset.totalValues) || 0; var resolvedRows = table.querySelectorAll('.lookup-replace-row[data-resolved="true"]'); table.dataset.resolved = String(resolvedRows.length); if (resolvedRows.length >= totalValues) triggerCascadingRevalidate(); }
+    function triggerCascadingRevalidate() { if (revalidating) return; revalidating = true; var area = document.getElementById('map-validate-area'); area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Applying changes and re-validating...</div>'; setTimeout(function () { runEntityValidation(curState()); }, 200); }
 
-    function applyReplacement(field, oldValue, selectId) {
-        if (revalidating) return;
-        var state = curState(); if (!state) return;
-        var sel = document.getElementById(selectId); if (!sel || !sel.value) { showAlert('Please select a replacement value.', { title: 'Selection Required', icon: '&#9432;', iconColor: '#569cd6' }); return; }
-        var newVal = sel.value, btn = sel.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true;
-        var skipBtn = sel.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true;
-        fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, old_value: oldValue, new_value: newVal }) })
-        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-        .then(function (data) {
-            var row = document.getElementById(selectId).closest('.lookup-replace-row');
-            if (row) { row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>' + escapeHtml(oldValue) + '</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Replaced</span>'; row.dataset.resolved = 'true'; checkLookupCardComplete(row); }
-        }).catch(function (err) { showAlert(err.message, { title: 'Replacement Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
-    }
+    function applyReplacement(field, oldValue, selectId) { if (revalidating) return; var state = curState(); if (!state) return; var sel = document.getElementById(selectId); if (!sel || !sel.value) { showAlert('Please select a replacement value.', { title: 'Selection Required', icon: '&#9432;', iconColor: '#569cd6' }); return; } var newVal = sel.value, btn = sel.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true; var skipBtn = sel.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true; fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, old_value: oldValue, new_value: newVal }) }).then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); }).then(function (data) { var row = document.getElementById(selectId).closest('.lookup-replace-row'); if (row) { row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>' + escapeHtml(oldValue) + '</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Replaced</span>'; row.dataset.resolved = 'true'; checkLookupCardComplete(row); } }).catch(function (err) { showAlert(err.message, { title: 'Replacement Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; }); }
 
-    function fillEmpty(field, inputId) {
-        if (revalidating) return;
-        var state = curState(); if (!state) return;
-        var input = document.getElementById(inputId), newVal = input ? input.value : '';
-        if (!newVal) { showAlert('Please enter or select a value.', { title: 'Value Required', icon: '&#9432;', iconColor: '#569cd6' }); return; }
-        var btn = input.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true;
-        var skipBtn = input.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true;
-        fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, old_value: '', new_value: newVal }) })
-        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-        .then(function (data) {
-            var row = document.getElementById(inputId).closest('.lookup-replace-row');
-            if (row) row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>(empty)</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Filled</span>';
-            triggerCascadingRevalidate();
-        }).catch(function (err) { showAlert(err.message, { title: 'Fill Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; });
-    }
+    function fillEmpty(field, inputId) { if (revalidating) return; var state = curState(); if (!state) return; var input = document.getElementById(inputId), newVal = input ? input.value : ''; if (!newVal) { showAlert('Please enter or select a value.', { title: 'Value Required', icon: '&#9432;', iconColor: '#569cd6' }); return; } var btn = input.parentElement.querySelector('.replace-btn'); if (btn) btn.disabled = true; var skipBtn = input.parentElement.querySelector('.skip-btn'); if (skipBtn) skipBtn.disabled = true; fetch('/api/bdl-import/replace-values', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, old_value: '', new_value: newVal }) }).then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); }).then(function (data) { var row = document.getElementById(inputId).closest('.lookup-replace-row'); if (row) row.innerHTML = '<span class="lrr-count">' + data.rows_updated + '</span><span class="lrr-value"><code>(empty)</code> &#8594; <code>' + escapeHtml(newVal) + '</code></span><span class="lrr-action replace-done">&#10003; Filled</span>'; triggerCascadingRevalidate(); }).catch(function (err) { showAlert(err.message, { title: 'Fill Failed', icon: '&#10005;', iconColor: '#f48771' }); if (btn) btn.disabled = false; if (skipBtn) skipBtn.disabled = false; }); }
 
-    function skipRows(field, value, rowElementId) {
-        if (revalidating) return;
-        var state = curState(); if (!state) return;
-        var rowEl = document.getElementById(rowElementId);
-        if (rowEl) rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-        fetch('/api/bdl-import/skip-rows', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, value: value }) })
-        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-        .then(function (data) {
-            var row = document.getElementById(rowElementId);
-            if (row) {
-                row.innerHTML = '<span class="lrr-count">' + data.rows_skipped + '</span><span class="lrr-value"><code>' + escapeHtml(value || '(empty)') + '</code></span><span class="lrr-action skip-done">&#10005; Skipped (' + data.rows_skipped + ' rows)</span>';
-                if (row.dataset.resolved !== undefined) { row.dataset.resolved = 'true'; checkLookupCardComplete(row); }
-                else triggerCascadingRevalidate();
-            }
-        }).catch(function (err) { showAlert(err.message, { title: 'Skip Failed', icon: '&#10005;', iconColor: '#f48771' }); if (rowEl) rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); });
-    }
+    function skipRows(field, value, rowElementId) { if (revalidating) return; var state = curState(); if (!state) return; var rowEl = document.getElementById(rowElementId); if (rowEl) rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = true; }); fetch('/api/bdl-import/skip-rows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staging_table: state.stagingContext.staging_table, field: field, value: value }) }).then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); }).then(function (data) { var row = document.getElementById(rowElementId); if (row) { row.innerHTML = '<span class="lrr-count">' + data.rows_skipped + '</span><span class="lrr-value"><code>' + escapeHtml(value || '(empty)') + '</code></span><span class="lrr-action skip-done">&#10005; Skipped (' + data.rows_skipped + ' rows)</span>'; if (row.dataset.resolved !== undefined) { row.dataset.resolved = 'true'; checkLookupCardComplete(row); } else triggerCascadingRevalidate(); } }).catch(function (err) { showAlert(err.message, { title: 'Skip Failed', icon: '&#10005;', iconColor: '#f48771' }); if (rowEl) rowEl.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); }); }
 
     // ── Step 5: Execute (Tabbed) ─────────────────────────────────────────
     function renderExecuteReview() {
         var area = document.getElementById('execute-area');
         var envName = selectedEnvironment ? selectedEnvironment.environment : '?';
         clearPromoteState();
-
         var html = '';
-
-        // Jira Ticket (shared across all entities)
-        html += '<div class="execute-ticket">';
-        html += '<div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional — applies to all imports)</span></div>';
-        html += '<div class="ticket-fields">';
-        html += '<div class="ticket-field-row"><label class="ticket-label" for="jira-ticket">Ticket</label><input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" oninput="BDL.ticketChanged()"></div>';
-        html += '<div class="ticket-field-row" id="ar-message-row" style="display:none;"><label class="ticket-label" for="ar-message">AR Message</label><input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message for DM AR log"></div>';
-        html += '</div></div>';
-
-        // Entity tabs
-        html += '<div class="execute-tabs" id="execute-tabs">';
-        entityStates.forEach(function (state, idx) {
-            var activeClass = idx === 0 ? ' execute-tab-active' : '';
-            html += '<div class="execute-tab' + activeClass + '" id="exec-tab-' + idx + '" onclick="BDL.switchExecuteTab(' + idx + ')">' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</div>';
-        });
-        html += '</div>';
-
-        // Tab content
-        entityStates.forEach(function (state, idx) {
-            var visClass = idx === 0 ? '' : ' hidden';
-            var entityName = formatEntityName(state.entity.entity_type);
-            var mappedCount = Object.keys(state.columnMapping).length;
-            var rowCount = state.stagingContext ? state.stagingContext.row_count : 0;
-            var skipped = state.stagingContext && state.stagingContext.skipped_count ? state.stagingContext.skipped_count : 0;
-
-            html += '<div class="execute-tab-content' + visClass + '" id="exec-content-' + idx + '">';
-            html += '<div class="execute-summary"><div class="execute-summary-header">' + escapeHtml(entityName) + '</div>';
-            html += '<div class="execute-summary-grid">';
-            html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
-            html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.entity.entity_type) + '</code></span></div>';
-            html += '<div class="summary-item"><span class="summary-label">Rows</span><span class="summary-value">' + rowCount.toLocaleString() + (skipped > 0 ? ' <span style="color:#888;font-size:11px;">(' + skipped + ' skipped)</span>' : '') + '</span></div>';
-            html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>';
-            html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.stagingContext.staging_table) + '</code></span></div>';
-            html += '</div></div>';
-            html += '<div class="execute-result hidden" id="exec-result-' + idx + '"></div>';
-            html += '</div>';
-        });
-
-        // Execute Actions
-        html += '<div class="execute-actions" id="execute-actions">';
-        if (envName === 'PROD') html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>';
-        html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeAll()">Submit All (' + entityStates.length + ' BDL' + (entityStates.length > 1 ? 's' : '') + ')</button>';
-        html += '</div>';
+        html += '<div class="execute-ticket"><div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional — applies to all imports)</span></div><div class="ticket-fields"><div class="ticket-field-row"><label class="ticket-label" for="jira-ticket">Ticket</label><input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" oninput="BDL.ticketChanged()"></div><div class="ticket-field-row" id="ar-message-row" style="display:none;"><label class="ticket-label" for="ar-message">AR Message</label><input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message for DM AR log"></div></div></div>';
+        html += '<div class="execute-tabs" id="execute-tabs">'; entityStates.forEach(function (state, idx) { var activeClass = idx === 0 ? ' execute-tab-active' : ''; html += '<div class="execute-tab' + activeClass + '" id="exec-tab-' + idx + '" onclick="BDL.switchExecuteTab(' + idx + ')">' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</div>'; }); html += '</div>';
+        entityStates.forEach(function (state, idx) { var visClass = idx === 0 ? '' : ' hidden'; var entityName = formatEntityName(state.entity.entity_type); var mappedCount = Object.keys(state.columnMapping).length; var rowCount = state.stagingContext ? state.stagingContext.row_count : 0; var skipped = state.stagingContext && state.stagingContext.skipped_count ? state.stagingContext.skipped_count : 0; html += '<div class="execute-tab-content' + visClass + '" id="exec-content-' + idx + '"><div class="execute-summary"><div class="execute-summary-header">' + escapeHtml(entityName) + '</div><div class="execute-summary-grid">'; html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>'; html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.entity.entity_type) + '</code></span></div>'; html += '<div class="summary-item"><span class="summary-label">Rows</span><span class="summary-value">' + rowCount.toLocaleString() + (skipped > 0 ? ' <span style="color:#888;font-size:11px;">(' + skipped + ' skipped)</span>' : '') + '</span></div>'; html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>'; html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.stagingContext.staging_table) + '</code></span></div>'; html += '</div></div><div class="execute-result hidden" id="exec-result-' + idx + '"></div></div>'; });
+        html += '<div class="execute-actions" id="execute-actions">'; if (envName === 'PROD') html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>'; html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeAll()">Submit All (' + entityStates.length + ' BDL' + (entityStates.length > 1 ? 's' : '') + ')</button></div>';
         html += '<div class="execute-progress hidden" id="execute-progress"></div>';
-
         area.innerHTML = html;
     }
 
-    function switchExecuteTab(idx) {
-        entityStates.forEach(function (_, i) {
-            var tab = document.getElementById('exec-tab-' + i);
-            var content = document.getElementById('exec-content-' + i);
-            if (i === idx) { tab.classList.add('execute-tab-active'); content.classList.remove('hidden'); }
-            else { tab.classList.remove('execute-tab-active'); content.classList.add('hidden'); }
-        });
-    }
+    function switchExecuteTab(idx) { entityStates.forEach(function (_, i) { var tab = document.getElementById('exec-tab-' + i); var content = document.getElementById('exec-content-' + i); if (i === idx) { tab.classList.add('execute-tab-active'); content.classList.remove('hidden'); } else { tab.classList.remove('execute-tab-active'); content.classList.add('hidden'); } }); }
 
-    function ticketChanged() {
-        var ticketInput = document.getElementById('jira-ticket');
-        var messageRow = document.getElementById('ar-message-row');
-        var messageInput = document.getElementById('ar-message');
-        var ticket = ticketInput ? ticketInput.value.trim() : '';
-        if (ticket) {
-            messageRow.style.display = '';
-            if (!messageInput.dataset.userEdited) messageInput.value = ticket + ': BDL update via BDL Import';
-        } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; }
-    }
+    function ticketChanged() { var ticketInput = document.getElementById('jira-ticket'); var messageRow = document.getElementById('ar-message-row'); var messageInput = document.getElementById('ar-message'); var ticket = ticketInput ? ticketInput.value.trim() : ''; if (ticket) { messageRow.style.display = ''; if (!messageInput.dataset.userEdited) messageInput.value = ticket + ': BDL update via BDL Import'; } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; } }
 
     function executeAll() {
         if (executeInProgress) return;
-        var envName = selectedEnvironment.environment;
-        var jiraTicket = (document.getElementById('jira-ticket') || {}).value || '';
-        jiraTicket = jiraTicket.trim();
-        var count = entityStates.length;
-
-        var bodyHtml = '<p>Submit ' + count + ' BDL import' + (count > 1 ? 's' : '') + ' to <strong class="summary-env-' + envName.toLowerCase() + '">' + envName + '</strong>?</p>';
-        entityStates.forEach(function (s) { bodyHtml += '<p style="font-size:12px;color:#999;">' + escapeHtml(formatEntityName(s.entity.entity_type)) + ': ' + s.stagingContext.row_count.toLocaleString() + ' rows</p>'; });
-        if (envName === 'PROD') bodyHtml += '<p style="color:#f48771;font-weight:600;">This is a PRODUCTION import and cannot be undone.</p>';
-
-        showConfirm(bodyHtml, {
-            title: 'Submit BDL Import' + (count > 1 ? 's' : ''),
-            icon: envName === 'PROD' ? '&#9888;' : '&#9654;',
-            iconColor: envName === 'PROD' ? '#f48771' : '#4ec9b0',
-            confirmLabel: 'Submit ' + (count > 1 ? 'All' : 'Import'),
-            cancelLabel: 'Cancel',
-            confirmClass: envName === 'PROD' ? 'xf-modal-btn-danger' : 'xf-modal-btn-primary',
-            html: true
-        }).then(function (confirmed) {
-            if (!confirmed) return;
-            executeInProgress = true;
-            var execBtn = document.getElementById('btn-execute-import');
-            if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; }
-            executeSequential(0, jiraTicket);
-        });
+        var envName = selectedEnvironment.environment, jiraTicket = (document.getElementById('jira-ticket') || {}).value || ''; jiraTicket = jiraTicket.trim(); var count = entityStates.length;
+        var bodyHtml = '<p>Submit ' + count + ' BDL import' + (count > 1 ? 's' : '') + ' to <strong class="summary-env-' + envName.toLowerCase() + '">' + envName + '</strong>?</p>'; entityStates.forEach(function (s) { bodyHtml += '<p style="font-size:12px;color:#999;">' + escapeHtml(formatEntityName(s.entity.entity_type)) + ': ' + s.stagingContext.row_count.toLocaleString() + ' rows</p>'; }); if (envName === 'PROD') bodyHtml += '<p style="color:#f48771;font-weight:600;">This is a PRODUCTION import and cannot be undone.</p>';
+        showConfirm(bodyHtml, { title: 'Submit BDL Import' + (count > 1 ? 's' : ''), icon: envName === 'PROD' ? '&#9888;' : '&#9654;', iconColor: envName === 'PROD' ? '#f48771' : '#4ec9b0', confirmLabel: 'Submit ' + (count > 1 ? 'All' : 'Import'), cancelLabel: 'Cancel', confirmClass: envName === 'PROD' ? 'xf-modal-btn-danger' : 'xf-modal-btn-primary', html: true }).then(function (confirmed) { if (!confirmed) return; executeInProgress = true; var execBtn = document.getElementById('btn-execute-import'); if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; } executeSequential(0, jiraTicket); });
     }
 
     function executeSequential(idx, jiraTicket) {
-        if (idx >= entityStates.length) {
-            // All done
-            executeInProgress = false;
-            var actions = document.getElementById('execute-actions');
-            if (actions) actions.classList.add('hidden');
-            stepComplete[4] = true;
-            updateStepperUI(); updateNavButtons();
-            return;
-        }
-
-        var state = entityStates[idx];
-        var resultEl = document.getElementById('exec-result-' + idx);
-        var tabEl = document.getElementById('exec-tab-' + idx);
-
-        // Switch to this tab
+        if (idx >= entityStates.length) { executeInProgress = false; var actions = document.getElementById('execute-actions'); if (actions) actions.classList.add('hidden'); stepComplete[4] = true; updateStepperUI(); updateNavButtons(); return; }
+        var state = entityStates[idx], resultEl = document.getElementById('exec-result-' + idx), tabEl = document.getElementById('exec-tab-' + idx);
         switchExecuteTab(idx);
-
-        // Show progress on tab
         if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#dcdcaa;">&#8943;</span>';
-
         var arMessage = (document.getElementById('ar-message') || {}).value || '';
-        var requestBody = {
-            staging_table: state.stagingContext.staging_table,
-            entity_type: state.entity.entity_type,
-            config_id: selectedEnvironment.config_id,
-            source_filename: uploadedFile ? uploadedFile.name : 'unknown',
-            column_mapping: JSON.stringify(state.columnMapping)
-        };
-        if (jiraTicket) {
-            requestBody.jira_ticket = jiraTicket;
-            if (arMessage.trim()) requestBody.ar_message = arMessage.trim().replace('BDL update', state.entity.entity_type + ' update');
-        }
-
+        var requestBody = { staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, source_filename: uploadedFile ? uploadedFile.name : 'unknown', column_mapping: JSON.stringify(state.columnMapping) };
+        if (jiraTicket) { requestBody.jira_ticket = jiraTicket; if (arMessage.trim()) requestBody.ar_message = arMessage.trim().replace('BDL update', state.entity.entity_type + ' update'); }
         fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
         .then(function (data) {
-            if (data._httpStatus >= 400 || data.error) {
-                resultEl.classList.remove('hidden');
-                resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Import Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>';
-                if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>';
-            } else {
-                resultEl.classList.remove('hidden');
-                var rh = '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>Submitted</strong><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: ' + data.file_registry_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>';
-                if (data.ar_log) {
-                    if (data.ar_log.success) rh += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log</strong><div class="result-meta">' + data.ar_log.row_count.toLocaleString() + ' records linked</div></div></div>';
-                    else rh += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log Failed</strong><div class="result-detail">' + escapeHtml(data.ar_log.error) + '</div></div></div>';
-                }
-                resultEl.innerHTML = rh;
-                if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#4ec9b0;">&#10003;</span>';
-            }
-            // Continue to next entity regardless of success/failure
+            if (data._httpStatus >= 400 || data.error) { resultEl.classList.remove('hidden'); resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Import Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>'; if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>'; }
+            else { resultEl.classList.remove('hidden'); var rh = '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>Submitted</strong><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: ' + data.file_registry_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>'; if (data.ar_log) { if (data.ar_log.success) rh += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log</strong><div class="result-meta">' + data.ar_log.row_count.toLocaleString() + ' records linked</div></div></div>'; else rh += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log Failed</strong><div class="result-detail">' + escapeHtml(data.ar_log.error) + '</div></div></div>'; } resultEl.innerHTML = rh; if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#4ec9b0;">&#10003;</span>'; }
             executeSequential(idx + 1, jiraTicket);
         })
-        .catch(function (err) {
-            resultEl.classList.remove('hidden');
-            resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
-            if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>';
-            executeSequential(idx + 1, jiraTicket);
-        });
+        .catch(function (err) { resultEl.classList.remove('hidden'); resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>'; if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>'; executeSequential(idx + 1, jiraTicket); });
     }
 
     // ── Templates ─────────────────────────────────────────────────────────
-    function loadTemplates(entityType) {
-        entityTemplates = [];
-        var list = document.getElementById('template-list');
-        if (!list) return;
-        list.innerHTML = '<div class="template-empty">Loading templates...</div>';
-        fetch('/api/bdl-import/templates?entity_type=' + encodeURIComponent(entityType))
-            .then(function (r) { return r.json(); })
-            .then(function (data) { entityTemplates = data.templates || []; renderTemplateList(); })
-            .catch(function () { list.innerHTML = '<div class="template-empty">Failed to load templates.</div>'; });
-    }
-    function renderTemplateList() {
-        var list = document.getElementById('template-list');
-        if (!list) return;
-        if (!entityTemplates.length) { list.innerHTML = '<div class="template-empty">No saved templates for this entity type.</div>'; return; }
-        var html = '';
-        entityTemplates.forEach(function (t) {
-            var mapping = {}; try { mapping = JSON.parse(t.column_mapping); } catch (e) {}
-            var fieldCount = Object.keys(mapping).length;
-            var matchInfo = '';
-            if (currentStep === 4 && parsedFileData) { var mc = countTemplateMatches(mapping); matchInfo = '<span class="template-match">' + mc + ' of ' + fieldCount + ' fields match</span>'; }
-            var creator = t.created_by || ''; if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
-            var activeCls = (activeTemplateId === t.template_id) ? ' template-card-active' : '';
-            html += '<div class="template-card' + activeCls + '" onclick="BDL.previewTemplate(' + t.template_id + ')"><div class="template-card-name">' + escapeHtml(t.template_name) + '</div>';
-            if (t.description) html += '<div class="template-card-desc">' + escapeHtml(t.description) + '</div>';
-            html += '<div class="template-card-meta">' + fieldCount + ' fields &middot; ' + escapeHtml(creator) + (matchInfo ? ' &middot; ' + matchInfo : '') + '</div></div>';
-        });
-        list.innerHTML = html;
-    }
-    function countTemplateMatches(mapping) {
-        if (!parsedFileData) return 0;
-        var count = 0, fh = parsedFileData.headers.map(function (h) { return h.toUpperCase(); });
-        Object.keys(mapping).forEach(function (sc) { if (fh.indexOf(sc.toUpperCase()) !== -1) count++; });
-        return count;
-    }
-    function updateTemplateSectionState() {
-        var saveArea = document.getElementById('template-save-area');
-        var state = curState();
-        if (saveArea) {
-            if (currentStep === 4 && state && Object.keys(state.columnMapping).length > 0) saveArea.classList.remove('hidden');
-            else saveArea.classList.add('hidden');
-        }
-        if (entityTemplates.length > 0) renderTemplateList();
-    }
-    function previewTemplate(templateId) {
-        var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
-        if (!template) return;
-        var mapping = {}; try { mapping = JSON.parse(template.column_mapping); } catch (e) {}
-        var mappingKeys = Object.keys(mapping);
-        var slideout = document.getElementById('template-slideout'), overlay = document.getElementById('template-slideout-overlay');
-        document.getElementById('template-slideout-title').textContent = template.template_name;
-        var html = '', creator = template.created_by || ''; if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1];
-        html += '<div class="slideout-meta">'; if (template.description) html += '<div class="slideout-desc">' + escapeHtml(template.description) + '</div>'; html += '<div class="slideout-creator">Created by <strong>' + escapeHtml(creator) + '</strong></div></div>';
-        if (parsedFileData && currentStep === 4) { var mc = countTemplateMatches(mapping); var matchClass = (mc === mappingKeys.length) ? 'slideout-match-full' : (mc > 0 ? 'slideout-match-partial' : 'slideout-match-none'); html += '<div class="slideout-match-summary ' + matchClass + '">' + mc + ' of ' + mappingKeys.length + ' mapped columns found in your file</div>'; }
-        html += '<div class="slideout-mappings-header">Column Mappings (' + mappingKeys.length + ')</div><div class="slideout-mappings">';
-        var fileHeaders = parsedFileData ? parsedFileData.headers.map(function (h) { return h.toUpperCase(); }) : [];
-        mappingKeys.forEach(function (sourceCol) {
-            var elementName = mapping[sourceCol], displayName = getFieldDisplayNameByElement(elementName);
-            var matched = fileHeaders.indexOf(sourceCol.toUpperCase()) !== -1;
-            html += '<div class="slideout-pair' + (parsedFileData ? (matched ? ' slideout-pair-match' : ' slideout-pair-miss') : '') + '"><span class="slideout-pair-source">' + escapeHtml(sourceCol) + '</span><span class="slideout-pair-arrow">&#8594;</span>';
-            if (displayName !== elementName) html += '<span class="slideout-pair-target">' + escapeHtml(displayName) + ' <code>' + elementName + '</code></span>';
-            else html += '<span class="slideout-pair-target"><code>' + elementName + '</code></span>';
-            if (parsedFileData) html += '<span class="slideout-pair-status">' + (matched ? '&#10003;' : '&#10005;') + '</span>';
-            html += '</div>';
-        });
-        html += '</div>';
-        if (currentStep === 4 && parsedFileData) html += '<div class="slideout-actions"><button class="replace-btn" onclick="BDL.applyTemplate(' + templateId + ')">Apply Template</button></div>';
-        if (window.isAdmin) html += '<div class="slideout-danger"><button class="slideout-delete-btn" onclick="BDL.deleteTemplate(' + templateId + ')">Delete Template</button></div>';
-        document.getElementById('template-slideout-body').innerHTML = html;
-        slideout.classList.add('open'); overlay.classList.add('open');
-    }
+    function loadTemplates(entityType) { entityTemplates = []; var list = document.getElementById('template-list'); if (!list) return; list.innerHTML = '<div class="template-empty">Loading templates...</div>'; fetch('/api/bdl-import/templates?entity_type=' + encodeURIComponent(entityType)).then(function (r) { return r.json(); }).then(function (data) { entityTemplates = data.templates || []; renderTemplateList(); }).catch(function () { list.innerHTML = '<div class="template-empty">Failed to load templates.</div>'; }); }
+    function renderTemplateList() { var list = document.getElementById('template-list'); if (!list) return; if (!entityTemplates.length) { list.innerHTML = '<div class="template-empty">No saved templates for this entity type.</div>'; return; } var html = ''; entityTemplates.forEach(function (t) { var mapping = {}; try { mapping = JSON.parse(t.column_mapping); } catch (e) {} var fieldCount = Object.keys(mapping).length; var matchInfo = ''; if (currentStep === 4 && parsedFileData) { var mc = countTemplateMatches(mapping); matchInfo = '<span class="template-match">' + mc + ' of ' + fieldCount + ' fields match</span>'; } var creator = t.created_by || ''; if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1]; var activeCls = (activeTemplateId === t.template_id) ? ' template-card-active' : ''; html += '<div class="template-card' + activeCls + '" onclick="BDL.previewTemplate(' + t.template_id + ')"><div class="template-card-name">' + escapeHtml(t.template_name) + '</div>'; if (t.description) html += '<div class="template-card-desc">' + escapeHtml(t.description) + '</div>'; html += '<div class="template-card-meta">' + fieldCount + ' fields &middot; ' + escapeHtml(creator) + (matchInfo ? ' &middot; ' + matchInfo : '') + '</div></div>'; }); list.innerHTML = html; }
+    function countTemplateMatches(mapping) { if (!parsedFileData) return 0; var count = 0, fh = parsedFileData.headers.map(function (h) { return h.toUpperCase(); }); Object.keys(mapping).forEach(function (sc) { if (fh.indexOf(sc.toUpperCase()) !== -1) count++; }); return count; }
+    function updateTemplateSectionState() { var saveArea = document.getElementById('template-save-area'); var state = curState(); if (saveArea) { if (currentStep === 4 && state && Object.keys(state.columnMapping).length > 0) saveArea.classList.remove('hidden'); else saveArea.classList.add('hidden'); } if (entityTemplates.length > 0) renderTemplateList(); }
+    function previewTemplate(templateId) { var template = entityTemplates.find(function (t) { return t.template_id === templateId; }); if (!template) return; var mapping = {}; try { mapping = JSON.parse(template.column_mapping); } catch (e) {} var mappingKeys = Object.keys(mapping); var slideout = document.getElementById('template-slideout'), overlay = document.getElementById('template-slideout-overlay'); document.getElementById('template-slideout-title').textContent = template.template_name; var html = '', creator = template.created_by || ''; if (creator.indexOf('\\') !== -1) creator = creator.split('\\')[1]; html += '<div class="slideout-meta">'; if (template.description) html += '<div class="slideout-desc">' + escapeHtml(template.description) + '</div>'; html += '<div class="slideout-creator">Created by <strong>' + escapeHtml(creator) + '</strong></div></div>'; if (parsedFileData && currentStep === 4) { var mc = countTemplateMatches(mapping); var matchClass = (mc === mappingKeys.length) ? 'slideout-match-full' : (mc > 0 ? 'slideout-match-partial' : 'slideout-match-none'); html += '<div class="slideout-match-summary ' + matchClass + '">' + mc + ' of ' + mappingKeys.length + ' mapped columns found in your file</div>'; } html += '<div class="slideout-mappings-header">Column Mappings (' + mappingKeys.length + ')</div><div class="slideout-mappings">'; var fileHeaders = parsedFileData ? parsedFileData.headers.map(function (h) { return h.toUpperCase(); }) : []; mappingKeys.forEach(function (sourceCol) { var elementName = mapping[sourceCol], displayName = getFieldDisplayNameByElement(elementName); var matched = fileHeaders.indexOf(sourceCol.toUpperCase()) !== -1; html += '<div class="slideout-pair' + (parsedFileData ? (matched ? ' slideout-pair-match' : ' slideout-pair-miss') : '') + '"><span class="slideout-pair-source">' + escapeHtml(sourceCol) + '</span><span class="slideout-pair-arrow">&#8594;</span>'; if (displayName !== elementName) html += '<span class="slideout-pair-target">' + escapeHtml(displayName) + ' <code>' + elementName + '</code></span>'; else html += '<span class="slideout-pair-target"><code>' + elementName + '</code></span>'; if (parsedFileData) html += '<span class="slideout-pair-status">' + (matched ? '&#10003;' : '&#10005;') + '</span>'; html += '</div>'; }); html += '</div>'; if (currentStep === 4 && parsedFileData) html += '<div class="slideout-actions"><button class="replace-btn" onclick="BDL.applyTemplate(' + templateId + ')">Apply Template</button></div>'; if (window.isAdmin) html += '<div class="slideout-danger"><button class="slideout-delete-btn" onclick="BDL.deleteTemplate(' + templateId + ')">Delete Template</button></div>'; document.getElementById('template-slideout-body').innerHTML = html; slideout.classList.add('open'); overlay.classList.add('open'); }
     function closeTemplatePreview() { document.getElementById('template-slideout').classList.remove('open'); document.getElementById('template-slideout-overlay').classList.remove('open'); }
-    function applyTemplate(templateId) {
-        var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
-        var state = curState();
-        if (!template || !parsedFileData || !state) return;
-        var templateMapping = {}; try { templateMapping = JSON.parse(template.column_mapping); } catch (e) { return; }
-        var fileHeaderMap = {}; parsedFileData.headers.forEach(function (h) { fileHeaderMap[h.toUpperCase()] = h; });
-        state.columnMapping = {};
-        Object.keys(templateMapping).forEach(function (sourceCol) { var actualHeader = fileHeaderMap[sourceCol.toUpperCase()]; if (actualHeader) state.columnMapping[actualHeader] = templateMapping[sourceCol]; });
-        activeTemplateId = templateId;
-        closeTemplatePreview();
-        renderMapValidateMapping(document.getElementById('map-validate-area'), state);
-        renderTemplateList();
-    }
-    function showSaveTemplate() {
-        var state = curState();
-        if (!state || Object.keys(state.columnMapping).length === 0) return;
-        var modal = document.getElementById('template-modal-overlay');
-        var nameInput = document.getElementById('save-template-name'), descInput = document.getElementById('save-template-desc'), status = document.getElementById('save-template-status');
-        nameInput.value = ''; descInput.value = ''; status.classList.add('hidden');
-        var preview = document.getElementById('save-template-preview'), mKeys = Object.keys(state.columnMapping);
-        var html = '<div class="template-modal-preview-header">' + mKeys.length + ' mapping(s):</div>';
-        mKeys.forEach(function (sc) { var te = state.columnMapping[sc], dn = getFieldDisplayNameByElement(te); html += '<div class="template-modal-preview-row"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span><span class="pair-target">' + (dn !== te ? escapeHtml(dn) + ' <span class="pair-element">' + te + '</span>' : te) + '</span></div>'; });
-        preview.innerHTML = html; modal.classList.remove('hidden'); nameInput.focus();
-    }
+    function applyTemplate(templateId) { var template = entityTemplates.find(function (t) { return t.template_id === templateId; }); var state = curState(); if (!template || !parsedFileData || !state) return; var templateMapping = {}; try { templateMapping = JSON.parse(template.column_mapping); } catch (e) { return; } var fileHeaderMap = {}; parsedFileData.headers.forEach(function (h) { fileHeaderMap[h.toUpperCase()] = h; }); state.columnMapping = {}; Object.keys(templateMapping).forEach(function (sourceCol) { var actualHeader = fileHeaderMap[sourceCol.toUpperCase()]; if (actualHeader) state.columnMapping[actualHeader] = templateMapping[sourceCol]; }); activeTemplateId = templateId; closeTemplatePreview(); renderMapValidateMapping(document.getElementById('map-validate-area'), state); renderTemplateList(); }
+    function showSaveTemplate() { var state = curState(); if (!state || Object.keys(state.columnMapping).length === 0) return; var modal = document.getElementById('template-modal-overlay'); var nameInput = document.getElementById('save-template-name'), descInput = document.getElementById('save-template-desc'), status = document.getElementById('save-template-status'); nameInput.value = ''; descInput.value = ''; status.classList.add('hidden'); var preview = document.getElementById('save-template-preview'), mKeys = Object.keys(state.columnMapping); var html = '<div class="template-modal-preview-header">' + mKeys.length + ' mapping(s):</div>'; mKeys.forEach(function (sc) { var te = state.columnMapping[sc], dn = getFieldDisplayNameByElement(te); html += '<div class="template-modal-preview-row"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span><span class="pair-target">' + (dn !== te ? escapeHtml(dn) + ' <span class="pair-element">' + te + '</span>' : te) + '</span></div>'; }); preview.innerHTML = html; modal.classList.remove('hidden'); nameInput.focus(); }
     function closeSaveTemplate() { document.getElementById('template-modal-overlay').classList.add('hidden'); }
-    function saveTemplate() {
-        var state = curState(); if (!state) return;
-        var nameInput = document.getElementById('save-template-name'), descInput = document.getElementById('save-template-desc'), status = document.getElementById('save-template-status');
-        var name = nameInput.value.trim();
-        if (!name) { nameInput.focus(); nameInput.style.borderColor = '#f48771'; return; }
-        nameInput.style.borderColor = '';
-        fetch('/api/bdl-import/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity_type: state.entity.entity_type, template_name: name, description: descInput.value.trim() || null, column_mapping: JSON.stringify(state.columnMapping) }) })
-        .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
-        .then(function (data) {
-            if (data._httpStatus >= 400 || data.error) { status.textContent = data.error || 'Failed.'; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); }
-            else { status.textContent = 'Saved!'; status.className = 'template-modal-status template-modal-success'; status.classList.remove('hidden'); activeTemplateId = data.template_id; setTimeout(function () { closeSaveTemplate(); loadTemplates(state.entity.entity_type); }, 1000); }
-        }).catch(function (err) { status.textContent = 'Error: ' + err.message; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); });
-    }
-    function deleteTemplate(templateId) {
-        var template = entityTemplates.find(function (t) { return t.template_id === templateId; });
-        if (!template) return;
-        showConfirm('Delete template "' + template.template_name + '"?', { title: 'Delete Template', icon: '&#128465;', iconColor: '#f48771', confirmLabel: 'Delete', cancelLabel: 'Keep', confirmClass: 'xf-modal-btn-danger' })
-        .then(function (confirmed) {
-            if (!confirmed) return;
-            var state = curState();
-            fetch('/api/bdl-import/templates/' + templateId, { method: 'DELETE' }).then(function (r) { return r.json(); })
-            .then(function (data) { if (data.success) { if (activeTemplateId === templateId) activeTemplateId = null; closeTemplatePreview(); if (state) loadTemplates(state.entity.entity_type); } else showAlert(data.error || 'Failed.', { title: 'Delete Failed', icon: '&#10005;', iconColor: '#f48771' }); })
-            .catch(function (err) { showAlert(err.message, { title: 'Error', icon: '&#10005;', iconColor: '#f48771' }); });
-        });
-    }
+    function saveTemplate() { var state = curState(); if (!state) return; var nameInput = document.getElementById('save-template-name'), descInput = document.getElementById('save-template-desc'), status = document.getElementById('save-template-status'); var name = nameInput.value.trim(); if (!name) { nameInput.focus(); nameInput.style.borderColor = '#f48771'; return; } nameInput.style.borderColor = ''; fetch('/api/bdl-import/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity_type: state.entity.entity_type, template_name: name, description: descInput.value.trim() || null, column_mapping: JSON.stringify(state.columnMapping) }) }).then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); }).then(function (data) { if (data._httpStatus >= 400 || data.error) { status.textContent = data.error || 'Failed.'; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); } else { status.textContent = 'Saved!'; status.className = 'template-modal-status template-modal-success'; status.classList.remove('hidden'); activeTemplateId = data.template_id; setTimeout(function () { closeSaveTemplate(); loadTemplates(state.entity.entity_type); }, 1000); } }).catch(function (err) { status.textContent = 'Error: ' + err.message; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); }); }
+    function deleteTemplate(templateId) { var template = entityTemplates.find(function (t) { return t.template_id === templateId; }); if (!template) return; showConfirm('Delete template "' + template.template_name + '"?', { title: 'Delete Template', icon: '&#128465;', iconColor: '#f48771', confirmLabel: 'Delete', cancelLabel: 'Keep', confirmClass: 'xf-modal-btn-danger' }).then(function (confirmed) { if (!confirmed) return; var state = curState(); fetch('/api/bdl-import/templates/' + templateId, { method: 'DELETE' }).then(function (r) { return r.json(); }).then(function (data) { if (data.success) { if (activeTemplateId === templateId) activeTemplateId = null; closeTemplatePreview(); if (state) loadTemplates(state.entity.entity_type); } else showAlert(data.error || 'Failed.', { title: 'Delete Failed', icon: '&#10005;', iconColor: '#f48771' }); }).catch(function (err) { showAlert(err.message, { title: 'Error', icon: '&#10005;', iconColor: '#f48771' }); }); }); }
 
     // ── Reset ─────────────────────────────────────────────────────────────
     function resetFromStep(step) {
@@ -1412,22 +909,17 @@ var BDL = (function () {
         if (step <= 2) { uploadedFile = null; parsedFileData = null; }
         if (step <= 3) { selectedEntities = []; entityStates = []; currentEntityIndex = 0; entityTemplates = []; activeTemplateId = null; }
         if (step <= 4) { entityStates = []; currentEntityIndex = 0; activeTemplateId = null; }
-        executeInProgress = false;
-        clearPromoteState();
-        updateStepperUI(); updateNavButtons();
+        executeInProgress = false; clearPromoteState(); updateStepperUI(); updateNavButtons();
     }
 
-    function clearPromoteState() {
-        if (promoteCountdownTimer) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; }
-        promoteData = null; promoteSecondsRemaining = 0; promoteReady = false;
-    }
+    function clearPromoteState() { if (promoteCountdownTimer) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; } promoteData = null; promoteSecondsRemaining = 0; promoteReady = false; }
 
     function escapeHtml(str) { if (!str) return ''; var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
     return {
         init: init, goToStep: goToStep, nextStep: nextStep, prevStep: prevStep,
         selectEnvironment: selectEnvironment,
-        toggleEntity: toggleEntity, filterEntities: filterEntities,
+        toggleEntity: toggleEntity, showFieldInfo: showFieldInfo,
         dragOver: dragOver, dragLeave: dragLeave, fileDrop: fileDrop, fileSelected: fileSelected, removeFile: removeFile,
         sourceClick: sourceClick, targetClick: targetClick, chipDragStart: chipDragStart, chipDragOver: chipDragOver, chipDrop: chipDrop,
         unmapPair: unmapPair, identifierChanged: identifierChanged,
