@@ -163,9 +163,6 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                         <span class="entity-banner-text">Click entity types to select them for import. You can select multiple.</span>
                         <span class="entity-banner-count" id="entity-select-count"></span>
                     </div>
-                    <div class="entity-search">
-                        <input type="text" id="entity-search" placeholder="Filter entity types..." oninput="BDL.filterEntities(this.value)">
-                    </div>
                     <div class="entity-grid" id="entity-grid">
                         <div class="loading">Loading entity types...</div>
                     </div>
