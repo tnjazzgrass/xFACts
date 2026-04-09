@@ -1111,6 +1111,10 @@ Entity names (flow names, job names) can take the color of their status for at-a
 
 **Modals** follow a consistent structure: overlay (semi-transparent dark background), content container (dark background, rounded corners), header (title + × close button), scrollable body, footer with action buttons. Always use styled modals — never browser `prompt()`, `confirm()`, or `alert()`.
 
+**Shared modal functions:** `showAlert()` and `showConfirm()` in `engine-events.js` are the platform standard for alert and confirmation dialogs. CSS classes use the `xf-modal-*` prefix, defined in `engine-events.css` with a self-contained `xfModalFadeIn` animation. Both return Promises — `showAlert()` resolves on OK click, `showConfirm()` resolves true/false. Options include `title`, `icon`, `iconColor`, `buttonLabel`/`confirmLabel`/`cancelLabel`, `confirmClass` (supports `xf-modal-btn-danger` for destructive actions), and `html` (boolean for rich HTML body content). BDL Import is the reference implementation — it uses these exclusively with no native dialogs remaining.
+
+**BOLO — Legacy native dialogs:** Many existing CC pages still use native `alert()`, `confirm()`, and `prompt()` calls. These should be converted to `showAlert()`/`showConfirm()` incrementally as pages are touched during other work. When modifying an existing page for any reason, check for native dialog calls and convert them as part of the change. This is a gradual migration — do not attempt a bulk conversion, but do not leave native dialogs in place on a page you're already editing.
+
 **Slideout panels** slide in from the right for detail views. Structure: summary stats row at top (label/value pairs), section titles for content grouping, consistent close button. Optional refresh button only if the slideout fetches independent data.
 
 **Selection modals** that replace browser dialogs use button groups for preset options (e.g., time window selectors with 5m, 15m, 30m, 60m buttons).
