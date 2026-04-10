@@ -1197,6 +1197,143 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 }
 
 # ----------------------------------------------------------------------------
+# POST /api/bdl-import/align-rows
+# Aligns a target staging table's skip set to match a source staging table.
+# Finds identifier values that are skipped in the source but active in the
+# target, and marks them as skipped in the target.
+# Body: { source_table, target_table, identifier_column }
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $sourceTable = $body.source_table
+        $targetTable = $body.target_table
+        $identifierColumn = $body.identifier_column
+
+        if (-not $sourceTable -or -not $targetTable -or -not $identifierColumn) {
+            Write-PodeJsonResponse -Value @{ error = 'source_table, target_table, and identifier_column are required' } -StatusCode 400
+            return
+        }
+
+        # Verify both staging tables exist
+        foreach ($tblName in @($sourceTable, $targetTable)) {
+            $tableCheck = Invoke-XFActsQuery -Query @"
+                SELECT 1 FROM sys.tables t
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = 'Staging' AND t.name = @tableName
+"@ -Parameters @{ tableName = $tblName }
+
+            if (-not $tableCheck -or $tableCheck.Count -eq 0) {
+                Write-PodeJsonResponse -Value @{ error = "Staging table not found: $tblName" } -StatusCode 404
+                return
+            }
+        }
+
+        # Verify identifier column exists in both tables
+        foreach ($tblName in @($sourceTable, $targetTable)) {
+            $colCheck = Invoke-XFActsQuery -Query @"
+                SELECT 1 FROM sys.columns c
+                INNER JOIN sys.tables t ON t.object_id = c.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = 'Staging' AND t.name = @tableName AND c.name = @colName
+"@ -Parameters @{ tableName = $tblName; colName = $identifierColumn }
+
+            if (-not $colCheck -or $colCheck.Count -eq 0) {
+                Write-PodeJsonResponse -Value @{ error = "Identifier column '$identifierColumn' not found in staging table '$tblName'" } -StatusCode 404
+                return
+            }
+        }
+
+        $safeSource = "Staging.[" + $sourceTable.Replace(']', ']]') + "]"
+        $safeTarget = "Staging.[" + $targetTable.Replace(']', ']]') + "]"
+        $safeIdCol = "[" + $identifierColumn.Replace(']', ']]') + "]"
+
+        # Skip rows in the target where the identifier is skipped in the source
+        $rowsAligned = Invoke-XFActsNonQuery -Query @"
+            UPDATE t
+            SET t._skip = 1
+            FROM $safeTarget t
+            INNER JOIN $safeSource s ON s.$safeIdCol = t.$safeIdCol
+            WHERE s._skip = 1
+              AND t._skip = 0
+"@
+
+        # Get updated counts for the target table
+        $countResult = Invoke-XFActsQuery -Query @"
+            SELECT 
+                COUNT(CASE WHEN _skip = 0 THEN 1 END) AS active_count,
+                COUNT(CASE WHEN _skip = 1 THEN 1 END) AS skipped_count
+            FROM $safeTarget
+"@
+
+        $activeCount = if ($countResult -and $countResult.Count -gt 0) { $countResult[0].active_count } else { 0 }
+        $skippedCount = if ($countResult -and $countResult.Count -gt 0) { $countResult[0].skipped_count } else { 0 }
+
+        Write-PodeJsonResponse -Value @{
+            rows_aligned  = $rowsAligned
+            target_table  = $targetTable
+            source_table  = $sourceTable
+            active_count  = $activeCount
+            skipped_count = $skippedCount
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# POST /api/bdl-import/reset-alignment
+# Resets all skipped rows in a staging table back to active.
+# Used to undo alignment on FIXED_VALUE entity staging tables.
+# Body: { staging_table }
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/reset-alignment' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $stagingTable = $body.staging_table
+
+        if (-not $stagingTable) {
+            Write-PodeJsonResponse -Value @{ error = 'staging_table is required' } -StatusCode 400
+            return
+        }
+
+        $tableCheck = Invoke-XFActsQuery -Query @"
+            SELECT 1 FROM sys.tables t
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = 'Staging' AND t.name = @tableName
+"@ -Parameters @{ tableName = $stagingTable }
+
+        if (-not $tableCheck -or $tableCheck.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = "Staging table not found: $stagingTable" } -StatusCode 404
+            return
+        }
+
+        $safeTable = "Staging.[" + $stagingTable.Replace(']', ']]') + "]"
+
+        $rowsReset = Invoke-XFActsNonQuery -Query @"
+            UPDATE $safeTable SET _skip = 0 WHERE _skip = 1
+"@
+
+        # Get updated count
+        $countResult = Invoke-XFActsQuery -Query @"
+            SELECT COUNT(*) AS active_count FROM $safeTable WHERE _skip = 0
+"@
+
+        $activeCount = if ($countResult -and $countResult.Count -gt 0) { $countResult[0].active_count } else { 0 }
+
+        Write-PodeJsonResponse -Value @{
+            rows_reset   = $rowsReset
+            active_count = $activeCount
+            staging_table = $stagingTable
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
 # GET /api/bdl-import/templates?entity_type=PHONE
 # Returns active templates for a given entity type. Visible to all users.
 # ----------------------------------------------------------------------------
