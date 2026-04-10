@@ -1,11 +1,9 @@
 # BDL Import Module -- Working Document
 
-**Status:** In development -- 5-step wizard operational for FILE_MAPPED and FIXED_VALUE entities, multi-entity selection with per-entity loop, CONSUMER_TAG end-to-end verified  
+**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge. Multi-entity + FIXED_VALUE end-to-end verified.  
 **Audience:** Dirk, Matt, Brandon, Claude  
-**Last Updated:** April 9, 2026  
+**Last Updated:** April 10, 2026  
 **Replaces:** `BDL_Import_Module_Design.md`, `BDL_Catalog_Reload_Instructions.md`, `xFACts_Questions_For_Matt.md`, `BDL_Action_Sequences_Planning.md`
-
-> **Note:** The `BDL_Action_Sequences_Planning.md` document has been merged into this file and should be deleted from the repository.
 
 ---
 
@@ -221,10 +219,47 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Red border when unselected, green border when confirmed
 - Applies to both FILE_MAPPED and FIXED_VALUE entity types
 
-### Promote to Production
-- After successful non-PROD import, Promote to Production card appears with GlobalConfig-driven countdown timer
-- Infrastructure exists: state variables, CSS styles, GlobalConfig `bdl_promote_cooldown_seconds`, `prod_config_id` in API response
-- UI rendering was lost during the 5-step tabbed execute restructure -- needs to be re-wired (follow-up item)
+### Promote to Production (Restored April 10)
+- After successful non-PROD import (at least one entity succeeded), Promote to Production card appears below the unified results pane
+- GlobalConfig-driven cooldown timer (`bdl_promote_cooldown_seconds`) counts down before enabling the card
+- Card is interactive during countdown -- clicking flashes hint: "Please verify your results in the lower environment first"
+- When timer expires, card shows "Ready" with green styling; clicking opens PROD advisory modal
+- PROD advisory modal shows source environment, entity list with row counts, and production warning
+- Confirming swaps `selectedEnvironment` to PROD, resets execution state (preserving staging data, mappings, alignment), resets `xmlPreviewLoaded`, and re-renders Step 5
+- User gets full edit capability on the PROD summary (alignment, XML preview, Jira ticket, Submit All)
+- Promote metadata (`promote_cooldown_seconds`, `prod_config_id`) captured from first successful API response
+
+### Unified Execution Results (April 10)
+- Per-entity result divs removed from individual tab content
+- All execution results (primary BDLs + AR log companions) render in a unified results pane below the tabs
+- Each result card includes entity name in title: "Phone — Submitted", "Consumer Tag — AR Log Submitted"
+- Results accumulate as `executeSequential()` processes each entity
+- Pane appears automatically when first execution begins; hidden before that
+
+### Row Count Alignment (April 10)
+- Mismatch detection banner appears on Step 5 when multiple entities have different active row counts AND at least one FIXED_VALUE/HYBRID entity exists
+- Alignment only applies to FIXED_VALUE/HYBRID entities -- FILE_MAPPED entities are independent alignment sources
+- "Align Row Counts" button opens a modal with per-entity dropdowns listing FILE_MAPPED entities as alignment targets
+- Alignment joins staging tables on shared identifier column (`cnsmr_idntfr_agncy_id` or `cnsmr_accnt_idntfr_agncy_id`), skips rows in target that are skipped in source
+- "Undo" per entity in the modal resets all `_skip = 0` on that entity's staging table
+- Step 5 re-renders after alignment with updated counts in summary cards
+- Design principle: FILE_MAPPED = independent ("load this data"), FIXED_VALUE = derivative ("apply this to those records")
+- Future multi-tag design will extend alignment to per-tag granularity within a single FIXED_VALUE entity
+
+### XML Preview per Entity Tab (April 10)
+- Single-click "Preview XML" header in each entity tab on Step 5
+- First click expands section and fires `/api/bdl-import/build-preview` API call
+- Subsequent clicks toggle visibility without re-fetching (uses `xmlPreviewLoaded` flag on entity state)
+- XML rendered with syntax highlighting (declaration, tags, attributes, values via CSS classes)
+- Copy button uses `document.execCommand('copy')` fallback -- `navigator.clipboard` does not work in Pode-served environment
+- Preview truncated at 100KB with note; full file size shown in metadata
+
+### Environment Badge (April 10)
+- Persistent badge in the far left of the stepper bar showing the selected environment (TEST, STAGE, PROD)
+- Appears after Step 1 environment selection, updates on Promote to Production
+- Color palette: TEST = yellow (`#dcdcaa`), STAGE = orange (`#ce9178`), PROD = red (`#ef4444`)
+- PROD environment card border and selected name color also changed from green to red to match badge
+- Badge container in route HTML (`BDLImport.ps1`), populated by `updateEnvBadge()` in JS
 
 ### Styled Modal System
 - All native dialogs replaced with `showAlert()`/`showConfirm()` from `engine-events.js`
@@ -381,6 +416,8 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 | POST | `/api/bdl-import/validate` | Read staging table + fetch lookups from DM (repeatable) |
 | POST | `/api/bdl-import/replace-values` | Mass-replace values in staging table column |
 | POST | `/api/bdl-import/skip-rows` | Mark rows as skipped in staging table |
+| POST | `/api/bdl-import/align-rows` | Align target staging table skip set to source. Joins on identifier column, skips mismatched rows in target. Returns updated counts. |
+| POST | `/api/bdl-import/reset-alignment` | Reset all skipped rows in a staging table to active. Used to undo alignment on FIXED_VALUE entities. |
 | GET | `/api/bdl-import/staging-cleanup` | Check for expired staging tables (>48 hours) |
 | POST | `/api/bdl-import/staging-cleanup` | Drop expired staging tables |
 | GET | `/api/bdl-import/history` | Recent import history from BDL_ImportLog |
@@ -397,21 +434,64 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 
 ### Immediate (Resume Point)
 
-1. **Multi-entity row count alignment** -- When multiple entities are selected and rows are skipped during validation of one entity, the other entities' staging tables still contain the full row set. Need a cross-entity key comparison modal on Step 5 that identifies mismatched row counts and offers alignment (mark extra rows as skipped in companion entities) before enabling Submit All.
+1. **BDL Permissions Admin Modal** -- Extend the existing BDL Content Management admin modal on the Apps/Int page with a mode selector: "Global Configuration" (current behavior) and "Department Access" mode. Department Access mode adds a department dropdown (from `RBAC_DepartmentRegistry`) that re-renders the format list and element grid as a permissions management view. See "BDL Permissions Admin Modal Design" section below for full specification. Prerequisite: verify exact column schemas for `Tools.AccessConfig`, `Tools.AccessFieldConfig`, and `RBAC_DepartmentRegistry` before writing SQL.
 
-2. **XML preview per tab** -- The Execute step (Step 5) previously had XML preview capability that was lost during the 5-step consolidation. Restore per-entity XML preview within each tab on the execute screen.
+2. **AR Log companion scope decision** -- Confirm with Matt/Brandon whether the AR log companion should remain per-entity (current behavior: Phone + Consumer Tag + Jira ticket = 4 BDLs) or be consolidated to one AR log per batch. Current implementation is per-entity. Decision impacts future multi-tag alignment design.
 
-3. **Promote to Production** -- Infrastructure exists (state variables, CSS, GlobalConfig cooldown setting, prod_config_id in API response) but the UI rendering was lost during the tabbed execute restructure. Re-wire the promote card rendering and click handler into the new tabbed execute flow.
+3. **Execution progress indicator** -- Re-wire the step-through progress display (building XML → registering → submitting) into the unified results pane. CSS classes exist (`.progress-steps`, `.progress-active`, `.progress-complete`). Visual polish item.
 
 4. **`import_guidance` column on Catalog_BDLElementRegistry** -- Operational tips for fields during import (e.g., "Required numeric value -- enter 0 if not in source data" for phone quality score, "Optional -- defaults to current timestamp if blank" for tag assignment date). Separate from `field_description` which documents what the field is.
 
-5. **Version bumps** -- Deferred from April 6, April 8, and April 9 sessions. Multiple components touched: Tools.Operations (action_type, entity_key, batch_abbreviation columns), Tools.Catalog (element registry is_import_required updates), ControlCenter.BDLImport (5-step consolidation, multi-select, per-entity loop, fixed-value UI, typeahead, entity grouping, field info modal, tabbed execute), DeptOps.ApplicationsIntegration (API file, JS file, CSS badges).
+5. **Version bumps** -- Deferred from April 6, April 8, April 9, and April 10 sessions. Multiple components touched: Tools.Operations (action_type, entity_key, batch_abbreviation columns), Tools.Catalog (element registry is_import_required updates), ControlCenter.BDLImport (5-step consolidation, multi-select, per-entity loop, fixed-value UI, typeahead, entity grouping, field info modal, tabbed execute, XML preview, unified results, row alignment, promote to production, environment badge), DeptOps.ApplicationsIntegration (API file, JS file, CSS badges).
+
+### BDL Permissions Admin Modal Design
+
+Extends the existing BDL Content Management admin modal on the Apps/Int page with a department access management mode. No new modal -- same two-tier slide-up/slideout panel with a mode selector overlay.
+
+**Mode Selector:**
+- Toggle at top of slide-up panel: "Global Configuration" (default) vs "Department Access"
+- Department Access mode reveals a dropdown populated from `RBAC_DepartmentRegistry`
+- Selecting a department reloads the format list through a department permissions lens
+
+**Tier 1 — Format List in Department Mode:**
+- Shows only globally active entities (`is_active = 1`) -- inactive entities hidden since they can't be granted
+- Toggle per entity = has `Tools.AccessConfig` row for this department + entity
+- Toggle ON = INSERT into `Tools.AccessConfig` (`tool_type = 'BDL'`, `item_key = entity_type`, `department_scope = selected department`)
+- Toggle OFF = SET `is_active = 0` on the `AccessConfig` row
+- Stats show "X of Y fields granted" per entity
+- display_name, field_description, and other catalog fields are read-only in this mode
+
+**Tier 2 — Element Grid in Department Mode:**
+- Shows only globally visible fields (`is_visible = 1`)
+- Single "Granted" toggle per field = has `Tools.AccessFieldConfig` row
+- Toggle ON = INSERT into `Tools.AccessFieldConfig`
+- Toggle OFF = SET `is_active = 0` on the `AccessFieldConfig` row
+- display_name and field_description shown as read-only (edits happen in Global mode only)
+
+** FOR BOTH TIER 1 AND TIER 2 this should be UPSERT behavior - if the row exists already in the department scope it should update it accordingly. If it does not, it should insert it. **
+
+**Key Design Principle:** Global config first (activate entity, configure fields), then department scoping second (grant entity access, whitelist specific fields). The department view inherits from the global view as a natural filter. FILE_MAPPED entities are independent alignment sources; FIXED_VALUE/HYBRID entities are derivative and align to mapped entities.
+
+**New API Endpoints Required:**
+- `GET /api/apps-int/departments` -- Active departments from `RBAC_DepartmentRegistry`
+- `GET /api/apps-int/bdl-access?department=X` -- Format list with access status per department
+- `GET /api/apps-int/bdl-field-access?config_id=X` -- Element list with field access status
+- `POST /api/apps-int/bdl-access/toggle` -- Grant or revoke entity access
+- `POST /api/apps-int/bdl-field-access/toggle` -- Grant or revoke field access
+
+**Files Modified:**
+- `ApplicationsIntegration-API.ps1` -- 5 new endpoints
+- `applications-integration.js` -- Mode state, department dropdown, conditional rendering in `BdlCatalog` module
+- `applications-integration.css` -- Mode selector styling, department-specific toggle styling
 
 ### Follow-Up Items
 
 - **Multi-tag "Add Another" pattern** -- Entering multiple tag values for the same entity, generating one row per consumer per tag with sequential `seq_no`. Tags use a repeating pattern where each tag gets its own entry (not contained within the same entry).
+- **Multi-tag alignment per tag** -- When multi-tag support is built for FIXED_VALUE entities, the alignment modal will need per-tag alignment dropdowns (each tag independently aligns to a FILE_MAPPED entity). Staging table will need per-tag skip tracking instead of single `_skip` column.
 - **HYBRID action_type UI** -- Reserved but not yet implemented. Combination of file-mapped and manually entered fields.
 - **Same source column mapped to multiple BDLs** -- Pending Brandon's input on whether this is a real scenario.
+- **AR Log scope decision** -- Pending confirmation: should AR log remain per-entity (current) or consolidate to one per batch? Impacts multi-tag design. Dirk conferring with team.
+- **Reset validation skips for mapped entities** -- Currently no mechanism to undo validation-phase skips on FILE_MAPPED entities without re-running validation from scratch. Future enhancement.
 - **Step guide text refinement** -- Right-column guidance for each step.
 - **Template UX refinement** -- User feedback on template workflow.
 - **Typeahead lookup column discovery** -- Current discovery logic finds `_actv_flg` and `_nm` columns dynamically. If future lookup tables use different naming patterns for active flags or descriptions, the discovery may need expansion.
@@ -421,7 +501,6 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 ### Phase 2
 
 - Import history view on the BDL Import page
-- Admin UI for AccessFieldConfig management
 - `display_name` enrichment across additional entity elements
 - Staging table resume/review capability
 - **BatchOps BDL monitoring collector** -- Pulls BDL processing results from DM. Writes completion status back to `Tools.BDL_ImportLog` via `file_registry_id`. Cross-module: collector lives in BatchOps, write-back targets Tools schema.
