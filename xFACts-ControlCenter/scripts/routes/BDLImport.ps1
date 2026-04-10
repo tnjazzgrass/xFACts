@@ -94,6 +94,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
             
             <!-- STEPPER BAR (5 steps) -->
             <div class="stepper">
+                <div class="env-badge hidden" id="env-badge"></div>
                 <div class="step active" id="step-ind-1" onclick="BDL.goToStep(1)">
                     <div class="step-number" id="step-num-1">1</div>
                     <div class="step-label">Environment</div>
