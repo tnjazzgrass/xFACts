@@ -6,7 +6,8 @@
 
    CHANGELOG
    ---------
-   2026-04-09  Entity selection grouped by entity_key (CONSUMER/ACCOUNT/OTHER)
+   2026-04-09  Restored XML preview per entity tab on Execute step
+               Entity selection grouped by entity_key (CONSUMER/ACCOUNT/OTHER)
                Field info modal on entity cards (on-demand field list via ℹ icon)
    2026-04-08  Consolidated to 5-step wizard
                Steps 2/3 swapped: Upload File precedes Entity Type selection
@@ -145,6 +146,15 @@ var BDL = (function () {
         }
     }
 
+    function updateEnvBadge() {
+        var badge = document.getElementById('env-badge');
+        if (!badge) return;
+        if (!selectedEnvironment) { badge.className = 'env-badge hidden'; badge.textContent = ''; return; }
+        var env = selectedEnvironment.environment;
+        badge.textContent = env;
+        badge.className = 'env-badge env-badge-' + env.toLowerCase();
+    }
+
     // ── Step 1: Environment ──────────────────────────────────────────────
     function loadEnvironments() {
         fetch('/api/bdl-import/environments').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -166,7 +176,7 @@ var BDL = (function () {
     function applyEnvironmentSelection(card, envData) {
         document.querySelectorAll('.env-card').forEach(function (c) { c.classList.remove('selected'); }); card.classList.add('selected');
         selectedEnvironment = envData;
-        stepComplete[0] = true; updateNavButtons(); updateStepperUI(); resetFromStep(2);
+        stepComplete[0] = true; updateNavButtons(); updateStepperUI(); updateEnvBadge(); resetFromStep(2);
     }
     function showProdAdvisoryModal(card, envData) {
         var existing = document.getElementById('prod-advisory-modal');
@@ -261,7 +271,6 @@ var BDL = (function () {
         var grid = document.getElementById('entity-grid');
         if (!entities.length) { grid.innerHTML = '<div class="placeholder-message">No entity types available.</div>'; return; }
 
-        // Group by entity_key with defined order
         var sectionOrder = ['CONSUMER', 'ACCOUNT', 'OTHER'];
         var sectionLabels = { CONSUMER: 'Consumer', ACCOUNT: 'Account', OTHER: 'Other' };
         var groups = {};
@@ -535,7 +544,6 @@ var BDL = (function () {
         var field = state.fields.find(function (f) { return f.element_name === elementName; });
         if (!field || !field.lookup_table) { checkFixedValueComplete(state); return; }
 
-        // Check cache first (keyed by element + search term)
         if (!state._lookupCache) state._lookupCache = {};
         var cacheKey = elementName + '::' + val.toLowerCase();
         if (state._lookupCache[cacheKey]) {
@@ -544,7 +552,6 @@ var BDL = (function () {
             return;
         }
 
-        // Debounce: wait 300ms after last keystroke before fetching
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
@@ -854,14 +861,409 @@ var BDL = (function () {
         clearPromoteState();
         var html = '';
         html += '<div class="execute-ticket"><div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional — applies to all imports)</span></div><div class="ticket-fields"><div class="ticket-field-row"><label class="ticket-label" for="jira-ticket">Ticket</label><input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" oninput="BDL.ticketChanged()"></div><div class="ticket-field-row" id="ar-message-row" style="display:none;"><label class="ticket-label" for="ar-message">AR Message</label><input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message for DM AR log"></div></div></div>';
+        // Row count mismatch detection (multi-entity only)
+        if (entityStates.length > 1) {
+            var hasFixedOrHybrid = entityStates.some(function (s) { return s.entity.action_type === 'FIXED_VALUE' || s.entity.action_type === 'HYBRID'; });
+            var counts = entityStates.map(function (s) { return s.stagingContext ? s.stagingContext.row_count : 0; });
+            var allSame = counts.every(function (c) { return c === counts[0]; });
+            if (!allSame && hasFixedOrHybrid) {
+                html += '<div class="execute-mismatch-banner">';
+                html += '<div class="mismatch-header"><span class="mismatch-icon">&#9888;</span> Row counts differ across entities</div>';
+                html += '<div class="mismatch-detail">';
+                entityStates.forEach(function (s) {
+                    var name = formatEntityName(s.entity.entity_type);
+                    var active = s.stagingContext ? s.stagingContext.row_count : 0;
+                    var skipped = s.stagingContext && s.stagingContext.skipped_count ? s.stagingContext.skipped_count : 0;
+                    html += '<div class="mismatch-entity"><span class="mismatch-name">' + escapeHtml(name) + '</span><span class="mismatch-counts">' + active.toLocaleString() + ' active';
+                    if (skipped > 0) html += ', ' + skipped.toLocaleString() + ' skipped';
+                    html += '</span></div>';
+                });
+                html += '</div>';
+                html += '<div class="mismatch-actions"><button class="nav-btn" onclick="BDL.showAlignmentModal()">Align Row Counts</button></div>';
+                html += '</div>';
+            }
+        }
         html += '<div class="execute-tabs" id="execute-tabs">'; entityStates.forEach(function (state, idx) { var activeClass = idx === 0 ? ' execute-tab-active' : ''; html += '<div class="execute-tab' + activeClass + '" id="exec-tab-' + idx + '" onclick="BDL.switchExecuteTab(' + idx + ')">' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</div>'; }); html += '</div>';
-        entityStates.forEach(function (state, idx) { var visClass = idx === 0 ? '' : ' hidden'; var entityName = formatEntityName(state.entity.entity_type); var mappedCount = Object.keys(state.columnMapping).length; var rowCount = state.stagingContext ? state.stagingContext.row_count : 0; var skipped = state.stagingContext && state.stagingContext.skipped_count ? state.stagingContext.skipped_count : 0; html += '<div class="execute-tab-content' + visClass + '" id="exec-content-' + idx + '"><div class="execute-summary"><div class="execute-summary-header">' + escapeHtml(entityName) + '</div><div class="execute-summary-grid">'; html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>'; html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.entity.entity_type) + '</code></span></div>'; html += '<div class="summary-item"><span class="summary-label">Rows</span><span class="summary-value">' + rowCount.toLocaleString() + (skipped > 0 ? ' <span style="color:#888;font-size:11px;">(' + skipped + ' skipped)</span>' : '') + '</span></div>'; html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>'; html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.stagingContext.staging_table) + '</code></span></div>'; html += '</div></div><div class="execute-result hidden" id="exec-result-' + idx + '"></div></div>'; });
+        entityStates.forEach(function (state, idx) {
+            var visClass = idx === 0 ? '' : ' hidden';
+            var entityName = formatEntityName(state.entity.entity_type);
+            var mappedCount = Object.keys(state.columnMapping).length;
+            var rowCount = state.stagingContext ? state.stagingContext.row_count : 0;
+            var skipped = state.stagingContext && state.stagingContext.skipped_count ? state.stagingContext.skipped_count : 0;
+            html += '<div class="execute-tab-content' + visClass + '" id="exec-content-' + idx + '">';
+            html += '<div class="execute-summary"><div class="execute-summary-header">' + escapeHtml(entityName) + '</div><div class="execute-summary-grid">';
+            html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.entity.entity_type) + '</code></span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Rows</span><span class="summary-value">' + rowCount.toLocaleString() + (skipped > 0 ? ' <span style="color:#888;font-size:11px;">(' + skipped + ' skipped)</span>' : '') + '</span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>';
+            html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.stagingContext.staging_table) + '</code></span></div>';
+            html += '</div></div>';
+            // XML Preview section — single click to expand and build
+            html += '<div class="execute-preview" id="exec-preview-' + idx + '">';
+            html += '<div class="execute-section-header xml-preview-header" onclick="BDL.previewEntityXml(' + idx + ')">&#128196; Preview XML <span class="section-toggle" id="xml-toggle-' + idx + '">&#9654;</span></div>';
+            html += '<div class="execute-section-body collapsed" id="xml-body-' + idx + '">';
+            html += '<div id="xml-content-' + idx + '"></div>';
+            html += '</div></div>';
+            html += '</div>';
+        });
+        // Unified results pane — all execution results appear here together
+        html += '<div class="execute-results-all hidden" id="execute-results-all"><div class="execute-results-header">Execution Results</div><div id="execute-results-list"></div></div>';
         html += '<div class="execute-actions" id="execute-actions">'; if (envName === 'PROD') html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>'; html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeAll()">Submit All (' + entityStates.length + ' BDL' + (entityStates.length > 1 ? 's' : '') + ')</button></div>';
         html += '<div class="execute-progress hidden" id="execute-progress"></div>';
         area.innerHTML = html;
     }
 
     function switchExecuteTab(idx) { entityStates.forEach(function (_, i) { var tab = document.getElementById('exec-tab-' + i); var content = document.getElementById('exec-content-' + i); if (i === idx) { tab.classList.add('execute-tab-active'); content.classList.remove('hidden'); } else { tab.classList.remove('execute-tab-active'); content.classList.add('hidden'); } }); }
+
+    function previewEntityXml(idx) {
+        var body = document.getElementById('xml-body-' + idx);
+        var toggle = document.getElementById('xml-toggle-' + idx);
+        var state = entityStates[idx];
+        if (!body || !state || !state.stagingContext) return;
+
+        // If already loaded, just toggle visibility
+        if (state.xmlPreviewLoaded) {
+            if (body.classList.contains('collapsed')) {
+                body.classList.remove('collapsed');
+                if (toggle) toggle.innerHTML = '&#9660;';
+            } else {
+                body.classList.add('collapsed');
+                if (toggle) toggle.innerHTML = '&#9654;';
+            }
+            return;
+        }
+
+        // Expand and load
+        body.classList.remove('collapsed');
+        if (toggle) toggle.innerHTML = '&#9660;';
+        var contentEl = document.getElementById('xml-content-' + idx);
+        if (!contentEl) return;
+        contentEl.innerHTML = '<div class="xml-preview-loading">Building XML preview...</div>';
+        fetch('/api/bdl-import/build-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                staging_table: state.stagingContext.staging_table,
+                entity_type: state.entity.entity_type,
+                config_id: selectedEnvironment.config_id
+            })
+        })
+        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+        .then(function (data) {
+            var html = '<div class="xml-preview-header">';
+            html += '<span class="xml-filename">' + escapeHtml(data.xml_filename) + '</span>';
+            html += '<span class="xml-meta">' + data.row_count.toLocaleString() + ' rows';
+            if (data.skipped_count > 0) html += ', ' + data.skipped_count.toLocaleString() + ' skipped';
+            var sizeKB = (data.full_size_bytes / 1024).toFixed(1);
+            html += ' &middot; ' + sizeKB + ' KB';
+            if (data.truncated) html += ' (preview truncated)';
+            html += '</span>';
+            html += '<button class="xml-copy-btn" onclick="BDL.copyEntityXml(' + idx + ')" title="Copy XML to clipboard">Copy</button>';
+            html += '</div>';
+            html += '<pre class="xml-preview-code" id="xml-code-' + idx + '">' + highlightXml(data.xml) + '</pre>';
+            contentEl.innerHTML = html;
+            contentEl._rawXml = data.xml;
+            state.xmlPreviewLoaded = true;
+        })
+        .catch(function (err) {
+            contentEl.innerHTML = '<div class="xml-preview-loading" style="color:#f48771;">Preview failed: ' + escapeHtml(err.message) + '</div>';
+        });
+    }
+
+    function highlightXml(xml) {
+        return escapeHtml(xml)
+            .replace(/^(&lt;\?xml.*?\?&gt;)/gm, '<span class="xml-decl">$1</span>')
+            .replace(/(&lt;!--.*?--&gt;)/g, '<span class="xml-comment">$1</span>')
+            .replace(/(&lt;\/?)([\w:_-]+)/g, '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span>')
+            .replace(/(\/?&gt;)/g, '<span class="xml-bracket">$1</span>')
+            .replace(/\s([\w:_-]+)(=)(&quot;[^&]*?&quot;)/g, ' <span class="xml-attr-name">$1</span>$2<span class="xml-attr-val">$3</span>');
+    }
+
+    function copyEntityXml(idx) {
+        var contentEl = document.getElementById('xml-content-' + idx);
+        if (!contentEl || !contentEl._rawXml) return;
+        var ta = document.createElement('textarea');
+        ta.value = contentEl._rawXml;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+            document.execCommand('copy');
+            var btn = contentEl.querySelector('.xml-copy-btn');
+            if (btn) {
+                btn.textContent = 'Copied!';
+                btn.style.color = '#4ec9b0';
+                btn.style.borderColor = '#4ec9b0';
+                setTimeout(function () { btn.textContent = 'Copy'; btn.style.color = ''; btn.style.borderColor = ''; }, 2000);
+            }
+        } catch (e) {
+            showAlert('Failed to copy to clipboard. You can manually select and copy the XML text.', { title: 'Copy Failed', icon: '&#9432;', iconColor: '#569cd6' });
+        }
+        document.body.removeChild(ta);
+    }
+
+    // ── Row Count Alignment ──────────────────────────────────────────────
+
+    function getIdentifierColumn() {
+        // All entities in a batch share the same identifier type
+        var firstEntity = entityStates[0];
+        if (!firstEntity) return 'cnsmr_idntfr_agncy_id';
+        var isAcct = firstEntity.entity.entity_key === 'ACCOUNT';
+        return isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
+    }
+
+    function showAlignmentModal() {
+        var existing = document.getElementById('alignment-modal');
+        if (existing) existing.remove();
+
+        var mappedEntities = entityStates.filter(function (s) { return s.entity.action_type === 'FILE_MAPPED'; });
+        var alignableEntities = entityStates.filter(function (s) { return s.entity.action_type === 'FIXED_VALUE' || s.entity.action_type === 'HYBRID'; });
+
+        if (alignableEntities.length === 0 || mappedEntities.length === 0) return;
+
+        var modal = document.createElement('div');
+        modal.id = 'alignment-modal';
+        modal.className = 'xf-modal-overlay';
+
+        var bodyHtml = '';
+        alignableEntities.forEach(function (s, i) {
+            var name = formatEntityName(s.entity.entity_type);
+            var active = s.stagingContext ? s.stagingContext.row_count : 0;
+            var skipped = s.stagingContext && s.stagingContext.skipped_count ? s.stagingContext.skipped_count : 0;
+            var entityIdx = entityStates.indexOf(s);
+
+            bodyHtml += '<div class="alignment-row" id="align-row-' + entityIdx + '">';
+            bodyHtml += '<div class="alignment-entity-info"><span class="alignment-entity-name">' + escapeHtml(name) + '</span>';
+            bodyHtml += '<span class="alignment-entity-counts">' + active.toLocaleString() + ' active';
+            if (skipped > 0) bodyHtml += ', ' + skipped.toLocaleString() + ' skipped';
+            bodyHtml += '</span></div>';
+            bodyHtml += '<div class="alignment-select-row"><label class="alignment-label">Align to:</label>';
+            bodyHtml += '<select class="alignment-dropdown" id="align-select-' + entityIdx + '">';
+            bodyHtml += '<option value="">Keep all rows</option>';
+            mappedEntities.forEach(function (m) {
+                var mName = formatEntityName(m.entity.entity_type);
+                var mActive = m.stagingContext ? m.stagingContext.row_count : 0;
+                var mIdx = entityStates.indexOf(m);
+                bodyHtml += '<option value="' + mIdx + '">' + escapeHtml(mName) + ' (' + mActive.toLocaleString() + ' rows)</option>';
+            });
+            bodyHtml += '</select>';
+            bodyHtml += '<button class="skip-btn alignment-undo-btn" id="align-undo-' + entityIdx + '" onclick="BDL.resetAlignment(' + entityIdx + ')" style="display:none;">Undo</button>';
+            bodyHtml += '</div></div>';
+        });
+
+        modal.innerHTML = '<div class="xf-modal" style="max-width:520px;"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span><span>Align Row Counts</span></div><div class="xf-modal-body"><p style="color:#999;font-size:13px;margin:0 0 14px;">Choose which mapped entity each fixed-value entity should align its row set to.</p>' + bodyHtml + '</div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" onclick="BDL.closeAlignmentModal()">Cancel</button><button class="xf-modal-btn-primary" onclick="BDL.applyAlignment()">Apply</button></div></div>';
+        document.body.appendChild(modal);
+    }
+
+    function closeAlignmentModal() {
+        var modal = document.getElementById('alignment-modal');
+        if (modal) modal.remove();
+    }
+
+    function applyAlignment() {
+        var alignableEntities = entityStates.filter(function (s) { return s.entity.action_type === 'FIXED_VALUE' || s.entity.action_type === 'HYBRID'; });
+        var idCol = getIdentifierColumn();
+        var pending = [];
+
+        alignableEntities.forEach(function (s) {
+            var entityIdx = entityStates.indexOf(s);
+            var sel = document.getElementById('align-select-' + entityIdx);
+            if (!sel || sel.value === '') return;
+            var sourceIdx = parseInt(sel.value);
+            var sourceState = entityStates[sourceIdx];
+            if (!sourceState || !sourceState.stagingContext || !s.stagingContext) return;
+            pending.push({ targetIdx: entityIdx, sourceIdx: sourceIdx, targetTable: s.stagingContext.staging_table, sourceTable: sourceState.stagingContext.staging_table });
+        });
+
+        if (pending.length === 0) {
+            closeAlignmentModal();
+            return;
+        }
+
+        // Disable buttons while processing
+        var applyBtn = document.querySelector('#alignment-modal .xf-modal-btn-primary');
+        if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Aligning...'; }
+
+        var completed = 0;
+        pending.forEach(function (item) {
+            fetch('/api/bdl-import/align-rows', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source_table: item.sourceTable, target_table: item.targetTable, identifier_column: idCol })
+            })
+            .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+            .then(function (data) {
+                // Update entity state with new counts
+                entityStates[item.targetIdx].stagingContext.row_count = data.active_count;
+                entityStates[item.targetIdx].stagingContext.skipped_count = data.skipped_count;
+                completed++;
+                if (completed >= pending.length) { closeAlignmentModal(); renderExecuteReview(); }
+            })
+            .catch(function (err) {
+                completed++;
+                showAlert('Alignment failed for ' + formatEntityName(entityStates[item.targetIdx].entity.entity_type) + ': ' + err.message, { title: 'Alignment Error', icon: '&#10005;', iconColor: '#f48771' });
+                if (completed >= pending.length) { closeAlignmentModal(); renderExecuteReview(); }
+            });
+        });
+    }
+
+    function resetAlignment(entityIdx) {
+        var state = entityStates[entityIdx];
+        if (!state || !state.stagingContext) return;
+
+        var undoBtn = document.getElementById('align-undo-' + entityIdx);
+        if (undoBtn) { undoBtn.disabled = true; undoBtn.textContent = 'Resetting...'; }
+
+        fetch('/api/bdl-import/reset-alignment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staging_table: state.stagingContext.staging_table })
+        })
+        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+        .then(function (data) {
+            state.stagingContext.row_count = data.active_count;
+            state.stagingContext.skipped_count = 0;
+            // Update the modal row display
+            var row = document.getElementById('align-row-' + entityIdx);
+            if (row) {
+                var countsEl = row.querySelector('.alignment-entity-counts');
+                if (countsEl) countsEl.textContent = data.active_count.toLocaleString() + ' active';
+            }
+            var sel = document.getElementById('align-select-' + entityIdx);
+            if (sel) sel.value = '';
+            if (undoBtn) { undoBtn.style.display = 'none'; undoBtn.disabled = false; undoBtn.textContent = 'Undo'; }
+        })
+        .catch(function (err) {
+            showAlert('Reset failed: ' + err.message, { title: 'Reset Error', icon: '&#10005;', iconColor: '#f48771' });
+            if (undoBtn) { undoBtn.disabled = false; undoBtn.textContent = 'Undo'; }
+        });
+    }
+
+    // ── Promote to Production ────────────────────────────────────────────
+
+    function renderPromoteCard(sourceEnv) {
+        var resultsPane = document.getElementById('execute-results-all');
+        if (!resultsPane) return;
+        // Remove any existing promote card
+        var existing = document.getElementById('promote-area');
+        if (existing) existing.remove();
+        var promoteDiv = document.createElement('div');
+        promoteDiv.id = 'promote-area';
+        promoteDiv.className = 'promote-area';
+        promoteSecondsRemaining = promoteData.cooldownSeconds;
+        promoteReady = false;
+        var timerDisplay = formatCountdown(promoteSecondsRemaining);
+        promoteDiv.innerHTML = '<div class="promote-card" id="promote-card" onclick="BDL.promoteCardClicked()">' +
+            '<div class="promote-card-header"><span class="promote-card-icon">&#9650;</span><span class="promote-card-title">Promote to Production</span></div>' +
+            '<div class="promote-card-timer" id="promote-timer">' + timerDisplay + '</div>' +
+            '<div class="promote-card-hint" id="promote-hint">Review your ' + escapeHtml(sourceEnv) + ' results before promoting</div>' +
+            '</div>';
+        resultsPane.parentNode.insertBefore(promoteDiv, resultsPane.nextSibling);
+        startPromoteCountdown();
+    }
+
+    function formatCountdown(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = seconds % 60;
+        return (m > 0 ? m + ':' : '') + (m > 0 && s < 10 ? '0' : '') + s + (m === 0 ? 's' : '');
+    }
+
+    function startPromoteCountdown() {
+        if (promoteCountdownTimer) clearInterval(promoteCountdownTimer);
+        promoteCountdownTimer = setInterval(function () {
+            promoteSecondsRemaining--;
+            var timerEl = document.getElementById('promote-timer');
+            var hintEl = document.getElementById('promote-hint');
+            var card = document.getElementById('promote-card');
+            if (promoteSecondsRemaining <= 0) {
+                clearInterval(promoteCountdownTimer);
+                promoteCountdownTimer = null;
+                promoteReady = true;
+                if (timerEl) timerEl.textContent = 'Ready';
+                if (hintEl) hintEl.textContent = 'Click to promote to Production';
+                if (card) card.classList.add('promote-ready');
+            } else {
+                if (timerEl) timerEl.textContent = formatCountdown(promoteSecondsRemaining);
+            }
+        }, 1000);
+    }
+
+    function promoteCardClicked() {
+        if (!promoteReady) {
+            // Flash the hint message
+            var hintEl = document.getElementById('promote-hint');
+            if (hintEl) {
+                hintEl.textContent = 'Please verify your results in the lower environment first';
+                hintEl.classList.add('promote-hint-flash');
+                setTimeout(function () { hintEl.classList.remove('promote-hint-flash'); }, 1500);
+            }
+            return;
+        }
+        promoteToProduction();
+    }
+
+    function promoteToProduction() {
+        if (!promoteData || !promoteData.prodConfigId) return;
+        // Fetch PROD environment config
+        fetch('/api/bdl-import/environments')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var envs = data.environments || [];
+                var prodEnv = envs.find(function (e) { return e.config_id === promoteData.prodConfigId; });
+                if (!prodEnv) {
+                    showAlert('Production environment configuration not found.', { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' });
+                    return;
+                }
+                // Show the PROD advisory modal
+                showPromoteProdAdvisory(prodEnv);
+            })
+            .catch(function (err) {
+                showAlert('Failed to load environments: ' + err.message, { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' });
+            });
+    }
+
+    function showPromoteProdAdvisory(prodEnv) {
+        var sourceEnv = promoteData.sourceEnvironment;
+        var existing = document.getElementById('prod-advisory-modal');
+        if (existing) existing.remove();
+        var modal = document.createElement('div');
+        modal.id = 'prod-advisory-modal';
+        modal.className = 'xf-modal-overlay';
+        var entityList = '';
+        entityStates.forEach(function (s) {
+            entityList += '<div style="font-size:12px;color:#999;margin:2px 0;">' + escapeHtml(formatEntityName(s.entity.entity_type)) + ': ' + s.stagingContext.row_count.toLocaleString() + ' rows</div>';
+        });
+        modal.innerHTML = '<div class="xf-modal"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span><span>Promote to Production</span></div><div class="xf-modal-body">' +
+            '<p>You are about to promote your <strong>' + escapeHtml(sourceEnv) + '</strong> import to <strong>Production</strong>.</p>' +
+            '<p>The same staging data will be submitted to the production environment:</p>' +
+            entityList +
+            '<p style="color:#f48771;font-weight:600;margin-top:12px;">This is a PRODUCTION import and cannot be undone.</p>' +
+            '</div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" id="promote-advisory-back">Cancel</button><button class="xf-modal-btn-primary xf-modal-btn-danger" id="promote-advisory-continue">Promote to Production</button></div></div>';
+        document.body.appendChild(modal);
+        document.getElementById('promote-advisory-back').onclick = function () { modal.remove(); };
+        document.getElementById('promote-advisory-continue').onclick = function () {
+            modal.remove();
+            applyPromoteToProduction(prodEnv);
+        };
+    }
+
+    function applyPromoteToProduction(prodEnv) {
+        // Swap environment to PROD
+        selectedEnvironment = prodEnv;
+        // Reset execution state but preserve staging data, mappings, alignment
+        stepComplete[4] = false;
+        executeInProgress = false;
+        // Clear promote state so it doesn't re-appear
+        clearPromoteState();
+        // Reset xmlPreviewLoaded so previews rebuild with new environment context
+        entityStates.forEach(function (s) { s.xmlPreviewLoaded = false; });
+        // Update badge and re-render Step 5 targeting PROD
+        updateEnvBadge();
+        renderExecuteReview();
+    }
 
     function ticketChanged() { var ticketInput = document.getElementById('jira-ticket'); var messageRow = document.getElementById('ar-message-row'); var messageInput = document.getElementById('ar-message'); var ticket = ticketInput ? ticketInput.value.trim() : ''; if (ticket) { messageRow.style.display = ''; if (!messageInput.dataset.userEdited) messageInput.value = ticket + ': BDL update via BDL Import'; } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; } }
 
@@ -873,21 +1275,62 @@ var BDL = (function () {
     }
 
     function executeSequential(idx, jiraTicket) {
-        if (idx >= entityStates.length) { executeInProgress = false; var actions = document.getElementById('execute-actions'); if (actions) actions.classList.add('hidden'); stepComplete[4] = true; updateStepperUI(); updateNavButtons(); return; }
-        var state = entityStates[idx], resultEl = document.getElementById('exec-result-' + idx), tabEl = document.getElementById('exec-tab-' + idx);
+        if (idx >= entityStates.length) {
+            executeInProgress = false;
+            var actions = document.getElementById('execute-actions');
+            if (actions) actions.classList.add('hidden');
+            stepComplete[4] = true;
+            updateStepperUI();
+            updateNavButtons();
+            // Check for promote eligibility (non-PROD, at least one success)
+            if (promoteData && promoteData.cooldownSeconds && promoteData.prodConfigId) {
+                renderPromoteCard(promoteData.sourceEnvironment);
+            }
+            return;
+        }
+        var state = entityStates[idx], tabEl = document.getElementById('exec-tab-' + idx);
+        var resultsPane = document.getElementById('execute-results-all');
+        var resultsList = document.getElementById('execute-results-list');
         switchExecuteTab(idx);
         if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#dcdcaa;">&#8943;</span>';
+        // Show the unified results pane on first execution
+        if (resultsPane) resultsPane.classList.remove('hidden');
+        var entityName = formatEntityName(state.entity.entity_type);
         var arMessage = (document.getElementById('ar-message') || {}).value || '';
         var requestBody = { staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, source_filename: uploadedFile ? uploadedFile.name : 'unknown', column_mapping: JSON.stringify(state.columnMapping) };
         if (jiraTicket) { requestBody.jira_ticket = jiraTicket; if (arMessage.trim()) requestBody.ar_message = arMessage.trim().replace('BDL update', state.entity.entity_type + ' update'); }
         fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
         .then(function (data) {
-            if (data._httpStatus >= 400 || data.error) { resultEl.classList.remove('hidden'); resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Import Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>'; if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>'; }
-            else { resultEl.classList.remove('hidden'); var rh = '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>Submitted</strong><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: ' + data.file_registry_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>'; if (data.ar_log) { if (data.ar_log.success) rh += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log</strong><div class="result-meta">' + data.ar_log.row_count.toLocaleString() + ' records linked</div></div></div>'; else rh += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log Failed</strong><div class="result-detail">' + escapeHtml(data.ar_log.error) + '</div></div></div>'; } resultEl.innerHTML = rh; if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#4ec9b0;">&#10003;</span>'; }
+            var rh = '';
+            if (data._httpStatus >= 400 || data.error) {
+                rh += '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>' + escapeHtml(entityName) + ' — Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>';
+                if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#ef4444;">&#10006;</span>';
+            } else {
+                rh += '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>' + escapeHtml(entityName) + ' — Submitted</strong><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: ' + data.file_registry_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>';
+                if (data.ar_log) {
+                    if (data.ar_log.success) rh += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>' + escapeHtml(entityName) + ' — AR Log Submitted</strong><div class="result-meta">' + data.ar_log.row_count.toLocaleString() + ' records linked</div></div></div>';
+                    else rh += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>' + escapeHtml(entityName) + ' — AR Log Failed</strong><div class="result-detail">' + escapeHtml(data.ar_log.error) + '</div></div></div>';
+                }
+                if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#4ec9b0;">&#10003;</span>';
+                // Capture promote metadata from first successful non-PROD response
+                if (!promoteData && data.promote_cooldown_seconds && data.prod_config_id) {
+                    promoteData = {
+                        cooldownSeconds: data.promote_cooldown_seconds,
+                        prodConfigId: data.prod_config_id,
+                        sourceEnvironment: selectedEnvironment.environment
+                    };
+                }
+            }
+            if (resultsList) resultsList.innerHTML += rh;
             executeSequential(idx + 1, jiraTicket);
         })
-        .catch(function (err) { resultEl.classList.remove('hidden'); resultEl.innerHTML = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>'; if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#ef4444;">&#10006;</span>'; executeSequential(idx + 1, jiraTicket); });
+        .catch(function (err) {
+            var rh = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>' + escapeHtml(entityName) + ' — Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
+            if (resultsList) resultsList.innerHTML += rh;
+            if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#ef4444;">&#10006;</span>';
+            executeSequential(idx + 1, jiraTicket);
+        });
     }
 
     // ── Templates ─────────────────────────────────────────────────────────
@@ -930,6 +1373,9 @@ var BDL = (function () {
         toggleValidationCard: toggleValidationCard, toggleInfoCard: toggleInfoCard,
         switchExecuteTab: switchExecuteTab, executeAll: executeAll,
         ticketChanged: ticketChanged,
+        previewEntityXml: previewEntityXml, copyEntityXml: copyEntityXml,
+        showAlignmentModal: showAlignmentModal, closeAlignmentModal: closeAlignmentModal, applyAlignment: applyAlignment, resetAlignment: resetAlignment,
+        promoteCardClicked: promoteCardClicked,
         previewTemplate: previewTemplate, closeTemplatePreview: closeTemplatePreview,
         applyTemplate: applyTemplate, showSaveTemplate: showSaveTemplate,
         closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate
