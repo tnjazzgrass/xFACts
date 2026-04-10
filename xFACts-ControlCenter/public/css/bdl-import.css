@@ -66,7 +66,7 @@ a { color: #9cdcfe; }
 /* ============================================================================
    STEPPER BAR
    ============================================================================ */
-.stepper { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 16px; padding: 12px 16px; background: #252526; border: 1px solid #404040; border-radius: 6px; }
+.stepper { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 16px; padding: 12px 16px; background: #252526; border: 1px solid #404040; border-radius: 6px; position: relative; }
 .step { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 4px; cursor: default; transition: all 0.3s ease; opacity: 0.4; }
 .step.active { opacity: 1; background: rgba(86, 156, 214, 0.1); }
 .step.completed { opacity: 0.8; cursor: pointer; }
@@ -79,6 +79,12 @@ a { color: #9cdcfe; }
 .step.completed .step-label { color: #999; }
 .step-connector { width: 24px; height: 2px; background: #404040; flex-shrink: 0; transition: background 0.3s ease; }
 .step-connector.completed { background: #4ec9b0; }
+
+/* Environment Badge (persistent in stepper bar) */
+.env-badge { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.env-badge-test { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
+.env-badge-stage { background: rgba(206, 145, 120, 0.15); color: #ce9178; border: 1px solid rgba(206, 145, 120, 0.3); }
+.env-badge-prod { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
 
 /* ============================================================================
    STEP PANELS
@@ -116,8 +122,8 @@ a { color: #9cdcfe; }
 .env-card[data-env="TEST"].selected .env-name { color: #dcdcaa; }
 .env-card[data-env="STAGE"]:hover, .env-card[data-env="STAGE"].selected { border-color: #ce9178; }
 .env-card[data-env="STAGE"].selected .env-name { color: #ce9178; }
-.env-card[data-env="PROD"]:hover, .env-card[data-env="PROD"].selected { border-color: #4ec9b0; }
-.env-card[data-env="PROD"].selected .env-name { color: #4ec9b0; }
+.env-card[data-env="PROD"]:hover, .env-card[data-env="PROD"].selected { border-color: #ef4444; }
+.env-card[data-env="PROD"].selected .env-name { color: #ef4444; }
 .env-card.env-locked { opacity: 0.35; cursor: default; pointer-events: none; }
 .env-locked-label { font-size: 10px; color: #888; margin-top: 4px; font-style: italic; }
 
@@ -476,6 +482,33 @@ a { color: #9cdcfe; }
 .execute-result-warn { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 6px; background: #3d3520; border: 1px solid #6d5a30; }
 .execute-result-warn .result-icon { color: #dcdcaa; font-size: 24px; flex-shrink: 0; }
 .execute-result-warn strong { color: #dcdcaa; font-size: 15px; }
+
+/* Unified Execution Results Pane */
+.execute-results-all { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-top: 12px; }
+.execute-results-header { padding: 10px 14px; background: #333; color: #9cdcfe; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #404040; }
+#execute-results-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+ 
+/* Row Count Mismatch Banner */
+.execute-mismatch-banner { background: #3d3520; border: 1px solid #6d5a30; border-radius: 6px; padding: 14px 18px; margin-bottom: 12px; }
+.mismatch-header { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #dcdcaa; margin-bottom: 10px; }
+.mismatch-icon { font-size: 16px; }
+.mismatch-detail { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.mismatch-entity { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(30, 30, 30, 0.5); border-radius: 4px; font-size: 13px; }
+.mismatch-name { color: #d4d4d4; font-weight: 500; }
+.mismatch-counts { color: #dcdcaa; font-size: 12px; font-weight: 600; }
+.mismatch-actions { margin-top: 10px; }
+ 
+/* Row Count Alignment Modal */
+.alignment-row { padding: 12px; background: #1e1e1e; border: 1px solid #333; border-radius: 5px; margin-bottom: 8px; }
+.alignment-row:last-child { margin-bottom: 0; }
+.alignment-entity-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.alignment-entity-name { font-size: 14px; font-weight: 600; color: #d4d4d4; }
+.alignment-entity-counts { font-size: 12px; color: #888; }
+.alignment-select-row { display: flex; align-items: center; gap: 10px; }
+.alignment-label { font-size: 12px; color: #888; flex-shrink: 0; }
+.alignment-dropdown { flex: 1; padding: 6px 10px; background: #252526; border: 1px solid #404040; border-radius: 4px; color: #d4d4d4; font-size: 13px; cursor: pointer; }
+.alignment-dropdown:focus { border-color: #569cd6; outline: none; }
+.alignment-undo-btn { flex-shrink: 0; }
 
 /* Jira Ticket Link */
 .execute-ticket { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
