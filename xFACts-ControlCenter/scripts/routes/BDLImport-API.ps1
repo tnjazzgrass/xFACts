@@ -112,7 +112,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
                 SELECT e.element_name, e.display_name, e.data_type, e.max_length,
                        e.table_column, e.lookup_table, e.is_not_nullifiable, 
                        e.is_primary_id, e.is_visible, e.is_import_required,
-                       e.field_description, e.sort_order
+                       e.field_description, e.import_guidance, e.sort_order
                 FROM Tools.Catalog_BDLElementRegistry e
                 INNER JOIN Tools.Catalog_BDLFormatRegistry f
                     ON e.format_id = f.format_id
@@ -137,7 +137,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
                 SELECT e.element_name, e.display_name, e.data_type, e.max_length,
                        e.table_column, e.lookup_table, e.is_not_nullifiable, 
                        e.is_primary_id, e.is_visible, e.is_import_required,
-                       e.field_description, e.sort_order
+                       e.field_description, e.import_guidance, e.sort_order
                 FROM Tools.Catalog_BDLElementRegistry e
                 INNER JOIN Tools.Catalog_BDLFormatRegistry f
                     ON e.format_id = f.format_id
@@ -866,9 +866,8 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/build-preview' -Authentication
 # ----------------------------------------------------------------------------
 # POST /api/bdl-import/execute
 # Full execute: build XML -> write to dmfs -> register -> trigger import.
-# Optionally builds and submits a companion AR log BDL when a Jira ticket
-# is provided, creating a traceable link between the import and the ticket.
-# Mirrors Matt's legacy VBA pattern exactly.
+# Handles a single entity type per call. Called sequentially by the client
+# for multi-entity imports. AR log is handled separately via execute-ar-log.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1070,129 +1069,172 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             }
         }
 
-        # ── Step 8 (Optional): Build and submit AR Log BDL ──────────────
-        # When a Jira ticket is provided, a second BDL file is built and
-        # submitted containing CONSUMER_ACCOUNT_AR_LOG entries that link
-        # each imported record back to the ticket. This mirrors Matt's
-        # legacy VBA pattern where update operations (phone, address,
-        # account, consumer) generate a companion AR Event file.
-        # AR log failure does NOT roll back the primary import.
-        $jiraTicket = $body.jira_ticket
-        $arMessage = $body.ar_message
-        $arResult = $null
-
-        if ($jiraTicket -and $jiraTicket.Trim() -ne '') {
-            $jiraTicket = $jiraTicket.Trim()
-            if (-not $arMessage -or $arMessage.Trim() -eq '') {
-                $arMessage = "${jiraTicket}: ${entityType} update via BDL Import"
-            }
-
-            # Determine identifier element based on entity folder
-            $folderInfo = Invoke-XFActsQuery -Query @"
-                SELECT folder FROM Tools.Catalog_BDLFormatRegistry
-                WHERE entity_type = @entityType AND is_active = 1
-"@ -Parameters @{ entityType = $entityType }
-
-            $isAcctLevel = $false
-            if ($folderInfo -and $folderInfo.Count -gt 0 -and $folderInfo[0].folder) {
-                $isAcctLevel = $folderInfo[0].folder -like '*account*'
-            }
-            $identifierElement = if ($isAcctLevel) { 'cnsmr_accnt_idntfr_agncy_id' } else { 'cnsmr_idntfr_agncy_id' }
-
-            $arLogId = $null
-
-            try {
-                # Build AR log XML
-                $arXmlResult = Build-ARLogXml -StagingTable $stagingTable -EntityType $entityType `
-                    -JiraTicket $jiraTicket -ArMessage $arMessage `
-                    -IdentifierElement $identifierElement -WebEvent $WebEvent
-
-                if ($arXmlResult.Error) {
-                    $arResult = @{ success = $false; error = $arXmlResult.Error }
-                }
-                else {
-                    # Write AR log XML to dmfs
-                    $arFilePath = $dmfsPath + $arXmlResult.Filename
-                    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-                    [System.IO.File]::WriteAllText($arFilePath, $arXmlResult.Xml, $utf8NoBom)
-
-                    # Create AR log ImportLog row (BUILDING)
-                    $arLogInsert = Invoke-XFActsQuery -Query @"
-                        INSERT INTO Tools.BDL_ImportLog 
-                            (server_config_id, environment, entity_type, source_filename,
-                             xml_filename, staging_table, row_count, status, executed_by, parent_log_id)
-                        OUTPUT INSERTED.log_id
-                        VALUES 
-                            (@configId, @environment, 'CONSUMER_ACCOUNT_AR_LOG', @sourceFilename,
-                             @xmlFilename, @stagingTable, @rowCount, 'BUILDING', @executedBy, @parentLogId)
-"@ -Parameters @{
-                        configId       = $configId
-                        environment    = $xmlResult.Environment
-                        sourceFilename = if ($sourceFilename) { $sourceFilename } else { 'unknown' }
-                        xmlFilename    = $arXmlResult.Filename
-                        rowCount       = $arXmlResult.RowCount
-                        stagingTable    = $stagingTable						
-                        executedBy     = $user
-                        parentLogId    = $primaryLogId
-                    }
-                    $arLogId = $arLogInsert[0].log_id
-
-                    # Register AR log file with DM
-                    $arRegBody = @{ fileName = $arXmlResult.Filename; fileType = 'BDL_IMPORT' } | ConvertTo-Json
-                    $arRegResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry" `
-                        -Method POST -Headers $apiHeaders -Body $arRegBody -ErrorAction Stop
-
-                    $arFileRegistryId = $null
-                    if ($arRegResponse.data -and $arRegResponse.data.fileRegistryId) { $arFileRegistryId = $arRegResponse.data.fileRegistryId }
-                    elseif ($arRegResponse.fileRegistryId) { $arFileRegistryId = $arRegResponse.fileRegistryId }
-                    elseif ($arRegResponse.id) { $arFileRegistryId = $arRegResponse.id }
-
-                    if (-not $arFileRegistryId) { throw "Could not extract file_registry_id from AR log registration response" }
-
-                    Invoke-XFActsNonQuery -Query @"
-                        UPDATE Tools.BDL_ImportLog 
-                        SET status = 'REGISTERED', file_registry_id = @regId
-                        WHERE log_id = @logId
-"@ -Parameters @{ logId = $arLogId; regId = $arFileRegistryId }
-
-                    # Trigger AR log import
-                    Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$arFileRegistryId/bdlimport" `
-                        -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
-
-                    Invoke-XFActsNonQuery -Query @"
-                        UPDATE Tools.BDL_ImportLog 
-                        SET status = 'SUBMITTED', completed_dttm = GETDATE()
-                        WHERE log_id = @logId
-"@ -Parameters @{ logId = $arLogId }
-
-                    $arResult = @{
-                        success          = $true
-                        log_id           = $arLogId
-                        file_registry_id = $arFileRegistryId
-                        xml_filename     = $arXmlResult.Filename
-                        row_count        = $arXmlResult.RowCount
-                    }
-                }
-            }
-            catch {
-                # AR log failure — log it but don't fail the primary import
-                if ($arLogId) {
-                    Invoke-XFActsNonQuery -Query @"
-                        UPDATE Tools.BDL_ImportLog 
-                        SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
-                        WHERE log_id = @logId
-"@ -Parameters @{ logId = $arLogId; errorMsg = "AR log failed: $($_.Exception.Message)" }
-                }
-                $arResult = @{ success = $false; error = $_.Exception.Message }
-            }
-        }
-
         # ── Final response ──────────────────────────────────────────────
-        $primaryResult.ar_log = $arResult
         Write-PodeJsonResponse -Value $primaryResult
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# POST /api/bdl-import/execute-ar-log
+# Builds and submits a single consolidated CONSUMER_ACCOUNT_AR_LOG BDL
+# covering all entity types in a batch execution. Called by the client
+# after all primary entity imports complete successfully.
+# Body: { staging_table, entity_types, jira_ticket, ar_message (optional),
+#          config_id, source_filename, parent_log_ids }
+# entity_types: comma-separated list (e.g., "PHONE,CONSUMER_TAG")
+# parent_log_ids: comma-separated log_id values from primary imports
+# AR log failure returns error but does not affect primary imports.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $stagingTable   = $body.staging_table
+        $entityTypes    = $body.entity_types
+        $jiraTicket     = $body.jira_ticket
+        $arMessage      = $body.ar_message
+        $configId       = $body.config_id
+        $sourceFilename = $body.source_filename
+        $parentLogIds   = $body.parent_log_ids
+
+        if (-not $stagingTable -or -not $jiraTicket -or -not $configId -or -not $entityTypes) {
+            Write-PodeJsonResponse -Value @{ error = 'staging_table, entity_types, jira_ticket, and config_id are required' } -StatusCode 400
+            return
+        }
+
+        $jiraTicket = $jiraTicket.Trim()
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
+
+        # ── Default AR message if not provided ──────────────────────────
+        if (-not $arMessage -or $arMessage.Trim() -eq '') {
+            $arMessage = "${jiraTicket}: ${entityTypes} update via BDL Import"
+        }
+
+        # ── Determine identifier element from first entity type ─────────
+        $firstEntity = ($entityTypes -split ',')[0].Trim()
+        $folderInfo = Invoke-XFActsQuery -Query @"
+            SELECT folder FROM Tools.Catalog_BDLFormatRegistry
+            WHERE entity_type = @entityType AND is_active = 1
+"@ -Parameters @{ entityType = $firstEntity }
+
+        $isAcctLevel = $false
+        if ($folderInfo -and $folderInfo.Count -gt 0 -and $folderInfo[0].folder) {
+            $isAcctLevel = $folderInfo[0].folder -like '*account*'
+        }
+        $identifierElement = if ($isAcctLevel) { 'cnsmr_accnt_idntfr_agncy_id' } else { 'cnsmr_idntfr_agncy_id' }
+
+        # ── Get server config ───────────────────────────────────────────
+        $serverConfig = Invoke-XFActsQuery -Query @"
+            SELECT api_base_url, dmfs_base_path, dmfs_bdl_folder, environment
+            FROM Tools.ServerConfig
+            WHERE config_id = @configId AND is_active = 1
+"@ -Parameters @{ configId = $configId }
+
+        if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
+            return
+        }
+
+        $apiBaseUrl = $serverConfig[0].api_base_url
+        $dmfsPath = $serverConfig[0].dmfs_base_path + '\' + $serverConfig[0].dmfs_bdl_folder + '\'
+        $environment = $serverConfig[0].environment
+
+        # ── Build AR log XML ────────────────────────────────────────────
+        $arXmlResult = Build-ARLogXml -StagingTable $stagingTable -EntityType $firstEntity `
+            -JiraTicket $jiraTicket -ArMessage $arMessage `
+            -IdentifierElement $identifierElement -WebEvent $WebEvent
+
+        if ($arXmlResult.Error) {
+            Write-PodeJsonResponse -Value @{ error = $arXmlResult.Error } -StatusCode ($arXmlResult.StatusCode -as [int])
+            return
+        }
+
+        # ── Write AR log XML to dmfs ────────────────────────────────────
+        $arFilePath = $dmfsPath + $arXmlResult.Filename
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($arFilePath, $arXmlResult.Xml, $utf8NoBom)
+
+        # ── Create ImportLog row (BUILDING) ─────────────────────────────
+        $arLogInsert = Invoke-XFActsQuery -Query @"
+            INSERT INTO Tools.BDL_ImportLog 
+                (server_config_id, environment, entity_type, source_filename,
+                 xml_filename, staging_table, row_count, status, executed_by, parent_log_ids)
+            OUTPUT INSERTED.log_id
+            VALUES 
+                (@configId, @environment, 'CONSUMER_ACCOUNT_AR_LOG', @sourceFilename,
+                 @xmlFilename, @stagingTable, @rowCount, 'BUILDING', @executedBy, @parentLogIds)
+"@ -Parameters @{
+            configId       = $configId
+            environment    = $environment
+            sourceFilename = if ($sourceFilename) { $sourceFilename } else { 'unknown' }
+            xmlFilename    = $arXmlResult.Filename
+            rowCount       = $arXmlResult.RowCount
+            stagingTable   = $stagingTable
+            executedBy     = $user
+            parentLogIds   = if ($parentLogIds) { $parentLogIds } else { [DBNull]::Value }
+        }
+
+        $arLogId = $arLogInsert[0].log_id
+
+        # ── Get DM API credentials ──────────────────────────────────────
+        $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
+        $apiHeaders = @{
+            'Authorization' = $creds.AuthHeader
+            'Content-Type'  = 'application/vnd.fico.dm.v1+json'
+        }
+
+        # ── Register AR log file with DM ────────────────────────────────
+        $arRegBody = @{ fileName = $arXmlResult.Filename; fileType = 'BDL_IMPORT' } | ConvertTo-Json
+        $arRegResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry" `
+            -Method POST -Headers $apiHeaders -Body $arRegBody -ErrorAction Stop
+
+        $arFileRegistryId = $null
+        if ($arRegResponse.data -and $arRegResponse.data.fileRegistryId) { $arFileRegistryId = $arRegResponse.data.fileRegistryId }
+        elseif ($arRegResponse.fileRegistryId) { $arFileRegistryId = $arRegResponse.fileRegistryId }
+        elseif ($arRegResponse.id) { $arFileRegistryId = $arRegResponse.id }
+
+        if (-not $arFileRegistryId) { throw "Could not extract file_registry_id from AR log registration response" }
+
+        Invoke-XFActsNonQuery -Query @"
+            UPDATE Tools.BDL_ImportLog 
+            SET status = 'REGISTERED', file_registry_id = @regId
+            WHERE log_id = @logId
+"@ -Parameters @{ logId = $arLogId; regId = $arFileRegistryId }
+
+        # ── Trigger AR log import ───────────────────────────────────────
+        Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$arFileRegistryId/bdlimport" `
+            -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
+
+        Invoke-XFActsNonQuery -Query @"
+            UPDATE Tools.BDL_ImportLog 
+            SET status = 'SUBMITTED', completed_dttm = GETDATE()
+            WHERE log_id = @logId
+"@ -Parameters @{ logId = $arLogId }
+
+        Write-PodeJsonResponse -Value @{
+            success          = $true
+            log_id           = $arLogId
+            file_registry_id = $arFileRegistryId
+            xml_filename     = $arXmlResult.Filename
+            row_count        = $arXmlResult.RowCount
+            entity_types     = $entityTypes
+            message          = "AR log submitted for ${entityTypes}"
+        }
+    }
+    catch {
+        # If we have a log_id, mark it failed
+        if ($arLogId) {
+            try {
+                Invoke-XFActsNonQuery -Query @"
+                    UPDATE Tools.BDL_ImportLog 
+                    SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
+                    WHERE log_id = @logId
+"@ -Parameters @{ logId = $arLogId; errorMsg = "AR log failed: $($_.Exception.Message)" }
+            } catch { }
+        }
+        Write-PodeJsonResponse -Value @{ error = "AR log failed: $($_.Exception.Message)" } -StatusCode 500
     }
 }
 
