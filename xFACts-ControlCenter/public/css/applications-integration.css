@@ -230,6 +230,61 @@ a { color: #9cdcfe; }
 }
 .bdlcat-close:hover { color: #d4d4d4; }
 
+/* ============================================================
+   MODE SELECTOR — Tab bar + Department Dropdown
+   ============================================================ */
+
+.bdlcat-mode-selector {
+    padding: 8px 20px;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+
+.bdlcat-mode-tabs {
+    display: flex;
+    gap: 0;
+}
+
+.bdlcat-mode-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #888;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.bdlcat-mode-tab:hover { color: #d4d4d4; }
+.bdlcat-mode-tab.active {
+    color: #569cd6;
+    border-bottom-color: #569cd6;
+}
+
+.bdlcat-dept-selector {
+    margin-top: 8px;
+}
+
+.bdlcat-dept-dropdown {
+    background: #252526;
+    border: 1px solid #404040;
+    color: #d4d4d4;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 4px;
+    width: 280px;
+    outline: none;
+    cursor: pointer;
+}
+.bdlcat-dept-dropdown:focus { border-color: #569cd6; }
+
+/* ============================================================
+   PANEL BODY + STATUS
+   ============================================================ */
+
 .bdlcat-body {
     flex: 1;
     overflow-y: auto;
@@ -277,6 +332,10 @@ a { color: #9cdcfe; }
 .bdlcat-format-row.inactive { opacity: 0.45; }
 .bdlcat-format-row.inactive:hover { opacity: 0.65; }
 
+/* Department mode — ungranted entity rows */
+.bdlcat-format-row.dept-ungranted { opacity: 0.4; }
+.bdlcat-format-row.dept-ungranted:hover { opacity: 0.6; }
+
 .bdlcat-format-main {
     flex: 1;
     display: flex;
@@ -312,6 +371,12 @@ a { color: #9cdcfe; }
     font-size: 10px;
     color: #555;
     white-space: nowrap;
+}
+
+/* Department mode field count stat */
+.bdlcat-stat.dept-field-stat {
+    color: #4ec9b0;
+    font-weight: 600;
 }
 
 .bdlcat-format-toggle {
@@ -421,6 +486,7 @@ a { color: #9cdcfe; }
 .bdlcat-th-display { width: 160px; }
 .bdlcat-th-toggle { width: 60px; text-align: center !important; }
 .bdlcat-th-desc { width: auto; }
+.bdlcat-th-guidance { width: 180px; }
 
 .bdlcat-element-row {
     border-bottom: 1px solid #1a1a1a;
@@ -451,6 +517,10 @@ a { color: #9cdcfe; }
 .bdlcat-cell-desc {
     font-size: 11px;
     color: #888;
+}
+.bdlcat-cell-guidance {
+    font-size: 11px;
+    color: #dcdcaa;
 }
 
 /* Element badges */
@@ -505,6 +575,16 @@ a { color: #9cdcfe; }
     border-radius: 2px;
     padding: 0 4px;
     margin-left: 6px;
+    vertical-align: middle;
+}
+.bdlcat-badge-req {
+    font-size: 8px;
+    font-weight: 700;
+    background: rgba(220,220,170,0.12);
+    color: #dcdcaa;
+    border: 1px solid rgba(220,220,170,0.25);
+    border-radius: 2px;
+    padding: 0 3px;
     vertical-align: middle;
 }
 
