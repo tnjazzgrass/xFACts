@@ -6,6 +6,7 @@
 # Components:
 #   - BDL Import: Card linking to the BDL Import workflow page
 #   - BDL Content Management: Admin-only catalog maintenance (slide-up panel)
+#     with Global Configuration and Department Access modes
 #   - Future: Additional toolkit functions migrated from Access DB
 #
 # CSS: /css/applications-integration.css
@@ -65,11 +66,12 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
         </div>
         <div class="bdlcat-header">
             <div class="bdlcat-header-left">
-                <h2 class="bdlcat-title">BDL Content Management</h2>
+                <h2 id="bdlcat-title" class="bdlcat-title">BDL Content Management</h2>
                 <span id="bdlcat-count" class="bdlcat-count"></span>
             </div>
             <button class="bdlcat-close" onclick="BdlCatalog.close()">&times;</button>
         </div>
+        <div id="bdlcat-mode-selector" class="bdlcat-mode-selector"></div>
         <div id="bdlcat-status" class="bdlcat-status"></div>
         <div id="bdlcat-body" class="bdlcat-body"></div>
     </div>
