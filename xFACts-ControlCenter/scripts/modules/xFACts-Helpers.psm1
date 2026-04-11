@@ -1751,6 +1751,7 @@ function Build-BDLXml {
 
     # Header — mirrors Matt's VBA header structure exactly
     [void]$sb.AppendLine('  <header>')
+    [void]$sb.AppendLine("    <import_as_user_name>${username}</import_as_user_name>")
     [void]$sb.AppendLine('    <sender_id_txt>Organization</sender_id_txt>')
     [void]$sb.AppendLine('    <target_id_txt>FAC Debt Manager</target_id_txt>')
     $batchTimestamp = (Get-Date).ToString('yyyyMMddHHmmss')
@@ -1867,6 +1868,7 @@ function Build-ARLogXml {
     [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
     [void]$sb.AppendLine('<dm_data xmlns="http://www.fico.com/xml/debtmanager/data/v1_0">')
     [void]$sb.AppendLine('  <header>')
+    [void]$sb.AppendLine("    <import_as_user_name>${username}</import_as_user_name>")
     [void]$sb.AppendLine('    <sender_id_txt>Organization</sender_id_txt>')
     [void]$sb.AppendLine('    <target_id_txt>FAC Debt Manager</target_id_txt>')
     [void]$sb.AppendLine("    <batch_id_txt>${JiraTicket}</batch_id_txt>")
