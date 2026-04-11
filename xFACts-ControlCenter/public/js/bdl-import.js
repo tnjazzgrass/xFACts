@@ -38,6 +38,7 @@ var BDL = (function () {
     var uploadedFile = null, parsedFileData = null;
     var allEntities = [], MAX_PREVIEW_ROWS = 10;
     var executeInProgress = false;
+    var executeResultTracker = [];
     var revalidating = false;
     var entityTemplates = [];
     var activeTemplateId = null;
@@ -334,6 +335,9 @@ var BDL = (function () {
                     if (f.field_description && f.field_description.length > 0) {
                         html += '<div class="field-info-desc">' + escapeHtml(f.field_description) + '</div>';
                     }
+                    if (f.import_guidance && f.import_guidance.length > 0) {
+                        html += '<div class="field-info-guidance">' + escapeHtml(f.import_guidance) + '</div>';
+                    }
                     html += '</div>';
                 });
                 html += '</div>';
@@ -483,6 +487,7 @@ var BDL = (function () {
             html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(displayName) + reqLabel;
             if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
             if (f.field_description) html += '<div class="fixed-value-desc">' + escapeHtml(f.field_description.substring(0, 120)) + '</div>';
+            if (f.import_guidance) html += '<div class="fixed-value-guidance">' + escapeHtml(f.import_guidance) + '</div>';
             html += '</div><div class="fixed-value-input">';
             if (f.lookup_table) {
                 html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueSearch(\'' + f.element_name + '\',this)" autocomplete="off">';
@@ -742,6 +747,7 @@ var BDL = (function () {
             if (hasDisplayName(f)) { tgtH += '<div class="chip-name">' + escapeHtml(f.display_name) + '</div><div class="chip-element">' + f.element_name + '</div>'; }
             else { tgtH += '<div class="chip-name chip-name-technical">' + f.element_name + '</div>'; }
             if (f.field_description) tgtH += '<div class="chip-desc">' + escapeHtml(f.field_description.substring(0, 80)) + '</div>';
+            if (f.import_guidance) tgtH += '<div class="chip-guidance">' + escapeHtml(f.import_guidance) + '</div>';
             var meta = buildFieldMeta(f); if (meta) tgtH += '<div class="chip-meta">' + meta + '</div>'; tgtH += '</div>';
         }); tgtList.innerHTML = tgtH || '<div class="panel-empty">All fields mapped</div>';
         var mapList = document.getElementById('mapped-list'), mapH = '', mKeys = Object.keys(columnMapping);
@@ -834,7 +840,7 @@ var BDL = (function () {
         if (!warnings.length) html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>Validation passed</strong><div class="validation-detail">' + rowSummary + '. No issues found.</div></div></div>';
         else if (actionableWarnings.length > 0) html += '<div class="validation-summary validation-block"><span class="validation-icon">&#9888;</span><div><strong>' + actionableWarnings.length + ' issue' + (actionableWarnings.length > 1 ? 's' : '') + ' found</strong><div class="validation-detail">' + rowSummary + '. Resolve issues below.</div></div></div>';
         else html += '<div class="validation-summary validation-warn"><span class="validation-icon">&#9888;</span><div><strong>' + infoWarnings.length + ' warning' + (infoWarnings.length > 1 ? 's' : '') + '</strong><div class="validation-detail">' + rowSummary + '. You may proceed.</div></div></div>';
-        if (actionableWarnings.length > 0) { html += '<div class="validation-cards" id="validation-cards">'; var typeLabels = { required_empty: 'Required Value Missing', lookup_invalid: 'Invalid Lookup Value' }; actionableWarnings.forEach(function (w, idx) { var cardId = 'vcard-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field); html += '<div class="val-card" id="' + cardId + '"><div class="val-card-header" onclick="BDL.toggleValidationCard(\'' + cardId + '\')"><div class="val-card-header-left"><span class="val-card-field">'; if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>'; html += '</span><span class="val-badge">' + typeLabels[w.type] + '</span></div><div class="val-card-header-right"><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-card-chevron" id="chevron-' + cardId + '">&#9654;</span></div></div>'; html += '<div class="val-card-body" id="body-' + cardId + '" style="display:none;">'; if (w.type === 'required_empty') html += renderRequiredEmptyActions(w); else if (w.type === 'lookup_invalid') html += renderLookupInvalidActions(w, cardId, serverData); html += '</div></div>'; }); html += '</div>'; }
+        if (actionableWarnings.length > 0) { html += '<div class="validation-cards" id="validation-cards">'; var typeLabels = { required_empty: 'Required Value Missing', lookup_invalid: 'Invalid Lookup Value' }; actionableWarnings.forEach(function (w, idx) { var cardId = 'vcard-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field); html += '<div class="val-card" id="' + cardId + '"><div class="val-card-header" onclick="BDL.toggleValidationCard(\'' + cardId + '\')"><div class="val-card-header-left"><span class="val-card-field">'; if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>'; html += '</span><span class="val-badge">' + typeLabels[w.type] + '</span></div><div class="val-card-header-right"><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-card-chevron" id="chevron-' + cardId + '">&#9654;</span></div></div>'; html += '<div class="val-card-body" id="body-' + cardId + '" style="display:none;">'; var guidanceState = curState(), guidanceField = guidanceState && guidanceState.fields ? guidanceState.fields.find(function(gf) { return gf.element_name === w.field; }) : null; if (guidanceField && guidanceField.import_guidance) html += '<div class="val-guidance-tip">' + escapeHtml(guidanceField.import_guidance) + '</div>'; if (w.type === 'required_empty') html += renderRequiredEmptyActions(w); else if (w.type === 'lookup_invalid') html += renderLookupInvalidActions(w, cardId, serverData); html += '</div></div>'; }); html += '</div>'; }
         if (infoWarnings.length > 0) { html += '<div class="validation-info-section"><div class="validation-info-header">Warnings (' + infoWarnings.length + ')</div>'; infoWarnings.forEach(function (w, idx) { var infoId = 'vinfo-' + idx, fieldDisplay = getFieldDisplayNameByElement(w.field); var typeLabel = { max_length: 'Max Length', data_type: 'Data Type', lookup_error: 'Lookup Discovery' }[w.type] || w.type; html += '<div class="val-info-card" id="' + infoId + '"><div class="val-info-header" onclick="BDL.toggleInfoCard(\'' + infoId + '\')"><span class="val-card-field">'; if (fieldDisplay !== w.field) html += escapeHtml(fieldDisplay) + ' <code class="val-target">' + w.field + '</code>'; else html += '<code class="val-target">' + w.field + '</code>'; html += '</span><span class="val-badge val-badge-info">' + typeLabel + '</span><span class="val-card-count">' + w.rowCount.toLocaleString() + ' rows</span><span class="val-info-chevron" id="chevron-' + infoId + '">&#9654;</span></div>'; html += '<div class="val-info-body" id="body-' + infoId + '" style="display:none;"><div class="val-card-message">' + escapeHtml(w.message) + '</div>'; if (w.samples && w.samples.length > 0) { html += '<div class="validation-samples">'; w.samples.forEach(function (s) { html += '<span class="val-sample">Row ' + s.row + ': <code>' + escapeHtml(String(s.value)) + '</code>'; if (s.length) html += ' (' + s.length + ' chars)'; html += '</span>'; }); html += '</div>'; } html += '</div></div>'; }); html += '</div>'; }
         return html;
     }
@@ -1265,26 +1271,23 @@ var BDL = (function () {
         renderExecuteReview();
     }
 
-    function ticketChanged() { var ticketInput = document.getElementById('jira-ticket'); var messageRow = document.getElementById('ar-message-row'); var messageInput = document.getElementById('ar-message'); var ticket = ticketInput ? ticketInput.value.trim() : ''; if (ticket) { messageRow.style.display = ''; if (!messageInput.dataset.userEdited) messageInput.value = ticket + ': BDL update via BDL Import'; } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; } }
+    function ticketChanged() { var ticketInput = document.getElementById('jira-ticket'); var messageRow = document.getElementById('ar-message-row'); var messageInput = document.getElementById('ar-message'); var ticket = ticketInput ? ticketInput.value.trim() : ''; if (ticket) { messageRow.style.display = ''; if (!messageInput.dataset.userEdited) { var entityNames = entityStates.map(function (s) { return s.entity.entity_type; }).join(', '); messageInput.value = ticket + ': ' + (entityNames || 'BDL') + ' update via BDL Import'; } } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; } }
 
     function executeAll() {
         if (executeInProgress) return;
         var envName = selectedEnvironment.environment, jiraTicket = (document.getElementById('jira-ticket') || {}).value || ''; jiraTicket = jiraTicket.trim(); var count = entityStates.length;
         var bodyHtml = '<p>Submit ' + count + ' BDL import' + (count > 1 ? 's' : '') + ' to <strong class="summary-env-' + envName.toLowerCase() + '">' + envName + '</strong>?</p>'; entityStates.forEach(function (s) { bodyHtml += '<p style="font-size:12px;color:#999;">' + escapeHtml(formatEntityName(s.entity.entity_type)) + ': ' + s.stagingContext.row_count.toLocaleString() + ' rows</p>'; }); if (envName === 'PROD') bodyHtml += '<p style="color:#f48771;font-weight:600;">This is a PRODUCTION import and cannot be undone.</p>';
-        showConfirm(bodyHtml, { title: 'Submit BDL Import' + (count > 1 ? 's' : ''), icon: envName === 'PROD' ? '&#9888;' : '&#9654;', iconColor: envName === 'PROD' ? '#f48771' : '#4ec9b0', confirmLabel: 'Submit ' + (count > 1 ? 'All' : 'Import'), cancelLabel: 'Cancel', confirmClass: envName === 'PROD' ? 'xf-modal-btn-danger' : 'xf-modal-btn-primary', html: true }).then(function (confirmed) { if (!confirmed) return; executeInProgress = true; var execBtn = document.getElementById('btn-execute-import'); if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; } executeSequential(0, jiraTicket); });
+        showConfirm(bodyHtml, { title: 'Submit BDL Import' + (count > 1 ? 's' : ''), icon: envName === 'PROD' ? '&#9888;' : '&#9654;', iconColor: envName === 'PROD' ? '#f48771' : '#4ec9b0', confirmLabel: 'Submit ' + (count > 1 ? 'All' : 'Import'), cancelLabel: 'Cancel', confirmClass: envName === 'PROD' ? 'xf-modal-btn-danger' : 'xf-modal-btn-primary', html: true }).then(function (confirmed) { if (!confirmed) return; executeInProgress = true; executeResultTracker = []; var execBtn = document.getElementById('btn-execute-import'); if (execBtn) { execBtn.disabled = true; execBtn.textContent = 'Submitting...'; } executeSequential(0, jiraTicket); });
     }
 
     function executeSequential(idx, jiraTicket) {
         if (idx >= entityStates.length) {
-            executeInProgress = false;
-            var actions = document.getElementById('execute-actions');
-            if (actions) actions.classList.add('hidden');
-            stepComplete[4] = true;
-            updateStepperUI();
-            updateNavButtons();
-            // Check for promote eligibility (non-PROD, at least one success)
-            if (promoteData && promoteData.cooldownSeconds && promoteData.prodConfigId) {
-                renderPromoteCard(promoteData.sourceEnvironment);
+            // All primary imports complete — submit consolidated AR log if Jira ticket provided
+            var hasSuccess = executeResultTracker.some(function (r) { return r.success; });
+            if (jiraTicket && hasSuccess) {
+                submitConsolidatedArLog(jiraTicket, function () { finishExecution(); });
+            } else {
+                finishExecution();
             }
             return;
         }
@@ -1293,12 +1296,9 @@ var BDL = (function () {
         var resultsList = document.getElementById('execute-results-list');
         switchExecuteTab(idx);
         if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#dcdcaa;">&#8943;</span>';
-        // Show the unified results pane on first execution
         if (resultsPane) resultsPane.classList.remove('hidden');
         var entityName = formatEntityName(state.entity.entity_type);
-        var arMessage = (document.getElementById('ar-message') || {}).value || '';
         var requestBody = { staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, source_filename: uploadedFile ? uploadedFile.name : 'unknown', column_mapping: JSON.stringify(state.columnMapping) };
-        if (jiraTicket) { requestBody.jira_ticket = jiraTicket; if (arMessage.trim()) requestBody.ar_message = arMessage.trim().replace('BDL update', state.entity.entity_type + ' update'); }
         fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
         .then(function (data) {
@@ -1306,14 +1306,11 @@ var BDL = (function () {
             if (data._httpStatus >= 400 || data.error) {
                 rh += '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>' + escapeHtml(entityName) + ' — Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div>' + (data.log_id ? '<div class="result-meta">Log ID: ' + data.log_id + '</div>' : '') + '</div></div>';
                 if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#ef4444;">&#10006;</span>';
+                executeResultTracker.push({ entity_type: state.entity.entity_type, staging_table: state.stagingContext.staging_table, log_id: data.log_id || null, success: false });
             } else {
                 rh += '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>' + escapeHtml(entityName) + ' — Submitted</strong><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: ' + data.file_registry_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>';
-                if (data.ar_log) {
-                    if (data.ar_log.success) rh += '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>' + escapeHtml(entityName) + ' — AR Log Submitted</strong><div class="result-meta">' + data.ar_log.row_count.toLocaleString() + ' records linked</div></div></div>';
-                    else rh += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>' + escapeHtml(entityName) + ' — AR Log Failed</strong><div class="result-detail">' + escapeHtml(data.ar_log.error) + '</div></div></div>';
-                }
                 if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#4ec9b0;">&#10003;</span>';
-                // Capture promote metadata from first successful non-PROD response
+                executeResultTracker.push({ entity_type: state.entity.entity_type, staging_table: state.stagingContext.staging_table, log_id: data.log_id, success: true });
                 if (!promoteData && data.promote_cooldown_seconds && data.prod_config_id) {
                     promoteData = {
                         cooldownSeconds: data.promote_cooldown_seconds,
@@ -1329,8 +1326,61 @@ var BDL = (function () {
             var rh = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>' + escapeHtml(entityName) + ' — Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
             if (resultsList) resultsList.innerHTML += rh;
             if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#ef4444;">&#10006;</span>';
+            executeResultTracker.push({ entity_type: state.entity.entity_type, staging_table: state.stagingContext.staging_table, log_id: null, success: false });
             executeSequential(idx + 1, jiraTicket);
         });
+    }
+
+    function submitConsolidatedArLog(jiraTicket, callback) {
+        var resultsList = document.getElementById('execute-results-list');
+        var successResults = executeResultTracker.filter(function (r) { return r.success; });
+        if (successResults.length === 0) { callback(); return; }
+
+        var entityTypes = successResults.map(function (r) { return r.entity_type; }).join(',');
+        var parentLogIds = successResults.map(function (r) { return r.log_id; }).filter(function (id) { return id; }).join(',');
+        var firstStagingTable = successResults[0].staging_table;
+        var arMessage = (document.getElementById('ar-message') || {}).value || '';
+        if (!arMessage.trim()) { arMessage = jiraTicket + ': ' + entityTypes + ' update via BDL Import'; }
+
+        var requestBody = {
+            staging_table: firstStagingTable,
+            entity_types: entityTypes,
+            jira_ticket: jiraTicket,
+            ar_message: arMessage.trim(),
+            config_id: selectedEnvironment.config_id,
+            source_filename: uploadedFile ? uploadedFile.name : 'unknown',
+            parent_log_ids: parentLogIds
+        };
+
+        fetch('/api/bdl-import/execute-ar-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) })
+        .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
+        .then(function (data) {
+            var rh = '';
+            if (data._httpStatus >= 400 || data.error) {
+                rh = '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log — Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div></div></div>';
+            } else {
+                rh = '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log — Submitted</strong><div class="result-meta">' + data.row_count.toLocaleString() + ' records linked to ' + escapeHtml(jiraTicket) + ' (' + escapeHtml(entityTypes) + ')</div></div></div>';
+            }
+            if (resultsList) resultsList.innerHTML += rh;
+            callback();
+        })
+        .catch(function (err) {
+            var rh = '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log — Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
+            if (resultsList) resultsList.innerHTML += rh;
+            callback();
+        });
+    }
+
+    function finishExecution() {
+        executeInProgress = false;
+        var actions = document.getElementById('execute-actions');
+        if (actions) actions.classList.add('hidden');
+        stepComplete[4] = true;
+        updateStepperUI();
+        updateNavButtons();
+        if (promoteData && promoteData.cooldownSeconds && promoteData.prodConfigId) {
+            renderPromoteCard(promoteData.sourceEnvironment);
+        }
     }
 
     // ── Templates ─────────────────────────────────────────────────────────
@@ -1352,7 +1402,7 @@ var BDL = (function () {
         if (step <= 2) { uploadedFile = null; parsedFileData = null; }
         if (step <= 3) { selectedEntities = []; entityStates = []; currentEntityIndex = 0; entityTemplates = []; activeTemplateId = null; }
         if (step <= 4) { entityStates = []; currentEntityIndex = 0; activeTemplateId = null; }
-        executeInProgress = false; clearPromoteState(); updateStepperUI(); updateNavButtons();
+        executeInProgress = false; executeResultTracker = []; clearPromoteState(); updateStepperUI(); updateNavButtons();
     }
 
     function clearPromoteState() { if (promoteCountdownTimer) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; } promoteData = null; promoteSecondsRemaining = 0; promoteReady = false; }
