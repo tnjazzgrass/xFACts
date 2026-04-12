@@ -6,6 +6,9 @@
 
    CHANGELOG
    ---------
+   2026-04-11  Added blanket nullify fields support in mapping step
+               Nullify badge on target chips for eligible fields
+               Nullified fields shown in Mapped section with distinct styling
    2026-04-09  Restored XML preview per entity tab on Execute step
                Entity selection grouped by entity_key (CONSUMER/ACCOUNT/OTHER)
                Field info modal on entity cards (on-demand field list via ℹ icon)
@@ -27,7 +30,6 @@ var BDL = (function () {
     var stepComplete = [false, false, false, false, false];
     var selectedEnvironment = null;
 
-    // Multi-select entity state
     var selectedEntities = [];
     var entityStates = [];
     var currentEntityIndex = 0;
@@ -77,15 +79,16 @@ var BDL = (function () {
             if (currentStep === 3) {
                 initEntityStates();
                 currentEntityIndex = 0;
-                loadCurrentEntityFields(function () {
-                    showStep(4);
-                    renderMapValidatePanel();
-                });
+                loadCurrentEntityFields(function () { showStep(4); renderMapValidatePanel(); });
                 return;
             }
             if (currentStep === 4) {
-                showStep(5);
-                renderExecuteReview();
+                var state = curState();
+                if (state && state.nullifyFields && state.nullifyFields.length > 0 && state.stagingContext) {
+                    persistNullifyFields(state, function () { showStep(5); renderExecuteReview(); });
+                } else {
+                    showStep(5); renderExecuteReview();
+                }
                 return;
             }
             showStep(currentStep + 1);
@@ -93,13 +96,7 @@ var BDL = (function () {
     }
 
     function prevStep() {
-        if (currentStep === 4 && currentEntityIndex > 0) {
-            currentEntityIndex--;
-            loadCurrentEntityFields(function () {
-                renderMapValidatePanel();
-            });
-            return;
-        }
+        if (currentStep === 4 && currentEntityIndex > 0) { currentEntityIndex--; loadCurrentEntityFields(function () { renderMapValidatePanel(); }); return; }
         if (currentStep > 1) showStep(currentStep - 1);
     }
 
@@ -123,10 +120,7 @@ var BDL = (function () {
     }
 
     function updateGuidePanel() {
-        for (var g = 1; g <= totalSteps; g++) {
-            var gt = document.getElementById('guide-text-' + g);
-            if (gt) { if (g === currentStep) gt.classList.remove('hidden'); else gt.classList.add('hidden'); }
-        }
+        for (var g = 1; g <= totalSteps; g++) { var gt = document.getElementById('guide-text-' + g); if (gt) { if (g === currentStep) gt.classList.remove('hidden'); else gt.classList.add('hidden'); } }
         updateTemplateSectionState();
     }
 
@@ -148,12 +142,10 @@ var BDL = (function () {
     }
 
     function updateEnvBadge() {
-        var badge = document.getElementById('env-badge');
-        if (!badge) return;
+        var badge = document.getElementById('env-badge'); if (!badge) return;
         if (!selectedEnvironment) { badge.className = 'env-badge hidden'; badge.textContent = ''; return; }
-        var env = selectedEnvironment.environment;
-        badge.textContent = env;
-        badge.className = 'env-badge env-badge-' + env.toLowerCase();
+        badge.textContent = selectedEnvironment.environment;
+        badge.className = 'env-badge env-badge-' + selectedEnvironment.environment.toLowerCase();
     }
 
     // ── Step 1: Environment ──────────────────────────────────────────────
@@ -176,15 +168,11 @@ var BDL = (function () {
     }
     function applyEnvironmentSelection(card, envData) {
         document.querySelectorAll('.env-card').forEach(function (c) { c.classList.remove('selected'); }); card.classList.add('selected');
-        selectedEnvironment = envData;
-        stepComplete[0] = true; updateNavButtons(); updateStepperUI(); updateEnvBadge(); resetFromStep(2);
+        selectedEnvironment = envData; stepComplete[0] = true; updateNavButtons(); updateStepperUI(); updateEnvBadge(); resetFromStep(2);
     }
     function showProdAdvisoryModal(card, envData) {
-        var existing = document.getElementById('prod-advisory-modal');
-        if (existing) existing.remove();
-        var modal = document.createElement('div');
-        modal.id = 'prod-advisory-modal';
-        modal.className = 'xf-modal-overlay';
+        var existing = document.getElementById('prod-advisory-modal'); if (existing) existing.remove();
+        var modal = document.createElement('div'); modal.id = 'prod-advisory-modal'; modal.className = 'xf-modal-overlay';
         modal.innerHTML = '<div class="xf-modal"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span><span>Production Environment</span></div><div class="xf-modal-body"><p>You are about to target <strong>Production</strong> directly.</p><p>If you haven\'t validated this data in a test environment first, consider running a test import on TEST or STAGE before loading to Production.</p></div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" id="prod-advisory-back">Go Back</button><button class="xf-modal-btn-primary" id="prod-advisory-continue">Continue to Production</button></div></div>';
         document.body.appendChild(modal);
         document.getElementById('prod-advisory-back').onclick = function () { modal.remove(); };
@@ -219,17 +207,27 @@ var BDL = (function () {
         for (var i = 0; i < line.length; i++) { var ch = line[i]; if (inQ) { if (ch === '"' && i + 1 < line.length && line[i + 1] === '"') { current += '"'; i++; } else if (ch === '"') inQ = false; else current += ch; } else { if (ch === '"') inQ = true; else if (ch === ',') { result.push(current.trim()); current = ''; } else current += ch; } }
         result.push(current.trim()); return result;
     }
+    function excelCellValue(cell) {
+        if (!cell) return '';
+        if (cell.t === 'd' && cell.v instanceof Date) {
+            var dt = cell.v;
+            var mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+            var dd = String(dt.getUTCDate()).padStart(2, '0');
+            return dt.getUTCFullYear() + '-' + mm + '-' + dd;
+        }
+        return cell.w !== undefined ? cell.w : String(cell.v);
+    }
     function parseExcelPreview(file) {
         var reader = new FileReader(); reader.onload = function (e) {
             try {
-                var data = new Uint8Array(e.target.result), wb = XLSX.read(data, { type: 'array' }), sh = wb.Sheets[wb.SheetNames[0]];
+                var data = new Uint8Array(e.target.result), wb = XLSX.read(data, { type: 'array', cellDates: true }), sh = wb.Sheets[wb.SheetNames[0]];
                 if (!sh['!ref']) { showAlert('The file contains no data.', { title: 'Empty File', icon: '&#9888;', iconColor: '#dcdcaa' }); return; }
                 var range = XLSX.utils.decode_range(sh['!ref']), totalRows = range.e.r;
                 if (totalRows < 1) { showAlert('The file has headers but no data rows.', { title: 'No Data Rows', icon: '&#9888;', iconColor: '#dcdcaa' }); return; }
                 var headers = [];
                 for (var col = range.s.c; col <= range.e.c; col++) { var cell = sh[XLSX.utils.encode_cell({ r: 0, c: col })]; headers.push(cell ? String(cell.v) : 'Column ' + (col + 1)); }
                 var rows = [];
-                for (var row = 1; row <= Math.min(totalRows, MAX_PREVIEW_ROWS); row++) { var rd = []; for (var c = range.s.c; c <= range.e.c; c++) { var dc = sh[XLSX.utils.encode_cell({ r: row, c: c })]; rd.push(dc ? String(dc.v) : ''); } rows.push(rd); }
+                for (var row = 1; row <= Math.min(totalRows, MAX_PREVIEW_ROWS); row++) { var rd = []; for (var c = range.s.c; c <= range.e.c; c++) { var dc = sh[XLSX.utils.encode_cell({ r: row, c: c })]; rd.push(excelCellValue(dc)); } rows.push(rd); }
                 parsedFileData = { headers: headers, rows: rows, rowCount: totalRows };
                 showFileInfo(file, parsedFileData); renderFilePreview(parsedFileData);
                 document.getElementById('upload-prompt').style.display = 'none';
@@ -271,125 +269,76 @@ var BDL = (function () {
     function renderEntities(entities) {
         var grid = document.getElementById('entity-grid');
         if (!entities.length) { grid.innerHTML = '<div class="placeholder-message">No entity types available.</div>'; return; }
-
-        var sectionOrder = ['CONSUMER', 'ACCOUNT', 'OTHER'];
-        var sectionLabels = { CONSUMER: 'Consumer', ACCOUNT: 'Account', OTHER: 'Other' };
-        var groups = {};
-        entities.forEach(function (ent) {
-            var key = ent.entity_key || 'OTHER';
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(ent);
-        });
-
+        var sectionOrder = ['CONSUMER', 'ACCOUNT', 'OTHER'], sectionLabels = { CONSUMER: 'Consumer', ACCOUNT: 'Account', OTHER: 'Other' };
+        var groups = {}; entities.forEach(function (ent) { var key = ent.entity_key || 'OTHER'; if (!groups[key]) groups[key] = []; groups[key].push(ent); });
         var h = '';
         sectionOrder.forEach(function (key) {
             if (!groups[key] || groups[key].length === 0) return;
-            var label = sectionLabels[key] || key;
-            var count = groups[key].length;
-
-            h += '<div class="entity-section">';
-            h += '<div class="entity-section-header"><span class="entity-section-label">' + escapeHtml(label) + '</span><span class="entity-section-line"></span><span class="entity-section-count">' + count + '</span></div>';
-            h += '<div class="entity-cards">';
+            h += '<div class="entity-section"><div class="entity-section-header"><span class="entity-section-label">' + escapeHtml(sectionLabels[key] || key) + '</span><span class="entity-section-line"></span><span class="entity-section-count">' + groups[key].length + '</span></div><div class="entity-cards">';
             groups[key].forEach(function (ent) {
                 var dn = formatEntityName(ent.entity_type), folder = ent.folder || 'root';
                 var isSelected = selectedEntities.some(function (se) { return se.entity_type === ent.entity_type; });
                 var safeType = ent.entity_type.replace(/'/g, "\\'");
                 h += '<div class="entity-card' + (isSelected ? ' selected' : '') + '" onclick="BDL.toggleEntity(\'' + safeType + '\')">';
                 h += '<button class="entity-info-btn" onclick="event.stopPropagation(); BDL.showFieldInfo(\'' + safeType + '\', \'' + escapeHtml(dn).replace(/'/g, "\\'") + '\')" title="View available fields">i</button>';
-                h += '<div class="entity-name">' + dn + '</div>';
-                h += '<div class="entity-meta"><span class="entity-folder">' + folder + '</span><span class="entity-fields">' + ent.element_count + ' fields</span></div>';
-                h += '</div>';
+                h += '<div class="entity-name">' + dn + '</div><div class="entity-meta"><span class="entity-folder">' + folder + '</span><span class="entity-fields">' + ent.element_count + ' fields</span></div></div>';
             });
             h += '</div></div>';
         });
-
-        grid.innerHTML = h;
-        updateEntitySelectionBanner();
+        grid.innerHTML = h; updateEntitySelectionBanner();
     }
 
     function showFieldInfo(entityType, entityName) {
-        var existing = document.getElementById('field-info-modal');
-        if (existing) existing.remove();
-
-        var modal = document.createElement('div');
-        modal.id = 'field-info-modal';
-        modal.className = 'xf-modal-overlay';
+        var existing = document.getElementById('field-info-modal'); if (existing) existing.remove();
+        var modal = document.createElement('div'); modal.id = 'field-info-modal'; modal.className = 'xf-modal-overlay';
         modal.innerHTML = '<div class="xf-modal" style="max-width:480px;"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#9cdcfe">&#9432;</span><span>Available Fields</span></div><div class="xf-modal-body"><div class="field-info-loading">Loading fields for ' + escapeHtml(entityName) + '...</div></div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" id="field-info-close">Close</button></div></div>';
         document.body.appendChild(modal);
         document.getElementById('field-info-close').onclick = function () { modal.remove(); };
         modal.onclick = function (e) { if (e.target === modal) modal.remove(); };
-
-        fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(entityType))
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                var fields = data.fields || [];
-                var body = modal.querySelector('.xf-modal-body');
-                if (!fields.length) {
-                    body.innerHTML = '<div class="field-info-empty">No fields available for this entity type.</div>';
-                    return;
-                }
-                var html = '<div class="field-info-list">';
-                fields.forEach(function (f) {
-                    var displayName = (f.display_name && f.display_name !== '') ? f.display_name : f.element_name;
-                    html += '<div class="field-info-item"><div class="field-info-name">' + escapeHtml(displayName) + '</div>';
-                    if (f.field_description && f.field_description.length > 0) {
-                        html += '<div class="field-info-desc">' + escapeHtml(f.field_description) + '</div>';
-                    }
-                    if (f.import_guidance && f.import_guidance.length > 0) {
-                        html += '<div class="field-info-guidance">' + escapeHtml(f.import_guidance) + '</div>';
-                    }
-                    html += '</div>';
-                });
+        fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(entityType)).then(function (r) { return r.json(); }).then(function (data) {
+            var fields = data.fields || [], body = modal.querySelector('.xf-modal-body');
+            if (!fields.length) { body.innerHTML = '<div class="field-info-empty">No fields available for this entity type.</div>'; return; }
+            var entityInfo = allEntities.find(function (e) { return e.entity_type === entityType; });
+            var entityCanNullify = entityInfo && entityInfo.has_nullify_fields;
+            var html = '<div class="field-info-list">'; fields.forEach(function (f) {
+                var displayName = (f.display_name && f.display_name !== '') ? f.display_name : f.element_name;
+                var canNullify = entityCanNullify && !f.is_not_nullifiable && !f.is_primary_id && !f.is_import_required;
+                html += '<div class="field-info-item">';
+                if (canNullify) html += '<span class="field-info-nullify-icon" title="This field can be nullified during import">&#8709;</span>';
+                html += '<div class="field-info-name">' + escapeHtml(displayName) + '</div>';
+                if (f.field_description && f.field_description.length > 0) html += '<div class="field-info-desc">' + escapeHtml(f.field_description) + '</div>';
+                if (f.import_guidance && f.import_guidance.length > 0) html += '<div class="field-info-guidance">' + escapeHtml(f.import_guidance) + '</div>';
                 html += '</div>';
-                body.innerHTML = html;
-            })
-            .catch(function (err) {
-                var body = modal.querySelector('.xf-modal-body');
-                body.innerHTML = '<div class="field-info-empty" style="color:#f48771;">Failed to load fields: ' + escapeHtml(err.message) + '</div>';
-            });
+            }); html += '</div>'; body.innerHTML = html;
+        }).catch(function (err) { modal.querySelector('.xf-modal-body').innerHTML = '<div class="field-info-empty" style="color:#f48771;">Failed to load fields: ' + escapeHtml(err.message) + '</div>'; });
     }
 
     function toggleEntity(entityType) {
-        var idx = -1;
-        for (var i = 0; i < selectedEntities.length; i++) { if (selectedEntities[i].entity_type === entityType) { idx = i; break; } }
+        var idx = -1; for (var i = 0; i < selectedEntities.length; i++) { if (selectedEntities[i].entity_type === entityType) { idx = i; break; } }
         if (idx !== -1) selectedEntities.splice(idx, 1);
         else { var ent = allEntities.find(function (e) { return e.entity_type === entityType; }); if (ent) selectedEntities.push(ent); }
-        renderEntities(allEntities);
-        stepComplete[2] = selectedEntities.length > 0;
-        updateNavButtons(); updateStepperUI(); resetFromStep(4);
+        renderEntities(allEntities); stepComplete[2] = selectedEntities.length > 0; updateNavButtons(); updateStepperUI(); resetFromStep(4);
     }
     function updateEntitySelectionBanner() {
-        var countEl = document.getElementById('entity-select-count');
-        if (!countEl) return;
-        var count = selectedEntities.length;
-        if (count === 0) { countEl.textContent = ''; countEl.className = 'entity-banner-count'; }
-        else { countEl.textContent = count + ' selected'; countEl.className = 'entity-banner-count entity-banner-count-active'; }
+        var countEl = document.getElementById('entity-select-count'); if (!countEl) return;
+        if (selectedEntities.length === 0) { countEl.textContent = ''; countEl.className = 'entity-banner-count'; }
+        else { countEl.textContent = selectedEntities.length + ' selected'; countEl.className = 'entity-banner-count entity-banner-count-active'; }
     }
     function formatEntityName(et) { return et.split('_').map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(' '); }
 
     // ── Per-Entity State Management ──────────────────────────────────────
     function initEntityStates() {
         entityStates = selectedEntities.map(function (ent) {
-            return {
-                entity: ent, fields: null, wrapper: null, columnMapping: {},
-                stagingContext: null, stagedMapping: null, validationResult: null,
-                validated: false, xmlPreviewLoaded: false
-            };
+            return { entity: ent, fields: null, wrapper: null, columnMapping: {}, stagingContext: null, stagedMapping: null, validationResult: null, validated: false, xmlPreviewLoaded: false, nullifyFields: [] };
         });
     }
 
     function loadCurrentEntityFields(callback) {
-        var state = curState();
-        if (!state) { if (callback) callback(); return; }
+        var state = curState(); if (!state) { if (callback) callback(); return; }
         if (state.fields) { if (callback) callback(); return; }
         fetch('/api/bdl-import/entity-fields?entity_type=' + encodeURIComponent(state.entity.entity_type))
             .then(function (r) { return r.json(); })
-            .then(function (data) {
-                state.fields = data.fields || [];
-                state.wrapper = data.wrapper || [];
-                loadTemplates(state.entity.entity_type);
-                if (callback) callback();
-            })
+            .then(function (data) { state.fields = data.fields || []; state.wrapper = data.wrapper || []; loadTemplates(state.entity.entity_type); if (callback) callback(); })
             .catch(function (err) { console.error('Failed to load entity fields:', err); if (callback) callback(); });
     }
 
@@ -401,27 +350,21 @@ var BDL = (function () {
     }
     function hasDisplayName(f) { return f.display_name && f.display_name !== ''; }
 
-
     // ── Step 4: Map & Validate (per-entity loop) ─────────────────────────
 
     function renderMapValidatePanel() {
         var area = document.getElementById('map-validate-area');
         var state = curState();
-        if (!state || !state.fields || !parsedFileData) {
-            area.innerHTML = '<div class="placeholder-message">Complete previous steps.</div>';
-            return;
-        }
+        if (!state || !state.fields || !parsedFileData) { area.innerHTML = '<div class="placeholder-message">Complete previous steps.</div>'; return; }
         if (state.validated) { renderMapValidateValidated(area, state); }
         else if (state.stagingContext && state.validationResult) { renderMapValidateValidation(area, state); }
         else { renderMapValidateMapping(area, state); }
-        updateStep4Completion();
-        updateNavButtons();
+        updateStep4Completion(); updateNavButtons();
     }
 
     function renderMapValidateMapping(area, state) {
         if (state.entity.action_type === 'FIXED_VALUE') { renderFixedValueMapping(area, state); return; }
-        var entityFields = state.fields;
-        var columnMapping = state.columnMapping;
+        var entityFields = state.fields, columnMapping = state.columnMapping;
         var visibleFields = entityFields.filter(function (f) { return f.is_visible !== 0 && f.is_visible !== false; });
         var isAcct = state.entity.folder && state.entity.folder.indexOf('account') !== -1;
         var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
@@ -429,8 +372,7 @@ var BDL = (function () {
         var mappableFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
         var prevIdIdx = '';
         for (var k in columnMapping) { if (columnMapping[k] === idElemName) { var hIdx = parsedFileData.headers.indexOf(k); if (hIdx !== -1) prevIdIdx = String(hIdx); break; } }
-        var html = '';
-        html += renderEntityProgressBanner('mapping');
+        var html = renderEntityProgressBanner('mapping');
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
@@ -441,25 +383,17 @@ var BDL = (function () {
         var disabledClass = (idField && !idSelected) ? ' mapping-disabled' : '';
         html += '<div class="mapping-panels-wrap' + disabledClass + '" id="mapping-panels-wrap">';
         if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to begin mapping</div>';
-        html += '<div class="mapping-panels">';
-        html += '<div class="mapping-panel panel-source"><div class="panel-header">Source Columns</div><div class="panel-list" id="source-list"></div></div>';
-        html += '<div class="mapping-panel panel-target"><div class="panel-header">BDL Fields</div><div class="panel-list" id="target-list"></div></div>';
-        html += '</div>';
+        html += '<div class="mapping-panels"><div class="mapping-panel panel-source"><div class="panel-header">Source Columns</div><div class="panel-list" id="source-list"></div></div><div class="mapping-panel panel-target"><div class="panel-header">BDL Fields</div><div class="panel-list" id="target-list"></div></div></div>';
         html += '<div class="mapped-section"><div class="panel-header">Mapped</div><div class="mapped-list" id="mapped-list"></div></div>';
-        html += '<div id="mapping-warnings" class="mapping-warnings"></div>';
-        html += '</div>';
+        html += '<div id="mapping-warnings" class="mapping-warnings"></div></div>';
         html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()" disabled>Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
         area.innerHTML = html;
-        area._mappableFields = mappableFields;
-        area._identifierField = idField;
-        area._identifierElementName = idElemName;
-        area._selectedSource = null;
+        area._mappableFields = mappableFields; area._identifierField = idField; area._identifierElementName = idElemName; area._selectedSource = null;
         refreshMappingPanels();
     }
 
     function renderFixedValueMapping(area, state) {
-        var entityFields = state.fields;
-        var columnMapping = state.columnMapping;
+        var entityFields = state.fields, columnMapping = state.columnMapping;
         var visibleFields = entityFields.filter(function (f) { return f.is_visible !== 0 && f.is_visible !== false; });
         var isAcct = state.entity.folder && state.entity.folder.indexOf('account') !== -1;
         var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
@@ -480,149 +414,116 @@ var BDL = (function () {
         html += '<div class="fixed-value-fields' + disabledClass + '" id="fixed-value-fields">';
         if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to enter values</div>';
         valueFields.forEach(function (f) {
-            var fieldId = 'fv-' + f.element_name.replace(/[^a-zA-Z0-9]/g, '');
-            var existingVal = state.columnMapping['__fixed__' + f.element_name] || '';
-            var displayName = hasDisplayName(f) ? f.display_name : f.element_name;
-            var reqLabel = f.is_import_required ? ' <span class="chip-required-label">required</span>' : '';
+            var fieldId = 'fv-' + f.element_name.replace(/[^a-zA-Z0-9]/g, ''); var existingVal = state.columnMapping['__fixed__' + f.element_name] || '';
+            var displayName = hasDisplayName(f) ? f.display_name : f.element_name; var reqLabel = f.is_import_required ? ' <span class="chip-required-label">required</span>' : '';
             html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(displayName) + reqLabel;
             if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
             if (f.field_description) html += '<div class="fixed-value-desc">' + escapeHtml(f.field_description.substring(0, 120)) + '</div>';
             if (f.import_guidance) html += '<div class="fixed-value-guidance">' + escapeHtml(f.import_guidance) + '</div>';
             html += '</div><div class="fixed-value-input">';
-            if (f.lookup_table) {
-                html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueSearch(\'' + f.element_name + '\',this)" autocomplete="off">';
-                html += '<div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
-            } else {
-                html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueChanged(\'' + f.element_name + '\',this)">';
-            }
+            if (f.lookup_table) { html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueSearch(\'' + f.element_name + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>'; }
+            else { html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueChanged(\'' + f.element_name + '\',this)">'; }
             var meta = buildFieldMeta(f); if (meta) html += '<div class="fixed-value-meta">' + meta + '</div>';
             html += '</div></div>';
         });
         html += '</div>';
         html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()">Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
         area.innerHTML = html;
-        area._identifierField = idField;
-        area._identifierElementName = idElemName;
-        area._valueFields = valueFields;
+        area._identifierField = idField; area._identifierElementName = idElemName; area._valueFields = valueFields;
         checkFixedValueComplete(state);
     }
 
     function fixedValueIdentifierChanged() {
-        var area = document.getElementById('map-validate-area');
-        var idSel = document.getElementById('identifier-column');
-        var idElem = area._identifierElementName;
+        var area = document.getElementById('map-validate-area'), idSel = document.getElementById('identifier-column'), idElem = area._identifierElementName;
         var state = curState(); if (!state) return;
-        var cm = state.columnMapping;
-        for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
+        var cm = state.columnMapping; for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
         if (idSel.value !== '') cm[parsedFileData.headers[parseInt(idSel.value)]] = idElem;
-        var idSection = document.querySelector('.mapping-identifier');
-        var fieldsWrap = document.getElementById('fixed-value-fields');
-        if (idSel.value !== '') {
-            if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); }
-            if (fieldsWrap) { fieldsWrap.classList.remove('mapping-disabled'); var msg = fieldsWrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); }
-        } else {
-            if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); }
-            if (fieldsWrap) fieldsWrap.classList.add('mapping-disabled');
-        }
+        var idSection = document.querySelector('.mapping-identifier'), fieldsWrap = document.getElementById('fixed-value-fields');
+        if (idSel.value !== '') { if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); } if (fieldsWrap) { fieldsWrap.classList.remove('mapping-disabled'); var msg = fieldsWrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); } }
+        else { if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); } if (fieldsWrap) fieldsWrap.classList.add('mapping-disabled'); }
         checkFixedValueComplete(state);
     }
 
-    function fixedValueChanged(elementName, input) {
-        var state = curState(); if (!state) return;
-        var val = input.value.trim();
-        if (val) state.columnMapping['__fixed__' + elementName] = val;
-        else delete state.columnMapping['__fixed__' + elementName];
-        checkFixedValueComplete(state);
-    }
+    function fixedValueChanged(elementName, input) { var state = curState(); if (!state) return; var val = input.value.trim(); if (val) state.columnMapping['__fixed__' + elementName] = val; else delete state.columnMapping['__fixed__' + elementName]; checkFixedValueComplete(state); }
 
     var searchDebounceTimer = null;
 
     function fixedValueSearch(elementName, input) {
-        var state = curState(); if (!state) return;
-        var val = input.value.trim();
-        if (val) state.columnMapping['__fixed__' + elementName] = val;
-        else delete state.columnMapping['__fixed__' + elementName];
-        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
-        var sugEl = document.getElementById('sug-' + fieldId);
-        if (!sugEl) return;
+        var state = curState(); if (!state) return; var val = input.value.trim();
+        if (val) state.columnMapping['__fixed__' + elementName] = val; else delete state.columnMapping['__fixed__' + elementName];
+        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, ''); var sugEl = document.getElementById('sug-' + fieldId); if (!sugEl) return;
         if (val.length < 2) { sugEl.innerHTML = ''; checkFixedValueComplete(state); return; }
-        var field = state.fields.find(function (f) { return f.element_name === elementName; });
-        if (!field || !field.lookup_table) { checkFixedValueComplete(state); return; }
-
+        var field = state.fields.find(function (f) { return f.element_name === elementName; }); if (!field || !field.lookup_table) { checkFixedValueComplete(state); return; }
         if (!state._lookupCache) state._lookupCache = {};
         var cacheKey = elementName + '::' + val.toLowerCase();
-        if (state._lookupCache[cacheKey]) {
-            renderSuggestions(sugEl, state._lookupCache[cacheKey], elementName);
-            checkFixedValueComplete(state);
-            return;
-        }
-
+        if (state._lookupCache[cacheKey]) { renderSuggestions(sugEl, state._lookupCache[cacheKey], elementName); checkFixedValueComplete(state); return; }
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
-            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) +
-                  '&element_name=' + encodeURIComponent(elementName) +
-                  '&search=' + encodeURIComponent(val) +
-                  '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; }
-                    var values = data.values || [];
-                    state._lookupCache[cacheKey] = values;
-                    renderSuggestions(sugEl, values, elementName);
-                })
-                .catch(function (err) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+                .then(function (r) { return r.json(); }).then(function (data) { if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; } var values = data.values || []; state._lookupCache[cacheKey] = values; renderSuggestions(sugEl, values, elementName); })
+                .catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
         }, 300);
         checkFixedValueComplete(state);
     }
 
     function renderSuggestions(sugEl, values, elementName) {
         if (values.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
-        var html = '';
-        values.forEach(function (item) {
-            var val = item.value || item;
-            var safeVal = escapeHtml(String(val)).replace(/'/g, "\\'");
-            html += '<div class="suggestion-item" onclick="BDL.selectFixedValue(\'' + elementName + '\',\'' + safeVal + '\')">';
-            html += '<span class="suggestion-value">' + escapeHtml(String(val)) + '</span>';
-            if (item.description) html += '<span class="suggestion-desc">' + escapeHtml(item.description) + '</span>';
-            html += '</div>';
-        });
+        var html = ''; values.forEach(function (item) { var val = item.value || item; var safeVal = escapeHtml(String(val)).replace(/'/g, "\\'");
+            html += '<div class="suggestion-item" onclick="BDL.selectFixedValue(\'' + elementName + '\',\'' + safeVal + '\')"><span class="suggestion-value">' + escapeHtml(String(val)) + '</span>';
+            if (item.description) html += '<span class="suggestion-desc">' + escapeHtml(item.description) + '</span>'; html += '</div>'; });
         sugEl.innerHTML = html;
     }
 
     function selectFixedValue(elementName, value) {
         var state = curState(); if (!state) return;
-        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
-        var input = document.getElementById(fieldId);
-        if (input) input.value = value;
+        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, ''); var input = document.getElementById(fieldId); if (input) input.value = value;
         state.columnMapping['__fixed__' + elementName] = value;
-        var sugEl = document.getElementById('sug-' + fieldId);
-        if (sugEl) sugEl.innerHTML = '';
+        var sugEl = document.getElementById('sug-' + fieldId); if (sugEl) sugEl.innerHTML = '';
         checkFixedValueComplete(state);
     }
 
     function checkFixedValueComplete(state) {
-        if (!state) return;
-        var area = document.getElementById('map-validate-area');
-        var hasIdentifier = false;
-        for (var k in state.columnMapping) { if (state.columnMapping[k] === (area ? area._identifierElementName : '')) { hasIdentifier = true; break; } }
+        if (!state) return; var area = document.getElementById('map-validate-area');
+        var hasIdentifier = false; for (var k in state.columnMapping) { if (state.columnMapping[k] === (area ? area._identifierElementName : '')) { hasIdentifier = true; break; } }
         var requiredMet = true;
         if (area && area._valueFields) { area._valueFields.forEach(function (f) { if (f.is_import_required && !state.columnMapping['__fixed__' + f.element_name]) requiredMet = false; }); }
-        var valBtn = document.getElementById('btn-validate-entity');
-        if (valBtn) valBtn.disabled = !(hasIdentifier && requiredMet);
+        var valBtn = document.getElementById('btn-validate-entity'); if (valBtn) valBtn.disabled = !(hasIdentifier && requiredMet);
     }
 
     function renderMapValidateValidation(area, state) {
         var html = renderEntityProgressBanner('validating');
-        var warnings = state.validationResult.warnings;
-        var serverData = state.validationResult.serverData;
-        html += buildValidationResultsHtml(warnings, serverData);
+        html += buildValidationResultsHtml(state.validationResult.warnings, state.validationResult.serverData);
         area.innerHTML = html;
     }
 
     function renderMapValidateValidated(area, state) {
         var html = renderEntityProgressBanner('complete');
-        html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + ' — Mapping and validation complete</strong><div class="validation-detail">' + (state.stagingContext ? state.stagingContext.row_count.toLocaleString() + ' rows staged' : '') + '</div></div></div>';
+        var detailParts = [];
+        if (state.stagingContext) detailParts.push(state.stagingContext.row_count.toLocaleString() + ' rows staged');
+        var mappedCount = Object.keys(state.columnMapping).length;
+        detailParts.push(mappedCount + ' field' + (mappedCount !== 1 ? 's' : '') + ' mapped');
+        if (state.nullifyFields && state.nullifyFields.length > 0) {
+            detailParts.push(state.nullifyFields.length + ' field' + (state.nullifyFields.length !== 1 ? 's' : '') + ' will be nullified');
+        }
+        html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + ' — Mapping and validation complete</strong><div class="validation-detail">' + detailParts.join(' &middot; ') + '</div></div></div>';
+        // Mapped fields card
+        var mappingKeys = Object.keys(state.columnMapping);
+        if (mappingKeys.length > 0) {
+            html += '<div class="execute-mapped-summary"><span class="mapped-summary-icon">&#128279;</span> <strong>Mapped Fields:</strong> ';
+            html += mappingKeys.map(function (sc) {
+                var te = state.columnMapping[sc];
+                var fld = state.fields ? state.fields.find(function (f) { return f.element_name === te; }) : null;
+                return '<code>' + escapeHtml(fld ? getFieldDisplayName(fld) : te) + '</code>';
+            }).join(', ');
+            html += '</div>';
+        }
+        // Nullify fields card
+        if (state.nullifyFields && state.nullifyFields.length > 0) {
+            html += '<div class="nullify-summary"><span class="nullify-summary-icon">&#8709;</span> <strong>Nullify:</strong> ';
+            html += state.nullifyFields.map(function (nf) { return '<code>' + escapeHtml(getFieldDisplayNameByElement(nf)) + '</code>'; }).join(', ');
+            html += '</div>';
+        }
         html += '<div class="map-validate-actions">';
         html += '<button class="nav-btn" onclick="BDL.revalidateCurrentEntity()">Re-validate</button>';
         if (currentEntityIndex < entityStates.length - 1) html += '<button class="execute-btn" onclick="BDL.advanceToNextEntity()">Continue to ' + escapeHtml(formatEntityName(entityStates[currentEntityIndex + 1].entity.entity_type)) + ' &#8594;</button>';
@@ -631,10 +532,8 @@ var BDL = (function () {
     }
 
     function renderEntityProgressBanner(phase) {
-        var total = entityStates.length;
-        if (total <= 1 && phase !== 'complete') return '';
-        var current = currentEntityIndex + 1;
-        var entityName = formatEntityName(curEntity().entity_type);
+        var total = entityStates.length; if (total <= 1 && phase !== 'complete') return '';
+        var current = currentEntityIndex + 1, entityName = formatEntityName(curEntity().entity_type);
         var html = '<div class="mapping-progress-banner"><div class="progress-banner-top">';
         for (var i = 0; i < total; i++) {
             var dotClass = 'progress-dot';
@@ -669,8 +568,7 @@ var BDL = (function () {
             try { if (ext === '.csv' || ext === '.txt') allRows = parseCSVAllRows(e.target.result); else allRows = parseExcelAllRows(e.target.result); }
             catch (err) { area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Failed to read file: ' + err.message + '</div>'; return; }
             area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Staging ' + allRows.length.toLocaleString() + ' rows for ' + formatEntityName(state.entity.entity_type) + '...</div>';
-            var fileMapping = {};
-            var fixedValues = {};
+            var fileMapping = {}, fixedValues = {};
             Object.keys(state.columnMapping).forEach(function (k) { if (k.indexOf('__fixed__') === 0) fixedValues[k.replace('__fixed__', '')] = state.columnMapping[k]; else fileMapping[k] = state.columnMapping[k]; });
             var stageBody = { entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, mapping: fileMapping, headers: parsedFileData.headers, rows: allRows };
             if (Object.keys(fixedValues).length > 0) stageBody.fixed_values = fixedValues;
@@ -714,23 +612,70 @@ var BDL = (function () {
     }
 
     function advanceToNextEntity() {
-        if (currentEntityIndex < entityStates.length - 1) { currentEntityIndex++; loadCurrentEntityFields(function () { loadTemplates(curEntity().entity_type); renderMapValidatePanel(); }); }
+        if (currentEntityIndex >= entityStates.length - 1) return;
+        var state = curState();
+        if (state && state.nullifyFields && state.nullifyFields.length > 0 && state.stagingContext) {
+            persistNullifyFields(state, function () {
+                currentEntityIndex++;
+                loadCurrentEntityFields(function () { loadTemplates(curEntity().entity_type); renderMapValidatePanel(); });
+            });
+        } else {
+            currentEntityIndex++;
+            loadCurrentEntityFields(function () { loadTemplates(curEntity().entity_type); renderMapValidatePanel(); });
+        }
     }
 
-    function revalidateCurrentEntity() { var state = curState(); if (!state) return; state.validated = false; state.validationResult = null; renderMapValidateMapping(document.getElementById('map-validate-area'), state); }
+    function revalidateCurrentEntity() {
+        var state = curState(); if (!state) return;
+        state.validated = false; state.validationResult = null;
+        // Preserve nullifyFields — they are part of the mapping, not validation
+        renderMapValidateMapping(document.getElementById('map-validate-area'), state);
+    }
 
     function updateStep4Completion() { var allDone = entityStates.length > 0 && entityStates.every(function (s) { return s.validated; }); stepComplete[3] = allDone; updateStepperUI(); }
 
     function mappingsAreEqual(a, b) { if (!a || !b) return false; var aKeys = Object.keys(a).sort(), bKeys = Object.keys(b).sort(); if (aKeys.length !== bKeys.length) return false; for (var i = 0; i < aKeys.length; i++) { if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[bKeys[i]]) return false; } return true; }
+
+    // ── Nullify Fields (in mapping step) ─────────────────────────────────
+
+    function nullifyField(elementName) {
+        var state = curState(); if (!state) return;
+        if (!state.nullifyFields) state.nullifyFields = [];
+        if (state.nullifyFields.indexOf(elementName) === -1) {
+            state.nullifyFields.push(elementName);
+        }
+        refreshMappingPanels();
+    }
+
+    function unnullifyField(elementName) {
+        var state = curState(); if (!state) return;
+        if (!state.nullifyFields) return;
+        var idx = state.nullifyFields.indexOf(elementName);
+        if (idx !== -1) state.nullifyFields.splice(idx, 1);
+        refreshMappingPanels();
+    }
+
+    function persistNullifyFields(state, callback) {
+        if (!state || !state.stagingContext || !state.nullifyFields || state.nullifyFields.length === 0) { if (callback) callback(); return; }
+        fetch('/api/bdl-import/set-nullify-fields', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staging_table: state.stagingContext.staging_table, nullify_fields: state.nullifyFields }) })
+        .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
+        .then(function () { if (callback) callback(); })
+        .catch(function (err) { console.error('Failed to persist nullify fields:', err); if (callback) callback(); });
+    }
 
     // ── Mapping Panel Internals ──────────────────────────────────────────
     function refreshMappingPanels() {
         var area = document.getElementById('map-validate-area');
         var state = curState(); if (!state) return;
         var mf = area._mappableFields, columnMapping = state.columnMapping;
+        var nullified = state.nullifyFields || [];
+        var canEntityNullify = !!state.entity.has_nullify_fields;
         var idColIdx = null;
         var idSel = document.getElementById('identifier-column'); if (idSel && idSel.value !== '') idColIdx = parseInt(idSel.value);
         var mSrc = Object.keys(columnMapping), mTgt = Object.values(columnMapping);
+
+        // Source columns
         var srcList = document.getElementById('source-list'), srcH = '';
         parsedFileData.headers.forEach(function (header, idx) {
             if (idx === idColIdx || mSrc.indexOf(header) !== -1) return;
@@ -739,20 +684,46 @@ var BDL = (function () {
             srcH += '<div class="mapping-chip source-chip' + selCls + '" draggable="true" data-source="' + escapeHtml(header) + '" data-idx="' + idx + '" ondragstart="BDL.chipDragStart(event)" onclick="BDL.sourceClick(\'' + escapeHtml(header).replace(/'/g, "\\'") + '\')">';
             srcH += '<div class="chip-name">' + escapeHtml(header) + '</div>'; if (sample) srcH += '<div class="chip-sample">' + escapeHtml(sample) + '</div>'; srcH += '</div>';
         }); srcList.innerHTML = srcH || '<div class="panel-empty">All columns mapped</div>';
+
+        // Target BDL fields (exclude mapped and nullified)
         var tgtList = document.getElementById('target-list'), tgtH = '';
         mf.forEach(function (f) {
             if (mTgt.indexOf(f.element_name) !== -1) return;
+            if (nullified.indexOf(f.element_name) !== -1) return;
             var rc = f.is_import_required ? ' chip-required' : '';
+            var canNullify = canEntityNullify && !f.is_not_nullifiable && !f.is_import_required;
             tgtH += '<div class="mapping-chip target-chip' + rc + '" data-element="' + f.element_name + '" ondragover="BDL.chipDragOver(event)" ondrop="BDL.chipDrop(event)" onclick="BDL.targetClick(\'' + f.element_name + '\')">';
             if (hasDisplayName(f)) { tgtH += '<div class="chip-name">' + escapeHtml(f.display_name) + '</div><div class="chip-element">' + f.element_name + '</div>'; }
             else { tgtH += '<div class="chip-name chip-name-technical">' + f.element_name + '</div>'; }
             if (f.field_description) tgtH += '<div class="chip-desc">' + escapeHtml(f.field_description.substring(0, 80)) + '</div>';
             if (f.import_guidance) tgtH += '<div class="chip-guidance">' + escapeHtml(f.import_guidance) + '</div>';
-            var meta = buildFieldMeta(f); if (meta) tgtH += '<div class="chip-meta">' + meta + '</div>'; tgtH += '</div>';
+            var meta = buildFieldMeta(f); if (meta) tgtH += '<div class="chip-meta">' + meta + '</div>';
+            if (canNullify) tgtH += '<span class="chip-nullify-btn" onclick="event.stopPropagation(); BDL.nullifyField(\'' + f.element_name + '\')" title="Nullify this field in DM">&#8709;</span>';
+            tgtH += '</div>';
         }); tgtList.innerHTML = tgtH || '<div class="panel-empty">All fields mapped</div>';
+
+        // Mapped section — file mappings + nullified fields
         var mapList = document.getElementById('mapped-list'), mapH = '', mKeys = Object.keys(columnMapping);
-        if (!mKeys.length) { mapH = '<div class="panel-empty">Click a source column, then click a BDL field to pair them. Or drag and drop.</div>'; }
-        else { mKeys.forEach(function (sc) { var te = columnMapping[sc], displayName = getFieldDisplayNameByElement(te); mapH += '<div class="mapped-pair"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>'; if (displayName !== te) mapH += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>'; else mapH += '<span class="pair-target">' + te + '</span>'; mapH += '<span class="pair-remove" onclick="BDL.unmapPair(\'' + escapeHtml(sc).replace(/'/g, "\\'") + '\')" title="Remove mapping">&#10005;</span></div>'; }); }
+        if (!mKeys.length && !nullified.length) {
+            mapH = '<div class="panel-empty">Click a source column, then click a BDL field to pair them. Or drag and drop.</div>';
+        } else {
+            // File-mapped pairs
+            mKeys.forEach(function (sc) {
+                var te = columnMapping[sc], displayName = getFieldDisplayNameByElement(te);
+                mapH += '<div class="mapped-pair"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>';
+                if (displayName !== te) mapH += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + te + '</span></span>';
+                else mapH += '<span class="pair-target">' + te + '</span>';
+                mapH += '<span class="pair-remove" onclick="BDL.unmapPair(\'' + escapeHtml(sc).replace(/'/g, "\\'") + '\')" title="Remove mapping">&#10005;</span></div>';
+            });
+            // Nullified fields
+            nullified.forEach(function (nf) {
+                var displayName = getFieldDisplayNameByElement(nf);
+                mapH += '<div class="mapped-pair mapped-pair-nullify"><span class="pair-nullify-label">&#8709; Nullify</span><span class="pair-arrow">&#8594;</span>';
+                if (displayName !== nf) mapH += '<span class="pair-target"><span class="pair-display">' + escapeHtml(displayName) + '</span> <span class="pair-element">' + nf + '</span></span>';
+                else mapH += '<span class="pair-target">' + nf + '</span>';
+                mapH += '<span class="pair-remove" onclick="BDL.unnullifyField(\'' + nf + '\')" title="Remove nullification">&#10005;</span></div>';
+            });
+        }
         mapList.innerHTML = mapH;
         checkMappingComplete();
     }
@@ -768,8 +739,7 @@ var BDL = (function () {
 
     function identifierChanged() {
         var a = document.getElementById('map-validate-area'), idSel = document.getElementById('identifier-column'), idElem = a._identifierElementName;
-        var cm = curState().columnMapping;
-        for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
+        var cm = curState().columnMapping; for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
         if (idSel.value !== '') cm[parsedFileData.headers[parseInt(idSel.value)]] = idElem;
         var idSection = document.querySelector('.mapping-identifier'), wrap = document.getElementById('mapping-panels-wrap');
         if (idSel.value !== '') { if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); } if (wrap) { wrap.classList.remove('mapping-disabled'); var msg = wrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); } }
@@ -791,12 +761,13 @@ var BDL = (function () {
             else wd.innerHTML = '';
         }
         var valBtn = document.getElementById('btn-validate-entity');
-        if (valBtn) valBtn.disabled = (mc === 0);
+        // Enable validate if at least one mapping OR nullify field exists
+        if (valBtn) valBtn.disabled = (mc === 0 && (!state.nullifyFields || state.nullifyFields.length === 0));
     }
 
     // ── Validation Logic ─────────────────────────────────────────────────
     function parseCSVAllRows(text) { var lines = text.split(/\r?\n/).filter(function (l) { return l.trim(); }), rows = []; for (var i = 1; i < lines.length; i++) rows.push(parseCSVLine(lines[i])); return rows; }
-    function parseExcelAllRows(buffer) { var d = new Uint8Array(buffer), wb = XLSX.read(d, { type: 'array' }), sh = wb.Sheets[wb.SheetNames[0]], range = XLSX.utils.decode_range(sh['!ref']), rows = []; for (var r = 1; r <= range.e.r; r++) { var rd = []; for (var c = range.s.c; c <= range.e.c; c++) { var cell = sh[XLSX.utils.encode_cell({ r: r, c: c })]; rd.push(cell ? String(cell.v) : ''); } rows.push(rd); } return rows; }
+    function parseExcelAllRows(buffer) { var d = new Uint8Array(buffer), wb = XLSX.read(d, { type: 'array', cellDates: true }), sh = wb.Sheets[wb.SheetNames[0]], range = XLSX.utils.decode_range(sh['!ref']), rows = []; for (var r = 1; r <= range.e.r; r++) { var rd = []; for (var c = range.s.c; c <= range.e.c; c++) { var cell = sh[XLSX.utils.encode_cell({ r: r, c: c })]; rd.push(excelCellValue(cell)); } rows.push(rd); } return rows; }
 
     function validateStagedRows(serverData, state) {
         var warnings = [], columns = serverData.columns || [], rows = serverData.rows || [];
@@ -867,52 +838,51 @@ var BDL = (function () {
         clearPromoteState();
         var html = '';
         html += '<div class="execute-ticket"><div class="execute-section-header">Jira Ticket Link <span class="ticket-optional">(optional — applies to all imports)</span></div><div class="ticket-fields"><div class="ticket-field-row"><label class="ticket-label" for="jira-ticket">Ticket</label><input type="text" id="jira-ticket" class="ticket-input" placeholder="SD-1234" oninput="BDL.ticketChanged()"></div><div class="ticket-field-row" id="ar-message-row" style="display:none;"><label class="ticket-label" for="ar-message">AR Message</label><input type="text" id="ar-message" class="ticket-input ticket-message-input" placeholder="Message for DM AR log"></div></div></div>';
-        // Row count mismatch detection (multi-entity only)
         if (entityStates.length > 1) {
             var hasFixedOrHybrid = entityStates.some(function (s) { return s.entity.action_type === 'FIXED_VALUE' || s.entity.action_type === 'HYBRID'; });
             var counts = entityStates.map(function (s) { return s.stagingContext ? s.stagingContext.row_count : 0; });
             var allSame = counts.every(function (c) { return c === counts[0]; });
             if (!allSame && hasFixedOrHybrid) {
-                html += '<div class="execute-mismatch-banner">';
-                html += '<div class="mismatch-header"><span class="mismatch-icon">&#9888;</span> Row counts differ across entities</div>';
-                html += '<div class="mismatch-detail">';
-                entityStates.forEach(function (s) {
-                    var name = formatEntityName(s.entity.entity_type);
-                    var active = s.stagingContext ? s.stagingContext.row_count : 0;
-                    var skipped = s.stagingContext && s.stagingContext.skipped_count ? s.stagingContext.skipped_count : 0;
-                    html += '<div class="mismatch-entity"><span class="mismatch-name">' + escapeHtml(name) + '</span><span class="mismatch-counts">' + active.toLocaleString() + ' active';
-                    if (skipped > 0) html += ', ' + skipped.toLocaleString() + ' skipped';
-                    html += '</span></div>';
-                });
-                html += '</div>';
-                html += '<div class="mismatch-actions"><button class="nav-btn" onclick="BDL.showAlignmentModal()">Align Row Counts</button></div>';
-                html += '</div>';
+                html += '<div class="execute-mismatch-banner"><div class="mismatch-header"><span class="mismatch-icon">&#9888;</span> Row counts differ across entities</div><div class="mismatch-detail">';
+                entityStates.forEach(function (s) { html += '<div class="mismatch-entity"><span class="mismatch-name">' + escapeHtml(formatEntityName(s.entity.entity_type)) + '</span><span class="mismatch-counts">' + (s.stagingContext ? s.stagingContext.row_count : 0).toLocaleString() + ' active' + (s.stagingContext && s.stagingContext.skipped_count > 0 ? ', ' + s.stagingContext.skipped_count.toLocaleString() + ' skipped' : '') + '</span></div>'; });
+                html += '</div><div class="mismatch-actions"><button class="nav-btn" onclick="BDL.showAlignmentModal()">Align Row Counts</button></div></div>';
             }
         }
-        html += '<div class="execute-tabs" id="execute-tabs">'; entityStates.forEach(function (state, idx) { var activeClass = idx === 0 ? ' execute-tab-active' : ''; html += '<div class="execute-tab' + activeClass + '" id="exec-tab-' + idx + '" onclick="BDL.switchExecuteTab(' + idx + ')">' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</div>'; }); html += '</div>';
+        html += '<div class="execute-tabs" id="execute-tabs">'; entityStates.forEach(function (state, idx) { html += '<div class="execute-tab' + (idx === 0 ? ' execute-tab-active' : '') + '" id="exec-tab-' + idx + '" onclick="BDL.switchExecuteTab(' + idx + ')">' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</div>'; }); html += '</div>';
         entityStates.forEach(function (state, idx) {
             var visClass = idx === 0 ? '' : ' hidden';
             var entityName = formatEntityName(state.entity.entity_type);
-            var mappedCount = Object.keys(state.columnMapping).length;
             var rowCount = state.stagingContext ? state.stagingContext.row_count : 0;
             var skipped = state.stagingContext && state.stagingContext.skipped_count ? state.stagingContext.skipped_count : 0;
+            var nullifyCount = state.nullifyFields ? state.nullifyFields.length : 0;
             html += '<div class="execute-tab-content' + visClass + '" id="exec-content-' + idx + '">';
+            // Summary grid (4 items)
             html += '<div class="execute-summary"><div class="execute-summary-header">' + escapeHtml(entityName) + '</div><div class="execute-summary-grid">';
             html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
             html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.entity.entity_type) + '</code></span></div>';
             html += '<div class="summary-item"><span class="summary-label">Rows</span><span class="summary-value">' + rowCount.toLocaleString() + (skipped > 0 ? ' <span style="color:#888;font-size:11px;">(' + skipped + ' skipped)</span>' : '') + '</span></div>';
-            html += '<div class="summary-item"><span class="summary-label">Mapped Fields</span><span class="summary-value">' + mappedCount + '</span></div>';
             html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.stagingContext.staging_table) + '</code></span></div>';
             html += '</div></div>';
-            // XML Preview section — single click to expand and build
-            html += '<div class="execute-preview" id="exec-preview-' + idx + '">';
-            html += '<div class="execute-section-header xml-preview-header" onclick="BDL.previewEntityXml(' + idx + ')">&#128196; Preview XML <span class="section-toggle" id="xml-toggle-' + idx + '">&#9654;</span></div>';
-            html += '<div class="execute-section-body collapsed" id="xml-body-' + idx + '">';
-            html += '<div id="xml-content-' + idx + '"></div>';
-            html += '</div></div>';
-            html += '</div>';
+            // Mapped fields card
+            var mappingKeys = Object.keys(state.columnMapping);
+            if (mappingKeys.length > 0) {
+                html += '<div class="execute-mapped-summary"><span class="mapped-summary-icon">&#128279;</span> <strong>Mapped Fields:</strong> ';
+                html += mappingKeys.map(function (sc) {
+                    var te = state.columnMapping[sc];
+                    var nfField = state.fields ? state.fields.find(function (f) { return f.element_name === te; }) : null;
+                    var displayName = nfField ? getFieldDisplayName(nfField) : te;
+                    return '<code>' + escapeHtml(displayName) + '</code>';
+                }).join(', ');
+                html += '</div>';
+            }
+            // Nullify fields card
+            if (nullifyCount > 0) {
+                html += '<div class="execute-nullify-summary"><span class="nullify-summary-icon">&#8709;</span> <strong>Nullify:</strong> ';
+                html += state.nullifyFields.map(function (nf) { var nfField = state.fields ? state.fields.find(function (f) { return f.element_name === nf; }) : null; return '<code>' + escapeHtml(nfField ? getFieldDisplayName(nfField) : nf) + '</code>'; }).join(', ');
+                html += '</div>';
+            }
+            html += '<div class="execute-preview" id="exec-preview-' + idx + '"><div class="execute-section-header xml-preview-header"><button class="xml-preview-btn" onclick="BDL.previewEntityXml(' + idx + ')">&#128196; Preview XML <span class="section-toggle" id="xml-toggle-' + idx + '">&#9654;</span></button></div><div class="execute-section-body collapsed" id="xml-body-' + idx + '"><div id="xml-content-' + idx + '"></div></div></div></div>';
         });
-        // Unified results pane — all execution results appear here together
         html += '<div class="execute-results-all hidden" id="execute-results-all"><div class="execute-results-header">Execution Results</div><div id="execute-results-list"></div></div>';
         html += '<div class="execute-actions" id="execute-actions">'; if (envName === 'PROD') html += '<div class="execute-prod-warning">&#9888; You are about to import into <strong>PRODUCTION</strong>. This action cannot be undone.</div>'; html += '<button class="execute-btn" id="btn-execute-import" onclick="BDL.executeAll()">Submit All (' + entityStates.length + ' BDL' + (entityStates.length > 1 ? 's' : '') + ')</button></div>';
         html += '<div class="execute-progress hidden" id="execute-progress"></div>';
@@ -922,356 +892,101 @@ var BDL = (function () {
     function switchExecuteTab(idx) { entityStates.forEach(function (_, i) { var tab = document.getElementById('exec-tab-' + i); var content = document.getElementById('exec-content-' + i); if (i === idx) { tab.classList.add('execute-tab-active'); content.classList.remove('hidden'); } else { tab.classList.remove('execute-tab-active'); content.classList.add('hidden'); } }); }
 
     function previewEntityXml(idx) {
-        var body = document.getElementById('xml-body-' + idx);
-        var toggle = document.getElementById('xml-toggle-' + idx);
-        var state = entityStates[idx];
+        var body = document.getElementById('xml-body-' + idx), toggle = document.getElementById('xml-toggle-' + idx), state = entityStates[idx];
         if (!body || !state || !state.stagingContext) return;
-
-        // If already loaded, just toggle visibility
-        if (state.xmlPreviewLoaded) {
-            if (body.classList.contains('collapsed')) {
-                body.classList.remove('collapsed');
-                if (toggle) toggle.innerHTML = '&#9660;';
-            } else {
-                body.classList.add('collapsed');
-                if (toggle) toggle.innerHTML = '&#9654;';
-            }
-            return;
-        }
-
-        // Expand and load
-        body.classList.remove('collapsed');
-        if (toggle) toggle.innerHTML = '&#9660;';
-        var contentEl = document.getElementById('xml-content-' + idx);
-        if (!contentEl) return;
+        if (state.xmlPreviewLoaded) { if (body.classList.contains('collapsed')) { body.classList.remove('collapsed'); if (toggle) toggle.innerHTML = '&#9660;'; } else { body.classList.add('collapsed'); if (toggle) toggle.innerHTML = '&#9654;'; } return; }
+        body.classList.remove('collapsed'); if (toggle) toggle.innerHTML = '&#9660;';
+        var contentEl = document.getElementById('xml-content-' + idx); if (!contentEl) return;
         contentEl.innerHTML = '<div class="xml-preview-loading">Building XML preview...</div>';
-        fetch('/api/bdl-import/build-preview', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                staging_table: state.stagingContext.staging_table,
-                entity_type: state.entity.entity_type,
-                config_id: selectedEnvironment.config_id
-            })
-        })
+        fetch('/api/bdl-import/build-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
         .then(function (data) {
-            var html = '<div class="xml-preview-header">';
-            html += '<span class="xml-filename">' + escapeHtml(data.xml_filename) + '</span>';
-            html += '<span class="xml-meta">' + data.row_count.toLocaleString() + ' rows';
+            var html = '<div class="xml-preview-header"><span class="xml-filename">' + escapeHtml(data.xml_filename) + '</span><span class="xml-meta">' + data.row_count.toLocaleString() + ' rows';
             if (data.skipped_count > 0) html += ', ' + data.skipped_count.toLocaleString() + ' skipped';
-            var sizeKB = (data.full_size_bytes / 1024).toFixed(1);
-            html += ' &middot; ' + sizeKB + ' KB';
-            if (data.truncated) html += ' (preview truncated)';
-            html += '</span>';
-            html += '<button class="xml-copy-btn" onclick="BDL.copyEntityXml(' + idx + ')" title="Copy XML to clipboard">Copy</button>';
-            html += '</div>';
+            html += ' &middot; ' + (data.full_size_bytes / 1024).toFixed(1) + ' KB'; if (data.truncated) html += ' (preview truncated)';
+            html += '</span><button class="xml-copy-btn" onclick="BDL.copyEntityXml(' + idx + ')" title="Copy XML to clipboard">Copy</button></div>';
             html += '<pre class="xml-preview-code" id="xml-code-' + idx + '">' + highlightXml(data.xml) + '</pre>';
-            contentEl.innerHTML = html;
-            contentEl._rawXml = data.xml;
-            state.xmlPreviewLoaded = true;
-        })
-        .catch(function (err) {
-            contentEl.innerHTML = '<div class="xml-preview-loading" style="color:#f48771;">Preview failed: ' + escapeHtml(err.message) + '</div>';
-        });
+            contentEl.innerHTML = html; contentEl._rawXml = data.xml; state.xmlPreviewLoaded = true;
+        }).catch(function (err) { contentEl.innerHTML = '<div class="xml-preview-loading" style="color:#f48771;">Preview failed: ' + escapeHtml(err.message) + '</div>'; });
     }
 
-    function highlightXml(xml) {
-        return escapeHtml(xml)
-            .replace(/^(&lt;\?xml.*?\?&gt;)/gm, '<span class="xml-decl">$1</span>')
-            .replace(/(&lt;!--.*?--&gt;)/g, '<span class="xml-comment">$1</span>')
-            .replace(/(&lt;\/?)([\w:_-]+)/g, '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span>')
-            .replace(/(\/?&gt;)/g, '<span class="xml-bracket">$1</span>')
-            .replace(/\s([\w:_-]+)(=)(&quot;[^&]*?&quot;)/g, ' <span class="xml-attr-name">$1</span>$2<span class="xml-attr-val">$3</span>');
-    }
+    function highlightXml(xml) { return escapeHtml(xml).replace(/^(&lt;\?xml.*?\?&gt;)/gm, '<span class="xml-decl">$1</span>').replace(/(&lt;!--.*?--&gt;)/g, '<span class="xml-comment">$1</span>').replace(/(&lt;\/?)([\w:_-]+)/g, '<span class="xml-bracket">$1</span><span class="xml-tag">$2</span>').replace(/(\/?&gt;)/g, '<span class="xml-bracket">$1</span>').replace(/\s([\w:_-]+)(=)(&quot;[^&]*?&quot;)/g, ' <span class="xml-attr-name">$1</span>$2<span class="xml-attr-val">$3</span>'); }
 
     function copyEntityXml(idx) {
-        var contentEl = document.getElementById('xml-content-' + idx);
-        if (!contentEl || !contentEl._rawXml) return;
-        var ta = document.createElement('textarea');
-        ta.value = contentEl._rawXml;
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        ta.style.top = '-9999px';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        try {
-            document.execCommand('copy');
-            var btn = contentEl.querySelector('.xml-copy-btn');
-            if (btn) {
-                btn.textContent = 'Copied!';
-                btn.style.color = '#4ec9b0';
-                btn.style.borderColor = '#4ec9b0';
-                setTimeout(function () { btn.textContent = 'Copy'; btn.style.color = ''; btn.style.borderColor = ''; }, 2000);
-            }
-        } catch (e) {
-            showAlert('Failed to copy to clipboard. You can manually select and copy the XML text.', { title: 'Copy Failed', icon: '&#9432;', iconColor: '#569cd6' });
-        }
+        var contentEl = document.getElementById('xml-content-' + idx); if (!contentEl || !contentEl._rawXml) return;
+        var ta = document.createElement('textarea'); ta.value = contentEl._rawXml; ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.style.top = '-9999px'; document.body.appendChild(ta); ta.focus(); ta.select();
+        try { document.execCommand('copy'); var btn = contentEl.querySelector('.xml-copy-btn'); if (btn) { btn.textContent = 'Copied!'; btn.style.color = '#4ec9b0'; btn.style.borderColor = '#4ec9b0'; setTimeout(function () { btn.textContent = 'Copy'; btn.style.color = ''; btn.style.borderColor = ''; }, 2000); } }
+        catch (e) { showAlert('Failed to copy to clipboard.', { title: 'Copy Failed', icon: '&#9432;', iconColor: '#569cd6' }); }
         document.body.removeChild(ta);
     }
 
     // ── Row Count Alignment ──────────────────────────────────────────────
-
-    function getIdentifierColumn() {
-        // All entities in a batch share the same identifier type
-        var firstEntity = entityStates[0];
-        if (!firstEntity) return 'cnsmr_idntfr_agncy_id';
-        var isAcct = firstEntity.entity.entity_key === 'ACCOUNT';
-        return isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
-    }
+    function getIdentifierColumn() { var firstEntity = entityStates[0]; if (!firstEntity) return 'cnsmr_idntfr_agncy_id'; return firstEntity.entity.entity_key === 'ACCOUNT' ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id'; }
 
     function showAlignmentModal() {
-        var existing = document.getElementById('alignment-modal');
-        if (existing) existing.remove();
-
+        var existing = document.getElementById('alignment-modal'); if (existing) existing.remove();
         var mappedEntities = entityStates.filter(function (s) { return s.entity.action_type === 'FILE_MAPPED'; });
         var alignableEntities = entityStates.filter(function (s) { return s.entity.action_type === 'FIXED_VALUE' || s.entity.action_type === 'HYBRID'; });
-
         if (alignableEntities.length === 0 || mappedEntities.length === 0) return;
-
-        var modal = document.createElement('div');
-        modal.id = 'alignment-modal';
-        modal.className = 'xf-modal-overlay';
-
+        var modal = document.createElement('div'); modal.id = 'alignment-modal'; modal.className = 'xf-modal-overlay';
         var bodyHtml = '';
-        alignableEntities.forEach(function (s, i) {
-            var name = formatEntityName(s.entity.entity_type);
-            var active = s.stagingContext ? s.stagingContext.row_count : 0;
-            var skipped = s.stagingContext && s.stagingContext.skipped_count ? s.stagingContext.skipped_count : 0;
+        alignableEntities.forEach(function (s) {
             var entityIdx = entityStates.indexOf(s);
-
-            bodyHtml += '<div class="alignment-row" id="align-row-' + entityIdx + '">';
-            bodyHtml += '<div class="alignment-entity-info"><span class="alignment-entity-name">' + escapeHtml(name) + '</span>';
-            bodyHtml += '<span class="alignment-entity-counts">' + active.toLocaleString() + ' active';
-            if (skipped > 0) bodyHtml += ', ' + skipped.toLocaleString() + ' skipped';
-            bodyHtml += '</span></div>';
-            bodyHtml += '<div class="alignment-select-row"><label class="alignment-label">Align to:</label>';
-            bodyHtml += '<select class="alignment-dropdown" id="align-select-' + entityIdx + '">';
-            bodyHtml += '<option value="">Keep all rows</option>';
-            mappedEntities.forEach(function (m) {
-                var mName = formatEntityName(m.entity.entity_type);
-                var mActive = m.stagingContext ? m.stagingContext.row_count : 0;
-                var mIdx = entityStates.indexOf(m);
-                bodyHtml += '<option value="' + mIdx + '">' + escapeHtml(mName) + ' (' + mActive.toLocaleString() + ' rows)</option>';
-            });
-            bodyHtml += '</select>';
-            bodyHtml += '<button class="skip-btn alignment-undo-btn" id="align-undo-' + entityIdx + '" onclick="BDL.resetAlignment(' + entityIdx + ')" style="display:none;">Undo</button>';
-            bodyHtml += '</div></div>';
+            bodyHtml += '<div class="alignment-row" id="align-row-' + entityIdx + '"><div class="alignment-entity-info"><span class="alignment-entity-name">' + escapeHtml(formatEntityName(s.entity.entity_type)) + '</span><span class="alignment-entity-counts">' + (s.stagingContext ? s.stagingContext.row_count : 0).toLocaleString() + ' active' + (s.stagingContext && s.stagingContext.skipped_count > 0 ? ', ' + s.stagingContext.skipped_count.toLocaleString() + ' skipped' : '') + '</span></div><div class="alignment-select-row"><label class="alignment-label">Align to:</label><select class="alignment-dropdown" id="align-select-' + entityIdx + '"><option value="">Keep all rows</option>';
+            mappedEntities.forEach(function (m) { bodyHtml += '<option value="' + entityStates.indexOf(m) + '">' + escapeHtml(formatEntityName(m.entity.entity_type)) + ' (' + (m.stagingContext ? m.stagingContext.row_count : 0).toLocaleString() + ' rows)</option>'; });
+            bodyHtml += '</select><button class="skip-btn alignment-undo-btn" id="align-undo-' + entityIdx + '" onclick="BDL.resetAlignment(' + entityIdx + ')" style="display:none;">Undo</button></div></div>';
         });
-
         modal.innerHTML = '<div class="xf-modal" style="max-width:520px;"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span><span>Align Row Counts</span></div><div class="xf-modal-body"><p style="color:#999;font-size:13px;margin:0 0 14px;">Choose which mapped entity each fixed-value entity should align its row set to.</p>' + bodyHtml + '</div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" onclick="BDL.closeAlignmentModal()">Cancel</button><button class="xf-modal-btn-primary" onclick="BDL.applyAlignment()">Apply</button></div></div>';
         document.body.appendChild(modal);
     }
-
-    function closeAlignmentModal() {
-        var modal = document.getElementById('alignment-modal');
-        if (modal) modal.remove();
-    }
-
+    function closeAlignmentModal() { var modal = document.getElementById('alignment-modal'); if (modal) modal.remove(); }
     function applyAlignment() {
         var alignableEntities = entityStates.filter(function (s) { return s.entity.action_type === 'FIXED_VALUE' || s.entity.action_type === 'HYBRID'; });
-        var idCol = getIdentifierColumn();
-        var pending = [];
-
-        alignableEntities.forEach(function (s) {
-            var entityIdx = entityStates.indexOf(s);
-            var sel = document.getElementById('align-select-' + entityIdx);
-            if (!sel || sel.value === '') return;
-            var sourceIdx = parseInt(sel.value);
-            var sourceState = entityStates[sourceIdx];
-            if (!sourceState || !sourceState.stagingContext || !s.stagingContext) return;
-            pending.push({ targetIdx: entityIdx, sourceIdx: sourceIdx, targetTable: s.stagingContext.staging_table, sourceTable: sourceState.stagingContext.staging_table });
-        });
-
-        if (pending.length === 0) {
-            closeAlignmentModal();
-            return;
-        }
-
-        // Disable buttons while processing
-        var applyBtn = document.querySelector('#alignment-modal .xf-modal-btn-primary');
-        if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Aligning...'; }
-
+        var idCol = getIdentifierColumn(), pending = [];
+        alignableEntities.forEach(function (s) { var entityIdx = entityStates.indexOf(s); var sel = document.getElementById('align-select-' + entityIdx); if (!sel || sel.value === '') return; var sourceIdx = parseInt(sel.value); var sourceState = entityStates[sourceIdx]; if (!sourceState || !sourceState.stagingContext || !s.stagingContext) return; pending.push({ targetIdx: entityIdx, sourceIdx: sourceIdx, targetTable: s.stagingContext.staging_table, sourceTable: sourceState.stagingContext.staging_table }); });
+        if (pending.length === 0) { closeAlignmentModal(); return; }
+        var applyBtn = document.querySelector('#alignment-modal .xf-modal-btn-primary'); if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Aligning...'; }
         var completed = 0;
         pending.forEach(function (item) {
-            fetch('/api/bdl-import/align-rows', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source_table: item.sourceTable, target_table: item.targetTable, identifier_column: idCol })
-            })
+            fetch('/api/bdl-import/align-rows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_table: item.sourceTable, target_table: item.targetTable, identifier_column: idCol }) })
             .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-            .then(function (data) {
-                // Update entity state with new counts
-                entityStates[item.targetIdx].stagingContext.row_count = data.active_count;
-                entityStates[item.targetIdx].stagingContext.skipped_count = data.skipped_count;
-                completed++;
-                if (completed >= pending.length) { closeAlignmentModal(); renderExecuteReview(); }
-            })
-            .catch(function (err) {
-                completed++;
-                showAlert('Alignment failed for ' + formatEntityName(entityStates[item.targetIdx].entity.entity_type) + ': ' + err.message, { title: 'Alignment Error', icon: '&#10005;', iconColor: '#f48771' });
-                if (completed >= pending.length) { closeAlignmentModal(); renderExecuteReview(); }
-            });
+            .then(function (data) { entityStates[item.targetIdx].stagingContext.row_count = data.active_count; entityStates[item.targetIdx].stagingContext.skipped_count = data.skipped_count; completed++; if (completed >= pending.length) { closeAlignmentModal(); renderExecuteReview(); } })
+            .catch(function (err) { completed++; showAlert('Alignment failed: ' + err.message, { title: 'Alignment Error', icon: '&#10005;', iconColor: '#f48771' }); if (completed >= pending.length) { closeAlignmentModal(); renderExecuteReview(); } });
         });
     }
-
     function resetAlignment(entityIdx) {
-        var state = entityStates[entityIdx];
-        if (!state || !state.stagingContext) return;
-
-        var undoBtn = document.getElementById('align-undo-' + entityIdx);
-        if (undoBtn) { undoBtn.disabled = true; undoBtn.textContent = 'Resetting...'; }
-
-        fetch('/api/bdl-import/reset-alignment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staging_table: state.stagingContext.staging_table })
-        })
+        var state = entityStates[entityIdx]; if (!state || !state.stagingContext) return;
+        var undoBtn = document.getElementById('align-undo-' + entityIdx); if (undoBtn) { undoBtn.disabled = true; undoBtn.textContent = 'Resetting...'; }
+        fetch('/api/bdl-import/reset-alignment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staging_table: state.stagingContext.staging_table }) })
         .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-        .then(function (data) {
-            state.stagingContext.row_count = data.active_count;
-            state.stagingContext.skipped_count = 0;
-            // Update the modal row display
-            var row = document.getElementById('align-row-' + entityIdx);
-            if (row) {
-                var countsEl = row.querySelector('.alignment-entity-counts');
-                if (countsEl) countsEl.textContent = data.active_count.toLocaleString() + ' active';
-            }
-            var sel = document.getElementById('align-select-' + entityIdx);
-            if (sel) sel.value = '';
-            if (undoBtn) { undoBtn.style.display = 'none'; undoBtn.disabled = false; undoBtn.textContent = 'Undo'; }
-        })
-        .catch(function (err) {
-            showAlert('Reset failed: ' + err.message, { title: 'Reset Error', icon: '&#10005;', iconColor: '#f48771' });
-            if (undoBtn) { undoBtn.disabled = false; undoBtn.textContent = 'Undo'; }
-        });
+        .then(function (data) { state.stagingContext.row_count = data.active_count; state.stagingContext.skipped_count = 0; var row = document.getElementById('align-row-' + entityIdx); if (row) { var countsEl = row.querySelector('.alignment-entity-counts'); if (countsEl) countsEl.textContent = data.active_count.toLocaleString() + ' active'; } var sel = document.getElementById('align-select-' + entityIdx); if (sel) sel.value = ''; if (undoBtn) { undoBtn.style.display = 'none'; undoBtn.disabled = false; undoBtn.textContent = 'Undo'; } })
+        .catch(function (err) { showAlert('Reset failed: ' + err.message, { title: 'Reset Error', icon: '&#10005;', iconColor: '#f48771' }); if (undoBtn) { undoBtn.disabled = false; undoBtn.textContent = 'Undo'; } });
     }
 
     // ── Promote to Production ────────────────────────────────────────────
-
     function renderPromoteCard(sourceEnv) {
-        var resultsPane = document.getElementById('execute-results-all');
-        if (!resultsPane) return;
-        // Remove any existing promote card
-        var existing = document.getElementById('promote-area');
-        if (existing) existing.remove();
-        var promoteDiv = document.createElement('div');
-        promoteDiv.id = 'promote-area';
-        promoteDiv.className = 'promote-area';
-        promoteSecondsRemaining = promoteData.cooldownSeconds;
-        promoteReady = false;
-        var timerDisplay = formatCountdown(promoteSecondsRemaining);
-        promoteDiv.innerHTML = '<div class="promote-card" id="promote-card" onclick="BDL.promoteCardClicked()">' +
-            '<div class="promote-card-header"><span class="promote-card-icon">&#9650;</span><span class="promote-card-title">Promote to Production</span></div>' +
-            '<div class="promote-card-timer" id="promote-timer">' + timerDisplay + '</div>' +
-            '<div class="promote-card-hint" id="promote-hint">Review your ' + escapeHtml(sourceEnv) + ' results before promoting</div>' +
-            '</div>';
-        resultsPane.parentNode.insertBefore(promoteDiv, resultsPane.nextSibling);
-        startPromoteCountdown();
+        var resultsPane = document.getElementById('execute-results-all'); if (!resultsPane) return;
+        var existing = document.getElementById('promote-area'); if (existing) existing.remove();
+        var promoteDiv = document.createElement('div'); promoteDiv.id = 'promote-area'; promoteDiv.className = 'promote-area';
+        promoteSecondsRemaining = promoteData.cooldownSeconds; promoteReady = false;
+        promoteDiv.innerHTML = '<div class="promote-card" id="promote-card" onclick="BDL.promoteCardClicked()"><div class="promote-card-header"><span class="promote-card-icon">&#9650;</span><span class="promote-card-title">Promote to Production</span></div><div class="promote-card-timer" id="promote-timer">' + formatCountdown(promoteSecondsRemaining) + '</div><div class="promote-card-hint" id="promote-hint">Review your ' + escapeHtml(sourceEnv) + ' results before promoting</div></div>';
+        resultsPane.parentNode.insertBefore(promoteDiv, resultsPane.nextSibling); startPromoteCountdown();
     }
-
-    function formatCountdown(seconds) {
-        var m = Math.floor(seconds / 60);
-        var s = seconds % 60;
-        return (m > 0 ? m + ':' : '') + (m > 0 && s < 10 ? '0' : '') + s + (m === 0 ? 's' : '');
-    }
-
-    function startPromoteCountdown() {
-        if (promoteCountdownTimer) clearInterval(promoteCountdownTimer);
-        promoteCountdownTimer = setInterval(function () {
-            promoteSecondsRemaining--;
-            var timerEl = document.getElementById('promote-timer');
-            var hintEl = document.getElementById('promote-hint');
-            var card = document.getElementById('promote-card');
-            if (promoteSecondsRemaining <= 0) {
-                clearInterval(promoteCountdownTimer);
-                promoteCountdownTimer = null;
-                promoteReady = true;
-                if (timerEl) timerEl.textContent = 'Ready';
-                if (hintEl) hintEl.textContent = 'Click to promote to Production';
-                if (card) card.classList.add('promote-ready');
-            } else {
-                if (timerEl) timerEl.textContent = formatCountdown(promoteSecondsRemaining);
-            }
-        }, 1000);
-    }
-
-    function promoteCardClicked() {
-        if (!promoteReady) {
-            // Flash the hint message
-            var hintEl = document.getElementById('promote-hint');
-            if (hintEl) {
-                hintEl.textContent = 'Please verify your results in the lower environment first';
-                hintEl.classList.add('promote-hint-flash');
-                setTimeout(function () { hintEl.classList.remove('promote-hint-flash'); }, 1500);
-            }
-            return;
-        }
-        promoteToProduction();
-    }
-
-    function promoteToProduction() {
-        if (!promoteData || !promoteData.prodConfigId) return;
-        // Fetch PROD environment config
-        fetch('/api/bdl-import/environments')
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                var envs = data.environments || [];
-                var prodEnv = envs.find(function (e) { return e.config_id === promoteData.prodConfigId; });
-                if (!prodEnv) {
-                    showAlert('Production environment configuration not found.', { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' });
-                    return;
-                }
-                // Show the PROD advisory modal
-                showPromoteProdAdvisory(prodEnv);
-            })
-            .catch(function (err) {
-                showAlert('Failed to load environments: ' + err.message, { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' });
-            });
-    }
-
+    function formatCountdown(seconds) { var m = Math.floor(seconds / 60), s = seconds % 60; return (m > 0 ? m + ':' : '') + (m > 0 && s < 10 ? '0' : '') + s + (m === 0 ? 's' : ''); }
+    function startPromoteCountdown() { if (promoteCountdownTimer) clearInterval(promoteCountdownTimer); promoteCountdownTimer = setInterval(function () { promoteSecondsRemaining--; var timerEl = document.getElementById('promote-timer'), hintEl = document.getElementById('promote-hint'), card = document.getElementById('promote-card'); if (promoteSecondsRemaining <= 0) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; promoteReady = true; if (timerEl) timerEl.textContent = 'Ready'; if (hintEl) hintEl.textContent = 'Click to promote to Production'; if (card) card.classList.add('promote-ready'); } else { if (timerEl) timerEl.textContent = formatCountdown(promoteSecondsRemaining); } }, 1000); }
+    function promoteCardClicked() { if (!promoteReady) { var hintEl = document.getElementById('promote-hint'); if (hintEl) { hintEl.textContent = 'Please verify your results in the lower environment first'; hintEl.classList.add('promote-hint-flash'); setTimeout(function () { hintEl.classList.remove('promote-hint-flash'); }, 1500); } return; } promoteToProduction(); }
+    function promoteToProduction() { if (!promoteData || !promoteData.prodConfigId) return; fetch('/api/bdl-import/environments').then(function (r) { return r.json(); }).then(function (data) { var prodEnv = (data.environments || []).find(function (e) { return e.config_id === promoteData.prodConfigId; }); if (!prodEnv) { showAlert('Production environment configuration not found.', { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' }); return; } showPromoteProdAdvisory(prodEnv); }).catch(function (err) { showAlert('Failed to load environments: ' + err.message, { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' }); }); }
     function showPromoteProdAdvisory(prodEnv) {
-        var sourceEnv = promoteData.sourceEnvironment;
-        var existing = document.getElementById('prod-advisory-modal');
-        if (existing) existing.remove();
-        var modal = document.createElement('div');
-        modal.id = 'prod-advisory-modal';
-        modal.className = 'xf-modal-overlay';
-        var entityList = '';
-        entityStates.forEach(function (s) {
-            entityList += '<div style="font-size:12px;color:#999;margin:2px 0;">' + escapeHtml(formatEntityName(s.entity.entity_type)) + ': ' + s.stagingContext.row_count.toLocaleString() + ' rows</div>';
-        });
-        modal.innerHTML = '<div class="xf-modal"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span><span>Promote to Production</span></div><div class="xf-modal-body">' +
-            '<p>You are about to promote your <strong>' + escapeHtml(sourceEnv) + '</strong> import to <strong>Production</strong>.</p>' +
-            '<p>The same staging data will be submitted to the production environment:</p>' +
-            entityList +
-            '<p style="color:#f48771;font-weight:600;margin-top:12px;">This is a PRODUCTION import and cannot be undone.</p>' +
-            '</div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" id="promote-advisory-back">Cancel</button><button class="xf-modal-btn-primary xf-modal-btn-danger" id="promote-advisory-continue">Promote to Production</button></div></div>';
+        var existing = document.getElementById('prod-advisory-modal'); if (existing) existing.remove();
+        var modal = document.createElement('div'); modal.id = 'prod-advisory-modal'; modal.className = 'xf-modal-overlay';
+        var entityList = ''; entityStates.forEach(function (s) { entityList += '<div style="font-size:12px;color:#999;margin:2px 0;">' + escapeHtml(formatEntityName(s.entity.entity_type)) + ': ' + s.stagingContext.row_count.toLocaleString() + ' rows</div>'; });
+        modal.innerHTML = '<div class="xf-modal"><div class="xf-modal-header"><span class="xf-modal-icon" style="color:#dcdcaa">&#9888;</span><span>Promote to Production</span></div><div class="xf-modal-body"><p>You are about to promote your <strong>' + escapeHtml(promoteData.sourceEnvironment) + '</strong> import to <strong>Production</strong>.</p><p>The same staging data will be submitted to the production environment:</p>' + entityList + '<p style="color:#f48771;font-weight:600;margin-top:12px;">This is a PRODUCTION import and cannot be undone.</p></div><div class="xf-modal-actions"><button class="xf-modal-btn-cancel" id="promote-advisory-back">Cancel</button><button class="xf-modal-btn-primary xf-modal-btn-danger" id="promote-advisory-continue">Promote to Production</button></div></div>';
         document.body.appendChild(modal);
         document.getElementById('promote-advisory-back').onclick = function () { modal.remove(); };
-        document.getElementById('promote-advisory-continue').onclick = function () {
-            modal.remove();
-            applyPromoteToProduction(prodEnv);
-        };
+        document.getElementById('promote-advisory-continue').onclick = function () { modal.remove(); selectedEnvironment = prodEnv; stepComplete[4] = false; executeInProgress = false; clearPromoteState(); entityStates.forEach(function (s) { s.xmlPreviewLoaded = false; }); updateEnvBadge(); renderExecuteReview(); };
     }
 
-    function applyPromoteToProduction(prodEnv) {
-        // Swap environment to PROD
-        selectedEnvironment = prodEnv;
-        // Reset execution state but preserve staging data, mappings, alignment
-        stepComplete[4] = false;
-        executeInProgress = false;
-        // Clear promote state so it doesn't re-appear
-        clearPromoteState();
-        // Reset xmlPreviewLoaded so previews rebuild with new environment context
-        entityStates.forEach(function (s) { s.xmlPreviewLoaded = false; });
-        // Update badge and re-render Step 5 targeting PROD
-        updateEnvBadge();
-        renderExecuteReview();
-    }
-
-    function ticketChanged() { var ticketInput = document.getElementById('jira-ticket'); var messageRow = document.getElementById('ar-message-row'); var messageInput = document.getElementById('ar-message'); var ticket = ticketInput ? ticketInput.value.trim() : ''; if (ticket) { messageRow.style.display = ''; if (!messageInput.dataset.userEdited) { var entityNames = entityStates.map(function (s) { return s.entity.entity_type; }).join(', '); messageInput.value = ticket + ': ' + (entityNames || 'BDL') + ' update via BDL Import'; } } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; } }
+    function ticketChanged() { var ticketInput = document.getElementById('jira-ticket'); var messageRow = document.getElementById('ar-message-row'); var messageInput = document.getElementById('ar-message'); var ticket = ticketInput ? ticketInput.value.trim() : ''; if (ticket) { messageRow.style.display = ''; if (!messageInput.dataset.userEdited) { messageInput.value = ticket + ': ' + entityStates.map(function (s) { return s.entity.entity_type; }).join(', ') + ' update via BDL Import'; } } else { messageRow.style.display = 'none'; messageInput.value = ''; messageInput.dataset.userEdited = ''; } }
 
     function executeAll() {
         if (executeInProgress) return;
@@ -1281,25 +996,13 @@ var BDL = (function () {
     }
 
     function executeSequential(idx, jiraTicket) {
-        if (idx >= entityStates.length) {
-            // All primary imports complete — submit consolidated AR log if Jira ticket provided
-            var hasSuccess = executeResultTracker.some(function (r) { return r.success; });
-            if (jiraTicket && hasSuccess) {
-                submitConsolidatedArLog(jiraTicket, function () { finishExecution(); });
-            } else {
-                finishExecution();
-            }
-            return;
-        }
-        var state = entityStates[idx], tabEl = document.getElementById('exec-tab-' + idx);
-        var resultsPane = document.getElementById('execute-results-all');
-        var resultsList = document.getElementById('execute-results-list');
+        if (idx >= entityStates.length) { var hasSuccess = executeResultTracker.some(function (r) { return r.success; }); if (jiraTicket && hasSuccess) { submitConsolidatedArLog(jiraTicket, function () { finishExecution(); }); } else { finishExecution(); } return; }
+        var state = entityStates[idx], tabEl = document.getElementById('exec-tab-' + idx), resultsPane = document.getElementById('execute-results-all'), resultsList = document.getElementById('execute-results-list');
         switchExecuteTab(idx);
         if (tabEl) tabEl.innerHTML = escapeHtml(formatEntityName(state.entity.entity_type)) + ' <span style="color:#dcdcaa;">&#8943;</span>';
         if (resultsPane) resultsPane.classList.remove('hidden');
         var entityName = formatEntityName(state.entity.entity_type);
-        var requestBody = { staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, source_filename: uploadedFile ? uploadedFile.name : 'unknown', column_mapping: JSON.stringify(state.columnMapping) };
-        fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) })
+        fetch('/api/bdl-import/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staging_table: state.stagingContext.staging_table, entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, source_filename: uploadedFile ? uploadedFile.name : 'unknown', column_mapping: JSON.stringify(state.columnMapping) }) })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
         .then(function (data) {
             var rh = '';
@@ -1311,20 +1014,13 @@ var BDL = (function () {
                 rh += '<div class="execute-result-success"><span class="result-icon">&#10003;</span><div><strong>' + escapeHtml(entityName) + ' — Submitted</strong><div class="result-meta">File: <code>' + escapeHtml(data.xml_filename) + '</code> &middot; Registry ID: ' + data.file_registry_id + ' &middot; ' + data.row_count.toLocaleString() + ' rows</div></div></div>';
                 if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#4ec9b0;">&#10003;</span>';
                 executeResultTracker.push({ entity_type: state.entity.entity_type, staging_table: state.stagingContext.staging_table, log_id: data.log_id, success: true });
-                if (!promoteData && data.promote_cooldown_seconds && data.prod_config_id) {
-                    promoteData = {
-                        cooldownSeconds: data.promote_cooldown_seconds,
-                        prodConfigId: data.prod_config_id,
-                        sourceEnvironment: selectedEnvironment.environment
-                    };
-                }
+                if (!promoteData && data.promote_cooldown_seconds && data.prod_config_id) { promoteData = { cooldownSeconds: data.promote_cooldown_seconds, prodConfigId: data.prod_config_id, sourceEnvironment: selectedEnvironment.environment }; }
             }
             if (resultsList) resultsList.innerHTML += rh;
             executeSequential(idx + 1, jiraTicket);
         })
         .catch(function (err) {
-            var rh = '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>' + escapeHtml(entityName) + ' — Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
-            if (resultsList) resultsList.innerHTML += rh;
+            if (resultsList) resultsList.innerHTML += '<div class="execute-result-fail"><span class="result-icon">&#10006;</span><div><strong>' + escapeHtml(entityName) + ' — Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
             if (tabEl) tabEl.innerHTML = escapeHtml(entityName) + ' <span style="color:#ef4444;">&#10006;</span>';
             executeResultTracker.push({ entity_type: state.entity.entity_type, staging_table: state.stagingContext.staging_table, log_id: null, success: false });
             executeSequential(idx + 1, jiraTicket);
@@ -1333,55 +1029,18 @@ var BDL = (function () {
 
     function submitConsolidatedArLog(jiraTicket, callback) {
         var resultsList = document.getElementById('execute-results-list');
-        var successResults = executeResultTracker.filter(function (r) { return r.success; });
-        if (successResults.length === 0) { callback(); return; }
-
+        var successResults = executeResultTracker.filter(function (r) { return r.success; }); if (successResults.length === 0) { callback(); return; }
         var entityTypes = successResults.map(function (r) { return r.entity_type; }).join(',');
         var parentLogIds = successResults.map(function (r) { return r.log_id; }).filter(function (id) { return id; }).join(',');
-        var firstStagingTable = successResults[0].staging_table;
         var arMessage = (document.getElementById('ar-message') || {}).value || '';
-        if (!arMessage.trim()) { arMessage = jiraTicket + ': ' + entityTypes + ' update via BDL Import'; }
-
-        var requestBody = {
-            staging_table: firstStagingTable,
-            entity_types: entityTypes,
-            jira_ticket: jiraTicket,
-            ar_message: arMessage.trim(),
-            config_id: selectedEnvironment.config_id,
-            source_filename: uploadedFile ? uploadedFile.name : 'unknown',
-            parent_log_ids: parentLogIds
-        };
-
-        fetch('/api/bdl-import/execute-ar-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) })
+        if (!arMessage.trim()) arMessage = jiraTicket + ': ' + entityTypes + ' update via BDL Import';
+        fetch('/api/bdl-import/execute-ar-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staging_table: successResults[0].staging_table, entity_types: entityTypes, jira_ticket: jiraTicket, ar_message: arMessage.trim(), config_id: selectedEnvironment.config_id, source_filename: uploadedFile ? uploadedFile.name : 'unknown', parent_log_ids: parentLogIds }) })
         .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
-        .then(function (data) {
-            var rh = '';
-            if (data._httpStatus >= 400 || data.error) {
-                rh = '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log — Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div></div></div>';
-            } else {
-                rh = '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log — Submitted</strong><div class="result-meta">' + data.row_count.toLocaleString() + ' records linked to ' + escapeHtml(jiraTicket) + ' (' + escapeHtml(entityTypes) + ')</div></div></div>';
-            }
-            if (resultsList) resultsList.innerHTML += rh;
-            callback();
-        })
-        .catch(function (err) {
-            var rh = '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log — Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>';
-            if (resultsList) resultsList.innerHTML += rh;
-            callback();
-        });
+        .then(function (data) { var rh = data._httpStatus >= 400 || data.error ? '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log — Failed</strong><div class="result-detail">' + escapeHtml(data.error) + '</div></div></div>' : '<div class="execute-result-success execute-result-ar"><span class="result-icon">&#10003;</span><div><strong>AR Log — Submitted</strong><div class="result-meta">' + data.row_count.toLocaleString() + ' records linked to ' + escapeHtml(jiraTicket) + ' (' + escapeHtml(entityTypes) + ')</div></div></div>'; if (resultsList) resultsList.innerHTML += rh; callback(); })
+        .catch(function (err) { if (resultsList) resultsList.innerHTML += '<div class="execute-result-warn execute-result-ar"><span class="result-icon">&#9888;</span><div><strong>AR Log — Request Failed</strong><div class="result-detail">' + escapeHtml(err.message) + '</div></div></div>'; callback(); });
     }
 
-    function finishExecution() {
-        executeInProgress = false;
-        var actions = document.getElementById('execute-actions');
-        if (actions) actions.classList.add('hidden');
-        stepComplete[4] = true;
-        updateStepperUI();
-        updateNavButtons();
-        if (promoteData && promoteData.cooldownSeconds && promoteData.prodConfigId) {
-            renderPromoteCard(promoteData.sourceEnvironment);
-        }
-    }
+    function finishExecution() { executeInProgress = false; var actions = document.getElementById('execute-actions'); if (actions) actions.classList.add('hidden'); stepComplete[4] = true; updateStepperUI(); updateNavButtons(); if (promoteData && promoteData.cooldownSeconds && promoteData.prodConfigId) renderPromoteCard(promoteData.sourceEnvironment); }
 
     // ── Templates ─────────────────────────────────────────────────────────
     function loadTemplates(entityType) { entityTemplates = []; var list = document.getElementById('template-list'); if (!list) return; list.innerHTML = '<div class="template-empty">Loading templates...</div>'; fetch('/api/bdl-import/templates?entity_type=' + encodeURIComponent(entityType)).then(function (r) { return r.json(); }).then(function (data) { entityTemplates = data.templates || []; renderTemplateList(); }).catch(function () { list.innerHTML = '<div class="template-empty">Failed to load templates.</div>'; }); }
@@ -1404,9 +1063,7 @@ var BDL = (function () {
         if (step <= 4) { entityStates = []; currentEntityIndex = 0; activeTemplateId = null; }
         executeInProgress = false; executeResultTracker = []; clearPromoteState(); updateStepperUI(); updateNavButtons();
     }
-
     function clearPromoteState() { if (promoteCountdownTimer) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; } promoteData = null; promoteSecondsRemaining = 0; promoteReady = false; }
-
     function escapeHtml(str) { if (!str) return ''; var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
     return {
@@ -1418,6 +1075,7 @@ var BDL = (function () {
         unmapPair: unmapPair, identifierChanged: identifierChanged,
         validateCurrentEntity: validateCurrentEntity, advanceToNextEntity: advanceToNextEntity, revalidateCurrentEntity: revalidateCurrentEntity,
         fixedValueIdentifierChanged: fixedValueIdentifierChanged, fixedValueChanged: fixedValueChanged, fixedValueSearch: fixedValueSearch, selectFixedValue: selectFixedValue,
+        nullifyField: nullifyField, unnullifyField: unnullifyField,
         applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows,
         runCleanup: runCleanup,
         toggleValidationCard: toggleValidationCard, toggleInfoCard: toggleInfoCard,
