@@ -10,6 +10,7 @@
 # 2026-04-04  Added AR log (Jira ticket link) support to execute endpoint
 # 2026-04-04  Added drop_existing support to stage endpoint for re-staging
 # 2026-04-04  Added template CRUD endpoints (list, save, update, delete)
+# 2026-04-11  Added set-nullify-fields endpoint for blanket field nullification
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -1041,8 +1042,8 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             status           = 'SUBMITTED'
             message          = "BDL file $($xmlResult.Filename) has been submitted to Debt Manager."
         }
-		
-# ── Promote metadata for non-PROD environments ─────────────────
+
+        # ── Promote metadata for non-PROD environments ─────────────────
         if ($xmlResult.Environment -ne 'PROD') {
             $cooldownConfig = Invoke-XFActsQuery -Query @"
                 SELECT setting_value
@@ -1368,6 +1369,80 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/reset-alignment' -Authenticati
             rows_reset   = $rowsReset
             active_count = $activeCount
             staging_table = $stagingTable
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# POST /api/bdl-import/set-nullify-fields
+# Sets blanket nullification for specified fields on all non-skipped rows
+# in a staging table. Adds _nullify_fields column if it doesn't exist.
+# Body: { staging_table, nullify_fields: ["field1", "field2"] }
+# Empty array clears all nullifications.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $stagingTable = $body.staging_table
+        $nullifyFields = $body.nullify_fields
+
+        if (-not $stagingTable) {
+            Write-PodeJsonResponse -Value @{ error = 'staging_table is required' } -StatusCode 400
+            return
+        }
+
+        # Validate staging table exists
+        $tableCheck = Invoke-XFActsQuery -Query @"
+            SELECT 1 FROM sys.tables t
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = 'Staging' AND t.name = @tableName
+"@ -Parameters @{ tableName = $stagingTable }
+
+        if (-not $tableCheck -or $tableCheck.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = "Staging table not found: $stagingTable" } -StatusCode 404
+            return
+        }
+
+        $safeTable = "Staging.[" + $stagingTable.Replace(']', ']]') + "]"
+
+        # Add _nullify_fields column if it doesn't exist
+        $colExists = Invoke-XFActsQuery -Query @"
+            SELECT 1 FROM sys.columns c
+            INNER JOIN sys.tables t ON t.object_id = c.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = 'Staging' AND t.name = @tableName AND c.name = '_nullify_fields'
+"@ -Parameters @{ tableName = $stagingTable }
+
+        if (-not $colExists -or $colExists.Count -eq 0) {
+            Invoke-XFActsNonQuery -Query "ALTER TABLE $safeTable ADD [_nullify_fields] VARCHAR(MAX) NULL"
+        }
+
+        # Build comma-separated value (or NULL if empty array)
+        $nullifyValue = $null
+        if ($nullifyFields -and $nullifyFields.Count -gt 0) {
+            $nullifyValue = ($nullifyFields | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) -join ','
+            if ($nullifyValue -eq '') { $nullifyValue = $null }
+        }
+
+        # Update all non-skipped rows
+        if ($null -eq $nullifyValue) {
+            $rowsUpdated = Invoke-XFActsNonQuery -Query @"
+                UPDATE $safeTable SET [_nullify_fields] = NULL WHERE _skip = 0
+"@
+        }
+        else {
+            $rowsUpdated = Invoke-XFActsNonQuery -Query @"
+                UPDATE $safeTable SET [_nullify_fields] = @nullifyVal WHERE _skip = 0
+"@ -Parameters @{ nullifyVal = $nullifyValue }
+        }
+
+        Write-PodeJsonResponse -Value @{
+            rows_updated    = $rowsUpdated
+            nullify_fields  = if ($nullifyValue) { @($nullifyValue -split ',') } else { @() }
+            staging_table   = $stagingTable
         }
     }
     catch {
