@@ -1421,9 +1421,6 @@ function Get-ServiceCredentials {
     $masterPass = $masterResult[0].setting_value
 
     # Step 2: Decrypt service-level passphrase, then decrypt all config keys
-    # Note: Passphrases are concatenated into the query (not parameterized) because
-    # DECRYPTBYPASSPHRASE requires literal string values. This mirrors the proven
-    # pattern in Process-JiraTicketQueue.ps1 and other collector scripts.
     $decryptQuery = @"
         DECLARE @MasterPassphrase VARCHAR(100) = '$($masterPass -replace "'", "''")';
         DECLARE @ServicePassphrase VARCHAR(100);
@@ -1631,6 +1628,9 @@ function ConvertTo-SafeDecimal {
 #     <operational_transaction_data>
 #       <{wrapper}_operational_transaction_data>
 #         <{entity_element} seq_no="N" type="{ENTITY_TYPE}">
+#           <nullify_fields>              ← only when row has nullifications
+#             <nullify_field>name</nullify_field>
+#           </nullify_fields>
 #           <field>value</field>
 #         </{entity_element}>
 #       </{wrapper}_operational_transaction_data>
@@ -1670,7 +1670,7 @@ function Build-BDLXml {
 
     # ── Get entity format info ──────────────────────────────────────
     $formatInfo = Invoke-XFActsQuery -Query @"
-        SELECT f.format_id, f.entity_type, f.type_name, f.folder, f.batch_abbreviation
+        SELECT f.format_id, f.entity_type, f.type_name, f.folder, f.batch_abbreviation, f.has_nullify_fields
         FROM Tools.Catalog_BDLFormatRegistry f
         WHERE f.entity_type = @entityType
           AND f.is_active = 1
@@ -1682,10 +1682,19 @@ function Build-BDLXml {
     $typeName = $formatInfo[0].type_name
     $folder = $formatInfo[0].folder
     $batchAbbrev = if ($formatInfo[0].batch_abbreviation -and $formatInfo[0].batch_abbreviation -isnot [System.DBNull]) { $formatInfo[0].batch_abbreviation } else { $EntityType.Substring(0, [Math]::Min($EntityType.Length, 14)) }
+    $hasNullifyFields = $formatInfo[0].has_nullify_fields -eq 1
+
+    # ── Get non-nullifiable fields (for record-level nullify) ────────
+    $nonNullifiableSet = @{}
+    if ($hasNullifyFields) {
+        $nonNullifiable = Invoke-XFActsQuery -Query @"
+            SELECT element_name FROM Tools.Catalog_BDLElementRegistry
+            WHERE format_id = @formatId AND is_not_nullifiable = 1
+"@ -Parameters @{ formatId = $formatInfo[0].format_id }
+        if ($nonNullifiable) { $nonNullifiable | ForEach-Object { $nonNullifiableSet[$_.element_name] = $true } }
+    }
 
     # ── Get wrapper info from catalog ───────────────────────────────
-    # This query finds the operational_transaction_data wrapper that
-    # contains this entity type (e.g., consumer_operational_transaction_data)
     $wrapperInfo = Invoke-XFActsQuery -Query @"
         SELECT w.type_name AS wrapper_type, we.element_name AS entity_element
         FROM Tools.Catalog_BDLFormatRegistry w
@@ -1697,16 +1706,14 @@ function Build-BDLXml {
 
     # Determine wrapper element name and entity element name
     $wrapperElement = 'consumer_operational_transaction_data'  # default
-    $entityElement = $typeName -replace '_data_type$', ''       # e.g., bdl_cnsmr_phn_data_type → bdl_cnsmr_phn
+    $entityElement = $typeName -replace '_data_type$', ''
 
     if ($wrapperInfo -and $wrapperInfo.Count -gt 0) {
-        # wrapper_type is like "consumer_operational_transaction_data_type"
         $wrapperElement = $wrapperInfo[0].wrapper_type -replace '_type$', ''
         $entityElement = $wrapperInfo[0].entity_element
     }
 
     # Determine the operational_transaction_type for the header
-    # This maps to the folder level: consumer → CONSUMER, consumer/account → CONSUMERACCOUNT
     $operationalTransactionType = 'CONSUMER'
     if ($folder) {
         switch -Wildcard ($folder) {
@@ -1729,9 +1736,9 @@ function Build-BDLXml {
     $skipResult = Invoke-XFActsQuery -Query "SELECT COUNT(*) AS cnt FROM $safeTable WHERE _skip = 1"
     $skippedCount = if ($skipResult -and $skipResult.Count -gt 0) { $skipResult[0].cnt } else { 0 }
 
-    # Identify mapped columns (exclude system and unmapped columns)
+    # Identify mapped columns (exclude system columns and unmapped columns)
     $mappedColumns = @($stagingRows[0].Keys | Where-Object { 
-        $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -notlike '*_unmapped' 
+        $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -ne '_nullify_fields' -and $_ -notlike '*_unmapped' 
     })
 
     # ── Build filename ──────────────────────────────────────────────
@@ -1749,7 +1756,7 @@ function Build-BDLXml {
     # Root element
     [void]$sb.AppendLine('<dm_data xmlns="http://www.fico.com/xml/debtmanager/data/v1_0">')
 
-    # Header — mirrors Matt's VBA header structure exactly
+    # Header
     [void]$sb.AppendLine('  <header>')
     [void]$sb.AppendLine("    <import_as_user_name>${username}</import_as_user_name>")
     [void]$sb.AppendLine('    <sender_id_txt>Organization</sender_id_txt>')
@@ -1775,6 +1782,39 @@ function Build-BDLXml {
     foreach ($row in $stagingRows) {
         [void]$sb.AppendLine("      <${entityElement} seq_no=`"${seq}`" type=`"${EntityType}`">")
 
+        # ── Collect record-level nullify fields (empty mapped columns) ──
+        $allNullifyFields = @()
+
+        # Blanket nullify fields (from UI badge via _nullify_fields column)
+        if ($row.ContainsKey('_nullify_fields')) {
+            $nfVal = $row['_nullify_fields']
+            if ($nfVal -and $nfVal -isnot [System.DBNull] -and ([string]$nfVal).Trim() -ne '') {
+                $allNullifyFields = @(([string]$nfVal) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+            }
+        }
+
+        # Record-level nullify: empty values in mapped columns → nullify
+        if ($hasNullifyFields) {
+            foreach ($col in $mappedColumns) {
+                if ($nonNullifiableSet.ContainsKey($col)) { continue }
+                if ($allNullifyFields -contains $col) { continue }
+                $val = $row[$col]
+                if ($val -is [System.DBNull] -or $null -eq $val -or ([string]$val).Trim() -eq '') {
+                    $allNullifyFields += $col
+                }
+            }
+        }
+
+        # Emit nullify block if any fields need nullification
+        if ($allNullifyFields.Count -gt 0) {
+            [void]$sb.AppendLine("        <nullify_fields>")
+            foreach ($nf in $allNullifyFields) {
+                [void]$sb.AppendLine("          <nullify_field>${nf}</nullify_field>")
+            }
+            [void]$sb.AppendLine("        </nullify_fields>")
+        }
+
+        # ── Data elements ───────────────────────────────────────────────
         foreach ($col in $mappedColumns) {
             $val = $row[$col]
             if ($val -is [System.DBNull] -or $null -eq $val) { continue }
@@ -1835,10 +1875,6 @@ function Build-ARLogXml {
     if (-not $tableCheck -or $tableCheck.Count -eq 0) {
         return @{ Error = "Staging table not found: $StagingTable"; StatusCode = 404 }
     }
-
-    # ── Get environment from ServerConfig ───────────────────────────
-    # (EntityType is passed for filename; environment comes from the
-    #  same ConfigId the caller already validated)
 
     # ── Read staging data (non-skipped rows, identifier column only) ─
     $safeTable = "Staging.[" + $StagingTable.Replace(']', ']]') + "]"
@@ -1914,7 +1950,7 @@ function Build-ARLogXml {
 }
  
 # ============================================================================
-# UPDATED Export-ModuleMember — REPLACE the existing block with this one
+# Export-ModuleMember
 # ============================================================================
 Export-ModuleMember -Function @(
     # Database
@@ -1937,7 +1973,7 @@ Export-ModuleMember -Function @(
     # RBAC - Response Helpers
     'Get-AccessDeniedHtml',
     'Get-ActionDeniedResponse',
-#    # API Cache
+    # API Cache
     'Initialize-ApiCacheConfig',
     'Get-CachedResult',
     # Credentials
@@ -1949,8 +1985,8 @@ Export-ModuleMember -Function @(
     'Get-CRS5Connection',
     'Invoke-CRS5ReadQuery',
     'Invoke-CRS5WriteQuery',
-#     # AG Generalized Read
-     'Invoke-AGReadQuery',
+    # AG Generalized Read
+    'Invoke-AGReadQuery',
     # DmOps Cache
     'Get-RemainingCounts',
     # Data Conversion Helpers
