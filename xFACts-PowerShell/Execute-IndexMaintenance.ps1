@@ -668,7 +668,7 @@ ALTER INDEX [$indexName] ON [$schemaName].[$tableName] REBUILD WITH ($onlineClau
             
             try {
                 # Use longer timeout for the rebuild itself - estimate + buffer
-                $cmdTimeout = [math]::Max($estimatedSeconds * 2, 300)
+                $cmdTimeout = [math]::Min([math]::Max($estimatedSeconds * 2, 300), 65535)
                 
                 Invoke-Sqlcmd -ServerInstance $connectionServer -Database $dbName -Query $rebuildCommand -QueryTimeout $cmdTimeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
                 $rebuildSuccess = $true
