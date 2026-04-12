@@ -79,8 +79,6 @@ a { color: #9cdcfe; }
 .step.completed .step-label { color: #999; }
 .step-connector { width: 24px; height: 2px; background: #404040; flex-shrink: 0; transition: background 0.3s ease; }
 .step-connector.completed { background: #4ec9b0; }
-
-/* Environment Badge (persistent in stepper bar) */
 .env-badge { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
 .env-badge-test { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
 .env-badge-stage { background: rgba(206, 145, 120, 0.15); color: #ce9178; border: 1px solid rgba(206, 145, 120, 0.3); }
@@ -139,8 +137,6 @@ a { color: #9cdcfe; }
 .upload-btn { display: inline-block; padding: 8px 20px; background: #0e639c; color: #fff; border-radius: 4px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
 .upload-btn:hover { background: #1177bb; }
 .upload-formats { color: #555; font-size: 11px; margin-top: 8px; }
-
-/* File Preview (inside upload zone) */
 .file-preview { padding: 12px 16px; text-align: left; }
 .file-preview.hidden { display: none; }
 .file-info { display: flex; align-items: center; gap: 8px; padding: 8px 0; margin-bottom: 8px; border-bottom: 1px solid #333; font-size: 13px; }
@@ -171,33 +167,26 @@ a { color: #9cdcfe; }
 .entity-card .entity-meta { font-size: 11px; color: #888; }
 .entity-card .entity-folder { display: inline-block; background: #1e1e1e; padding: 2px 6px; border-radius: 3px; font-size: 10px; color: #888; margin-right: 6px; }
 .entity-card .entity-fields { font-size: 10px; color: #666; }
-
-/* Entity Key Section Headers */
 .entity-section { margin-bottom: 16px; }
 .entity-section:last-child { margin-bottom: 0; }
 .entity-section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 0 2px; }
 .entity-section-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #569cd6; white-space: nowrap; }
 .entity-section-line { flex: 1; height: 1px; background: #404040; }
 .entity-section-count { font-size: 10px; color: #555; white-space: nowrap; }
-
-/* Field Info Icon on Entity Cards */
 .entity-info-btn { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #555; background: transparent; color: #666; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; line-height: 1; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
 .entity-info-btn:hover { border-color: #9cdcfe; color: #9cdcfe; background: rgba(86, 156, 214, 0.1); }
-
-/* Field Info Modal Content */
 .field-info-list { display: flex; flex-direction: column; gap: 4px; max-height: 400px; overflow-y: auto; padding: 4px 0; }
-.field-info-item { padding: 6px 10px; background: #1e1e1e; border: 1px solid #333; border-radius: 4px; }
-.field-info-name { font-size: 13px; color: #d4d4d4; font-weight: 500; }
+.field-info-item { padding: 6px 10px; background: #1e1e1e; border: 1px solid #333; border-radius: 4px; position: relative; }
+.field-info-name { font-size: 13px; color: #d4d4d4; font-weight: 500; padding-right: 20px; }
 .field-info-desc { font-size: 11px; color: #888; margin-top: 2px; line-height: 1.4; }
 .field-info-guidance { font-size: 11px; color: #dcdcaa; font-style: italic; margin-top: 2px; line-height: 1.4; }
+.field-info-nullify-icon { position: absolute; top: 6px; right: 8px; color: #c586c0; font-size: 13px; font-weight: 600; cursor: default; }
 .field-info-empty { color: #555; font-size: 12px; text-align: center; padding: 20px 10px; font-style: italic; }
 .field-info-loading { color: #888; font-size: 12px; text-align: center; padding: 20px 10px; }
 
 /* ============================================================================
    STEP 4: MAP & VALIDATE — Per-Entity Loop
    ============================================================================ */
-
-/* Entity Progress Banner (dots + label) */
 .mapping-progress-banner { padding: 10px 14px; background: rgba(86, 156, 214, 0.06); border: 1px solid rgba(86, 156, 214, 0.2); border-radius: 5px; margin-bottom: 12px; }
 .progress-banner-top { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 6px; }
 .progress-dot { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; border: 2px solid #555; color: #888; background: transparent; flex-shrink: 0; }
@@ -207,8 +196,6 @@ a { color: #9cdcfe; }
 .progress-dot-line-done { background: #4ec9b0; }
 .progress-banner-label { font-size: 13px; color: #9cdcfe; text-align: center; }
 .progress-banner-label strong { color: #d4d4d4; }
-
-/* Map & Validate Action Bar */
 .map-validate-actions { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px 0 0; margin-top: 12px; border-top: 1px solid #333; }
 
 /* ── Identifier Selector ──────────────────────────────────────────────── */
@@ -225,12 +212,12 @@ a { color: #9cdcfe; }
 .mapping-identifier.identifier-pending { border-color: #f48771; border-width: 2px; }
 .mapping-identifier.identifier-confirmed { border-color: #4ec9b0; border-width: 2px; background: #1e2d2a; }
 
-/* ── Disabled State (until identifier selected) ───────────────────────── */
+/* ── Disabled State ───────────────────────────────────────────────────── */
 .mapping-panels-wrap { position: relative; }
 .mapping-panels-wrap.mapping-disabled { opacity: 0.35; pointer-events: none; }
 .mapping-disabled-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10; color: #888; font-size: 13px; text-align: center; background: rgba(30, 30, 30, 0.85); padding: 10px 20px; border-radius: 6px; border: 1px solid #404040; pointer-events: none; }
 
-/* ── Column Mapping Panels (FILE_MAPPED entities) ─────────────────────── */
+/* ── Column Mapping Panels ────────────────────────────────────────────── */
 .mapping-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 250px; }
 .mapping-panel { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
 .panel-header { padding: 8px 12px; background: #333; color: #888; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #404040; text-align: center; }
@@ -238,13 +225,9 @@ a { color: #9cdcfe; }
 .panel-target .panel-header { color: #ce9178; }
 .panel-list { flex: 1; padding: 6px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; max-height: 300px; }
 .panel-empty { color: #555; font-size: 12px; text-align: center; padding: 16px 10px; line-height: 1.6; font-style: italic; }
-
-/* Mapped Section (spans below panels) */
 .mapped-section { margin-top: 10px; background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; }
 .mapped-section .panel-header { color: #4ec9b0; }
 .mapped-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
-
-/* Mapping Chips */
 .mapping-chip { padding: 6px 10px; border: 1px solid #404040; border-radius: 5px; cursor: pointer; transition: all 0.15s ease; background: #252526; }
 .mapping-chip:hover { border-color: #569cd6; background: #2a2a2a; }
 .mapping-chip.selected { border-color: #569cd6; background: rgba(86, 156, 214, 0.12); box-shadow: 0 0 0 1px rgba(86, 156, 214, 0.3); }
@@ -261,8 +244,6 @@ a { color: #9cdcfe; }
 .chip-guidance { font-size: 9px; color: #dcdcaa; font-style: italic; margin-top: 1px; }
 .chip-meta { font-size: 10px; color: #666; margin-top: 2px; }
 .chip-required-label { font-size: 9px; font-weight: 600; color: #f48771; text-transform: uppercase; letter-spacing: 0.3px; }
-
-/* Mapped Pairs */
 .mapped-pair { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(78, 201, 176, 0.06); border: 1px solid rgba(78, 201, 176, 0.2); border-radius: 5px; font-size: 12px; }
 .pair-source { color: #569cd6; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pair-arrow { color: #4ec9b0; flex-shrink: 0; }
@@ -271,14 +252,12 @@ a { color: #9cdcfe; }
 .pair-element { font-family: 'Consolas', 'Courier New', monospace; font-size: 10px; color: #888; }
 .pair-remove { color: #f48771; cursor: pointer; font-size: 14px; flex-shrink: 0; padding: 0 2px; opacity: 0.5; transition: opacity 0.15s; }
 .pair-remove:hover { opacity: 1; }
-
-/* Mapping Warnings */
 .mapping-warnings { margin-top: 10px; }
 .warning-box { padding: 10px 14px; background: #3d3520; border: 1px solid #6d5a30; border-radius: 4px; font-size: 12px; color: #dcdcaa; line-height: 1.6; }
 .warning-box code { background: #1e1e1e; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #ce9178; font-size: 11px; }
 .success-box { padding: 10px 14px; background: #1e3a2a; border: 1px solid #2d5a3d; border-radius: 4px; font-size: 12px; color: #4ec9b0; }
 
-/* ── Fixed-Value Mapping (FIXED_VALUE entities) ───────────────────────── */
+/* ── Fixed-Value Mapping ──────────────────────────────────────────────── */
 .fixed-value-banner { padding: 10px 14px; background: rgba(197, 134, 192, 0.06); border: 1px solid rgba(197, 134, 192, 0.2); border-radius: 5px; margin-bottom: 12px; font-size: 13px; color: #c586c0; }
 .fixed-value-banner strong { color: #d4d4d4; }
 .fixed-value-icon { font-size: 14px; }
@@ -295,8 +274,6 @@ a { color: #9cdcfe; }
 .fixed-value-text:focus { border-color: #569cd6; }
 .fixed-value-text::placeholder { color: #555; }
 .fixed-value-meta { font-size: 10px; color: #555; margin-top: 4px; }
-
-/* Lookup Suggestions Dropdown */
 .fixed-value-suggestions { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: #1e1e1e; border: 1px solid #555; border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .fixed-value-suggestions:empty { display: none; }
 .suggestion-item { padding: 6px 10px; font-size: 12px; color: #d4d4d4; cursor: pointer; transition: background 0.1s; display: flex; align-items: baseline; gap: 8px; }
@@ -306,9 +283,7 @@ a { color: #9cdcfe; }
 .suggestion-hint { padding: 6px 10px; font-size: 11px; color: #888; font-style: italic; }
 .suggestion-none { padding: 6px 10px; font-size: 11px; color: #666; font-style: italic; }
 
-/* ── Validation Results (within Map & Validate) ───────────────────────── */
-
-/* Summary Banner */
+/* ── Validation Results ───────────────────────────────────────────────── */
 .validation-summary { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 6px; margin-bottom: 12px; }
 .validation-pass { background: #1e3a2a; border: 1px solid #2d5a3d; }
 .validation-warn { background: #3d3520; border: 1px solid #6d5a30; }
@@ -322,8 +297,6 @@ a { color: #9cdcfe; }
 .validation-warn strong { color: #dcdcaa; }
 .validation-block strong { color: #f48771; }
 .validation-detail { font-size: 12px; color: #999; margin-top: 2px; }
-
-/* Accordion Issue Cards */
 .validation-cards { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .val-card { border: 1px solid #404040; border-radius: 6px; overflow: hidden; transition: border-color 0.2s; }
 .val-card-expanded { border-color: #569cd6; }
@@ -340,8 +313,6 @@ a { color: #9cdcfe; }
 .val-card-body { padding: 10px 14px; background: #1e1e1e; border-top: 1px solid #333; animation: fadeIn 0.2s ease; }
 .val-guidance-tip { font-size: 11px; color: #dcdcaa; font-style: italic; padding: 4px 8px; margin-bottom: 8px; border-left: 2px solid rgba(220, 220, 170, 0.3); background: rgba(220, 220, 170, 0.05); border-radius: 0 3px 3px 0; }
 .val-target { background: #1e1e1e; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #ce9178; font-size: 11px; }
-
-/* Informational Warnings */
 .validation-info-section { margin-bottom: 12px; border: 1px solid #404040; border-radius: 6px; overflow: hidden; }
 .validation-info-header { padding: 8px 12px; background: #2a2a2a; color: #888; font-size: 12px; font-weight: 600; border-bottom: 1px solid #404040; }
 .val-info-card { border-bottom: 1px solid #333; }
@@ -353,13 +324,9 @@ a { color: #9cdcfe; }
 .validation-samples { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding-left: 12px; }
 .val-sample { font-size: 11px; color: #888; }
 .val-sample code { background: #1e1e1e; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #f48771; font-size: 10px; }
-
-/* Validation Context Footer */
 .validation-context { margin-top: 12px; padding: 8px 12px; font-size: 11px; color: #666; text-align: right; }
 .validation-context strong { color: #888; }
 .validation-actions { margin-top: 10px; display: flex; justify-content: flex-start; }
-
-/* Lookup Value Replacement Table */
 .lookup-replace-table { margin-top: 8px; border: 1px solid #404040; border-radius: 4px; overflow: hidden; }
 .lookup-replace-header { display: flex; padding: 6px 10px; background: #2a2a2a; border-bottom: 1px solid #404040; font-size: 11px; color: #888; font-weight: 600; }
 .lrh-count { width: 55px; flex-shrink: 0; }
@@ -386,19 +353,28 @@ a { color: #9cdcfe; }
 .replace-done { color: #4ec9b0; font-size: 12px; }
 .skip-done { color: #f48771; font-size: 12px; }
 
+/* ── Nullify Badge & Mapped Nullify Pairs (within mapping panels) ──────── */
+.chip-nullify-btn { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #555; background: transparent; color: #c586c0; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; line-height: 1; padding: 0; }
+.chip-nullify-btn:hover { border-color: #c586c0; background: rgba(197, 134, 192, 0.15); }
+.target-chip { position: relative; }
+.mapped-pair-nullify { background: rgba(197, 134, 192, 0.06); border-color: rgba(197, 134, 192, 0.25); }
+.pair-nullify-label { color: #c586c0; font-weight: 600; font-size: 12px; flex-shrink: 0; }
+
+/* Nullify Summary (validated/complete state on Step 4) */
+.nullify-summary { padding: 8px 14px; background: rgba(197, 134, 192, 0.06); border: 1px solid rgba(197, 134, 192, 0.2); border-radius: 5px; margin-bottom: 12px; font-size: 12px; color: #c586c0; }
+.nullify-summary strong { color: #d4d4d4; }
+.nullify-summary code { background: #1e1e1e; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #c586c0; font-size: 11px; }
+.nullify-summary-icon { font-size: 14px; margin-right: 4px; }
+
 /* ============================================================================
    STEP 5: EXECUTE (tabbed per-entity)
    ============================================================================ */
-
-/* Execute Tabs */
 .execute-tabs { display: flex; gap: 2px; margin-bottom: 0; border-bottom: 1px solid #404040; }
 .execute-tab { padding: 8px 18px; font-size: 13px; font-weight: 500; color: #888; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 5px 5px 0 0; transition: all 0.15s; background: #1e1e1e; }
 .execute-tab:hover { color: #d4d4d4; background: #252526; }
 .execute-tab-active { color: #d4d4d4; background: #252526; border-color: #404040; border-bottom: 1px solid #252526; margin-bottom: -1px; }
 .execute-tab-content { padding: 16px 0; }
 .execute-tab-content.hidden { display: none; }
-
-/* Execute Summary Card */
 .execute-summary { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
 .execute-summary-header { padding: 10px 14px; background: #333; color: #569cd6; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #404040; }
 .execute-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
@@ -411,25 +387,35 @@ a { color: #9cdcfe; }
 .summary-env-stage { color: #ce9178; }
 .summary-env-prod { color: #4ec9b0; }
 
+/* Execute Mapped Fields Summary */
+.execute-mapped-summary { padding: 8px 14px; background: rgba(78, 201, 176, 0.06); border: 1px solid rgba(78, 201, 176, 0.2); border-radius: 5px; margin-bottom: 8px; font-size: 12px; color: #4ec9b0; }
+.execute-mapped-summary strong { color: #d4d4d4; }
+.execute-mapped-summary code { background: #1e1e1e; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #4ec9b0; font-size: 11px; }
+.mapped-summary-icon { font-size: 14px; margin-right: 4px; }
+
+/* Execute Nullify Summary */
+.execute-nullify-summary { padding: 8px 14px; background: rgba(197, 134, 192, 0.06); border: 1px solid rgba(197, 134, 192, 0.2); border-radius: 5px; margin-bottom: 12px; font-size: 12px; color: #c586c0; }
+.execute-nullify-summary strong { color: #d4d4d4; }
+.execute-nullify-summary code { background: #1e1e1e; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #c586c0; font-size: 11px; }
+
 /* Collapsible Sections */
 .execute-mapping, .execute-preview { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
 .execute-section-header { padding: 10px 14px; background: #2a2a2a; color: #888; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; user-select: none; }
 .execute-section-header:hover { background: #333; color: #d4d4d4; }
+.xml-preview-header { cursor: default; }
+.xml-preview-header:hover { background: #2a2a2a; color: #888; }
+.xml-preview-btn { padding: 6px 16px; background: #2d2d2d; border: 1px solid #569cd6; border-radius: 4px; color: #9cdcfe; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Segoe UI', Arial, sans-serif; }
+.xml-preview-btn:hover { background: rgba(86, 156, 214, 0.15); border-color: #9cdcfe; color: #d4d4d4; }
+.xml-preview-btn .section-toggle { font-size: 10px; color: #569cd6; margin-left: 6px; }
 .section-toggle { font-size: 10px; color: #666; }
 .execute-section-body { padding: 10px 14px; }
 .execute-section-body.collapsed { display: none; }
-
-/* Mapping Reference in Execute */
 .execute-map-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; border-bottom: 1px solid #2a2a2a; }
 .execute-map-row:last-child { border-bottom: none; }
 .exec-map-source { color: #569cd6; font-weight: 600; flex: 1; }
 .exec-map-arrow { color: #4ec9b0; flex-shrink: 0; }
 .exec-map-target { color: #d4d4d4; flex: 1; text-align: right; }
 .exec-map-target code { background: #252526; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; color: #ce9178; font-size: 11px; }
-
-/* XML Preview */
-.execute-preview-prominent { border-color: #505050; }
-.execute-xml-header { color: #9cdcfe !important; font-size: 13px !important; }
 .xml-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .xml-filename { color: #569cd6; font-weight: 600; font-size: 12px; }
 .xml-meta { color: #888; font-size: 11px; }
@@ -438,8 +424,6 @@ a { color: #9cdcfe; }
 .xml-preview-loading { color: #888; font-size: 12px; font-style: italic; padding: 12px 0; }
 .xml-copy-btn { margin-left: auto; padding: 3px 10px; background: #2d2d2d; border: 1px solid #404040; border-radius: 3px; color: #888; font-size: 11px; cursor: pointer; transition: all 0.15s; }
 .xml-copy-btn:hover { background: #333; color: #d4d4d4; border-color: #569cd6; }
-
-/* XML Syntax Highlighting */
 .xml-decl { color: #6a9955; }
 .xml-comment { color: #6a9955; font-style: italic; }
 .xml-bracket { color: #808080; }
@@ -447,15 +431,11 @@ a { color: #9cdcfe; }
 .xml-attr-name { color: #9cdcfe; }
 .xml-attr-val { color: #ce9178; }
 .xml-value { color: #d4d4d4; }
-
-/* Execute Actions */
 .execute-actions { padding: 16px 0; text-align: center; }
 .execute-prod-warning { background: #3d2020; border: 1px solid #6d3030; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; color: #f48771; font-size: 13px; text-align: center; }
 .execute-btn { padding: 14px 40px; background: #4ec9b0; border: none; border-radius: 6px; color: #1e1e1e; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.2s; letter-spacing: 0.3px; }
 .execute-btn:hover:not(:disabled) { background: #5fd4bb; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(78, 201, 176, 0.3); }
 .execute-btn:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
-
-/* Execute Progress Steps */
 .execute-progress { margin-bottom: 12px; }
 .progress-steps { display: flex; align-items: center; justify-content: center; gap: 0; padding: 16px; background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; }
 .progress-step { display: flex; align-items: center; gap: 6px; padding: 6px 10px; }
@@ -470,8 +450,6 @@ a { color: #9cdcfe; }
 .progress-connector { width: 30px; height: 2px; background: #404040; flex-shrink: 0; }
 .progress-connector-done { background: #4ec9b0; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-/* Execute Result Cards */
 .execute-result-success, .execute-result-fail { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 6px; }
 .execute-result-success { background: #1e3a2a; border: 1px solid #2d5a3d; }
 .execute-result-fail { background: #3d2020; border: 1px solid #6d3030; }
@@ -486,13 +464,9 @@ a { color: #9cdcfe; }
 .execute-result-warn { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 6px; background: #3d3520; border: 1px solid #6d5a30; }
 .execute-result-warn .result-icon { color: #dcdcaa; font-size: 24px; flex-shrink: 0; }
 .execute-result-warn strong { color: #dcdcaa; font-size: 15px; }
-
-/* Unified Execution Results Pane */
 .execute-results-all { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-top: 12px; }
 .execute-results-header { padding: 10px 14px; background: #333; color: #9cdcfe; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #404040; }
 #execute-results-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
- 
-/* Row Count Mismatch Banner */
 .execute-mismatch-banner { background: #3d3520; border: 1px solid #6d5a30; border-radius: 6px; padding: 14px 18px; margin-bottom: 12px; }
 .mismatch-header { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #dcdcaa; margin-bottom: 10px; }
 .mismatch-icon { font-size: 16px; }
@@ -501,8 +475,6 @@ a { color: #9cdcfe; }
 .mismatch-name { color: #d4d4d4; font-weight: 500; }
 .mismatch-counts { color: #dcdcaa; font-size: 12px; font-weight: 600; }
 .mismatch-actions { margin-top: 10px; }
- 
-/* Row Count Alignment Modal */
 .alignment-row { padding: 12px; background: #1e1e1e; border: 1px solid #333; border-radius: 5px; margin-bottom: 8px; }
 .alignment-row:last-child { margin-bottom: 0; }
 .alignment-entity-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -513,8 +485,6 @@ a { color: #9cdcfe; }
 .alignment-dropdown { flex: 1; padding: 6px 10px; background: #252526; border: 1px solid #404040; border-radius: 4px; color: #d4d4d4; font-size: 13px; cursor: pointer; }
 .alignment-dropdown:focus { border-color: #569cd6; outline: none; }
 .alignment-undo-btn { flex-shrink: 0; }
-
-/* Jira Ticket Link */
 .execute-ticket { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
 .execute-ticket .execute-section-header { cursor: default; }
 .ticket-optional { font-weight: normal; color: #555; font-size: 11px; text-transform: none; letter-spacing: 0; margin-left: 6px; }
@@ -527,8 +497,6 @@ a { color: #9cdcfe; }
 .ticket-input:focus { border-color: #569cd6; }
 .ticket-input::placeholder { color: #555; }
 .ticket-message-input { max-width: 100%; }
-
-/* Promote to Production Card */
 .promote-area { margin-top: 12px; }
 .promote-card { background: #1e1e1e; border: 2px solid #404040; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.3s ease; }
 .promote-card:hover { border-color: #569cd6; background: #222; }
@@ -564,7 +532,7 @@ a { color: #9cdcfe; }
 .template-save-btn:hover { border-color: #4ec9b0; color: #4ec9b0; background: #333; }
 
 /* ============================================================================
-   TEMPLATE PREVIEW SLIDEOUT (content only — panel from engine-events.css)
+   TEMPLATE PREVIEW SLIDEOUT
    ============================================================================ */
 .slideout-meta { margin-bottom: 14px; }
 .slideout-desc { font-size: 13px; color: #999; line-height: 1.5; margin-bottom: 6px; }
