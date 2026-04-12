@@ -1,8 +1,8 @@
 # BDL Import Module -- Working Document
 
-**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance. Multi-entity + FIXED_VALUE end-to-end verified.  
+**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance, nullify fields (blanket + record-level), Excel date formatting. Multi-entity + FIXED_VALUE end-to-end verified.  
 **Audience:** Dirk, Matt, Brandon, Claude  
-**Last Updated:** April 10, 2026  
+**Last Updated:** April 11, 2026  
 **Replaces:** `BDL_Import_Module_Design.md`, `BDL_Catalog_Reload_Instructions.md`, `xFACts_Questions_For_Matt.md`, `BDL_Action_Sequences_Planning.md`
 
 ---
@@ -72,7 +72,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 
 **Shared helpers:**
 - `Invoke-XFActsNonQuery` added to `xFACts-Helpers.psm1` -- ExecuteNonQuery() for DDL and DML operations against xFACts database
-- `Build-BDLXml` added to `xFACts-Helpers.psm1` -- constructs BDL XML from staging table data and catalog metadata. Uses `batch_abbreviation` for batch ID construction. Includes `communication_reference_id_txt` and `import_as_user_name` header elements.
+- `Build-BDLXml` added to `xFACts-Helpers.psm1` -- constructs BDL XML from staging table data and catalog metadata. Uses `batch_abbreviation` for batch ID construction. Includes `communication_reference_id_txt` and `import_as_user_name` header elements. Supports blanket nullify (from `_nullify_fields` column) and record-level nullify (empty mapped columns auto-nullified for entities with `has_nullify_fields = 1`, excluding `is_not_nullifiable` fields).
 - `Build-ARLogXml` added to `xFACts-Helpers.psm1` -- constructs CONSUMER_ACCOUNT_AR_LOG BDL XML for Jira ticket linking. Includes `import_as_user_name` header element.
 - `Get-ServiceCredentials` in `xFACts-Helpers.psm1` -- two-tier decryption for DM API credentials
 - `import_as_user_name` added to XML headers in both `Build-BDLXml` and `Build-ARLogXml` -- passes authenticated CC user's AD username to DM so imports are attributed to the actual user instead of apiuser. DM falls back to apiuser silently if the username is not recognized.
@@ -114,8 +114,8 @@ Accessible via card links from the Applications & Integration page (IT team) and
 1. **Select Environment** -- Cards for TEST, STAGE, PROD loaded from `Tools.ServerConfig`. Environment-specific accent colors. All environments unlocked. Selecting PROD shows a styled advisory modal.
 2. **Upload File** -- Drag-and-drop or browse. CSV, TXT, XLSX, XLS supported via client-side parsing. Preview renders inside the drop zone. Row count warning above 250K.
 3. **Select Entity Types** -- Multi-select grid with toggle cards grouped by `entity_key` (Consumer, Account, Other sections with headers). Field info modal (info icon) shows access-controlled field list with display names, descriptions, and import guidance on demand. Admin sees all active; department users see only AccessConfig-granted entities with AccessFieldConfig-filtered fields.
-4. **Map & Validate** -- Per-entity loop with progress dots and transition modals. For FILE_MAPPED entities: identifier gating, two-column mapping panels, drag-and-drop. For FIXED_VALUE entities: identifier selector + direct value entry fields with debounced typeahead lookup against DM reference tables (300ms debounce, top 10 results with description from discovered _nm column). Each entity stages and validates independently. Validation cards show `import_guidance` tips when populated. Step complete when all entities pass validation.
-5. **Execute** -- Tabbed per-entity summary cards. Single Jira ticket field (applies to all). Submit All button processes entities sequentially. Per-tab success/failure indicators. Consolidated AR log auto-submits after all entities complete if Jira ticket provided.
+4. **Map & Validate** -- Per-entity loop with progress dots and transition modals. For FILE_MAPPED entities: identifier gating, two-column mapping panels, drag-and-drop, nullify badge (∅) on eligible target fields. Nullified fields appear in the Mapped section with distinct purple styling. For FIXED_VALUE entities: identifier selector + direct value entry fields with debounced typeahead lookup against DM reference tables (300ms debounce, top 10 results with description from discovered _nm column). Each entity stages and validates independently. Validation cards show `import_guidance` tips when populated. Validated screen shows Mapped Fields card and Nullify card (when applicable). Step complete when all entities pass validation.
+5. **Execute** -- Tabbed per-entity summary cards (4-item grid: Environment, Entity Type, Rows, Staging Table). Mapped Fields card (teal) lists all mapped field display names. Nullify card (purple) lists nullified field display names when applicable. XML Preview button with distinct button styling. Single Jira ticket field (applies to all). Submit All button processes entities sequentially. Per-tab success/failure indicators. Consolidated AR log auto-submits after all entities complete if Jira ticket provided.
 
 ### End-to-End Test Results
 
@@ -354,6 +354,27 @@ Accessible via card links from the Applications & Integration page (IT team) and
 ### RBAC Middleware: Department-Scoped Roles on Shared Pages
 - Fix: explicit permission rows always honored regardless of department scope
 
+### Excel Date Formatting (April 11)
+- `cellDates: true` option added to SheetJS `XLSX.read()` calls to parse date serial numbers as JS Date objects
+- `excelCellValue()` helper detects date cells (`cell.t === 'd'`) and formats as `YYYY-MM-DD` (ISO 8601) with zero-padded month/day and 4-digit year
+- Non-date cells use `cell.w` (Excel's formatted text) when available, falling back to `cell.v` (raw value)
+- Applies to both preview parsing (`parseExcelPreview`) and full data parsing (`parseExcelAllRows`)
+- BDL date/datetime fields require either `YYYY-MM-DD` or `MM/DD/YYYY` format; ISO chosen as safest for XML
+
+### Nullify in Mapping Step (April 11)
+- Nullify controls placed in the mapping step (Step 4) rather than the validation screen
+- Rationale: nullify is a mapping-level decision ("what should happen to this field"), not a validation-level decision
+- Nullify fields preserved through re-validation since they're part of the mapping, not validation state
+- ∅ badge on target chips mirrors the entity info button pattern (absolute positioned, top-right)
+- Purple accent color (`#c586c0`) used consistently for all nullify UI elements
+
+### Record-Level Auto-Nullify (April 11)
+- Empty values in mapped columns are automatically nullified at XML build time for entities with `has_nullify_fields = 1`
+- Rationale: if a column is explicitly mapped, the source file is the source of truth for that field — empty means "clear it," not "leave it alone." Silent-skip only applies to unmapped fields where omission means "not touching this field."
+- Mimics Matt's Access Toolkit behavior where pasting a NULL into a mapped field triggered nullification
+- Non-nullifiable fields (`is_not_nullifiable = 1`) are excluded — empty values still silently skipped
+- No UI change required — implemented entirely in `Build-BDLXml`
+
 ### Identifier Handling
 - Consumer-level: `cnsmr_idntfr_agncy_id`
 - Account-level: `cnsmr_accnt_idntfr_agncy_id`
@@ -467,6 +488,7 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 | POST | `/api/bdl-import/skip-rows` | Mark rows as skipped in staging table |
 | POST | `/api/bdl-import/align-rows` | Align target staging table skip set to source. Joins on identifier column, skips mismatched rows in target. Returns updated counts. |
 | POST | `/api/bdl-import/reset-alignment` | Reset all skipped rows in a staging table to active. Used to undo alignment on FIXED_VALUE entities. |
+| POST | `/api/bdl-import/set-nullify-fields` | Set blanket nullify fields on staging table. Adds `_nullify_fields` column if needed, updates all non-skipped rows. |
 | GET | `/api/bdl-import/staging-cleanup` | Check for expired staging tables (>48 hours) |
 | POST | `/api/bdl-import/staging-cleanup` | Drop expired staging tables |
 | GET | `/api/bdl-import/history` | Recent import history from BDL_ImportLog |
@@ -489,91 +511,41 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 
 ### Immediate (Resume Point)
 
-1. **Nullify Fields support** -- Per-record nullification of field values in BDL XML. See "Nullify Fields Design" section below for full specification. Requires changes to `Build-BDLXml`, validation UI, and staging architecture.
+1. **Execution progress indicator** -- Re-wire the step-through progress display (building XML -> registering -> submitting) into the unified results pane. CSS classes exist (`.progress-steps`, `.progress-active`, `.progress-complete`). Visual polish item. May not be needed -- BatchOps BDL collector already shows processing status on Batch Monitoring page. Evaluate whether this adds value.
 
-2. **Execution progress indicator** -- Re-wire the step-through progress display (building XML -> registering -> submitting) into the unified results pane. CSS classes exist (`.progress-steps`, `.progress-active`, `.progress-complete`). Visual polish item. May not be needed -- BatchOps BDL collector already shows processing status on Batch Monitoring page. Evaluate whether this adds value.
+2. **`value_changes` column on BDL_ImportLog** -- Verify whether the replace-values and fill-empty endpoints are actually populating this column. If not, wire it in. Designed as batch-level replacement audit trail but may not be connected.
 
-3. **`value_changes` column on BDL_ImportLog** -- Verify whether the replace-values and fill-empty endpoints are actually populating this column. If not, wire it in. Designed as batch-level replacement audit trail but may not be connected.
+3. **Record-level import audit table** -- Pending Matt's input on his current tracking pattern. Single table design to accommodate all entity types using JSON payload per record. Volume concern for large imports (250K rows). Deferred pending clarification on Matt's requirements and scope.
 
-4. **Record-level import audit table** -- Pending Matt's input on his current tracking pattern. Single table design to accommodate all entity types using JSON payload per record. Volume concern for large imports (250K rows). Deferred pending clarification on Matt's requirements and scope.
+### Nullify Fields (Implemented April 11)
 
-5. **Version bumps** -- Deferred from multiple sessions. Components touched: Tools.Operations, Tools.Catalog, ControlCenter.BDLImport, ControlCenter.Shared, DeptOps.ApplicationsIntegration.
+Supports explicit nullification of field values in DM via the `<nullify_fields>` XML block. Two complementary mechanisms:
 
-### Nullify Fields Design
+**Blanket Nullify (UI-driven, mapping step):**
+- Nullify badge (∅) appears on each eligible target field chip in the BDL Fields panel during mapping
+- Eligibility: entity has `has_nullify_fields = 1`, field has `is_not_nullifiable = 0`, field is not `is_import_required`
+- Clicking the badge moves the field from the target panel into the Mapped section as "∅ Nullify → Field Name" with ✕ to undo
+- Tracked in `state.nullifyFields[]` during mapping, preserved through re-validation
+- Persisted to staging table `_nullify_fields` column (VARCHAR(MAX), comma-separated) via `POST /api/bdl-import/set-nullify-fields` on entity advance or step transition
+- Field info modal (entity cards) also displays ∅ icon for nullifiable fields with hover tooltip
 
-Adds the ability to explicitly null out field values in DM via the `<nullify_fields>` XML block. Currently, empty fields are silently omitted from the XML, which tells DM to leave the existing value unchanged. Nullify tells DM to actively set the value to NULL.
+**Record-Level Nullify (automatic, Build-BDLXml):**
+- When a mapped column has an empty/NULL value for a row and the entity supports nullify, that field is automatically added to the record's nullify block instead of being silently omitted
+- Non-nullifiable fields (`is_not_nullifiable = 1`) are excluded — empty values still silently skipped for those
+- `Build-BDLXml` queries `Catalog_BDLElementRegistry` for non-nullifiable field set at XML build time
+- Mimics Matt's Access Toolkit behavior: pasting a NULL into a field triggers nullification for that record
 
-**XML Structure (per record):**
-```xml
-<entity_element seq_no="1" type="ENTITY_TYPE">
-    <nullify_fields>
-        <nullify_field>field_name_1</nullify_field>
-        <nullify_field>field_name_2</nullify_field>
-    </nullify_fields>
-    <identifier_field>value</identifier_field>
-    <data_field>value</data_field>
-</entity_element>
-```
+**Combined behavior per row:**
+- Blanket nullify fields (from `_nullify_fields` column) + record-level nullify fields (empty mapped columns) are merged into a single `<nullify_fields>` block per record
+- Duplicates excluded (blanket already in list not re-added from record-level detection)
+- Data elements loop unchanged — still skips empty values (they're captured as nullify entries instead)
 
-The `<nullify_fields>` block appears before the data fields inside each entity entry. Fields listed in `<nullify_field>` elements are NOT included as data elements — they are exclusively in the nullify block. Only generated for records that have fields to nullify; omitted entirely when a record has no nullifications.
-
-**Catalog Infrastructure (already exists):**
-- `has_nullify_fields` on `Catalog_BDLFormatRegistry` -- entity supports nullification (0/1)
-- `is_not_nullifiable` on `Catalog_BDLElementRegistry` -- field CANNOT be nullified (excluded from nullify UI)
-
-**Design: Expanded Validation Screen**
-
-The validation screen currently only surfaces mapped fields with issues. Nullify support requires expanding it to show ALL visible fields for the entity, giving the user control over unmapped fields as well. The validation screen becomes a comprehensive **field action screen** with three categories:
-
-*Category 1 — Mapped fields with validation issues (existing behavior + Nullify):*
-- Required empty: Fill, Nullify (if `is_not_nullifiable = 0`), Skip
-- Lookup invalid: Replace, Nullify (if `is_not_nullifiable = 0`), Skip
-- Max length / data type: informational (existing)
-
-*Category 2 — Mapped fields with empty values in some rows (enhanced):*
-- For non-required fields where some rows have values and some are empty
-- Empty rows get: Ignore (leave out of XML), Nullify (add to nullify block), Fill
-- Only shown for entities with `has_nullify_fields = 1`
-
-*Category 3 — Unmapped fields (NEW):*
-- Every visible, non-identifier field that was NOT mapped from the source file
-- Default action: Ignore (field omitted from XML entirely — DM leaves existing value)
-- Available actions: Nullify (blanket — all rows), Fill (blanket — all rows get same value)
-- Only shown for entities with `has_nullify_fields = 1`
-- Fields with `is_not_nullifiable = 1` excluded from this section
-- Presented as a collapsible "Unmapped Fields" section below the validation cards
-- This is the primary mechanism for blanket nullification of fields not in the source data
-
-**Blanket vs Record-Level Nullify:**
-
-Matt confirms blanket nullify is the most common case (nullify field X for ALL rows in the import). Record-level nullify (nullify field X on rows 1-50 but keep existing value on rows 51-100) was needed a handful of times over the years.
-
-*Concrete example (blanket nullify on unmapped field):*
-DM has a consumer record: First Name = BILLY, Middle Name = BOB, Last Name = THORNTON. Client sends a demographic update file with First Name = BILLYBOB, Last Name = THORNTON — no middle name column in the file. Without nullify, the import updates first/last name but leaves Middle Name = BOB, which is now wrong. The user maps first and last name, then on the validation screen sees `cnsmr_nm_mddl_txt` in the Unmapped Fields section and clicks Nullify. Every row in the XML gets `<nullify_field>cnsmr_nm_mddl_txt</nullify_field>`, telling DM to clear it.
-
-- **Blanket nullify** maps naturally to the UI: a "Nullify" button on a validation card or unmapped field row applies to all rows. Implementation: set a flag on the staging table or a separate tracking mechanism.
-- **Record-level nullify** is more complex: requires per-row per-field tracking. Matt's legacy approach was to paste record-level data into a table where NULL values in a column were auto-detected as "nullify on import." In our workflow, this could happen when a mapped column has a mix of values and blanks — blank rows get nullified while rows with values get the value. This is the "mapped fields with empty values" scenario in Category 2 above.
-- **Decision needed:** Should record-level nullify be Phase 1 or deferred? Blanket nullify covers the majority of use cases. Record-level could follow as an enhancement.
-
-**Staging Table Impact:**
-- Need a mechanism to track which fields are nullified per row
-- Option A: `_nullify_fields` column (VARCHAR(MAX)) on the staging table storing comma-separated field names per row — simple, entity-agnostic, only read during XML build
-- Option B: Separate `_nullify_{fieldname}` bit columns per nullifiable field — more queryable but requires dynamic DDL per entity
-- Option A recommended for initial implementation
-- Blanket nullify: all non-skipped rows get the same `_nullify_fields` value
-- Record-level nullify: each row gets its own `_nullify_fields` value based on which fields are empty
-
-**Build-BDLXml Changes:**
-- After writing data fields for each row, check `_nullify_fields` column
-- If populated, parse comma-separated list and emit `<nullify_fields>` block before data elements
-- Only for entities where `has_nullify_fields = 1`
-- Fields in nullify list are NOT written as data elements (already handled by existing empty-skip logic)
-
-**Files Affected:**
-- `Build-BDLXml` in `xFACts-Helpers.psm1` -- nullify block generation
-- `BDLImport-API.ps1` -- stage endpoint (add `_nullify_fields` column), new endpoint or parameter for setting nullify flags
-- `bdl-import.js` -- expanded validation UI with unmapped fields section, Nullify action buttons
-- `bdl-import.css` -- nullify-specific styling (amber/yellow to match import_guidance theme)
+**Execute Summary:**
+- Step 5 summary grid reduced to 4 items (Environment, Entity Type, Rows, Staging Table)
+- Mapped Fields card (teal accent `#4ec9b0`) lists all mapped field display names
+- Nullify card (purple accent `#c586c0`) lists nullified field display names (only when applicable)
+- Same cards shown on Step 4 validated/complete screen for consistency
+- XML Preview rendered as a distinct button rather than clickable header for visibility
 
 ### Follow-Up Items
 
@@ -643,14 +615,14 @@ For fields with `lookup_table` populated, the typeahead and validation endpoints
 | Object | Type | Description |
 |--------|------|-------------|
 | BDLImport.ps1 | Route | BDL Import CC page route (5-step layout) |
-| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, consolidated AR log, fixed_values staging, lookup search) |
-| bdl-import.js | JavaScript | BDL Import CC client-side logic (multi-entity, per-entity state, fixed-value UI, typeahead, entity grouping, consolidated AR log) |
+| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, consolidated AR log, fixed_values staging, lookup search, set-nullify-fields) |
+| bdl-import.js | JavaScript | BDL Import CC client-side logic (multi-entity, per-entity state, fixed-value UI, typeahead, entity grouping, consolidated AR log, nullify badge in mapping, Excel date formatting) |
 | bdl-import.css | CSS | BDL Import CC styles |
 
 ### ControlCenter.Shared Component
 | Object | Type | Description |
 |--------|------|-------------|
-| xFACts-Helpers.psm1 | Module | Shared helpers (Invoke-XFActsNonQuery, Build-BDLXml, Build-ARLogXml, Get-ServiceCredentials) |
+| xFACts-Helpers.psm1 | Module | Shared helpers (Invoke-XFActsNonQuery, Build-BDLXml with blanket + record-level nullify, Build-ARLogXml, Get-ServiceCredentials) |
 
 ### DeptOps.ApplicationsIntegration Component
 | Object | Type | Description |
