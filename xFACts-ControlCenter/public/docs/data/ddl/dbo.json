@@ -2,10 +2,10 @@
     "tables":  [
                    {
                        "name":  "ActionAuditLog",
-                       "description":  "Universal audit trail for all Control Center configuration changes. Records field-level modifications made through administrative interfaces including GlobalConfig settings, process schedule updates, and other operational edits.",
+                       "description":  "Centralized audit trail for all user-initiated actions in the Control Center. Captures configuration changes, schedule edits, job triggers, BDL imports, access grants, alert resends, and any other operational action performed through the UI.",
                        "module":  "dbo",
                        "category":  "Shared Infrastructure",
-                       "dataFlow":  "Populated by Control Center API route handlers whenever a configuration change is made through an administrative interface. Each field-level modification on an entity generates one row. Rows are append-only and never updated or deleted. The changed_by field captures the AD username from the authenticated session.",
+                       "dataFlow":  "Populated by Control Center API route handlers whenever a user performs an action through any CC page. Each discrete action generates one row with a human-readable summary. Rows are append-only and never updated or deleted.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -13,7 +13,154 @@
                                            "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  true,
-                                           "description":  "Unique identifier for the audit entry"
+                                           "description":  "Primary key identity."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "page_route",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Control Center page route where the action originated (e.g., /admin, /bdl-import, /apps-int)."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "action_type",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Action category: CONFIG_CHANGE, SCHEDULE_CHANGE, JOB_TRIGGER, BDL_IMPORT, ACCESS_CHANGE, ALERT_RESEND."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "action_summary",
+                                           "dataType":  "varchar",
+                                           "length":  "1000",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Human-readable description of what happened, built by the calling code to capture essential context in a single string."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "environment",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Target DM environment for environment-scoped actions (TEST, STAGE, PROD). NULL for actions that are not environment-specific."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "result",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Outcome for operational actions: SUCCESS or FAILED. NULL for instant actions like config changes."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "error_detail",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Error message captured on failure. NULL on success or for action types where result is not tracked."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "executed_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "AD username of the user who performed the action (FAC\\ domain prefix)."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "executed_dttm",
+                                           "dataType":  "datetime2",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(sysdatetime())",
+                                           "description":  "Timestamp when the action was performed."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK__ActionAu__5AF33E336719D06A",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "audit_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Action Summary Pattern",
+                                               "note":  "Each row captures a single user action with a human-readable action_summary string built by the calling code. The summary includes all relevant context (e.g., \"Changed orchestrator_drain_mode from 0 to 1\" or \"Triggered Refresh Drools (3 servers)\"). This avoids structured old/new value columns in favor of flexibility across diverse action types.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Cooldown Enforcement",
+                                               "note":  "Operational actions with cooldown periods (e.g., Balance Sync at 60 minutes) query the most recent successful execution by action_type, action_summary pattern, and environment to determine eligibility. The table serves as both audit trail and throttle source.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "action_type",
+                                                "value":  "CONFIG_CHANGE",
+                                                "meaning":  "A configuration setting was modified through a Control Center administrative interface.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "action_type",
+                                                "value":  "JOB_TRIGGER",
+                                                "meaning":  "A DM scheduled job or process was manually triggered through the Control Center.",
+                                                "sortOrder":  2
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Recent actions across all pages",
+                                           "description":  "Shows the most recent user actions with full context.",
+                                           "sql":  "SELECT TOP 50 page_route, action_type, action_summary,\r\n       environment, result, error_detail,\r\n       executed_by, executed_dttm\r\nFROM dbo.ActionAuditLog\r\nORDER BY executed_dttm DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Actions by type",
+                                           "description":  "Filtered audit history for a specific action category.",
+                                           "sql":  "SELECT action_summary, environment, result, error_detail,\r\n       executed_by, executed_dttm\r\nFROM dbo.ActionAuditLog\r\nWHERE action_type = \u0027JOB_TRIGGER\u0027\r\nORDER BY executed_dttm DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Cooldown check for job triggers",
+                                           "description":  "Finds the most recent successful execution of a specific trigger in an environment.",
+                                           "sql":  "SELECT TOP 1 executed_dttm\r\nFROM dbo.ActionAuditLog\r\nWHERE action_type = \u0027JOB_TRIGGER\u0027\r\n  AND action_summary LIKE \u0027%Balance Sync%\u0027\r\n  AND environment = \u0027PROD\u0027\r\n  AND result = \u0027SUCCESS\u0027\r\nORDER BY executed_dttm DESC;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "GlobalConfig",
+                                                     "note":  "CONFIG_CHANGE entries originating from GlobalConfig edits on the Admin page. Action summary includes the setting name and old/new values.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "ActionAuditLog_Legacy",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "audit_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
                                        },
                                        {
                                            "ordinal":  2,
@@ -21,8 +168,7 @@
                                            "dataType":  "varchar",
                                            "length":  "50",
                                            "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Module that owns the entity (e.g., Orchestrator, ControlCenter)"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  3,
@@ -30,16 +176,14 @@
                                            "dataType":  "varchar",
                                            "length":  "50",
                                            "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Type of entity being changed (e.g., ProcessSchedule, GlobalConfig)"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  4,
                                            "name":  "entity_id",
                                            "dataType":  "int",
                                            "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Numeric identifier of the entity in its source table. NULL when not applicable"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  5,
@@ -47,8 +191,7 @@
                                            "dataType":  "varchar",
                                            "length":  "128",
                                            "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Human-readable name of the entity at the time of change"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  6,
@@ -56,8 +199,7 @@
                                            "dataType":  "varchar",
                                            "length":  "100",
                                            "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Which field was changed (e.g., setting_value, execution_mode, NEW_PROCESS)"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  7,
@@ -65,8 +207,7 @@
                                            "dataType":  "varchar",
                                            "length":  "500",
                                            "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Previous value before the change. NULL for new entity creation"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  8,
@@ -74,8 +215,7 @@
                                            "dataType":  "varchar",
                                            "length":  "500",
                                            "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "New value after the change. NULL for deletions"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  9,
@@ -83,8 +223,7 @@
                                            "dataType":  "varchar",
                                            "length":  "100",
                                            "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "AD username of the person who made the change"
+                                           "identity":  false
                                        },
                                        {
                                            "ordinal":  10,
@@ -92,8 +231,7 @@
                                            "dataType":  "datetime",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "(getdate())",
-                                           "description":  "When the change was recorded"
+                                           "default":  "(getdate())"
                                        }
                                    ],
                        "indexes":  [
@@ -123,60 +261,7 @@
                                            "keyColumns":  "entity_type, entity_id",
                                            "includedColumns":  "field_name, old_value, new_value, changed_by, changed_dttm"
                                        }
-                                   ],
-                       "designNotes":  [
-                                           {
-                                               "topic":  "Field-Level Granularity",
-                                               "note":  "Each row represents a change to one field on one entity. When a single UI operation modifies multiple fields (e.g., updating both interval_seconds and execution_mode on a process), each field change gets its own row with the same changed_dttm timestamp.",
-                                               "sortOrder":  1
-                                           },
-                                           {
-                                               "topic":  "Entity Name Denormalization",
-                                               "note":  "The entity_name captures the human-readable name at the time of the change. This preserves accuracy even if the source entity is later renamed. Combined with entity_id for programmatic joins back to source tables.",
-                                               "sortOrder":  2
-                                           }
-                                       ],
-                       "statusValues":  [
-                                            {
-                                                "column":  "entity_type",
-                                                "value":  "GlobalConfig",
-                                                "meaning":  "A setting in dbo.GlobalConfig was modified through the Control Center editor.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "entity_type",
-                                                "value":  "ProcessSchedule",
-                                                "meaning":  "A process in Orchestrator.ProcessRegistry was added or its scheduling was modified through the Process Scheduler.",
-                                                "sortOrder":  2
-                                            }
-                                        ],
-                       "queries":  [
-                                       {
-                                           "name":  "Recent changes across all modules",
-                                           "description":  "Shows the most recent configuration changes with full context.",
-                                           "sql":  "SELECT TOP 50 source_module, entity_type, entity_name,\r\n       field_name, old_value, new_value,\r\n       changed_by, changed_dttm\r\nFROM dbo.ActionAuditLog\r\nORDER BY changed_dttm DESC;",
-                                           "sortOrder":  1
-                                       },
-                                       {
-                                           "name":  "Changes for a specific entity",
-                                           "description":  "Full audit history for a specific process or configuration item.",
-                                           "sql":  "SELECT field_name, old_value, new_value, changed_by, changed_dttm\r\nFROM dbo.ActionAuditLog\r\nWHERE entity_type = \u0027ProcessSchedule\u0027\r\n  AND entity_name = \u0027Collect-BackupStatus\u0027\r\nORDER BY changed_dttm DESC;",
-                                           "sortOrder":  2
-                                       },
-                                       {
-                                           "name":  "GlobalConfig change history",
-                                           "description":  "All configuration changes made through the Control Center editor.",
-                                           "sql":  "SELECT entity_name AS setting_name, old_value, new_value,\r\n       changed_by, changed_dttm\r\nFROM dbo.ActionAuditLog\r\nWHERE entity_type = \u0027GlobalConfig\u0027\r\nORDER BY changed_dttm DESC;",
-                                           "sortOrder":  3
-                                       }
-                                   ],
-                       "relationshipNotes":  [
-                                                 {
-                                                     "relatedObject":  "GlobalConfig",
-                                                     "note":  "Logs field-level changes to GlobalConfig settings made through the Control Center editor. entity_name = the setting_name that was modified.",
-                                                     "sortOrder":  1
-                                                 }
-                                             ]
+                                   ]
                    },
                    {
                        "name":  "API_RequestLog",
@@ -3590,6 +3675,24 @@
                                        },
                                        {
                                            "ordinal":  27,
+                                           "name":  "api_base_url",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM REST API base URL for this server. Populated for APP_SERVER and STANDALONE entries that expose a DM REST API. NULL for SQL_SERVER and AG_LISTENER entries. Used by Tools operations for API call targeting."
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "is_api_primary",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Marks the default API target for single-server operations in this environment. One primary per environment. All-server operations (e.g., Refresh Drools) iterate all servers with api_base_url populated and tools_enabled = 1."
+                                       },
+                                       {
+                                           "ordinal":  29,
                                            "name":  "last_service_start_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -3597,7 +3700,7 @@
                                            "description":  "SQL Server service start time from sys.dm_os_sys_info"
                                        },
                                        {
-                                           "ordinal":  28,
+                                           "ordinal":  30,
                                            "name":  "last_service_start_captured_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -3605,7 +3708,7 @@
                                            "description":  "When the service start time was last captured"
                                        },
                                        {
-                                           "ordinal":  29,
+                                           "ordinal":  31,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -3614,7 +3717,7 @@
                                            "description":  "When server was registered"
                                        },
                                        {
-                                           "ordinal":  30,
+                                           "ordinal":  32,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -3624,7 +3727,7 @@
                                            "description":  "Who registered the server"
                                        },
                                        {
-                                           "ordinal":  31,
+                                           "ordinal":  33,
                                            "name":  "modified_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -3632,7 +3735,7 @@
                                            "description":  "When record was last modified"
                                        },
                                        {
-                                           "ordinal":  32,
+                                           "ordinal":  34,
                                            "name":  "modified_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
