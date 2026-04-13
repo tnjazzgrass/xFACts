@@ -1,7 +1,7 @@
 # xFACts Development Guidelines
 
 **Version:** 1.4.0  
-**Date:** March 15, 2026
+**Date:** April 13, 2026
 
 The single source of truth for how xFACts platform components are built. Every new module, page, script, and database object should align with these guidelines. Deviations are acceptable when justified — document them when they occur.
 
@@ -1181,6 +1181,7 @@ All xFACts documentation is authored and maintained as HTML pages hosted within 
 | **Architecture** | `{module}-arch.html` | Development team + curious readers from the narrative audience | How it works technically. Data flows, status machines, scheduling logic, ERDs, integration details. Written to be engaging — not a cure for insomnia. |
 | **Reference** | `{module}-ref.html` | Development team | Nuts and bolts. Auto-generated from schema JSON files via `ddl-loader.js`. Full DDL, field definitions, Object_Metadata content, operational queries. |
 | **CC Guide** | `{pageId}-cc.html` | Everyone who uses the Control Center page | Interactive visual walkthrough of the corresponding Control Center page. Mockup diagram with numbered callout markers, flip-card key to UI elements, section-by-section feature guide. Written for understanding what you're looking at, not how it's built. |
+| **Guide** | `pages/guides/{name}.html` | Target audience varies per guide | Standalone walkthrough or tutorial for a specific tool or workflow. Visual mockups, step-by-step instructions, tips and troubleshooting. Not tied to Component_Registry — auto-discovered by the publisher from the filesystem. |
 
 **The narrative page is the entry point.** Every module's narrative page links to its architecture and reference pages. Control Center dashboard pages link to their corresponding narrative page via the page title (opens in a new tab). The Hub page (`index.html`) provides navigation to all modules.
 
@@ -1544,7 +1545,38 @@ When building or editing documentation pages, use these CSS classes and HTML pat
 
 **Important:** When introducing new visual elements or CSS classes in HTML pages, consider the publisher impact. If a new element carries meaningful content, a corresponding conversion rule needs to be added to `Publish-ConfluenceDocumentation.ps1` to ensure it renders properly in Confluence and markdown exports. Purely decorative elements (borders, colors, spacing) don't need conversion rules — they'll be stripped with generic div removal.
 
-### 6.4 File Headers
+### 6.4 Standalone Guide Pages
+
+Guide pages are standalone walkthrough documents that live in `pages/guides/` and are auto-discovered by the publisher. No registry file or Component_Registry entry is needed — drop an HTML file in the folder and run the pipeline.
+
+**Auto-discovery contract (required for the publisher to find and process the page):**
+
+| Requirement | Purpose | Example |
+|-------------|---------|---------|
+| File location | `public/docs/pages/guides/*.html` | `pages/guides/bdl-import-guide.html` |
+| `<h1>` tag | Publisher extracts this as the Confluence page title | `<h1>BDL Import — User Guide</h1>` |
+| Breadcrumb nav | Publisher extracts parent pageId from the `<a href>` | `<div class="doc-nav"><a href="../tools.html">Tools</a><span class="sep">•</span><span class="current">BDL Import Guide</span></div>` |
+
+If either the `<h1>` or breadcrumb link is missing, the publisher logs a warning and skips the file.
+
+**Parent page resolution:** The `href` in the breadcrumb link determines which page the guide appears under in Confluence. `../tools.html` → parent is the Tools narrative page. `../controlcenter.html` → parent is The Control Center. The parent must be a registered page in `doc-registry.json` (i.e., it must have a Component_Registry row with `doc_page_id`).
+
+**Publisher processing (Phase 1.7):**
+- Strips embedded `<style>` blocks, guide mockup divs (depth-counted), jump nav, step badges, all `<span>` tags, and guide-specific visual elements
+- Adds an info banner: "This page is a text reference version..."
+- Extracts `page-wrapper` content using `</body>` anchor (guide pages have no `<script>` tags)
+- Delegates remaining content to the standard narrative converter
+
+**Markdown export:** Guide pages are appended to their parent module's combined markdown file with a `---` separator.
+
+**Object_Registry:** Each guide page should have an Object_Registry entry under the `Documentation.Site` component with `object_category = 'Documentation'` and `object_type = 'HTML'`.
+
+**Adding a new guide page checklist:**
+1. Create the HTML file in `pages/guides/` with `<h1>` title and breadcrumb nav linking to the parent page
+2. Add an Object_Registry row
+3. Run the documentation pipeline from the Admin modal — the page is auto-discovered and published
+
+### 6.5 File Headers
 
 See Section 2.6.2 for complete file header standards including changelog policies.
 
