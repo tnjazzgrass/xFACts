@@ -6,6 +6,48 @@
     <title>Tools &mdash; xFACts Secrets Revealed</title>
     <link rel="stylesheet" href="../css/docs-base.css">
     <link rel="stylesheet" href="../css/docs-narrative.css">
+    <style>
+        /* Guide cards for the User Guides section */
+        .guide-card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 14px;
+            margin: 16px 0;
+        }
+        .guide-card {
+            display: block;
+            padding: 16px;
+            background: var(--surface, #1e1e1e);
+            border: 1px solid var(--border, #333);
+            border-radius: 6px;
+            text-decoration: none;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .guide-card:hover {
+            border-color: var(--accent-blue, #569cd6);
+            background: rgba(86, 156, 214, 0.04);
+        }
+        .guide-card-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--accent-blue, #569cd6);
+            margin-bottom: 6px;
+        }
+        .guide-card-desc {
+            font-size: 0.82rem;
+            color: #aaa;
+            line-height: 1.5;
+        }
+        .guide-card-badge {
+            display: inline-block;
+            font-size: 0.68rem;
+            padding: 2px 8px;
+            border-radius: 3px;
+            background: rgba(78, 201, 176, 0.12);
+            color: var(--accent-green, #4ec9b0);
+            margin-top: 8px;
+        }
+    </style>
 </head>
 <body>
 
@@ -14,7 +56,7 @@
     <!-- Header -->
     <div class="page-header">
         <h1>Tools</h1>
-        <div class="subtitle">Shared operational tools and vendor specification catalogs</div>
+        <div class="subtitle">Operational tools and vendor specification catalogs for Debt Manager</div>
     </div>
 
     <!-- Navigation (populated by nav.js) -->
@@ -22,18 +64,38 @@
 
     <!-- Where This Fits -->
     <div class="context-bar">
-        The Tools module houses shared infrastructure that powers operational actions across xFACts &mdash; BDL imports, payment processing, DM API operations, and the vendor specification catalogs that drive them all. If monitoring modules are the eyes and ears, Tools is the hands.
+        The Tools module houses the operational side of xFACts &mdash; the things that actually <em>do</em> things to Debt Manager rather than just watch it. BDL imports, consumer lookups, scheduled job triggers, and the vendor specification catalogs that drive them all live here. If the monitoring modules are the eyes and ears, Tools is the hands.
     </div>
 
     <!-- ============================================ -->
-    <!-- SECTION: Placeholder -->
+    <!-- SECTION: What's Here -->
     <!-- ============================================ -->
     <div class="section">
-        <h2>Coming Soon</h2>
+        <h2>What Lives in Tools</h2>
 
-        <p>This module is under active development. The vendor specification catalogs (BDL, CDL, and API) are populated and available on the reference page. Operational tool functionality &mdash; BDL imports, payment processing, scheduled job triggers, and consumer operations &mdash; is being built out in phases.</p>
+        <p><strong>BDL Import</strong> &mdash; A guided wizard for importing bulk data into Debt Manager. Upload a vendor file, map columns to BDL fields, validate the data against DM&rsquo;s reference tables, and submit &mdash; all from the Control Center. Replaces the manual copy-paste workflow from the legacy Access toolkit with proper validation, audit logging, and RBAC-controlled access per entity type and field.</p>
 
-        <p>Check the reference page for the current catalog content.</p>
+        <p><strong>Client Portal</strong> &mdash; Consumer and account lookup with detailed views across five consumer tabs and three account tabs. Search by consumer ID, account ID, SSN, name, or phone number. Read-only access to DM&rsquo;s operational data for quick reference without opening the DM application directly.</p>
+
+        <p><strong>Vendor Specification Catalogs</strong> &mdash; The BDL Format Registry and Element Registry define every BDL entity type and its fields. These catalogs drive the Import wizard&rsquo;s column mapping, validation rules, and XML construction. Managed through the BDL Content Management admin modal on the Applications &amp; Integration page.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: User Guides -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>User Guides</h2>
+
+        <p>Step-by-step walkthroughs for Tools module features. Each guide covers what you&rsquo;ll see on screen and how to use it.</p>
+
+        <div class="guide-card-grid">
+            <a class="guide-card" href="guides/bdl-import-guide.html">
+                <div class="guide-card-title">BDL Import Guide</div>
+                <div class="guide-card-desc">Walk through the 5-step import wizard: environment selection, file upload, entity selection, column mapping and validation, and execution with Promote to Production.</div>
+                <div class="guide-card-badge">Available</div>
+            </a>
+            <!-- Future guide cards will go here -->
+        </div>
     </div>
 
     <!-- Architecture & Reference Links -->
