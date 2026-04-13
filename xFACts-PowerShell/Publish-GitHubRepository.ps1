@@ -143,7 +143,7 @@ $FileSources = @(
         RepoPath   = "xFACts-ControlCenter/public/docs/pages"
         Filter     = @("*.html")
         Recurse    = $true
-        Description = "Documentation HTML pages (narrative, arch, ref, cc)"
+        Description = "Documentation HTML pages (narrative, arch, ref, cc, guides)"
     }
     @{
         ServerPath = "$CCRoot\public\docs\css"
