@@ -564,14 +564,12 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
         # Audit log
         Invoke-XFActsQuery -Query @"
             INSERT INTO dbo.ActionAuditLog
-                (source_module, entity_type, entity_id, entity_name, field_name, old_value, new_value, changed_by)
+                (page_route, action_type, action_summary, executed_by)
             VALUES
-                ('JBoss', 'AppServer', @cid, 'dm_sharepoint_active_server', 'active_server', @oldVal, @newVal, @user)
+                ('/jboss-monitoring', 'CONFIG_CHANGE', @summary, @user)
 "@ -Parameters @{
-            cid    = [int]$configId
-            oldVal = $oldServer
-            newVal = $targetServer
-            user   = $user
+            summary = "Changed dm_sharepoint_active_server from $oldServer to $targetServer"
+            user    = $user
         }
 
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
