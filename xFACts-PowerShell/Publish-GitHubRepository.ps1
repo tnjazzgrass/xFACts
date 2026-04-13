@@ -199,6 +199,7 @@ $FileSources = @(
 )
 
 # Track generated file paths so orphan cleanup doesn't delete them
+$GeneratedRepoPaths = [System.Collections.Generic.HashSet[string]]::new()
 $GeneratedRepoPaths.Add("manifest-cc-app.json")
 $GeneratedRepoPaths.Add("manifest-cc-docs.json")
 $GeneratedRepoPaths.Add("manifest-powershell.json")
