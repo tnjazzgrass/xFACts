@@ -1179,6 +1179,14 @@ function Convert-GuideToStorageFormat {
     # Standalone breadcrumb nav (guide pages use a simple breadcrumb, not nav.js)
     $body = $body -replace '(?s)<div class="doc-nav">\s*<a[^>]*>.*?</a>\s*<span[^>]*>.*?</span>\s*<span[^>]*>.*?</span>\s*</div>', ''
 
+    # --- Extract page-wrapper content ---
+    # Guide pages have no <script> tag at the end, so the standard converter's
+    # extraction regex (which anchors on </div>\s*<script) won't match.
+    # Extract here before delegating.
+    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*</body>') {
+        $body = '<div class="page-wrapper">' + $Matches[1] + '</div>'
+    }
+
     # --- Now run the standard narrative converter ---
     $converted = Convert-HtmlToStorageFormat -HtmlContent $body -PageTitle $PageTitle
 
@@ -2421,6 +2429,13 @@ function Convert-GuideToMarkdown {
 
     # Standalone breadcrumb nav
     $body = $body -replace '(?s)<div class="doc-nav">\s*<a[^>]*>.*?</a>\s*<span[^>]*>.*?</span>\s*<span[^>]*>.*?</span>\s*</div>', ''
+
+    # --- Extract page-wrapper content ---
+    # Guide pages have no <script> tag, so the standard converter's extraction
+    # regex won't match. Extract here before delegating.
+    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*</body>') {
+        $body = '<div class="page-wrapper">' + $Matches[1] + '</div>'
+    }
 
     # --- Delegate to standard narrative markdown converter ---
     return Convert-HtmlToMarkdown -HtmlContent $body
