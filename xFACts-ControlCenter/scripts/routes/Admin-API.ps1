@@ -298,18 +298,15 @@ Add-PodeRoute -Method Post -Path '/api/admin/drain-mode' -Authentication 'ADLogi
 
         # Log the change to ActionAuditLog
         if ($drainRow) {
+            $oldDrainDisplay = if ($oldDrainVal) { $oldDrainVal } else { 'NULL' }
             Invoke-XFActsQuery -Query @"
                 INSERT INTO dbo.ActionAuditLog
-                    (source_module, entity_type, entity_id, entity_name, field_name, old_value, new_value, changed_by)
+                    (page_route, action_type, action_summary, executed_by)
                 VALUES
-                    (@mod, 'GlobalConfig', @cid, @name, 'setting_value', @oldVal, @newVal, @user)
+                    ('/admin', 'CONFIG_CHANGE', @summary, @user)
 "@ -Parameters @{
-                mod    = $drainRow.module_name
-                cid    = [int]$drainRow.config_id
-                name   = $drainRow.setting_name
-                oldVal = if ($oldDrainVal) { $oldDrainVal } else { [DBNull]::Value }
-                newVal = [string]$val
-                user   = $user
+                summary = "Changed $($drainRow.setting_name) from $oldDrainDisplay to $val"
+                user    = $user
             }
         }
 
@@ -830,19 +827,21 @@ Add-PodeRoute -Method Post -Path '/api/admin/globalconfig/update' -Authenticatio
         }
 
         # Log the change to ActionAuditLog
+        $oldDisplay = if ($oldValue) { $oldValue } else { 'NULL' }
+        $summaryText = if ($fieldName -eq 'is_active') {
+            $actWord = if ($val -eq '1') { 'reactivated' } else { 'deactivated' }
+            "$($setting.setting_name) $actWord (was $oldDisplay)"
+        } else {
+            "Changed $($setting.setting_name) from $oldDisplay to $val"
+        }
         Invoke-XFActsQuery -Query @"
             INSERT INTO dbo.ActionAuditLog
-                (source_module, entity_type, entity_id, entity_name, field_name, old_value, new_value, changed_by)
+                (page_route, action_type, action_summary, executed_by)
             VALUES
-                (@mod, 'GlobalConfig', @cid, @name, @field, @oldVal, @newVal, @user)
+                ('/admin', 'CONFIG_CHANGE', @summary, @user)
 "@ -Parameters @{
-            mod    = $setting.module_name
-            cid    = [int]$configId
-            name   = $setting.setting_name
-            field  = $fieldName
-            oldVal = if ($oldValue) { $oldValue } else { [DBNull]::Value }
-            newVal = $val
-            user   = $user
+            summary = $summaryText
+            user    = $user
         }
 
         $action = if ($fieldName -eq 'is_active') {
@@ -885,13 +884,11 @@ Add-PodeRoute -Method Get -Path '/api/admin/globalconfig/history' -Authenticatio
         $settingName = if ($settingInfo) { $settingInfo[0].setting_name } else { '' }
 
         $results = Invoke-XFActsQuery -Query @"
-            SELECT audit_id AS change_id, entity_id AS config_id,
-                   source_module AS module_name, entity_name AS setting_name,
-                   old_value, new_value, changed_by, changed_dttm
+            SELECT audit_id AS change_id, action_summary, executed_by AS changed_by, executed_dttm AS changed_dttm
             FROM dbo.ActionAuditLog
-            WHERE entity_type = 'GlobalConfig'
-              AND entity_name = @sname
-            ORDER BY changed_dttm DESC
+            WHERE action_type = 'CONFIG_CHANGE'
+              AND action_summary LIKE '%' + @sname + '%'
+            ORDER BY executed_dttm DESC
 "@ -Parameters @{ sname = $settingName }
 
         Write-PodeJsonResponse -Value $results
@@ -1161,19 +1158,16 @@ Add-PodeRoute -Method Post -Path '/api/admin/schedule/update' -Authentication 'A
         }
 
         # Audit log
+        $oldDisplay = if ($oldValue -ne $null -and $oldValue -ne '') { [string]$oldValue } else { 'NULL' }
+        $newDisplay = if ($sqlValue -is [DBNull]) { 'NULL' } else { [string]$sqlValue }
         Invoke-XFActsQuery -Query @"
             INSERT INTO dbo.ActionAuditLog
-                (source_module, entity_type, entity_id, entity_name, field_name, old_value, new_value, changed_by)
+                (page_route, action_type, action_summary, executed_by)
             VALUES
-                (@mod, 'ProcessSchedule', @pid, @pname, @field, @oldVal, @newVal, @user)
+                ('/admin', 'SCHEDULE_CHANGE', @summary, @user)
 "@ -Parameters @{
-            mod    = $moduleName
-            pid    = [int]$processId
-            pname  = $processName
-            field  = $fieldName
-            oldVal = if ($oldValue -ne $null -and $oldValue -ne '') { [string]$oldValue } else { [DBNull]::Value }
-            newVal = if ($sqlValue -is [DBNull]) { [DBNull]::Value } else { [string]$sqlValue }
-            user   = $user
+            summary = "Changed $processName $fieldName from $oldDisplay to $newDisplay"
+            user    = $user
         }
 
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
@@ -1288,15 +1282,12 @@ Add-PodeRoute -Method Post -Path '/api/admin/schedule/add' -Authentication 'ADLo
         # Audit log
         Invoke-XFActsQuery -Query @"
             INSERT INTO dbo.ActionAuditLog
-                (source_module, entity_type, entity_id, entity_name, field_name, old_value, new_value, changed_by)
+                (page_route, action_type, action_summary, executed_by)
             VALUES
-                (@mod, 'ProcessSchedule', @pid, @pname, 'NEW_PROCESS', NULL, @desc, @user)
+                ('/admin', 'SCHEDULE_CHANGE', @summary, @user)
 "@ -Parameters @{
-            mod   = $moduleName
-            pid   = if ($newId) { [int]$newId } else { [DBNull]::Value }
-            pname = $processName
-            desc  = "script=$scriptPath, mode=$executionMode, group=$dependencyGroup, interval=$intervalVal, timeout=$timeoutSeconds"
-            user  = $user
+            summary = "Added process $processName (script=$scriptPath, mode=$executionMode, group=$dependencyGroup, interval=$intervalVal, timeout=$timeoutSeconds)"
+            user    = $user
         }
 
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
@@ -1567,13 +1558,12 @@ Add-PodeRoute -Method Post -Path '/api/admin/alert-resend' -Authentication 'ADLo
         # Audit log
         Invoke-XFActsQuery -Query @"
             INSERT INTO dbo.ActionAuditLog
-                (source_module, entity_type, entity_id, entity_name, field_name, old_value, new_value, changed_by)
+                (page_route, action_type, action_summary, executed_by)
             VALUES
-                ('Teams', 'AlertResend', @origId, @title, 'resend', 'Failed', 'Pending (resend)', @user)
+                ('/admin', 'ALERT_RESEND', @summary, @user)
 "@ -Parameters @{
-            origId = [int]$queueId
-            title  = $orig.title
-            user   = $user
+            summary = "Resent Teams alert $queueId`: $($orig.title)"
+            user    = $user
         }
 
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
