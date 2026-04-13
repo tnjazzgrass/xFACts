@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-12 05:42:11
+Generated: 2026-04-13 04:09:29
 
 ## Module Registry
 
@@ -153,6 +153,7 @@ Generated: 2026-04-12 05:42:11
 | Documentation.Site | batchops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\batchops-cc.html | Batch Monitoring Control Center guide page |
 | Documentation.Site | batchops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\batchops-ref.html | BatchOps DDL reference page |
 | Documentation.Site | batchops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\batchops.html | BatchOps narrative page |
+| Documentation.Site | bdl-import-guide.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\guides\bdl-import-guide.html | BDL Import user guide — standalone step-by-step walkthrough |
 | Documentation.Site | bidata-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\bidata-arch.html | BIDATA architecture page |
 | Documentation.Site | bidata-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\bidata-cc.html | BIDATA Monitoring Control Center guide page |
 | Documentation.Site | bidata-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\bidata-ref.html | BIDATA DDL reference page |
