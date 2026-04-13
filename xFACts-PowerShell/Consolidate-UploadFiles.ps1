@@ -80,6 +80,7 @@ $FileSources = @(
     @{ Source = "$CCRoot\public\docs\pages";             Filter = "*.html"; Description = "Narrative pages" }
     @{ Source = "$CCRoot\public\docs\pages\arch";        Filter = "*.html"; Description = "Architecture pages" }
     @{ Source = "$CCRoot\public\docs\pages\cc";          Filter = "*.html"; Description = "Control Center guide pages" }
+    @{ Source = "$CCRoot\public\docs\pages\guides";      Filter = "*.html"; Description = "User guide pages" }
     @{ Source = "$CCRoot\public\docs\images\cc";          Filter = "*.png";  Description = "Control Center guide screenshots" }
     @{ Source = "$CCRoot\public\docs\pages\ref";         Filter = "*.html"; Description = "Reference pages" }
     @{ Source = "$CCRoot\public\docs\css";               Filter = "*.css";  Description = "Documentation CSS" }
@@ -419,6 +420,7 @@ if ($Execute) {
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\pages\     Documentation narrative pages (HTML)"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\pages\arch\  Documentation architecture pages (HTML)"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\pages\ref\   Documentation reference pages (HTML)"
+    $manifestContent += "E:\xFACts-ControlCenter\public\docs\pages\guides\ User guide pages (HTML)"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\css\       Documentation CSS"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\js\        Documentation JS (nav.js, ddl-loader.js, ddl-erd.js)"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\data\ddl\  JSON data files (from sp_GenerateDDLReference)"
