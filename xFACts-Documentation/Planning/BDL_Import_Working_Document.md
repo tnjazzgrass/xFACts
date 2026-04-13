@@ -1,8 +1,8 @@
 # BDL Import Module -- Working Document
 
-**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance, nullify fields (blanket + record-level), Excel date formatting. Multi-entity + FIXED_VALUE end-to-end verified.  
+**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance, nullify fields (blanket + record-level), Excel date formatting. Multi-entity + FIXED_VALUE end-to-end verified. ServerRegistry API targeting deployed. ActionAuditLog redesigned. BDL Import user guide deployed.  
 **Audience:** Dirk, Matt, Brandon, Claude  
-**Last Updated:** April 11, 2026  
+**Last Updated:** April 13, 2026  
 **Replaces:** `BDL_Import_Module_Design.md`, `BDL_Catalog_Reload_Instructions.md`, `xFACts_Questions_For_Matt.md`, `BDL_Action_Sequences_Planning.md`
 
 ---
@@ -21,7 +21,8 @@ Accessible via card links from the Applications & Integration page (IT team) and
 
 **Database infrastructure (Tools schema):**
 - `tools_enabled` column on `dbo.ServerRegistry` -- master switch for Tools server participation (7 app servers enabled)
-- `Tools.ServerConfig` -- 3 rows (one per environment) with API URLs, dmfs paths, `db_instance`, and pipeline folder names for environment-specific targeting
+- `api_base_url VARCHAR(200)` and `is_api_primary BIT` columns on `dbo.ServerRegistry` -- API targeting for all 7 tools-enabled app servers. ServerRegistry is now the single source of truth for API URLs. Single-server operations query `WHERE is_api_primary = 1`; all-server operations iterate `WHERE api_base_url IS NOT NULL AND tools_enabled = 1`.
+- `Tools.ServerConfig` -- 3 rows (one per environment) with dmfs paths, `db_instance`, and pipeline folder names. Pending rename to `Tools.EnvironmentConfig` (see Next Steps). Currently still has `api_base_url`, `server_id`, and `server_name` columns which will be removed once BDL Import queries are updated to use ServerRegistry.
 - `Tools.AccessConfig` -- department-scoped entity access control (BI seeded with PHONE and CONSUMER_TAG)
 - `Tools.AccessFieldConfig` -- field-level whitelist, child of AccessConfig. Strict whitelist: no child rows = zero field access. Admin tier bypasses entirely. BI seeded with PHONE and CONSUMER_TAG fields.
 - `Tools.BDL_ImportLog` -- import execution audit trail with lifecycle status tracking, `column_mapping` JSON, `value_changes` column for replacement audit, `file_registry_id` from DM API, `parent_log_ids` (VARCHAR(200)) comma-separated list of primary import log_id values for consolidated AR log linking, and `staging_table` column for test-to-prod correlation tracking
@@ -29,6 +30,9 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - `Staging` schema -- created for temporary import staging tables (not registered in xFACts platform, invisible to documentation pipeline)
 - `AVG-STAGE-LSNR` added to `dbo.ServerRegistry` (AG_LISTENER, STAGE, DMSTAGEAG, is_active=0)
 - `Tools.Operations` component -- registered and baselined
+
+**Platform infrastructure (April 13):**
+- `dbo.ActionAuditLog` redesigned -- universal user action audit trail replacing the original field-level config change tracking structure. New columns: `page_route`, `action_type`, `action_summary`, `environment`, `result`, `error_detail`, `executed_by`, `executed_dttm`. 91 legacy rows migrated. All existing writers in `Admin-API.ps1` (5 INSERTs + 1 SELECT) and `JBossMonitoring-API.ps1` (1 INSERT) updated. Serves dual purpose: audit trail and cooldown enforcement for throttled operations.
 
 **Catalog_BDLFormatRegistry columns added:**
 - `action_type VARCHAR(20)` -- controls mapping UI experience (FILE_MAPPED, FIXED_VALUE, HYBRID). CHECK constraint enforced. CONSUMER_TAG and ACCOUNT_TAG set to FIXED_VALUE.
@@ -85,6 +89,12 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - `ApplicationsIntegration.ps1` / `ApplicationsIntegration-API.ps1` / `applications-integration.js` / `applications-integration.css` -- Apps/Int departmental page with BDL Content Management admin modal
 - BI page updated: BDL Import card now links to `/bdl-import`
 - SheetJS `xlsx.full.min.js` v0.20.3 hosted locally for client-side Excel parsing
+
+**Documentation (April 13):**
+- `bdl-import-guide.html` -- standalone step-by-step user guide with visual mockups covering all 5 wizard steps, deployed to `pages/guides/`
+- `tools.html` -- updated with User Guides card section linking to guide pages
+- Documentation pipeline updated: auto-discovery of guide pages from `pages/guides/*.html` (title from `<h1>`, parent from breadcrumb), `Convert-GuideToStorageFormat`, `Convert-GuideToMarkdown`, Phase 1.7 Confluence publishing, markdown export integration
+- `Consolidate-UploadFiles.ps1` and `Publish-GitHubRepository.ps1` updated for guides folder
 
 **BDL Content Management Admin Modal (Apps/Int page):**
 - Two-tier slide-up/slideout panel, admin-only access
@@ -316,7 +326,8 @@ Accessible via card links from the Applications & Integration page (IT team) and
 
 ### Server Configuration
 - `tools_enabled` on ServerRegistry = master switch for Tools server participation
-- `Tools.ServerConfig` = per-environment operational config
+- `api_base_url` and `is_api_primary` on `dbo.ServerRegistry` = API targeting (single source of truth for all server knowledge, deployed April 13)
+- `Tools.ServerConfig` = per-environment operational config (file paths, db_instance, pipeline folders). Pending rename to `Tools.EnvironmentConfig` and removal of server-specific columns (see Next Steps).
 - `db_instance` stores the database server/listener per environment
 
 ### DM API Authentication
@@ -381,6 +392,15 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Only agncy_id works reliably per Matt
 - Identifier must be selected before mapping is enabled
 
+### ActionAuditLog Redesign (April 13)
+- Redesigned from field-level config change tracking (`source_module`, `entity_type`, `entity_id`, `entity_name`, `field_name`, `old_value`, `new_value`, `changed_by`, `changed_dttm`) to universal user action audit trail
+- New structure: `page_route`, `action_type`, `action_summary`, `environment`, `result`, `error_detail`, `executed_by`, `executed_dttm`
+- `action_summary` is a human-readable string built by calling code (e.g., "Changed orchestrator_drain_mode from 0 to 1" or "Triggered Refresh Drools (3 servers)")
+- Serves dual purpose: audit trail and cooldown enforcement for throttled operations (query most recent successful execution by action_type + environment)
+- action_type values: CONFIG_CHANGE, SCHEDULE_CHANGE, JOB_TRIGGER, BDL_IMPORT, ACCESS_CHANGE, ALERT_RESEND
+- 91 legacy rows migrated with derived page_route, action_type, and action_summary from old columns
+- All existing writers updated: Admin-API.ps1 (drain toggle, GlobalConfig update, GlobalConfig history SELECT, schedule update, schedule add, alert resend) and JBossMonitoring-API.ps1 (app server switch)
+
 ---
 
 ## Matt's Answers (From Sessions)
@@ -416,11 +436,20 @@ Accessible via card links from the Applications & Integration page (IT team) and
 ## DM API Integration
 
 ### Server Routing
-| Environment | File Target (dmfs) | API Target | DB Instance |
-|-------------|-------------------|------------|-------------|
+| Environment | File Target (dmfs) | API Target (Primary) | DB Instance |
+|-------------|-------------------|---------------------|-------------|
 | TEST | DM-TEST-APP | DM-TEST-APP | DM-TEST-APP |
 | STAGE | DM-STAGE-APP3 | DM-STAGE-APP | AVG-STAGE-LSNR |
 | PROD | DM-PROD-APP3 | DM-PROD-APP | AVG-PROD-LSNR |
+
+**API URL source:** `dbo.ServerRegistry WHERE is_api_primary = 1 AND tools_enabled = 1` (deployed April 13). File paths and db_instance from `Tools.ServerConfig` (pending rename to `Tools.EnvironmentConfig`).
+
+**All app servers per environment (for multi-server operations like Refresh Drools):**
+| Environment | App Servers | Primary |
+|-------------|-------------|---------|
+| PROD | DM-PROD-APP, DM-PROD-APP2, DM-PROD-APP3 | DM-PROD-APP |
+| STAGE | DM-STAGE-APP, DM-STAGE-APP2, DM-STAGE-APP3 | DM-STAGE-APP |
+| TEST | DM-TEST-APP | DM-TEST-APP |
 
 ### API Calls (Two per import)
 
@@ -509,7 +538,77 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 
 ## Next Steps
 
-### Immediate (Resume Point)
+### ServerConfig → EnvironmentConfig Refactoring (Priority: First thing next session)
+
+**Context:** `api_base_url` and `is_api_primary` columns were added to `dbo.ServerRegistry` for all 7 tools-enabled app servers. ServerRegistry is now the single source of truth for API targeting. `Tools.ServerConfig` needs to be stripped of server-specific data and renamed to reflect its actual role as environment-level configuration.
+
+**Step 1: Rename table**
+- `Tools.ServerConfig` → `Tools.EnvironmentConfig`
+- Update Object_Registry, Object_Metadata, Component_Registry references
+
+**Step 2: Remove server columns from EnvironmentConfig**
+- Drop `api_base_url` — now on `dbo.ServerRegistry`
+- Drop `server_id` — FK to ServerRegistry, no longer needed (environment is the key, not a specific server)
+- Drop `server_name` — redundant with environment lookup
+
+**Step 3: Remaining EnvironmentConfig columns**
+- `config_id` (PK), `environment`, `db_instance`, `dmfs_base_path`, `dmfs_bdl_folder`, `dmfs_cdl_folder`, `dmfs_payment_folder`, `dmfs_newbusiness_folder`, `is_active`, audit columns
+
+**Step 4: Update BDL Import API queries**
+- `BDLImport-API.ps1` — all ServerConfig references become:
+  - File paths/db_instance: `FROM Tools.EnvironmentConfig WHERE environment = @env`
+  - API URL: `FROM dbo.ServerRegistry WHERE environment = @env AND is_api_primary = 1 AND tools_enabled = 1`
+- `xFACts-Helpers.psm1` — any ServerConfig references in `Build-BDLXml` or API call construction
+
+**Step 5: Update ApplicationsIntegration-API.ps1**
+- `/api/bdl-import/environments` endpoint returns environment list from EnvironmentConfig
+- Any other references
+
+**Step 6: Wire ActionAuditLog into BDL Import**
+- Add audit row on successful BDL import execution (action_type = 'BDL_IMPORT', page_route = '/bdl-import')
+- Summary format: `"PHONE: 3,863 rows submitted (File Registry ID: 284519)"`
+- Include environment, result, and error_detail on failure
+
+**API URL query patterns going forward:**
+```sql
+-- Single-server operations (BDL import, Balance Sync, etc.)
+SELECT api_base_url FROM dbo.ServerRegistry
+WHERE environment = @env AND is_api_primary = 1 AND tools_enabled = 1
+
+-- All-server operations (Refresh Drools)
+SELECT server_name, api_base_url FROM dbo.ServerRegistry
+WHERE environment = @env AND api_base_url IS NOT NULL AND tools_enabled = 1
+```
+
+### ActionAuditLog Integration
+
+Wire ActionAuditLog into CC actions not currently tracked:
+- BDL import execution (action_type = 'BDL_IMPORT', summary with entity/rows/file registry ID)
+- BDL catalog management actions (format toggles, element edits, access grants — action_type = 'CONFIG_CHANGE' or 'ACCESS_CHANGE')
+- Any other admin-level actions added in future sessions
+
+### DM Job Triggers (Apps/Int Page)
+
+**Context:** Action buttons on the Applications & Integration page for triggering DM scheduled jobs and processes. No config table needed — these are a fixed set of buttons. Uses ServerRegistry for API URLs, ActionAuditLog for audit + cooldown enforcement.
+
+**Triggers:**
+| # | Name | DM Endpoint | Server Target | Cooldown |
+|---|------|-------------|---------------|----------|
+| R1 | Refresh Drools | POST `/scheduledjobs/REFRESH_DROOLS` | All app servers (sequential) | None |
+| R2 | Release Notices | POST `/scheduledjobs/RELEASE_DOC_REQUESTS` | Single (primary) | 5 min |
+| R3 | Balance Sync | POST `/scheduledjobs/UPDATE_BALANCES` | Single (primary) | 60 min |
+| R4 | Request Validation | POST `/jobs/JC_CBVAL/execute`, `/jobs/JC_CRVAL/execute`, `/jobs/JC_CYVAL/execute` (sequential) | Single (primary) | None |
+| R5 | Launch Job (generic) | POST `/jobs/{job_name}/execute` | Single (primary) | None |
+
+**Design:**
+- Environment selection always explicit (modal or dropdown before execution)
+- R1 iterates all servers: `SELECT server_name, api_base_url FROM dbo.ServerRegistry WHERE environment = @env AND api_base_url IS NOT NULL AND tools_enabled = 1`
+- R2–R5 use primary: `SELECT api_base_url FROM dbo.ServerRegistry WHERE environment = @env AND is_api_primary = 1 AND tools_enabled = 1`
+- Cooldown enforcement via ActionAuditLog: `SELECT TOP 1 executed_dttm WHERE action_type = 'JOB_TRIGGER' AND action_summary LIKE '%Balance Sync%' AND environment = @env AND result = 'SUCCESS' ORDER BY executed_dttm DESC`
+- R5 (generic launcher) should be admin-only — freeform job name input
+- Each execution logs to ActionAuditLog with page_route = '/apps-int', action_type = 'JOB_TRIGGER', environment, result, error_detail
+
+### Immediate (Pre-existing)
 
 1. **Execution progress indicator** -- Re-wire the step-through progress display (building XML -> registering -> submitting) into the unified results pane. CSS classes exist (`.progress-steps`, `.progress-active`, `.progress-complete`). Visual polish item. May not be needed -- BatchOps BDL collector already shows processing status on Batch Monitoring page. Evaluate whether this adds value.
 
@@ -561,6 +660,8 @@ Supports explicit nullification of field values in DM via the `<nullify_fields>`
 - **`custom_properties` XML block** -- Currently included as an empty `<custom_property/>` element. May not be needed; successful third-party tag imports omit it entirely. Consider removing.
 - **Record-level import audit table** -- Pending Matt's input on current tracking pattern. Single table design to accommodate all entity types. Volume concern for large imports (250K rows). Deferred to future session.
 - **`value_changes` population gap** -- Verify and wire in if not connected.
+- **GlobalConfig history UI** -- Admin-API endpoint updated for new ActionAuditLog columns. May need minor admin.js adjustment if a history display exists or is added.
+- **Drop `ActionAuditLog_Legacy`** -- Legacy table preserved during migration. Ready to drop once confirmed stable.
 
 ### Phase 2
 
@@ -605,7 +706,7 @@ For fields with `lookup_table` populated, the typeahead and validation endpoints
 ### Tools.Operations Component
 | Object | Type | Description |
 |--------|------|-------------|
-| ServerConfig | Table | Per-environment DM server configuration (incl. db_instance) |
+| ServerConfig (→ EnvironmentConfig) | Table | Per-environment DM configuration (file paths, db_instance). Pending rename — server-specific columns moving to ServerRegistry. |
 | AccessConfig | Table | Department-scoped tool/entity access control |
 | AccessFieldConfig | Table | Field-level whitelist, child of AccessConfig |
 | BDL_ImportLog | Table | Import execution audit trail (incl. parent_log_ids for consolidated AR log linking) |
@@ -631,6 +732,11 @@ For fields with `lookup_table` populated, the typeahead and validation endpoints
 | ApplicationsIntegration-API.ps1 | API | Apps/Int CC API endpoints (BDL catalog management, format update, department access management) |
 | applications-integration.js | JavaScript | Apps/Int CC client-side logic (BdlCatalog module with Global/Department modes) |
 | applications-integration.css | CSS | Apps/Int CC styles (catalog modal, badges, mode selector, department access styling) |
+
+### Documentation.Site Component
+| Object | Type | Description |
+|--------|------|-------------|
+| bdl-import-guide.html | HTML | BDL Import user guide — standalone step-by-step walkthrough with visual mockups |
 
 ### Credential Infrastructure
 | Object | Location | Description |
