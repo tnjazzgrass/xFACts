@@ -1179,6 +1179,15 @@ function Convert-GuideToStorageFormat {
     # Standalone breadcrumb nav (guide pages use a simple breadcrumb, not nav.js)
     $body = $body -replace '(?s)<div class="doc-nav">\s*<a[^>]*>.*?</a>\s*<span[^>]*>.*?</span>\s*<span[^>]*>.*?</span>\s*</div>', ''
 
+    # Strip ALL remaining span tags (keep content, remove tags)
+    # Guide pages use spans for visual styling only — safe to remove universally
+    $body = $body -replace '<span[^>]*>', ''
+    $body = $body -replace '</span>', ''
+
+    # Guide-specific entity cleanup (not handled by standard converter)
+    $body = $body -replace '&ensp;', '&#8194;'
+    $body = $body -replace '&empty;', '&#8709;'
+
     # --- Extract page-wrapper content ---
     # Guide pages have no <script> tag at the end, so the standard converter's
     # extraction regex (which anchors on </div>\s*<script) won't match.
@@ -2429,6 +2438,10 @@ function Convert-GuideToMarkdown {
 
     # Standalone breadcrumb nav
     $body = $body -replace '(?s)<div class="doc-nav">\s*<a[^>]*>.*?</a>\s*<span[^>]*>.*?</span>\s*<span[^>]*>.*?</span>\s*</div>', ''
+
+    # Strip ALL remaining span tags (keep content, remove tags)
+    $body = $body -replace '<span[^>]*>', ''
+    $body = $body -replace '</span>', ''
 
     # --- Extract page-wrapper content ---
     # Guide pages have no <script> tag, so the standard converter's extraction
