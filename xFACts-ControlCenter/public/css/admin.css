@@ -1129,8 +1129,6 @@ a { color: #9cdcfe; }
     width: 0;
     height: 60vh;
     background: #1e1e1e;
-    border-top: 1px solid #555;
-    border-left: 1px solid #333;
     border-radius: 0 12px 0 0;
     z-index: 1501;
     display: flex;
@@ -1140,6 +1138,8 @@ a { color: #9cdcfe; }
 }
 .detail-panel.visible {
     width: 650px;
+    border-top: 1px solid #555;
+    border-left: 1px solid #333;
 }
 .detail-header {
     display: flex;
