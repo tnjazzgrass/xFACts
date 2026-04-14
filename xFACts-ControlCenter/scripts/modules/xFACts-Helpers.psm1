@@ -1657,16 +1657,16 @@ function Build-BDLXml {
         return @{ Error = "Staging table not found: $StagingTable"; StatusCode = 404 }
     }
 
-    # ── Get server config ───────────────────────────────────────────
-    $serverConfig = Invoke-XFActsQuery -Query @"
-        SELECT environment FROM Tools.ServerConfig
+    # ── Get environment config ───────────────────────────────────────────
+    $envConfig = Invoke-XFActsQuery -Query @"
+        SELECT environment FROM Tools.EnvironmentConfig
         WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $ConfigId }
 
-    if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+    if (-not $envConfig -or $envConfig.Count -eq 0) {
         return @{ Error = 'Environment configuration not found'; StatusCode = 404 }
     }
-    $environment = $serverConfig[0].environment
+    $environment = $envConfig[0].environment
 
     # ── Get entity format info ──────────────────────────────────────
     $formatInfo = Invoke-XFActsQuery -Query @"
@@ -1948,6 +1948,50 @@ function Build-ARLogXml {
         Error    = $null
     }
 }
+
+# ============================================================================
+# HELPER: Get-ToolsServers
+# Returns tools-enabled DM app servers from ServerRegistry for a given
+# environment. Used by all DM API operations (job triggers, BDL import, etc.).
+#
+# -PrimaryOnly: Returns only the is_api_primary server (single-server ops)
+# Without flag: Returns all servers with API URLs (all-server ops like Drools)
+# ============================================================================
+
+function Get-ToolsServers {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Environment,
+
+        [switch]$PrimaryOnly
+    )
+
+    if ($PrimaryOnly) {
+        $servers = Invoke-XFActsQuery -Query @"
+            SELECT server_name, api_base_url, environment
+            FROM dbo.ServerRegistry
+            WHERE environment = @env
+              AND is_api_primary = 1
+              AND tools_enabled = 1
+"@ -Parameters @{ env = $Environment }
+    }
+    else {
+        $servers = Invoke-XFActsQuery -Query @"
+            SELECT server_name, api_base_url, environment
+            FROM dbo.ServerRegistry
+            WHERE environment = @env
+              AND api_base_url IS NOT NULL
+              AND tools_enabled = 1
+            ORDER BY server_name
+"@ -Parameters @{ env = $Environment }
+    }
+
+    if (-not $servers -or $servers.Count -eq 0) {
+        return @()
+    }
+
+    return @($servers)
+}
  
 # ============================================================================
 # Export-ModuleMember
@@ -1978,6 +2022,8 @@ Export-ModuleMember -Function @(
     'Get-CachedResult',
     # Credentials
     'Get-ServiceCredentials',
+    # Tools Server Targeting
+    'Get-ToolsServers',
     # BDL Process
     'Build-BDLXml',
     'Build-ARLogXml',
