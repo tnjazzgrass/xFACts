@@ -831,6 +831,16 @@
         </div>
 
         <p>For fields with lookup tables (like tag names), a <strong>typeahead search</strong> appears as you type. It queries DM&rsquo;s reference tables in real time, showing matching values with their descriptions. Only active values are shown.</p>
+		
+		<!-- NULLIFY FIELDS -->
+        <h3>Nullifying Field Values</h3>
+        <p>Sometimes you need to <strong>clear</strong> a field value in DM rather than update it. BDL Import supports this through the <code>&lt;nullify_fields&gt;</code> XML block, which tells DM to wipe the specified fields back to empty. There are two ways nullification happens:</p>
+
+        <div class="callout tip"><p><strong>Blanket nullification:</strong> On the target field chips in the mapping panel, eligible fields show an <span style="color: #dcdcaa;">&empty;</span> badge. Clicking it marks that field for nullification across <em>every row</em> in the import. The field appears in the Mapped section with a purple &ldquo;&empty; Nullify &rarr; Field Name&rdquo; label. This is the right choice when you want to deliberately wipe a field value for an entire batch &mdash; for example, clearing all phone consent flags.</p></div>
+
+        <div class="callout info"><p><strong>Record-level nullification:</strong> When a column is explicitly mapped but a row has an <strong>empty value</strong> in that column, the system automatically nullifies that field for just that row. The logic is: if you mapped the column, you intended for the source file to control that field. An empty cell means &ldquo;clear it,&rdquo; not &ldquo;leave it alone.&rdquo; Unmapped fields are simply omitted from the XML entirely and are never touched. This mirrors the behavior of the legacy Access toolkit.</p></div>
+
+        <p><strong>Which fields can be nullified?</strong> Not all fields support nullification. Primary identifiers, required fields, and fields flagged as non-nullifiable in the catalog are excluded. The <span style="color: #dcdcaa;">&empty;</span> badge only appears on eligible fields. Non-eligible fields with empty values are silently skipped rather than nullified.</p>
 
         <!-- VALIDATION -->
         <h3>Validation</h3>
