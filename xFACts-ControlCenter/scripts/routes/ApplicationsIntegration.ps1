@@ -5,6 +5,7 @@
 # Departmental dashboard for the Applications & Integration team.
 # Components:
 #   - BDL Import: Card linking to the BDL Import workflow page
+#   - Refresh Drools: Trigger rules engine refresh across DM app servers
 #   - BDL Content Management: Admin-only catalog maintenance (slide-up panel)
 #     with Global Configuration and Department Access modes
 #   - Future: Additional toolkit functions migrated from Access DB
@@ -13,6 +14,10 @@
 # JS:  /js/applications-integration.js
 #
 # Version: Tracked in dbo.System_Metadata (component: DeptOps.ApplicationsIntegration)
+#
+# CHANGELOG
+# ---------
+# 2026-04-13  Added Refresh Drools card with environment selection modal
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authentication 'ADLogin' -ScriptBlock {
@@ -41,7 +46,7 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
     <div class="section" id="admin-section">
         <div class="section-header">
             <h2>Administration</h2>
-            <span class="section-subtitle">Catalog management and configuration</span>
+            <span class="section-subtitle">Catalog management, configuration, and DM operations</span>
         </div>
         <div class="section-body">
             <div class="tool-cards">
@@ -49,6 +54,21 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
                     <div class="tool-icon">&#128218;</div>
                     <div class="tool-label">BDL Content Management</div>
                     <div class="tool-status admin-badge">Entity Types &amp; Field Settings</div>
+                </div>
+                <div class="tool-card admin-tool" onclick="DmJobs.refreshDrools()">
+                    <div class="tool-icon">&#9881;</div>
+                    <div class="tool-label">Refresh Drools</div>
+                    <div class="tool-status admin-badge">Rules Engine Refresh</div>
+                </div>
+                <div class="tool-card admin-tool" onclick="DmJobs.releaseNotices()">
+                    <div class="tool-icon">&#128196;</div>
+                    <div class="tool-label">Release Notices</div>
+                    <div class="tool-status admin-badge">Release Document Requests</div>
+                </div>
+                <div class="tool-card admin-tool" onclick="DmJobs.balanceSync()">
+                    <div class="tool-icon">&#128176;</div>
+                    <div class="tool-label">Balance Sync</div>
+                    <div class="tool-status admin-badge">Update Account Balances</div>
                 </div>
             </div>
         </div>
@@ -152,19 +172,14 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
                     <div class="tool-status">Bulk Data Load</div>
                 </div>
                 <div class="tool-card placeholder">
-                    <div class="tool-icon">&#128176;</div>
-                    <div class="tool-label">Payment Import</div>
-                    <div class="tool-status">Phase 3</div>
-                </div>
-                <div class="tool-card placeholder">
-                    <div class="tool-icon">&#9881;</div>
-                    <div class="tool-label">Job Triggers</div>
-                    <div class="tool-status">Phase 2</div>
-                </div>
-                <div class="tool-card placeholder">
                     <div class="tool-icon">&#128100;</div>
                     <div class="tool-label">Consumer Ops</div>
                     <div class="tool-status">Phase 4</div>
+                </div>
+                <div class="tool-card placeholder">
+                    <div class="tool-icon">&#128179;</div>
+                    <div class="tool-label">Payment Import</div>
+                    <div class="tool-status">Future</div>
                 </div>
                 <div class="tool-card placeholder">
                     <div class="tool-icon">&#128196;</div>
