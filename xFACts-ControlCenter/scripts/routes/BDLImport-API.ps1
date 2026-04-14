@@ -7,10 +7,12 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-13  ServerConfig → EnvironmentConfig migration; API URLs from ServerRegistry
+#             ActionAuditLog wired into BDL import execution
+# 2026-04-11  Added set-nullify-fields endpoint for blanket field nullification
 # 2026-04-04  Added AR log (Jira ticket link) support to execute endpoint
 # 2026-04-04  Added drop_existing support to stage endpoint for re-staging
 # 2026-04-04  Added template CRUD endpoints (list, save, update, delete)
-# 2026-04-11  Added set-nullify-fields endpoint for blanket field nullification
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -19,15 +21,11 @@
 Add-PodeRoute -Method Get -Path '/api/bdl-import/environments' -Authentication 'ADLogin' -ScriptBlock {
     try {
         $results = Invoke-XFActsQuery -Query @"
-            SELECT sc.config_id, sc.server_name, sc.environment, 
-                   sc.api_base_url, sc.dmfs_base_path
-            FROM Tools.ServerConfig sc
-            INNER JOIN dbo.ServerRegistry sr ON sr.server_id = sc.server_id
-            WHERE sc.is_active = 1
-              AND sr.tools_enabled = 1
-              --AND sr.is_active = 1
+            SELECT config_id, environment, dmfs_base_path
+            FROM Tools.EnvironmentConfig
+            WHERE is_active = 1
             ORDER BY 
-                CASE sc.environment 
+                CASE environment 
                     WHEN 'TEST' THEN 1 
                     WHEN 'STAGE' THEN 2 
                     WHEN 'PROD' THEN 3 
@@ -108,7 +106,6 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
         $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
         
         if ($access.Tier -eq 'admin') {
-            # Admin: all visible fields
             $fields = Invoke-XFActsQuery -Query @"
                 SELECT e.element_name, e.display_name, e.data_type, e.max_length,
                        e.table_column, e.lookup_table, e.is_not_nullifiable, 
@@ -123,7 +120,6 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
 "@ -Parameters @{ entityType = $entityType }
         }
         else {
-            # Department: only fields whitelisted in AccessFieldConfig
             $deptScope = ''
             if ($access.DepartmentScopes -and $access.DepartmentScopes.Count -gt 0) {
                 foreach ($scope in $access.DepartmentScopes) {
@@ -203,18 +199,18 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
         # mapping may be empty for pure FIXED_VALUE entities (only identifier mapped)
         if (-not $mapping) { $mapping = [PSCustomObject]@{} }
  
-        $serverConfig = Invoke-XFActsQuery -Query @"
+        $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance, environment
-            FROM Tools.ServerConfig
+            FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
  
-        if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+        if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
  
-        $environment = $serverConfig[0].environment
+        $environment = $envConfig[0].environment
  
         # ── Drop existing staging table if re-staging ───────────────────
         $dropExisting = $body.drop_existing
@@ -360,7 +356,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 $fvElementName = $prop.Name
                 $fvValue = $prop.Value
  
-                # Check if column exists in staging table
                 $colExists = Invoke-XFActsQuery -Query @"
                     SELECT 1 FROM sys.columns c
                     INNER JOIN sys.tables t ON t.object_id = c.object_id
@@ -369,7 +364,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
 "@ -Parameters @{ tableName = $tableName; colName = $fvElementName }
  
                 if (-not $colExists -or $colExists.Count -eq 0) {
-                    # Column doesn't exist — add it with appropriate type
                     $fvMeta = $fieldMetaMap[$fvElementName]
                     $fvSqlType = 'VARCHAR(MAX)'
                     if ($fvMeta) {
@@ -390,7 +384,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     Invoke-XFActsNonQuery -Query "ALTER TABLE $fullTableName ADD $safeCol $fvSqlType NULL"
                 }
  
-                # Update all non-skipped rows with the fixed value
                 $safeCol = "[$fvElementName]"
                 Invoke-XFActsNonQuery -Query @"
                     UPDATE $fullTableName SET $safeCol = @fixedVal WHERE _skip = 0
@@ -438,19 +431,19 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
             return
         }
 
-        $serverConfig = Invoke-XFActsQuery -Query @"
+        $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance, environment
-            FROM Tools.ServerConfig
+            FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
 
-        if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+        if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
 
-        $dbInstance = $serverConfig[0].db_instance
-        $environment = $serverConfig[0].environment
+        $dbInstance = $envConfig[0].db_instance
+        $environment = $envConfig[0].environment
 
         $safeTable = "Staging.[" + $stagingTable.Replace(']', ']]') + "]"
         $stagingRows = Invoke-XFActsQuery -Query "SELECT * FROM $safeTable WHERE _skip = 0 ORDER BY _row_number"
@@ -566,9 +559,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
 # ----------------------------------------------------------------------------
 # GET /api/bdl-import/lookup-search
 # Typeahead search against DM lookup tables for FIXED_VALUE entity fields.
-# Discovers active flag and description columns dynamically via
-# INFORMATION_SCHEMA. Returns top 10 matching values with descriptions
-# when a _nm column is available.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -587,20 +577,19 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
             return
         }
 
-        $serverConfig = Invoke-XFActsQuery -Query @"
+        $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance
-            FROM Tools.ServerConfig
+            FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
 
-        if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+        if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
 
-        $dbInstance = $serverConfig[0].db_instance
+        $dbInstance = $envConfig[0].db_instance
 
-        # Discover columns dynamically
         $columns = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
             SELECT COLUMN_NAME
             FROM INFORMATION_SCHEMA.COLUMNS
@@ -610,7 +599,6 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
 
         $colNames = @($columns | ForEach-Object { $_.COLUMN_NAME })
 
-        # Verify the element_name column exists in the lookup table
         if ($colNames -notcontains $elementName) {
             Write-PodeJsonResponse -Value @{ error = "Column '$elementName' not found in table '$lookupTable'" } -StatusCode 404
             return
@@ -619,7 +607,6 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
         $actvColumn = $colNames | Where-Object { $_ -like '*_actv_flg' } | Select-Object -First 1
         $descColumn = $colNames | Where-Object { $_ -like '*_nm' -and $_ -ne $elementName } | Select-Object -First 1
 
-        # Build and execute the search query
         $safeElement = "[$elementName]"
         $safeTable = "dbo.[$lookupTable]"
         $selectColumns = "$safeElement AS val"
@@ -841,7 +828,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/build-preview' -Authentication
             return
         }
 
-        # Return a truncated preview if the XML is very large
         $xmlPreview = $xmlResult.Xml
         $truncated = $false
         if ($xmlPreview.Length -gt 100000) {
@@ -918,15 +904,34 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 
         $logId = $logInsert[0].log_id
 
-        # ── Step 3: Get server config for file path and API URL ─────────
-        $serverConfig = Invoke-XFActsQuery -Query @"
-            SELECT api_base_url, dmfs_base_path, dmfs_bdl_folder, environment
-            FROM Tools.ServerConfig
+        # ── Step 3: Get environment config (file paths) and API URL ─────
+        $envConfig = Invoke-XFActsQuery -Query @"
+            SELECT dmfs_base_path, dmfs_bdl_folder, environment
+            FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
 
-        $apiBaseUrl = $serverConfig[0].api_base_url
-        $dmfsPath = $serverConfig[0].dmfs_base_path + '\' + $serverConfig[0].dmfs_bdl_folder + '\'
+        $environment = $envConfig[0].environment
+        $dmfsPath = $envConfig[0].dmfs_base_path + '\' + $envConfig[0].dmfs_bdl_folder + '\'
+
+        # API URL from ServerRegistry (primary app server for this environment)
+        $apiServer = Invoke-XFActsQuery -Query @"
+            SELECT api_base_url FROM dbo.ServerRegistry
+            WHERE environment = @env AND is_api_primary = 1 AND tools_enabled = 1
+"@ -Parameters @{ env = $environment }
+
+        if (-not $apiServer -or $apiServer.Count -eq 0) {
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog 
+                SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; errorMsg = "No primary API server found for environment $environment" }
+
+            Write-PodeJsonResponse -Value @{ error = "No primary API server configured for $environment"; log_id = $logId } -StatusCode 500
+            return
+        }
+
+        $apiBaseUrl = $apiServer[0].api_base_url
 
         # ── Step 4: Write XML file to dmfs ──────────────────────────────
         try {
@@ -1030,8 +1035,21 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             return
         }
 
+        # ── ActionAuditLog ──────────────────────────────────────────────
+        try {
+            Invoke-XFActsNonQuery -Query @"
+                INSERT INTO dbo.ActionAuditLog 
+                    (page_route, action_type, action_summary, environment, result, executed_by)
+                VALUES 
+                    ('/bdl-import', 'BDL_IMPORT', @summary, @environment, 'SUCCESS', @executedBy)
+"@ -Parameters @{
+                summary     = "$entityType`: $($xmlResult.RowCount.ToString('N0')) rows submitted (File Registry ID: $fileRegistryId)"
+                environment = $environment
+                executedBy  = $user
+            }
+        } catch { }
+
         # ── Primary BDL Success ─────────────────────────────────────────
-        $primaryLogId = $logId
         $primaryResult = @{
             success          = $true
             log_id           = $logId
@@ -1054,12 +1072,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
                   AND is_active = 1
 "@
             $prodConfig = Invoke-XFActsQuery -Query @"
-                SELECT sc.config_id
-                FROM Tools.ServerConfig sc
-                INNER JOIN dbo.ServerRegistry sr ON sr.server_id = sc.server_id
-                WHERE sc.environment = 'PROD'
-                  AND sc.is_active = 1
-                  AND sr.tools_enabled = 1
+                SELECT config_id
+                FROM Tools.EnvironmentConfig
+                WHERE environment = 'PROD'
+                  AND is_active = 1
 "@
 
             if ($cooldownConfig -and $cooldownConfig.Count -gt 0) {
@@ -1081,13 +1097,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 # ----------------------------------------------------------------------------
 # POST /api/bdl-import/execute-ar-log
 # Builds and submits a single consolidated CONSUMER_ACCOUNT_AR_LOG BDL
-# covering all entity types in a batch execution. Called by the client
-# after all primary entity imports complete successfully.
-# Body: { staging_table, entity_types, jira_ticket, ar_message (optional),
-#          config_id, source_filename, parent_log_ids }
-# entity_types: comma-separated list (e.g., "PHONE,CONSUMER_TAG")
-# parent_log_ids: comma-separated log_id values from primary imports
-# AR log failure returns error but does not affect primary imports.
+# covering all entity types in a batch execution.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1108,7 +1118,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         $jiraTicket = $jiraTicket.Trim()
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── Default AR message if not provided ──────────────────────────
         if (-not $arMessage -or $arMessage.Trim() -eq '') {
             $arMessage = "${jiraTicket}: ${entityTypes} update via BDL Import"
         }
@@ -1126,21 +1135,33 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         }
         $identifierElement = if ($isAcctLevel) { 'cnsmr_accnt_idntfr_agncy_id' } else { 'cnsmr_idntfr_agncy_id' }
 
-        # ── Get server config ───────────────────────────────────────────
-        $serverConfig = Invoke-XFActsQuery -Query @"
-            SELECT api_base_url, dmfs_base_path, dmfs_bdl_folder, environment
-            FROM Tools.ServerConfig
+        # ── Get environment config (file paths) ─────────────────────────
+        $envConfig = Invoke-XFActsQuery -Query @"
+            SELECT dmfs_base_path, dmfs_bdl_folder, environment
+            FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
 
-        if (-not $serverConfig -or $serverConfig.Count -eq 0) {
+        if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
 
-        $apiBaseUrl = $serverConfig[0].api_base_url
-        $dmfsPath = $serverConfig[0].dmfs_base_path + '\' + $serverConfig[0].dmfs_bdl_folder + '\'
-        $environment = $serverConfig[0].environment
+        $environment = $envConfig[0].environment
+        $dmfsPath = $envConfig[0].dmfs_base_path + '\' + $envConfig[0].dmfs_bdl_folder + '\'
+
+        # ── Get API URL from ServerRegistry ─────────────────────────────
+        $apiServer = Invoke-XFActsQuery -Query @"
+            SELECT api_base_url FROM dbo.ServerRegistry
+            WHERE environment = @env AND is_api_primary = 1 AND tools_enabled = 1
+"@ -Parameters @{ env = $environment }
+
+        if (-not $apiServer -or $apiServer.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = "No primary API server configured for $environment" } -StatusCode 500
+            return
+        }
+
+        $apiBaseUrl = $apiServer[0].api_base_url
 
         # ── Build AR log XML ────────────────────────────────────────────
         $arXmlResult = Build-ARLogXml -StagingTable $stagingTable -EntityType $firstEntity `
@@ -1225,7 +1246,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         }
     }
     catch {
-        # If we have a log_id, mark it failed
         if ($arLogId) {
             try {
                 Invoke-XFActsNonQuery -Query @"
@@ -1241,10 +1261,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
 
 # ----------------------------------------------------------------------------
 # POST /api/bdl-import/align-rows
-# Aligns a target staging table's skip set to match a source staging table.
-# Finds identifier values that are skipped in the source but active in the
-# target, and marks them as skipped in the target.
-# Body: { source_table, target_table, identifier_column }
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1258,7 +1274,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'A
             return
         }
 
-        # Verify both staging tables exist
         foreach ($tblName in @($sourceTable, $targetTable)) {
             $tableCheck = Invoke-XFActsQuery -Query @"
                 SELECT 1 FROM sys.tables t
@@ -1272,7 +1287,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'A
             }
         }
 
-        # Verify identifier column exists in both tables
         foreach ($tblName in @($sourceTable, $targetTable)) {
             $colCheck = Invoke-XFActsQuery -Query @"
                 SELECT 1 FROM sys.columns c
@@ -1291,7 +1305,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'A
         $safeTarget = "Staging.[" + $targetTable.Replace(']', ']]') + "]"
         $safeIdCol = "[" + $identifierColumn.Replace(']', ']]') + "]"
 
-        # Skip rows in the target where the identifier is skipped in the source
         $rowsAligned = Invoke-XFActsNonQuery -Query @"
             UPDATE t
             SET t._skip = 1
@@ -1301,7 +1314,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'A
               AND t._skip = 0
 "@
 
-        # Get updated counts for the target table
         $countResult = Invoke-XFActsQuery -Query @"
             SELECT 
                 COUNT(CASE WHEN _skip = 0 THEN 1 END) AS active_count,
@@ -1327,9 +1339,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'A
 
 # ----------------------------------------------------------------------------
 # POST /api/bdl-import/reset-alignment
-# Resets all skipped rows in a staging table back to active.
-# Used to undo alignment on FIXED_VALUE entity staging tables.
-# Body: { staging_table }
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/reset-alignment' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1358,7 +1367,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/reset-alignment' -Authenticati
             UPDATE $safeTable SET _skip = 0 WHERE _skip = 1
 "@
 
-        # Get updated count
         $countResult = Invoke-XFActsQuery -Query @"
             SELECT COUNT(*) AS active_count FROM $safeTable WHERE _skip = 0
 "@
@@ -1378,10 +1386,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/reset-alignment' -Authenticati
 
 # ----------------------------------------------------------------------------
 # POST /api/bdl-import/set-nullify-fields
-# Sets blanket nullification for specified fields on all non-skipped rows
-# in a staging table. Adds _nullify_fields column if it doesn't exist.
-# Body: { staging_table, nullify_fields: ["field1", "field2"] }
-# Empty array clears all nullifications.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1394,7 +1398,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentic
             return
         }
 
-        # Validate staging table exists
         $tableCheck = Invoke-XFActsQuery -Query @"
             SELECT 1 FROM sys.tables t
             INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
@@ -1408,7 +1411,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentic
 
         $safeTable = "Staging.[" + $stagingTable.Replace(']', ']]') + "]"
 
-        # Add _nullify_fields column if it doesn't exist
         $colExists = Invoke-XFActsQuery -Query @"
             SELECT 1 FROM sys.columns c
             INNER JOIN sys.tables t ON t.object_id = c.object_id
@@ -1420,14 +1422,12 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentic
             Invoke-XFActsNonQuery -Query "ALTER TABLE $safeTable ADD [_nullify_fields] VARCHAR(MAX) NULL"
         }
 
-        # Build comma-separated value (or NULL if empty array)
         $nullifyValue = $null
         if ($nullifyFields -and $nullifyFields.Count -gt 0) {
             $nullifyValue = ($nullifyFields | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) -join ','
             if ($nullifyValue -eq '') { $nullifyValue = $null }
         }
 
-        # Update all non-skipped rows
         if ($null -eq $nullifyValue) {
             $rowsUpdated = Invoke-XFActsNonQuery -Query @"
                 UPDATE $safeTable SET [_nullify_fields] = NULL WHERE _skip = 0
@@ -1452,7 +1452,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentic
 
 # ----------------------------------------------------------------------------
 # GET /api/bdl-import/templates?entity_type=PHONE
-# Returns active templates for a given entity type. Visible to all users.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/templates' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1481,7 +1480,6 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/templates' -Authentication 'ADL
 
 # ----------------------------------------------------------------------------
 # POST /api/bdl-import/templates
-# Save a new template. Any authenticated user can create.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/templates' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1498,7 +1496,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/templates' -Authentication 'AD
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # Check for duplicate name within entity type
         $existing = Invoke-XFActsQuery -Query @"
             SELECT template_id FROM Tools.BDL_ImportTemplate
             WHERE entity_type = @entityType AND template_name = @templateName AND is_active = 1
@@ -1538,7 +1535,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/templates' -Authentication 'AD
 
 # ----------------------------------------------------------------------------
 # PUT /api/bdl-import/templates/:id
-# Update a template. Creator or admin only.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Put -Path '/api/bdl-import/templates/:id' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1557,7 +1553,6 @@ Add-PodeRoute -Method Put -Path '/api/bdl-import/templates/:id' -Authentication 
             return
         }
 
-        # Check ownership: creator or admin
         $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
         $isOwner = ($existing[0].created_by -eq $user)
         if (-not $isOwner -and $access.Tier -ne 'admin') {
@@ -1565,12 +1560,10 @@ Add-PodeRoute -Method Put -Path '/api/bdl-import/templates/:id' -Authentication 
             return
         }
 
-        # Build dynamic SET clause based on provided fields
         $setClauses = @("modified_by = @modifiedBy", "modified_dttm = GETDATE()")
         $params = @{ templateId = $templateId; modifiedBy = $user }
 
         if ($body.template_name) {
-            # Check for duplicate name (excluding self)
             $dupCheck = Invoke-XFActsQuery -Query @"
                 SELECT template_id FROM Tools.BDL_ImportTemplate
                 WHERE entity_type = @entityType AND template_name = @templateName
@@ -1605,7 +1598,6 @@ Add-PodeRoute -Method Put -Path '/api/bdl-import/templates/:id' -Authentication 
 
 # ----------------------------------------------------------------------------
 # DELETE /api/bdl-import/templates/:id
-# Soft-delete (deactivate) a template. Creator or admin only.
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Delete -Path '/api/bdl-import/templates/:id' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1623,7 +1615,6 @@ Add-PodeRoute -Method Delete -Path '/api/bdl-import/templates/:id' -Authenticati
             return
         }
 
-        # Check ownership: creator or admin
         $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
         $isOwner = ($existing[0].created_by -eq $user)
         if (-not $isOwner -and $access.Tier -ne 'admin') {
