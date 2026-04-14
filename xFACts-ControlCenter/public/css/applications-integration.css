@@ -401,8 +401,6 @@ a { color: #9cdcfe; }
     width: 0;
     height: 55vh;
     background: #1e1e1e;
-    border-top: 1px solid #555;
-    border-left: 1px solid #333;
     border-radius: 0 12px 0 0;
     z-index: 1501;
     display: flex;
@@ -412,6 +410,8 @@ a { color: #9cdcfe; }
 }
 .bdlcat-detail.visible {
     width: 1000px;
+    border-top: 1px solid #555;
+    border-left: 1px solid #333;
 }
 
 .bdlcat-detail-header {
@@ -709,3 +709,140 @@ a { color: #9cdcfe; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
+
+/* ============================================================
+   DM JOB TRIGGERS — Modal Styles
+   ============================================================ */
+
+/* Environment selection buttons */
+.dmjob-env-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.dmjob-env-btn {
+    padding: 12px 28px;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    background: #252526;
+    color: #d4d4d4;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 90px;
+}
+.dmjob-env-btn:hover { border-color: #888; }
+
+.dmjob-env-test { border-color: rgba(220,220,170,0.3); color: #dcdcaa; }
+.dmjob-env-test:hover { border-color: #dcdcaa; background: rgba(220,220,170,0.08); }
+
+.dmjob-env-stage { border-color: rgba(206,145,120,0.3); color: #ce9178; }
+.dmjob-env-stage:hover { border-color: #ce9178; background: rgba(206,145,120,0.08); }
+
+.dmjob-env-prod { border-color: rgba(239,68,68,0.3); color: #ef4444; }
+.dmjob-env-prod:hover { border-color: #ef4444; background: rgba(239,68,68,0.08); }
+
+/* Environment highlight in confirm message */
+.dmjob-env-highlight { font-weight: 700; }
+.dmjob-env-highlight.dmjob-env-test { color: #dcdcaa; }
+.dmjob-env-highlight.dmjob-env-stage { color: #ce9178; }
+.dmjob-env-highlight.dmjob-env-prod { color: #ef4444; }
+
+/* Server progress list */
+.dmjob-server-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.dmjob-server-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #252526;
+    border: 1px solid #333;
+    border-radius: 4px;
+}
+
+.dmjob-server-name {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    color: #d4d4d4;
+}
+
+.dmjob-server-status {
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 80px;
+    text-align: right;
+}
+
+.dmjob-status-pending { color: #555; }
+.dmjob-status-running { color: #dcdcaa; }
+.dmjob-status-success { color: #4ade80; }
+.dmjob-status-failed { color: #ef4444; }
+
+/* Final summary */
+.dmjob-summary-success {
+    color: #4ade80;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 0;
+}
+
+.dmjob-summary-failed {
+    color: #ef4444;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 0;
+}
+
+.dmjob-summary-partial {
+    color: #dcdcaa;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 0;
+}
+
+.dmjob-error-detail {
+    font-size: 11px;
+    color: #888;
+    padding: 4px 0 4px 12px;
+    border-left: 2px solid #ef4444;
+    margin-top: 4px;
+}
+
+/* Cooldown display */
+.dmjob-cooldown-active {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(220, 220, 170, 0.08);
+    border: 1px solid rgba(220, 220, 170, 0.2);
+    border-radius: 5px;
+    font-size: 12px;
+    color: #dcdcaa;
+    line-height: 1.6;
+}
+ 
+.dmjob-cooldown-icon {
+    font-size: 14px;
+}
+ 
+.dmjob-cooldown-clear {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #666;
+}
+ 
+/* DM API response inline display */
+.dmjob-dm-response {
+    font-size: 10px;
+    color: #888;
+    font-weight: 400;
+    margin-left: 6px;
+}
+ 
