@@ -13,13 +13,19 @@
     workgroup (populated nightly by a DM scheduled job).
 
     Pre-flight exclusions remove consumers that still have data in tables not
-    covered by the delete sequence (cnsmr_pymnt_jrnl, dcmnt_rqst,
-    agnt_crdtbl_actvty, bnkrptcy, schdld_pymnt_smmry, and optionally
-    sspns_trnsctn_cnsmr_idntfr). These consumers are skipped rather than
-    partially deleted.
+    safely deletable in isolation: cnsmr_pymnt_jrnl, dcmnt_rqst,
+    agnt_crdtbl_actvty, bnkrptcy, schdld_pymnt_smmry, agnt_crdt, and
+    consumers with unresolved cross-consumer suspense references. These
+    consumers are skipped rather than partially deleted.
 
-    Delete sequence derived from Matt's sp_Delete_EmptyShell_Consumers with
-    dynamic UDEF discovery and xFACts chunked delete infrastructure.
+    Resolved suspense transactions with cross-consumer payment journal references
+    (caused by consumer merges) are handled by NULLing the historical FK link
+    before deleting the suspense chain. Unresolved cross-consumer suspense
+    triggers exclusion.
+
+    Delete sequence derived from sys.foreign_keys chain analysis against the
+    cnsmr terminal table, with dynamic UDEF discovery and xFACts chunked
+    delete/update infrastructure.
 
     Schedule-aware: reads DmOps.ShellPurge_Schedule to determine execution
     mode per hour (blocked/full/reduced). Checks schedule between batches.
@@ -31,6 +37,15 @@
 
     CHANGELOG
     ---------
+    2026-03-30  Phase 2 redesigned from sys.foreign_keys chain analysis.
+                98→101 steps, 34 new FK-required tables, FK ordering corrected.
+                Added Invoke-TargetUpdate/Invoke-TableUpdate/Step-Update for
+                UPDATE operations (suspense merge reference cleanup).
+                Removed exclude_suspense GlobalConfig toggle — all exclusions
+                managed uniformly in the exclusion checks array.
+                Added agnt_crdt exclusion check.
+                Refined sspns_trnsctn_cnsmr_idntfr exclusion to only catch
+                unresolved cross-consumer suspense (resolved handled by UPDATE).
     2026-03-24  Initial implementation
 
 .PARAMETER ServerInstance
@@ -50,8 +65,9 @@
     When specified, overrides schedule-driven batch sizing.
 
 .PARAMETER ChunkSize
-    Maximum rows per DELETE operation. Larger tables are deleted in chunks
-    of this size to prevent lock escalation and blocking. Default: 5000.
+    Maximum rows per DELETE/UPDATE operation. Larger tables are processed
+    in chunks of this size to prevent lock escalation and blocking.
+    Default: 5000.
 
 .PARAMETER Execute
     Perform deletions. Without this flag, runs in preview mode — shows
@@ -79,11 +95,10 @@ DEPLOYMENT REMINDERS
    - DmOps.ShellPurge.chunk_size (rows per delete chunk, default 5000)
    - DmOps.ShellPurge.shell_purge_abort (emergency shutoff, 0=normal, 1=stop)
    - DmOps.ShellPurge.alerting_enabled (1=on, 0=suppress alerts)
-   - DmOps.ShellPurge.exclude_suspense (1=exclude consumers with suspense data)
 4. ServerRegistry.dmops_shell_purge_enabled must be 1 on the target server.
 5. DmOps.ShellPurge_Schedule must have 7 rows with hourly mode values.
 6. The WFAPURGE workgroup must exist in crs5_oltp.dbo.wrkgrp.
-7. The service account needs DELETE permission on crs5_oltp tables.
+7. The service account needs DELETE and UPDATE permission on crs5_oltp tables.
 ================================================================================
 #>
 
@@ -194,6 +209,11 @@ function Invoke-TargetQuery {
 }
 
 function Invoke-TargetDelete {
+    <#
+    .SYNOPSIS
+        Executes a DELETE against the target crs5_oltp with snapshot isolation,
+        deadlock retry, and chunked execution for production safety.
+    #>
     param(
         [Parameter(Mandatory)]
         [string]$DeleteSQL,
@@ -270,6 +290,91 @@ SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
     }
 
     return $totalRowsDeleted
+}
+
+function Invoke-TargetUpdate {
+    <#
+    .SYNOPSIS
+        Executes an UPDATE against the target crs5_oltp with snapshot isolation,
+        deadlock retry, and chunked execution for production safety.
+        Mirrors Invoke-TargetDelete but for UPDATE operations (e.g., NULLing
+        FK references before deleting parent records).
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$UpdateSQL,
+        [int]$Timeout = 600,
+        [int]$MaxRetries = 10,
+        [int]$RetryDelaySeconds = 5
+    )
+
+    $totalRowsUpdated = 0
+    $chunkNumber = 0
+
+    $chunkedSQL = $UpdateSQL -replace '(?i)^UPDATE\s+', "UPDATE TOP ($($Script:BatchChunkSize)) "
+
+    while ($true) {
+        $chunkNumber++
+        $retryCount = 0
+        $chunkUpdated = -1
+
+        while ($retryCount -lt $MaxRetries) {
+            $cmd = $Script:TargetConnection.CreateCommand()
+            $cmd.CommandTimeout = $Timeout
+
+            try {
+                $cmd.CommandText = @"
+SET DEADLOCK_PRIORITY LOW;
+SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+$chunkedSQL
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+"@
+                $chunkUpdated = $cmd.ExecuteNonQuery()
+                break
+            }
+            catch {
+                $errNum = 0
+                $innerEx = $_.Exception
+                while ($innerEx.InnerException) { $innerEx = $innerEx.InnerException }
+                if ($innerEx -is [System.Data.SqlClient.SqlException]) {
+                    $errNum = $innerEx.Number
+                }
+
+                if ($errNum -in @(1204, 1205, 1222, 3960)) {
+                    $retryCount++
+                    if ($retryCount -ge $MaxRetries) {
+                        Write-Log "      Retry limit ($MaxRetries) exceeded on chunk $chunkNumber" "ERROR"
+                        throw $_
+                    }
+                    Write-Log "      Retryable error ($errNum), attempt $retryCount/$MaxRetries — waiting ${RetryDelaySeconds}s..." "WARN"
+                    Start-Sleep -Seconds $RetryDelaySeconds
+
+                    try {
+                        $resetCmd = $Script:TargetConnection.CreateCommand()
+                        $resetCmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
+                        $resetCmd.ExecuteNonQuery() | Out-Null
+                        $resetCmd.Dispose()
+                    } catch { }
+                }
+                else {
+                    throw $_
+                }
+            }
+            finally {
+                $cmd.Dispose()
+            }
+        }
+
+        if ($chunkUpdated -le 0) { break }
+
+        $totalRowsUpdated += $chunkUpdated
+
+        if ($chunkUpdated -lt $Script:BatchChunkSize) { break }
+
+        Start-Sleep -Milliseconds 100
+    }
+
+    return $totalRowsUpdated
 }
 
 # ============================================================================
@@ -432,6 +537,12 @@ function Write-ConsumerLog {
 # ============================================================================
 
 function Invoke-TableDelete {
+    <#
+    .SYNOPSIS
+        Executes a single table deletion with logging and error handling.
+        In preview mode, counts rows. In execute mode, deletes with chunking.
+        Returns $true on success, $false on failure.
+    #>
     param(
         [Parameter(Mandatory)]
         $Order,
@@ -505,6 +616,11 @@ function Invoke-TableDelete {
 }
 
 function Invoke-JoinTableDelete {
+    <#
+    .SYNOPSIS
+        Same as Invoke-TableDelete but for DELETE with JOIN syntax (alias required).
+        Returns $true on success, $false on failure.
+    #>
     param(
         [Parameter(Mandatory)]
         $Order,
@@ -566,6 +682,83 @@ function Invoke-JoinTableDelete {
         }
         catch {
             $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
+            Write-Log "  [$Order] $TableName$passLabel — FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
+            $Script:TablesFailed++
+            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
+                -RowsAffected 0 -DurationMs $durationMs -Status 'Failed' -ErrorMessage $_.Exception.Message
+            return $false
+        }
+    }
+}
+
+function Invoke-TableUpdate {
+    <#
+    .SYNOPSIS
+        Executes a single table UPDATE with logging and error handling.
+        In preview mode, counts rows. In execute mode, updates with chunking.
+        Used for severing FK references before deleting parent records
+        (e.g., NULLing resolved suspense references on merged consumers).
+        Returns $true on success, $false on failure.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        $Order,
+        [Parameter(Mandatory)]
+        [string]$TableName,
+        [Parameter(Mandatory)]
+        [string]$UpdateStatement,
+        [string]$CountQuery,
+        [string]$PassDescription = "",
+        [bool]$PreviewOnly = $true
+    )
+
+    $passLabel = if ($PassDescription) { " ($PassDescription)" } else { "" }
+
+    if ($PreviewOnly) {
+        try {
+            $countResult = Invoke-TargetQuery -Query $CountQuery -Timeout 300
+            $previewCount = [long]$countResult.Rows[0].row_count
+            if ($previewCount -eq 0) {
+                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
+                $Script:TablesSkipped++
+                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
+                    -RowsAffected 0 -DurationMs 0 -Status 'Skipped'
+            } else {
+                Write-Log "  [$Order] $TableName$passLabel — would update $previewCount rows" "INFO"
+                $Script:TablesProcessed++
+                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
+                    -RowsAffected $previewCount -DurationMs 0 -Status 'Success'
+            }
+            return $true
+        }
+        catch {
+            Write-Log "  [$Order] $TableName$passLabel — count failed: $($_.Exception.Message)" "WARN"
+            $Script:TablesFailed++
+            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
+                -RowsAffected 0 -DurationMs 0 -Status 'Failed' -ErrorMessage $_.Exception.Message
+            return $false
+        }
+    }
+    else {
+        $updateStart = Get-Date
+        try {
+            $rowsUpdated = Invoke-TargetUpdate -UpdateSQL $UpdateStatement
+            $durationMs = [int]((Get-Date) - $updateStart).TotalMilliseconds
+            if ($rowsUpdated -eq 0) {
+                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
+                $Script:TablesSkipped++
+                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
+                    -RowsAffected 0 -DurationMs $durationMs -Status 'Skipped'
+            } else {
+                Write-Log "  [$Order] $TableName$passLabel — updated $rowsUpdated rows (${durationMs}ms)" "SUCCESS"
+                $Script:TablesProcessed++
+                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
+                    -RowsAffected $rowsUpdated -DurationMs $durationMs -Status 'Success'
+            }
+            return $true
+        }
+        catch {
+            $durationMs = [int]((Get-Date) - $updateStart).TotalMilliseconds
             Write-Log "  [$Order] $TableName$passLabel — FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
             $Script:TablesFailed++
             Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
@@ -822,16 +1015,16 @@ if ($batchResult.Rows.Count -eq 0) {
     break
 }
 
-# Step 3c: Validate batch against exclusion tables (catch new exclusions since seed)
+# Step 3d: Validate batch against exclusion tables (catch new exclusions since seed)
 $exclusionChecks = @(
 #    @{ Name = 'cnsmr_pymnt_jrnl';              SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj WHERE cpj.cnsmr_id = sc.cnsmr_id)" }
 #    @{ Name = 'dcmnt_rqst';                    SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.dcmnt_rqst dr WHERE dr.dcmnt_rqst_send_to_entty_id = sc.cnsmr_id AND dr.dcmnt_rqst_send_to_entty_assctn_cd = 2)" }
-#    @{ Name = 'agnt_crdtbl_actvty';             SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_id = sc.cnsmr_id)" }
-#    @{ Name = 'agnt_crdtbl_actvty_via_smmry';   SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT sps.schdld_pymnt_smmry_id FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id))" }
+#    @{ Name = 'agnt_crdtbl_actvty';            SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_id = sc.cnsmr_id)" }
+#    @{ Name = 'agnt_crdtbl_actvty_via_smmry';  SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT sps.schdld_pymnt_smmry_id FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id))" }
 #    @{ Name = 'agnt_crdt';                     SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdt ac INNER JOIN crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj ON ac.cnsmr_pymnt_jrnl_id = cpj.cnsmr_pymnt_jrnl_id WHERE cpj.cnsmr_id = sc.cnsmr_id)" }
 #    @{ Name = 'bnkrptcy';                      SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.bnkrptcy b WHERE b.cnsmr_id = sc.cnsmr_id)" }
-#    @{ Name = 'schdld_pymnt_smmry';             SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id)" }
-#    @{ Name = 'sspns_trnsctn_cnsmr_idntfr';    SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci WHERE stci.cnsmr_id = sc.cnsmr_id)" }
+#    @{ Name = 'schdld_pymnt_smmry';            SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id)" }
+#    @{ Name = 'sspns_unresolved_cross_consumer'; SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci INNER JOIN crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci ON stci.sspns_trnsctn_cnsmr_idntfr_id = sci.sspns_trnsctn_cnsmr_idntfr_id INNER JOIN crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj ON cpj.sspns_cnsmr_imprt_trnsctn_id = sci.sspns_cnsmr_imprt_trnsctn_id WHERE stci.cnsmr_id = sc.cnsmr_id AND cpj.cnsmr_id != stci.cnsmr_id AND sci.sspns_trnsctn_stts_cd NOT IN (3, 5, 7, 10))" }
 )
 
 try {
@@ -989,11 +1182,18 @@ $materializeSQL = @"
     WHERE cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers);
     CREATE CLUSTERED INDEX CIX ON #shell_smmry_ids (schdld_pymnt_smmry_id);
 
+    IF OBJECT_ID('tempdb..#shell_ar_log_ids') IS NOT NULL DROP TABLE #shell_ar_log_ids;
+    SELECT cnsmr_accnt_ar_log_id INTO #shell_ar_log_ids
+    FROM crs5_oltp.dbo.cnsmr_accnt_ar_log
+    WHERE cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers);
+    CREATE CLUSTERED INDEX CIX ON #shell_ar_log_ids (cnsmr_accnt_ar_log_id);
+
     SELECT
         (SELECT COUNT(*) FROM #shell_pymnt_instrmnt_ids) AS instrmnt_count,
         (SELECT COUNT(*) FROM #shell_pymnt_jrnl_ids) AS jrnl_count,
         (SELECT COUNT(*) FROM #shell_cntct_trnsctn_ids) AS cntct_count,
-        (SELECT COUNT(*) FROM #shell_smmry_ids) AS smmry_count;
+        (SELECT COUNT(*) FROM #shell_smmry_ids) AS smmry_count,
+        (SELECT COUNT(*) FROM #shell_ar_log_ids) AS ar_log_count;
 "@
 
 try {
@@ -1010,12 +1210,14 @@ try {
     $jrnlCount = [long]$countTable.Rows[0].jrnl_count
     $cntctCount = [long]$countTable.Rows[0].cntct_count
     $smmryCount = [long]$countTable.Rows[0].smmry_count
+    $arLogCount = [long]$countTable.Rows[0].ar_log_count
 
     Write-Log "  Intermediate ID tables materialized:" "SUCCESS"
     Write-Log "    Payment instruments: $instrmntCount" "INFO"
     Write-Log "    Payment journals:    $jrnlCount" "INFO"
     Write-Log "    Contact txn logs:    $cntctCount" "INFO"
     Write-Log "    Sched pymnt smmry:   $smmryCount" "INFO"
+    Write-Log "    AR Log entries:      $arLogCount" "INFO"
 }
 catch {
     Write-Log "Failed to create intermediate temp tables: $($_.Exception.Message)" "ERROR"
@@ -1040,6 +1242,7 @@ $wCntctLog    = "cnsmr_cntct_trnsctn_log_id IN (SELECT cnsmr_cntct_trnsctn_log_i
 $wInstrmnt    = "cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM #shell_pymnt_instrmnt_ids)"
 $wJrnl        = "cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
 $wSmmry       = "schdld_pymnt_smmry_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
+$wArLog       = "cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
 
 function Step-Delete {
     param([hashtable]$Params)
@@ -1055,6 +1258,16 @@ function Step-JoinDelete {
     param([hashtable]$Params)
     if ($Script:StopProcessing) { return }
     $ok = Invoke-JoinTableDelete @Params -PreviewOnly $previewOnly
+    if (-not $ok) {
+        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
+        $Script:StopProcessing = $true
+    }
+}
+
+function Step-Update {
+    param([hashtable]$Params)
+    if ($Script:StopProcessing) { return }
+    $ok = Invoke-TableUpdate @Params -PreviewOnly $previewOnly
     if (-not $ok) {
         Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
         $Script:StopProcessing = $true
@@ -1096,7 +1309,7 @@ Write-Log ""
 
 # ── Phase 2: Consumer-Level Tables (FK-ordered, all gaps filled) ──
 # Redesigned from sys.foreign_keys chain analysis against cnsmr terminal table.
-# 98 steps: 34 new FK-required tables, 11 ordering corrections, 3 exclusion-controlled chains.
+# 101 steps: 34 new FK-required tables, FK ordering corrected, 3 exclusion-controlled chains.
 # Tables marked [NEW] were not in the previous sequence.
 # Tables marked [EXCL] are exclusion-controlled — currently no-ops while exclusions are active.
 Write-Log "  Phase 2: Consumer-Level Tables" "INFO"
@@ -1130,12 +1343,10 @@ Step-Delete @{Order=25; TableName='job_file'; WhereClause=$wCnsmr}
 Step-Delete @{Order=26; TableName='cnsmr_accnt_ownrs'; WhereClause=$wCnsmr}
 
 # ── bal_rdctn_plan chain (FK: stpdwn → plan → cnsmr) ──
-# [NEW] bal_rdctn_plan_stpdwn: FK child of bal_rdctn_plan — 0 rows
 Step-Delete @{Order=27; TableName='bal_rdctn_plan_stpdwn'; WhereClause="bal_rdctn_plan_id IN (SELECT bal_rdctn_plan_id FROM crs5_oltp.dbo.bal_rdctn_plan WHERE $wCnsmr)"}
 Step-Delete @{Order=28; TableName='bal_rdctn_plan'; WhereClause=$wCnsmr}
 
 # ── ca_case chain (FK: children → ca_case → cnsmr) ──
-# [NEW] All ca_case children — 0 rows across all tables
 Step-Delete @{Order=29; TableName='ca_case_accnt_assctn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
 Step-Delete @{Order=30; TableName='ca_case_ar_log_assctn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
 Step-Delete @{Order=31; TableName='ca_case_bal_wrk_actn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
@@ -1149,74 +1360,62 @@ Step-Delete @{Order=38; TableName='wrkgrp_scan_lst_case_cache'; WhereClause="ca_
 Step-Delete @{Order=39; TableName='ca_case'; WhereClause=$wCnsmr}
 
 # ── cmpgn chain (FK: dialer_trnsctn_log → cmpgn_trnsctn_log → cnsmr, cmpgn_cache → cnsmr_Phn) ──
-# [NEW] dialer_trnsctn_log: FK child of cmpgn_trnsctn_log — 0 rows
 Step-Delete @{Order=40; TableName='dialer_trnsctn_log'; WhereClause="cmpgn_trnsctn_log_id IN (SELECT cmpgn_trnsctn_log_id FROM crs5_oltp.dbo.cmpgn_trnsctn_log WHERE $wCnsmr)"}
 Step-Delete @{Order=41; TableName='cmpgn_trnsctn_log'; WhereClause=$wCnsmr}
 Step-Delete @{Order=42; TableName='cmpgn_cache'; WhereClause=$wCnsmr}
-# cnsmr_Phn must come after cmpgn_cache and cmpgn_trnsctn_log (both FK to cnsmr_Phn)
 Step-Delete @{Order=43; TableName='cnsmr_Phn'; WhereClause=$wCnsmr}
 
-# ── cnsmr_accnt_ar_log chain — CORRECTED ORDERING ──
-# Contact log children BEFORE cnsmr_cntct_trnsctn_log BEFORE cnsmr_accnt_ar_log
+# ── cnsmr_accnt_ar_log chain — contact log children BEFORE ar_log ──
 Step-Delete @{Order=44; TableName='cnsmr_cntct_addrs_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
-# [NEW] cnsmr_cntct_phn_log: FK child of cnsmr_cntct_trnsctn_log — 83 rows
 Step-Delete @{Order=45; TableName='cnsmr_cntct_phn_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
-# [NEW] cnsmr_cntct_email_log: FK child of cnsmr_cntct_trnsctn_log — 0 rows
 Step-Delete @{Order=46; TableName='cnsmr_cntct_email_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
 Step-Delete @{Order=47; TableName='cnsmr_cntct_trnsctn_log'; WhereClause=$wCnsmr}
-# [NEW] cnsmr_task_itm_cnsmr_accnt_ar_log_assctn: FK to cnsmr_accnt_ar_log and cnsmr_task_itm — 0 rows
-Step-Delete @{Order=48; TableName='cnsmr_task_itm_cnsmr_accnt_ar_log_assctn'; WhereClause="cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM crs5_oltp.dbo.cnsmr_accnt_ar_log WHERE $wCnsmr)"}
+Step-Delete @{Order=48; TableName='cnsmr_task_itm_cnsmr_accnt_ar_log_assctn'; WhereClause=$wArLog}
 
-# [NEW] agnt_crdtbl_actvty chain via ar_log — must clear before cnsmr_accnt_ar_log
+# ── agnt_crdtbl_actvty chain via ar_log — must clear before cnsmr_accnt_ar_log ──
 Step-JoinDelete @{
     Order = 49; TableName = 'agnt_crdtbl_actvty_spprssn'
-    DeleteStatement = "DELETE acas FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM crs5_oltp.dbo.cnsmr_accnt_ar_log WHERE $wCnsmr)"
-    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM crs5_oltp.dbo.cnsmr_accnt_ar_log WHERE $wCnsmr)"
-    PassDescription = 'Pass 1: via ar_log (before ar_log delete)'
+    DeleteStatement = "DELETE acas FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
+    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
+    PassDescription = 'Pass 1: via ar_log'
 }
 
 Step-JoinDelete @{
     Order = 50; TableName = 'agnt_crdtbl_actvty_crdt_assctn'
-    DeleteStatement = "DELETE acac FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM crs5_oltp.dbo.cnsmr_accnt_ar_log WHERE $wCnsmr)"
-    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM crs5_oltp.dbo.cnsmr_accnt_ar_log WHERE $wCnsmr)"
-    PassDescription = 'Pass 1: via ar_log (before ar_log delete)'
+    DeleteStatement = "DELETE acac FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
+    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
+    PassDescription = 'Pass 1: via ar_log'
 }
 
 Step-JoinDelete @{
     Order = 51; TableName = 'agnt_crdtbl_actvty'
-    DeleteStatement = "DELETE FROM crs5_oltp.dbo.agnt_crdtbl_actvty WHERE cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM crs5_oltp.dbo.cnsmr_accnt_ar_log WHERE $wCnsmr)"
-    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty WHERE cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM crs5_oltp.dbo.cnsmr_accnt_ar_log WHERE $wCnsmr)"
-    PassDescription = 'Pass 1: via ar_log (before ar_log delete)'
+    DeleteStatement = "DELETE FROM crs5_oltp.dbo.agnt_crdtbl_actvty WHERE cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
+    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty WHERE cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
+    PassDescription = 'Pass 1: via ar_log'
 }
 
 Step-Delete @{Order=52; TableName='crdtr_srvc_evnt'; WhereClause=$wCnsmr; PassDescription='before ar_log (FK dependency)'}
-Step-Delete @{Order=53; TableName='cnsmr_accnt_ar_log'; WhereClause=$wCnsmr}
+Step-Delete @{Order=53; TableName='cnsmr_accnt_ar_log'; WhereClause=$wArLog}
 
 # ── cnsmr_task_itm (must come after ar_log association at 48) ──
 Step-Delete @{Order=54; TableName='cnsmr_task_itm'; WhereClause=$wCnsmr}
 
 # ── invc_crrctn chain (FK: dtl children → parent → cnsmr) ──
-# [NEW] invc_crrctn_dtl_stgng: FK child of invc_crrctn_trnsctn_stgng — 0 rows
 Step-Delete @{Order=55; TableName='invc_crrctn_dtl_stgng'; WhereClause="invc_crrctn_trnsctn_stgng_id IN (SELECT invc_crrctn_trnsctn_stgng_id FROM crs5_oltp.dbo.invc_crrctn_trnsctn_stgng WHERE $wCnsmr)"}
 Step-Delete @{Order=56; TableName='invc_crrctn_trnsctn_stgng'; WhereClause=$wCnsmr}
-# [NEW] invc_crrctn_dtl: FK child of invc_crrctn_trnsctn — 0 rows
 Step-Delete @{Order=57; TableName='invc_crrctn_dtl'; WhereClause="invc_crrctn_trnsctn_id IN (SELECT invc_crrctn_trnsctn_id FROM crs5_oltp.dbo.invc_crrctn_trnsctn WHERE $wCnsmr)"}
 Step-Delete @{Order=58; TableName='invc_crrctn_trnsctn'; WhereClause=$wCnsmr}
 
 # ── jdgmnt chain (FK: jdgmnt_addtnl_info → jdgmnt → cnsmr) ──
-# [NEW] jdgmnt_addtnl_info: FK child of jdgmnt — 5,237 rows
 Step-Delete @{Order=59; TableName='jdgmnt_addtnl_info'; WhereClause="jdgmnt_id IN (SELECT jdgmnt_id FROM crs5_oltp.dbo.jdgmnt WHERE $wCnsmr)"}
 Step-Delete @{Order=60; TableName='jdgmnt'; WhereClause=$wCnsmr}
 
 # ── Rltd_Prsn chain (FK: rltd_prsn_tag → Rltd_Prsn → cnsmr) ──
-# [NEW] rltd_prsn_tag: FK child of Rltd_Prsn — 0 rows
 Step-Delete @{Order=61; TableName='rltd_prsn_tag'; WhereClause="rltd_prsn_id IN (SELECT rltd_prsn_id FROM crs5_oltp.dbo.Rltd_Prsn WHERE $wCnsmr)"}
 Step-Delete @{Order=62; TableName='Rltd_Prsn'; WhereClause=$wCnsmr}
 
 # ── cnsmr_chck_rqst chain (FK: children → cnsmr_chck_rqst → cnsmr) ──
-# [NEW] cnsmr_accnt_bckt_chck_rqst: FK child of cnsmr_chck_rqst — 55 rows
 Step-Delete @{Order=63; TableName='cnsmr_accnt_bckt_chck_rqst'; WhereClause="cnsmr_chck_rqst_id IN (SELECT cnsmr_chck_rqst_id FROM crs5_oltp.dbo.cnsmr_chck_rqst WHERE $wCnsmr)"}
-# [NEW] cnsmr_chck_btch_log: FK child of cnsmr_chck_rqst — 6 rows
 Step-Delete @{Order=64; TableName='cnsmr_chck_btch_log'; WhereClause="cnsmr_chck_rqst_id IN (SELECT cnsmr_chck_rqst_id FROM crs5_oltp.dbo.cnsmr_chck_rqst WHERE $wCnsmr)"}
 Step-Delete @{Order=65; TableName='cnsmr_chck_rqst'; WhereClause=$wCnsmr}
 
@@ -1224,143 +1423,164 @@ Step-Delete @{Order=65; TableName='cnsmr_chck_rqst'; WhereClause=$wCnsmr}
 Step-Delete @{Order=66; TableName='notice_rqst'; WhereClause=$wCnsmr}
 
 # ── sttlmnt_offr chain — must come before cnsmr_pymnt_instrmnt AND schdld_pymnt_smmry ──
-# [NEW] sttlmnt_offr_accnt_assctn: FK child of sttlmnt_offr — 5 rows
 Step-Delete @{Order=67; TableName='sttlmnt_offr_accnt_assctn'; WhereClause="sttlmnt_offr_id IN (SELECT sttlmnt_offr_id FROM crs5_oltp.dbo.sttlmnt_offr WHERE $wCnsmr)"}
-# [NEW] sttlmnt_offr_systm_dtl: FK child of sttlmnt_offr — 5 rows
 Step-Delete @{Order=68; TableName='sttlmnt_offr_systm_dtl'; WhereClause="sttlmnt_offr_id IN (SELECT sttlmnt_offr_id FROM crs5_oltp.dbo.sttlmnt_offr WHERE $wCnsmr)"}
 Step-Delete @{Order=69; TableName='sttlmnt_offr'; WhereClause=$wCnsmr}
 
 # ── epp chain (FK: children → epp_pymnt_typ_cnfg → cnsmr_pymnt_instrmnt) ──
-# Must come before cnsmr_pymnt_instrmnt
-# [NEW] epp_cmmnctn_log: FK child of epp_pymnt_typ_cnfg — 4,945 rows
 Step-Delete @{Order=70; TableName='epp_cmmnctn_log'; WhereClause="epp_pymnt_typ_cnfg_id IN (SELECT epp_pymnt_typ_cnfg_id FROM crs5_oltp.dbo.epp_pymnt_typ_cnfg WHERE $wInstrmnt)"}
-# [NEW] epp_vrfctn_rspns: FK child of epp_pymnt_typ_cnfg — 8 rows
 Step-Delete @{Order=71; TableName='epp_vrfctn_rspns'; WhereClause="epp_pymnt_typ_cnfg_id IN (SELECT epp_pymnt_typ_cnfg_id FROM crs5_oltp.dbo.epp_pymnt_typ_cnfg WHERE $wInstrmnt)"}
-# [NEW] epp_pymnt_typ_cnfg: FK child of cnsmr_pymnt_instrmnt — 8 rows
 Step-Delete @{Order=72; TableName='epp_pymnt_typ_cnfg'; WhereClause=$wInstrmnt}
-# epp_pymnt_rspns: FK to cnsmr_pymnt_instrmnt — must come before it
 Step-Delete @{Order=73; TableName='epp_pymnt_rspns'; WhereClause=$wCnsmr}
 
 # ── cpm_pm_assctn (FK to both cnsmr_pymnt_instrmnt AND cnsmr_pymnt_mthd) ──
-# [NEW] Must come before both parents — 0 rows
 Step-Delete @{Order=74; TableName='cpm_pm_assctn'; WhereClause=$wInstrmnt}
 
 # ── Scheduled payment children (before schdld_pymnt_instnc) ──
-# [NEW] pymnt_schdl_notice_rqst_assctn: FK child of schdld_pymnt_instnc — 0 rows
 Step-Delete @{Order=75; TableName='pymnt_schdl_notice_rqst_assctn'; WhereClause="schdld_pymnt_instnc_id IN (SELECT schdld_pymnt_instnc_id FROM crs5_oltp.dbo.schdld_pymnt_instnc WHERE $wSmmry)"}
 Step-Delete @{Order=76; TableName='schdld_pymnt_cnsmr_accnt_assctn'; WhereClause=$wSmmry; PassDescription='via smmry'}
- 
+
 # ── Agent credit chain [EXCL] — must clear before cnsmr_pymnt_jrnl ──
 # agnt_crdt has FK on cnsmr_pymnt_jrnl_id
-# [NEW][EXCL] agnt_crdt_spprssn: FK child of agnt_crdt — 0 rows
 Step-Delete @{Order=77; TableName='agnt_crdt_spprssn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE $wJrnl)"; PassDescription='[EXCL] via pymnt_jrnl'}
-# [NEW][EXCL] agnt_crdtbl_actvty_crdt_assctn: FK child of agnt_crdt — 1.4M rows
 Step-Delete @{Order=78; TableName='agnt_crdtbl_actvty_crdt_assctn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE $wJrnl)"; PassDescription='[EXCL] Pass 1: via pymnt_jrnl'}
-# [NEW][EXCL] agnt_crdt: FK child of cnsmr_pymnt_jrnl — 13.6M rows
 Step-Delete @{Order=79; TableName='agnt_crdt'; WhereClause=$wJrnl; PassDescription='[EXCL] via pymnt_jrnl'}
- 
+
 # ── Payment journal children (must clear before cnsmr_pymnt_jrnl) ──
-# [NEW] cnsmr_chck_trnsctn: FK child of cnsmr_pymnt_jrnl — 11 rows
 Step-Delete @{Order=80; TableName='cnsmr_chck_trnsctn'; WhereClause=$wJrnl; PassDescription='via pymnt_jrnl'}
- 
+
 Step-JoinDelete @{
     Order = 81; TableName = 'cpj_rvrsl_assctn'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cpj_rvrsl_assctn WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cpj_rvrsl_assctn WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
     PassDescription = 'via pymnt_jrnl'
 }
- 
+
 # cnsmr_pymnt_jrnl_schdld_pymnt_instnc: FK to BOTH cnsmr_pymnt_jrnl AND schdld_pymnt_instnc
-# Must come before cnsmr_pymnt_jrnl — schdld_pymnt_instnc already cleared at 79
 Step-JoinDelete @{
     Order = 82; TableName = 'cnsmr_pymnt_jrnl_schdld_pymnt_instnc'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
     PassDescription = 'Pass 1: via pymnt_jrnl'
 }
- 
+
 Step-JoinDelete @{
     Order = 83; TableName = 'cnsmr_pymnt_jrnl_schdld_pymnt_instnc'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE schdld_pymnt_instnc_id IN (SELECT schdld_pymnt_instnc_id FROM crs5_oltp.dbo.schdld_pymnt_instnc WHERE schdld_pymnt_smmry_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE schdld_pymnt_instnc_id IN (SELECT schdld_pymnt_instnc_id FROM crs5_oltp.dbo.schdld_pymnt_instnc WHERE schdld_pymnt_smmry_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"
     PassDescription = 'Pass 2: via smmry'
 }
- 
+
 # ── cnsmr_pymnt_jrnl — all children now cleared ──
-# FK to cnsmr_pymnt_instrmnt AND sspns_cnsmr_imprt_trnsctn (both deleted later)
 Step-Delete @{Order=84; TableName='cnsmr_pymnt_jrnl'; WhereClause=$wCnsmr}
- 
+
 # ── schdld_pymnt_instnc — cnsmr_pymnt_jrnl_schdld_pymnt_instnc cleared above ──
-# FK to cnsmr_pymnt_instrmnt and notice_rqst (notice_rqst cleared at 66)
 Step-Delete @{Order=85; TableName='schdld_pymnt_instnc'; WhereClause=$wSmmry; PassDescription='via smmry'}
- 
+
+# ── Suspense: NULL resolved cross-consumer payment journal references ──
+# When consumer A merges into consumer B, the payment journal moves to B but the
+# sspns_cnsmr_imprt_trnsctn stays on A. The FK reference from B's cnsmr_pymnt_jrnl
+# back to A's suspense record is a historical breadcrumb. For resolved suspense
+# (status 3=RESOLVED, 5=RESOLVED_AS_REFUND, 7=RESOLVED_AS_ESCHEAT, 10=MULTI_RESOLVED),
+# we NULL the reference to allow deletion. Unresolved cross-consumer suspense is
+# caught by the exclusion check and never reaches this point.
+Step-Update @{
+    Order = 86; TableName = 'cnsmr_pymnt_jrnl'
+    UpdateStatement = "UPDATE cpj SET cpj.sspns_cnsmr_imprt_trnsctn_id = NULL FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj WHERE cpj.sspns_cnsmr_imprt_trnsctn_id IN (SELECT sci.sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci INNER JOIN crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci ON sci.sspns_trnsctn_cnsmr_idntfr_id = stci.sspns_trnsctn_cnsmr_idntfr_id WHERE stci.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers) AND sci.sspns_trnsctn_stts_cd IN (3, 5, 7, 10))"
+    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj WHERE cpj.sspns_cnsmr_imprt_trnsctn_id IN (SELECT sci.sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci INNER JOIN crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci ON sci.sspns_trnsctn_cnsmr_idntfr_id = stci.sspns_trnsctn_cnsmr_idntfr_id WHERE stci.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers) AND sci.sspns_trnsctn_stts_cd IN (3, 5, 7, 10))"
+    PassDescription = 'NULL resolved suspense refs on merged consumers'
+}
+
 # ── Suspense chain — must come after cnsmr_pymnt_jrnl (which has FK to sspns_cnsmr_imprt_trnsctn) ──
-# [NEW] sspns_cnsmr_trnsctn_log: FK child of sspns_cnsmr_imprt_trnsctn — 1.6M rows
-Step-Delete @{Order=86; TableName='sspns_cnsmr_trnsctn_log'; WhereClause="sspns_cnsmr_imprt_trnsctn_id IN (SELECT sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE $wInstrmnt)"; PassDescription='via pymnt_instrmnt'}
- 
+# Pass 1: via payment instrument
+Step-Delete @{Order=87; TableName='sspns_cnsmr_trnsctn_log'; WhereClause="sspns_cnsmr_imprt_trnsctn_id IN (SELECT sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE $wInstrmnt)"; PassDescription='Pass 1: via pymnt_instrmnt'}
+
 Step-JoinDelete @{
-    Order = 87; TableName = 'sspns_cnsmr_imprt_trnsctn'
+    Order = 88; TableName = 'sspns_cnsmr_imprt_trnsctn'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM #shell_pymnt_instrmnt_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM #shell_pymnt_instrmnt_ids)"
-    PassDescription = 'via pymnt_instrmnt'
+    PassDescription = 'Pass 1: via pymnt_instrmnt'
 }
- 
+
+# Pass 2: via sspns_trnsctn_cnsmr_idntfr — catches rows with NULL cnsmr_pymnt_instrmnt_id
+Step-Delete @{Order=89; TableName='sspns_cnsmr_trnsctn_log'; WhereClause="sspns_cnsmr_imprt_trnsctn_id IN (SELECT sci.sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci INNER JOIN crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci ON sci.sspns_trnsctn_cnsmr_idntfr_id = stci.sspns_trnsctn_cnsmr_idntfr_id WHERE stci.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers))"; PassDescription='Pass 2: via sspns_trnsctn_cnsmr_idntfr'}
+
+Step-Delete @{Order=90; TableName='sspns_cnsmr_imprt_trnsctn'; WhereClause="sspns_trnsctn_cnsmr_idntfr_id IN (SELECT sspns_trnsctn_cnsmr_idntfr_id FROM crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr WHERE $wCnsmr)"; PassDescription='Pass 2: via sspns_trnsctn_cnsmr_idntfr'}
+
 # ── Agent creditable activity chain [EXCL] — Pass 2: via direct cnsmr_id ──
-# Catches any agnt_crdtbl_actvty rows not reached through the ar_log path (orders 49-51)
- 
 Step-JoinDelete @{
-    Order = 88; TableName = 'agnt_crdtbl_actvty_spprssn'
+    Order = 91; TableName = 'agnt_crdtbl_actvty_spprssn'
     DeleteStatement = "DELETE acas FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     PassDescription = '[EXCL] Pass 2: via direct cnsmr_id'
 }
- 
+
 Step-JoinDelete @{
-    Order = 89; TableName = 'agnt_crdtbl_actvty_crdt_assctn'
+    Order = 92; TableName = 'agnt_crdtbl_actvty_crdt_assctn'
     DeleteStatement = "DELETE acac FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     PassDescription = '[EXCL] Pass 2: via direct cnsmr_id'
 }
- 
-Step-Delete @{Order=90; TableName='agnt_crdtbl_actvty'; WhereClause=$wCnsmr; PassDescription='[EXCL] Pass 2: via direct cnsmr_id'}
- 
+
+Step-Delete @{Order=93; TableName='agnt_crdtbl_actvty'; WhereClause=$wCnsmr; PassDescription='[EXCL] Pass 2: via direct cnsmr_id'}
+
 # ── cnsmr_pymnt_instrmnt (now safe — ALL FK children cleared above) ──
-Step-Delete @{Order=91; TableName='cnsmr_pymnt_instrmnt'; WhereClause=$wCnsmr; PassDescription='Pass 1: direct'}
- 
+Step-Delete @{Order=94; TableName='cnsmr_pymnt_instrmnt'; WhereClause=$wCnsmr; PassDescription='Pass 1: direct'}
+
 Step-JoinDelete @{
-    Order = 92; TableName = 'cnsmr_pymnt_instrmnt'
+    Order = 95; TableName = 'cnsmr_pymnt_instrmnt'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cnsmr_pymnt_instrmnt WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl WHERE cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers))"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_instrmnt WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl WHERE cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers))"
     PassDescription = 'Pass 2: via pymnt_jrnl'
 }
- 
+
 # ── cnsmr_pymnt_mthd (now safe — cpm_pm_assctn cleared at 74) ──
-Step-Delete @{Order=93; TableName='cnsmr_pymnt_mthd'; WhereClause=$wCnsmr}
- 
-# ── sspns_trnsctn_cnsmr_idntfr (now safe — sspns_cnsmr_imprt_trnsctn cleared at 87) ──
-Step-Delete @{Order=94; TableName='sspns_trnsctn_cnsmr_idntfr'; WhereClause=$wCnsmr}
- 
+Step-Delete @{Order=96; TableName='cnsmr_pymnt_mthd'; WhereClause=$wCnsmr}
+
+# ── sspns_trnsctn_cnsmr_idntfr (now safe — all suspense children cleared) ──
+Step-Delete @{Order=97; TableName='sspns_trnsctn_cnsmr_idntfr'; WhereClause=$wCnsmr}
+
+# ── Agent credit chain Pass 2: via schdld_pymnt_smmry ──
+# agnt_crdt.cnsmr_pymnt_schdl_id FK to schdld_pymnt_smmry — must clear before smmry delete
+Step-Delete @{Order=98; TableName='agnt_crdt_spprssn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"; PassDescription='[EXCL] Pass 2: via smmry'}
+Step-Delete @{Order=99; TableName='agnt_crdtbl_actvty_crdt_assctn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"; PassDescription='[EXCL] Pass 2: via smmry'}
+Step-Delete @{Order=100; TableName='agnt_crdt'; WhereClause="cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"; PassDescription='[EXCL] Pass 2: via smmry'}
+
+# ── agnt_crdtbl_actvty chain Pass 3: via schdld_pymnt_smmry ──
+# agnt_crdtbl_actvty.cnsmr_pymnt_schdl_id FK to schdld_pymnt_smmry
+Step-JoinDelete @{
+    Order = 101; TableName = 'agnt_crdtbl_actvty_spprssn'
+    DeleteStatement = "DELETE acas FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
+    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
+    PassDescription = '[EXCL] Pass 3: via smmry'
+}
+
+Step-JoinDelete @{
+    Order = 102; TableName = 'agnt_crdtbl_actvty_crdt_assctn'
+    DeleteStatement = "DELETE acac FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
+    CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
+    PassDescription = '[EXCL] Pass 3: via smmry'
+}
+
+Step-Delete @{Order=103; TableName='agnt_crdtbl_actvty'; WhereClause="cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"; PassDescription='[EXCL] Pass 3: via smmry'}
+
 # ── schdld_pymnt_smmry (now safe — all children cleared above) ──
-Step-Delete @{Order=95; TableName='schdld_pymnt_smmry'; WhereClause=$wCnsmr}
- 
+Step-Delete @{Order=104; TableName='schdld_pymnt_smmry'; WhereClause=$wSmmry}
+
 # ── Bankruptcy chain [EXCL] ──
-# Currently exclusion-controlled. Legal retention — Operations decision.
-# [NEW][EXCL] bnkrptcy_addtnl_info: FK child of bnkrptcy — 348K rows
-Step-Delete @{Order=96; TableName='bnkrptcy_addtnl_info'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
-# [NEW][EXCL] bnkrptcy_pttnr: FK child of bnkrptcy — 0 rows
-Step-Delete @{Order=97; TableName='bnkrptcy_pttnr'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
-# [NEW][EXCL] bnkrptcy_trustee: FK child of bnkrptcy — 306K rows
-Step-Delete @{Order=98; TableName='bnkrptcy_trustee'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
-# [NEW][EXCL] bnkrptcy — 533K rows
-Step-Delete @{Order=99; TableName='bnkrptcy'; WhereClause=$wCnsmr; PassDescription='[EXCL]'}
- 
+Step-Delete @{Order=105; TableName='bnkrptcy_addtnl_info'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
+Step-Delete @{Order=106; TableName='bnkrptcy_pttnr'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
+Step-Delete @{Order=107; TableName='bnkrptcy_trustee'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
+Step-Delete @{Order=108; TableName='bnkrptcy'; WhereClause=$wCnsmr; PassDescription='[EXCL]'}
+
 # ── hc_payer_plan (direct cnsmr FK, no encntr dependency for shells) ──
-Step-Delete @{Order=100; TableName='hc_payer_plan'; WhereClause=$wCnsmr}
- 
+Step-Delete @{Order=109; TableName='hc_payer_plan'; WhereClause=$wCnsmr}
+
 # ── TERMINAL: cnsmr record itself ──
-Step-Delete @{Order=101; TableName='cnsmr'; WhereClause=$wCnsmr}
+Step-Delete @{Order=110; TableName='cnsmr'; WhereClause=$wCnsmr}
 Write-Log ""
 Write-Log "  Consumer-level deletion sequence complete" "SUCCESS"
+
 # ── Finalize batch log ──
 $batchStatus = if ($Script:TablesFailed -gt 0) { "Failed" } else { "Success" }
 $batchError = if ($Script:TablesFailed -gt 0) { "One or more tables failed during delete sequence" } else { $null }
