@@ -77,7 +77,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
     
     <div class="header-bar">
         <div>
-            <h1>BDL Import</h1>
+            <h1><a href="/docs/pages/guides/bdl-import-guide.html" target="_blank">BDL Import</a></h1>
             <p class="page-subtitle">Guided bulk data load import into Debt Manager</p>
         </div>
     </div>
