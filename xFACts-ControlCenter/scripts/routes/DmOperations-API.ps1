@@ -598,26 +598,25 @@ Add-PodeRoute -Method Post -Path '/api/dmops/abort' -Authentication 'ADLogin' -S
         $oldValue = [string]$currentSetting[0].setting_value
         
         # Update the setting value
-        Invoke-XFActsQuery -Query @"
+        Invoke-XFActsNonQuery -Query @"
             UPDATE dbo.GlobalConfig
             SET setting_value = @AbortValue
             WHERE config_id = @ConfigId
 "@ -Parameters @{ AbortValue = $abortValue; ConfigId = $configId }
         
         # Log the change to ActionAuditLog
-        Invoke-XFActsQuery -Query @"
-            INSERT INTO dbo.ActionAuditLog
-                (source_module, entity_type, entity_id, entity_name, field_name, old_value, new_value, changed_by)
-            VALUES
-                (@Module, 'GlobalConfig', @ConfigId, @SettingName, 'setting_value', @OldVal, @NewVal, @User)
+        $action = if ($abort) { "Activated" } else { "Cleared" }
+        try {
+            Invoke-XFActsNonQuery -Query @"
+                INSERT INTO dbo.ActionAuditLog
+                    (page_route, action_type, action_summary, result, executed_by)
+                VALUES
+                    ('/dm-operations', 'CONFIG_CHANGE', @summary, 'SUCCESS', @executedBy)
 "@ -Parameters @{
-            Module = 'DmOps'
-            ConfigId = $configId
-            SettingName = $settingName
-            OldVal = $oldValue
-            NewVal = $abortValue
-            User = $user
-        }
+                summary    = "$action $settingName (was: $oldValue, now: $abortValue)"
+                executedBy = $user
+            }
+        } catch { }
         
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Success = $true
