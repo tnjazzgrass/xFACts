@@ -507,7 +507,7 @@
                                            {
                                                "name":  "FK_BDL_ImportLog_ServerConfig",
                                                "column":  "server_config_id",
-                                               "referencedTable":  "Tools.ServerConfig",
+                                               "referencedTable":  "Tools.EnvironmentConfig",
                                                "referencedColumn":  "config_id"
                                            }
                                        ],
@@ -2109,11 +2109,11 @@
                                              ]
                    },
                    {
-                       "name":  "ServerConfig",
+                       "name":  "EnvironmentConfig",
                        "description":  "Per-server configuration for Tools module operations. One row per tools-enabled target server, providing DM API connection details and dmfs file import paths. Child of dbo.ServerRegistry via server_id foreign key.",
                        "module":  "Tools",
                        "category":  "Operations",
-                       "dataFlow":  "Rows are manually inserted when a server is designated as a Tools operations target (tools_enabled = 1 on ServerRegistry). The BDL Import workflow reads this table to resolve the target server\u0027s API URL and dmfs file path based on the user\u0027s environment selection. Future Tools pipelines (Payment, CDL, New Business) consume the same rows using their respective folder columns.",
+                       "dataFlow":  "Rows are manually inserted when a new DM environment is configured. The BDL Import workflow reads this table to resolve the dmfs file path and database instance based on the user\u0027s environment selection. API URLs are resolved separately from dbo.ServerRegistry using the environment value. Future Tools pipelines (Payment, CDL, New Business) consume the same rows using their respective folder columns.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -2122,23 +2122,6 @@
                                            "nullable":  false,
                                            "identity":  true,
                                            "description":  "Identity primary key."
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "server_id",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "FK to dbo.ServerRegistry. Identifies the tools-enabled server that owns the dmfs file share for this environment."
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "server_name",
-                                           "dataType":  "varchar",
-                                           "length":  "128",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Denormalized server hostname from ServerRegistry. Avoids joins for common queries."
                                        },
                                        {
                                            "ordinal":  4,
@@ -2157,15 +2140,6 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "description":  "SQL Server instance name or AG listener for the crs5_oltp database in this environment. Used by validation and query operations that need to read DM reference tables. For standalone environments (TEST), this is the same as server_name. For AG environments (PROD, STAGE), this is the AG listener name."
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "api_base_url",
-                                           "dataType":  "varchar",
-                                           "length":  "500",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Full base URL for the DM REST API. Includes protocol, hostname, port, and base path (e.g., http://dm-prod-app:8080/dm-rest-services/api). May point to a different server than the dmfs path in multi-node environments. API endpoint paths are appended to this value."
                                        },
                                        {
                                            "ordinal":  7,
@@ -2270,56 +2244,23 @@
                                            "isPrimaryKey":  true,
                                            "isUniqueConstraint":  false,
                                            "keyColumns":  "config_id"
-                                       },
-                                       {
-                                           "name":  "UQ_ServerConfig_server_id",
-                                           "type":  "NONCLUSTERED",
-                                           "isUnique":  true,
-                                           "isPrimaryKey":  false,
-                                           "isUniqueConstraint":  true,
-                                           "keyColumns":  "server_id"
                                        }
                                    ],
-                       "foreignKeys":  [
-                                           {
-                                               "name":  "FK_ServerConfig_ServerRegistry",
-                                               "column":  "server_id",
-                                               "referencedTable":  "dbo.ServerRegistry",
-                                               "referencedColumn":  "server_id"
-                                           }
-                                       ],
                        "designNotes":  [
-                                           {
-                                               "topic":  "Denormalized Convenience Columns",
-                                               "note":  "server_name and environment are stored directly alongside the server_id foreign key. This avoids joins to ServerRegistry for the most common query pattern: selecting configuration by environment.",
-                                               "sortOrder":  1
-                                           },
                                            {
                                                "topic":  "Path Construction Pattern",
                                                "note":  "Full file paths are constructed by combining dmfs_base_path with the pipeline-specific folder column and a trailing backslash. For example, a BDL import path is dmfs_base_path + backslash + dmfs_bdl_folder + backslash. The folder columns have sensible defaults but are stored explicitly so paths remain configurable without code changes.",
                                                "sortOrder":  2
-                                           },
-                                           {
-                                               "topic":  "Separate File and API Targets",
-                                               "note":  "In multi-node environments (Production, Staging), the dmfs file path and the API base URL may point to different servers. Files are written to the ETL/content server (APP3) via UNC share, while API calls to trigger imports are fired against the domain controller (APP). The executing server reads the file from APP3 via the shared dmfs mount.",
-                                               "sortOrder":  3
                                            }
                                        ],
                        "queries":  [
                                        {
                                            "name":  "Configuration by environment",
                                            "description":  "Returns the full server configuration for a given environment. Primary query pattern for all Tools operations.",
-                                           "sql":  "SELECT server_name, environment, api_base_url,\n    dmfs_base_path, dmfs_bdl_folder, dmfs_cdl_folder,\n    dmfs_payment_folder, dmfs_newbusiness_folder\nFROM Tools.ServerConfig\nWHERE environment = \u0027PROD\u0027\n    AND is_active = 1;",
+                                           "sql":  "SELECT environment, db_instance, dmfs_base_path,\r\n    dmfs_bdl_folder, dmfs_cdl_folder,\r\n    dmfs_payment_folder, dmfs_newbusiness_folder\r\nFROM Tools.EnvironmentConfig\r\nWHERE environment = \u0027PROD\u0027\r\n    AND is_active = 1;",
                                            "sortOrder":  1
                                        }
-                                   ],
-                       "relationshipNotes":  [
-                                                 {
-                                                     "relatedObject":  "dbo.ServerRegistry",
-                                                     "note":  "Child table. server_id references ServerRegistry.server_id. Only servers with tools_enabled = 1 should have rows in this table. The unique constraint on server_id enforces a 1:1 relationship.",
-                                                     "sortOrder":  1
-                                                 }
-                                             ]
+                                   ]
                    }
                ],
     "procedures":  [
