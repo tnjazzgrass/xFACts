@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-13 08:45:05
+Generated: 2026-04-14 13:34:30
 
 ## Module Registry
 
@@ -379,7 +379,7 @@ Generated: 2026-04-13 08:45:05
 | Tools.Operations | AccessFieldConfig | Database | Table | Tools | Department-scoped field-level whitelist for BDL entity access. Child of AccessConfig. |
 | Tools.Operations | BDL_ImportLog | Database | Table | Tools | Audit trail for BDL import executions. One row per import capturing the full lifecycle from validation through DM submission. |
 | Tools.Operations | BDL_ImportTemplate | Database | Table | Tools | Saved column mapping templates for BDL Import. Stores reusable source-to-element field mappings per entity type, allowing users to apply a known file layout without manual column pairing. |
-| Tools.Operations | ServerConfig | Database | Table | Tools | Per-server configuration for Tools module operations. One row per tools-enabled target server with DM file paths and API connection details. |
+| Tools.Operations | EnvironmentConfig | Database | Table | Tools | Per-environment configuration for Tools module operations. One row per DM environment with database instance and dmfs file import paths. API URLs sourced from dbo.ServerRegistry. |
 | Tools.Operations | BDLImport-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1 | BDL Import CC API endpoints |
 | Tools.Operations | ClientPortal-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ClientPortal-API.ps1 | Client Portal CC API endpoints — search, consumer/account detail, lookups |
 | Tools.Operations | bdl-import.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\bdl-import.css | BDL Import CC styles |
@@ -440,22 +440,24 @@ Generated: 2026-04-13 08:45:05
 | ControlCenter | Refresh | refresh_fileops_seconds | 30 | INT | File Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_indexmaintenance_seconds | 5 | INT | Index Maintenance page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_jboss_monitoring_seconds | 60 | INT | Auto-refresh interval for the JBoss Monitoring page |
-| ControlCenter | Refresh | refresh_jobflow_seconds | 30 | INT | JobFlow Monitoring page live window refresh interval (seconds) |
+| ControlCenter | Refresh | refresh_jobflow_seconds | 10 | INT | JobFlow Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_replication_seconds | 10 | INT | Replication Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_serverhealth_seconds | 5 | INT | Server Health page refresh live window interval (seconds) |
+| DeptOps | ApplicationsIntegration | cooldown_balance_sync_seconds | 3600 | INT | Minimum seconds between Balance Sync executions per environment. Enforced via ActionAuditLog. |
+| DeptOps | ApplicationsIntegration | cooldown_release_notices_seconds | 300 | INT | Minimum seconds between Release Notices executions per environment. Enforced via ActionAuditLog. |
 | DeptOps | BS_ReviewRequest | bs_default_assignment_cap | 100 | INT | Default max assignments for new distribution users |
 | DeptOps | BS_ReviewRequest | bs_distribution_enabled | 1 | BIT | Master on/off switch for automated review request distribution |
 | DmOps | Archive | alerting_enabled | 0 | BIT | Master switch for archive alerting: 1 = Teams alerts active, 0 = alerting suppressed. Does not affect archive execution. |
 | DmOps | Archive | archive_abort | 0 | BIT | Emergency shutoff: 1 = stop after current batch completes. Overrides schedule and enabled flag. Reset to 0 manually after investigation. |
 | DmOps | Archive | batch_size | 25000 | INT | Number of consumers per batch during full-mode schedule windows |
-| DmOps | Archive | batch_size_reduced | 100 | INT | Number of consumers per batch during reduced-mode schedule windows |
+| DmOps | Archive | batch_size_reduced | 500 | INT | Number of consumers per batch during reduced-mode schedule windows |
 | DmOps | Archive | bidata_build_job_name | BIDATA Daily Build | VARCHAR | SQL Agent job name for the BIDATA Daily Build. Used by pre-flight check to detect build-in-progress on bidata_instance server. |
 | DmOps | Archive | bidata_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting the BIDATA database for P-to-C migration. Production: DM-PROD-REP. |
 | DmOps | Archive | chunk_size | 5000 | INT | Maximum rows per DELETE operation — larger tables are deleted in chunks of this size |
 | DmOps | Archive | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
 | DmOps | ShellPurge | alerting_enabled | 0 | BIT | Master switch for shell purge alerting: 1 = Teams alerts active, 0 = alerting suppressed |
 | DmOps | ShellPurge | batch_size | 25000 | INT | Number of shell consumers per batch during full-mode schedule windows |
-| DmOps | ShellPurge | batch_size_reduced | 100 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
+| DmOps | ShellPurge | batch_size_reduced | 500 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
 | DmOps | ShellPurge | chunk_size | 5000 | INT | Maximum rows per DELETE operation — larger tables are deleted in chunks of this size |
 | DmOps | ShellPurge | shell_purge_abort | 0 | BIT | Emergency shutoff: 1 = stop after current batch completes. Reset to 0 manually after investigation. |
 | DmOps | ShellPurge | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for shell purge processing |
