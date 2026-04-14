@@ -154,10 +154,10 @@ var BDL = (function () {
             .then(function (data) { renderEnvironments(data.environments || []); })
             .catch(function (err) { document.getElementById('env-cards').innerHTML = '<div class="placeholder-message" style="color:#f48771;">Failed to load: ' + err.message + '</div>'; });
     }
-    function renderEnvironments(envs) {
+	function renderEnvironments(envs) {
         var c = document.getElementById('env-cards');
         if (!envs.length) { c.innerHTML = '<div class="placeholder-message">No environments configured.</div>'; return; }
-        var h = ''; envs.forEach(function (env) { h += '<div class="env-card" data-env="' + env.environment + '" onclick="BDL.selectEnvironment(this,' + env.config_id + ')"><div class="env-name">' + env.environment + '</div><div class="env-server">' + env.server_name + '</div></div>'; });
+        var h = ''; envs.forEach(function (env) { h += '<div class="env-card" data-env="' + env.environment + '" onclick="BDL.selectEnvironment(this,' + env.config_id + ')"><div class="env-name">' + env.environment + '</div></div>'; });
         c.innerHTML = h; c._envData = envs;
     }
     function selectEnvironment(card, configId) {
