@@ -298,6 +298,7 @@ a { color: #9cdcfe; }
 .assignment-mode-badge { font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.3px; }
 .assignment-badge-blanket { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
 .assignment-badge-conditional { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; }
+.assignment-badge-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; }
 .assignment-remove { background: none; border: none; color: #666; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 3px; transition: all 0.15s; }
 .assignment-remove:hover { color: #f48771; background: #2d2d2d; }
  
@@ -308,6 +309,7 @@ a { color: #9cdcfe; }
 .assignment-toggle-btn:last-child { border-radius: 0 4px 4px 0; border-left: none; }
 .assignment-toggle-active-blanket { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; border-color: rgba(78, 201, 176, 0.4); }
 .assignment-toggle-active-cond { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border-color: rgba(220, 220, 170, 0.4); }
+.assignment-toggle-active-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; border-color: rgba(86, 156, 214, 0.4); }
  
 /* Assignment Card Body */
 .assignment-body { padding: 12px 14px; }
@@ -419,6 +421,26 @@ a { color: #9cdcfe; }
 .target-chip { position: relative; }
 .mapped-pair-nullify { background: rgba(197, 134, 192, 0.06); border-color: rgba(197, 134, 192, 0.25); }
 .pair-nullify-label { color: #c586c0; font-weight: 600; font-size: 12px; flex-shrink: 0; }
+
+/* ── Per-Field Mode Toggle (conditional-eligible fields on FILE_MAPPED) ── */
+.field-mode-toggle { display: flex; gap: 0; margin-top: 6px; }
+.field-mode-btn { padding: 2px 8px; font-size: 10px; border: 1px solid #404040; background: #252526; color: #666; cursor: pointer; transition: all 0.15s; user-select: none; }
+.field-mode-btn:first-child { border-radius: 3px 0 0 3px; }
+.field-mode-btn:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+.field-mode-btn:nth-child(2) { border-left: none; }
+.field-mode-btn:hover { color: #d4d4d4; background: #333; }
+.field-mode-active-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; border-color: rgba(86, 156, 214, 0.4); cursor: default; }
+ 
+/* Field Assignments Section (below mapping panels for FILE_MAPPED) */
+.field-assignments-section { margin-top: 10px; background: #1e1e1e; border: 1px solid rgba(220, 220, 170, 0.25); border-radius: 6px; overflow: hidden; }
+.field-assignments-section > .panel-header { color: #dcdcaa; }
+.field-assignments-list { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.field-assignment-card { border-color: rgba(220, 220, 170, 0.2); }
+.field-assignment-card .assignment-header { background: #2a2820; }
+.field-assignment-name { color: #dcdcaa; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.field-assignment-elem { font-family: 'Consolas', 'Courier New', monospace; font-size: 10px; color: #888; font-weight: normal; margin-left: 4px; }
+.field-assignment-card .assignment-remove { font-size: 11px; color: #569cd6; font-weight: 500; font-family: 'Segoe UI', Arial, sans-serif; border: 1px solid #404040; padding: 2px 8px; border-radius: 3px; }
+.field-assignment-card .assignment-remove:hover { background: rgba(86, 156, 214, 0.1); border-color: #569cd6; }
 
 /* Nullify Summary (validated/complete state on Step 4) */
 .nullify-summary { padding: 8px 14px; background: rgba(197, 134, 192, 0.06); border: 1px solid rgba(197, 134, 192, 0.2); border-radius: 5px; margin-bottom: 12px; font-size: 12px; color: #c586c0; }
