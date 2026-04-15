@@ -1738,7 +1738,8 @@ function Build-BDLXml {
 
     # Identify mapped columns (exclude system columns and unmapped columns)
     $mappedColumns = @($stagingRows[0].Keys | Where-Object { 
-        $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -ne '_nullify_fields' -and $_ -notlike '*_unmapped' 
+        $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -ne '_nullify_fields' -and
+        $_ -ne '_trigger_value' -and $_ -ne '_assignment_index' -and $_ -notlike '*_unmapped' 
     })
 
     # ── Build filename ──────────────────────────────────────────────
