@@ -1,6 +1,6 @@
 # BDL Import Module -- Working Document
 
-**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance, nullify fields (blanket + record-level), Excel date formatting. Multi-entity + FIXED_VALUE end-to-end verified. Multi-assignment cards for FIXED_VALUE entities with blanket/conditional mode. ServerConfig renamed to EnvironmentConfig. ServerRegistry API targeting deployed. ActionAuditLog redesigned. BDL Import user guide deployed.  
+**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance, nullify fields (blanket + record-level), Excel date formatting. Multi-entity + FIXED_VALUE end-to-end verified. Multi-assignment cards with blanket/conditional/from-file modes. Per-field mode selector for conditional-eligible fields on FILE_MAPPED entities (3-way: File/Blanket/Conditional). 4-step dynamic lookup column discovery for validation and typeahead. ServerConfig renamed to EnvironmentConfig. ServerRegistry API targeting deployed. ActionAuditLog redesigned. BDL Import user guide deployed.  
 **Audience:** Dirk, Matt, Brandon, Claude  
 **Last Updated:** April 15, 2026  
 **Replaces:** `BDL_Import_Module_Design.md`, `BDL_Catalog_Reload_Instructions.md`, `xFACts_Questions_For_Matt.md`, `BDL_Action_Sequences_Planning.md`
@@ -41,12 +41,10 @@ Accessible via card links from the Applications & Integration page (IT team) and
 
 **Catalog_BDLElementRegistry columns added:**
 - `import_guidance VARCHAR(500)` -- operational tips for fields during import (e.g., "Required numeric value -- enter 0 if not in source data" for phone quality score, "Optional -- defaults to current timestamp if blank" for tag assignment date). Separate from `field_description` which documents what the field is. Editable through admin catalog modal (Global Configuration mode). Displayed in field info modal, fixed-value UI, mapping chips, and validation card bodies.
-
-**Catalog_BDLElementRegistry columns added (April 15):**
-- `is_conditional_eligible BIT DEFAULT 0` -- identifies fields eligible for conditional value assignment during BDL Import. When set to 1, the FIXED_VALUE mapping UI offers a Conditional mode where this field's value can vary per row based on a trigger column from the uploaded file. Currently set on `tag_shrt_nm` for CONSUMER_TAG and ACCOUNT_TAG.
+- `is_conditional_eligible BIT DEFAULT 0` -- identifies fields eligible for per-field mode selection during BDL Import. When set to 1, FILE_MAPPED entities show a 3-way toggle (File/Blanket/Cond) on the target chip; FIXED_VALUE entities show a 3-way toggle (File/Blanket/Cond) on the assignment card. Currently set on `tag_shrt_nm` for CONSUMER_TAG and ACCOUNT_TAG, and `wrkgrp_shrt_nm` for CONSUMER.
 
 **Staging table enhancements (April 15):**
-- `_trigger_value VARCHAR(200)` system column added to staging tables created via the assignments path. Stores the trigger column value that produced each row (NULL for blanket assignments). Available for debugging and potential secondary record retention.
+- `_trigger_value VARCHAR(200)` system column added to staging tables created via the assignments path. Stores the trigger column value that produced each row (NULL for blanket and from-file assignments). Available for debugging and potential secondary record retention.
 - `_assignment_index INT` system column tracks which assignment card generated each row.
 - `Build-BDLXml` exclusion filter updated to exclude `_trigger_value` and `_assignment_index` from XML output (same pattern as `_row_number`, `_skip`, `_nullify_fields`).
 
@@ -105,18 +103,44 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - `Consolidate-UploadFiles.ps1` and `Publish-GitHubRepository.ps1` updated for guides folder
 
 **Multi-Assignment Cards (April 15):**
-- FIXED_VALUE entity mapping panel rewritten as assignment card model
-- Each assignment is an independent card with Blanket (default) or Conditional mode
-- Blanket mode: same value entry UI as before, scoped to the assignment card
+- FIXED_VALUE entity mapping panel uses an assignment card model
+- Each assignment is an independent card with File, Blanket, or Conditional mode (3-way toggle shown when entity has conditional-eligible fields)
+- File mode: conditional-eligible field value read from a selected file column; shared (non-conditional) fields entered manually below the column selector
+- Blanket mode: same value entry UI for all fields, scoped to the assignment card
 - Conditional mode: trigger column selector scans full file for unique values, renders grid with per-value typeahead against DM reference tables, shared fields section for non-varying fields
-- "Add Another" button stacks multiple assignments (blanket + conditional mix supported)
+- "Add Another" button stacks multiple assignments (any mix of file/blanket/conditional supported)
 - Remove button on all cards except the first (minimum one assignment required)
-- Blanket/Conditional toggle only appears when entity has at least one `is_conditional_eligible` field
+- File/Blanket/Conditional toggle only appears when entity has at least one `is_conditional_eligible` field; entities without conditional-eligible fields show blanket-only cards
 - Staging expansion: client sends `assignments` array to stage endpoint; server generates expanded rows (one per identifier per applicable assignment) with consumer-grouped ordering matching established BDL XML pattern
 - `readFileColumnValues()` client-side helper async-reads full file for unique value extraction when trigger column is selected
 - 15+ unique values trigger "show all" toggle for trigger grid overflow
 - Assignment state comparison for re-staging detection: serialized assignments snapshot compared alongside columnMapping to detect changes requiring re-staging
 - Backward compatible: entities without assignments still use original fixed_values staging path
+
+**Per-Field Mode Selector for FILE_MAPPED entities (April 15):**
+- Conditional-eligible fields on FILE_MAPPED entities display a compact 3-way toggle on the target chip: `[File | Blanket | Cond]`
+- "File" (default): standard drag-drop mapping from a source column -- field stays in the target panel with normal click/drag behavior
+- "Blanket": one fixed value applied to all rows -- field moves from target panel to a Field Assignments section below the mapping panels, renders as an assignment card with value input (typeahead for lookup fields)
+- "Conditional": value varies per row based on a trigger column -- same assignment card pattern with trigger column selector, unique value grid, per-value typeahead
+- Toggling back to "File" returns the field to the target panel
+- Field Assignments section only appears when at least one field is in Blanket or Conditional mode
+- State stored in `fieldAssignments` object on entity state, keyed by `element_name`
+- Staging: client sends `field_assignments` in the stage request; server creates staging table from file data normally (Path B), then adds assignment field columns via ALTER TABLE and populates via UPDATE (blanket) or per-trigger-value UPDATEs (conditional)
+- Validated/complete and Execute summary views show field assignment fields with `(fixed)` or `(cond)` mode tags alongside file-mapped fields
+- First use case: CONSUMER entity with `wrkgrp_shrt_nm` for BI team workgroup reassignment
+
+**4-Step Dynamic Lookup Column Discovery (April 15):**
+- Validation and typeahead lookup endpoints use a universal 4-step column resolution instead of hardcoded `_val_txt` pattern
+- Applies to both `POST /api/bdl-import/validate` (lookup value loading) and `GET /api/bdl-import/lookup-search` (typeahead search)
+- Resolution order (short-circuits at first match):
+  1. Direct match: `element_name` exists as a column in the lookup table (~75% of lookups)
+  2. `*_val_txt` fallback: first column matching the pattern (ref tables with prefixed elements)
+  3. `*_shrt_nm` fallback: first column matching the pattern (entity tables with prefixed elements)
+  4. `*_nm` fallback (excluding `_shrt_nm`): first column matching the pattern (entity tables like `fee_typ`, `pymnt_memo`)
+- Active flag discovery unchanged (`*_actv_flg` pattern)
+- Description column discovery updated: tries `*_nm` (excluding resolved column) first, then `*_dscrptn_txt` -- entity tables show `wrkgrp_nm`/`tag_nm`, ref tables show `*_dscrptn_txt`
+- Table structure (column list + active flag) cached per-table for efficiency; value column resolved per-element
+- Validated against all 52 distinct lookup tables across all BDL entity types -- zero exceptions
 
 **BDL Content Management Admin Modal (Apps/Int page):**
 - Two-tier slide-up/slideout panel, admin-only access
@@ -146,8 +170,8 @@ Accessible via card links from the Applications & Integration page (IT team) and
 1. **Select Environment** -- Cards for TEST, STAGE, PROD loaded from `Tools.EnvironmentConfig`. Environment-specific accent colors. All environments unlocked. Selecting PROD shows a styled advisory modal.
 2. **Upload File** -- Drag-and-drop or browse. CSV, TXT, XLSX, XLS supported via client-side parsing. Preview renders inside the drop zone. Row count warning above 250K.
 3. **Select Entity Types** -- Multi-select grid with toggle cards grouped by `entity_key` (Consumer, Account, Other sections with headers). Field info modal (info icon) shows access-controlled field list with display names, descriptions, and import guidance on demand. Admin sees all active; department users see only AccessConfig-granted entities with AccessFieldConfig-filtered fields.
-4. **Map & Validate** -- Per-entity loop with progress dots and transition modals. For FILE_MAPPED entities: identifier gating, two-column mapping panels, drag-and-drop, nullify badge (∅) on eligible target fields. Nullified fields appear in the Mapped section with distinct purple styling. For FIXED_VALUE entities: identifier selector + multi-assignment card model with Blanket/Conditional mode per card. Blanket mode provides direct value entry with debounced typeahead lookup. Conditional mode provides trigger column selection, unique value grid with per-value typeahead, and shared fields. "Add Another" button supports stacking multiple assignments. Each entity stages and validates independently. Validation cards show `import_guidance` tips when populated. Validated screen shows Mapped Fields card and Nullify card (when applicable). Step complete when all entities pass validation.
-5. **Execute** -- Tabbed per-entity summary cards (4-item grid: Environment, Entity Type, Rows, Staging Table). Mapped Fields card (teal) lists all mapped field display names. Nullify card (purple) lists nullified field display names when applicable. XML Preview button with distinct button styling. Single Jira ticket field (applies to all). Submit All button processes entities sequentially. Per-tab success/failure indicators. Consolidated AR log auto-submits after all entities complete if Jira ticket provided.
+4. **Map & Validate** -- Per-entity loop with progress dots and transition modals. For FILE_MAPPED entities: identifier gating, two-column mapping panels, drag-and-drop, nullify badge on eligible target fields, per-field mode toggle on conditional-eligible fields. For FIXED_VALUE entities: identifier selector + multi-assignment card model with File/Blanket/Conditional mode per card. Each entity stages and validates independently. Validation cards show `import_guidance` tips when populated. Validated screen shows Mapped Fields card and Nullify card (when applicable). Step complete when all entities pass validation.
+5. **Execute** -- Tabbed per-entity summary cards (4-item grid: Environment, Entity Type, Rows, Staging Table). Mapped Fields card (teal) lists all mapped field display names including field assignments with mode tags. Nullify card (purple) lists nullified field display names when applicable. XML Preview button with distinct button styling. Single Jira ticket field (applies to all). Submit All button processes entities sequentially. Per-tab success/failure indicators. Consolidated AR log auto-submits after all entities complete if Jira ticket provided.
 
 ### End-to-End Test Results
 
@@ -168,6 +192,10 @@ Accessible via card links from the Applications & Integration page (IT team) and
 **April 10, 2026 (TEST - Consolidated AR Log + import_as_user_name):**
 - **Test 7 (Dirk):** Multi-entity (PHONE + CONSUMER_TAG) with Jira ticket. Both primary BDLs submitted successfully. Single consolidated AR log submitted covering both entities. DM attributed imports to actual user (dcota) via `import_as_user_name` header element instead of apiuser. Confirmed working across both entity types.
 
+**April 15, 2026 (TEST - Per-Field Mode + Lookup Discovery):**
+- **Test 8 (Dirk):** CONSUMER entity with `wrkgrp_shrt_nm` in all three modes (File, Blanket, Conditional). Staging, validation, and lookup all functional. 4-step lookup discovery correctly resolved `wrkgrp_shrt_nm` as a direct column match in the `wrkgrp` table (Step 1).
+- **Test 9 (Dirk):** CONSUMER_TAG with From File mode -- tag values mapped from a file column instead of manual entry. Staging and validation functional.
+
 ---
 
 ## Architecture Decisions (Resolved)
@@ -187,7 +215,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 ### Multi-Entity Selection
 - Entity cards are toggle-selectable (click to select/deselect) instead of single-select
 - `selectedEntities[]` array holds all selected entities; `entityStates[]` array holds per-entity state
-- Each entity state independently tracks: fields, columnMapping, stagingContext, stagedMapping, validationResult, validated flag
+- Each entity state independently tracks: fields, columnMapping, assignments, fieldAssignments, stagingContext, stagedMapping, validationResult, validated flag
 - Step 3 completes when at least one entity is selected
 
 ### Per-Entity Map & Validate Loop
@@ -202,26 +230,56 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - `action_type VARCHAR(20)` with CHECK constraint: FILE_MAPPED (default), FIXED_VALUE, HYBRID
 - Determines which mapping UI is rendered for each entity type
 - Manageable through the admin catalog modal on the Apps/Int page
-- FILE_MAPPED: full column mapping panels with drag-and-drop (existing behavior)
-- FIXED_VALUE: simplified panel with identifier selector + value entry fields
-- HYBRID: reserved for future -- combination of mapped and fixed fields
+- FILE_MAPPED: full column mapping panels with drag-and-drop, per-field mode toggle on conditional-eligible fields
+- FIXED_VALUE: assignment card model with File/Blanket/Conditional modes per card
+- HYBRID: reserved for future -- may be unnecessary given per-field mode model handles all combinations natively
+
+### Per-Field Mode Model (Implemented April 15)
+- The three value assignment modes (From File, Blanket, Conditional) are a **per-field** decision, not an entity-level decision
+- Any `is_conditional_eligible` field on any entity type supports all three modes:
+  1. **From File** -- map to a source column (file already has the values) -- standard drag-drop on FILE_MAPPED, column selector on FIXED_VALUE
+  2. **Blanket** -- enter one value applied to all rows
+  3. **Conditional** -- vary by trigger column with per-value typeahead
+- This makes the HYBRID `action_type` potentially unnecessary -- the per-field model handles all combinations:
+  - FILE_MAPPED entity with conditional workgroup = consumer fields mapped from file, workgroup uses assignment card
+  - FIXED_VALUE entity with tag from file = tag value mapped from a file column instead of entered manually
+- The `action_type` on `Catalog_BDLFormatRegistry` determines the **default UI path** for the entity, not a rigid constraint
+- FILE_MAPPED entities: fields default to target panel (File mode); conditional-eligible fields get mode toggle to override
+- FIXED_VALUE entities: fields default to assignment card (Blanket mode); conditional-eligible fields get 3-way mode toggle
+- Implementation: per-field mode selector on FILE_MAPPED target chips; 3-way toggle on FIXED_VALUE assignment cards
+- First real-world use cases: CONSUMER entity with `wrkgrp_shrt_nm`; CONSUMER_TAG with `tag_shrt_nm` via From File mode
+
+### 4-Step Lookup Column Discovery (Implemented April 15)
+- Previous approach hardcoded `_val_txt` as the value column pattern -- failed for entity lookup tables (wrkgrp, tag, crdtr, etc.) where the element_name IS the column
+- New universal resolution discovers the value column dynamically using catalog data (`element_name`, `lookup_table`) and INFORMATION_SCHEMA column inspection
+- Resolution order (short-circuits at first match):
+  1. **Direct match:** `element_name` exists as a column in the lookup table (e.g., `wrkgrp_shrt_nm` in `wrkgrp`, `tag_shrt_nm` in `tag`, `cntry_val_txt` in `Ref_cntry_cd`)
+  2. **`*_val_txt` fallback:** first column matching pattern (e.g., `cnsmr_phn_typ_val_txt` → `phn_typ_val_txt`)
+  3. **`*_shrt_nm` fallback:** first column matching pattern (e.g., `cnsmr_lst_wrkgrp_shrt_nm` → `wrkgrp_shrt_nm`)
+  4. **`*_nm` fallback** (excluding `_shrt_nm`): first column matching pattern (e.g., `schdld_pymnt_instnc_prcssng_fee_typ_nm` → `fee_typ_nm`)
+- Validated against all 52 distinct lookup tables across all 83 BDL entity types -- zero exceptions
+- Table structure cached per-table; value column resolved per-element (same table may resolve differently for different elements)
+- Applied to both validation endpoint (full value set for comparison) and typeahead endpoint (LIKE search with TOP 10)
 
 ### Fixed-Value Mapping UI
-- Different UI rendered for entities with `action_type = 'FIXED_VALUE'`
-- Identifier column selector (same as file-mapped -- which column has the agency ID?)
-- Direct value entry fields for each non-identifier visible field
+- Assignment card model with per-card mode selection
+- Each card independently selects File, Blanket, or Conditional mode (3-way toggle when entity has conditional-eligible fields)
+- File mode: source column dropdown for the conditional-eligible field; shared fields for non-varying fields
+- Blanket mode: direct value entry fields for each non-identifier visible field
+- Conditional mode: trigger column selector, unique value grid, per-value typeahead
 - Lookup fields use debounced typeahead search (300ms) against DM reference tables via `/api/bdl-import/lookup-search`
-- Typeahead discovers the search column from `element_name`, active flag from `_actv_flg` column, and description from `_nm` column dynamically via INFORMATION_SCHEMA
+- Typeahead uses the same 4-step column discovery as validation
 - Suggestions show value and description side by side; results cached per element+search term
-- Values stored in `columnMapping` with `__fixed__` prefix keys
-- Validate button enabled when identifier is selected and all required fields have values
+- Validate button enabled when identifier is selected and all required fields/modes are complete
 
 ### Fixed-Value Staging Pipeline
-- Fixed values stored in `columnMapping` with `__fixed__` prefix keys (e.g., `__fixed__tag_shrt_nm`)
-- Stage request separates `mapping` (file-to-column) from `fixed_values` (user-entered)
-- Server adds columns for fixed values (ALTER TABLE if needed) and UPDATEs all rows with those values
-- Validation runs normally against the staged data -- same validation infrastructure as FILE_MAPPED
-- Optional fields left blank are simply not included in the staging table or XML -- DM applies its own defaults (e.g., tag assignment date defaults to current timestamp)
+- Stage request sends `assignments` array with per-assignment mode, values, and file column references
+- Server Path A: iterates file rows first, then assignments within each row (consumer-grouped ordering)
+- Blanket assignments: fixed values inserted for every file row
+- Conditional assignments: trigger column value looked up per row, mapped to output value, skipped if unmapped
+- From File assignments: conditional field value read from specified file column index, skipped if empty, shared fields applied
+- Mixed-path support: when assignments have different column structures, grouped by column list for efficient batching
+- Validation runs normally against the staged data -- same validation infrastructure regardless of mode
 
 ### Tabbed Execute
 - One tab per entity type with individual summary card
@@ -247,6 +305,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Column mapping preserved on back navigation (not reset to empty)
 - Identifier dropdown selection restored on re-render
 - If mapping unchanged from what was staged, existing staging table is reused (no re-stage). If mapping changed, old staging table is dropped via `drop_existing` parameter.
+- Field assignments and FIXED_VALUE assignments included in change detection for re-staging
 
 ### Cascading Validation
 - Validation issues presented as accordion cards -- one expandable at a time
@@ -320,7 +379,6 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - "Undo" per entity in the modal resets all `_skip = 0` on that entity's staging table
 - Step 5 re-renders after alignment with updated counts in summary cards
 - Design principle: FILE_MAPPED = independent ("load this data"), FIXED_VALUE = derivative ("apply this to those records")
-- Future multi-tag design will extend alignment to per-tag granularity within a single FIXED_VALUE entity
 
 ### XML Preview per Entity Tab (April 10)
 - Single-click "Preview XML" header in each entity tab on Step 5
@@ -377,6 +435,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - All columns stored as VARCHAR
 - Bulk INSERT in batches of 500 rows
 - Fixed-value columns added via ALTER TABLE and populated via UPDATE after bulk insert
+- Field assignment columns (per-field mode overrides) added via ALTER TABLE with blanket UPDATE or per-trigger-value UPDATEs
 - Re-staging drops old table atomically via `drop_existing` parameter
 
 ### Import Lifecycle
@@ -398,15 +457,15 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Nullify controls placed in the mapping step (Step 4) rather than the validation screen
 - Rationale: nullify is a mapping-level decision ("what should happen to this field"), not a validation-level decision
 - Nullify fields preserved through re-validation since they're part of the mapping, not validation state
-- ∅ badge on target chips mirrors the entity info button pattern (absolute positioned, top-right)
+- Nullify badge not shown on conditional-eligible fields (they use the mode toggle instead)
 - Purple accent color (`#c586c0`) used consistently for all nullify UI elements
 
 ### Record-Level Auto-Nullify (April 11)
 - Empty values in mapped columns are automatically nullified at XML build time for entities with `has_nullify_fields = 1`
-- Rationale: if a column is explicitly mapped, the source file is the source of truth for that field — empty means "clear it," not "leave it alone." Silent-skip only applies to unmapped fields where omission means "not touching this field."
+- Rationale: if a column is explicitly mapped, the source file is the source of truth for that field -- empty means "clear it," not "leave it alone." Silent-skip only applies to unmapped fields where omission means "not touching this field."
 - Mimics Matt's Access Toolkit behavior where pasting a NULL into a mapped field triggered nullification
-- Non-nullifiable fields (`is_not_nullifiable = 1`) are excluded — empty values still silently skipped
-- No UI change required — implemented entirely in `Build-BDLXml`
+- Non-nullifiable fields (`is_not_nullifiable = 1`) are excluded -- empty values still silently skipped
+- No UI change required -- implemented entirely in `Build-BDLXml`
 
 ### Identifier Handling
 - Consumer-level: `cnsmr_idntfr_agncy_id`
@@ -415,41 +474,13 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Identifier must be selected before mapping is enabled
 
 ### ActionAuditLog Redesign (April 13)
-- Redesigned from field-level config change tracking (`source_module`, `entity_type`, `entity_id`, `entity_name`, `field_name`, `old_value`, `new_value`, `changed_by`, `changed_dttm`) to universal user action audit trail
+- Redesigned from field-level config change tracking to universal user action audit trail
 - New structure: `page_route`, `action_type`, `action_summary`, `environment`, `result`, `error_detail`, `executed_by`, `executed_dttm`
-- `action_summary` is a human-readable string built by calling code (e.g., "Changed orchestrator_drain_mode from 0 to 1" or "Triggered Refresh Drools (3 servers)")
-- Serves dual purpose: audit trail and cooldown enforcement for throttled operations (query most recent successful execution by action_type + environment)
+- `action_summary` is a human-readable string built by calling code
+- Serves dual purpose: audit trail and cooldown enforcement for throttled operations
 - action_type values: CONFIG_CHANGE, SCHEDULE_CHANGE, JOB_TRIGGER, BDL_IMPORT, ACCESS_CHANGE, ALERT_RESEND
-- 91 legacy rows migrated with derived page_route, action_type, and action_summary from old columns
-- All existing writers updated: Admin-API.ps1 (drain toggle, GlobalConfig update, GlobalConfig history SELECT, schedule update, schedule add, alert resend) and JBossMonitoring-API.ps1 (app server switch)
-
-### Multi-Assignment Cards for FIXED_VALUE Entities (April 15)
-- FIXED_VALUE mapping panel redesigned from single-assignment to multi-assignment card model
-- Each card independently selects Blanket or Conditional mode
-- Blanket = same value applied to all rows (default, most common use case)
-- Conditional = value varies per row based on a trigger column from the uploaded file
-- The trigger column is scanned client-side by re-reading the full uploaded file to extract unique values and row counts
-- Server-side staging iterates rows first, then assignments within each row, producing consumer-grouped ordering (consumer A gets all tag assignments before consumer B) — matches the seq_no pattern in established production BDL files
-- `is_conditional_eligible` flag on `Catalog_BDLElementRegistry` controls which fields display the Blanket/Conditional toggle
-- Stage endpoint accepts `assignments` array (new path) alongside existing `fixed_values` support (backward compatible)
-- Staging tables include `_trigger_value` and `_assignment_index` system columns for traceability
-- `Build-BDLXml` requires zero changes — processes expanded staging table rows sequentially with global seq_no counter
-
-### Per-Field Mode Model — Design Direction (April 15)
-- **Not yet built.** Documented design direction for the next phase of conditional assignment support.
-- Observation: the three value assignment modes (From File, Blanket, Conditional) are a **per-field** decision, not an entity-level decision
-- Any `is_conditional_eligible` field on any entity type should support all three modes:
-  1. **From File** — map to a source column (file already has the values) — standard drag-drop behavior
-  2. **Blanket** — enter one value applied to all rows
-  3. **Conditional** — vary by trigger column with per-value typeahead
-- This makes the HYBRID `action_type` unnecessary — the per-field model handles all combinations:
-  - FILE_MAPPED entity with conditional workgroup = consumer fields mapped from file, workgroup uses assignment card
-  - FIXED_VALUE entity with tag from file = tag value mapped from a file column instead of entered manually
-- The `action_type` on `Catalog_BDLFormatRegistry` determines the **default mode** for fields, not a rigid UI path
-- FILE_MAPPED entities default fields to "From File" mode; conditional-eligible fields get a mode selector override
-- FIXED_VALUE entities default fields to "Blanket" mode; conditional-eligible fields get a mode selector override
-- Implementation approach: per-field mode selector (small toggle on the chip/row) layered on top of existing mapping panels
-- First real-world use case: CONSUMER entity with `wrkgrp_shrt_nm` as conditional-eligible field for BI team workgroup reassignment
+- 91 legacy rows migrated
+- All existing writers updated: Admin-API.ps1 and JBossMonitoring-API.ps1
 
 ---
 
@@ -557,22 +588,22 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/bdl-import/environments` | Available environments from ServerConfig |
+| GET | `/api/bdl-import/environments` | Available environments from EnvironmentConfig |
 | GET | `/api/bdl-import/entities` | Available entity types with `action_type`, `entity_key` (RBAC + is_active filtered) |
-| GET | `/api/bdl-import/entity-fields?entity_type=X` | BDL fields for an entity (admin: all visible; dept: AccessFieldConfig whitelist). Includes `import_guidance`. |
-| GET | `/api/bdl-import/lookup-search` | Typeahead search against DM lookup tables. Params: lookup_table, element_name, search, config_id. Discovers active flag and description columns dynamically. |
-| POST | `/api/bdl-import/stage` | Create staging table, insert rows, apply fixed values. Optional drop_existing, fixed_values. Supports `assignments` array for multi-assignment expansion with consumer-grouped row ordering. |
-| POST | `/api/bdl-import/validate` | Read staging table + fetch lookups from DM (repeatable) |
+| GET | `/api/bdl-import/entity-fields?entity_type=X` | BDL fields for an entity (admin: all visible; dept: AccessFieldConfig whitelist). Includes `import_guidance`, `is_conditional_eligible`. |
+| GET | `/api/bdl-import/lookup-search` | Typeahead search against DM lookup tables. 4-step column discovery. Params: lookup_table, element_name, search, config_id. |
+| POST | `/api/bdl-import/stage` | Create staging table, insert rows. Path A: assignments-based expansion (file/blanket/conditional modes). Path B: file-mapped with optional fixed_values and field_assignments. |
+| POST | `/api/bdl-import/validate` | Read staging table + fetch lookups from DM with 4-step column discovery (repeatable) |
 | POST | `/api/bdl-import/replace-values` | Mass-replace values in staging table column |
 | POST | `/api/bdl-import/skip-rows` | Mark rows as skipped in staging table |
-| POST | `/api/bdl-import/align-rows` | Align target staging table skip set to source. Joins on identifier column, skips mismatched rows in target. Returns updated counts. |
-| POST | `/api/bdl-import/reset-alignment` | Reset all skipped rows in a staging table to active. Used to undo alignment on FIXED_VALUE entities. |
-| POST | `/api/bdl-import/set-nullify-fields` | Set blanket nullify fields on staging table. Adds `_nullify_fields` column if needed, updates all non-skipped rows. |
+| POST | `/api/bdl-import/align-rows` | Align target staging table skip set to source |
+| POST | `/api/bdl-import/reset-alignment` | Reset all skipped rows in a staging table to active |
+| POST | `/api/bdl-import/set-nullify-fields` | Set blanket nullify fields on staging table |
 | GET | `/api/bdl-import/staging-cleanup` | Check for expired staging tables (>48 hours) |
 | POST | `/api/bdl-import/staging-cleanup` | Drop expired staging tables |
 | GET | `/api/bdl-import/history` | Recent import history from BDL_ImportLog |
 | POST | `/api/bdl-import/build-preview` | Build XML and return for preview |
-| POST | `/api/bdl-import/execute` | Full pipeline: build XML -> write -> register -> trigger (primary BDL only, no AR log) |
+| POST | `/api/bdl-import/execute` | Full pipeline: build XML -> write -> register -> trigger (primary BDL only) |
 | POST | `/api/bdl-import/execute-ar-log` | Consolidated AR log: build + register + trigger for all entities in a batch |
 | GET | `/api/bdl-import/templates?entity_type=X` | List saved templates for an entity type |
 | POST | `/api/bdl-import/templates` | Save a new template |
@@ -588,39 +619,30 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 
 ## Next Steps
 
-### ServerConfig → EnvironmentConfig Refactoring — COMPLETE
-Completed in a prior session. `Tools.ServerConfig` renamed to `Tools.EnvironmentConfig`. Server-specific columns (`api_base_url`, `server_id`, `server_name`) removed. API URLs sourced from `dbo.ServerRegistry`. All BDL Import API queries updated. ActionAuditLog wired into BDL import execution.
+### Tag Entity Filtering (Priority: Next session)
 
-### Per-Field Mode Selector for Conditional-Eligible Fields (Priority: First thing next session)
+**Context:** CONSUMER_TAG and ACCOUNT_TAG entities need to restrict typeahead and validation lookup results to only tags associated with the correct entity level. Without filtering, a user could accidentally select an account-level tag for a consumer import, which would fail or produce incorrect results in DM.
 
-**Context:** BI team needs workgroup reassignment capability on the CONSUMER entity. The multi-assignment card model built April 15 handles FIXED_VALUE entities (tags). Extending to FILE_MAPPED entities like CONSUMER requires a per-field mode selector that lets individual conditional-eligible fields opt out of drag-drop mapping and into blanket or conditional assignment mode. All three modes (From File, Blanket, Conditional) should be available for any `is_conditional_eligible` field on any entity type.
+**Filter chain:** `tag` → `tag_typ_id` → `tag_typ.tag_typ_id` → `tag_typ.tag_typ_entty_assctn_cd` → `ref_entty_assctn_cd`
+- CONSUMER_TAG: `tag_shrt_nm FROM tag WHERE tag_typ_id IN (SELECT tag_typ_id FROM tag_typ WHERE tag_typ_entty_assctn_cd = 2)`
+- ACCOUNT_TAG: `tag_shrt_nm FROM tag WHERE tag_typ_id IN (SELECT tag_typ_id FROM tag_typ WHERE tag_typ_entty_assctn_cd = 3)`
 
-**Design:** Each conditional-eligible field gets a 3-way mode selector: From File (default for FILE_MAPPED) / Blanket / Conditional. Selecting Blanket or Conditional removes the field from the drag-drop target panel and creates an assignment card for it below the mapping panels. Selecting "From File" returns it to the target panel. This eliminates the need for HYBRID as a separate `action_type` — the per-field model handles all combinations natively.
+**Implementation approach:**
+- Add entity-level context to lookup-search and validate calls when lookup_table is `tag`
+- The entity_type (CONSUMER_TAG vs ACCOUNT_TAG) maps to entty_assctn_cd (2 vs 3)
+- Filter applied as JOIN or WHERE subquery on the lookup query
+- May need a catalog-driven approach (e.g., `lookup_filter` column on element registry) rather than hardcoding tag-specific logic, to handle similar cases on future entity types
 
-**Step 1: DDL**
-- Set `is_conditional_eligible = 1` on `wrkgrp_shrt_nm` for the CONSUMER entity
-- Evaluate whether any other CONSUMER fields should be eligible (discuss with Matt/Brandon)
+### BDL Import User Guide Update (Priority: Next session — BI release imminent)
 
-**Step 2: UI — Per-field mode selector**
-- Add mode toggle to conditional-eligible field chips in the FILE_MAPPED target panel
-- When toggled to Blanket or Conditional, field moves from target panel to a new "Field Assignments" section below the mapping panels
-- When toggled back to "From File," field returns to the target panel
-- Field assignments section renders assignment cards (same component as FIXED_VALUE)
+**Context:** BI team is being onboarded to use BDL Import for production workflows. The existing `bdl-import-guide.html` covers the original 5-step wizard but does not document the per-field mode selector, From File mode, conditional assignments, or the 3-way toggle. Guide needs to be updated before official BI team release.
 
-**Step 3: Staging — Mixed mapping handling**
-- Stage endpoint already handles `assignments` array
-- For FILE_MAPPED entities with field assignments, the client sends both `mapping` (file-mapped fields) and `assignments` (field-level overrides)
-- Server creates staging table with all mapped columns from the file, then applies assignment values (blanket UPDATE or conditional per-row INSERT/UPDATE)
-
-**Step 4: Evaluate HYBRID action_type**
-- If per-field model proves sufficient, HYBRID action_type may be unnecessary
-- Decision: keep HYBRID as a catalog marker for "this entity commonly uses field-level overrides" (visual hint) or remove entirely
-- Either way, the `action_type` CHECK constraint should remain unchanged until a decision is made
-
-**Open question:** Does the mode selector belong in the mapping step only, or should it also be configurable at the entity selection step (Step 3) so the user declares intent before reaching mapping?
-
-### ActionAuditLog Integration — COMPLETE
-ActionAuditLog wired into BDL import execution, BDL catalog management actions, JBoss app server operations, and admin config changes.
+**Scope:**
+- Update Step 4 (Map & Validate) section to cover the 3-way mode toggle on both FILE_MAPPED and FIXED_VALUE entities
+- Add visual mockups or descriptions for File, Blanket, and Conditional modes
+- Document the Field Assignments section that appears below mapping panels
+- Add section on From File mode for tag imports
+- Review and update all existing step descriptions for accuracy
 
 ### DM Job Triggers (Apps/Int Page) — R1-R4 COMPLETE
 
@@ -631,7 +653,7 @@ R1 (Refresh Drools), R2 (Release Notices), R3 (Balance Sync), and R4 (Request Va
 |---|------|-------------|---------------|----------|
 | R5 | Launch Job (generic) | POST `/jobs/{job_name}/execute` | Single (primary) | None |
 
-- R5 (generic launcher) should be admin-only — freeform job name input
+- R5 (generic launcher) should be admin-only -- freeform job name input
 
 ### Immediate (Pre-existing)
 
@@ -646,8 +668,8 @@ R1 (Refresh Drools), R2 (Release Notices), R3 (Balance Sync), and R4 (Request Va
 Supports explicit nullification of field values in DM via the `<nullify_fields>` XML block. Two complementary mechanisms:
 
 **Blanket Nullify (UI-driven, mapping step):**
-- Nullify badge (∅) appears on each eligible target field chip in the BDL Fields panel during mapping
-- Eligibility: entity has `has_nullify_fields = 1`, field has `is_not_nullifiable = 0`, field is not `is_import_required`
+- Nullify badge (∅) appears on each eligible target field chip in the BDL Fields panel during mapping (not shown on conditional-eligible fields which use the mode toggle instead)
+- Eligibility: entity has `has_nullify_fields = 1`, field has `is_not_nullifiable = 0`, field is not `is_import_required`, field is not `is_conditional_eligible`
 - Clicking the badge moves the field from the target panel into the Mapped section as "∅ Nullify → Field Name" with ✕ to undo
 - Tracked in `state.nullifyFields[]` during mapping, preserved through re-validation
 - Persisted to staging table `_nullify_fields` column (VARCHAR(MAX), comma-separated) via `POST /api/bdl-import/set-nullify-fields` on entity advance or step transition
@@ -655,38 +677,35 @@ Supports explicit nullification of field values in DM via the `<nullify_fields>`
 
 **Record-Level Nullify (automatic, Build-BDLXml):**
 - When a mapped column has an empty/NULL value for a row and the entity supports nullify, that field is automatically added to the record's nullify block instead of being silently omitted
-- Non-nullifiable fields (`is_not_nullifiable = 1`) are excluded — empty values still silently skipped for those
+- Non-nullifiable fields (`is_not_nullifiable = 1`) are excluded -- empty values still silently skipped for those
 - `Build-BDLXml` queries `Catalog_BDLElementRegistry` for non-nullifiable field set at XML build time
 - Mimics Matt's Access Toolkit behavior: pasting a NULL into a field triggers nullification for that record
 
 **Combined behavior per row:**
 - Blanket nullify fields (from `_nullify_fields` column) + record-level nullify fields (empty mapped columns) are merged into a single `<nullify_fields>` block per record
 - Duplicates excluded (blanket already in list not re-added from record-level detection)
-- Data elements loop unchanged — still skips empty values (they're captured as nullify entries instead)
+- Data elements loop unchanged -- still skips empty values (they're captured as nullify entries instead)
 
 **Execute Summary:**
-- Step 5 summary grid reduced to 4 items (Environment, Entity Type, Rows, Staging Table)
-- Mapped Fields card (teal accent `#4ec9b0`) lists all mapped field display names
+- Step 5 summary grid: 4 items (Environment, Entity Type, Rows, Staging Table)
+- Mapped Fields card (teal accent `#4ec9b0`) lists all mapped field display names including field assignments with mode tags
 - Nullify card (purple accent `#c586c0`) lists nullified field display names (only when applicable)
 - Same cards shown on Step 4 validated/complete screen for consistency
 - XML Preview rendered as a distinct button rather than clickable header for visibility
 
 ### Follow-Up Items
 
-- **Multi-tag "Add Another" pattern** -- COMPLETE (April 15). Assignment card model supports multiple blanket and/or conditional assignments per FIXED_VALUE entity. Staging expansion generates one row per identifier per assignment with consumer-grouped seq_no ordering.
-- **Multi-tag alignment per tag** -- When multi-tag support is built for FIXED_VALUE entities, the alignment modal will need per-tag alignment dropdowns (each tag independently aligns to a FILE_MAPPED entity). Staging table will need per-tag skip tracking instead of single `_skip` column.
-- **HYBRID action_type evaluation** -- Per-field mode model (April 15 design) may make HYBRID unnecessary as a separate action_type. Decision pending implementation of per-field mode selector for FILE_MAPPED entities. See Architecture Decisions: Per-Field Mode Model.
+- **HYBRID action_type evaluation** -- Per-field mode model (April 15) may make HYBRID unnecessary as a separate action_type. The per-field model handles all combinations natively. Decision deferred until more entity types are onboarded.
 - **Same source column mapped to multiple BDLs** -- Pending Brandon's input on whether this is a real scenario.
 - **Reset validation skips for mapped entities** -- Currently no mechanism to undo validation-phase skips on FILE_MAPPED entities without re-running validation from scratch. Future enhancement.
 - **Step guide text refinement** -- Right-column guidance for each step.
 - **Template UX refinement** -- User feedback on template workflow.
-- **Typeahead lookup column discovery** -- Current discovery logic finds `_actv_flg` and `_nm` columns dynamically. If future lookup tables use different naming patterns for active flags or descriptions, the discovery may need expansion.
-- **Wrapper element selection** -- Most entity types appear under both `consumer_operational_transaction_data` and `account_operational_transaction_data` in the XSD. Current code takes the first match from the catalog. This works for PHONE and CONSUMER_TAG but may need a `wrapper_format_id` column on `Catalog_BDLFormatRegistry` if future entities require a specific wrapper that differs from the default first-match behavior.
+- **Typeahead lookup column discovery** -- Now uses 4-step dynamic resolution. No further hardcoded patterns needed.
+- **Wrapper element selection** -- Most entity types appear under both `consumer_operational_transaction_data` and `account_operational_transaction_data` in the XSD. Current code takes the first match from the catalog. This works for PHONE and CONSUMER_TAG but may need a `wrapper_format_id` column on `Catalog_BDLFormatRegistry` if future entities require a specific wrapper.
 - **`custom_properties` XML block** -- Currently included as an empty `<custom_property/>` element. May not be needed; successful third-party tag imports omit it entirely. Consider removing.
 - **Record-level import audit table** -- Pending Matt's input on current tracking pattern. Single table design to accommodate all entity types. Volume concern for large imports (250K rows). Deferred to future session.
 - **`value_changes` population gap** -- Verify and wire in if not connected.
 - **GlobalConfig history UI** -- Admin-API endpoint updated for new ActionAuditLog columns. May need minor admin.js adjustment if a history display exists or is added.
-- **"From File" mode for FIXED_VALUE conditional-eligible fields** -- FIXED_VALUE entities like CONSUMER_TAG could receive tag values from a file column rather than manual entry. Per-field mode selector would add "From File" option alongside Blanket/Conditional. Low priority — blanket/conditional covers current use cases.
 
 ### Phase 2
 
@@ -718,11 +737,21 @@ One row per element within each entity type. Child table via `format_id` FK. Key
 - `is_not_nullifiable` -- From Excel spec. Means "cannot be included in nullify_fields." Also controls Skip button visibility on required empty fields.
 - `is_import_required` -- Practical requirement from operational experience. Set by Matt. **This is the only flag used for required field validation and hard blocks.**
 
-### Lookup Table Discovery Pattern
-For fields with `lookup_table` populated, the typeahead and validation endpoints discover columns dynamically:
-- **Search column:** The `element_name` itself matches a column in the lookup table (e.g., `tag_shrt_nm` in `dbo.tag`)
-- **Active flag:** First column matching `*_actv_flg` pattern (e.g., `tag_actv_flg`)
-- **Description:** First column matching `*_nm` pattern that is not the search column (e.g., `tag_nm`)
+### Lookup Table Discovery Pattern (4-Step — April 15)
+For fields with `lookup_table` populated, the typeahead and validation endpoints discover the value column dynamically:
+1. **Direct match:** `element_name` is a column in the lookup table (e.g., `wrkgrp_shrt_nm` in `wrkgrp`)
+2. **`*_val_txt` fallback:** first column matching pattern (e.g., `phn_typ_val_txt` in `Ref_phn_typ_cd`)
+3. **`*_shrt_nm` fallback:** first column matching pattern (e.g., `wrkgrp_shrt_nm` when element is `cnsmr_lst_wrkgrp_shrt_nm`)
+4. **`*_nm` fallback** (excluding `_shrt_nm`): first column matching pattern (e.g., `fee_typ_nm` in `fee_typ`)
+- **Active flag:** First column matching `*_actv_flg` pattern
+- **Description:** First column matching `*_nm` (excluding resolved value column), then `*_dscrptn_txt`
+
+### Tag Type Filtering (Planned)
+Tags in DM are entity-scoped via `tag_typ.tag_typ_entty_assctn_cd`:
+- Consumer tags: `tag_typ_entty_assctn_cd = 2` (maps to `ref_entty_assctn_cd` CONSUMER)
+- Account tags: `tag_typ_entty_assctn_cd = 3` (maps to `ref_entty_assctn_cd` CONSUMERACCOUNT)
+- Filter chain: `tag.tag_typ_id` → `tag_typ.tag_typ_entty_assctn_cd`
+- Applied to CONSUMER_TAG and ACCOUNT_TAG entities to prevent cross-level tag selection
 
 ---
 
@@ -741,9 +770,9 @@ For fields with `lookup_table` populated, the typeahead and validation endpoints
 | Object | Type | Description |
 |--------|------|-------------|
 | BDLImport.ps1 | Route | BDL Import CC page route (5-step layout) |
-| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, consolidated AR log, assignments-based staging, lookup search, set-nullify-fields) |
-| bdl-import.js | JavaScript | BDL Import CC client-side logic (multi-entity, per-entity state, multi-assignment cards with blanket/conditional mode, typeahead, entity grouping, consolidated AR log, nullify badge in mapping, Excel date formatting) |
-| bdl-import.css | CSS | BDL Import CC styles (incl. assignment card, trigger grid, mode toggle) |
+| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, consolidated AR log, assignments-based staging with file/blanket/conditional modes, per-field assignments, 4-step lookup discovery, set-nullify-fields) |
+| bdl-import.js | JavaScript | BDL Import CC client-side logic (multi-entity, per-entity state, multi-assignment cards with file/blanket/conditional mode, per-field mode selector on FILE_MAPPED entities, typeahead, entity grouping, consolidated AR log, nullify badge in mapping, Excel date formatting) |
+| bdl-import.css | CSS | BDL Import CC styles (incl. assignment card, trigger grid, mode toggle, per-field mode toggle, field assignment cards) |
 
 ### ControlCenter.Shared Component
 | Object | Type | Description |
@@ -761,7 +790,7 @@ For fields with `lookup_table` populated, the typeahead and validation endpoints
 ### Documentation.Site Component
 | Object | Type | Description |
 |--------|------|-------------|
-| bdl-import-guide.html | HTML | BDL Import user guide — standalone step-by-step walkthrough with visual mockups |
+| bdl-import-guide.html | HTML | BDL Import user guide — standalone step-by-step walkthrough with visual mockups (update pending for per-field mode and From File features) |
 
 ### Credential Infrastructure
 | Object | Location | Description |
