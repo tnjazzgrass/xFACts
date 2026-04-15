@@ -47,7 +47,7 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
     <!-- Header -->
     <div class="page-header">
         <div>
-            <h1>Administration</h1>
+            <h1><a href="docs/pages/cc/controlcenter-cc-admin.html" target="_blank">Administration</a></h1>
             <p class="header-subtitle">Process timeline and platform management</p>
         </div>
         <div class="refresh-info">
