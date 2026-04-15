@@ -248,7 +248,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
  
         $mappingHash = @{}
         foreach ($key in $mapping.PSObject.Properties) { $mappingHash[$key.Name] = $key.Value }
- 
+
         # ══════════════════════════════════════════════════════════════════
         # PATH A: Assignments-based staging (multi-assignment expansion)
         # ══════════════════════════════════════════════════════════════════
@@ -314,19 +314,11 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             Invoke-XFActsNonQuery -Query $createDdl
  
             # ── Process assignments: iterate rows first, then assignments ───
-            # Produces consumer-grouped ordering in the staging table:
-            #   consumer A tag 1, consumer A tag 2, consumer B tag 1, consumer B tag 2
-            # Matches the established BDL XML pattern from existing production files.
-            # Build-BDLXml reads rows via ORDER BY _row_number, so the IDENTITY
-            # column insertion order directly controls XML entry sequence.
             $batchSize = 500
             $totalInserted = 0
             $valuesClauses = @()
 
             # ── Pre-build assignment metadata for efficient inner loop ──
-            # Avoids re-parsing PSObject properties on every file row.
-            # Each entry contains mode, column list, and mode-specific data
-            # (value map + shared fields for conditional, fixed values for blanket).
             $assignmentMeta = @()
             for ($aIdx = 0; $aIdx -lt $assignments.Count; $aIdx++) {
                 $assignment = $assignments[$aIdx]
@@ -343,13 +335,11 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                         return
                     }
 
-                    # Build hashtable from value_map PSObject for fast lookup
                     $valueMapHash = @{}
                     foreach ($key in $assignment.value_map.PSObject.Properties) {
                         $valueMapHash[$key.Name] = $key.Value
                     }
 
-                    # Build shared fields hashtable (non-varying fields like tag_assgn_dt)
                     $sharedHash = @{}
                     if ($assignment.shared_fields) {
                         foreach ($key in $assignment.shared_fields.PSObject.Properties) {
@@ -363,8 +353,33 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     $meta.SharedHash = $sharedHash
                     $meta.ConditionalField = $condField
 
-                    # Column list: identifier, trigger value, assignment index, conditional field, shared fields
                     $insertCols = @("[$idElementName]", '[_trigger_value]', '[_assignment_index]', "[$condField]")
+                    foreach ($sf in $sharedHash.Keys) { $insertCols += "[$sf]" }
+                    $meta.ColumnList = $insertCols -join ', '
+                    $meta.ColumnCount = $insertCols.Count
+                }
+                elseif ($mode -eq 'from_file') {
+                    # From File: read conditional field value from a file column
+                    $fileColumn = $assignment.file_column
+                    $fileColIndex = [array]::IndexOf($headers, $fileColumn)
+                    if ($fileColIndex -lt 0) {
+                        Write-PodeJsonResponse -Value @{ error = "File column '$fileColumn' not found in file headers" } -StatusCode 400
+                        return
+                    }
+
+                    $sharedHash = @{}
+                    if ($assignment.shared_fields) {
+                        foreach ($key in $assignment.shared_fields.PSObject.Properties) {
+                            $sharedHash[$key.Name] = $key.Value
+                        }
+                    }
+
+                    $condField = $assignment.conditional_field
+                    $meta.FileColIndex = $fileColIndex
+                    $meta.SharedHash = $sharedHash
+                    $meta.ConditionalField = $condField
+
+                    $insertCols = @("[$idElementName]", '[_assignment_index]', "[$condField]")
                     foreach ($sf in $sharedHash.Keys) { $insertCols += "[$sf]" }
                     $meta.ColumnList = $insertCols -join ', '
                     $meta.ColumnCount = $insertCols.Count
@@ -379,7 +394,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     }
                     $meta.FvFields = $fvFields
 
-                    # Column list: identifier, assignment index, fixed value fields
                     $insertCols = @("[$idElementName]", '[_assignment_index]')
                     foreach ($fk in $fvFields.Keys) { $insertCols += "[$fk]" }
                     $meta.ColumnList = $insertCols -join ', '
@@ -389,9 +403,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             }
 
             # ── Check if all assignments share the same column list ──────
-            # When column structures match (e.g., two blanket tags or two
-            # conditionals with the same shared fields), we can batch all
-            # rows into a single INSERT stream for efficiency.
             $allSameColumns = $true
             $firstColList = $assignmentMeta[0].ColumnList
             for ($a = 1; $a -lt $assignmentMeta.Count; $a++) {
@@ -400,25 +411,20 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
 
             if ($allSameColumns) {
                 # ── Fast path: all assignments use same column structure ─
-                # Single INSERT stream, rows interleaved by consumer.
                 $colList = $firstColList
                 for ($r = 0; $r -lt $rows.Count; $r++) {
                     $row = $rows[$r]
                     $idVal = if ($idHeaderIndex -lt $row.Count) { $row[$idHeaderIndex] } else { '' }
 
-                    # Inner loop: each assignment for this consumer row
                     foreach ($am in $assignmentMeta) {
                         if ($am.Mode -eq 'conditional') {
-                            # Read trigger value from file row
                             $triggerVal = if ($am.TriggerHeaderIndex -lt $row.Count) { $row[$am.TriggerHeaderIndex] } else { '' }
                             $triggerVal = $triggerVal.Trim()
 
-                            # Skip if trigger value has no mapping (user left it blank = skip)
                             if (-not $am.ValueMapHash.ContainsKey($triggerVal)) { continue }
                             $mappedValue = $am.ValueMapHash[$triggerVal]
                             if (-not $mappedValue -or $mappedValue -eq '') { continue }
 
-                            # Build VALUES: identifier, trigger value, assignment index, conditional field, shared fields
                             $vals = @(
                                 "'" + ($idVal -replace "'", "''") + "'"
                                 "'" + ($triggerVal -replace "'", "''") + "'"
@@ -429,8 +435,21 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                                 $vals += "'" + ($am.SharedHash[$sf] -replace "'", "''") + "'"
                             }
                         }
+                        elseif ($am.Mode -eq 'from_file') {
+                            $fileVal = if ($am.FileColIndex -lt $row.Count) { $row[$am.FileColIndex] } else { '' }
+                            $fileVal = $fileVal.Trim()
+                            if (-not $fileVal -or $fileVal -eq '') { continue }
+
+                            $vals = @(
+                                "'" + ($idVal -replace "'", "''") + "'"
+                                $am.Index
+                                "'" + ($fileVal -replace "'", "''") + "'"
+                            )
+                            foreach ($sf in $am.SharedHash.Keys) {
+                                $vals += "'" + ($am.SharedHash[$sf] -replace "'", "''") + "'"
+                            }
+                        }
                         else {
-                            # Blanket: one row per consumer with fixed values
                             $vals = @(
                                 "'" + ($idVal -replace "'", "''") + "'"
                                 $am.Index
@@ -442,7 +461,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
 
                         $valuesClauses += "(" + ($vals -join ', ') + ")"
 
-                        # Flush batch at threshold
                         if ($valuesClauses.Count -ge $batchSize) {
                             $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
                             Invoke-XFActsNonQuery -Query $insertSql
@@ -452,7 +470,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     }
                 }
 
-                # Flush remaining rows
                 if ($valuesClauses.Count -gt 0) {
                     $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
                     Invoke-XFActsNonQuery -Query $insertSql
@@ -461,9 +478,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             }
             else {
                 # ── Mixed path: assignments have different column structures
-                # This occurs when mixing blanket and conditional assignments
-                # (different column sets). Group by column list, then within
-                # each group iterate rows-first for consumer-grouped ordering.
                 $colGroups = @{}
                 foreach ($am in $assignmentMeta) {
                     if (-not $colGroups.ContainsKey($am.ColumnList)) { $colGroups[$am.ColumnList] = @() }
@@ -478,10 +492,8 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                         $row = $rows[$r]
                         $idVal = if ($idHeaderIndex -lt $row.Count) { $row[$idHeaderIndex] } else { '' }
 
-                        # Process each assignment in this column group for current consumer
                         foreach ($am in $groupMetas) {
                             if ($am.Mode -eq 'conditional') {
-                                # Read trigger value and look up mapped value
                                 $triggerVal = if ($am.TriggerHeaderIndex -lt $row.Count) { $row[$am.TriggerHeaderIndex] } else { '' }
                                 $triggerVal = $triggerVal.Trim()
                                 if (-not $am.ValueMapHash.ContainsKey($triggerVal)) { continue }
@@ -498,8 +510,21 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                                     $vals += "'" + ($am.SharedHash[$sf] -replace "'", "''") + "'"
                                 }
                             }
+                            elseif ($am.Mode -eq 'from_file') {
+                                $fileVal = if ($am.FileColIndex -lt $row.Count) { $row[$am.FileColIndex] } else { '' }
+                                $fileVal = $fileVal.Trim()
+                                if (-not $fileVal -or $fileVal -eq '') { continue }
+
+                                $vals = @(
+                                    "'" + ($idVal -replace "'", "''") + "'"
+                                    $am.Index
+                                    "'" + ($fileVal -replace "'", "''") + "'"
+                                )
+                                foreach ($sf in $am.SharedHash.Keys) {
+                                    $vals += "'" + ($am.SharedHash[$sf] -replace "'", "''") + "'"
+                                }
+                            }
                             else {
-                                # Blanket: fixed values for this consumer
                                 $vals = @(
                                     "'" + ($idVal -replace "'", "''") + "'"
                                     $am.Index
@@ -511,7 +536,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
 
                             $valuesClauses += "(" + ($vals -join ', ') + ")"
 
-                            # Flush batch at threshold
                             if ($valuesClauses.Count -ge $batchSize) {
                                 $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
                                 Invoke-XFActsNonQuery -Query $insertSql
@@ -521,7 +545,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                         }
                     }
 
-                    # Flush remaining rows for this column group
                     if ($valuesClauses.Count -gt 0) {
                         $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
                         Invoke-XFActsNonQuery -Query $insertSql
@@ -687,6 +710,89 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
 "@ -Parameters @{ fixedVal = $fvValue }
             }
         }
+
+        # ── Apply field assignments (per-field mode overrides on FILE_MAPPED entities) ──
+        $fieldAssignments = $body.field_assignments
+        if ($fieldAssignments) {
+            foreach ($prop in $fieldAssignments.PSObject.Properties) {
+                $faElementName = $prop.Name
+                $faData = $prop.Value
+                $faMode = $faData.mode
+
+                # Ensure column exists in staging table
+                $faColExists = Invoke-XFActsQuery -Query @"
+                    SELECT 1 FROM sys.columns c
+                    INNER JOIN sys.tables t ON t.object_id = c.object_id
+                    INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                    WHERE s.name = 'Staging' AND t.name = @tableName AND c.name = @colName
+"@ -Parameters @{ tableName = $tableName; colName = $faElementName }
+
+                if (-not $faColExists -or $faColExists.Count -eq 0) {
+                    $faMeta = $fieldMetaMap[$faElementName]
+                    $faSqlType = 'VARCHAR(MAX)'
+                    if ($faMeta) {
+                        $faBdlType = if ($faMeta.data_type -and $faMeta.data_type -isnot [System.DBNull]) { $faMeta.data_type.ToLower() } else { '' }
+                        $faMaxLen = $faMeta.max_length
+                        switch ($faBdlType) {
+                            'string'   { $faSqlType = if ($faMaxLen) { "VARCHAR($faMaxLen)" } else { 'VARCHAR(MAX)' } }
+                            'int'      { $faSqlType = 'VARCHAR(20)' }
+                            'long'     { $faSqlType = 'VARCHAR(20)' }
+                            'short'    { $faSqlType = 'VARCHAR(10)' }
+                            'decimal'  { $faSqlType = 'VARCHAR(30)' }
+                            'boolean'  { $faSqlType = 'VARCHAR(10)' }
+                            'dateTime' { $faSqlType = 'VARCHAR(50)' }
+                            default    { $faSqlType = if ($faMaxLen) { "VARCHAR($faMaxLen)" } else { 'VARCHAR(MAX)' } }
+                        }
+                    }
+                    Invoke-XFActsNonQuery -Query "ALTER TABLE $fullTableName ADD [$faElementName] $faSqlType NULL"
+                }
+
+                $safeFaCol = "[$faElementName]"
+
+                if ($faMode -eq 'blanket') {
+                    # Blanket: UPDATE all non-skipped rows with the single value
+                    $faValue = $faData.value
+                    if ($faValue -and $faValue -ne '') {
+                        Invoke-XFActsNonQuery -Query @"
+                            UPDATE $fullTableName SET $safeFaCol = @faVal WHERE _skip = 0
+"@ -Parameters @{ faVal = $faValue }
+                    }
+                }
+                elseif ($faMode -eq 'conditional') {
+                    # Conditional: resolve trigger column to staging table column,
+                    # then UPDATE per trigger value
+                    $faTriggerHeader = $faData.trigger_column
+                    $faValueMap = $faData.value_map
+
+                    if ($faTriggerHeader -and $faValueMap) {
+                        # Resolve trigger header to staging table column name
+                        if ($mappingHash.ContainsKey($faTriggerHeader)) {
+                            # Mapped column — staging table uses element name
+                            $triggerStagingCol = $mappingHash[$faTriggerHeader]
+                        } else {
+                            # Unmapped column — staging table uses _unmapped suffix
+                            $safeTriggerName = ($faTriggerHeader -replace '[^\w]', '_')
+                            if ($safeTriggerName.Length -gt 100) { $safeTriggerName = $safeTriggerName.Substring(0, 100) }
+                            $triggerStagingCol = "${safeTriggerName}_unmapped"
+                        }
+
+                        $safeTriggerCol = "[$triggerStagingCol]"
+
+                        foreach ($vmProp in $faValueMap.PSObject.Properties) {
+                            $triggerVal = $vmProp.Name
+                            $mappedVal = $vmProp.Value
+                            if (-not $mappedVal -or $mappedVal -eq '') { continue }
+
+                            Invoke-XFActsNonQuery -Query @"
+                                UPDATE $fullTableName
+                                SET $safeFaCol = @mappedVal
+                                WHERE $safeTriggerCol = @triggerVal AND _skip = 0
+"@ -Parameters @{ mappedVal = $mappedVal; triggerVal = $triggerVal }
+                        }
+                    }
+                }
+            }
+        }
  
         $reqExtraNames = @($requiredExtraColumns | ForEach-Object { $_.elementName })
  
@@ -711,47 +817,45 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
         $stagingTable = $body.staging_table
         $entityType = $body.entity_type
         $configId = $body.config_id
-
+ 
         if (-not $stagingTable -or -not $entityType -or -not $configId) {
             Write-PodeJsonResponse -Value @{ error = 'staging_table, entity_type, and config_id are required' } -StatusCode 400
             return
         }
-
+ 
         $tableCheck = Invoke-XFActsQuery -Query @"
             SELECT 1 FROM sys.tables t
             INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
             WHERE s.name = 'Staging' AND t.name = @tableName
 "@ -Parameters @{ tableName = $stagingTable }
-
+ 
         if (-not $tableCheck -or $tableCheck.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = "Staging table not found: $stagingTable" } -StatusCode 404
             return
         }
-
+ 
         $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance, environment
             FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
-
+ 
         if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
-
+ 
         $dbInstance = $envConfig[0].db_instance
         $environment = $envConfig[0].environment
-
+ 
         $safeTable = "Staging.[" + $stagingTable.Replace(']', ']]') + "]"
         $stagingRows = Invoke-XFActsQuery -Query "SELECT * FROM $safeTable WHERE _skip = 0 ORDER BY _row_number"
-
+ 
         $mappedColumnNames = @()
         if ($stagingRows -and $stagingRows.Count -gt 0) {
-            $mappedColumnNames = @($stagingRows[0].Keys | Where-Object { 
-                $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -notlike '*_unmapped' 
-            })
+            $mappedColumnNames = @($stagingRows[0].Keys | Where-Object { $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -notlike '*_unmapped' -and $_ -ne '_trigger_value' -and $_ -ne '_assignment_index' -and $_ -ne '_nullify_fields' })
         }
-
+ 
         $fieldMeta = Invoke-XFActsQuery -Query @"
             SELECT e.element_name, e.data_type, e.max_length, e.lookup_table
             FROM Tools.Catalog_BDLElementRegistry e
@@ -759,18 +863,19 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
             WHERE f.entity_type = @entityType
               AND e.is_visible = 1
 "@ -Parameters @{ entityType = $entityType }
-
+ 
         $lookupFields = $fieldMeta | Where-Object { $_.lookup_table -and $_.lookup_table -isnot [System.DBNull] }
         $lookups = @{}
         $lookupErrors = @{}
         $discoveredTables = @{}
-
+ 
         foreach ($field in $lookupFields) {
             if ($mappedColumnNames -notcontains $field.element_name) { continue }
             $tblName = $field.lookup_table
             $elementName = $field.element_name
-
+ 
             try {
+                # Cache table structure (columns + active flag) per table
                 if (-not $discoveredTables.ContainsKey($tblName)) {
                     $columns = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
                         SELECT COLUMN_NAME
@@ -778,28 +883,45 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                         WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @tableName
                         ORDER BY ORDINAL_POSITION
 "@ -Parameters @{ tableName = $tblName }
-
+ 
                     $colNames = @($columns | ForEach-Object { $_.COLUMN_NAME })
-                    $valColumn = $colNames | Where-Object { $_ -like '*_val_txt' } | Select-Object -First 1
                     $actvColumn = $colNames | Where-Object { $_ -like '*_actv_flg' } | Select-Object -First 1
-
+ 
                     $discoveredTables[$tblName] = @{
-                        ValColumn  = $valColumn
                         ActvColumn = $actvColumn
                         AllColumns = $colNames
                     }
                 }
-
+ 
                 $tableInfo = $discoveredTables[$tblName]
-
-                if (-not $tableInfo.ValColumn) {
-                    $lookupErrors[$elementName] = "Could not find _val_txt column in $tblName (columns: $($tableInfo.AllColumns -join ', '))"
+                $colNames = $tableInfo.AllColumns
+ 
+                # 4-step value column resolution (per element, not per table)
+                $valCol = $null
+                # Step 1: Direct match — element_name is a column in the table
+                if ($colNames -contains $elementName) {
+                    $valCol = $elementName
+                }
+                # Step 2: *_val_txt fallback
+                if (-not $valCol) {
+                    $valCol = $colNames | Where-Object { $_ -like '*_val_txt' } | Select-Object -First 1
+                }
+                # Step 3: *_shrt_nm fallback
+                if (-not $valCol) {
+                    $valCol = $colNames | Where-Object { $_ -like '*_shrt_nm' } | Select-Object -First 1
+                }
+                # Step 4: *_nm fallback (excluding _shrt_nm columns)
+                if (-not $valCol) {
+                    $valCol = $colNames | Where-Object { $_ -like '*_nm' -and $_ -notlike '*_shrt_nm' } | Select-Object -First 1
+                }
+ 
+                if (-not $valCol) {
+                    $lookupErrors[$elementName] = "Could not resolve value column for '$elementName' in $tblName (columns: $($colNames -join ', '))"
                     continue
                 }
-
-                $valCol = $tableInfo.ValColumn
+ 
                 $actvCol = $tableInfo.ActvColumn
-
+ 
                 if ($actvCol) {
                     $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
                         SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] WHERE [$actvCol] = 'Y' ORDER BY [$valCol]
@@ -810,7 +932,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                         SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] ORDER BY [$valCol]
 "@
                 }
-
+ 
                 $lookups[$elementName] = @{
                     values      = @($values | ForEach-Object { $_.val })
                     table       = $tblName
@@ -822,7 +944,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                 $lookupErrors[$elementName] = "Failed to query $tblName on ${dbInstance}: $($_.Exception.Message)"
             }
         }
-
+ 
         $rowArrays = @()
         foreach ($sRow in $stagingRows) {
             $rowVals = @()
@@ -833,10 +955,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
             }
             $rowArrays += ,@($rowVals)
         }
-
+ 
         $skipCount = Invoke-XFActsQuery -Query "SELECT COUNT(*) AS cnt FROM $safeTable WHERE _skip = 1"
         $skippedCount = if ($skipCount -and $skipCount.Count -gt 0) { $skipCount[0].cnt } else { 0 }
-
+ 
         Write-PodeJsonResponse -Value @{
             columns       = @($mappedColumnNames)
             rows          = @($rowArrays)
@@ -855,7 +977,8 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
 
 # ----------------------------------------------------------------------------
 # GET /api/bdl-import/lookup-search
-# Typeahead search against DM lookup tables for FIXED_VALUE entity fields.
+# Typeahead search against DM lookup tables for BDL entity fields.
+# Uses 4-step column resolution: element_name → *_val_txt → *_shrt_nm → *_nm
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -863,62 +986,85 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
         $elementName = $WebEvent.Query['element_name']
         $search = $WebEvent.Query['search']
         $configId = $WebEvent.Query['config_id']
-
+ 
         if (-not $lookupTable -or -not $elementName -or -not $search -or -not $configId) {
             Write-PodeJsonResponse -Value @{ error = 'lookup_table, element_name, search, and config_id are required' } -StatusCode 400
             return
         }
-
+ 
         if ($search.Length -lt 2) {
             Write-PodeJsonResponse -Value @{ values = @() }
             return
         }
-
+ 
         $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance
             FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
-
+ 
         if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
-
+ 
         $dbInstance = $envConfig[0].db_instance
-
+ 
         $columns = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
             SELECT COLUMN_NAME
             FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @tableName
             ORDER BY ORDINAL_POSITION
 "@ -Parameters @{ tableName = $lookupTable }
-
+ 
         $colNames = @($columns | ForEach-Object { $_.COLUMN_NAME })
-
-        if ($colNames -notcontains $elementName) {
-            Write-PodeJsonResponse -Value @{ error = "Column '$elementName' not found in table '$lookupTable'" } -StatusCode 404
+ 
+        # 4-step value column resolution
+        $resolvedCol = $null
+        # Step 1: Direct match — element_name is a column in the table
+        if ($colNames -contains $elementName) {
+            $resolvedCol = $elementName
+        }
+        # Step 2: *_val_txt fallback
+        if (-not $resolvedCol) {
+            $resolvedCol = $colNames | Where-Object { $_ -like '*_val_txt' } | Select-Object -First 1
+        }
+        # Step 3: *_shrt_nm fallback
+        if (-not $resolvedCol) {
+            $resolvedCol = $colNames | Where-Object { $_ -like '*_shrt_nm' } | Select-Object -First 1
+        }
+        # Step 4: *_nm fallback (excluding _shrt_nm columns)
+        if (-not $resolvedCol) {
+            $resolvedCol = $colNames | Where-Object { $_ -like '*_nm' -and $_ -notlike '*_shrt_nm' } | Select-Object -First 1
+        }
+ 
+        if (-not $resolvedCol) {
+            Write-PodeJsonResponse -Value @{ error = "Could not resolve value column for '$elementName' in table '$lookupTable'" } -StatusCode 404
             return
         }
-
+ 
         $actvColumn = $colNames | Where-Object { $_ -like '*_actv_flg' } | Select-Object -First 1
-        $descColumn = $colNames | Where-Object { $_ -like '*_nm' -and $_ -ne $elementName } | Select-Object -First 1
-
-        $safeElement = "[$elementName]"
+        # Description: *_nm (excluding resolved column) first, then *_dscrptn_txt
+        $descColumn = $colNames | Where-Object { $_ -like '*_nm' -and $_ -ne $resolvedCol } | Select-Object -First 1
+        if (-not $descColumn) {
+            $descColumn = $colNames | Where-Object { $_ -like '*_dscrptn_txt' } | Select-Object -First 1
+        }
+ 
+        $safeResolvedCol = "[$resolvedCol]"
         $safeTable = "dbo.[$lookupTable]"
-        $selectColumns = "$safeElement AS val"
+        $selectColumns = "$safeResolvedCol AS val"
         if ($descColumn) { $selectColumns += ", [$descColumn] AS description" }
-
-        $whereClause = "$safeElement LIKE @searchPattern"
+ 
+        $whereClause = "$safeResolvedCol LIKE @searchPattern"
         if ($actvColumn) { $whereClause += " AND [$actvColumn] = 'Y'" }
-
+ 
         $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
             SELECT DISTINCT TOP 10 $selectColumns
             FROM $safeTable
             WHERE $whereClause
-            ORDER BY $safeElement
+            ORDER BY $safeResolvedCol
 "@ -Parameters @{ searchPattern = "%$search%" }
-
+ 
         $results = @($values | ForEach-Object {
             $item = @{ value = $_.val }
             if ($descColumn -and $_.description -and $_.description -isnot [System.DBNull]) {
@@ -926,7 +1072,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
             }
             $item
         })
-
+ 
         Write-PodeJsonResponse -Value @{ values = @($results) }
     }
     catch {
