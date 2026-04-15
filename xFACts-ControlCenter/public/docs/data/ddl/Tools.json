@@ -1410,6 +1410,15 @@
                                        },
                                        {
                                            "ordinal":  17,
+                                           "name":  "is_conditional_eligible",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Identifies fields eligible for conditional value assignment during BDL Import. When set to 1, the FIXED_VALUE mapping UI offers a Conditional mode where this field\u0027s value can vary per row based on a trigger column from the uploaded file, rather than being applied as a blanket fixed value to all rows. Fields with 0 (default) use the standard blanket assignment only. Currently set on tag_shrt_nm for CONSUMER_TAG and ACCOUNT_TAG entities."
+                                       },
+                                       {
+                                           "ordinal":  18,
                                            "name":  "field_description",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -1418,7 +1427,7 @@
                                            "description":  "Human-readable field description from the Excel interface definition. Supplements the XSD structural data with business context."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  19,
                                            "name":  "import_guidance",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -1427,7 +1436,7 @@
                                            "description":  "Operational guidance text displayed during BDL import to help users fill in the field correctly. Examples: \"Required numeric value — enter 0 if not in source data\" for phone quality score, \"Optional — defaults to current timestamp if blank\" for tag assignment date. Separate from field_description which documents what the field is. NULL when no special import guidance is needed."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  20,
                                            "name":  "sort_order",
                                            "dataType":  "smallint",
                                            "nullable":  false,
