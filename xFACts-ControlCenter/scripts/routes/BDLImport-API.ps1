@@ -110,7 +110,8 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
                 SELECT e.element_name, e.display_name, e.data_type, e.max_length,
                        e.table_column, e.lookup_table, e.is_not_nullifiable, 
                        e.is_primary_id, e.is_visible, e.is_import_required,
-                       e.field_description, e.import_guidance, e.sort_order
+                       e.field_description, e.import_guidance, e.sort_order,
+                       e.is_conditional_eligible
                 FROM Tools.Catalog_BDLElementRegistry e
                 INNER JOIN Tools.Catalog_BDLFormatRegistry f
                     ON e.format_id = f.format_id
@@ -134,7 +135,8 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
                 SELECT e.element_name, e.display_name, e.data_type, e.max_length,
                        e.table_column, e.lookup_table, e.is_not_nullifiable, 
                        e.is_primary_id, e.is_visible, e.is_import_required,
-                       e.field_description, e.import_guidance, e.sort_order
+                       e.field_description, e.import_guidance, e.sort_order,
+                       e.is_conditional_eligible
                 FROM Tools.Catalog_BDLElementRegistry e
                 INNER JOIN Tools.Catalog_BDLFormatRegistry f
                     ON e.format_id = f.format_id
@@ -190,13 +192,13 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
         $headers = $body.headers
         $rows = $body.rows
         $fixedValues = $body.fixed_values
+        $assignments = $body.assignments
  
         if (-not $entityType -or -not $configId -or -not $headers -or -not $rows) {
             Write-PodeJsonResponse -Value @{ error = 'Missing required fields: entity_type, config_id, headers, rows' } -StatusCode 400
             return
         }
  
-        # mapping may be empty for pure FIXED_VALUE entities (only identifier mapped)
         if (-not $mapping) { $mapping = [PSCustomObject]@{} }
  
         $envConfig = Invoke-XFActsQuery -Query @"
@@ -246,6 +248,301 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
  
         $mappingHash = @{}
         foreach ($key in $mapping.PSObject.Properties) { $mappingHash[$key.Name] = $key.Value }
+ 
+        # ══════════════════════════════════════════════════════════════════
+        # PATH A: Assignments-based staging (multi-assignment expansion)
+        # ══════════════════════════════════════════════════════════════════
+        if ($assignments -and $assignments.Count -gt 0) {
+ 
+            # ── Determine identifier from mapping ───────────────────────
+            $idElementName = $null
+            $idHeaderIndex = -1
+            foreach ($key in $mappingHash.Keys) {
+                $elem = $mappingHash[$key]
+                if ($elem -eq 'cnsmr_idntfr_agncy_id' -or $elem -eq 'cnsmr_accnt_idntfr_agncy_id') {
+                    $idElementName = $elem
+                    $idHeaderIndex = [array]::IndexOf($headers, $key)
+                    break
+                }
+            }
+ 
+            if (-not $idElementName -or $idHeaderIndex -lt 0) {
+                Write-PodeJsonResponse -Value @{ error = 'Identifier column mapping is required' } -StatusCode 400
+                return
+            }
+ 
+            # ── Helper: resolve SQL type from field metadata ────────────
+            function Get-SqlTypeFromMeta {
+                param($Meta)
+                if (-not $Meta) { return 'VARCHAR(MAX)' }
+                $bdlType = if ($Meta.data_type -and $Meta.data_type -isnot [System.DBNull]) { $Meta.data_type.ToLower() } else { '' }
+                $maxLen = $Meta.max_length
+                switch ($bdlType) {
+                    'string'   { if ($maxLen) { return "VARCHAR($maxLen)" } else { return 'VARCHAR(MAX)' } }
+                    'int'      { return 'VARCHAR(20)' }
+                    'long'     { return 'VARCHAR(20)' }
+                    'short'    { return 'VARCHAR(10)' }
+                    'decimal'  { return 'VARCHAR(30)' }
+                    'boolean'  { return 'VARCHAR(10)' }
+                    'dateTime' { return 'VARCHAR(50)' }
+                    default    { if ($maxLen) { return "VARCHAR($maxLen)" } else { return 'VARCHAR(MAX)' } }
+                }
+            }
+ 
+            # ── Build CREATE TABLE with all visible entity element columns ──
+            $colDefs = @()
+            $colDefs += '    [_row_number] INT IDENTITY(1,1)'
+            $colDefs += '    [_skip] BIT NOT NULL DEFAULT 0'
+            $colDefs += '    [_trigger_value] VARCHAR(200) NULL'
+            $colDefs += '    [_assignment_index] INT NULL'
+ 
+            # Add identifier column
+            $idMeta = $fieldMetaMap[$idElementName]
+            $idSqlType = Get-SqlTypeFromMeta -Meta $idMeta
+            $colDefs += "    [$idElementName] $idSqlType NULL"
+ 
+            # Add all visible non-identifier entity element columns
+            $entityColumns = @()
+            foreach ($f in $fieldMeta) {
+                if ($f.element_name -eq $idElementName) { continue }
+                $sqlType = Get-SqlTypeFromMeta -Meta $f
+                $colDefs += "    [$($f.element_name)] $sqlType NULL"
+                $entityColumns += $f.element_name
+            }
+ 
+            $createDdl = "CREATE TABLE $fullTableName (`n" + ($colDefs -join ",`n") + "`n);"
+            Invoke-XFActsNonQuery -Query $createDdl
+ 
+            # ── Process assignments: iterate rows first, then assignments ───
+            # Produces consumer-grouped ordering in the staging table:
+            #   consumer A tag 1, consumer A tag 2, consumer B tag 1, consumer B tag 2
+            # Matches the established BDL XML pattern from existing production files.
+            # Build-BDLXml reads rows via ORDER BY _row_number, so the IDENTITY
+            # column insertion order directly controls XML entry sequence.
+            $batchSize = 500
+            $totalInserted = 0
+            $valuesClauses = @()
+
+            # ── Pre-build assignment metadata for efficient inner loop ──
+            # Avoids re-parsing PSObject properties on every file row.
+            # Each entry contains mode, column list, and mode-specific data
+            # (value map + shared fields for conditional, fixed values for blanket).
+            $assignmentMeta = @()
+            for ($aIdx = 0; $aIdx -lt $assignments.Count; $aIdx++) {
+                $assignment = $assignments[$aIdx]
+                $mode = $assignment.mode
+
+                $meta = @{ Mode = $mode; Index = $aIdx }
+
+                if ($mode -eq 'conditional') {
+                    # Conditional: resolve trigger column index and build value map
+                    $triggerColumn = $assignment.trigger_column
+                    $triggerHeaderIndex = [array]::IndexOf($headers, $triggerColumn)
+                    if ($triggerHeaderIndex -lt 0) {
+                        Write-PodeJsonResponse -Value @{ error = "Trigger column '$triggerColumn' not found in file headers" } -StatusCode 400
+                        return
+                    }
+
+                    # Build hashtable from value_map PSObject for fast lookup
+                    $valueMapHash = @{}
+                    foreach ($key in $assignment.value_map.PSObject.Properties) {
+                        $valueMapHash[$key.Name] = $key.Value
+                    }
+
+                    # Build shared fields hashtable (non-varying fields like tag_assgn_dt)
+                    $sharedHash = @{}
+                    if ($assignment.shared_fields) {
+                        foreach ($key in $assignment.shared_fields.PSObject.Properties) {
+                            $sharedHash[$key.Name] = $key.Value
+                        }
+                    }
+
+                    $condField = $assignment.conditional_field
+                    $meta.TriggerHeaderIndex = $triggerHeaderIndex
+                    $meta.ValueMapHash = $valueMapHash
+                    $meta.SharedHash = $sharedHash
+                    $meta.ConditionalField = $condField
+
+                    # Column list: identifier, trigger value, assignment index, conditional field, shared fields
+                    $insertCols = @("[$idElementName]", '[_trigger_value]', '[_assignment_index]', "[$condField]")
+                    foreach ($sf in $sharedHash.Keys) { $insertCols += "[$sf]" }
+                    $meta.ColumnList = $insertCols -join ', '
+                    $meta.ColumnCount = $insertCols.Count
+                }
+                else {
+                    # Blanket: build fixed values hashtable
+                    $fvFields = @{}
+                    if ($assignment.fixed_values) {
+                        foreach ($key in $assignment.fixed_values.PSObject.Properties) {
+                            $fvFields[$key.Name] = $key.Value
+                        }
+                    }
+                    $meta.FvFields = $fvFields
+
+                    # Column list: identifier, assignment index, fixed value fields
+                    $insertCols = @("[$idElementName]", '[_assignment_index]')
+                    foreach ($fk in $fvFields.Keys) { $insertCols += "[$fk]" }
+                    $meta.ColumnList = $insertCols -join ', '
+                    $meta.ColumnCount = $insertCols.Count
+                }
+                $assignmentMeta += $meta
+            }
+
+            # ── Check if all assignments share the same column list ──────
+            # When column structures match (e.g., two blanket tags or two
+            # conditionals with the same shared fields), we can batch all
+            # rows into a single INSERT stream for efficiency.
+            $allSameColumns = $true
+            $firstColList = $assignmentMeta[0].ColumnList
+            for ($a = 1; $a -lt $assignmentMeta.Count; $a++) {
+                if ($assignmentMeta[$a].ColumnList -ne $firstColList) { $allSameColumns = $false; break }
+            }
+
+            if ($allSameColumns) {
+                # ── Fast path: all assignments use same column structure ─
+                # Single INSERT stream, rows interleaved by consumer.
+                $colList = $firstColList
+                for ($r = 0; $r -lt $rows.Count; $r++) {
+                    $row = $rows[$r]
+                    $idVal = if ($idHeaderIndex -lt $row.Count) { $row[$idHeaderIndex] } else { '' }
+
+                    # Inner loop: each assignment for this consumer row
+                    foreach ($am in $assignmentMeta) {
+                        if ($am.Mode -eq 'conditional') {
+                            # Read trigger value from file row
+                            $triggerVal = if ($am.TriggerHeaderIndex -lt $row.Count) { $row[$am.TriggerHeaderIndex] } else { '' }
+                            $triggerVal = $triggerVal.Trim()
+
+                            # Skip if trigger value has no mapping (user left it blank = skip)
+                            if (-not $am.ValueMapHash.ContainsKey($triggerVal)) { continue }
+                            $mappedValue = $am.ValueMapHash[$triggerVal]
+                            if (-not $mappedValue -or $mappedValue -eq '') { continue }
+
+                            # Build VALUES: identifier, trigger value, assignment index, conditional field, shared fields
+                            $vals = @(
+                                "'" + ($idVal -replace "'", "''") + "'"
+                                "'" + ($triggerVal -replace "'", "''") + "'"
+                                $am.Index
+                                "'" + ($mappedValue -replace "'", "''") + "'"
+                            )
+                            foreach ($sf in $am.SharedHash.Keys) {
+                                $vals += "'" + ($am.SharedHash[$sf] -replace "'", "''") + "'"
+                            }
+                        }
+                        else {
+                            # Blanket: one row per consumer with fixed values
+                            $vals = @(
+                                "'" + ($idVal -replace "'", "''") + "'"
+                                $am.Index
+                            )
+                            foreach ($fk in $am.FvFields.Keys) {
+                                $vals += "'" + ($am.FvFields[$fk] -replace "'", "''") + "'"
+                            }
+                        }
+
+                        $valuesClauses += "(" + ($vals -join ', ') + ")"
+
+                        # Flush batch at threshold
+                        if ($valuesClauses.Count -ge $batchSize) {
+                            $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
+                            Invoke-XFActsNonQuery -Query $insertSql
+                            $totalInserted += $valuesClauses.Count
+                            $valuesClauses = @()
+                        }
+                    }
+                }
+
+                # Flush remaining rows
+                if ($valuesClauses.Count -gt 0) {
+                    $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
+                    Invoke-XFActsNonQuery -Query $insertSql
+                    $totalInserted += $valuesClauses.Count
+                }
+            }
+            else {
+                # ── Mixed path: assignments have different column structures
+                # This occurs when mixing blanket and conditional assignments
+                # (different column sets). Group by column list, then within
+                # each group iterate rows-first for consumer-grouped ordering.
+                $colGroups = @{}
+                foreach ($am in $assignmentMeta) {
+                    if (-not $colGroups.ContainsKey($am.ColumnList)) { $colGroups[$am.ColumnList] = @() }
+                    $colGroups[$am.ColumnList] += $am
+                }
+
+                foreach ($colList in $colGroups.Keys) {
+                    $groupMetas = $colGroups[$colList]
+                    $valuesClauses = @()
+
+                    for ($r = 0; $r -lt $rows.Count; $r++) {
+                        $row = $rows[$r]
+                        $idVal = if ($idHeaderIndex -lt $row.Count) { $row[$idHeaderIndex] } else { '' }
+
+                        # Process each assignment in this column group for current consumer
+                        foreach ($am in $groupMetas) {
+                            if ($am.Mode -eq 'conditional') {
+                                # Read trigger value and look up mapped value
+                                $triggerVal = if ($am.TriggerHeaderIndex -lt $row.Count) { $row[$am.TriggerHeaderIndex] } else { '' }
+                                $triggerVal = $triggerVal.Trim()
+                                if (-not $am.ValueMapHash.ContainsKey($triggerVal)) { continue }
+                                $mappedValue = $am.ValueMapHash[$triggerVal]
+                                if (-not $mappedValue -or $mappedValue -eq '') { continue }
+
+                                $vals = @(
+                                    "'" + ($idVal -replace "'", "''") + "'"
+                                    "'" + ($triggerVal -replace "'", "''") + "'"
+                                    $am.Index
+                                    "'" + ($mappedValue -replace "'", "''") + "'"
+                                )
+                                foreach ($sf in $am.SharedHash.Keys) {
+                                    $vals += "'" + ($am.SharedHash[$sf] -replace "'", "''") + "'"
+                                }
+                            }
+                            else {
+                                # Blanket: fixed values for this consumer
+                                $vals = @(
+                                    "'" + ($idVal -replace "'", "''") + "'"
+                                    $am.Index
+                                )
+                                foreach ($fk in $am.FvFields.Keys) {
+                                    $vals += "'" + ($am.FvFields[$fk] -replace "'", "''") + "'"
+                                }
+                            }
+
+                            $valuesClauses += "(" + ($vals -join ', ') + ")"
+
+                            # Flush batch at threshold
+                            if ($valuesClauses.Count -ge $batchSize) {
+                                $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
+                                Invoke-XFActsNonQuery -Query $insertSql
+                                $totalInserted += $valuesClauses.Count
+                                $valuesClauses = @()
+                            }
+                        }
+                    }
+
+                    # Flush remaining rows for this column group
+                    if ($valuesClauses.Count -gt 0) {
+                        $insertSql = "INSERT INTO $fullTableName ($colList) VALUES`n" + ($valuesClauses -join ",`n")
+                        Invoke-XFActsNonQuery -Query $insertSql
+                        $totalInserted += $valuesClauses.Count
+                    }
+                }
+            }
+
+            Write-PodeJsonResponse -Value @{
+                staging_table         = $tableName
+                row_count             = $totalInserted
+                environment           = $environment
+                assignment_count      = $assignments.Count
+                required_extra_fields = @()
+            }
+            return
+        }
+ 
+        # ══════════════════════════════════════════════════════════════════
+        # PATH B: Original staging logic (FILE_MAPPED or single FIXED_VALUE)
+        # ══════════════════════════════════════════════════════════════════
  
         $mappedElementNames = @{}
         foreach ($val in $mappingHash.Values) { $mappedElementNames[$val] = $true }
