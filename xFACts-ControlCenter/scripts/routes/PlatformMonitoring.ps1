@@ -49,7 +49,7 @@ Add-PodeRoute -Method Get -Path '/platform-monitoring' -Authentication 'ADLogin'
         <!-- Header -->
         <div class="header-bar">
             <div class="header-left">
-                <h1>Platform Monitoring</h1>
+                <h1><a href="docs/pages/cc/controlcenter-cc-platform.html" target="_blank">Platform Monitoring</a></h1>
                 <div class="pm-subtitle">Measuring the resource impact of xFACts on the server environment</div>
             </div>
             <div class="header-right">
