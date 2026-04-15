@@ -1,7 +1,7 @@
 {
     "tables":  [
                    {
-                       "name":  "BDL_CONSUMER_dcota_20260413_093409",
+                       "name":  "BDL_CONSUMER_TAG_dcota_20260415_051017",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -20,6 +20,21 @@
                                        },
                                        {
                                            "ordinal":  3,
+                                           "name":  "_trigger_value",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "_assignment_index",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
                                            "name":  "cnsmr_idntfr_agncy_id",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -27,178 +42,18 @@
                                            "identity":  false
                                        },
                                        {
-                                           "ordinal":  4,
-                                           "name":  "cnsmr_email_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "128",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "cnsmr_email_txt_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
                                            "ordinal":  6,
-                                           "name":  "cnsmr_accnt_id_unmapped",
+                                           "name":  "tag_shrt_nm",
                                            "dataType":  "varchar",
-                                           "length":  "MAX",
+                                           "length":  "8",
                                            "nullable":  true,
                                            "identity":  false
                                        },
                                        {
                                            "ordinal":  7,
-                                           "name":  "Account_Number_unmapped",
+                                           "name":  "cnsmr_tag_assgn_dt",
                                            "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "cnsmr_id_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  9,
-                                           "name":  "Creditor_Reference_Number_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  10,
-                                           "name":  "Creditor_Short_Name_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  11,
-                                           "name":  "Creditor_Name_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  12,
-                                           "name":  "placement_date_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  13,
-                                           "name":  "Released_Date_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  14,
-                                           "name":  "Date_Of_Last_Service_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  15,
-                                           "name":  "Consumer_Birth_Date_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  16,
-                                           "name":  "rltd_prsn_brth_dt_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  17,
-                                           "name":  "Consumer_Last_Name_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  18,
-                                           "name":  "Consumer_First_Name_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  19,
-                                           "name":  "rltd_prsn_nm_lst_txt_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  20,
-                                           "name":  "rltd_prsn_nm_frst_txt_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  21,
-                                           "name":  "currentbal_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  22,
-                                           "name":  "amtref_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  23,
-                                           "name":  "Returned_Date_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  24,
-                                           "name":  "New_Business_Batch_Short_Name_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  25,
-                                           "name":  "_nullify_fields",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
+                                           "length":  "50",
                                            "nullable":  true,
                                            "identity":  false
                                        }
