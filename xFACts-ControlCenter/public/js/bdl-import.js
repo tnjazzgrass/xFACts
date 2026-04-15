@@ -6,6 +6,10 @@
 
    CHANGELOG
    ---------
+   2026-04-15  Per-field mode selector for conditional-eligible fields on FILE_MAPPED entities
+               3-way toggle (File / Blanket / Cond) on target chips
+               Field Assignments section below mapping panels
+               Assignment card model for blanket/conditional field overrides
    2026-04-15  Assignment card model for FIXED_VALUE entities (multi-assignment)
                Blanket/Conditional mode toggle per assignment card
                Conditional mode: trigger column scan, unique value grid, per-value typeahead
@@ -334,7 +338,7 @@ var BDL = (function () {
     // ── Per-Entity State Management ──────────────────────────────────────
     function initEntityStates() {
         entityStates = selectedEntities.map(function (ent) {
-            return { entity: ent, fields: null, wrapper: null, columnMapping: {}, assignments: [], stagingContext: null, stagedMapping: null, stagedAssignments: null, validationResult: null, validated: false, xmlPreviewLoaded: false, nullifyFields: [] };
+            return { entity: ent, fields: null, wrapper: null, columnMapping: {}, assignments: [], fieldAssignments: {}, stagingContext: null, stagedMapping: null, stagedAssignments: null, stagedFieldAssignments: null, validationResult: null, validated: false, xmlPreviewLoaded: false, nullifyFields: [] };
         });
     }
 
@@ -390,6 +394,7 @@ var BDL = (function () {
         if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to begin mapping</div>';
         html += '<div class="mapping-panels"><div class="mapping-panel panel-source"><div class="panel-header">Source Columns</div><div class="panel-list" id="source-list"></div></div><div class="mapping-panel panel-target"><div class="panel-header">BDL Fields</div><div class="panel-list" id="target-list"></div></div></div>';
         html += '<div class="mapped-section"><div class="panel-header">Mapped</div><div class="mapped-list" id="mapped-list"></div></div>';
+        html += '<div id="field-assignments-area"></div>';
         html += '<div id="mapping-warnings" class="mapping-warnings"></div></div>';
         html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()" disabled>Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
         area.innerHTML = html;
@@ -398,10 +403,6 @@ var BDL = (function () {
     }
 
     // ── Fixed-Value Mapping with Assignment Cards ──────────────────────
-    // Supports multi-assignment (Add Another) with per-assignment
-    // Blanket or Conditional mode. Conditional mode varies a single
-    // field per row based on a trigger column from the uploaded file.
-
     function renderFixedValueMapping(area, state) {
         var entityFields = state.fields;
         var visibleFields = entityFields.filter(function (f) { return f.is_visible !== 0 && f.is_visible !== false; });
@@ -411,17 +412,13 @@ var BDL = (function () {
         var valueFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
         var conditionalFields = valueFields.filter(function (f) { return f.is_conditional_eligible; });
         var hasConditionalOption = conditionalFields.length > 0;
-
-        // Initialize first assignment if empty
         if (!state.assignments || state.assignments.length === 0) {
             state.assignments = [{ mode: 'blanket', fixedValues: {}, triggerColumn: null, conditionalField: null, valueMap: {}, sharedFields: {}, triggerUniqueValues: null }];
         }
-
         var prevIdIdx = '';
         for (var k in state.columnMapping) { if (state.columnMapping[k] === idElemName) { var hIdx = parsedFileData.headers.indexOf(k); if (hIdx !== -1) prevIdIdx = String(hIdx); break; } }
-
         var html = renderEntityProgressBanner('mapping');
-        html += '<div class="fixed-value-banner"><span class="fixed-value-icon">&#9998;</span> <strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</strong> uses fixed values — define one or more assignments below.</div>';
+        // html += '<div class="fixed-value-banner"><span class="fixed-value-icon">&#9998;</span> <strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</strong> uses fixed values — define one or more assignments below.</div>';
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
@@ -432,21 +429,15 @@ var BDL = (function () {
         var disabledClass = (idField && !idSelected) ? ' mapping-disabled' : '';
         html += '<div class="assignment-area' + disabledClass + '" id="assignment-area">';
         if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to enter values</div>';
-
-        // Assignment cards
         html += '<div class="assignment-list" id="assignment-list">';
         state.assignments.forEach(function (assignment, aIdx) {
             html += renderAssignmentCard(assignment, aIdx, state, valueFields, conditionalFields, hasConditionalOption);
         });
         html += '</div>';
-
-        // Add Another button
         var entityWord = formatEntityName(state.entity.entity_type).split(' ').pop();
         html += '<button class="add-assignment-btn" onclick="BDL.addAssignment()">+ Add Another ' + escapeHtml(entityWord) + ' Assignment</button>';
-
-        html += '</div>'; // close assignment-area
+        html += '</div>';
         html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()">Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
-
         area.innerHTML = html;
         area._identifierField = idField;
         area._identifierElementName = idElemName;
@@ -456,25 +447,22 @@ var BDL = (function () {
     }
 
     function renderAssignmentCard(assignment, aIdx, state, valueFields, conditionalFields, hasConditionalOption) {
-        var modeBadgeClass = assignment.mode === 'conditional' ? 'assignment-badge-conditional' : 'assignment-badge-blanket';
-        var modeBadgeLabel = assignment.mode === 'conditional' ? 'Conditional' : 'Blanket';
+        var modeBadgeClass = assignment.mode === 'conditional' ? 'assignment-badge-conditional' : (assignment.mode === 'from_file' ? 'assignment-badge-file' : 'assignment-badge-blanket');
+        var modeBadgeLabel = assignment.mode === 'conditional' ? 'Conditional' : (assignment.mode === 'from_file' ? 'From File' : 'Blanket');
         var html = '<div class="assignment-card" id="assignment-card-' + aIdx + '">';
-        // Header
         html += '<div class="assignment-header"><div class="assignment-title"><span class="assignment-num">' + (aIdx + 1) + '</span> Assignment <span class="assignment-mode-badge ' + modeBadgeClass + '">' + modeBadgeLabel + '</span></div>';
         if (state.assignments.length > 1) html += '<span class="assignment-remove" onclick="BDL.removeAssignment(' + aIdx + ')" title="Remove assignment">&#10005;</span>';
         html += '</div>';
-        // Mode toggle (only if conditional-eligible fields exist)
         if (hasConditionalOption) {
+            var fileCls = assignment.mode === 'from_file' ? ' assignment-toggle-active-file' : '';
             var blanketCls = assignment.mode === 'blanket' ? ' assignment-toggle-active-blanket' : '';
             var condCls = assignment.mode === 'conditional' ? ' assignment-toggle-active-cond' : '';
-            html += '<div class="assignment-mode-toggle"><div class="assignment-toggle-btn' + blanketCls + '" onclick="BDL.toggleAssignmentMode(' + aIdx + ',\'blanket\')">Blanket</div><div class="assignment-toggle-btn' + condCls + '" onclick="BDL.toggleAssignmentMode(' + aIdx + ',\'conditional\')">Conditional</div></div>';
+            html += '<div class="assignment-mode-toggle"><div class="assignment-toggle-btn' + fileCls + '" onclick="BDL.toggleAssignmentMode(' + aIdx + ',\'from_file\')">File</div><div class="assignment-toggle-btn' + blanketCls + '" onclick="BDL.toggleAssignmentMode(' + aIdx + ',\'blanket\')">Blanket</div><div class="assignment-toggle-btn' + condCls + '" onclick="BDL.toggleAssignmentMode(' + aIdx + ',\'conditional\')">Conditional</div></div>';
         }
         html += '<div class="assignment-body">';
-        if (assignment.mode === 'blanket') {
-            html += renderBlanketFields(assignment, aIdx, valueFields);
-        } else {
-            html += renderConditionalFields(assignment, aIdx, state, valueFields, conditionalFields);
-        }
+        if (assignment.mode === 'from_file') { html += renderFromFileAssignmentFields(assignment, aIdx, state, valueFields, conditionalFields); }
+        else if (assignment.mode === 'blanket') { html += renderBlanketFields(assignment, aIdx, valueFields); }
+        else { html += renderConditionalFields(assignment, aIdx, state, valueFields, conditionalFields); }
         html += '</div></div>';
         return html;
     }
@@ -505,7 +493,6 @@ var BDL = (function () {
     function renderConditionalFields(assignment, aIdx, state, valueFields, conditionalFields) {
         var html = '';
         var condField = conditionalFields[0];
-        // Trigger column selector
         html += '<div class="trigger-section"><div class="trigger-label"><span style="font-size:13px">&#9881;</span> Trigger column</div>';
         html += '<select class="identifier-dropdown trigger-dropdown" id="trigger-col-' + aIdx + '" onchange="BDL.setTriggerColumn(' + aIdx + ')" style="max-width:320px"><option value="">— Select trigger column —</option>';
         parsedFileData.headers.forEach(function (header, idx) {
@@ -518,7 +505,6 @@ var BDL = (function () {
             html += '<div class="trigger-note">&#9432; Unique values from "' + escapeHtml(assignment.triggerColumn) + '" mapped to <code style="color:#c586c0">' + condField.element_name + '</code></div>';
         }
         html += '</div>';
-        // Trigger value grid
         if (assignment.triggerColumn && assignment.triggerUniqueValues) {
             var uniqueVals = assignment.triggerUniqueValues;
             var showAll = assignment._showAllTriggerValues || false;
@@ -546,7 +532,6 @@ var BDL = (function () {
         } else if (assignment.triggerColumn && !assignment.triggerUniqueValues) {
             html += '<div class="loading">Scanning file for unique values...</div>';
         }
-        // Shared fields (non-conditional fields)
         var sharedFields = valueFields.filter(function (f) { return !f.is_conditional_eligible; });
         if (sharedFields.length > 0 && assignment.triggerColumn) {
             html += '<div class="shared-fields-section"><div class="shared-fields-label">Shared fields (apply to all rows in this assignment)</div>';
@@ -563,65 +548,104 @@ var BDL = (function () {
         return html;
     }
 
-    // ── Assignment Card Actions ──────────────────────────────────────────
+    function renderFromFileAssignmentFields(assignment, aIdx, state, valueFields, conditionalFields) {
+        var html = '';
+        var condField = conditionalFields[0];
+        if (!condField) return html;
+        var displayName = hasDisplayName(condField) ? condField.display_name : condField.element_name;
+        html += '<div class="trigger-section"><div class="trigger-label"><span style="font-size:13px">&#128196;</span> Source column for ' + escapeHtml(displayName) + '</div>';
+        html += '<select class="identifier-dropdown trigger-dropdown" id="filecol-' + aIdx + '" onchange="BDL.setAssignmentFileColumn(' + aIdx + ')" style="max-width:320px"><option value="">— Select file column —</option>';
+        parsedFileData.headers.forEach(function (header, idx) {
+            var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : '';
+            var sel = (assignment.fileColumn === header) ? ' selected' : '';
+            html += '<option value="' + escapeHtml(header) + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>';
+        });
+        html += '</select>';
+        if (assignment.fileColumn) {
+            html += '<div class="trigger-note">&#9432; Values from "' + escapeHtml(assignment.fileColumn) + '" will be used for <code style="color:#569cd6">' + condField.element_name + '</code></div>';
+        }
+        html += '</div>';
+        // Shared fields (non-conditional fields) with text inputs
+        var sharedFields = valueFields.filter(function (f) { return !f.is_conditional_eligible; });
+        if (sharedFields.length > 0 && assignment.fileColumn) {
+            html += '<div class="shared-fields-section"><div class="shared-fields-label">Shared fields (apply to all rows in this assignment)</div>';
+            sharedFields.forEach(function (f) {
+                var fieldId = 'asf-' + aIdx + '-' + f.element_name.replace(/[^a-zA-Z0-9]/g, '');
+                var existingVal = assignment.sharedFields[f.element_name] || '';
+                var dn = hasDisplayName(f) ? f.display_name : f.element_name;
+                html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(dn);
+                if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
+                html += '</div><div class="fixed-value-input"><input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)"></div></div>';
+            });
+            html += '</div>';
+        }
+        return html;
+    }
 
+    // ── FIXED_VALUE Assignment Card Actions ───────────────────────────────
     function addAssignment() {
         var state = curState(); if (!state) return;
         state.assignments.push({ mode: 'blanket', fixedValues: {}, triggerColumn: null, conditionalField: null, valueMap: {}, sharedFields: {}, triggerUniqueValues: null });
         renderFixedValueMapping(document.getElementById('map-validate-area'), state);
     }
-
     function removeAssignment(aIdx) {
         var state = curState(); if (!state || state.assignments.length <= 1) return;
         state.assignments.splice(aIdx, 1);
         renderFixedValueMapping(document.getElementById('map-validate-area'), state);
     }
-
     function toggleAssignmentMode(aIdx, mode) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         if (state.assignments[aIdx].mode === mode) return;
         var area = document.getElementById('map-validate-area');
         state.assignments[aIdx].mode = mode;
         if (mode === 'blanket') {
+            state.assignments[aIdx].triggerColumn = null; state.assignments[aIdx].conditionalField = null;
+            state.assignments[aIdx].valueMap = {}; state.assignments[aIdx].sharedFields = {};
+            state.assignments[aIdx].triggerUniqueValues = null; state.assignments[aIdx]._showAllTriggerValues = false;
+            state.assignments[aIdx].fileColumn = null;
+        } else if (mode === 'from_file') {
+            state.assignments[aIdx].fixedValues = {};
             state.assignments[aIdx].triggerColumn = null;
-            state.assignments[aIdx].conditionalField = null;
             state.assignments[aIdx].valueMap = {};
+            state.assignments[aIdx].triggerUniqueValues = null; state.assignments[aIdx]._showAllTriggerValues = false;
+            state.assignments[aIdx].fileColumn = null;
             state.assignments[aIdx].sharedFields = {};
-            state.assignments[aIdx].triggerUniqueValues = null;
-            state.assignments[aIdx]._showAllTriggerValues = false;
+            if (area._conditionalFields && area._conditionalFields.length > 0) {
+                state.assignments[aIdx].conditionalField = area._conditionalFields[0].element_name;
+            }
         } else {
             state.assignments[aIdx].fixedValues = {};
+            state.assignments[aIdx].fileColumn = null;
             if (area._conditionalFields && area._conditionalFields.length > 0) {
                 state.assignments[aIdx].conditionalField = area._conditionalFields[0].element_name;
             }
         }
         renderFixedValueMapping(area, state);
     }
-
+    function setAssignmentFileColumn(aIdx) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var sel = document.getElementById('filecol-' + aIdx);
+        var headerName = sel ? sel.value : '';
+        state.assignments[aIdx].fileColumn = headerName || null;
+        renderFixedValueMapping(document.getElementById('map-validate-area'), state);
+    }
     function showAllTriggerValues(aIdx) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         state.assignments[aIdx]._showAllTriggerValues = true;
         renderFixedValueMapping(document.getElementById('map-validate-area'), state);
     }
-
     function setTriggerColumn(aIdx) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var sel = document.getElementById('trigger-col-' + aIdx);
         var headerName = sel ? sel.value : '';
         if (!headerName) {
-            state.assignments[aIdx].triggerColumn = null;
-            state.assignments[aIdx].triggerUniqueValues = null;
-            state.assignments[aIdx].valueMap = {};
-            state.assignments[aIdx]._showAllTriggerValues = false;
-            renderFixedValueMapping(document.getElementById('map-validate-area'), state);
-            return;
+            state.assignments[aIdx].triggerColumn = null; state.assignments[aIdx].triggerUniqueValues = null;
+            state.assignments[aIdx].valueMap = {}; state.assignments[aIdx]._showAllTriggerValues = false;
+            renderFixedValueMapping(document.getElementById('map-validate-area'), state); return;
         }
-        state.assignments[aIdx].triggerColumn = headerName;
-        state.assignments[aIdx].triggerUniqueValues = null;
-        state.assignments[aIdx].valueMap = {};
-        state.assignments[aIdx]._showAllTriggerValues = false;
+        state.assignments[aIdx].triggerColumn = headerName; state.assignments[aIdx].triggerUniqueValues = null;
+        state.assignments[aIdx].valueMap = {}; state.assignments[aIdx]._showAllTriggerValues = false;
         renderFixedValueMapping(document.getElementById('map-validate-area'), state);
-        // Read full file to extract unique values for trigger column
         var headerIndex = parsedFileData.headers.indexOf(headerName);
         if (headerIndex < 0) return;
         readFileColumnValues(headerIndex, function (uniqueValues) {
@@ -652,8 +676,7 @@ var BDL = (function () {
         if (ext === '.csv' || ext === '.txt') reader.readAsText(uploadedFile); else reader.readAsArrayBuffer(uploadedFile);
     }
 
-    // ── Assignment Value Change/Search/Select (Blanket fields) ───────────
-
+    // ── FIXED_VALUE Assignment Value Change/Search/Select ────────────────
     function assignmentFieldChanged(aIdx, elementName, input) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var val = input.value.trim();
@@ -676,7 +699,7 @@ var BDL = (function () {
         if (!field || !field.lookup_table) { checkAssignmentsComplete(state); return; }
         if (!state._lookupCache) state._lookupCache = {};
         var cacheKey = elementName + '::' + val.toLowerCase();
-        if (state._lookupCache[cacheKey]) { renderAssignmentSuggestions(sugEl, state._lookupCache[cacheKey], aIdx, 'blanket', elementName); checkAssignmentsComplete(state); return; }
+        if (state._lookupCache[cacheKey]) { renderAssignmentSuggestions(document.getElementById('sug-' + fieldId), state._lookupCache[cacheKey], aIdx, 'blanket', elementName); checkAssignmentsComplete(state); return; }
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
@@ -686,7 +709,6 @@ var BDL = (function () {
         }, 300);
         checkAssignmentsComplete(state);
     }
-
     function selectAssignmentValue(aIdx, elementName, value) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var fieldId = 'afv-' + aIdx + '-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
@@ -695,9 +717,6 @@ var BDL = (function () {
         var sugEl = document.getElementById('sug-' + fieldId); if (sugEl) sugEl.innerHTML = '';
         checkAssignmentsComplete(state);
     }
-
-    // ── Shared Field Change (Conditional mode non-varying fields) ────────
-
     function sharedFieldChanged(aIdx, elementName, input) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var val = input.value.trim();
@@ -705,9 +724,6 @@ var BDL = (function () {
         else delete state.assignments[aIdx].sharedFields[elementName];
         checkAssignmentsComplete(state);
     }
-
-    // ── Conditional Value Change/Search/Select (Trigger grid rows) ──────
-
     function conditionalValueChanged(aIdx, triggerVal, input) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var val = input.value.trim();
@@ -716,7 +732,6 @@ var BDL = (function () {
         updateTriggerRowDisplay(aIdx, triggerVal, val);
         checkAssignmentsComplete(state);
     }
-
     function conditionalValueSearch(aIdx, triggerVal, input) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var val = input.value.trim();
@@ -730,7 +745,7 @@ var BDL = (function () {
         if (!field || !field.lookup_table) { checkAssignmentsComplete(state); return; }
         if (!state._lookupCache) state._lookupCache = {};
         var cacheKey = condField + '::' + val.toLowerCase();
-        if (state._lookupCache[cacheKey]) { renderAssignmentSuggestions(sugEl, state._lookupCache[cacheKey], aIdx, 'conditional', triggerVal); checkAssignmentsComplete(state); return; }
+        if (state._lookupCache[cacheKey]) { renderAssignmentSuggestions(document.getElementById('sug-' + fieldId), state._lookupCache[cacheKey], aIdx, 'conditional', triggerVal); checkAssignmentsComplete(state); return; }
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
@@ -740,7 +755,6 @@ var BDL = (function () {
         }, 300);
         checkAssignmentsComplete(state);
     }
-
     function selectConditionalValue(aIdx, triggerVal, value) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var fieldId = 'cond-' + aIdx + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
@@ -750,7 +764,6 @@ var BDL = (function () {
         updateTriggerRowDisplay(aIdx, triggerVal, value);
         checkAssignmentsComplete(state);
     }
-
     function updateTriggerRowDisplay(aIdx, triggerVal, value) {
         var state = curState(); if (!state || !state.assignments[aIdx]) return;
         var fieldId = 'cond-' + aIdx + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
@@ -762,9 +775,6 @@ var BDL = (function () {
         if (value) { countSpan.className = 'trigger-row-count'; countSpan.textContent = uv ? uv.count.toLocaleString() : ''; }
         else { countSpan.className = 'trigger-row-skip'; countSpan.textContent = 'skip'; }
     }
-
-    // ── Suggestion Rendering (scoped for assignment context) ─────────────
-
     function renderAssignmentSuggestions(sugEl, values, aIdx, scope, key) {
         if (values.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
         var selectFn = (scope === 'blanket') ? 'BDL.selectAssignmentValue' : 'BDL.selectConditionalValue';
@@ -779,9 +789,6 @@ var BDL = (function () {
         });
         sugEl.innerHTML = html;
     }
-
-    // ── Identifier Changed (Fixed-Value) ─────────────────────────────────
-
     function fixedValueIdentifierChanged() {
         var area = document.getElementById('map-validate-area'), idSel = document.getElementById('identifier-column'), idElem = area._identifierElementName;
         var state = curState(); if (!state) return;
@@ -792,9 +799,6 @@ var BDL = (function () {
         else { if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); } if (assignArea) assignArea.classList.add('mapping-disabled'); }
         checkAssignmentsComplete(state);
     }
-
-    // ── Assignment Completion Check ──────────────────────────────────────
-
     function checkAssignmentsComplete(state) {
         if (!state) return;
         var area = document.getElementById('map-validate-area');
@@ -802,14 +806,15 @@ var BDL = (function () {
         var hasIdentifier = false;
         for (var k in state.columnMapping) { if (state.columnMapping[k] === idElem) { hasIdentifier = true; break; } }
         if (!hasIdentifier || !state.assignments || state.assignments.length === 0) {
-            var valBtn = document.getElementById('btn-validate-entity'); if (valBtn) valBtn.disabled = true;
-            return;
+            var valBtn = document.getElementById('btn-validate-entity'); if (valBtn) valBtn.disabled = true; return;
         }
         var allComplete = true;
         var valueFields = area ? area._valueFields || [] : [];
         state.assignments.forEach(function (a) {
             if (a.mode === 'blanket') {
                 valueFields.forEach(function (f) { if (f.is_import_required && !a.fixedValues[f.element_name]) allComplete = false; });
+            } else if (a.mode === 'from_file') {
+                if (!a.fileColumn) { allComplete = false; return; }
             } else if (a.mode === 'conditional') {
                 if (!a.triggerColumn || !a.triggerUniqueValues) { allComplete = false; return; }
                 var hasMappedValue = Object.keys(a.valueMap).some(function (k) { return a.valueMap[k] && a.valueMap[k].trim() !== ''; });
@@ -817,6 +822,317 @@ var BDL = (function () {
             }
         });
         var valBtn = document.getElementById('btn-validate-entity'); if (valBtn) valBtn.disabled = !allComplete;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Per-Field Mode Selector (FILE_MAPPED entities)
+    // Conditional-eligible fields get a 3-way toggle: File / Blanket / Cond
+    // Selecting Blanket or Conditional pulls the field from the target panel
+    // and creates a field assignment card in the Field Assignments section.
+    // ══════════════════════════════════════════════════════════════════════
+
+    function toggleFieldMode(elementName, mode) {
+        var state = curState(); if (!state) return;
+        if (!state.fieldAssignments) state.fieldAssignments = {};
+        if (mode === 'from_file') {
+            delete state.fieldAssignments[elementName];
+        } else {
+            var field = state.fields ? state.fields.find(function (f) { return f.element_name === elementName; }) : null;
+            state.fieldAssignments[elementName] = {
+                mode: mode,
+                value: '',
+                triggerColumn: null,
+                conditionalField: elementName,
+                valueMap: {},
+                triggerUniqueValues: null,
+                _showAllTriggerValues: false
+            };
+        }
+        refreshMappingPanels();
+    }
+
+    function renderFieldAssignmentsSection(state) {
+        var container = document.getElementById('field-assignments-area');
+        if (!container) return;
+        if (!state.fieldAssignments || Object.keys(state.fieldAssignments).length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        var html = '<div class="field-assignments-section">';
+        html += '<div class="panel-header" style="color:#dcdcaa;">Field Assignments</div>';
+        html += '<div class="field-assignments-list">';
+        Object.keys(state.fieldAssignments).forEach(function (elemName) {
+            var fa = state.fieldAssignments[elemName];
+            html += renderFieldAssignmentCard(elemName, fa, state);
+        });
+        html += '</div></div>';
+        container.innerHTML = html;
+    }
+
+    function renderFieldAssignmentCard(elementName, fa, state) {
+        var field = state.fields ? state.fields.find(function (f) { return f.element_name === elementName; }) : null;
+        var displayName = field ? getFieldDisplayName(field) : elementName;
+        var modeBadgeClass = fa.mode === 'conditional' ? 'assignment-badge-conditional' : 'assignment-badge-blanket';
+        var modeBadgeLabel = fa.mode === 'conditional' ? 'Conditional' : 'Blanket';
+        var safeElem = elementName.replace(/'/g, "\\'");
+
+        var html = '<div class="assignment-card field-assignment-card">';
+        html += '<div class="assignment-header"><div class="assignment-title">';
+        html += '<span class="field-assignment-name">' + escapeHtml(displayName) + '</span>';
+        if (hasDisplayName(field)) html += ' <code class="field-assignment-elem">' + elementName + '</code>';
+        html += ' <span class="assignment-mode-badge ' + modeBadgeClass + '">' + modeBadgeLabel + '</span>';
+        html += '</div>';
+        html += '<span class="assignment-remove" onclick="BDL.toggleFieldMode(\'' + safeElem + '\',\'from_file\')" title="Return to file mapping">&#8592; File</span>';
+        html += '</div>';
+
+        // Mode toggle
+        var blanketCls = fa.mode === 'blanket' ? ' assignment-toggle-active-blanket' : '';
+        var condCls = fa.mode === 'conditional' ? ' assignment-toggle-active-cond' : '';
+        html += '<div class="assignment-mode-toggle">';
+        html += '<div class="assignment-toggle-btn' + blanketCls + '" onclick="BDL.switchFieldMode(\'' + safeElem + '\',\'blanket\')">Blanket</div>';
+        html += '<div class="assignment-toggle-btn' + condCls + '" onclick="BDL.switchFieldMode(\'' + safeElem + '\',\'conditional\')">Conditional</div>';
+        html += '</div>';
+
+        html += '<div class="assignment-body">';
+        if (fa.mode === 'blanket') {
+            html += renderFieldBlanketInput(elementName, fa, field);
+        } else {
+            html += renderFieldConditionalInput(elementName, fa, field, state);
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    function renderFieldBlanketInput(elementName, fa, field) {
+        var fieldId = 'fa-blanket-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var existingVal = fa.value || '';
+        var html = '<div class="fixed-value-row"><div class="fixed-value-label">Value for all rows';
+        if (field && field.import_guidance) html += '<div class="fixed-value-guidance">' + escapeHtml(field.import_guidance) + '</div>';
+        html += '</div><div class="fixed-value-input">';
+        if (field && field.lookup_table) {
+            html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldAssignmentSearch(\'' + elementName + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
+        } else {
+            html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldAssignmentValueChanged(\'' + elementName + '\',this)">';
+        }
+        if (field) { var meta = buildFieldMeta(field); if (meta) html += '<div class="fixed-value-meta">' + meta + '</div>'; }
+        html += '</div></div>';
+        return html;
+    }
+
+    function renderFieldConditionalInput(elementName, fa, field, state) {
+        var html = '';
+        var safeElem = elementName.replace(/'/g, "\\'");
+        html += '<div class="trigger-section"><div class="trigger-label"><span style="font-size:13px">&#9881;</span> Trigger column</div>';
+        html += '<select class="identifier-dropdown trigger-dropdown" id="fa-trigger-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '" onchange="BDL.setFieldTriggerColumn(\'' + safeElem + '\')" style="max-width:320px"><option value="">— Select trigger column —</option>';
+        parsedFileData.headers.forEach(function (header, idx) {
+            var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : '';
+            var sel = (fa.triggerColumn === header) ? ' selected' : '';
+            html += '<option value="' + escapeHtml(header) + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>';
+        });
+        html += '</select>';
+        if (fa.triggerColumn && field) {
+            var dn = field ? getFieldDisplayName(field) : elementName;
+            html += '<div class="trigger-note">&#9432; Unique values from "' + escapeHtml(fa.triggerColumn) + '" mapped to <code style="color:#c586c0">' + escapeHtml(dn) + '</code></div>';
+        }
+        html += '</div>';
+        if (fa.triggerColumn && fa.triggerUniqueValues) {
+            var uniqueVals = fa.triggerUniqueValues;
+            var showAll = fa._showAllTriggerValues || false;
+            var maxVisible = 15;
+            var displayVals = showAll ? uniqueVals : uniqueVals.slice(0, maxVisible);
+            var hasMore = uniqueVals.length > maxVisible && !showAll;
+            html += '<div class="trigger-grid"><div class="trigger-grid-header"><span>Trigger value</span><span>' + (field ? getFieldDisplayName(field) : elementName) + '</span><span style="text-align:right">Rows</span></div>';
+            displayVals.forEach(function (uv) {
+                var fieldId = 'fa-cond-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '-' + uv.value.replace(/[^a-zA-Z0-9]/g, '_');
+                var existingVal = fa.valueMap[uv.value] || '';
+                var safeTV = escapeHtml(uv.value).replace(/'/g, "\\'");
+                html += '<div class="trigger-grid-row"><span class="trigger-val"><code>' + escapeHtml(uv.value) + '</code></span><span class="trigger-input-cell">';
+                if (field && field.lookup_table) {
+                    html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldCondValueSearch(\'' + safeElem + '\',\'' + safeTV + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
+                } else {
+                    html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="(skip)" value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldCondValueChanged(\'' + safeElem + '\',\'' + safeTV + '\',this)">';
+                }
+                html += '</span>';
+                if (existingVal) html += '<span class="trigger-row-count">' + uv.count.toLocaleString() + '</span>';
+                else html += '<span class="trigger-row-skip">skip</span>';
+                html += '</div>';
+            });
+            if (hasMore) html += '<div class="trigger-grid-show-all" onclick="BDL.showAllFieldTriggerValues(\'' + safeElem + '\')">+ ' + (uniqueVals.length - maxVisible) + ' more values — show all</div>';
+            html += '</div>';
+        } else if (fa.triggerColumn && !fa.triggerUniqueValues) {
+            html += '<div class="loading">Scanning file for unique values...</div>';
+        }
+        return html;
+    }
+
+    // ── Per-Field Assignment Value Handlers ───────────────────────────────
+
+    function switchFieldMode(elementName, mode) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        if (state.fieldAssignments[elementName].mode === mode) return;
+        state.fieldAssignments[elementName].mode = mode;
+        state.fieldAssignments[elementName].value = '';
+        state.fieldAssignments[elementName].triggerColumn = null;
+        state.fieldAssignments[elementName].valueMap = {};
+        state.fieldAssignments[elementName].triggerUniqueValues = null;
+        state.fieldAssignments[elementName]._showAllTriggerValues = false;
+        refreshMappingPanels();
+    }
+
+    function fieldAssignmentValueChanged(elementName, input) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        state.fieldAssignments[elementName].value = input.value.trim();
+        checkMappingComplete();
+    }
+
+    function fieldAssignmentSearch(elementName, input) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        state.fieldAssignments[elementName].value = input.value.trim();
+        var val = input.value.trim();
+        var fieldId = 'fa-blanket-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var sugEl = document.getElementById('sug-' + fieldId); if (!sugEl) return;
+        if (val.length < 2) { sugEl.innerHTML = ''; checkMappingComplete(); return; }
+        var field = state.fields.find(function (f) { return f.element_name === elementName; });
+        if (!field || !field.lookup_table) { checkMappingComplete(); return; }
+        if (!state._lookupCache) state._lookupCache = {};
+        var cacheKey = elementName + '::' + val.toLowerCase();
+        if (state._lookupCache[cacheKey]) { renderFieldSuggestions(sugEl, state._lookupCache[cacheKey], elementName); checkMappingComplete(); return; }
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
+        searchDebounceTimer = setTimeout(function () {
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+                .then(function (r) { return r.json(); }).then(function (data) {
+                    if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; }
+                    var values = data.values || []; state._lookupCache[cacheKey] = values;
+                    renderFieldSuggestions(sugEl, values, elementName);
+                }).catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
+        }, 300);
+        checkMappingComplete();
+    }
+
+    function selectFieldAssignmentValue(elementName, value) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        var fieldId = 'fa-blanket-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var input = document.getElementById(fieldId); if (input) input.value = value;
+        state.fieldAssignments[elementName].value = value;
+        var sugEl = document.getElementById('sug-' + fieldId); if (sugEl) sugEl.innerHTML = '';
+        checkMappingComplete();
+    }
+
+    function setFieldTriggerColumn(elementName) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        var selId = 'fa-trigger-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var sel = document.getElementById(selId);
+        var headerName = sel ? sel.value : '';
+        var fa = state.fieldAssignments[elementName];
+        if (!headerName) {
+            fa.triggerColumn = null; fa.triggerUniqueValues = null; fa.valueMap = {};
+            fa._showAllTriggerValues = false;
+            refreshMappingPanels(); return;
+        }
+        fa.triggerColumn = headerName; fa.triggerUniqueValues = null; fa.valueMap = {};
+        fa._showAllTriggerValues = false;
+        refreshMappingPanels();
+        var headerIndex = parsedFileData.headers.indexOf(headerName);
+        if (headerIndex < 0) return;
+        readFileColumnValues(headerIndex, function (uniqueValues) {
+            var currentState = curState();
+            if (!currentState || !currentState.fieldAssignments || !currentState.fieldAssignments[elementName]) return;
+            if (currentState.fieldAssignments[elementName].triggerColumn !== headerName) return;
+            currentState.fieldAssignments[elementName].triggerUniqueValues = uniqueValues;
+            refreshMappingPanels();
+        });
+    }
+
+    function fieldCondValueChanged(elementName, triggerVal, input) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        var val = input.value.trim();
+        if (val) state.fieldAssignments[elementName].valueMap[triggerVal] = val;
+        else delete state.fieldAssignments[elementName].valueMap[triggerVal];
+        var fieldId = 'fa-cond-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
+        var inputEl = document.getElementById(fieldId); if (inputEl) {
+            var row = inputEl.closest('.trigger-grid-row'); if (row) {
+                var countSpan = row.querySelector('.trigger-row-count, .trigger-row-skip');
+                if (countSpan) {
+                    var fa = state.fieldAssignments[elementName];
+                    var uv = fa.triggerUniqueValues ? fa.triggerUniqueValues.find(function (u) { return u.value === triggerVal; }) : null;
+                    if (val) { countSpan.className = 'trigger-row-count'; countSpan.textContent = uv ? uv.count.toLocaleString() : ''; }
+                    else { countSpan.className = 'trigger-row-skip'; countSpan.textContent = 'skip'; }
+                }
+            }
+        }
+        checkMappingComplete();
+    }
+
+    function fieldCondValueSearch(elementName, triggerVal, input) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        var val = input.value.trim();
+        if (val) state.fieldAssignments[elementName].valueMap[triggerVal] = val;
+        else delete state.fieldAssignments[elementName].valueMap[triggerVal];
+        var fieldId = 'fa-cond-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
+        var sugEl = document.getElementById('sug-' + fieldId); if (!sugEl) return;
+        if (val.length < 2) { sugEl.innerHTML = ''; checkMappingComplete(); return; }
+        var field = state.fields.find(function (f) { return f.element_name === elementName; });
+        if (!field || !field.lookup_table) { checkMappingComplete(); return; }
+        if (!state._lookupCache) state._lookupCache = {};
+        var cacheKey = elementName + '::' + val.toLowerCase();
+        if (state._lookupCache[cacheKey]) { renderFieldSuggestions(sugEl, state._lookupCache[cacheKey], elementName, triggerVal); checkMappingComplete(); return; }
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
+        searchDebounceTimer = setTimeout(function () {
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+                .then(function (r) { return r.json(); }).then(function (data) {
+                    if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; }
+                    var values = data.values || []; state._lookupCache[cacheKey] = values;
+                    renderFieldSuggestions(sugEl, values, elementName, triggerVal);
+                }).catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
+        }, 300);
+        checkMappingComplete();
+    }
+
+    function selectFieldCondValue(elementName, triggerVal, value) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        var fieldId = 'fa-cond-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
+        var input = document.getElementById(fieldId); if (input) input.value = value;
+        state.fieldAssignments[elementName].valueMap[triggerVal] = value;
+        var sugEl = document.getElementById('sug-' + fieldId); if (sugEl) sugEl.innerHTML = '';
+        var inputEl = document.getElementById(fieldId); if (inputEl) {
+            var row = inputEl.closest('.trigger-grid-row'); if (row) {
+                var countSpan = row.querySelector('.trigger-row-count, .trigger-row-skip');
+                if (countSpan) {
+                    var fa = state.fieldAssignments[elementName];
+                    var uv = fa.triggerUniqueValues ? fa.triggerUniqueValues.find(function (u) { return u.value === triggerVal; }) : null;
+                    countSpan.className = 'trigger-row-count'; countSpan.textContent = uv ? uv.count.toLocaleString() : '';
+                }
+            }
+        }
+        checkMappingComplete();
+    }
+
+    function showAllFieldTriggerValues(elementName) {
+        var state = curState(); if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) return;
+        state.fieldAssignments[elementName]._showAllTriggerValues = true;
+        refreshMappingPanels();
+    }
+
+    function renderFieldSuggestions(sugEl, values, elementName, triggerVal) {
+        if (values.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
+        var safeElem = escapeHtml(String(elementName)).replace(/'/g, "\\'");
+        var html = '';
+        values.forEach(function (item) {
+            var val = item.value || item;
+            var safeVal = escapeHtml(String(val)).replace(/'/g, "\\'");
+            if (triggerVal !== undefined) {
+                var safeTV = escapeHtml(String(triggerVal)).replace(/'/g, "\\'");
+                html += '<div class="suggestion-item" onclick="BDL.selectFieldCondValue(\'' + safeElem + '\',\'' + safeTV + '\',\'' + safeVal + '\')">';
+            } else {
+                html += '<div class="suggestion-item" onclick="BDL.selectFieldAssignmentValue(\'' + safeElem + '\',\'' + safeVal + '\')">';
+            }
+            html += '<span class="suggestion-value">' + escapeHtml(String(val)) + '</span>';
+            if (item.description) html += '<span class="suggestion-desc">' + escapeHtml(item.description) + '</span>';
+            html += '</div>';
+        });
+        sugEl.innerHTML = html;
     }
 
     function renderMapValidateValidation(area, state) {
@@ -830,23 +1146,32 @@ var BDL = (function () {
         var detailParts = [];
         if (state.stagingContext) detailParts.push(state.stagingContext.row_count.toLocaleString() + ' rows staged');
         var mappedCount = Object.keys(state.columnMapping).length;
-        detailParts.push(mappedCount + ' field' + (mappedCount !== 1 ? 's' : '') + ' mapped');
+        var faCount = state.fieldAssignments ? Object.keys(state.fieldAssignments).length : 0;
+        detailParts.push((mappedCount + faCount) + ' field' + ((mappedCount + faCount) !== 1 ? 's' : '') + ' mapped');
         if (state.nullifyFields && state.nullifyFields.length > 0) {
             detailParts.push(state.nullifyFields.length + ' field' + (state.nullifyFields.length !== 1 ? 's' : '') + ' will be nullified');
         }
         html += '<div class="validation-summary validation-pass"><span class="validation-icon">&#10003;</span><div><strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + ' — Mapping and validation complete</strong><div class="validation-detail">' + detailParts.join(' &middot; ') + '</div></div></div>';
-        // Mapped fields card
         var mappingKeys = Object.keys(state.columnMapping);
-        if (mappingKeys.length > 0) {
+        if (mappingKeys.length > 0 || faCount > 0) {
             html += '<div class="execute-mapped-summary"><span class="mapped-summary-icon">&#128279;</span> <strong>Mapped Fields:</strong> ';
-            html += mappingKeys.map(function (sc) {
+            var fieldCodes = mappingKeys.map(function (sc) {
                 var te = state.columnMapping[sc];
                 var fld = state.fields ? state.fields.find(function (f) { return f.element_name === te; }) : null;
                 return '<code>' + escapeHtml(fld ? getFieldDisplayName(fld) : te) + '</code>';
-            }).join(', ');
+            });
+            if (state.fieldAssignments) {
+                Object.keys(state.fieldAssignments).forEach(function (elemName) {
+                    var fa = state.fieldAssignments[elemName];
+                    var fld = state.fields ? state.fields.find(function (f) { return f.element_name === elemName; }) : null;
+                    var label = fld ? getFieldDisplayName(fld) : elemName;
+                    var modeTag = fa.mode === 'conditional' ? ' <span style="color:#dcdcaa;font-size:10px;">(cond)</span>' : ' <span style="color:#4ec9b0;font-size:10px;">(fixed)</span>';
+                    fieldCodes.push('<code>' + escapeHtml(label) + '</code>' + modeTag);
+                });
+            }
+            html += fieldCodes.join(', ');
             html += '</div>';
         }
-        // Nullify fields card
         if (state.nullifyFields && state.nullifyFields.length > 0) {
             html += '<div class="nullify-summary"><span class="nullify-summary-icon">&#8709;</span> <strong>Nullify:</strong> ';
             html += state.nullifyFields.map(function (nf) { return '<code>' + escapeHtml(getFieldDisplayNameByElement(nf)) + '</code>'; }).join(', ');
@@ -880,15 +1205,18 @@ var BDL = (function () {
 
     function validateCurrentEntity() {
         var state = curState();
-        if (!state || Object.keys(state.columnMapping).length === 0) return;
+        if (!state || (Object.keys(state.columnMapping).length === 0 && (!state.fieldAssignments || Object.keys(state.fieldAssignments).length === 0))) return;
         var mappingUnchanged = state.stagingContext && state.stagedMapping && mappingsAreEqual(state.columnMapping, state.stagedMapping);
-        // For assignments-based entities, also compare assignments state
         if (mappingUnchanged && state.assignments && state.assignments.length > 0) {
-            var currentAssignmentsJson = JSON.stringify(state.assignments.map(function (a) { return { mode: a.mode, fixedValues: a.fixedValues, triggerColumn: a.triggerColumn, conditionalField: a.conditionalField, valueMap: a.valueMap, sharedFields: a.sharedFields }; }));
+            var currentAssignmentsJson = JSON.stringify(state.assignments.map(function (a) { return { mode: a.mode, fixedValues: a.fixedValues, triggerColumn: a.triggerColumn, conditionalField: a.conditionalField, valueMap: a.valueMap, sharedFields: a.sharedFields, fileColumn: a.fileColumn }; }));
             mappingUnchanged = state.stagedAssignments === currentAssignmentsJson;
         }
+        if (mappingUnchanged && state.fieldAssignments) {
+            var currentFAJson = JSON.stringify(state.fieldAssignments);
+            mappingUnchanged = state.stagedFieldAssignments === currentFAJson;
+        }
         if (mappingUnchanged) { runEntityValidation(state); }
-        else if (state.stagingContext) { var oldTable = state.stagingContext.staging_table; state.stagingContext = null; state.stagedMapping = null; state.stagedAssignments = null; stageEntityData(state, function () { runEntityValidation(state); }, oldTable); }
+        else if (state.stagingContext) { var oldTable = state.stagingContext.staging_table; state.stagingContext = null; state.stagedMapping = null; state.stagedAssignments = null; state.stagedFieldAssignments = null; stageEntityData(state, function () { runEntityValidation(state); }, oldTable); }
         else { stageEntityData(state, function () { runEntityValidation(state); }); }
     }
 
@@ -907,12 +1235,20 @@ var BDL = (function () {
             var stageBody = { entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, mapping: fileMapping, headers: parsedFileData.headers, rows: allRows };
             if (state.assignments && state.assignments.length > 0) {
                 stageBody.assignments = state.assignments.map(function (a) {
-                    return { mode: a.mode, fixed_values: a.fixedValues || {}, trigger_column: a.triggerColumn, conditional_field: a.conditionalField, value_map: a.valueMap || {}, shared_fields: a.sharedFields || {} };
+                    return { mode: a.mode, fixed_values: a.fixedValues || {}, trigger_column: a.triggerColumn, conditional_field: a.conditionalField, value_map: a.valueMap || {}, shared_fields: a.sharedFields || {}, file_column: a.fileColumn || null };
                 });
             } else {
                 var fixedValues = {};
                 Object.keys(state.columnMapping).forEach(function (k) { if (k.indexOf('__fixed__') === 0) fixedValues[k.replace('__fixed__', '')] = state.columnMapping[k]; });
                 if (Object.keys(fixedValues).length > 0) stageBody.fixed_values = fixedValues;
+            }
+            if (state.fieldAssignments && Object.keys(state.fieldAssignments).length > 0) {
+                var faPayload = {};
+                Object.keys(state.fieldAssignments).forEach(function (elemName) {
+                    var fa = state.fieldAssignments[elemName];
+                    faPayload[elemName] = { mode: fa.mode, value: fa.value || '', trigger_column: fa.triggerColumn, value_map: fa.valueMap || {} };
+                });
+                stageBody.field_assignments = faPayload;
             }
             if (dropExistingTable) stageBody.drop_existing = dropExistingTable;
             fetch('/api/bdl-import/stage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stageBody) })
@@ -921,7 +1257,10 @@ var BDL = (function () {
                 state.stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] };
                 state.stagedMapping = JSON.parse(JSON.stringify(state.columnMapping));
                 if (state.assignments && state.assignments.length > 0) {
-                    state.stagedAssignments = JSON.stringify(state.assignments.map(function (a) { return { mode: a.mode, fixedValues: a.fixedValues, triggerColumn: a.triggerColumn, conditionalField: a.conditionalField, valueMap: a.valueMap, sharedFields: a.sharedFields }; }));
+                    state.stagedAssignments = JSON.stringify(state.assignments.map(function (a) { return { mode: a.mode, fixedValues: a.fixedValues, triggerColumn: a.triggerColumn, conditionalField: a.conditionalField, valueMap: a.valueMap, sharedFields: a.sharedFields, fileColumn: a.fileColumn }; }));
+                }
+                if (state.fieldAssignments && Object.keys(state.fieldAssignments).length > 0) {
+                    state.stagedFieldAssignments = JSON.stringify(state.fieldAssignments);
                 }
                 if (onComplete) onComplete();
             })
@@ -977,7 +1316,6 @@ var BDL = (function () {
     function revalidateCurrentEntity() {
         var state = curState(); if (!state) return;
         state.validated = false; state.validationResult = null;
-        // Preserve nullifyFields — they are part of the mapping, not validation
         renderMapValidateMapping(document.getElementById('map-validate-area'), state);
     }
 
@@ -986,24 +1324,18 @@ var BDL = (function () {
     function mappingsAreEqual(a, b) { if (!a || !b) return false; var aKeys = Object.keys(a).sort(), bKeys = Object.keys(b).sort(); if (aKeys.length !== bKeys.length) return false; for (var i = 0; i < aKeys.length; i++) { if (aKeys[i] !== bKeys[i] || a[aKeys[i]] !== b[bKeys[i]]) return false; } return true; }
 
     // ── Nullify Fields (in mapping step) ─────────────────────────────────
-
     function nullifyField(elementName) {
         var state = curState(); if (!state) return;
         if (!state.nullifyFields) state.nullifyFields = [];
-        if (state.nullifyFields.indexOf(elementName) === -1) {
-            state.nullifyFields.push(elementName);
-        }
+        if (state.nullifyFields.indexOf(elementName) === -1) { state.nullifyFields.push(elementName); }
         refreshMappingPanels();
     }
-
     function unnullifyField(elementName) {
-        var state = curState(); if (!state) return;
-        if (!state.nullifyFields) return;
+        var state = curState(); if (!state || !state.nullifyFields) return;
         var idx = state.nullifyFields.indexOf(elementName);
         if (idx !== -1) state.nullifyFields.splice(idx, 1);
         refreshMappingPanels();
     }
-
     function persistNullifyFields(state, callback) {
         if (!state || !state.stagingContext || !state.nullifyFields || state.nullifyFields.length === 0) { if (callback) callback(); return; }
         fetch('/api/bdl-import/set-nullify-fields', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1020,6 +1352,7 @@ var BDL = (function () {
         var mf = area._mappableFields, columnMapping = state.columnMapping;
         var nullified = state.nullifyFields || [];
         var canEntityNullify = !!state.entity.has_nullify_fields;
+        var fieldAssigned = state.fieldAssignments || {};
         var idColIdx = null;
         var idSel = document.getElementById('identifier-column'); if (idSel && idSel.value !== '') idColIdx = parseInt(idSel.value);
         var mSrc = Object.keys(columnMapping), mTgt = Object.values(columnMapping);
@@ -1034,20 +1367,31 @@ var BDL = (function () {
             srcH += '<div class="chip-name">' + escapeHtml(header) + '</div>'; if (sample) srcH += '<div class="chip-sample">' + escapeHtml(sample) + '</div>'; srcH += '</div>';
         }); srcList.innerHTML = srcH || '<div class="panel-empty">All columns mapped</div>';
 
-        // Target BDL fields (exclude mapped and nullified)
+        // Target BDL fields (exclude mapped, nullified, and field-assigned)
         var tgtList = document.getElementById('target-list'), tgtH = '';
         mf.forEach(function (f) {
             if (mTgt.indexOf(f.element_name) !== -1) return;
             if (nullified.indexOf(f.element_name) !== -1) return;
+            if (fieldAssigned[f.element_name]) return;
             var rc = f.is_import_required ? ' chip-required' : '';
-            var canNullify = canEntityNullify && !f.is_not_nullifiable && !f.is_import_required;
+            var canNullify = canEntityNullify && !f.is_not_nullifiable && !f.is_import_required && !f.is_conditional_eligible;
+            var isConditionalEligible = !!f.is_conditional_eligible;
             tgtH += '<div class="mapping-chip target-chip' + rc + '" data-element="' + f.element_name + '" ondragover="BDL.chipDragOver(event)" ondrop="BDL.chipDrop(event)" onclick="BDL.targetClick(\'' + f.element_name + '\')">';
             if (hasDisplayName(f)) { tgtH += '<div class="chip-name">' + escapeHtml(f.display_name) + '</div><div class="chip-element">' + f.element_name + '</div>'; }
             else { tgtH += '<div class="chip-name chip-name-technical">' + f.element_name + '</div>'; }
             if (f.field_description) tgtH += '<div class="chip-desc">' + escapeHtml(f.field_description.substring(0, 80)) + '</div>';
             if (f.import_guidance) tgtH += '<div class="chip-guidance">' + escapeHtml(f.import_guidance) + '</div>';
             var meta = buildFieldMeta(f); if (meta) tgtH += '<div class="chip-meta">' + meta + '</div>';
-            if (canNullify) tgtH += '<span class="chip-nullify-btn" onclick="event.stopPropagation(); BDL.nullifyField(\'' + f.element_name + '\')" title="Nullify this field in DM">&#8709;</span>';
+            if (isConditionalEligible) {
+                var safeElem = f.element_name.replace(/'/g, "\\'");
+                tgtH += '<div class="field-mode-toggle">';
+                tgtH += '<span class="field-mode-btn field-mode-active-file" title="Map from file column (drag & drop)">File</span>';
+                tgtH += '<span class="field-mode-btn" onclick="event.stopPropagation(); BDL.toggleFieldMode(\'' + safeElem + '\',\'blanket\')" title="Set one value for all rows">Blanket</span>';
+                tgtH += '<span class="field-mode-btn" onclick="event.stopPropagation(); BDL.toggleFieldMode(\'' + safeElem + '\',\'conditional\')" title="Vary by trigger column">Cond</span>';
+                tgtH += '</div>';
+            } else if (canNullify) {
+                tgtH += '<span class="chip-nullify-btn" onclick="event.stopPropagation(); BDL.nullifyField(\'' + f.element_name + '\')" title="Nullify this field in DM">&#8709;</span>';
+            }
             tgtH += '</div>';
         }); tgtList.innerHTML = tgtH || '<div class="panel-empty">All fields mapped</div>';
 
@@ -1056,7 +1400,6 @@ var BDL = (function () {
         if (!mKeys.length && !nullified.length) {
             mapH = '<div class="panel-empty">Click a source column, then click a BDL field to pair them. Or drag and drop.</div>';
         } else {
-            // File-mapped pairs
             mKeys.forEach(function (sc) {
                 var te = columnMapping[sc], displayName = getFieldDisplayNameByElement(te);
                 mapH += '<div class="mapped-pair"><span class="pair-source">' + escapeHtml(sc) + '</span><span class="pair-arrow">&#8594;</span>';
@@ -1064,7 +1407,6 @@ var BDL = (function () {
                 else mapH += '<span class="pair-target">' + te + '</span>';
                 mapH += '<span class="pair-remove" onclick="BDL.unmapPair(\'' + escapeHtml(sc).replace(/'/g, "\\'") + '\')" title="Remove mapping">&#10005;</span></div>';
             });
-            // Nullified fields
             nullified.forEach(function (nf) {
                 var displayName = getFieldDisplayNameByElement(nf);
                 mapH += '<div class="mapped-pair mapped-pair-nullify"><span class="pair-nullify-label">&#8709; Nullify</span><span class="pair-arrow">&#8594;</span>';
@@ -1074,6 +1416,10 @@ var BDL = (function () {
             });
         }
         mapList.innerHTML = mapH;
+
+        // Field Assignments section (per-field mode overrides)
+        renderFieldAssignmentsSection(state);
+
         checkMappingComplete();
     }
 
@@ -1102,16 +1448,35 @@ var BDL = (function () {
         var mc = Object.keys(state.columnMapping).length;
         var mf = area ? area._mappableFields || [] : [], idF = area ? area._identifierField : null;
         var allReq = mf.filter(function (f) { return f.is_import_required; }); if (idF) allReq.push(idF);
-        var mapped = Object.values(state.columnMapping), unmReq = allReq.filter(function (f) { return mapped.indexOf(f.element_name) === -1; });
+        var mapped = Object.values(state.columnMapping), unmReq = allReq.filter(function (f) {
+            if (mapped.indexOf(f.element_name) !== -1) return false;
+            if (state.fieldAssignments && state.fieldAssignments[f.element_name]) return false;
+            return true;
+        });
         var wd = document.getElementById('mapping-warnings');
         if (wd) {
             if (unmReq.length > 0) wd.innerHTML = '<div class="warning-box"><strong>&#9888; Unmapped required fields:</strong> ' + unmReq.map(function (f) { return '<code>' + getFieldDisplayName(f) + '</code>'; }).join(', ') + '<br><span style="font-size:11px;color:#888;">These will be added to the staging table. You must provide values during validation.</span></div>';
-            else if (mc > 0) wd.innerHTML = '<div class="success-box">&#10003; All required fields mapped</div>';
+            else if (mc > 0 || (state.fieldAssignments && Object.keys(state.fieldAssignments).length > 0)) wd.innerHTML = '<div class="success-box">&#10003; All required fields mapped</div>';
             else wd.innerHTML = '';
         }
+        // Check field assignments are ready
+        var fieldAssignmentsReady = true;
+        if (state.fieldAssignments) {
+            Object.keys(state.fieldAssignments).forEach(function (elemName) {
+                var fa = state.fieldAssignments[elemName];
+                if (fa.mode === 'blanket') {
+                    var field = state.fields ? state.fields.find(function (f) { return f.element_name === elemName; }) : null;
+                    if (field && field.is_import_required && !fa.value) fieldAssignmentsReady = false;
+                } else if (fa.mode === 'conditional') {
+                    if (!fa.triggerColumn || !fa.triggerUniqueValues) { fieldAssignmentsReady = false; return; }
+                    var hasMappedValue = Object.keys(fa.valueMap).some(function (k) { return fa.valueMap[k] && fa.valueMap[k].trim() !== ''; });
+                    if (!hasMappedValue) fieldAssignmentsReady = false;
+                }
+            });
+        }
         var valBtn = document.getElementById('btn-validate-entity');
-        // Enable validate if at least one mapping OR nullify field exists
-        if (valBtn) valBtn.disabled = (mc === 0 && (!state.nullifyFields || state.nullifyFields.length === 0));
+        var hasContent = mc > 0 || (state.nullifyFields && state.nullifyFields.length > 0) || (state.fieldAssignments && Object.keys(state.fieldAssignments).length > 0);
+        if (valBtn) valBtn.disabled = !hasContent || !fieldAssignmentsReady;
     }
 
     // ── Validation Logic ─────────────────────────────────────────────────
@@ -1204,27 +1569,33 @@ var BDL = (function () {
             var rowCount = state.stagingContext ? state.stagingContext.row_count : 0;
             var skipped = state.stagingContext && state.stagingContext.skipped_count ? state.stagingContext.skipped_count : 0;
             var nullifyCount = state.nullifyFields ? state.nullifyFields.length : 0;
+            var faCount = state.fieldAssignments ? Object.keys(state.fieldAssignments).length : 0;
             html += '<div class="execute-tab-content' + visClass + '" id="exec-content-' + idx + '">';
-            // Summary grid (4 items)
             html += '<div class="execute-summary"><div class="execute-summary-header">' + escapeHtml(entityName) + '</div><div class="execute-summary-grid">';
             html += '<div class="summary-item"><span class="summary-label">Environment</span><span class="summary-value summary-env-' + envName.toLowerCase() + '">' + envName + '</span></div>';
             html += '<div class="summary-item"><span class="summary-label">Entity Type</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.entity.entity_type) + '</code></span></div>';
             html += '<div class="summary-item"><span class="summary-label">Rows</span><span class="summary-value">' + rowCount.toLocaleString() + (skipped > 0 ? ' <span style="color:#888;font-size:11px;">(' + skipped + ' skipped)</span>' : '') + '</span></div>';
             html += '<div class="summary-item"><span class="summary-label">Staging Table</span><span class="summary-value"><code class="summary-code">' + escapeHtml(state.stagingContext.staging_table) + '</code></span></div>';
             html += '</div></div>';
-            // Mapped fields card
             var mappingKeys = Object.keys(state.columnMapping);
-            if (mappingKeys.length > 0) {
+            if (mappingKeys.length > 0 || faCount > 0) {
                 html += '<div class="execute-mapped-summary"><span class="mapped-summary-icon">&#128279;</span> <strong>Mapped Fields:</strong> ';
-                html += mappingKeys.map(function (sc) {
+                var fieldCodes = mappingKeys.map(function (sc) {
                     var te = state.columnMapping[sc];
                     var nfField = state.fields ? state.fields.find(function (f) { return f.element_name === te; }) : null;
-                    var displayName = nfField ? getFieldDisplayName(nfField) : te;
-                    return '<code>' + escapeHtml(displayName) + '</code>';
-                }).join(', ');
-                html += '</div>';
+                    return '<code>' + escapeHtml(nfField ? getFieldDisplayName(nfField) : te) + '</code>';
+                });
+                if (state.fieldAssignments) {
+                    Object.keys(state.fieldAssignments).forEach(function (elemName) {
+                        var fa = state.fieldAssignments[elemName];
+                        var fld = state.fields ? state.fields.find(function (f) { return f.element_name === elemName; }) : null;
+                        var label = fld ? getFieldDisplayName(fld) : elemName;
+                        var modeTag = fa.mode === 'conditional' ? ' <span style="color:#dcdcaa;font-size:10px;">(cond)</span>' : ' <span style="color:#4ec9b0;font-size:10px;">(fixed)</span>';
+                        fieldCodes.push('<code>' + escapeHtml(label) + '</code>' + modeTag);
+                    });
+                }
+                html += fieldCodes.join(', ') + '</div>';
             }
-            // Nullify fields card
             if (nullifyCount > 0) {
                 html += '<div class="execute-nullify-summary"><span class="nullify-summary-icon">&#8709;</span> <strong>Nullify:</strong> ';
                 html += state.nullifyFields.map(function (nf) { var nfField = state.fields ? state.fields.find(function (f) { return f.element_name === nf; }) : null; return '<code>' + escapeHtml(nfField ? getFieldDisplayName(nfField) : nf) + '</code>'; }).join(', ');
@@ -1271,7 +1642,6 @@ var BDL = (function () {
 
     // ── Row Count Alignment ──────────────────────────────────────────────
     function getIdentifierColumn() { var firstEntity = entityStates[0]; if (!firstEntity) return 'cnsmr_idntfr_agncy_id'; return firstEntity.entity.entity_key === 'ACCOUNT' ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id'; }
-
     function showAlignmentModal() {
         var existing = document.getElementById('alignment-modal'); if (existing) existing.remove();
         var mappedEntities = entityStates.filter(function (s) { return s.entity.action_type === 'FILE_MAPPED'; });
@@ -1426,10 +1796,15 @@ var BDL = (function () {
         fixedValueIdentifierChanged: fixedValueIdentifierChanged,
         addAssignment: addAssignment, removeAssignment: removeAssignment,
         toggleAssignmentMode: toggleAssignmentMode, showAllTriggerValues: showAllTriggerValues,
-        setTriggerColumn: setTriggerColumn,
+        setTriggerColumn: setTriggerColumn, setAssignmentFileColumn: setAssignmentFileColumn,
         assignmentFieldChanged: assignmentFieldChanged, assignmentFieldSearch: assignmentFieldSearch, selectAssignmentValue: selectAssignmentValue,
         sharedFieldChanged: sharedFieldChanged,
         conditionalValueChanged: conditionalValueChanged, conditionalValueSearch: conditionalValueSearch, selectConditionalValue: selectConditionalValue,
+        toggleFieldMode: toggleFieldMode, switchFieldMode: switchFieldMode,
+        fieldAssignmentValueChanged: fieldAssignmentValueChanged, fieldAssignmentSearch: fieldAssignmentSearch, selectFieldAssignmentValue: selectFieldAssignmentValue,
+        setFieldTriggerColumn: setFieldTriggerColumn,
+        fieldCondValueChanged: fieldCondValueChanged, fieldCondValueSearch: fieldCondValueSearch, selectFieldCondValue: selectFieldCondValue,
+        showAllFieldTriggerValues: showAllFieldTriggerValues,
         nullifyField: nullifyField, unnullifyField: unnullifyField,
         applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows,
         runCleanup: runCleanup,
