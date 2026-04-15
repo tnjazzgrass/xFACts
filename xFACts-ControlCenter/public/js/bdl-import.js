@@ -6,6 +6,11 @@
 
    CHANGELOG
    ---------
+   2026-04-15  Assignment card model for FIXED_VALUE entities (multi-assignment)
+               Blanket/Conditional mode toggle per assignment card
+               Conditional mode: trigger column scan, unique value grid, per-value typeahead
+               Add Another / Remove assignment card management
+               Staging expansion sends assignments array to API
    2026-04-11  Added blanket nullify fields support in mapping step
                Nullify badge on target chips for eligible fields
                Nullified fields shown in Mapped section with distinct styling
@@ -329,7 +334,7 @@ var BDL = (function () {
     // ── Per-Entity State Management ──────────────────────────────────────
     function initEntityStates() {
         entityStates = selectedEntities.map(function (ent) {
-            return { entity: ent, fields: null, wrapper: null, columnMapping: {}, stagingContext: null, stagedMapping: null, validationResult: null, validated: false, xmlPreviewLoaded: false, nullifyFields: [] };
+            return { entity: ent, fields: null, wrapper: null, columnMapping: {}, assignments: [], stagingContext: null, stagedMapping: null, stagedAssignments: null, validationResult: null, validated: false, xmlPreviewLoaded: false, nullifyFields: [] };
         });
     }
 
@@ -392,17 +397,31 @@ var BDL = (function () {
         refreshMappingPanels();
     }
 
+    // ── Fixed-Value Mapping with Assignment Cards ──────────────────────
+    // Supports multi-assignment (Add Another) with per-assignment
+    // Blanket or Conditional mode. Conditional mode varies a single
+    // field per row based on a trigger column from the uploaded file.
+
     function renderFixedValueMapping(area, state) {
-        var entityFields = state.fields, columnMapping = state.columnMapping;
+        var entityFields = state.fields;
         var visibleFields = entityFields.filter(function (f) { return f.is_visible !== 0 && f.is_visible !== false; });
         var isAcct = state.entity.folder && state.entity.folder.indexOf('account') !== -1;
         var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
         var idField = visibleFields.find(function (f) { return f.element_name === idElemName; });
         var valueFields = visibleFields.filter(function (f) { return f.element_name !== idElemName; });
+        var conditionalFields = valueFields.filter(function (f) { return f.is_conditional_eligible; });
+        var hasConditionalOption = conditionalFields.length > 0;
+
+        // Initialize first assignment if empty
+        if (!state.assignments || state.assignments.length === 0) {
+            state.assignments = [{ mode: 'blanket', fixedValues: {}, triggerColumn: null, conditionalField: null, valueMap: {}, sharedFields: {}, triggerUniqueValues: null }];
+        }
+
         var prevIdIdx = '';
-        for (var k in columnMapping) { if (columnMapping[k] === idElemName) { var hIdx = parsedFileData.headers.indexOf(k); if (hIdx !== -1) prevIdIdx = String(hIdx); break; } }
+        for (var k in state.columnMapping) { if (state.columnMapping[k] === idElemName) { var hIdx = parsedFileData.headers.indexOf(k); if (hIdx !== -1) prevIdIdx = String(hIdx); break; } }
+
         var html = renderEntityProgressBanner('mapping');
-        html += '<div class="fixed-value-banner"><span class="fixed-value-icon">&#9998;</span> <strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</strong> uses fixed values — enter the values to apply to all rows below.</div>';
+        html += '<div class="fixed-value-banner"><span class="fixed-value-icon">&#9998;</span> <strong>' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</strong> uses fixed values — define one or more assignments below.</div>';
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
@@ -411,84 +430,393 @@ var BDL = (function () {
             html += '</select><span class="identifier-target">&#8594; <code>' + idField.element_name + '</code></span></div></div>';
         }
         var disabledClass = (idField && !idSelected) ? ' mapping-disabled' : '';
-        html += '<div class="fixed-value-fields' + disabledClass + '" id="fixed-value-fields">';
+        html += '<div class="assignment-area' + disabledClass + '" id="assignment-area">';
         if (idField && !idSelected) html += '<div class="mapping-disabled-msg">Select the identifier column above to enter values</div>';
+
+        // Assignment cards
+        html += '<div class="assignment-list" id="assignment-list">';
+        state.assignments.forEach(function (assignment, aIdx) {
+            html += renderAssignmentCard(assignment, aIdx, state, valueFields, conditionalFields, hasConditionalOption);
+        });
+        html += '</div>';
+
+        // Add Another button
+        var entityWord = formatEntityName(state.entity.entity_type).split(' ').pop();
+        html += '<button class="add-assignment-btn" onclick="BDL.addAssignment()">+ Add Another ' + escapeHtml(entityWord) + ' Assignment</button>';
+
+        html += '</div>'; // close assignment-area
+        html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()">Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
+
+        area.innerHTML = html;
+        area._identifierField = idField;
+        area._identifierElementName = idElemName;
+        area._valueFields = valueFields;
+        area._conditionalFields = conditionalFields;
+        checkAssignmentsComplete(state);
+    }
+
+    function renderAssignmentCard(assignment, aIdx, state, valueFields, conditionalFields, hasConditionalOption) {
+        var modeBadgeClass = assignment.mode === 'conditional' ? 'assignment-badge-conditional' : 'assignment-badge-blanket';
+        var modeBadgeLabel = assignment.mode === 'conditional' ? 'Conditional' : 'Blanket';
+        var html = '<div class="assignment-card" id="assignment-card-' + aIdx + '">';
+        // Header
+        html += '<div class="assignment-header"><div class="assignment-title"><span class="assignment-num">' + (aIdx + 1) + '</span> Assignment <span class="assignment-mode-badge ' + modeBadgeClass + '">' + modeBadgeLabel + '</span></div>';
+        if (state.assignments.length > 1) html += '<span class="assignment-remove" onclick="BDL.removeAssignment(' + aIdx + ')" title="Remove assignment">&#10005;</span>';
+        html += '</div>';
+        // Mode toggle (only if conditional-eligible fields exist)
+        if (hasConditionalOption) {
+            var blanketCls = assignment.mode === 'blanket' ? ' assignment-toggle-active-blanket' : '';
+            var condCls = assignment.mode === 'conditional' ? ' assignment-toggle-active-cond' : '';
+            html += '<div class="assignment-mode-toggle"><div class="assignment-toggle-btn' + blanketCls + '" onclick="BDL.toggleAssignmentMode(' + aIdx + ',\'blanket\')">Blanket</div><div class="assignment-toggle-btn' + condCls + '" onclick="BDL.toggleAssignmentMode(' + aIdx + ',\'conditional\')">Conditional</div></div>';
+        }
+        html += '<div class="assignment-body">';
+        if (assignment.mode === 'blanket') {
+            html += renderBlanketFields(assignment, aIdx, valueFields);
+        } else {
+            html += renderConditionalFields(assignment, aIdx, state, valueFields, conditionalFields);
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    function renderBlanketFields(assignment, aIdx, valueFields) {
+        var html = '';
         valueFields.forEach(function (f) {
-            var fieldId = 'fv-' + f.element_name.replace(/[^a-zA-Z0-9]/g, ''); var existingVal = state.columnMapping['__fixed__' + f.element_name] || '';
-            var displayName = hasDisplayName(f) ? f.display_name : f.element_name; var reqLabel = f.is_import_required ? ' <span class="chip-required-label">required</span>' : '';
+            var fieldId = 'afv-' + aIdx + '-' + f.element_name.replace(/[^a-zA-Z0-9]/g, '');
+            var existingVal = assignment.fixedValues[f.element_name] || '';
+            var displayName = hasDisplayName(f) ? f.display_name : f.element_name;
+            var reqLabel = f.is_import_required ? ' <span class="chip-required-label">required</span>' : '';
             html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(displayName) + reqLabel;
             if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
             if (f.field_description) html += '<div class="fixed-value-desc">' + escapeHtml(f.field_description.substring(0, 120)) + '</div>';
             if (f.import_guidance) html += '<div class="fixed-value-guidance">' + escapeHtml(f.import_guidance) + '</div>';
             html += '</div><div class="fixed-value-input">';
-            if (f.lookup_table) { html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueSearch(\'' + f.element_name + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>'; }
-            else { html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.fixedValueChanged(\'' + f.element_name + '\',this)">'; }
+            if (f.lookup_table) {
+                html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.assignmentFieldSearch(' + aIdx + ',\'' + f.element_name + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
+            } else {
+                html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.assignmentFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)">';
+            }
             var meta = buildFieldMeta(f); if (meta) html += '<div class="fixed-value-meta">' + meta + '</div>';
             html += '</div></div>';
         });
-        html += '</div>';
-        html += '<div class="map-validate-actions"><button class="execute-btn" id="btn-validate-entity" onclick="BDL.validateCurrentEntity()">Validate ' + escapeHtml(formatEntityName(state.entity.entity_type)) + '</button></div>';
-        area.innerHTML = html;
-        area._identifierField = idField; area._identifierElementName = idElemName; area._valueFields = valueFields;
-        checkFixedValueComplete(state);
+        return html;
     }
+
+    function renderConditionalFields(assignment, aIdx, state, valueFields, conditionalFields) {
+        var html = '';
+        var condField = conditionalFields[0];
+        // Trigger column selector
+        html += '<div class="trigger-section"><div class="trigger-label"><span style="font-size:13px">&#9881;</span> Trigger column</div>';
+        html += '<select class="identifier-dropdown trigger-dropdown" id="trigger-col-' + aIdx + '" onchange="BDL.setTriggerColumn(' + aIdx + ')" style="max-width:320px"><option value="">— Select trigger column —</option>';
+        parsedFileData.headers.forEach(function (header, idx) {
+            var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : '';
+            var sel = (assignment.triggerColumn === header) ? ' selected' : '';
+            html += '<option value="' + escapeHtml(header) + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>';
+        });
+        html += '</select>';
+        if (assignment.triggerColumn && condField) {
+            html += '<div class="trigger-note">&#9432; Unique values from "' + escapeHtml(assignment.triggerColumn) + '" mapped to <code style="color:#c586c0">' + condField.element_name + '</code></div>';
+        }
+        html += '</div>';
+        // Trigger value grid
+        if (assignment.triggerColumn && assignment.triggerUniqueValues) {
+            var uniqueVals = assignment.triggerUniqueValues;
+            var showAll = assignment._showAllTriggerValues || false;
+            var maxVisible = 15;
+            var displayVals = showAll ? uniqueVals : uniqueVals.slice(0, maxVisible);
+            var hasMore = uniqueVals.length > maxVisible && !showAll;
+            html += '<div class="trigger-grid"><div class="trigger-grid-header"><span>Trigger value</span><span>' + (condField ? condField.element_name : 'Value') + '</span><span style="text-align:right">Rows</span></div>';
+            displayVals.forEach(function (uv) {
+                var fieldId = 'cond-' + aIdx + '-' + uv.value.replace(/[^a-zA-Z0-9]/g, '_');
+                var existingVal = assignment.valueMap[uv.value] || '';
+                var safeTV = escapeHtml(uv.value).replace(/'/g, "\\'");
+                html += '<div class="trigger-grid-row"><span class="trigger-val"><code>' + escapeHtml(uv.value) + '</code></span><span class="trigger-input-cell">';
+                if (condField && condField.lookup_table) {
+                    html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.conditionalValueSearch(' + aIdx + ',\'' + safeTV + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
+                } else {
+                    html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="(skip)" value="' + escapeHtml(existingVal) + '" oninput="BDL.conditionalValueChanged(' + aIdx + ',\'' + safeTV + '\',this)">';
+                }
+                html += '</span>';
+                if (existingVal) html += '<span class="trigger-row-count">' + uv.count.toLocaleString() + '</span>';
+                else html += '<span class="trigger-row-skip">skip</span>';
+                html += '</div>';
+            });
+            if (hasMore) html += '<div class="trigger-grid-show-all" onclick="BDL.showAllTriggerValues(' + aIdx + ')">+ ' + (uniqueVals.length - maxVisible) + ' more values — show all</div>';
+            html += '</div>';
+        } else if (assignment.triggerColumn && !assignment.triggerUniqueValues) {
+            html += '<div class="loading">Scanning file for unique values...</div>';
+        }
+        // Shared fields (non-conditional fields)
+        var sharedFields = valueFields.filter(function (f) { return !f.is_conditional_eligible; });
+        if (sharedFields.length > 0 && assignment.triggerColumn) {
+            html += '<div class="shared-fields-section"><div class="shared-fields-label">Shared fields (apply to all rows in this assignment)</div>';
+            sharedFields.forEach(function (f) {
+                var fieldId = 'asf-' + aIdx + '-' + f.element_name.replace(/[^a-zA-Z0-9]/g, '');
+                var existingVal = assignment.sharedFields[f.element_name] || '';
+                var displayName = hasDisplayName(f) ? f.display_name : f.element_name;
+                html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(displayName);
+                if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
+                html += '</div><div class="fixed-value-input"><input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)"></div></div>';
+            });
+            html += '</div>';
+        }
+        return html;
+    }
+
+    // ── Assignment Card Actions ──────────────────────────────────────────
+
+    function addAssignment() {
+        var state = curState(); if (!state) return;
+        state.assignments.push({ mode: 'blanket', fixedValues: {}, triggerColumn: null, conditionalField: null, valueMap: {}, sharedFields: {}, triggerUniqueValues: null });
+        renderFixedValueMapping(document.getElementById('map-validate-area'), state);
+    }
+
+    function removeAssignment(aIdx) {
+        var state = curState(); if (!state || state.assignments.length <= 1) return;
+        state.assignments.splice(aIdx, 1);
+        renderFixedValueMapping(document.getElementById('map-validate-area'), state);
+    }
+
+    function toggleAssignmentMode(aIdx, mode) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        if (state.assignments[aIdx].mode === mode) return;
+        var area = document.getElementById('map-validate-area');
+        state.assignments[aIdx].mode = mode;
+        if (mode === 'blanket') {
+            state.assignments[aIdx].triggerColumn = null;
+            state.assignments[aIdx].conditionalField = null;
+            state.assignments[aIdx].valueMap = {};
+            state.assignments[aIdx].sharedFields = {};
+            state.assignments[aIdx].triggerUniqueValues = null;
+            state.assignments[aIdx]._showAllTriggerValues = false;
+        } else {
+            state.assignments[aIdx].fixedValues = {};
+            if (area._conditionalFields && area._conditionalFields.length > 0) {
+                state.assignments[aIdx].conditionalField = area._conditionalFields[0].element_name;
+            }
+        }
+        renderFixedValueMapping(area, state);
+    }
+
+    function showAllTriggerValues(aIdx) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        state.assignments[aIdx]._showAllTriggerValues = true;
+        renderFixedValueMapping(document.getElementById('map-validate-area'), state);
+    }
+
+    function setTriggerColumn(aIdx) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var sel = document.getElementById('trigger-col-' + aIdx);
+        var headerName = sel ? sel.value : '';
+        if (!headerName) {
+            state.assignments[aIdx].triggerColumn = null;
+            state.assignments[aIdx].triggerUniqueValues = null;
+            state.assignments[aIdx].valueMap = {};
+            state.assignments[aIdx]._showAllTriggerValues = false;
+            renderFixedValueMapping(document.getElementById('map-validate-area'), state);
+            return;
+        }
+        state.assignments[aIdx].triggerColumn = headerName;
+        state.assignments[aIdx].triggerUniqueValues = null;
+        state.assignments[aIdx].valueMap = {};
+        state.assignments[aIdx]._showAllTriggerValues = false;
+        renderFixedValueMapping(document.getElementById('map-validate-area'), state);
+        // Read full file to extract unique values for trigger column
+        var headerIndex = parsedFileData.headers.indexOf(headerName);
+        if (headerIndex < 0) return;
+        readFileColumnValues(headerIndex, function (uniqueValues) {
+            var currentState = curState();
+            if (!currentState || !currentState.assignments[aIdx] || currentState.assignments[aIdx].triggerColumn !== headerName) return;
+            currentState.assignments[aIdx].triggerUniqueValues = uniqueValues;
+            renderFixedValueMapping(document.getElementById('map-validate-area'), currentState);
+        });
+    }
+
+    function readFileColumnValues(colIndex, callback) {
+        var ext = '.' + uploadedFile.name.split('.').pop().toLowerCase();
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            var allRows;
+            try { if (ext === '.csv' || ext === '.txt') allRows = parseCSVAllRows(e.target.result); else allRows = parseExcelAllRows(e.target.result); }
+            catch (err) { callback([]); return; }
+            var counts = {};
+            for (var r = 0; r < allRows.length; r++) {
+                var val = (colIndex < allRows[r].length) ? allRows[r][colIndex].trim() : '';
+                if (val === '') continue;
+                if (!counts[val]) counts[val] = 0;
+                counts[val]++;
+            }
+            var result = Object.keys(counts).sort().map(function (v) { return { value: v, count: counts[v] }; });
+            callback(result);
+        };
+        if (ext === '.csv' || ext === '.txt') reader.readAsText(uploadedFile); else reader.readAsArrayBuffer(uploadedFile);
+    }
+
+    // ── Assignment Value Change/Search/Select (Blanket fields) ───────────
+
+    function assignmentFieldChanged(aIdx, elementName, input) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var val = input.value.trim();
+        if (val) state.assignments[aIdx].fixedValues[elementName] = val;
+        else delete state.assignments[aIdx].fixedValues[elementName];
+        checkAssignmentsComplete(state);
+    }
+
+    var searchDebounceTimer = null;
+
+    function assignmentFieldSearch(aIdx, elementName, input) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var val = input.value.trim();
+        if (val) state.assignments[aIdx].fixedValues[elementName] = val;
+        else delete state.assignments[aIdx].fixedValues[elementName];
+        var fieldId = 'afv-' + aIdx + '-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var sugEl = document.getElementById('sug-' + fieldId); if (!sugEl) return;
+        if (val.length < 2) { sugEl.innerHTML = ''; checkAssignmentsComplete(state); return; }
+        var field = state.fields.find(function (f) { return f.element_name === elementName; });
+        if (!field || !field.lookup_table) { checkAssignmentsComplete(state); return; }
+        if (!state._lookupCache) state._lookupCache = {};
+        var cacheKey = elementName + '::' + val.toLowerCase();
+        if (state._lookupCache[cacheKey]) { renderAssignmentSuggestions(sugEl, state._lookupCache[cacheKey], aIdx, 'blanket', elementName); checkAssignmentsComplete(state); return; }
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
+        searchDebounceTimer = setTimeout(function () {
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+                .then(function (r) { return r.json(); }).then(function (data) { if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; } var values = data.values || []; state._lookupCache[cacheKey] = values; renderAssignmentSuggestions(sugEl, values, aIdx, 'blanket', elementName); })
+                .catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
+        }, 300);
+        checkAssignmentsComplete(state);
+    }
+
+    function selectAssignmentValue(aIdx, elementName, value) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var fieldId = 'afv-' + aIdx + '-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
+        var input = document.getElementById(fieldId); if (input) input.value = value;
+        state.assignments[aIdx].fixedValues[elementName] = value;
+        var sugEl = document.getElementById('sug-' + fieldId); if (sugEl) sugEl.innerHTML = '';
+        checkAssignmentsComplete(state);
+    }
+
+    // ── Shared Field Change (Conditional mode non-varying fields) ────────
+
+    function sharedFieldChanged(aIdx, elementName, input) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var val = input.value.trim();
+        if (val) state.assignments[aIdx].sharedFields[elementName] = val;
+        else delete state.assignments[aIdx].sharedFields[elementName];
+        checkAssignmentsComplete(state);
+    }
+
+    // ── Conditional Value Change/Search/Select (Trigger grid rows) ──────
+
+    function conditionalValueChanged(aIdx, triggerVal, input) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var val = input.value.trim();
+        if (val) state.assignments[aIdx].valueMap[triggerVal] = val;
+        else delete state.assignments[aIdx].valueMap[triggerVal];
+        updateTriggerRowDisplay(aIdx, triggerVal, val);
+        checkAssignmentsComplete(state);
+    }
+
+    function conditionalValueSearch(aIdx, triggerVal, input) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var val = input.value.trim();
+        if (val) state.assignments[aIdx].valueMap[triggerVal] = val;
+        else delete state.assignments[aIdx].valueMap[triggerVal];
+        var condField = state.assignments[aIdx].conditionalField;
+        var fieldId = 'cond-' + aIdx + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
+        var sugEl = document.getElementById('sug-' + fieldId); if (!sugEl) return;
+        if (val.length < 2) { sugEl.innerHTML = ''; checkAssignmentsComplete(state); return; }
+        var field = state.fields.find(function (f) { return f.element_name === condField; });
+        if (!field || !field.lookup_table) { checkAssignmentsComplete(state); return; }
+        if (!state._lookupCache) state._lookupCache = {};
+        var cacheKey = condField + '::' + val.toLowerCase();
+        if (state._lookupCache[cacheKey]) { renderAssignmentSuggestions(sugEl, state._lookupCache[cacheKey], aIdx, 'conditional', triggerVal); checkAssignmentsComplete(state); return; }
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
+        searchDebounceTimer = setTimeout(function () {
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(condField) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+                .then(function (r) { return r.json(); }).then(function (data) { if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; } var values = data.values || []; state._lookupCache[cacheKey] = values; renderAssignmentSuggestions(sugEl, values, aIdx, 'conditional', triggerVal); })
+                .catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
+        }, 300);
+        checkAssignmentsComplete(state);
+    }
+
+    function selectConditionalValue(aIdx, triggerVal, value) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var fieldId = 'cond-' + aIdx + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
+        var input = document.getElementById(fieldId); if (input) input.value = value;
+        state.assignments[aIdx].valueMap[triggerVal] = value;
+        var sugEl = document.getElementById('sug-' + fieldId); if (sugEl) sugEl.innerHTML = '';
+        updateTriggerRowDisplay(aIdx, triggerVal, value);
+        checkAssignmentsComplete(state);
+    }
+
+    function updateTriggerRowDisplay(aIdx, triggerVal, value) {
+        var state = curState(); if (!state || !state.assignments[aIdx]) return;
+        var fieldId = 'cond-' + aIdx + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
+        var inputEl = document.getElementById(fieldId); if (!inputEl) return;
+        var row = inputEl.closest('.trigger-grid-row'); if (!row) return;
+        var countSpan = row.querySelector('.trigger-row-count, .trigger-row-skip');
+        if (!countSpan) return;
+        var uv = state.assignments[aIdx].triggerUniqueValues ? state.assignments[aIdx].triggerUniqueValues.find(function (u) { return u.value === triggerVal; }) : null;
+        if (value) { countSpan.className = 'trigger-row-count'; countSpan.textContent = uv ? uv.count.toLocaleString() : ''; }
+        else { countSpan.className = 'trigger-row-skip'; countSpan.textContent = 'skip'; }
+    }
+
+    // ── Suggestion Rendering (scoped for assignment context) ─────────────
+
+    function renderAssignmentSuggestions(sugEl, values, aIdx, scope, key) {
+        if (values.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
+        var selectFn = (scope === 'blanket') ? 'BDL.selectAssignmentValue' : 'BDL.selectConditionalValue';
+        var html = '';
+        values.forEach(function (item) {
+            var val = item.value || item;
+            var safeVal = escapeHtml(String(val)).replace(/'/g, "\\'");
+            var safeKey = escapeHtml(String(key)).replace(/'/g, "\\'");
+            html += '<div class="suggestion-item" onclick="' + selectFn + '(' + aIdx + ',\'' + safeKey + '\',\'' + safeVal + '\')"><span class="suggestion-value">' + escapeHtml(String(val)) + '</span>';
+            if (item.description) html += '<span class="suggestion-desc">' + escapeHtml(item.description) + '</span>';
+            html += '</div>';
+        });
+        sugEl.innerHTML = html;
+    }
+
+    // ── Identifier Changed (Fixed-Value) ─────────────────────────────────
 
     function fixedValueIdentifierChanged() {
         var area = document.getElementById('map-validate-area'), idSel = document.getElementById('identifier-column'), idElem = area._identifierElementName;
         var state = curState(); if (!state) return;
         var cm = state.columnMapping; for (var k in cm) { if (cm[k] === idElem) delete cm[k]; }
         if (idSel.value !== '') cm[parsedFileData.headers[parseInt(idSel.value)]] = idElem;
-        var idSection = document.querySelector('.mapping-identifier'), fieldsWrap = document.getElementById('fixed-value-fields');
-        if (idSel.value !== '') { if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); } if (fieldsWrap) { fieldsWrap.classList.remove('mapping-disabled'); var msg = fieldsWrap.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); } }
-        else { if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); } if (fieldsWrap) fieldsWrap.classList.add('mapping-disabled'); }
-        checkFixedValueComplete(state);
+        var idSection = document.querySelector('.mapping-identifier'), assignArea = document.getElementById('assignment-area');
+        if (idSel.value !== '') { if (idSection) { idSection.classList.remove('identifier-pending'); idSection.classList.add('identifier-confirmed'); } if (assignArea) { assignArea.classList.remove('mapping-disabled'); var msg = assignArea.querySelector('.mapping-disabled-msg'); if (msg) msg.remove(); } }
+        else { if (idSection) { idSection.classList.remove('identifier-confirmed'); idSection.classList.add('identifier-pending'); } if (assignArea) assignArea.classList.add('mapping-disabled'); }
+        checkAssignmentsComplete(state);
     }
 
-    function fixedValueChanged(elementName, input) { var state = curState(); if (!state) return; var val = input.value.trim(); if (val) state.columnMapping['__fixed__' + elementName] = val; else delete state.columnMapping['__fixed__' + elementName]; checkFixedValueComplete(state); }
+    // ── Assignment Completion Check ──────────────────────────────────────
 
-    var searchDebounceTimer = null;
-
-    function fixedValueSearch(elementName, input) {
-        var state = curState(); if (!state) return; var val = input.value.trim();
-        if (val) state.columnMapping['__fixed__' + elementName] = val; else delete state.columnMapping['__fixed__' + elementName];
-        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, ''); var sugEl = document.getElementById('sug-' + fieldId); if (!sugEl) return;
-        if (val.length < 2) { sugEl.innerHTML = ''; checkFixedValueComplete(state); return; }
-        var field = state.fields.find(function (f) { return f.element_name === elementName; }); if (!field || !field.lookup_table) { checkFixedValueComplete(state); return; }
-        if (!state._lookupCache) state._lookupCache = {};
-        var cacheKey = elementName + '::' + val.toLowerCase();
-        if (state._lookupCache[cacheKey]) { renderSuggestions(sugEl, state._lookupCache[cacheKey], elementName); checkFixedValueComplete(state); return; }
-        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-        sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
-        searchDebounceTimer = setTimeout(function () {
-            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
-                .then(function (r) { return r.json(); }).then(function (data) { if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; } var values = data.values || []; state._lookupCache[cacheKey] = values; renderSuggestions(sugEl, values, elementName); })
-                .catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
-        }, 300);
-        checkFixedValueComplete(state);
-    }
-
-    function renderSuggestions(sugEl, values, elementName) {
-        if (values.length === 0) { sugEl.innerHTML = '<div class="suggestion-none">No matches</div>'; return; }
-        var html = ''; values.forEach(function (item) { var val = item.value || item; var safeVal = escapeHtml(String(val)).replace(/'/g, "\\'");
-            html += '<div class="suggestion-item" onclick="BDL.selectFixedValue(\'' + elementName + '\',\'' + safeVal + '\')"><span class="suggestion-value">' + escapeHtml(String(val)) + '</span>';
-            if (item.description) html += '<span class="suggestion-desc">' + escapeHtml(item.description) + '</span>'; html += '</div>'; });
-        sugEl.innerHTML = html;
-    }
-
-    function selectFixedValue(elementName, value) {
-        var state = curState(); if (!state) return;
-        var fieldId = 'fv-' + elementName.replace(/[^a-zA-Z0-9]/g, ''); var input = document.getElementById(fieldId); if (input) input.value = value;
-        state.columnMapping['__fixed__' + elementName] = value;
-        var sugEl = document.getElementById('sug-' + fieldId); if (sugEl) sugEl.innerHTML = '';
-        checkFixedValueComplete(state);
-    }
-
-    function checkFixedValueComplete(state) {
-        if (!state) return; var area = document.getElementById('map-validate-area');
-        var hasIdentifier = false; for (var k in state.columnMapping) { if (state.columnMapping[k] === (area ? area._identifierElementName : '')) { hasIdentifier = true; break; } }
-        var requiredMet = true;
-        if (area && area._valueFields) { area._valueFields.forEach(function (f) { if (f.is_import_required && !state.columnMapping['__fixed__' + f.element_name]) requiredMet = false; }); }
-        var valBtn = document.getElementById('btn-validate-entity'); if (valBtn) valBtn.disabled = !(hasIdentifier && requiredMet);
+    function checkAssignmentsComplete(state) {
+        if (!state) return;
+        var area = document.getElementById('map-validate-area');
+        var idElem = area ? area._identifierElementName : '';
+        var hasIdentifier = false;
+        for (var k in state.columnMapping) { if (state.columnMapping[k] === idElem) { hasIdentifier = true; break; } }
+        if (!hasIdentifier || !state.assignments || state.assignments.length === 0) {
+            var valBtn = document.getElementById('btn-validate-entity'); if (valBtn) valBtn.disabled = true;
+            return;
+        }
+        var allComplete = true;
+        var valueFields = area ? area._valueFields || [] : [];
+        state.assignments.forEach(function (a) {
+            if (a.mode === 'blanket') {
+                valueFields.forEach(function (f) { if (f.is_import_required && !a.fixedValues[f.element_name]) allComplete = false; });
+            } else if (a.mode === 'conditional') {
+                if (!a.triggerColumn || !a.triggerUniqueValues) { allComplete = false; return; }
+                var hasMappedValue = Object.keys(a.valueMap).some(function (k) { return a.valueMap[k] && a.valueMap[k].trim() !== ''; });
+                if (!hasMappedValue) allComplete = false;
+            }
+        });
+        var valBtn = document.getElementById('btn-validate-entity'); if (valBtn) valBtn.disabled = !allComplete;
     }
 
     function renderMapValidateValidation(area, state) {
@@ -553,8 +881,14 @@ var BDL = (function () {
     function validateCurrentEntity() {
         var state = curState();
         if (!state || Object.keys(state.columnMapping).length === 0) return;
-        if (state.stagingContext && state.stagedMapping && mappingsAreEqual(state.columnMapping, state.stagedMapping)) { runEntityValidation(state); }
-        else if (state.stagingContext) { var oldTable = state.stagingContext.staging_table; state.stagingContext = null; state.stagedMapping = null; stageEntityData(state, function () { runEntityValidation(state); }, oldTable); }
+        var mappingUnchanged = state.stagingContext && state.stagedMapping && mappingsAreEqual(state.columnMapping, state.stagedMapping);
+        // For assignments-based entities, also compare assignments state
+        if (mappingUnchanged && state.assignments && state.assignments.length > 0) {
+            var currentAssignmentsJson = JSON.stringify(state.assignments.map(function (a) { return { mode: a.mode, fixedValues: a.fixedValues, triggerColumn: a.triggerColumn, conditionalField: a.conditionalField, valueMap: a.valueMap, sharedFields: a.sharedFields }; }));
+            mappingUnchanged = state.stagedAssignments === currentAssignmentsJson;
+        }
+        if (mappingUnchanged) { runEntityValidation(state); }
+        else if (state.stagingContext) { var oldTable = state.stagingContext.staging_table; state.stagingContext = null; state.stagedMapping = null; state.stagedAssignments = null; stageEntityData(state, function () { runEntityValidation(state); }, oldTable); }
         else { stageEntityData(state, function () { runEntityValidation(state); }); }
     }
 
@@ -568,14 +902,29 @@ var BDL = (function () {
             try { if (ext === '.csv' || ext === '.txt') allRows = parseCSVAllRows(e.target.result); else allRows = parseExcelAllRows(e.target.result); }
             catch (err) { area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Failed to read file: ' + err.message + '</div>'; return; }
             area.innerHTML = renderEntityProgressBanner('validating') + '<div class="loading">Staging ' + allRows.length.toLocaleString() + ' rows for ' + formatEntityName(state.entity.entity_type) + '...</div>';
-            var fileMapping = {}, fixedValues = {};
-            Object.keys(state.columnMapping).forEach(function (k) { if (k.indexOf('__fixed__') === 0) fixedValues[k.replace('__fixed__', '')] = state.columnMapping[k]; else fileMapping[k] = state.columnMapping[k]; });
+            var fileMapping = {};
+            Object.keys(state.columnMapping).forEach(function (k) { if (k.indexOf('__fixed__') !== 0) fileMapping[k] = state.columnMapping[k]; });
             var stageBody = { entity_type: state.entity.entity_type, config_id: selectedEnvironment.config_id, mapping: fileMapping, headers: parsedFileData.headers, rows: allRows };
-            if (Object.keys(fixedValues).length > 0) stageBody.fixed_values = fixedValues;
+            if (state.assignments && state.assignments.length > 0) {
+                stageBody.assignments = state.assignments.map(function (a) {
+                    return { mode: a.mode, fixed_values: a.fixedValues || {}, trigger_column: a.triggerColumn, conditional_field: a.conditionalField, value_map: a.valueMap || {}, shared_fields: a.sharedFields || {} };
+                });
+            } else {
+                var fixedValues = {};
+                Object.keys(state.columnMapping).forEach(function (k) { if (k.indexOf('__fixed__') === 0) fixedValues[k.replace('__fixed__', '')] = state.columnMapping[k]; });
+                if (Object.keys(fixedValues).length > 0) stageBody.fixed_values = fixedValues;
+            }
             if (dropExistingTable) stageBody.drop_existing = dropExistingTable;
             fetch('/api/bdl-import/stage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stageBody) })
             .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); }); return r.json(); })
-            .then(function (data) { state.stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] }; state.stagedMapping = JSON.parse(JSON.stringify(state.columnMapping)); if (onComplete) onComplete(); })
+            .then(function (data) {
+                state.stagingContext = { staging_table: data.staging_table, row_count: data.row_count, environment: data.environment, required_extra_fields: data.required_extra_fields || [] };
+                state.stagedMapping = JSON.parse(JSON.stringify(state.columnMapping));
+                if (state.assignments && state.assignments.length > 0) {
+                    state.stagedAssignments = JSON.stringify(state.assignments.map(function (a) { return { mode: a.mode, fixedValues: a.fixedValues, triggerColumn: a.triggerColumn, conditionalField: a.conditionalField, valueMap: a.valueMap, sharedFields: a.sharedFields }; }));
+                }
+                if (onComplete) onComplete();
+            })
             .catch(function (err) { area.innerHTML = renderEntityProgressBanner('validating') + '<div class="placeholder-message" style="color:#f48771;">Staging failed: ' + err.message + '</div>'; });
         };
         if (ext === '.csv' || ext === '.txt') reader.readAsText(uploadedFile); else reader.readAsArrayBuffer(uploadedFile);
@@ -1074,7 +1423,13 @@ var BDL = (function () {
         sourceClick: sourceClick, targetClick: targetClick, chipDragStart: chipDragStart, chipDragOver: chipDragOver, chipDrop: chipDrop,
         unmapPair: unmapPair, identifierChanged: identifierChanged,
         validateCurrentEntity: validateCurrentEntity, advanceToNextEntity: advanceToNextEntity, revalidateCurrentEntity: revalidateCurrentEntity,
-        fixedValueIdentifierChanged: fixedValueIdentifierChanged, fixedValueChanged: fixedValueChanged, fixedValueSearch: fixedValueSearch, selectFixedValue: selectFixedValue,
+        fixedValueIdentifierChanged: fixedValueIdentifierChanged,
+        addAssignment: addAssignment, removeAssignment: removeAssignment,
+        toggleAssignmentMode: toggleAssignmentMode, showAllTriggerValues: showAllTriggerValues,
+        setTriggerColumn: setTriggerColumn,
+        assignmentFieldChanged: assignmentFieldChanged, assignmentFieldSearch: assignmentFieldSearch, selectAssignmentValue: selectAssignmentValue,
+        sharedFieldChanged: sharedFieldChanged,
+        conditionalValueChanged: conditionalValueChanged, conditionalValueSearch: conditionalValueSearch, selectConditionalValue: selectConditionalValue,
         nullifyField: nullifyField, unnullifyField: unnullifyField,
         applyReplacement: applyReplacement, fillEmpty: fillEmpty, skipRows: skipRows,
         runCleanup: runCleanup,
