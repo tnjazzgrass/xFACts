@@ -10,6 +10,10 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-16  Added Import History panel to right column (below templates)
+#             Adjusted column widths: main 65→55, guide 35→45
+#             History panel renders active rows + Y/M/D accordion, polls
+#             /api/bdl-import/history on configured interval
 # 2026-04-08  Consolidated to 5-step wizard with step swap and multi-select
 #             Steps 4/5 merged into Map & Validate with per-entity loop
 #             Step 5 (Execute) uses tabbed per-entity summary
@@ -195,7 +199,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
             </div>
         </div>
         
-        <!-- RIGHT COLUMN: Step Guide + Templates -->
+        <!-- RIGHT COLUMN: Step Guide + Templates + Import History -->
         <div class="bdl-guide" id="bdl-guide">
             <div class="guide-tip-panel" id="guide-content">
                 <div class="guide-text" id="guide-text-1">
@@ -238,6 +242,33 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                 </div>
                 <div class="template-save-area hidden" id="template-save-area">
                     <button class="template-save-btn" onclick="BDL.showSaveTemplate()">Save Current Mapping as Template</button>
+                </div>
+            </div>
+
+            <!-- Import History Panel -->
+            <div class="history-section" id="history-section">
+                <div class="history-header">
+                    <div class="history-title-row">
+                        <span class="history-title">Import History</span>
+                        <span class="history-live-indicator hidden" id="history-live-indicator" title="Polling live — active imports in flight"></span>
+                        <span class="history-last-updated" id="history-last-updated"></span>
+                        <button class="history-refresh-btn" id="history-refresh-btn" onclick="BDL.refreshHistory()" title="Refresh now">&#8635;</button>
+                    </div>
+                    <div class="history-filter-row">
+                        <div class="history-env-chips" id="history-env-chips">
+                            <span class="history-chip history-chip-env history-chip-active" data-env="ALL" onclick="BDL.setHistoryEnvFilter('ALL')">All</span>
+                        </div>
+                        <div class="history-user-toggle" id="history-user-toggle">
+                            <span class="history-toggle-btn history-toggle-active" data-scope="me" onclick="BDL.setHistoryUserScope('me')">Mine</span>
+                            <span class="history-toggle-btn" data-scope="all" onclick="BDL.setHistoryUserScope('all')">All Users</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="history-body">
+                    <div class="history-active-section" id="history-active-section">
+                        <div class="history-empty">Loading history...</div>
+                    </div>
+                    <div class="history-tree" id="history-tree"></div>
                 </div>
             </div>
         </div>
