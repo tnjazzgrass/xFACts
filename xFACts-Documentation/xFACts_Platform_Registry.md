@@ -1,10 +1,11 @@
 # xFACts Platform Registry
-Generated: 2026-04-16 11:13:04
+Generated: 2026-04-16 16:55:31
 
 ## Module Registry
 
 | module_name | description |
 | --- | --- |
+| B2B | IBM Sterling B2B Integrator file transfer and ETL processing monitoring |
 | BatchOps | Debt Manager batch file loading monitoring |
 | BIDATA | Nightly data warehouse build monitoring |
 | ControlCenter | Web-based user interface for xFACts |
@@ -24,6 +25,7 @@ Generated: 2026-04-16 11:13:04
 
 | module_name | component_name | description | doc_page_id | doc_title | doc_json_schema | doc_json_categories | doc_sort_order | doc_section_order |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B2B | B2B | IBM Sterling B2B Integrator workflow monitoring, file transfer tracking, process configuration, and alerting |  |  |  |  |  |  |
 | BatchOps | BatchOps | Real-time Debt Manager batch processing activity, complete pipeline tracking, and execution history | batchops | Batch Monitoring | BatchOps |  | 80 | 1 |
 | BIDATA | BIDATA | Real-time BIDATA nightly build monitoring with process status, duration trending and build history | bidata | BIDATA Monitoring | BIDATA |  | 90 | 1 |
 | ControlCenter | ControlCenter.Admin | Administration page: process timeline, engine controls, platform management tools | controlcenter | Administration |  |  |  |  |
@@ -223,6 +225,7 @@ Generated: 2026-04-16 11:13:04
 | Engine.SharedInfrastructure | sp_LogProtectionViolation | Database | Procedure | dbo | Logs blocked DDL operations to Protection_ViolationLog |
 | Engine.SharedInfrastructure | ActionAuditLog | Database | Table | dbo | Audit trail for Control Center administrative actions |
 | Engine.SharedInfrastructure | API_RequestLog | Database | Table | dbo | HTTP request logging for Control Center API endpoints |
+| Engine.SharedInfrastructure | ClientHierarchy | Database | Table |  | Complete flattened DM creditor hierarchy for cross-module client resolution. |
 | Engine.SharedInfrastructure | Component_Registry | Database | Table | dbo | Logical component grouping catalog |
 | Engine.SharedInfrastructure | Credentials | Database | Table | dbo | Encrypted credential storage for service accounts |
 | Engine.SharedInfrastructure | CredentialServices | Database | Table | dbo | Service-to-credential mapping |
@@ -235,6 +238,7 @@ Generated: 2026-04-16 11:13:04
 | Engine.SharedInfrastructure | Protection_ViolationLog | Database | Table | dbo | Blocked DDL operations on protected objects |
 | Engine.SharedInfrastructure | ServerRegistry | Database | Table | dbo | Registered SQL Server instances |
 | Engine.SharedInfrastructure | System_Metadata | Database | Table | dbo | Component version changelog |
+| Engine.SharedInfrastructure | Sync-ClientHierarchy.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Sync-ClientHierarchy.ps1 | Daily rebuild of dbo.ClientHierarchy via recursive CTE and MERGE from crs5_oltp creditor hierarchy. |
 | FileOps | sp_AddNewMonitorConfig | Database | Procedure | FileOps | Adds a new file monitoring configuration entry |
 | FileOps | MonitorConfig | Database | Table | FileOps | SFTP file monitoring configuration |
 | FileOps | MonitorLog | Database | Table | FileOps | File monitoring event log |
