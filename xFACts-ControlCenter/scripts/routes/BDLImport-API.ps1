@@ -7,6 +7,12 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-16  Import History panel support:
+#             - Rewrote GET /api/bdl-import/history: calls Invoke-BDLImportLogReconcile,
+#               accepts env/user_scope filters, returns active_rows + years tree
+#               + poll_interval_seconds
+#             - Added GET /api/bdl-import/history-month for lazy day-level loading
+#             - All other endpoints unchanged
 # 2026-04-15  Tag entity filtering: CONSUMER_TAG/ACCOUNT_TAG lookups restricted
 #             to correct entity association level via tag_typ subquery
 # 2026-04-13  ServerConfig → EnvironmentConfig migration; API URLs from ServerRegistry
@@ -1247,17 +1253,335 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/staging-cleanup' -Authenticati
 
 # ----------------------------------------------------------------------------
 # GET /api/bdl-import/history
+# Reconciles in-flight imports against DM File_Registry, then returns:
+#   - active_rows: non-terminal imports (is_complete=0), filtered, top 50
+#   - years: aggregate counts for terminal rows, grouped by year → month
+#   - poll_interval_seconds: GlobalConfig refresh_bdl-import_seconds
+#   - environments: distinct env list for filter chips
+#   - reconcile_summary: what the reconcile step did this call
+#
+# Query params:
+#   env         — comma-separated environments (e.g., "TEST,PROD"); empty = all
+#   user_scope  — "me" (default) or "all"
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLogin' -ScriptBlock {
     try {
-        $results = Invoke-XFActsQuery -Query @"
-            SELECT TOP 50 log_id, environment, entity_type, source_filename,
-                   row_count, validation_errors, status, error_message,
-                   executed_by, started_dttm, completed_dttm, parent_log_id
+        # ── Step 1: On-demand reconciliation ─────────────────────────────
+        # Syncs any non-terminal xFACts rows against DM File_Registry.
+        # Runs across all envs/users (filter applies to display only).
+        $reconcileResult = @{ reconciled = 0; still_active = 0; not_found = 0; errors = @(); environments = @{} }
+        try {
+            $reconcileResult = Invoke-BDLImportLogReconcile -MaxRows 100
+        }
+        catch {
+            $reconcileResult.errors = @(@{ message = $_.Exception.Message })
+        }
+
+        # ── Step 2: Parse filters ────────────────────────────────────────
+        $envFilter = $WebEvent.Query['env']
+        $userScope = $WebEvent.Query['user_scope']
+        if (-not $userScope) { $userScope = 'me' }
+
+        $currentUser = "FAC\$($WebEvent.Auth.User.Username)"
+
+        # Build env filter clause + param map
+        $envFilterClause = ''
+        $envParams = @{}
+        if ($envFilter -and $envFilter.Trim() -ne '') {
+            $envList = @($envFilter.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+            if ($envList.Count -gt 0) {
+                $placeholders = @()
+                for ($i = 0; $i -lt $envList.Count; $i++) {
+                    $pn = "env$i"
+                    $placeholders += "@$pn"
+                    $envParams[$pn] = $envList[$i]
+                }
+                $envFilterClause = " AND environment IN ($($placeholders -join ', '))"
+            }
+        }
+
+        # User filter clause
+        $userClause = ''
+        $params = @{} + $envParams
+        if ($userScope -eq 'me') {
+            $userClause = " AND executed_by = @currentUser"
+            $params['currentUser'] = $currentUser
+        }
+
+        # ── Step 3: Active rows (is_complete=0), top 50, most recent first ──
+        $activeRows = Invoke-XFActsQuery -Query @"
+            SELECT TOP 50
+                log_id,
+                environment,
+                entity_type,
+                source_filename,
+                xml_filename,
+                staging_table,
+                row_count,
+                status,
+                file_registry_status,
+                file_registry_id,
+                total_record_count,
+                staging_success_count,
+                staging_failed_count,
+                import_processed_count,
+                import_success_count,
+                import_failed_count,
+                error_message,
+                executed_by,
+                started_dttm,
+                completed_dttm,
+                last_polled_dttm,
+                parent_log_ids,
+                DATEDIFF(SECOND, started_dttm, GETDATE()) AS age_seconds
             FROM Tools.BDL_ImportLog
-            ORDER BY log_id DESC
+            WHERE is_complete = 0
+              $envFilterClause
+              $userClause
+            ORDER BY started_dttm DESC, log_id DESC
+"@ -Parameters $params
+
+        # ── Step 4: Terminal rows grouped by year/month ───────────────────
+        $terminalMonths = Invoke-XFActsQuery -Query @"
+            SELECT
+                YEAR(started_dttm) AS year_num,
+                MONTH(started_dttm) AS month_num,
+                COUNT(*) AS total_imports,
+                SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS success_count,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) AS fail_count,
+                SUM(CASE
+                    WHEN status = 'COMPLETED' AND file_registry_status = 'PARTIALLY_PROCESSED' THEN 1
+                    ELSE 0
+                END) AS partial_count,
+                SUM(CASE WHEN status = 'ORPHANED' THEN 1 ELSE 0 END) AS orphaned_count
+            FROM Tools.BDL_ImportLog
+            WHERE is_complete = 1
+              $envFilterClause
+              $userClause
+            GROUP BY YEAR(started_dttm), MONTH(started_dttm)
+            ORDER BY year_num DESC, month_num DESC
+"@ -Parameters $params
+
+        # Group months into years
+        # NOTE: using regular @{} not [ordered]@{} — OrderedDictionary treats
+        # integer keys as positional indices and throws on $yearMap[$y] access.
+        # Field names match the month-level object shape so JS can read them uniformly.
+        $yearMap = @{}
+        foreach ($m in $terminalMonths) {
+            $y = [int]$m.year_num
+            if (-not $yearMap.ContainsKey($y)) {
+                $yearMap[$y] = @{
+                    year     = $y
+                    total    = 0
+                    success  = 0
+                    fail     = 0
+                    partial  = 0
+                    orphaned = 0
+                    months   = @()
+                }
+            }
+            $yearMap[$y].total    += [int]$m.total_imports
+            $yearMap[$y].success  += [int]$m.success_count
+            $yearMap[$y].fail     += [int]$m.fail_count
+            $yearMap[$y].partial  += [int]$m.partial_count
+            $yearMap[$y].orphaned += [int]$m.orphaned_count
+            $yearMap[$y].months += @{
+                month    = [int]$m.month_num
+                total    = [int]$m.total_imports
+                success  = [int]$m.success_count
+                fail     = [int]$m.fail_count
+                partial  = [int]$m.partial_count
+                orphaned = [int]$m.orphaned_count
+            }
+        }
+        # Sort by sorting keys — Sort-Object -Property on a plain Hashtable's
+        # Values collection doesn't reliably honor property access on each entry.
+        # Keys are integer years; sorting them descending gives newest first.
+        $years = @($yearMap.Keys | Sort-Object -Descending | ForEach-Object { $yearMap[$_] })
+
+        # ── Step 5: Distinct environments (for filter chip list) ──────────
+        $envList = Invoke-XFActsQuery -Query @"
+            SELECT environment
+            FROM Tools.EnvironmentConfig
+            WHERE is_active = 1
+            ORDER BY
+                CASE environment
+                    WHEN 'TEST' THEN 1
+                    WHEN 'STAGE' THEN 2
+                    WHEN 'PROD' THEN 3
+                    ELSE 4
+                END
 "@
-        Write-PodeJsonResponse -Value @{ history = @($results) }
+        $environments = @($envList | ForEach-Object { $_.environment })
+
+        # ── Step 6: Poll interval (shared GlobalConfig endpoint key) ──────
+        $pollInterval = 20
+        $pollCfg = Invoke-XFActsQuery -Query @"
+            SELECT setting_value
+            FROM dbo.GlobalConfig
+            WHERE module_name = 'Tools'
+              AND category = 'Operations'
+              AND setting_name = 'refresh_bdl-import_seconds'
+              AND is_active = 1
+"@
+        if ($pollCfg -and $pollCfg.Count -gt 0) {
+            $parsed = 0
+            if ([int]::TryParse([string]$pollCfg[0].setting_value, [ref]$parsed) -and $parsed -gt 0) {
+                $pollInterval = $parsed
+            }
+        }
+
+        # ── Step 7: Response ──────────────────────────────────────────────
+        Write-PodeJsonResponse -Value @{
+            active_rows            = @($activeRows)
+            years                  = $years
+            environments           = $environments
+            current_user           = $currentUser
+            filter_env             = $envFilter
+            filter_user_scope      = $userScope
+            poll_interval_seconds  = $pollInterval
+            reconcile_summary      = $reconcileResult
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# GET /api/bdl-import/history-month?year=2026&month=4&env=&user_scope=me
+# Returns day-level detail for a single month. Each day includes both
+# the aggregate counts AND the individual import rows for that date.
+#
+# Query params:
+#   year       — required, e.g. 2026
+#   month      — required, 1-12
+#   env        — comma-separated environments; empty = all
+#   user_scope — "me" (default) or "all"
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Get -Path '/api/bdl-import/history-month' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $year = $WebEvent.Query['year']
+        $month = $WebEvent.Query['month']
+        if (-not $year -or -not $month) {
+            Write-PodeJsonResponse -Value @{ error = 'year and month query parameters are required' } -StatusCode 400
+            return
+        }
+        $yearInt = 0
+        $monthInt = 0
+        if (-not [int]::TryParse([string]$year, [ref]$yearInt) -or -not [int]::TryParse([string]$month, [ref]$monthInt)) {
+            Write-PodeJsonResponse -Value @{ error = 'year and month must be integers' } -StatusCode 400
+            return
+        }
+        if ($monthInt -lt 1 -or $monthInt -gt 12) {
+            Write-PodeJsonResponse -Value @{ error = 'month must be between 1 and 12' } -StatusCode 400
+            return
+        }
+
+        $envFilter = $WebEvent.Query['env']
+        $userScope = $WebEvent.Query['user_scope']
+        if (-not $userScope) { $userScope = 'me' }
+
+        $currentUser = "FAC\$($WebEvent.Auth.User.Username)"
+
+        # Build env filter
+        $envFilterClause = ''
+        $envParams = @{}
+        if ($envFilter -and $envFilter.Trim() -ne '') {
+            $envList = @($envFilter.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+            if ($envList.Count -gt 0) {
+                $placeholders = @()
+                for ($i = 0; $i -lt $envList.Count; $i++) {
+                    $pn = "env$i"
+                    $placeholders += "@$pn"
+                    $envParams[$pn] = $envList[$i]
+                }
+                $envFilterClause = " AND environment IN ($($placeholders -join ', '))"
+            }
+        }
+
+        # User filter
+        $userClause = ''
+        $params = @{
+            yearNum  = $yearInt
+            monthNum = $monthInt
+        } + $envParams
+        if ($userScope -eq 'me') {
+            $userClause = " AND executed_by = @currentUser"
+            $params['currentUser'] = $currentUser
+        }
+
+        # Fetch all imports for the month (terminal + active, though active
+        # are rare given is_complete=1 filter). Capped at 500 for safety.
+        $imports = Invoke-XFActsQuery -Query @"
+            SELECT TOP 500
+                log_id,
+                environment,
+                entity_type,
+                source_filename,
+                xml_filename,
+                row_count,
+                status,
+                file_registry_status,
+                file_registry_id,
+                total_record_count,
+                staging_success_count,
+                staging_failed_count,
+                import_success_count,
+                import_failed_count,
+                error_message,
+                executed_by,
+                started_dttm,
+                completed_dttm,
+                is_complete,
+                parent_log_ids,
+                CONVERT(VARCHAR(10), started_dttm, 120) AS import_date
+            FROM Tools.BDL_ImportLog
+            WHERE YEAR(started_dttm) = @yearNum
+              AND MONTH(started_dttm) = @monthNum
+              $envFilterClause
+              $userClause
+            ORDER BY started_dttm DESC, log_id DESC
+"@ -Parameters $params
+
+        # Group by day
+        # NOTE: regular @{} (not [ordered]) for consistency — we sort at the end.
+        $dayMap = @{}
+        foreach ($row in $imports) {
+            $dateKey = [string]$row.import_date
+            if (-not $dayMap.ContainsKey($dateKey)) {
+                # Compute day-of-week
+                $parsedDate = [DateTime]::ParseExact($dateKey, 'yyyy-MM-dd', $null)
+                $dayMap[$dateKey] = @{
+                    date         = $dateKey
+                    day_of_week  = $parsedDate.ToString('ddd')
+                    day_of_month = $parsedDate.Day
+                    total        = 0
+                    success      = 0
+                    fail         = 0
+                    active       = 0
+                    imports      = @()
+                }
+            }
+            $dayMap[$dateKey].total++
+            if ($row.is_complete -eq $false -or $row.is_complete -eq 0) { $dayMap[$dateKey].active++ }
+            elseif ($row.status -eq 'COMPLETED') { $dayMap[$dateKey].success++ }
+            elseif ($row.status -eq 'FAILED') { $dayMap[$dateKey].fail++ }
+            $dayMap[$dateKey].imports += $row
+        }
+
+        # Sort by sorting keys — Sort-Object -Property on a plain Hashtable's
+        # Values collection doesn't reliably honor property access on each entry.
+        # Keys are "yyyy-MM-dd" strings; descending order = newest date first.
+        $days = @($dayMap.Keys | Sort-Object -Descending | ForEach-Object { $dayMap[$_] })
+
+        Write-PodeJsonResponse -Value @{
+            year    = $yearInt
+            month   = $monthInt
+            days    = $days
+            count   = $imports.Count
+            truncated = ($imports.Count -ge 500)
+        }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
