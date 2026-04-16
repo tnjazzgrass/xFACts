@@ -6,6 +6,13 @@
 
    CHANGELOG
    ---------
+   2026-04-16  Import History panel in right column
+               Active rows pinned top, pulsing LIVE indicator when polling
+               Y/M/D accordion (JobFlow pattern) for completed imports
+               Env chip filter + Mine/All Users toggle (localStorage persisted)
+               On-demand reconciliation via /api/bdl-import/history
+               Polling lifecycle driven by active-row presence + engine-events.js
+               Midnight rollover reload   
    2026-04-15  Per-field mode selector for conditional-eligible fields on FILE_MAPPED entities
                3-way toggle (File / Blanket / Cond) on target chips
                Field Assignments section below mapping panels
@@ -59,7 +66,29 @@ var BDL = (function () {
     var promoteSecondsRemaining = 0;
     var promoteReady = false;
 
-    function init() { loadEnvironments(); checkStagingCleanup(); }
+    // Environments listed here are rendered grayed-out and cannot be selected
+    // on Step 1 or filtered in the Import History panel. Used for temporary
+    // blocks during DM upgrades, maintenance windows, etc. Remove an entry
+    // from this list to re-enable that environment.
+    var DISABLED_ENVIRONMENTS = ['STAGE'];
+	
+    // ── Import History Panel State ───────────────────────────────────────
+    var historyData = null;
+    var historyEnvFilter = 'ALL';
+    var historyUserScope = 'me';
+    var historyPollTimer = null;
+    var historyPollInterval = 20;
+    var historyExpandedYears = {};
+    var historyExpandedMonths = {};
+    var historyExpandedDays = {};
+    var historyMonthCache = {};
+    var historyCurrentUser = null;
+    var historyAvailableEnvs = [];
+    var historyLastLoadMs = 0;
+    var pageLoadDate = new Date().toDateString();
+    var midnightCheckTimer = null;	
+
+    function init() { loadEnvironments(); checkStagingCleanup(); initHistoryPanel(); }
 
     function checkStagingCleanup() {
         fetch('/api/bdl-import/staging-cleanup').then(function (r) { return r.json(); }).then(function (data) {
@@ -166,7 +195,16 @@ var BDL = (function () {
 	function renderEnvironments(envs) {
         var c = document.getElementById('env-cards');
         if (!envs.length) { c.innerHTML = '<div class="placeholder-message">No environments configured.</div>'; return; }
-        var h = ''; envs.forEach(function (env) { h += '<div class="env-card" data-env="' + env.environment + '" onclick="BDL.selectEnvironment(this,' + env.config_id + ')"><div class="env-name">' + env.environment + '</div></div>'; });
+        var h = '';
+        envs.forEach(function (env) {
+            var isDisabled = DISABLED_ENVIRONMENTS.indexOf(env.environment) !== -1;
+            var cls = 'env-card' + (isDisabled ? ' env-card-disabled' : '');
+            var clickAttr = isDisabled ? '' : ' onclick="BDL.selectEnvironment(this,' + env.config_id + ')"';
+            h += '<div class="' + cls + '" data-env="' + env.environment + '"' + clickAttr + '>';
+            h += '<div class="env-name">' + env.environment + '</div>';
+            if (isDisabled) h += '<div class="env-disabled-note">Temporarily unavailable</div>';
+            h += '</div>';
+        });
         c.innerHTML = h; c._envData = envs;
     }
     function selectEnvironment(card, configId) {
@@ -1774,6 +1812,384 @@ var BDL = (function () {
     function saveTemplate() { var state = curState(); if (!state) return; var nameInput = document.getElementById('save-template-name'), descInput = document.getElementById('save-template-desc'), status = document.getElementById('save-template-status'); var name = nameInput.value.trim(); if (!name) { nameInput.focus(); nameInput.style.borderColor = '#f48771'; return; } nameInput.style.borderColor = ''; fetch('/api/bdl-import/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity_type: state.entity.entity_type, template_name: name, description: descInput.value.trim() || null, column_mapping: JSON.stringify(state.columnMapping) }) }).then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); }).then(function (data) { if (data._httpStatus >= 400 || data.error) { status.textContent = data.error || 'Failed.'; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); } else { status.textContent = 'Saved!'; status.className = 'template-modal-status template-modal-success'; status.classList.remove('hidden'); activeTemplateId = data.template_id; setTimeout(function () { closeSaveTemplate(); loadTemplates(state.entity.entity_type); }, 1000); } }).catch(function (err) { status.textContent = 'Error: ' + err.message; status.className = 'template-modal-status template-modal-error'; status.classList.remove('hidden'); }); }
     function deleteTemplate(templateId) { var template = entityTemplates.find(function (t) { return t.template_id === templateId; }); if (!template) return; showConfirm('Delete template "' + template.template_name + '"?', { title: 'Delete Template', icon: '&#128465;', iconColor: '#f48771', confirmLabel: 'Delete', cancelLabel: 'Keep', confirmClass: 'xf-modal-btn-danger' }).then(function (confirmed) { if (!confirmed) return; var state = curState(); fetch('/api/bdl-import/templates/' + templateId, { method: 'DELETE' }).then(function (r) { return r.json(); }).then(function (data) { if (data.success) { if (activeTemplateId === templateId) activeTemplateId = null; closeTemplatePreview(); if (state) loadTemplates(state.entity.entity_type); } else showAlert(data.error || 'Failed.', { title: 'Delete Failed', icon: '&#10005;', iconColor: '#f48771' }); }).catch(function (err) { showAlert(err.message, { title: 'Error', icon: '&#10005;', iconColor: '#f48771' }); }); }); }
 
+// ── Import History Panel ─────────────────────────────────────────────
+    function initHistoryPanel() {
+        try {
+            var savedScope = localStorage.getItem('bdl_history_user_scope');
+            if (savedScope === 'me' || savedScope === 'all') historyUserScope = savedScope;
+            var savedScopeBtns = document.querySelectorAll('#history-user-toggle .history-toggle-btn');
+            savedScopeBtns.forEach(function (btn) {
+                if (btn.dataset.scope === historyUserScope) btn.classList.add('history-toggle-active');
+                else btn.classList.remove('history-toggle-active');
+            });
+        } catch (e) { /* ignore */ }
+        fetch('/api/config/refresh-interval?page=bdl-import')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) { if (data && data.interval && !data.default) historyPollInterval = data.interval; })
+            .catch(function () { /* use default */ });
+        loadHistory();
+        if (midnightCheckTimer) clearInterval(midnightCheckTimer);
+        midnightCheckTimer = setInterval(checkMidnightRollover, 60000);
+    }
+
+    function loadHistory(silent) {
+        var envParam = (historyEnvFilter === 'ALL') ? '' : '&env=' + encodeURIComponent(historyEnvFilter);
+        var url = '/api/bdl-import/history?user_scope=' + historyUserScope + envParam;
+        var btn = document.getElementById('history-refresh-btn');
+        if (btn && !silent) btn.classList.add('spinning');
+        var doFetch = (typeof engineFetch === 'function') ? engineFetch(url) : fetch(url).then(function (r) { return r.json(); });
+        return Promise.resolve(doFetch)
+            .then(function (data) {
+                if (!data) return;
+                historyData = data;
+                historyCurrentUser = data.current_user || null;
+                historyAvailableEnvs = data.environments || [];
+                if (data.poll_interval_seconds) historyPollInterval = data.poll_interval_seconds;
+                historyLastLoadMs = Date.now();
+                renderHistoryEnvChips();
+                renderHistoryActive();
+                renderHistoryTree();
+                updateHistoryLastUpdated();
+                updateHistoryPollingLifecycle();
+            })
+            .catch(function (err) {
+                var active = document.getElementById('history-active-section');
+                if (active) active.innerHTML = '<div class="history-empty" style="color:#f48771;">Failed to load: ' + escapeHtml(err.message) + '</div>';
+                var tree = document.getElementById('history-tree'); if (tree) tree.innerHTML = '';
+            })
+            .then(function () {
+                if (btn) setTimeout(function () { btn.classList.remove('spinning'); }, 600);
+            });
+    }
+
+    function refreshHistory() { loadHistory(false); }
+
+    function renderHistoryEnvChips() {
+        var container = document.getElementById('history-env-chips');
+        if (!container) return;
+        var html = '<span class="history-chip history-chip-env' + (historyEnvFilter === 'ALL' ? ' history-chip-active' : '') + '" data-env="ALL" onclick="BDL.setHistoryEnvFilter(\'ALL\')">All</span>';
+        historyAvailableEnvs.forEach(function (env) {
+            var isDisabled = DISABLED_ENVIRONMENTS.indexOf(env) !== -1;
+            var activeCls   = (historyEnvFilter === env) ? ' history-chip-active' : '';
+            var disabledCls = isDisabled ? ' history-chip-disabled' : '';
+            var clickAttr   = isDisabled ? '' : ' onclick="BDL.setHistoryEnvFilter(\'' + escapeHtml(env).replace(/'/g, "\\'") + '\')"';
+            html += '<span class="history-chip history-chip-env' + activeCls + disabledCls + '" data-env="' + escapeHtml(env) + '"' + clickAttr + '>' + escapeHtml(env) + '</span>';
+        });
+        container.innerHTML = html;
+    }
+
+    function renderHistoryActive() {
+        var container = document.getElementById('history-active-section');
+        if (!container || !historyData) return;
+        var rows = historyData.active_rows || [];
+        var liveIndicator = document.getElementById('history-live-indicator');
+        if (rows.length === 0) {
+            container.innerHTML = '<div class="history-empty">No active imports</div>';
+            if (liveIndicator) liveIndicator.classList.add('hidden');
+            return;
+        }
+        if (liveIndicator) liveIndicator.classList.remove('hidden');
+        var html = '<div class="history-active-header"><span class="history-active-label">Active</span><span class="history-active-count">' + rows.length + '</span></div>';
+        html += '<div class="history-active-list">';
+        rows.forEach(function (r) { html += renderActiveRow(r); });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function renderActiveRow(r) {
+        var envLower = (r.environment || '').toLowerCase();
+        var fnShort = shortenFilename(r.source_filename || r.xml_filename || '');
+        var entityName = r.entity_type ? formatEntityName(r.entity_type) : '';
+        var ageText = formatAge(r.started_dttm || r.created_dttm);
+        var status = (r.status || '').toUpperCase();
+        var statusBadge = '<span class="history-status-badge history-status-' + escapeHtml(status) + '">' + escapeHtml(status) + '</span>';
+        var rowCount = r.total_record_count || r.staging_success_count || 0;
+        var tooltip = buildRowTooltip(r);
+        var html = '<div class="history-active-row" title="' + escapeHtml(tooltip) + '">';
+        html += '<span class="history-active-env env-' + envLower + '">' + escapeHtml(r.environment || '') + '</span>';
+        if (entityName) html += '<span class="history-active-entity">' + escapeHtml(entityName) + '</span>';
+        html += '<span class="history-active-filename">' + escapeHtml(fnShort) + '</span>';
+        html += statusBadge;
+        html += '<span class="history-active-meta"><span class="history-active-count">' + rowCount.toLocaleString() + '</span><span class="history-active-age">' + escapeHtml(ageText) + '</span></span>';
+        html += '</div>';
+        return html;
+    }
+
+    function renderHistoryTree() {
+        var container = document.getElementById('history-tree');
+        if (!container || !historyData) return;
+        var years = historyData.years || [];
+        if (years.length === 0) { container.innerHTML = '<div class="history-empty">No completed imports</div>'; return; }
+        var html = '';
+        years.forEach(function (yearObj) {
+            var year = yearObj.year;
+            var expanded = !!historyExpandedYears[year];
+            var iconCls = 'history-year-icon' + (expanded ? ' expanded' : '');
+            var contentCls = 'history-year-content' + (expanded ? ' expanded' : '');
+            html += '<div class="history-year" data-year="' + year + '">';
+            html += '<div class="history-year-header" onclick="BDL.toggleHistoryYear(' + year + ')">';
+            html += '<span class="' + iconCls + '">&#9654;</span>';
+            html += '<span class="history-year-label">' + year + '</span>';
+            html += '<span class="history-year-spacer"></span>';
+            html += '<span class="history-year-stat">' + yearObj.total.toLocaleString() + '</span>';
+            html += '<span class="history-year-stat success">' + (yearObj.success > 0 ? yearObj.success.toLocaleString() : '') + '</span>';
+            html += '<span class="history-year-stat failed">'  + (yearObj.fail    > 0 ? yearObj.fail.toLocaleString()    : '') + '</span>';
+            html += '</div>';
+            html += '<div class="' + contentCls + '" id="year-content-' + year + '">';
+            html += renderYearMonths(yearObj);
+            html += '</div></div>';
+        });
+        container.innerHTML = html;
+    }
+
+    function renderYearMonths(yearObj) {
+        var months = yearObj.months || [];
+        if (months.length === 0) return '';
+        var html = '<table class="history-month-table"><tbody>';
+        months.forEach(function (m) {
+            var expanded = !!historyExpandedMonths[yearObj.year + '-' + m.month];
+            var iconCls = 'history-month-icon' + (expanded ? ' expanded' : '');
+            var monthName = monthAbbrev(m.month);
+            html += '<tr class="history-month-row" onclick="BDL.toggleHistoryMonth(' + yearObj.year + ',' + m.month + ')">';
+            html += '<td class="history-month-expand-cell"><span class="' + iconCls + '">&#9654;</span></td>';
+            html += '<td class="history-month-name">' + monthName + '</td>';
+            html += '<td class="history-month-total">' + m.total.toLocaleString() + '</td>';
+            html += '<td class="history-month-success">' + (m.success > 0 ? m.success.toLocaleString() : '') + '</td>';
+            html += '<td class="history-month-fail">'    + (m.fail    > 0 ? m.fail.toLocaleString()    : '') + '</td>';
+            html += '</tr>';
+            html += '<tr class="history-month-details" id="month-details-' + yearObj.year + '-' + m.month + '" style="display:' + (expanded ? 'table-row' : 'none') + ';">';
+            html += '<td colspan="5"><div class="history-month-details-content" id="month-content-' + yearObj.year + '-' + m.month + '">';
+            if (expanded) html += '<div class="history-month-loading">Loading...</div>';
+            html += '</div></td></tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function toggleHistoryYear(year) {
+        historyExpandedYears[year] = !historyExpandedYears[year];
+        if (historyExpandedYears[year]) {
+            Object.keys(historyExpandedYears).forEach(function (y) { if (parseInt(y) !== year) historyExpandedYears[y] = false; });
+        }
+        renderHistoryTree();
+    }
+
+    function toggleHistoryMonth(year, month) {
+        var key = year + '-' + month;
+        historyExpandedMonths[key] = !historyExpandedMonths[key];
+        if (historyExpandedMonths[key]) {
+            Object.keys(historyExpandedMonths).forEach(function (k) {
+                if (k !== key && k.indexOf(year + '-') === 0) historyExpandedMonths[k] = false;
+            });
+        }
+        renderHistoryTree();
+        if (historyExpandedMonths[key]) loadHistoryMonth(year, month);
+    }
+
+    function loadHistoryMonth(year, month) {
+        var cacheKey = year + '-' + month + '-' + historyEnvFilter + '-' + historyUserScope;
+        var contentEl = document.getElementById('month-content-' + year + '-' + month);
+        if (!contentEl) return;
+        if (historyMonthCache[cacheKey]) { renderMonthDays(contentEl, historyMonthCache[cacheKey].days, year, month, historyMonthCache[cacheKey].truncated); return; }
+        contentEl.innerHTML = '<div class="history-month-loading">Loading...</div>';
+        var envParam = (historyEnvFilter === 'ALL') ? '' : '&env=' + encodeURIComponent(historyEnvFilter);
+        var url = '/api/bdl-import/history-month?year=' + year + '&month=' + month + '&user_scope=' + historyUserScope + envParam;
+        var doFetch = (typeof engineFetch === 'function') ? engineFetch(url) : fetch(url).then(function (r) { return r.json(); });
+        Promise.resolve(doFetch)
+            .then(function (data) {
+                if (!data) { contentEl.innerHTML = '<div class="history-month-loading">Paused</div>'; return; }
+                historyMonthCache[cacheKey] = { days: data.days || [], truncated: data.truncated || false };
+                renderMonthDays(contentEl, data.days || [], year, month, data.truncated);
+            })
+            .catch(function (err) {
+                contentEl.innerHTML = '<div class="history-month-loading" style="color:#f48771;">Failed: ' + escapeHtml(err.message) + '</div>';
+            });
+    }
+
+    function renderMonthDays(container, days, year, month, truncated) {
+        if (!days || days.length === 0) { container.innerHTML = '<div class="history-month-empty">No imports</div>'; return; }
+        var html = '';
+        days.forEach(function (d) {
+            var dateKey = d.date;
+            var expanded = !!historyExpandedDays[dateKey];
+            var iconCls = 'history-day-icon' + (expanded ? ' expanded' : '');
+            html += '<div class="history-day-row">';
+            html += '<div class="history-day-header" onclick="BDL.toggleHistoryDay(\'' + escapeHtml(dateKey).replace(/'/g, "\\'") + '\')">';
+            html += '<span class="' + iconCls + '">&#9654;</span>';
+            html += '<span class="history-day-label">' + d.day_of_month + '</span>';
+            html += '<span class="history-day-dow">' + escapeHtml(d.day_of_week || '') + '</span>';
+            html += '<span class="history-day-spacer"></span>';
+            html += '<span class="history-day-stat">' + d.total + '</span>';
+            html += '<span class="history-day-stat success">' + (d.success > 0 ? d.success : '') + '</span>';
+            html += '<span class="history-day-stat failed">'  + (d.fail    > 0 ? d.fail    : '') + '</span>';
+            html += '</div>';
+            html += '<div class="history-day-imports' + (expanded ? ' expanded' : '') + '" id="day-imports-' + dateKey + '">';
+            html += '<div class="history-import-header">';
+            html += '<span>Env</span>';
+            html += '<span>Entity</span>';
+            html += '<span>File</span>';
+            html += '<span>Status</span>';
+            html += '<span class="history-ih-total">Total</span>';
+            html += '<span class="history-ih-succ">Succ</span>';
+            html += '<span class="history-ih-fail">Fail</span>';
+            html += '<span>User</span>';
+            html += '</div>';
+            (d.imports || []).forEach(function (imp) { html += renderImportRow(imp); });
+            html += '</div></div>';
+        });
+        if (truncated) html += '<div class="history-month-truncated">Showing first 500 imports for this month &mdash; refine filters to see more</div>';
+        container.innerHTML = html;
+    }
+
+    function renderImportRow(imp) {
+        var envLower = (imp.environment || '').toLowerCase();
+        var fnShort = shortenFilename(imp.source_filename || imp.xml_filename || '');
+        var entityName = imp.entity_type ? formatEntityName(imp.entity_type) : '';
+        var status = (imp.file_registry_status || imp.status || '').toUpperCase();
+        var total = imp.total_record_count || imp.staging_success_count || 0;
+        var succ  = imp.import_success_count || 0;
+        var fail  = imp.import_failed_count  || 0;
+        var user = imp.executed_by || '';
+        if (user.indexOf('\\') !== -1) user = user.split('\\')[1];
+        var tooltip = buildRowTooltip(imp);
+        // Column order matches the CSS grid template for .history-import-row:
+        //   env | entity | filename | status | total | succ | fail | user
+        // Every column is always emitted (possibly empty) so the grid tracks align.
+        var userCell = (user && historyUserScope === 'all') ? escapeHtml(user) : '';
+        var html = '<div class="history-import-row" title="' + escapeHtml(tooltip) + '">';
+        html += '<span class="history-import-env env-' + envLower + '">' + escapeHtml(imp.environment || '') + '</span>';
+        html += '<span class="history-import-entity">' + escapeHtml(entityName) + '</span>';
+        html += '<span class="history-import-filename">' + escapeHtml(fnShort) + '</span>';
+        html += '<span class="history-import-status"><span class="history-status-badge history-status-' + escapeHtml(status) + '">' + escapeHtml(status) + '</span></span>';
+        html += '<span class="history-import-count">' + total.toLocaleString() + '</span>';
+        html += '<span class="history-import-count-success">' + (succ > 0 ? succ.toLocaleString() : '') + '</span>';
+        html += '<span class="history-import-count-fail">'    + (fail > 0 ? fail.toLocaleString() : '') + '</span>';
+        html += '<span class="history-import-user">' + userCell + '</span>';
+        html += '</div>';
+        return html;
+    }
+
+    function toggleHistoryDay(dateKey) {
+        historyExpandedDays[dateKey] = !historyExpandedDays[dateKey];
+        var el = document.getElementById('day-imports-' + dateKey);
+        if (el) el.classList.toggle('expanded');
+        var dayRow = el ? el.parentElement : null;
+        if (dayRow) {
+            var icon = dayRow.querySelector('.history-day-icon');
+            if (icon) icon.classList.toggle('expanded');
+        }
+    }
+
+    function setHistoryEnvFilter(env) {
+        if (historyEnvFilter === env) return;
+        historyEnvFilter = env;
+        historyExpandedMonths = {};
+        historyExpandedDays = {};
+        historyMonthCache = {};
+        loadHistory();
+    }
+
+    function setHistoryUserScope(scope) {
+        if (historyUserScope === scope) return;
+        historyUserScope = scope;
+        try { localStorage.setItem('bdl_history_user_scope', scope); } catch (e) { /* ignore */ }
+        var btns = document.querySelectorAll('#history-user-toggle .history-toggle-btn');
+        btns.forEach(function (b) {
+            if (b.dataset.scope === scope) b.classList.add('history-toggle-active');
+            else b.classList.remove('history-toggle-active');
+        });
+        historyExpandedMonths = {};
+        historyExpandedDays = {};
+        historyMonthCache = {};
+        loadHistory();
+    }
+
+    function updateHistoryLastUpdated() {
+        var el = document.getElementById('history-last-updated');
+        if (!el) return;
+        el.textContent = 'as of ' + formatClockTime(new Date());
+    }
+
+    function updateHistoryPollingLifecycle() {
+        var hasActive = historyData && historyData.active_rows && historyData.active_rows.length > 0;
+        if (hasActive) startHistoryPolling();
+        else stopHistoryPolling();
+    }
+
+    function startHistoryPolling() {
+        if (historyPollTimer) return;
+        historyPollTimer = setInterval(function () {
+            if (typeof enginePageHidden !== 'undefined' && enginePageHidden) return;
+            if (typeof engineSessionExpired !== 'undefined' && engineSessionExpired) { stopHistoryPolling(); return; }
+            loadHistory(true);
+        }, historyPollInterval * 1000);
+    }
+
+    function stopHistoryPolling() {
+        if (historyPollTimer) { clearInterval(historyPollTimer); historyPollTimer = null; }
+    }
+
+    function checkMidnightRollover() {
+        var today = new Date().toDateString();
+        if (today !== pageLoadDate) {
+            pageLoadDate = today;
+            historyMonthCache = {};
+            historyExpandedDays = {};
+            loadHistory(true);
+        }
+    }
+
+    // ── History Formatting Helpers ────────────────────────────────────────
+    function shortenFilename(fn) {
+        if (!fn) return '';
+        if (fn.length <= 34) return fn;
+        var dot = fn.lastIndexOf('.');
+        var ext = dot > 0 ? fn.substring(dot) : '';
+        var base = dot > 0 ? fn.substring(0, dot) : fn;
+        return base.substring(0, 28) + '\u2026' + ext;
+    }
+    function formatAge(dttm) {
+        if (!dttm) return '';
+        var then = new Date(dttm);
+        if (isNaN(then.getTime())) return '';
+        var secs = Math.floor((Date.now() - then.getTime()) / 1000);
+        if (secs < 60) return secs + 's ago';
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+        if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+        return Math.floor(secs / 86400) + 'd ago';
+    }
+    function formatImportTime(dttm) {
+        if (!dttm) return '';
+        var d = new Date(dttm);
+        if (isNaN(d.getTime())) return '';
+        var h = d.getHours(), m = d.getMinutes();
+        var ampm = h >= 12 ? 'pm' : 'am';
+        h = h % 12; if (h === 0) h = 12;
+        return h + ':' + (m < 10 ? '0' : '') + m + ampm;
+    }
+    function formatClockTime(d) {
+        var h = d.getHours(), m = d.getMinutes();
+        var ampm = h >= 12 ? 'pm' : 'am';
+        h = h % 12; if (h === 0) h = 12;
+        return h + ':' + (m < 10 ? '0' : '') + m + ampm;
+    }
+    function monthAbbrev(month) {
+        var names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return names[month - 1] || String(month);
+    }
+    function buildRowTooltip(r) {
+        var parts = [];
+        if (r.entity_type) parts.push('Entity: ' + r.entity_type);
+        if (r.environment) parts.push('Env: ' + r.environment);
+        if (r.status) parts.push('Status: ' + r.status);
+        if (r.file_registry_status) parts.push('DM: ' + r.file_registry_status);
+        if (r.executed_by) parts.push('User: ' + r.executed_by);
+        if (r.started_dttm) parts.push('Started: ' + new Date(r.started_dttm).toLocaleString());
+        if (r.completed_dttm) parts.push('Completed: ' + new Date(r.completed_dttm).toLocaleString());
+        if (r.error_message) parts.push('Error: ' + r.error_message);
+        return parts.join(' | ');
+    }
+
     // ── Reset ─────────────────────────────────────────────────────────────
     function resetFromStep(step) {
         for (var i = step - 1; i < totalSteps; i++) stepComplete[i] = false;
@@ -1816,7 +2232,18 @@ var BDL = (function () {
         promoteCardClicked: promoteCardClicked,
         previewTemplate: previewTemplate, closeTemplatePreview: closeTemplatePreview,
         applyTemplate: applyTemplate, showSaveTemplate: showSaveTemplate,
-        closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate
+        closeSaveTemplate: closeSaveTemplate, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate,
+        refreshHistory: refreshHistory,
+        setHistoryEnvFilter: setHistoryEnvFilter,
+        setHistoryUserScope: setHistoryUserScope,
+        toggleHistoryYear: toggleHistoryYear,
+        toggleHistoryMonth: toggleHistoryMonth,
+        toggleHistoryDay: toggleHistoryDay,
+        stopHistoryPolling: stopHistoryPolling
     };
 })();
+
+window.onPageResumed = function () { if (window.BDL) BDL.refreshHistory(); };
+window.onSessionExpired = function () { if (window.BDL) BDL.stopHistoryPolling(); };
+
 document.addEventListener('DOMContentLoaded', BDL.init);
