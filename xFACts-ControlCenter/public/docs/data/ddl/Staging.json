@@ -1,7 +1,66 @@
 {
     "tables":  [
                    {
-                       "name":  "BDL_PHONE_dhirt_20260414_075731",
+                       "name":  "BDL_CONSUMER_TAG_dcota_20260416_090607",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "_trigger_value",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "_assignment_index",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "tag_shrt_nm",
+                                           "dataType":  "varchar",
+                                           "length":  "8",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "cnsmr_tag_assgn_dt",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
+                       "name":  "BDL_PHONE_dcota_20260416_090421",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -44,7 +103,7 @@
                                        },
                                        {
                                            "ordinal":  6,
-                                           "name":  "cnsmr_phn_src_val_txt",
+                                           "name":  "cnsmr_phn_stts_val_txt",
                                            "dataType":  "varchar",
                                            "length":  "32",
                                            "nullable":  true,
@@ -52,7 +111,7 @@
                                        },
                                        {
                                            "ordinal":  7,
-                                           "name":  "cnsmr_phn_stts_val_txt",
+                                           "name":  "cnsmr_phn_src_val_txt",
                                            "dataType":  "varchar",
                                            "length":  "32",
                                            "nullable":  true,
