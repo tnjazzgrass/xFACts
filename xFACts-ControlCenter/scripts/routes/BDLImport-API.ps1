@@ -7,6 +7,8 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-15  Tag entity filtering: CONSUMER_TAG/ACCOUNT_TAG lookups restricted
+#             to correct entity association level via tag_typ subquery
 # 2026-04-13  ServerConfig → EnvironmentConfig migration; API URLs from ServerRegistry
 #             ActionAuditLog wired into BDL import execution
 # 2026-04-11  Added set-nullify-fields endpoint for blanket field nullification
@@ -327,7 +329,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 $meta = @{ Mode = $mode; Index = $aIdx }
 
                 if ($mode -eq 'conditional') {
-                    # Conditional: resolve trigger column index and build value map
                     $triggerColumn = $assignment.trigger_column
                     $triggerHeaderIndex = [array]::IndexOf($headers, $triggerColumn)
                     if ($triggerHeaderIndex -lt 0) {
@@ -359,7 +360,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     $meta.ColumnCount = $insertCols.Count
                 }
                 elseif ($mode -eq 'from_file') {
-                    # From File: read conditional field value from a file column
                     $fileColumn = $assignment.file_column
                     $fileColIndex = [array]::IndexOf($headers, $fileColumn)
                     if ($fileColIndex -lt 0) {
@@ -385,7 +385,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     $meta.ColumnCount = $insertCols.Count
                 }
                 else {
-                    # Blanket: build fixed values hashtable
                     $fvFields = @{}
                     if ($assignment.fixed_values) {
                         foreach ($key in $assignment.fixed_values.PSObject.Properties) {
@@ -750,7 +749,6 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 $safeFaCol = "[$faElementName]"
 
                 if ($faMode -eq 'blanket') {
-                    # Blanket: UPDATE all non-skipped rows with the single value
                     $faValue = $faData.value
                     if ($faValue -and $faValue -ne '') {
                         Invoke-XFActsNonQuery -Query @"
@@ -759,18 +757,13 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     }
                 }
                 elseif ($faMode -eq 'conditional') {
-                    # Conditional: resolve trigger column to staging table column,
-                    # then UPDATE per trigger value
                     $faTriggerHeader = $faData.trigger_column
                     $faValueMap = $faData.value_map
 
                     if ($faTriggerHeader -and $faValueMap) {
-                        # Resolve trigger header to staging table column name
                         if ($mappingHash.ContainsKey($faTriggerHeader)) {
-                            # Mapped column — staging table uses element name
                             $triggerStagingCol = $mappingHash[$faTriggerHeader]
                         } else {
-                            # Unmapped column — staging table uses _unmapped suffix
                             $safeTriggerName = ($faTriggerHeader -replace '[^\w]', '_')
                             if ($safeTriggerName.Length -gt 100) { $safeTriggerName = $safeTriggerName.Substring(0, 100) }
                             $triggerStagingCol = "${safeTriggerName}_unmapped"
@@ -921,15 +914,26 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                 }
  
                 $actvCol = $tableInfo.ActvColumn
+
+                # ── Tag entity filtering for validation lookups ──────────
+                $tagFilterClause = ''
+                if ($tblName -eq 'tag' -and $entityType) {
+                    $tagAssocCd = $null
+                    if ($entityType -eq 'CONSUMER_TAG') { $tagAssocCd = 2 }
+                    elseif ($entityType -eq 'ACCOUNT_TAG') { $tagAssocCd = 3 }
+                    if ($tagAssocCd) {
+                        $tagFilterClause = " AND [tag_typ_id] IN (SELECT [tag_typ_id] FROM dbo.[tag_typ] WHERE [tag_typ_entty_assctn_cd] = $tagAssocCd)"
+                    }
+                }
  
                 if ($actvCol) {
                     $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
-                        SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] WHERE [$actvCol] = 'Y' ORDER BY [$valCol]
+                        SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] WHERE [$actvCol] = 'Y'$tagFilterClause ORDER BY [$valCol]
 "@
                 }
                 else {
                     $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
-                        SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] ORDER BY [$valCol]
+                        SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] WHERE 1=1$tagFilterClause ORDER BY [$valCol]
 "@
                 }
  
@@ -979,6 +983,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
 # GET /api/bdl-import/lookup-search
 # Typeahead search against DM lookup tables for BDL entity fields.
 # Uses 4-step column resolution: element_name → *_val_txt → *_shrt_nm → *_nm
+# Tag entity filtering: CONSUMER_TAG/ACCOUNT_TAG restricted by tag_typ association
 # ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -1057,6 +1062,17 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
  
         $whereClause = "$safeResolvedCol LIKE @searchPattern"
         if ($actvColumn) { $whereClause += " AND [$actvColumn] = 'Y'" }
+
+        # ── Tag entity filtering: restrict to consumer or account level tags ──
+        $entityType = $WebEvent.Query['entity_type']
+        if ($lookupTable -eq 'tag' -and $entityType) {
+            $tagAssocCd = $null
+            if ($entityType -eq 'CONSUMER_TAG') { $tagAssocCd = 2 }
+            elseif ($entityType -eq 'ACCOUNT_TAG') { $tagAssocCd = 3 }
+            if ($tagAssocCd) {
+                $whereClause += " AND [tag_typ_id] IN (SELECT [tag_typ_id] FROM dbo.[tag_typ] WHERE [tag_typ_entty_assctn_cd] = $tagAssocCd)"
+            }
+        }
  
         $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
             SELECT DISTINCT TOP 10 $selectColumns
