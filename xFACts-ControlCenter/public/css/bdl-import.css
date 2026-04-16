@@ -47,13 +47,22 @@ a { color: #9cdcfe; }
 
 /* ============================================================================
    TWO-COLUMN LAYOUT
+   Left column (bdl-main) holds the wizard; right column (bdl-guide) holds
+   the step guide, template panel, and live Import History panel.
+   Right column is sticky with internal scroll so history doesn't overflow.
    ============================================================================ */
 .bdl-layout { display: flex; gap: 16px; align-items: flex-start; }
-.bdl-main { flex: 65; min-width: 0; }
-.bdl-guide { flex: 35; position: sticky; top: 56px; }
+.bdl-main { flex: 55; min-width: 0; }
+.bdl-guide {
+    flex: 45;
+    position: sticky;
+    top: 56px;
+    max-height: calc(100vh - 76px);
+    overflow-y: auto;
+}
 
 /* ============================================================================
-   STEP GUIDE (Right Column)
+   STEP GUIDE (Right Column — top panel)
    ============================================================================ */
 .guide-tip-panel { background: #252526; border: 1px solid #404040; border-radius: 6px; padding: 16px; }
 .guide-text { animation: fadeIn 0.3s ease; }
@@ -612,6 +621,562 @@ a { color: #9cdcfe; }
 .template-save-area { padding: 8px 6px 6px; }
 .template-save-btn { width: 100%; padding: 7px 10px; background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #d4d4d4; font-size: 11px; cursor: pointer; transition: all 0.15s; }
 .template-save-btn:hover { border-color: #4ec9b0; color: #4ec9b0; background: #333; }
+
+/* ============================================================================
+   IMPORT HISTORY PANEL (Right Column)
+   Live-polling panel below templates. Active (non-terminal) imports pin to
+   the top; terminal rows flow into a Year/Month/Day accordion below.
+   Env chips + user toggle filter both sections client-side.
+   ============================================================================ */
+.history-section {
+    margin-top: 10px;
+    background: #252526;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.history-header {
+    padding: 10px 12px;
+    border-bottom: 1px solid #404040;
+    background: #2a2a2a;
+}
+
+.history-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.history-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #4ec9b0;
+}
+
+.history-live-indicator {
+    width: 8px;
+    height: 8px;
+    background: #4ec9b0;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+}
+
+.history-last-updated {
+    margin-left: auto;
+    font-size: 10px;
+    color: #666;
+}
+
+.history-refresh-btn {
+    background: transparent;
+    border: 1px solid #555;
+    color: #888;
+    padding: 2px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    transition: all 0.15s;
+}
+.history-refresh-btn:hover { background: #333; color: #d4d4d4; border-color: #666; }
+.history-refresh-btn.spinning { animation: spin 0.8s ease-in-out; pointer-events: none; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ── Filter Row ──────────────────────────────────────────────────────── */
+.history-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.history-env-chips {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.history-chip {
+    padding: 2px 10px;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 10px;
+    color: #888;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+}
+.history-chip:hover { background: #3c3c3c; color: #d4d4d4; }
+.history-chip-active { background: #569cd6; border-color: #569cd6; color: #1e1e1e; }
+
+/* Environment-specific chip colors when active */
+.history-chip[data-env="TEST"].history-chip-active { background: #dcdcaa; border-color: #dcdcaa; }
+.history-chip[data-env="STAGE"].history-chip-active { background: #ce9178; border-color: #ce9178; }
+.history-chip[data-env="PROD"].history-chip-active { background: #f48771; border-color: #f48771; }
+
+.history-user-toggle {
+    display: flex;
+    margin-left: auto;
+}
+
+.history-toggle-btn {
+    padding: 2px 10px;
+    background: #333;
+    border: 1px solid #555;
+    color: #888;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+}
+.history-toggle-btn:first-child { border-radius: 3px 0 0 3px; }
+.history-toggle-btn:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+.history-toggle-btn:hover { background: #3c3c3c; color: #d4d4d4; }
+.history-toggle-active { background: #4ec9b0; border-color: #4ec9b0; color: #1e1e1e; }
+
+/* ── Body: active rows + history tree ────────────────────────────────── */
+.history-body { padding: 0; }
+
+/* ── Active Rows Section (pinned top) ────────────────────────────────── */
+.history-active-section {
+    border-bottom: 1px solid #333;
+}
+
+.history-active-header {
+    padding: 6px 12px;
+    background: rgba(86, 156, 214, 0.05);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #569cd6;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.history-active-list { padding: 4px 8px; }
+
+.history-active-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    margin: 3px 0;
+    background: rgba(86, 156, 214, 0.05);
+    border: 1px solid rgba(86, 156, 214, 0.2);
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.history-active-env {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+}
+.history-active-env.env-test { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
+.history-active-env.env-stage { background: rgba(206, 145, 120, 0.2); color: #ce9178; border: 1px solid rgba(206, 145, 120, 0.3); }
+.history-active-env.env-prod { background: rgba(244, 135, 113, 0.2); color: #f48771; border: 1px solid rgba(244, 135, 113, 0.3); }
+
+.history-active-entity {
+    color: #9cdcfe;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.history-active-filename {
+    color: #d4d4d4;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+}
+
+.history-active-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #888;
+}
+
+.history-active-count { color: #dcdcaa; }
+.history-active-age { color: #888; font-style: italic; }
+
+.history-empty {
+    padding: 12px 14px;
+    font-size: 11px;
+    color: #666;
+    font-style: italic;
+    text-align: center;
+}
+
+/* ── Status Badges: xFACts lifecycle + DM vocabulary ─────────────────── */
+.history-status-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* xFACts lifecycle (in-flight) */
+.history-status-BUILDING   { background: rgba(102, 102, 102, 0.2); color: #888; border: 1px solid rgba(102, 102, 102, 0.3); }
+.history-status-REGISTERED { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
+.history-status-SUBMITTED  { background: rgba(86, 156, 214, 0.2); color: #569cd6; border: 1px solid rgba(86, 156, 214, 0.3); }
+
+/* Terminal states (aligned to DM File_Registry vocabulary) */
+.history-status-COMPLETED              { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; border: 1px solid rgba(78, 201, 176, 0.3); }
+.history-status-PROCESSED              { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; border: 1px solid rgba(78, 201, 176, 0.3); }
+.history-status-PARTIALLY_PROCESSED    { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
+.history-status-FAILED                 { background: rgba(244, 135, 113, 0.2); color: #f48771; border: 1px solid rgba(244, 135, 113, 0.3); }
+.history-status-CANCELED               { background: rgba(244, 135, 113, 0.15); color: #f48771; border: 1px solid rgba(244, 135, 113, 0.25); }
+.history-status-ORPHANED               { background: rgba(136, 136, 136, 0.15); color: #666; border: 1px solid rgba(136, 136, 136, 0.25); }
+
+/* ── History Tree (Year/Month/Day accordion) ─────────────────────────── */
+.history-tree {
+    max-height: 480px;
+    overflow-y: auto;
+    padding: 6px 8px;
+}
+
+.history-year {
+    margin-bottom: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   History tree — shared column grid
+   Year, month, and day rows all align to the same right-edge stat columns:
+     [ content area (1fr) ] [ total 44px ] [ success 48px ] [ fail 48px ]
+   Import rows (inside an expanded day) use a separate grid tuned for them.
+   --------------------------------------------------------------------------- */
+
+.history-year-header {
+    display: grid;
+    grid-template-columns: 14px auto 1fr 44px 48px 48px;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: #2d2d2d;
+    border: 1px solid #404040;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+.history-year-header:hover { background: #353535; }
+
+.history-year-icon {
+    color: #888;
+    font-size: 9px;
+    text-align: center;
+    transition: transform 0.2s;
+}
+.history-year-icon.expanded { transform: rotate(90deg); }
+
+.history-year-label {
+    font-weight: 700;
+    color: #569cd6;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+}
+
+/* Spacer cell between label and stats so grid columns line up */
+.history-year-spacer { grid-column: 3; }
+
+.history-year-stat {
+    font-size: 11px;
+    text-align: right;
+    color: #888;
+    font-variant-numeric: tabular-nums;
+}
+.history-year-stat.success { color: #4ec9b0; }
+.history-year-stat.failed  { color: #f48771; }
+
+.history-year-content {
+    margin-top: 4px;
+    padding-left: 10px;
+    display: none;
+}
+.history-year-content.expanded { display: block; }
+
+/* Month table — column widths aligned to the shared stat grid */
+.history-month-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-bottom: 6px;
+    table-layout: fixed;
+}
+
+.history-month-table thead th {
+    text-align: left;
+    padding: 4px 6px;
+    border-bottom: 1px solid #404040;
+    color: #888;
+    font-weight: 500;
+    font-size: 10px;
+}
+
+.history-month-row td {
+    padding: 5px 6px;
+    border-bottom: 1px solid #333;
+    color: #d4d4d4;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-variant-numeric: tabular-nums;
+}
+.history-month-row:hover td { background: #2d2d2d; }
+
+.history-month-expand-cell {
+    width: 20px;
+    text-align: center;
+    color: #888;
+    font-size: 9px;
+}
+.history-month-expand-cell .history-month-icon { transition: transform 0.2s; display: inline-block; }
+.history-month-expand-cell .history-month-icon.expanded { transform: rotate(90deg); }
+
+.history-month-row td.history-month-name    { font-weight: 500; width: auto; }
+.history-month-row td.history-month-total   { text-align: right; color: #d4d4d4; width: 44px; font-variant-numeric: tabular-nums; }
+.history-month-row td.history-month-success { text-align: right; color: #4ec9b0; width: 48px; font-variant-numeric: tabular-nums; }
+.history-month-row td.history-month-fail    { text-align: right; color: #f48771; width: 48px; font-variant-numeric: tabular-nums; }
+
+.history-month-details td {
+    padding: 0 0 8px 18px;
+    background: transparent;
+    border-bottom: none;
+}
+
+.history-month-details-content {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+/* Day list within expanded month — same right-edge column widths as year/month */
+.history-day-row {
+    border-bottom: 1px solid #2a2a2a;
+}
+.history-day-row:last-child { border-bottom: none; }
+
+.history-day-header {
+    display: grid;
+    grid-template-columns: 14px 22px 32px 1fr 44px 48px 48px;
+    align-items: center;
+    gap: 14px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+    font-size: 11px;
+}
+.history-day-header:hover { background: #252526; }
+
+.history-day-icon {
+    color: #666;
+    font-size: 9px;
+    text-align: center;
+    transition: transform 0.2s;
+}
+.history-day-icon.expanded { transform: rotate(90deg); }
+
+.history-day-label { color: #d4d4d4; font-weight: 500; text-align: right; }
+.history-day-dow   { color: #888; font-size: 10px; }
+.history-day-spacer { grid-column: 4; }
+
+.history-day-stat {
+    font-size: 11px;
+    text-align: right;
+    color: #888;
+    font-variant-numeric: tabular-nums;
+}
+.history-day-stat.success { color: #4ec9b0; }
+.history-day-stat.failed  { color: #f48771; }
+
+.history-day-imports {
+    display: none;
+    padding: 2px 8px 6px 22px;
+    background: #1a1a1a;
+    border-top: 1px solid #2a2a2a;
+}
+.history-day-imports.expanded { display: block; }
+
+/* Import rows inside an expanded day — their own grid template.
+   Columns: [env 42] [entity 88] [filename 1fr] [status 94] [total 44] [succ 44] [fail 36] [user 60]
+   Time column dropped (available in row tooltip). User column stays empty in Mine view. */
+.history-import-row {
+    display: grid;
+    grid-template-columns: 42px 88px minmax(0, 1fr) 94px 44px 44px 36px 60px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+.history-import-row:last-child { border-bottom: none; }
+
+.history-import-env {
+    font-size: 8px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    text-align: center;
+    justify-self: start;
+}
+.history-import-env.env-test  { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; }
+.history-import-env.env-stage { background: rgba(206, 145, 120, 0.15); color: #ce9178; }
+.history-import-env.env-prod  { background: rgba(244, 135, 113, 0.15); color: #f48771; }
+
+.history-import-entity {
+    color: #9cdcfe;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-import-filename {
+    color: #999;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+}
+
+.history-import-status {
+    justify-self: start;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-import-count {
+    color: #888;
+    font-size: 10px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.history-import-time {
+    color: #666;
+    font-size: 9px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    text-align: right;
+}
+
+.history-import-count-success {
+    color: #4ec9b0;
+    font-size: 10px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.history-import-count-fail {
+    color: #f48771;
+    font-size: 10px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Column headers shown once at the top of each expanded day's imports list.
+   Grid template matches .history-import-row exactly so columns align. */
+.history-import-header {
+    display: grid;
+    grid-template-columns: 42px 88px minmax(0, 1fr) 94px 44px 44px 36px 60px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 9px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    border-bottom: 1px solid #333;
+    margin-bottom: 2px;
+}
+.history-import-header .history-ih-total,
+.history-import-header .history-ih-succ,
+.history-import-header .history-ih-fail {
+    text-align: right;
+}
+
+/* Disabled environment visuals — applied when an environment appears in the
+   DISABLED_ENVIRONMENTS list in bdl-import.js (used for temporary blocks
+   during DM upgrades, maintenance, etc.). */
+.env-card-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+    border-style: dashed !important;
+}
+.env-card-disabled:hover {
+    background: inherit;
+    border-color: inherit;
+}
+.env-disabled-note {
+    font-size: 10px;
+    color: #888;
+    font-style: italic;
+    margin-top: 4px;
+}
+
+.history-chip-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.history-import-user {
+    color: #666;
+    font-size: 9px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-month-loading, .history-month-empty {
+    padding: 10px;
+    font-size: 11px;
+    color: #666;
+    font-style: italic;
+    text-align: center;
+}
+
+.history-month-truncated {
+    padding: 4px 10px;
+    font-size: 10px;
+    color: #dcdcaa;
+    text-align: center;
+    font-style: italic;
+    background: rgba(220, 220, 170, 0.05);
+    border-top: 1px solid #2a2a2a;
+}
 
 /* ============================================================================
    TEMPLATE PREVIEW SLIDEOUT
