@@ -200,28 +200,35 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
             <div class="guide-tip-panel" id="guide-content">
                 <div class="guide-text" id="guide-text-1">
                     <h4>Select Target Environment</h4>
-                    <p>Choose the Debt Manager environment where this import will be executed. The environment determines which server receives the file and processes the API calls.</p>
-                    <p class="guide-tip">Use Test for initial validation of new file formats. Production imports should be verified on Test first.</p>
+                    <p>Click an environment card to choose where this import will be processed. The environment controls which DM server receives the file and handles the API calls.</p>
+                    <p>A color-coded badge will appear in the stepper bar as a reminder of your target environment throughout the wizard.</p>
+                    <p class="guide-tip">Always test new file layouts on TEST first. You can promote a successful test import to PROD from Step 5 without re-running the wizard.</p>
                 </div>
                 <div class="guide-text hidden" id="guide-text-2">
                     <h4>Upload Data File</h4>
-                    <p>Upload a CSV or Excel file containing the data to import. The first row should contain column headers. A preview of the first few rows will be displayed.</p>
-                    <p class="guide-tip">Maximum recommended size is 250,000 rows per import.</p>
+                    <p>Drag a file into the upload area or click Browse. Accepted formats: CSV, TXT, XLSX, XLS. The file is parsed in your browser &mdash; nothing is uploaded yet.</p>
+                    <p>The first row must be column headers. A preview grid will show the first several rows so you can verify the file loaded correctly. Excel date columns are automatically formatted.</p>
+                    <p class="guide-tip">Recommended limit: ~250,000 rows per import. For Excel files, the first sheet is used.</p>
                 </div>
                 <div class="guide-text hidden" id="guide-text-3">
                     <h4>Select Entity Types</h4>
-                    <p>Choose the type(s) of data you want to import from this file. Click a card to select it, click again to deselect. You can select multiple entity types if this file contains data for more than one BDL operation.</p>
-                    <p class="guide-tip">Each selected entity type will have its own mapping and validation cycle in the next step.</p>
+                    <p>Click one or more entity cards to select what you want to import. Cards are grouped by Consumer, Account, and Other. Click the <strong>i</strong> icon on any card to preview its available fields.</p>
+                    <p>Selecting multiple entities means each will get its own mapping and validation cycle in Step 4, processed one at a time.</p>
+                    <p class="guide-tip">Your department determines which entities and fields are available. If something is missing, contact the Applications team.</p>
                 </div>
                 <div class="guide-text hidden" id="guide-text-4">
                     <h4>Map &amp; Validate</h4>
-                    <p>For each selected entity type, map columns from your file to BDL fields, then validate the data. Issues are presented one at a time — resolve each before moving to the next entity.</p>
-                    <p class="guide-tip">Each entity is mapped and validated independently. Progress is preserved if you navigate back.</p>
+                    <p><strong>Identifier first:</strong> Select which file column contains the DM consumer or account number. Mapping is disabled until this is set.</p>
+                    <p><strong>Mapping:</strong> Drag source columns onto BDL fields, or click to pair them. Some fields support a mode toggle (File / Blanket / Conditional) for flexible value assignment. Tag entities use assignment cards instead of drag-and-drop.</p>
+                    <p><strong>Validation:</strong> Click <em>Validate</em> to check your data. Fix required empty fields (fill or skip) and invalid lookup values (replace or skip). The system re-validates automatically after each action.</p>
+                    <p class="guide-tip">All mappings and assignments are preserved on back navigation. Changed mappings trigger automatic re-staging on the next validate.</p>
                 </div>
                 <div class="guide-text hidden" id="guide-text-5">
                     <h4>Review &amp; Execute</h4>
-                    <p>Review the import summary for each entity type. Once confirmed, the system builds files, registers them with DM, and triggers the imports.</p>
-                    <p class="guide-tip">Each entity type is submitted independently. If one fails, the others are unaffected.</p>
+                    <p>Review the summary for each entity tab: environment, row counts, mapped fields, and nullified fields. Use <em>Preview XML</em> to inspect the exact output before submitting.</p>
+                    <p>Optionally enter a <strong>Jira ticket</strong> to create a consolidated AR log linking all imported records to the ticket.</p>
+                    <p>Click <strong>Submit All</strong> to execute. Each entity is submitted independently &mdash; one failure does not block the others. Results appear in the unified results pane below.</p>
+                    <p class="guide-tip">After a successful TEST or STAGE import, a Promote to Production option appears with a cooldown timer.</p>
                 </div>
             </div>
             <div class="template-section" id="template-section">
