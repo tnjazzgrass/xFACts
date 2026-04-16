@@ -1951,6 +1951,255 @@ function Build-ARLogXml {
 }
 
 # ============================================================================
+# HELPER: Invoke-BDLImportLogReconcile
+# Reconciles non-terminal Tools.BDL_ImportLog rows against their respective
+# DM File_Registry entries, writing back terminal status, record counts,
+# and completion flag when DM reports a terminal state.
+#
+# Called on-demand by /api/bdl-import/history. Groups non-terminal rows
+# (is_complete = 0) by environment, resolves the target db_instance from
+# Tools.EnvironmentConfig, and issues one batched DM query per environment.
+# Cross-environment: connects directly to each environment's DM database
+# using Integrated Security (not via the standard xFACts AG helpers which
+# are hardcoded to AVG-PROD-LSNR).
+#
+# No automatic orphan flagging — rows not found in DM simply get a
+# last_polled_dttm update and remain eligible for future reconciliation.
+# ============================================================================
+
+function Invoke-BDLImportLogReconcile {
+    <#
+    .SYNOPSIS
+        Reconciles non-terminal BDL_ImportLog rows against DM File_Registry.
+    .DESCRIPTION
+        Queries each environment's dbo.File_Registry for the current status
+        of SUBMITTED imports. When DM reports a terminal state, writes back
+        the terminal status, record counts, and sets is_complete = 1.
+        Rows still in non-terminal DM states get last_polled_dttm updated
+        only. Rows not found in DM also get last_polled_dttm updated.
+    .PARAMETER LogIds
+        Optional array of specific log_id values to reconcile. When omitted,
+        reconciles all rows where is_complete = 0 AND file_registry_id IS NOT NULL.
+    .PARAMETER MaxRows
+        Safety cap on rows reconciled per invocation (default: 100).
+    .RETURNS
+        Hashtable with success, reconciled, not_found, still_active, errors,
+        and a per-environment metrics breakdown.
+    .EXAMPLE
+        $summary = Invoke-BDLImportLogReconcile
+        Write-Host "Reconciled $($summary.reconciled), still active $($summary.still_active)"
+    #>
+    param(
+        [int[]]$LogIds = $null,
+        [int]$MaxRows = 100
+    )
+
+    $result = @{
+        success      = $true
+        reconciled   = 0
+        not_found    = 0
+        still_active = 0
+        errors       = @()
+        environments = @{}
+    }
+
+    # ── Build eligible rows query ───────────────────────────────────
+    $filter = "WHERE is_complete = 0 AND file_registry_id IS NOT NULL"
+    if ($LogIds -and $LogIds.Count -gt 0) {
+        # Safe inline — values are integers from caller, cast to [int] defensively
+        $idList = ($LogIds | ForEach-Object { [int]$_ }) -join ','
+        $filter += " AND log_id IN ($idList)"
+    }
+
+    $eligibleQuery = "SELECT TOP $MaxRows log_id, environment, file_registry_id FROM Tools.BDL_ImportLog $filter ORDER BY log_id DESC"
+    $eligibleRows = Invoke-XFActsQuery -Query $eligibleQuery
+
+    if (-not $eligibleRows -or $eligibleRows.Count -eq 0) {
+        return $result
+    }
+
+    # ── Group by environment ────────────────────────────────────────
+    $byEnv = @{}
+    foreach ($row in $eligibleRows) {
+        $env = $row.environment
+        if (-not $byEnv.ContainsKey($env)) { $byEnv[$env] = @() }
+        $byEnv[$env] += $row
+    }
+
+    # ── Process each environment ────────────────────────────────────
+    foreach ($env in $byEnv.Keys) {
+        $envRows = $byEnv[$env]
+        $envMetrics = @{
+            queried      = $envRows.Count
+            reconciled   = 0
+            not_found    = 0
+            still_active = 0
+        }
+
+        try {
+            # Resolve db_instance for this environment
+            $envConfig = Invoke-XFActsQuery -Query @"
+                SELECT db_instance FROM Tools.EnvironmentConfig
+                WHERE environment = @env AND is_active = 1
+"@ -Parameters @{ env = $env }
+
+            if (-not $envConfig -or $envConfig.Count -eq 0 -or [string]::IsNullOrEmpty($envConfig[0].db_instance)) {
+                $result.errors += "[$env] No db_instance configured in Tools.EnvironmentConfig"
+                $result.environments[$env] = $envMetrics
+                continue
+            }
+            $dbInstance = $envConfig[0].db_instance
+
+            # Build comma-separated file_registry_id list (safe — all integers from our own table)
+            $fileRegIds = ($envRows | ForEach-Object { [int]$_.file_registry_id }) -join ','
+
+            # ── DM query: File_Registry + file_rgstry_dtl + custom details in one shot ──
+            $dmQuery = @"
+;WITH CustomDetails AS (
+    SELECT
+        d.file_registry_id,
+        MAX(CASE WHEN cd.file_rgstry_cstm_dtl_nm = 'Dm_staging_success_count'  THEN cd.file_rgstry_cstm_dtl_val_txt END) AS staging_success,
+        MAX(CASE WHEN cd.file_rgstry_cstm_dtl_nm = 'Dm_staging_failed_count'   THEN cd.file_rgstry_cstm_dtl_val_txt END) AS staging_failed,
+        MAX(CASE WHEN cd.file_rgstry_cstm_dtl_nm = 'Dm_import_processed_count' THEN cd.file_rgstry_cstm_dtl_val_txt END) AS import_processed,
+        MAX(CASE WHEN cd.file_rgstry_cstm_dtl_nm = 'Dm_import_success_count'   THEN cd.file_rgstry_cstm_dtl_val_txt END) AS import_success,
+        MAX(CASE WHEN cd.file_rgstry_cstm_dtl_nm = 'Dm_import_failed_count'    THEN cd.file_rgstry_cstm_dtl_val_txt END) AS import_failed
+    FROM dbo.file_rgstry_cstm_dtl cd
+    INNER JOIN dbo.file_rgstry_dtl d ON cd.file_rgstry_dtl_id = d.file_rgstry_dtl_id
+    WHERE d.file_registry_id IN ($fileRegIds)
+    GROUP BY d.file_registry_id
+)
+SELECT
+    fr.File_registry_id                   AS file_registry_id,
+    fr.file_stts_cd                       AS file_registry_status_code,
+    fr.upsrt_dttm                         AS file_registry_upsrt_dttm,
+    fr.file_err_msg_txt                   AS file_err_msg_txt,
+    frd.file_rgstry_dtl_rec_ttl_cnt       AS total_record_count,
+    cd.staging_success,
+    cd.staging_failed,
+    cd.import_processed,
+    cd.import_success,
+    cd.import_failed
+FROM dbo.File_Registry fr
+LEFT JOIN dbo.file_rgstry_dtl frd ON fr.File_registry_id = frd.file_registry_id
+LEFT JOIN CustomDetails cd        ON fr.File_registry_id = cd.file_registry_id
+WHERE fr.File_registry_id IN ($fileRegIds)
+"@
+
+            # Execute DM query using cross-environment direct connection
+            $connString = "Server=$dbInstance;Database=crs5_oltp;Integrated Security=True;Application Name=xFACts BDL-Reconcile;"
+            $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
+            $dmResults = @{}
+
+            try {
+                $conn.Open()
+                $cmd = $conn.CreateCommand()
+                $cmd.CommandText = $dmQuery
+                $cmd.CommandTimeout = 30
+
+                $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+                $dataset = New-Object System.Data.DataSet
+                $adapter.Fill($dataset) | Out-Null
+
+                if ($dataset.Tables.Count -gt 0) {
+                    foreach ($dmRow in $dataset.Tables[0].Rows) {
+                        $dmResults[[int]$dmRow['file_registry_id']] = $dmRow
+                    }
+                }
+            }
+            finally {
+                if ($conn.State -eq 'Open') { $conn.Close() }
+            }
+
+            # ── Write back per row ──────────────────────────────────
+            foreach ($envRow in $envRows) {
+                $fileRegId = [int]$envRow.file_registry_id
+                $logId = [int]$envRow.log_id
+
+                # Not found in DM — just update last_polled_dttm
+                if (-not $dmResults.ContainsKey($fileRegId)) {
+                    Invoke-XFActsNonQuery -Query "UPDATE Tools.BDL_ImportLog SET last_polled_dttm = GETDATE() WHERE log_id = @logId" -Parameters @{ logId = $logId } | Out-Null
+                    $envMetrics.not_found++
+                    $result.not_found++
+                    continue
+                }
+
+                $dm = $dmResults[$fileRegId]
+                $sttsCode = [int]$dm['file_registry_status_code']
+
+                # Non-terminal DM state (1-4, 9-11) — just update last_polled_dttm
+                if ($sttsCode -notin @(5, 6, 7, 8)) {
+                    Invoke-XFActsNonQuery -Query "UPDATE Tools.BDL_ImportLog SET last_polled_dttm = GETDATE() WHERE log_id = @logId" -Parameters @{ logId = $logId } | Out-Null
+                    $envMetrics.still_active++
+                    $result.still_active++
+                    continue
+                }
+
+                # Terminal state — map and write back full state
+                $fileRegStatus = switch ($sttsCode) {
+                    5 { 'PROCESSED' }
+                    6 { 'FAILED' }
+                    7 { 'CANCELED' }
+                    8 { 'PARTIALLY_PROCESSED' }
+                }
+                $newStatus = if ($sttsCode -in @(5, 8)) { 'COMPLETED' } else { 'FAILED' }
+
+                # Safe extraction for nullable integer columns
+                $intOrNull = {
+                    param($val)
+                    if ($val -is [DBNull] -or $null -eq $val) { return [DBNull]::Value }
+                    try { return [int]$val } catch { return [DBNull]::Value }
+                }
+
+                $completedDttm = if ($dm['file_registry_upsrt_dttm'] -is [DBNull]) { [DBNull]::Value } else { $dm['file_registry_upsrt_dttm'] }
+                $errMsg = if ($newStatus -eq 'FAILED' -and $dm['file_err_msg_txt'] -isnot [DBNull]) { [string]$dm['file_err_msg_txt'] } else { [DBNull]::Value }
+
+                Invoke-XFActsNonQuery -Query @"
+UPDATE Tools.BDL_ImportLog
+SET status                      = @status,
+    file_registry_status_code   = @fileRegStatusCode,
+    file_registry_status        = @fileRegStatus,
+    total_record_count          = @totalRec,
+    staging_success_count       = @stgSuccess,
+    staging_failed_count        = @stgFailed,
+    import_processed_count      = @impProcessed,
+    import_success_count        = @impSuccess,
+    import_failed_count         = @impFailed,
+    is_complete                 = 1,
+    completed_dttm              = @completedDttm,
+    error_message               = COALESCE(error_message, @errMsg),
+    last_polled_dttm            = GETDATE()
+WHERE log_id = @logId
+"@ -Parameters @{
+                    logId             = $logId
+                    status            = $newStatus
+                    fileRegStatusCode = $sttsCode
+                    fileRegStatus     = $fileRegStatus
+                    totalRec          = & $intOrNull $dm['total_record_count']
+                    stgSuccess        = & $intOrNull $dm['staging_success']
+                    stgFailed         = & $intOrNull $dm['staging_failed']
+                    impProcessed      = & $intOrNull $dm['import_processed']
+                    impSuccess        = & $intOrNull $dm['import_success']
+                    impFailed         = & $intOrNull $dm['import_failed']
+                    completedDttm     = $completedDttm
+                    errMsg            = $errMsg
+                } | Out-Null
+
+                $envMetrics.reconciled++
+                $result.reconciled++
+            }
+        }
+        catch {
+            $result.errors += "[$env] $($_.Exception.Message)"
+            $result.success = $false
+        }
+
+        $result.environments[$env] = $envMetrics
+    }
+
+    return $result
+}
+
+# ============================================================================
 # HELPER: Get-ToolsServers
 # Returns tools-enabled DM app servers from ServerRegistry for a given
 # environment. Used by all DM API operations (job triggers, BDL import, etc.).
@@ -2028,6 +2277,7 @@ Export-ModuleMember -Function @(
     # BDL Process
     'Build-BDLXml',
     'Build-ARLogXml',
+    'Invoke-BDLImportLogReconcile',
     # CRS5 (Debt Manager) Database
     'Get-CRS5Connection',
     'Invoke-CRS5ReadQuery',
