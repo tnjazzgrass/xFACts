@@ -31,14 +31,15 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
     
     # --- Admin gear icon (visible only to admin role holders) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
+    $pageIsAdmin = $access.Tier -eq 'admin'
     $adminGear = if ($ctx.IsAdmin) {
         '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
     } else { '' }
-    
+
     # --- Admin-only sections ---
     $adminSection = ''
     $adminPanelHtml = ''
-    if ($ctx.IsAdmin) {
+    if ($pageIsAdmin) {
         $adminSection = @'
     <!-- ================================================================ -->
     <!-- ADMIN TOOLS (Admin-only)                                         -->
