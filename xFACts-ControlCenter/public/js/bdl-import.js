@@ -385,7 +385,7 @@ var BDL = (function () {
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
-            html += '<div class="mapping-identifier ' + idStateClass + '"><div class="identifier-label"><span class="identifier-icon">&#128273;</span><strong>Consumer Identifier</strong><span class="identifier-note">Which column contains the DM Agency ID?</span></div><div class="identifier-select"><select id="identifier-column" onchange="BDL.identifierChanged()" class="identifier-dropdown"><option value="">— Select identifier column —</option>';
+            html += '<div class="mapping-identifier ' + idStateClass + '"><div class="identifier-label"><span class="identifier-icon">&#128273;</span><strong>' + (isAcct ? 'Account' : 'Consumer') + ' Identifier</strong><span class="identifier-note">Which column contains the DM ' + (isAcct ? 'Account' : 'Consumer') + ' Number?</span></div><div class="identifier-select"><select id="identifier-column" onchange="BDL.identifierChanged()" class="identifier-dropdown"><option value="">— Select identifier column —</option>';
             parsedFileData.headers.forEach(function (header, idx) { var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : ''; var sel = (String(idx) === prevIdIdx) ? ' selected' : ''; html += '<option value="' + idx + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>'; });
             html += '</select><span class="identifier-target">&#8594; <code>' + idField.element_name + '</code></span></div></div>';
         }
@@ -422,7 +422,7 @@ var BDL = (function () {
         var idSelected = (prevIdIdx !== '');
         if (idField) {
             var idStateClass = idSelected ? 'identifier-confirmed' : 'identifier-pending';
-            html += '<div class="mapping-identifier ' + idStateClass + '"><div class="identifier-label"><span class="identifier-icon">&#128273;</span><strong>Consumer Identifier</strong><span class="identifier-note">Which column contains the DM Agency ID?</span></div><div class="identifier-select"><select id="identifier-column" onchange="BDL.fixedValueIdentifierChanged()" class="identifier-dropdown"><option value="">— Select identifier column —</option>';
+            html += '<div class="mapping-identifier ' + idStateClass + '"><div class="identifier-label"><span class="identifier-icon">&#128273;</span><strong>' + (isAcct ? 'Account' : 'Consumer') + ' Identifier</strong><span class="identifier-note">Which column contains the DM ' + (isAcct ? 'Account' : 'Consumer') + ' Number?</span></div><div class="identifier-select"><select id="identifier-column" onchange="BDL.fixedValueIdentifierChanged()" class="identifier-dropdown"><option value="">— Select identifier column —</option>';
             parsedFileData.headers.forEach(function (header, idx) { var sample = (parsedFileData.rows[0] && parsedFileData.rows[0][idx]) ? parsedFileData.rows[0][idx] : ''; var sel = (String(idx) === prevIdIdx) ? ' selected' : ''; html += '<option value="' + idx + '"' + sel + '>' + escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>'; });
             html += '</select><span class="identifier-target">&#8594; <code>' + idField.element_name + '</code></span></div></div>';
         }
@@ -703,7 +703,7 @@ var BDL = (function () {
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
-            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) +'&config_id=' + encodeURIComponent(selectedEnvironment.config_id) + '&entity_type=' + encodeURIComponent(curState().entity.entity_type))
                 .then(function (r) { return r.json(); }).then(function (data) { if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; } var values = data.values || []; state._lookupCache[cacheKey] = values; renderAssignmentSuggestions(sugEl, values, aIdx, 'blanket', elementName); })
                 .catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
         }, 300);
@@ -749,7 +749,7 @@ var BDL = (function () {
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
-            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(condField) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(condField) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id) + '&entity_type=' + encodeURIComponent(curState().entity.entity_type))
                 .then(function (r) { return r.json(); }).then(function (data) { if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; } var values = data.values || []; state._lookupCache[cacheKey] = values; renderAssignmentSuggestions(sugEl, values, aIdx, 'conditional', triggerVal); })
                 .catch(function () { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">Lookup failed</div>'; });
         }, 300);
@@ -1000,7 +1000,7 @@ var BDL = (function () {
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
-            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id) + '&entity_type=' + encodeURIComponent(curState().entity.entity_type))
                 .then(function (r) { return r.json(); }).then(function (data) {
                     if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; }
                     var values = data.values || []; state._lookupCache[cacheKey] = values;
@@ -1080,7 +1080,7 @@ var BDL = (function () {
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         sugEl.innerHTML = '<div class="suggestion-hint">Searching...</div>';
         searchDebounceTimer = setTimeout(function () {
-            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id))
+            fetch('/api/bdl-import/lookup-search?lookup_table=' + encodeURIComponent(field.lookup_table) + '&element_name=' + encodeURIComponent(elementName) + '&search=' + encodeURIComponent(val) + '&config_id=' + encodeURIComponent(selectedEnvironment.config_id) + '&entity_type=' + encodeURIComponent(curState().entity.entity_type))
                 .then(function (r) { return r.json(); }).then(function (data) {
                     if (data.error) { sugEl.innerHTML = '<div class="suggestion-hint" style="color:#f48771;">' + escapeHtml(data.error) + '</div>'; return; }
                     var values = data.values || []; state._lookupCache[cacheKey] = values;
