@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-16 03:12:36
+Generated: 2026-04-16 11:13:04
 
 ## Module Registry
 
@@ -433,6 +433,7 @@ Generated: 2026-04-16 03:12:36
 | ControlCenter | RBAC | rbac_enforcement_mode | audit | VARCHAR | Access control mode: disabled, audit (log only), or enforce (block) |
 | ControlCenter | Refresh | refresh_backup_seconds | 5 | INT | Backup Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_batch_seconds | 5 | INT | Batch Monitoring page live window refresh interval (seconds) |
+| ControlCenter | Refresh | refresh_bdl-import_seconds | 20 | INT | Polling interval in seconds for the BDL Import wizard's right-column Import History panel. Drives on-demand reconciliation against DM File_Registry while any non-terminal rows are visible. Consumed via /api/config/refresh-interval?page=bdl-import. |
 | ControlCenter | Refresh | refresh_bidata_seconds | 30 | INT | BIDATA Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_businessservices_seconds | 60 | INT | Business Services page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_clientrelations_seconds | 1800 | INT | Client Relations page live window refresh interval (seconds) |
