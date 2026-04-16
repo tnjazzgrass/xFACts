@@ -1,6 +1,6 @@
 # BDL Import Module -- Working Document
 
-**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance, nullify fields (blanket + record-level), Excel date formatting. Multi-entity + FIXED_VALUE end-to-end verified. Multi-assignment cards with blanket/conditional/from-file modes. Per-field mode selector for conditional-eligible fields on FILE_MAPPED entities (3-way: File/Blanket/Conditional). 4-step dynamic lookup column discovery for validation and typeahead. ServerConfig renamed to EnvironmentConfig. ServerRegistry API targeting deployed. ActionAuditLog redesigned. BDL Import user guide deployed.  
+**Status:** In development -- 5-step wizard operational with XML preview, unified execution results, row count alignment, Promote to Production, environment badge, consolidated AR log, import_as_user_name, BDL Permissions Admin Modal, import_guidance, nullify fields (blanket + record-level), Excel date formatting. Multi-entity + FIXED_VALUE end-to-end verified. Multi-assignment cards with blanket/conditional/from-file modes. Per-field mode selector for conditional-eligible fields on FILE_MAPPED entities (3-way: File/Blanket/Conditional). 4-step dynamic lookup column discovery for validation and typeahead. ServerConfig renamed to EnvironmentConfig. ServerRegistry API targeting deployed. ActionAuditLog redesigned. BDL Import user guide deployed and updated. Tag entity filtering deployed. Step guide text refined.  
 **Audience:** Dirk, Matt, Brandon, Claude  
 **Last Updated:** April 15, 2026  
 **Replaces:** `BDL_Import_Module_Design.md`, `BDL_Catalog_Reload_Instructions.md`, `xFACts_Questions_For_Matt.md`, `BDL_Action_Sequences_Planning.md`
@@ -96,10 +96,26 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - BI page updated: BDL Import card now links to `/bdl-import`
 - SheetJS `xlsx.full.min.js` v0.20.3 hosted locally for client-side Excel parsing
 
+**Tag Entity Filtering (April 15):**
+- CONSUMER_TAG and ACCOUNT_TAG lookups restricted to correct entity association level via `tag_typ.tag_typ_entty_assctn_cd` subquery
+- CONSUMER_TAG: `tag_typ_entty_assctn_cd = 2` (consumer-level tags only)
+- ACCOUNT_TAG: `tag_typ_entty_assctn_cd = 3` (account-level tags only)
+- Applied to both `/api/bdl-import/lookup-search` (typeahead) and `/api/bdl-import/validate` (full lookup value loading)
+- JS client passes `entity_type` parameter on all 4 typeahead fetch calls
+- Hardcoded approach (not catalog-driven) since entity association codes are fixed system values in DM
+
+**Dynamic Identifier Labels (April 15):**
+- Identifier section label adapts based on entity level: "Consumer Identifier / Which column contains the DM Consumer number?" for consumer-level entities, "Account Identifier / Which column contains the DM Account number?" for account-level entities
+- Computed from `isAcct` variable (entity folder contains 'account') already in scope in both `renderMapValidateMapping` and `renderFixedValueMapping`
+
+**Documentation (April 15):**
+- `bdl-import-guide.html` updated with all new features: per-field mode selector, assignment cards, From File/Blanket/Conditional modes, tag entity filtering, dynamic identifier labels, expanded row alignment, corrected mockup styling to match actual CSS
+- Step guide text (right column in `BDLImport.ps1`) refined with more actionable content covering identifier gating, mode toggles, assignment cards, validate button, Jira ticket, and promote flow
+- Documentation pipeline: auto-discovery of guide pages from `pages/guides/*.html`, `Convert-GuideToStorageFormat`, `Convert-GuideToMarkdown`, Phase 1.7 Confluence publishing, markdown export integration
+
 **Documentation (April 13):**
-- `bdl-import-guide.html` -- standalone step-by-step user guide with visual mockups covering all 5 wizard steps, deployed to `pages/guides/`
+- `bdl-import-guide.html` -- standalone step-by-step user guide deployed to `pages/guides/`
 - `tools.html` -- updated with User Guides card section linking to guide pages
-- Documentation pipeline updated: auto-discovery of guide pages from `pages/guides/*.html` (title from `<h1>`, parent from breadcrumb), `Convert-GuideToStorageFormat`, `Convert-GuideToMarkdown`, Phase 1.7 Confluence publishing, markdown export integration
 - `Consolidate-UploadFiles.ps1` and `Publish-GitHubRepository.ps1` updated for guides folder
 
 **Multi-Assignment Cards (April 15):**
@@ -146,7 +162,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Two-tier slide-up/slideout panel, admin-only access
 - Mode selector: "Global Configuration" (default) and "Department Access"
 - **Global Configuration mode:**
-  - Format list with active/inactive grouping, FIXED VALUE and HYBRID badges
+  - Format list with active/inactive grouping
   - Element grid with inline edit (display_name, field_description, import_guidance as click-to-edit; is_visible, is_import_required as toggles)
   - Format-level is_active toggle with confirmation
   - `/api/apps-int/bdl-format/update` endpoint for editing format fields (action_type, batch_abbreviation editable)
@@ -168,9 +184,9 @@ Accessible via card links from the Applications & Integration page (IT team) and
 ### What's Functional (5-Step Wizard)
 
 1. **Select Environment** -- Cards for TEST, STAGE, PROD loaded from `Tools.EnvironmentConfig`. Environment-specific accent colors. All environments unlocked. Selecting PROD shows a styled advisory modal.
-2. **Upload File** -- Drag-and-drop or browse. CSV, TXT, XLSX, XLS supported via client-side parsing. Preview renders inside the drop zone. Row count warning above 250K.
+2. **Upload File** -- Drag-and-drop or browse. CSV, TXT, XLSX, XLS supported via client-side parsing. Preview renders inside the drop zone. Row count warning above 250K. First sheet used for Excel files.
 3. **Select Entity Types** -- Multi-select grid with toggle cards grouped by `entity_key` (Consumer, Account, Other sections with headers). Field info modal (info icon) shows access-controlled field list with display names, descriptions, and import guidance on demand. Admin sees all active; department users see only AccessConfig-granted entities with AccessFieldConfig-filtered fields.
-4. **Map & Validate** -- Per-entity loop with progress dots and transition modals. For FILE_MAPPED entities: identifier gating, two-column mapping panels, drag-and-drop, nullify badge on eligible target fields, per-field mode toggle on conditional-eligible fields. For FIXED_VALUE entities: identifier selector + multi-assignment card model with File/Blanket/Conditional mode per card. Each entity stages and validates independently. Validation cards show `import_guidance` tips when populated. Validated screen shows Mapped Fields card and Nullify card (when applicable). Step complete when all entities pass validation.
+4. **Map & Validate** -- Per-entity loop with progress dots and transition modals. Dynamic identifier label (Consumer/Account) based on entity level. For FILE_MAPPED entities: identifier gating, two-column mapping panels, drag-and-drop, nullify badge on eligible target fields, per-field mode toggle on conditional-eligible fields. For FIXED_VALUE entities: identifier selector + multi-assignment card model with File/Blanket/Conditional mode per card. Each entity stages and validates independently. Validation cards show `import_guidance` tips when populated. Validated screen shows Mapped Fields card and Nullify card (when applicable). Step complete when all entities pass validation.
 5. **Execute** -- Tabbed per-entity summary cards (4-item grid: Environment, Entity Type, Rows, Staging Table). Mapped Fields card (teal) lists all mapped field display names including field assignments with mode tags. Nullify card (purple) lists nullified field display names when applicable. XML Preview button with distinct button styling. Single Jira ticket field (applies to all). Submit All button processes entities sequentially. Per-tab success/failure indicators. Consolidated AR log auto-submits after all entities complete if Jira ticket provided.
 
 ### End-to-End Test Results
@@ -196,6 +212,9 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - **Test 8 (Dirk):** CONSUMER entity with `wrkgrp_shrt_nm` in all three modes (File, Blanket, Conditional). Staging, validation, and lookup all functional. 4-step lookup discovery correctly resolved `wrkgrp_shrt_nm` as a direct column match in the `wrkgrp` table (Step 1).
 - **Test 9 (Dirk):** CONSUMER_TAG with From File mode -- tag values mapped from a file column instead of manual entry. Staging and validation functional.
 
+**April 15, 2026 (TEST - Tag Entity Filtering):**
+- **Test 10 (Dirk):** CONSUMER_TAG typeahead returns only consumer-level tags (tag_typ_entty_assctn_cd = 2). ACCOUNT_TAG typeahead returns only account-level tags (tag_typ_entty_assctn_cd = 3). Validation lookup loading also correctly filtered. No cross-level tag leakage.
+
 ---
 
 ## Architecture Decisions (Resolved)
@@ -217,14 +236,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - `selectedEntities[]` array holds all selected entities; `entityStates[]` array holds per-entity state
 - Each entity state independently tracks: fields, columnMapping, assignments, fieldAssignments, stagingContext, stagedMapping, validationResult, validated flag
 - Step 3 completes when at least one entity is selected
-
-### Per-Entity Map & Validate Loop
-- Map then validate per entity (Brandon's recommendation) -- safer than mapping all first then validating all
-- Progress dots with connecting lines show position in entity sequence
-- 1.5-second transition modal between entities for visual breathing room
-- Back button navigates through entities in reverse; entity 1 back goes to Step 3
-- All entity states preserved on back navigation -- nothing lost
-- Step 4 complete only when ALL entities pass validation
+- Same source column can be mapped independently to different fields on different entities since each entity has its own mapping state
 
 ### Action Types on Catalog_BDLFormatRegistry
 - `action_type VARCHAR(20)` with CHECK constraint: FILE_MAPPED (default), FIXED_VALUE, HYBRID
@@ -232,7 +244,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Manageable through the admin catalog modal on the Apps/Int page
 - FILE_MAPPED: full column mapping panels with drag-and-drop, per-field mode toggle on conditional-eligible fields
 - FIXED_VALUE: assignment card model with File/Blanket/Conditional modes per card
-- HYBRID: reserved for future -- may be unnecessary given per-field mode model handles all combinations natively
+- HYBRID: reserved for potential future use -- the per-field mode model handles all known combinations natively
 
 ### Per-Field Mode Model (Implemented April 15)
 - The three value assignment modes (From File, Blanket, Conditional) are a **per-field** decision, not an entity-level decision
@@ -240,9 +252,6 @@ Accessible via card links from the Applications & Integration page (IT team) and
   1. **From File** -- map to a source column (file already has the values) -- standard drag-drop on FILE_MAPPED, column selector on FIXED_VALUE
   2. **Blanket** -- enter one value applied to all rows
   3. **Conditional** -- vary by trigger column with per-value typeahead
-- This makes the HYBRID `action_type` potentially unnecessary -- the per-field model handles all combinations:
-  - FILE_MAPPED entity with conditional workgroup = consumer fields mapped from file, workgroup uses assignment card
-  - FIXED_VALUE entity with tag from file = tag value mapped from a file column instead of entered manually
 - The `action_type` on `Catalog_BDLFormatRegistry` determines the **default UI path** for the entity, not a rigid constraint
 - FILE_MAPPED entities: fields default to target panel (File mode); conditional-eligible fields get mode toggle to override
 - FIXED_VALUE entities: fields default to assignment card (Blanket mode); conditional-eligible fields get 3-way mode toggle
@@ -260,6 +269,20 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - Validated against all 52 distinct lookup tables across all 83 BDL entity types -- zero exceptions
 - Table structure cached per-table; value column resolved per-element (same table may resolve differently for different elements)
 - Applied to both validation endpoint (full value set for comparison) and typeahead endpoint (LIKE search with TOP 10)
+
+### Tag Entity Filtering (Implemented April 15)
+- CONSUMER_TAG and ACCOUNT_TAG lookups restricted by `tag_typ.tag_typ_entty_assctn_cd` subquery
+- Consumer tags: `tag_typ_entty_assctn_cd = 2`; Account tags: `tag_typ_entty_assctn_cd = 3`
+- Applied to both typeahead (lookup-search) and validation (validate) endpoints
+- JS client passes `entity_type` query parameter on all 4 typeahead fetch calls
+- Hardcoded approach chosen over catalog-driven (e.g., `lookup_filter` column) since these are fixed DM system values and only two tables are affected
+- Filter chain: `tag.tag_typ_id` → `tag_typ.tag_typ_entty_assctn_cd` → `ref_entty_assctn_cd`
+
+### Dynamic Identifier Labels (Implemented April 15)
+- Identifier section label adapts based on entity level using `isAcct` variable already computed in both mapping render functions
+- Consumer-level: "Consumer Identifier / Which column contains the DM Consumer number?"
+- Account-level: "Account Identifier / Which column contains the DM Account number?"
+- Applied to both `renderMapValidateMapping` (FILE_MAPPED) and `renderFixedValueMapping` (FIXED_VALUE)
 
 ### Fixed-Value Mapping UI
 - Assignment card model with per-card mode selection
@@ -403,6 +426,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 ### Guide Panel
 - Compact tip panel in upper right column
 - Content updates automatically based on current step (5 steps)
+- Refined April 15 with actionable guidance for each step
 
 ### Server Configuration
 - `tools_enabled` on ServerRegistry = master switch for Tools server participation
@@ -423,6 +447,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 - `communication_reference_id_txt` header element always included, hardcoded to "Organization"
 - Batch ID constructed as `XF_{batch_abbreviation}_{yyyyMMddHHmmss}` -- must not exceed 32 characters (DM `file_rgstry_dtl.btch_idntfr_txt` column limit)
 - Wrapper element (`consumer_operational_transaction_data` or `account_operational_transaction_data`) resolved from catalog; most entities appear under both wrappers in the XSD -- current code takes the first match. XSD files available on the DM application server for reference if wrapper issues arise with new entity types.
+- `custom_properties` XML block included as empty `<custom_property/>` element. Not currently used but causes no issues; left in place for potential future use.
 
 ### Access Control (Three Layers)
 1. **RBAC page access** -- `RBAC_PermissionMapping` controls who can see the page
@@ -441,7 +466,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 ### Import Lifecycle
 - Status progression: BUILDING -> REGISTERED -> SUBMITTED / FAILED
 - Column mapping captured as JSON in `BDL_ImportLog.column_mapping`
-- Completion tracking deferred to BatchOps BDL monitoring collector
+- Completion tracking deferred to Import History & Live Progress enhancement
 
 ### RBAC Middleware: Department-Scoped Roles on Shared Pages
 - Fix: explicit permission rows always honored regardless of department scope
@@ -506,7 +531,7 @@ Accessible via card links from the Applications & Integration page (IT team) and
 13. **Multi-tag same file:** Possible -- repeating pattern with sequential seq_no, NOT contained in same entry.
 14. **Consumer + Account mix:** Theoretically possible but no current processes do it.
 15. **Tag case sensitivity:** Not case sensitive.
-16. **Same source column mapped to multiple BDLs:** Pending -- checking with Brandon.
+16. **Same source column mapped to multiple BDLs:** Resolved by design -- each entity has independent mapping state in the multi-entity architecture.
 17. **Entity type selection approach:** Users are knowledgeable enough to select entity types directly; friendly action name abstraction layer (BDL_ActionRegistry) was unnecessary overhead. Field info modal provides enough context.
 
 ### AR Log Scope (April 10)
@@ -591,9 +616,9 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 | GET | `/api/bdl-import/environments` | Available environments from EnvironmentConfig |
 | GET | `/api/bdl-import/entities` | Available entity types with `action_type`, `entity_key` (RBAC + is_active filtered) |
 | GET | `/api/bdl-import/entity-fields?entity_type=X` | BDL fields for an entity (admin: all visible; dept: AccessFieldConfig whitelist). Includes `import_guidance`, `is_conditional_eligible`. |
-| GET | `/api/bdl-import/lookup-search` | Typeahead search against DM lookup tables. 4-step column discovery. Params: lookup_table, element_name, search, config_id. |
+| GET | `/api/bdl-import/lookup-search` | Typeahead search against DM lookup tables. 4-step column discovery. Tag entity filtering. Params: lookup_table, element_name, search, config_id, entity_type. |
 | POST | `/api/bdl-import/stage` | Create staging table, insert rows. Path A: assignments-based expansion (file/blanket/conditional modes). Path B: file-mapped with optional fixed_values and field_assignments. |
-| POST | `/api/bdl-import/validate` | Read staging table + fetch lookups from DM with 4-step column discovery (repeatable) |
+| POST | `/api/bdl-import/validate` | Read staging table + fetch lookups from DM with 4-step column discovery and tag entity filtering (repeatable) |
 | POST | `/api/bdl-import/replace-values` | Mass-replace values in staging table column |
 | POST | `/api/bdl-import/skip-rows` | Mark rows as skipped in staging table |
 | POST | `/api/bdl-import/align-rows` | Align target staging table skip set to source |
@@ -619,51 +644,45 @@ DM maps the `operational_transaction_type` header value to an internal ID via `R
 
 ## Next Steps
 
-### Tag Entity Filtering (Priority: Next session)
+### Import History & Live Progress (Priority: Next session)
 
-**Context:** CONSUMER_TAG and ACCOUNT_TAG entities need to restrict typeahead and validation lookup results to only tags associated with the correct entity level. Without filtering, a user could accidentally select an account-level tag for a consumer import, which would fail or produce incorrect results in DM.
+**Context:** The BDL Import page currently has no visibility into past imports or active processing status. Users submit an import and then have to switch to Batch Monitoring to see what happened. A compact import history and live progress view on the BDL Import page itself would close this loop.
 
-**Filter chain:** `tag` → `tag_typ_id` → `tag_typ.tag_typ_id` → `tag_typ.tag_typ_entty_assctn_cd` → `ref_entty_assctn_cd`
-- CONSUMER_TAG: `tag_shrt_nm FROM tag WHERE tag_typ_id IN (SELECT tag_typ_id FROM tag_typ WHERE tag_typ_entty_assctn_cd = 2)`
-- ACCOUNT_TAG: `tag_shrt_nm FROM tag WHERE tag_typ_id IN (SELECT tag_typ_id FROM tag_typ WHERE tag_typ_entty_assctn_cd = 3)`
+**Approach:**
+- Expand `Tools.BDL_ImportLog` with completion metric columns (rows processed, rows succeeded, rows failed, DM processing status) populated by a write-back from the existing BatchOps BDL collector or a lightweight polling mechanism
+- UI section on the BDL Import page showing recent imports from `BDL_ImportLog` with terminal status from DM
+- Imports without final metrics in the log are treated as active -- query live status from the target environment's DM API using `file_registry_id`
+- When DM reports a terminal state, write the results back to `BDL_ImportLog` and stop polling
+- Simplified version of the collector-to-UI pattern used on Batch Monitoring and other module pages, scoped to manual BDL executions only
 
-**Implementation approach:**
-- Add entity-level context to lookup-search and validate calls when lookup_table is `tag`
-- The entity_type (CONSUMER_TAG vs ACCOUNT_TAG) maps to entty_assctn_cd (2 vs 3)
-- Filter applied as JOIN or WHERE subquery on the lookup query
-- May need a catalog-driven approach (e.g., `lookup_filter` column on element registry) rather than hardcoding tag-specific logic, to handle similar cases on future entity types
+### DM Version Migration — Catalog Analysis (Priority: Upcoming)
 
-### BDL Import User Guide Update (Priority: Next session — BI release imminent)
+**Context:** A DM version migration is planned over the coming months. New XSD files and API definitions will be available for the updated version. The BDL catalog tables (`Catalog_BDLFormatRegistry`, `Catalog_BDLElementRegistry`, and their CDL counterparts) will need to be analyzed against the new XSDs to identify changes, additions, and any deprecated elements.
 
-**Context:** BI team is being onboarded to use BDL Import for production workflows. The existing `bdl-import-guide.html` covers the original 5-step wizard but does not document the per-field mode selector, From File mode, conditional assignments, or the 3-way toggle. Guide needs to be updated before official BI team release.
+**Approach:**
+- Obtain new XSD files and API documentation from the DM application server after the new version is available
+- Compare new XSDs against current catalog content to identify: new entity types, new fields on existing entities, changed data types or constraints, removed/deprecated elements
+- Repeat the catalog build process used in the initial setup, merging changes into existing catalog rows rather than rebuilding from scratch
+- Expectation is that existing functionality maps over largely unchanged -- focus on identifying net-new capabilities and any breaking changes
+- Update `Catalog_BDLFormatRegistry` and `Catalog_BDLElementRegistry` as needed
+- Re-validate the 4-step lookup column discovery against any new/changed lookup tables
 
-**Scope:**
-- Update Step 4 (Map & Validate) section to cover the 3-way mode toggle on both FILE_MAPPED and FIXED_VALUE entities
-- Add visual mockups or descriptions for File, Blanket, and Conditional modes
-- Document the Field Assignments section that appears below mapping panels
-- Add section on From File mode for tag imports
-- Review and update all existing step descriptions for accuracy
+### Value Changes & Record-Level Audit (Priority: Pending Matt)
 
-### DM Job Triggers (Apps/Int Page) — R1-R4 COMPLETE
+Two related items pending Matt's input on requirements and scope:
 
-R1 (Refresh Drools), R2 (Release Notices), R3 (Balance Sync), and R4 (Request Validation) are deployed and operational on the Applications & Integration page. Uses ServerRegistry for API URLs, ActionAuditLog for audit + cooldown enforcement. Environment selection explicit via modal.
+1. **`value_changes` column on BDL_ImportLog** -- Column exists but is not populated. Original intent: capture an audit trail of validation-phase replacements (e.g., "phone_type: CELLULAR → CELL, 47 rows"). Wire into replace-values and fill-empty endpoints if Matt confirms value.
 
-**Remaining:**
-| # | Name | DM Endpoint | Server Target | Cooldown |
-|---|------|-------------|---------------|----------|
-| R5 | Launch Job (generic) | POST `/jobs/{job_name}/execute` | Single (primary) | None |
+2. **Record-level import audit table** -- Single table design to accommodate all entity types using JSON payload per record. Volume concern for large imports (250K rows). Deferred pending clarification on Matt's requirements. These two items are a pair -- either both are needed for full audit trail coverage, or neither.
 
-- R5 (generic launcher) should be admin-only -- freeform job name input
+### Minor Enhancements (Backlog)
 
-### Immediate (Pre-existing)
+- **Reset validation skips** -- Currently no mechanism to undo validation-phase skips on FILE_MAPPED entities without re-running validation from scratch.
+- **Wrapper element selection** -- Most entity types appear under both wrapper formats in the XSD. Current code takes the first match. May need a `wrapper_format_id` column on `Catalog_BDLFormatRegistry` if future entities require a specific wrapper.
 
-1. **Execution progress indicator** -- Re-wire the step-through progress display (building XML -> registering -> submitting) into the unified results pane. CSS classes exist (`.progress-steps`, `.progress-active`, `.progress-complete`). Visual polish item. May not be needed -- BatchOps BDL collector already shows processing status on Batch Monitoring page. Evaluate whether this adds value.
+---
 
-2. **`value_changes` column on BDL_ImportLog** -- Verify whether the replace-values and fill-empty endpoints are actually populating this column. If not, wire it in. Designed as batch-level replacement audit trail but may not be connected.
-
-3. **Record-level import audit table** -- Pending Matt's input on his current tracking pattern. Single table design to accommodate all entity types using JSON payload per record. Volume concern for large imports (250K rows). Deferred pending clarification on Matt's requirements and scope.
-
-### Nullify Fields (Implemented April 11)
+## Nullify Fields (Implemented April 11)
 
 Supports explicit nullification of field values in DM via the `<nullify_fields>` XML block. Two complementary mechanisms:
 
@@ -693,35 +712,6 @@ Supports explicit nullification of field values in DM via the `<nullify_fields>`
 - Same cards shown on Step 4 validated/complete screen for consistency
 - XML Preview rendered as a distinct button rather than clickable header for visibility
 
-### Follow-Up Items
-
-- **HYBRID action_type evaluation** -- Per-field mode model (April 15) may make HYBRID unnecessary as a separate action_type. The per-field model handles all combinations natively. Decision deferred until more entity types are onboarded.
-- **Same source column mapped to multiple BDLs** -- Pending Brandon's input on whether this is a real scenario.
-- **Reset validation skips for mapped entities** -- Currently no mechanism to undo validation-phase skips on FILE_MAPPED entities without re-running validation from scratch. Future enhancement.
-- **Step guide text refinement** -- Right-column guidance for each step.
-- **Template UX refinement** -- User feedback on template workflow.
-- **Typeahead lookup column discovery** -- Now uses 4-step dynamic resolution. No further hardcoded patterns needed.
-- **Wrapper element selection** -- Most entity types appear under both `consumer_operational_transaction_data` and `account_operational_transaction_data` in the XSD. Current code takes the first match from the catalog. This works for PHONE and CONSUMER_TAG but may need a `wrapper_format_id` column on `Catalog_BDLFormatRegistry` if future entities require a specific wrapper.
-- **`custom_properties` XML block** -- Currently included as an empty `<custom_property/>` element. May not be needed; successful third-party tag imports omit it entirely. Consider removing.
-- **Record-level import audit table** -- Pending Matt's input on current tracking pattern. Single table design to accommodate all entity types. Volume concern for large imports (250K rows). Deferred to future session.
-- **`value_changes` population gap** -- Verify and wire in if not connected.
-- **GlobalConfig history UI** -- Admin-API endpoint updated for new ActionAuditLog columns. May need minor admin.js adjustment if a history display exists or is added.
-
-### Phase 2
-
-- Import history view on the BDL Import page
-- `display_name` enrichment across additional entity elements
-- Staging table resume/review capability
-- **BatchOps BDL monitoring collector** -- Pulls BDL processing results from DM. Writes completion status back to `Tools.BDL_ImportLog` via `file_registry_id`. Cross-module: collector lives in BatchOps, write-back targets Tools schema.
-
-### Future Enhancements
-
-- Payment Import pipeline (separate XML schema and API flow)
-- CDL Import pipeline
-- Consumer/Account CRUD Operations
-- DM Monitoring Dashboard widgets
-- New Business Import pipeline
-
 ---
 
 ## Catalog Table Reference
@@ -746,12 +736,12 @@ For fields with `lookup_table` populated, the typeahead and validation endpoints
 - **Active flag:** First column matching `*_actv_flg` pattern
 - **Description:** First column matching `*_nm` (excluding resolved value column), then `*_dscrptn_txt`
 
-### Tag Type Filtering (Planned)
+### Tag Type Filtering (Implemented April 15)
 Tags in DM are entity-scoped via `tag_typ.tag_typ_entty_assctn_cd`:
 - Consumer tags: `tag_typ_entty_assctn_cd = 2` (maps to `ref_entty_assctn_cd` CONSUMER)
 - Account tags: `tag_typ_entty_assctn_cd = 3` (maps to `ref_entty_assctn_cd` CONSUMERACCOUNT)
 - Filter chain: `tag.tag_typ_id` → `tag_typ.tag_typ_entty_assctn_cd`
-- Applied to CONSUMER_TAG and ACCOUNT_TAG entities to prevent cross-level tag selection
+- Applied to CONSUMER_TAG and ACCOUNT_TAG entities via subquery in both typeahead and validation endpoints
 
 ---
 
@@ -769,9 +759,9 @@ Tags in DM are entity-scoped via `tag_typ.tag_typ_entty_assctn_cd`:
 ### Tools.Operations Component (BDL Import CC Files)
 | Object | Type | Description |
 |--------|------|-------------|
-| BDLImport.ps1 | Route | BDL Import CC page route (5-step layout) |
-| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, consolidated AR log, assignments-based staging with file/blanket/conditional modes, per-field assignments, 4-step lookup discovery, set-nullify-fields) |
-| bdl-import.js | JavaScript | BDL Import CC client-side logic (multi-entity, per-entity state, multi-assignment cards with file/blanket/conditional mode, per-field mode selector on FILE_MAPPED entities, typeahead, entity grouping, consolidated AR log, nullify badge in mapping, Excel date formatting) |
+| BDLImport.ps1 | Route | BDL Import CC page route (5-step layout, refined guide text) |
+| BDLImport-API.ps1 | API | BDL Import CC API endpoints (incl. template CRUD, consolidated AR log, assignments-based staging with file/blanket/conditional modes, per-field assignments, 4-step lookup discovery, tag entity filtering, set-nullify-fields) |
+| bdl-import.js | JavaScript | BDL Import CC client-side logic (multi-entity, per-entity state, multi-assignment cards with file/blanket/conditional mode, per-field mode selector on FILE_MAPPED entities, typeahead with entity_type param, entity grouping, consolidated AR log, nullify badge in mapping, dynamic identifier labels, Excel date formatting) |
 | bdl-import.css | CSS | BDL Import CC styles (incl. assignment card, trigger grid, mode toggle, per-field mode toggle, field assignment cards) |
 
 ### ControlCenter.Shared Component
@@ -790,7 +780,7 @@ Tags in DM are entity-scoped via `tag_typ.tag_typ_entty_assctn_cd`:
 ### Documentation.Site Component
 | Object | Type | Description |
 |--------|------|-------------|
-| bdl-import-guide.html | HTML | BDL Import user guide — standalone step-by-step walkthrough with visual mockups (update pending for per-field mode and From File features) |
+| bdl-import-guide.html | HTML | BDL Import user guide — standalone step-by-step walkthrough with visual mockups (updated April 15 with per-field mode, assignment cards, tag filtering, dynamic identifiers) |
 
 ### Credential Infrastructure
 | Object | Location | Description |
