@@ -269,10 +269,10 @@
                    },
                    {
                        "name":  "BDL_ImportLog",
-                       "description":  "Audit trail for BDL import executions. One row per import capturing the full lifecycle from file upload and validation through XML construction, DM file registration, and import submission. Tracks who executed each import, against which environment, for which entity type, and what the outcome was.",
+                       "description":  "Audit trail for BDL import executions. One row per import capturing the full lifecycle from file upload and validation through XML construction, DM file registration, submission, and DM-side terminal state reconciliation. Tracks who executed each import, against which environment, for which entity type, and what the final DM outcome was.",
                        "module":  "Tools",
                        "category":  "Operations",
-                       "dataFlow":  "A row is inserted when a user initiates a BDL import from the Control Center, initially with VALIDATING status. The status column is updated as the import progresses through the lifecycle: VALIDATING (data checks running), BUILDING (XML file being constructed), REGISTERED (file registered with DM via POST /fileregistry), SUBMITTED (import triggered via POST /fileregistry/{id}/bdlimport), COMPLETED (DM confirmed successful processing), or FAILED (error at any stage). The column_mapping JSON is captured at validation time. The file_registry_id is populated after successful DM registration. Rows are append-only — status updates modify the existing row but no rows are ever deleted.",
+                       "dataFlow":  "A row is inserted when a user initiates a BDL import from the Control Center, initially with VALIDATING status. The status column is updated as the import progresses through the lifecycle: VALIDATING (data checks running), BUILDING (XML file being constructed), REGISTERED (file registered with DM via POST /fileregistry), SUBMITTED (import triggered via POST /fileregistry/{id}/bdlimport), COMPLETED (reconciliation confirmed DM terminal success), or FAILED (error at any stage or DM reported terminal failure). The column_mapping JSON is captured at validation time. The file_registry_id is populated after successful DM registration. After submission, the reconciliation helper in xFACts-Helpers.psm1 — invoked on demand by the /api/bdl-import/history endpoint — queries the target environment\u0027s dbo.File_Registry using the stored file_registry_id, writes back terminal status and record counts from the file_rgstry_cstm_dtl Dm_* metrics, and sets is_complete = 1 when DM-side processing reaches a terminal state. Rows are append-only — status updates modify the existing row but no rows are ever deleted.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -380,14 +380,6 @@
                                        },
                                        {
                                            "ordinal":  13,
-                                           "name":  "file_registry_id",
-                                           "dataType":  "int",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "File registry ID returned by the DM REST API after successful file registration (POST /fileregistry). NULL until the REGISTERED stage. Used as the path parameter for the import trigger call."
-                                       },
-                                       {
-                                           "ordinal":  15,
                                            "name":  "parent_log_ids",
                                            "dataType":  "varchar",
                                            "length":  "200",
@@ -396,7 +388,7 @@
                                            "description":  "Comma-separated list of primary import log_id values that this companion AR log row covers. NULL for primary imports. Populated when the execute-ar-log endpoint generates a consolidated AR log file linking back to one or more primary import rows. Replaces the former parent_log_id single FK column to support consolidated AR logs spanning multiple entity types in a single batch execution."
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  14,
                                            "name":  "status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -406,16 +398,16 @@
                                            "description":  "Current lifecycle status of the import. Progresses through VALIDATING, BUILDING, REGISTERED, SUBMITTED, COMPLETED, or FAILED. See status values for details."
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  15,
                                            "name":  "error_message",
                                            "dataType":  "varchar",
                                            "length":  "2000",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Error details captured on failure. NULL when status is not FAILED. May contain DM API error responses, validation summary, or file system errors depending on which stage failed."
+                                           "description":  "Error details captured on failure. NULL when status is not FAILED. May contain DM API error responses, validation summary, file system errors, or DM-side processing errors from File_Registry.file_err_msg_txt populated by reconciliation when DM reports a terminal failure."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  16,
                                            "name":  "executed_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -424,7 +416,7 @@
                                            "description":  "AD username of the Control Center user who initiated the import. Captured from the authenticated session at import start."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  17,
                                            "name":  "started_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -433,15 +425,105 @@
                                            "description":  "When the import process was initiated by the user."
                                        },
                                        {
-                                           "ordinal":  20,
+                                           "ordinal":  18,
                                            "name":  "completed_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "When the import reached a terminal status (COMPLETED or FAILED). NULL while the import is in progress."
+                                           "description":  "When the import reached a terminal status (COMPLETED or FAILED). Sourced from File_Registry.upsrt_dttm when reconciliation advances SUBMITTED to a terminal state. Set to GETDATE() on xFACts-side FAILED transitions. NULL while the import is in progress."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "file_registry_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "File registry ID returned by the DM REST API after successful file registration (POST /fileregistry). NULL until the REGISTERED stage. Used as the path parameter for the import trigger call."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "file_registry_status_code",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM File_Registry.file_stts_cd at the time of reconciliation write-back. Terminal values: 5 = PROCESSED, 6 = FAILED, 7 = CANCELED, 8 = PARTIALLY_PROCESSED. NULL until reconciliation captures a terminal state. Stored alongside file_registry_status (the string form) for operational convenience."
                                        },
                                        {
                                            "ordinal":  21,
+                                           "name":  "file_registry_status",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM terminal status string captured by reconciliation. Values: PROCESSED, PARTIALLY_PROCESSED, FAILED, CANCELED, ORPHANED. ORPHANED is not a DM code — reconciliation sets it when File_Registry returns no row after repeated attempts, typically after a lower-environment refresh removed the DM-side record. NULL until reconciliation captures a terminal state."
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "total_record_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total record count reported by DM (file_rgstry_dtl.file_rgstry_dtl_rec_ttl_cnt). Populated by reconciliation after DM processes the file. Distinct from row_count, which captures the uploaded file\u0027s data row count at validation time."
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "staging_success_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records successfully staged in DM during the first phase of BDL processing. Populated by reconciliation from the Dm_staging_success_count custom detail on file_rgstry_cstm_dtl."
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "staging_failed_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records that failed staging validation in DM. Populated by reconciliation from the Dm_staging_failed_count custom detail on file_rgstry_cstm_dtl. Non-zero values indicate data quality issues that prevented staging even though the file itself was syntactically valid."
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "import_processed_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total records DM attempted to import (equal to import_success_count + import_failed_count). Populated by reconciliation from the Dm_import_processed_count custom detail on file_rgstry_cstm_dtl."
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "import_success_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records successfully imported by DM into the target entity tables. Populated by reconciliation from the Dm_import_success_count custom detail on file_rgstry_cstm_dtl. Primary indicator of import success alongside file_registry_status."
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "import_failed_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Records that failed during the DM import phase (post-staging). Populated by reconciliation from the Dm_import_failed_count custom detail on file_rgstry_cstm_dtl. Non-zero values combined with PARTIALLY_PROCESSED status indicate rows that staged cleanly but failed during commit to the target tables."
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "is_complete",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Completion flag driving reconciliation eligibility. 0 = active (reconciliation will attempt DM lookup on next history page load). 1 = terminal (reconciliation skips this row entirely). Set to 1 by reconciliation when DM reports any terminal file_stts_cd, when a row is flagged ORPHANED, or at xFACts-side FAILED transitions. Backed by filtered index IX_BDL_ImportLog_reconcile for efficient reconcile queries."
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "last_polled_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Timestamp of the most recent reconciliation attempt against DM File_Registry for this row. Updated every time the row is queried regardless of whether a terminal state was captured. Used by the history UI to display \"last checked\" timing and by the reconciliation helper to detect rows that have gone unresolved for extended periods."
+                                       },
+                                       {
+                                           "ordinal":  30,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -450,7 +532,7 @@
                                            "description":  "When the log row was created."
                                        },
                                        {
-                                           "ordinal":  22,
+                                           "ordinal":  31,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -486,6 +568,15 @@
                                            "isUniqueConstraint":  false,
                                            "keyColumns":  "executed_by, started_dttm",
                                            "includedColumns":  "entity_type, environment, status"
+                                       },
+                                       {
+                                           "name":  "IX_BDL_ImportLog_reconcile",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "is_complete",
+                                           "includedColumns":  "file_registry_id, environment, status, last_polled_dttm, started_dttm"
                                        },
                                        {
                                            "name":  "IX_BDL_ImportLog_status",
@@ -524,13 +615,18 @@
                                            },
                                            {
                                                "topic":  "DM Import Status Confirmation",
-                                               "note":  "The SUBMITTED to COMPLETED transition reflects DM confirming successful processing. DM updates the file registry status to complete when the import finishes. The mechanism for checking this status (polling, callback, or manual confirmation) is determined by the import workflow implementation.",
+                                               "note":  "The SUBMITTED to COMPLETED/FAILED transition is driven by on-demand reconciliation, not a scheduled collector. The /api/bdl-import/history endpoint invokes Invoke-BDLImportLogReconcile in xFACts-Helpers.psm1, which groups non-terminal rows (is_complete = 0) by environment, resolves the target db_instance from Tools.EnvironmentConfig, and issues one batched query per environment against dbo.File_Registry using the stored file_registry_id. Terminal File_Registry status codes (5 = PROCESSED, 6 = FAILED, 7 = CANCELED, 8 = PARTIALLY_PROCESSED) drive the write-back — status is advanced to COMPLETED or FAILED, file_registry_status captures DM\u0027s detailed vocabulary, and record counts are sourced from file_rgstry_cstm_dtl Dm_* metrics. Rows that cannot be located in File_Registry after repeated lookups are flagged ORPHANED, typical after environment refreshes. is_complete = 1 stops further reconciliation attempts on terminal or orphaned rows. Frontend polling (GlobalConfig-driven interval) drives repeated reconciliation while a user has the history panel open.",
                                                "sortOrder":  3
                                            },
                                            {
                                                "topic":  "AR Log Companion Pattern",
                                                "note":  "When a Jira ticket is provided during import execution, the system generates a single consolidated CONSUMER_ACCOUNT_AR_LOG BDL file after all primary entity imports complete. This file creates a clerical comment (CC/CC action/result codes) on each imported record linking it back to the ticket, with the AR message referencing all entity types in the batch (e.g., \"JIRA-123: PHONE, CONSUMER_TAG update via BDL Import\"). This replaces the earlier per-entity AR log pattern with a single companion file per batch execution. The AR log is built from the first successful entity\u0027s staging table (identifiers are consistent across aligned entities). parent_log_ids stores a comma-separated list of all primary import log_id values the AR log covers. On the DM side, the AR log file has its own file_registry_id and processes through the BDL pipeline independently. AR log failure does not roll back primary imports.",
                                                "sortOrder":  4
+                                           },
+                                           {
+                                               "topic":  "DM Reconciliation Pattern",
+                                               "note":  "Reconciliation is driven on demand by the /api/bdl-import/history endpoint — there is no scheduled collector dedicated to this table. When the history endpoint is called, Invoke-BDLImportLogReconcile groups rows where is_complete = 0 by environment, resolves the target db_instance from Tools.EnvironmentConfig, and issues a single batched query per environment against dbo.File_Registry. This spans TEST, STAGE, and PROD — a deliberate choice to keep manual import tracking cross-environment without creating a dependency on the BatchOps BDL collector (which runs PROD-only). Frontend polling drives repeated reconciliation while a user has the page open; the GlobalConfig setting bdl_history_poll_seconds controls the poll interval. Terminal rows (is_complete = 1) are filtered out by the reconcile query itself, so load stays proportional to actively in-flight imports. Orphan handling covers the case where a lower-environment refresh removes DM-side File_Registry rows — after repeated lookup failures, the row is flagged ORPHANED and is_complete is set to 1 to stop further attempts.",
+                                               "sortOrder":  5
                                            }
                                        ],
                        "statusValues":  [
@@ -539,6 +635,18 @@
                                                 "value":  "VALIDATING",
                                                 "meaning":  "Import initiated. Uploaded file is being parsed and data validation checks are running against the column mapping.",
                                                 "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "file_registry_status",
+                                                "value":  "PROCESSED",
+                                                "meaning":  "DM File_Registry.file_stts_cd = 5. All records processed successfully. Paired with status = COMPLETED. Record counts: import_success_count should match total_record_count with import_failed_count = 0.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "file_registry_status",
+                                                "value":  "PARTIALLY_PROCESSED",
+                                                "meaning":  "DM File_Registry.file_stts_cd = 8. Some records processed, others failed during import. Paired with status = COMPLETED. import_failed_count is non-zero; check import_success_count and import_failed_count for the split.",
+                                                "sortOrder":  2
                                             },
                                             {
                                                 "column":  "status",
@@ -553,21 +661,39 @@
                                                 "sortOrder":  3
                                             },
                                             {
+                                                "column":  "file_registry_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "DM File_Registry.file_stts_cd = 6. Processing failed before completion. Paired with status = FAILED. error_message populated from File_Registry.file_err_msg_txt.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "file_registry_status",
+                                                "value":  "CANCELED",
+                                                "meaning":  "DM File_Registry.file_stts_cd = 7. Processing was canceled. Paired with status = FAILED. Rare in practice — canceled imports typically result from manual DM-side intervention.",
+                                                "sortOrder":  4
+                                            },
+                                            {
                                                 "column":  "status",
                                                 "value":  "SUBMITTED",
-                                                "meaning":  "BDL import triggered via POST /fileregistry/{id}/bdlimport. Awaiting DM processing confirmation.",
+                                                "meaning":  "BDL import triggered via POST /fileregistry/{id}/bdlimport. Transitional state — file handed off to DM, awaiting reconciliation to a terminal state. Reconciliation advances SUBMITTED to COMPLETED or FAILED based on File_Registry.file_stts_cd.",
                                                 "sortOrder":  4
                                             },
                                             {
                                                 "column":  "status",
                                                 "value":  "COMPLETED",
-                                                "meaning":  "DM confirmed successful import processing.",
+                                                "meaning":  "DM reported terminal success via File_Registry.file_stts_cd (5 = PROCESSED or 8 = PARTIALLY_PROCESSED). Set by reconciliation along with file_registry_status, record counts, and completed_dttm.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "file_registry_status",
+                                                "value":  "ORPHANED",
+                                                "meaning":  "Not a DM code. Set by reconciliation when dbo.File_Registry returns no row for the stored file_registry_id across repeated lookup attempts. Typically occurs after a lower-environment refresh removed DM-side records, or when file_registry_id was never populated due to registration failure. is_complete is set to 1 to stop further reconciliation attempts.",
                                                 "sortOrder":  5
                                             },
                                             {
                                                 "column":  "status",
                                                 "value":  "FAILED",
-                                                "meaning":  "Import failed at any stage. error_message contains details. A retry requires a new import with a new filename.",
+                                                "meaning":  "Import failed at any stage. xFACts-side validation, registration, or submission failures set this directly. Reconciliation also sets this when DM reports File_Registry.file_stts_cd 6 = FAILED or 7 = CANCELED — file_registry_status captures which. error_message contains details. A retry requires a new import with a new filename.",
                                                 "sortOrder":  6
                                             }
                                         ],
@@ -589,6 +715,12 @@
                                            "description":  "Shows import counts and outcomes per user for auditing.",
                                            "sql":  "SELECT executed_by, environment, entity_type,\r\n    COUNT(*) AS total_imports,\r\n    SUM(CASE WHEN status = \u0027COMPLETED\u0027 THEN 1 ELSE 0 END) AS completed,\r\n    SUM(CASE WHEN status = \u0027FAILED\u0027 THEN 1 ELSE 0 END) AS failed\r\nFROM Tools.BDL_ImportLog\r\nGROUP BY executed_by, environment, entity_type\r\nORDER BY executed_by, environment;",
                                            "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "In-flight imports awaiting reconciliation",
+                                           "description":  "Shows SUBMITTED imports that have not yet been reconciled to a terminal state. Useful for operational troubleshooting when the BDL Import history page shows persistent active rows.",
+                                           "sql":  "SELECT log_id, environment, entity_type, source_filename,\r\n    executed_by, started_dttm, last_polled_dttm,\r\n    DATEDIFF(MINUTE, started_dttm, GETDATE()) AS minutes_since_start\r\nFROM Tools.BDL_ImportLog\r\nWHERE is_complete = 0\r\n    AND status = \u0027SUBMITTED\u0027\r\nORDER BY started_dttm DESC;",
+                                           "sortOrder":  4
                                        }
                                    ],
                        "relationshipNotes":  [
