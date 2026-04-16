@@ -318,6 +318,184 @@
                                    ]
                    },
                    {
+                       "name":  "ClientHierarchy",
+                       "description":  "Complete flattened DM creditor hierarchy providing single-lookup resolution from any creditor to its direct parent group and ultimate top-level parent. Rebuilt daily by Sync-ClientHierarchy.ps1 using a recursive CTE against crs5_oltp creditor and creditor group tables. Standalone creditors (crdtr_grp_id = 1) self-reference — their parent and top parent fields point to themselves. Includes all creditors regardless of transaction history or active status.",
+                       "module":  "dbo",
+                       "category":  "Shared Infrastructure",
+                       "dataFlow":  "Sync-ClientHierarchy.ps1 rebuilds the entire table daily via MERGE, reading from crs5_oltp.dbo.crdtr and crs5_oltp.dbo.crdtr_grp on the AG. The recursive CTE resolves the full creditor group hierarchy in a single pass. The B2B module uses this table to resolve Integration CREDITOR_NAME values (CE/CB codes) to the DM client hierarchy for crosswalk and grouping operations.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "creditor_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "DM creditor identifier (crdtr_id from crs5_oltp.dbo.crdtr). Primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "creditor_key",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "DM creditor short name (crdtr_shrt_nm) — the CE/CB code used as the crosswalk key to B2B CREDITOR_NAME."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "creditor_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "DM creditor display name (crdtr_nm)."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "parent_group_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Direct parent creditor group identifier. Self-references creditor_id for standalone creditors (crdtr_grp_id = 1)."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "parent_group_key",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Direct parent group short name. Self-references creditor_key for standalone creditors."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "parent_group_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Direct parent group display name. Self-references creditor_name for standalone creditors."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "top_parent_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Highest ancestor creditor group identifier resolved via recursive CTE. Self-references creditor_id for standalone creditors."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "top_parent_key",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Highest ancestor group short name. Self-references creditor_key for standalone creditors."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "top_parent_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Highest ancestor group display name. Self-references creditor_name for standalone creditors."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Creditor active status derived from crdtr_stts_cd = 1 in crs5_oltp."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "parent_group_is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Direct parent group active status derived from crdtr_grp_sft_dlt_flg in crs5_oltp (N = active, Y = soft-deleted). For standalone creditors (self-referencing), mirrors the creditor is_active flag. Enables detection of active creditors assigned to inactive groups."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "top_parent_is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Top-level parent group active status derived from crdtr_grp_sft_dlt_flg at the highest ancestor level. For standalone creditors (self-referencing), mirrors the creditor is_active flag. Combined with parent_group_is_active and is_active, enables full hierarchy health assessment."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "last_refreshed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Timestamp of the most recent sync cycle that wrote or confirmed this row."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_ClientHierarchy",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "creditor_id"
+                                       },
+                                       {
+                                           "name":  "IX_ClientHierarchy_creditor_key",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "creditor_key",
+                                           "includedColumns":  "creditor_name, top_parent_id, top_parent_key, top_parent_name"
+                                       },
+                                       {
+                                           "name":  "IX_ClientHierarchy_top_parent_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "top_parent_id",
+                                           "includedColumns":  "creditor_key, creditor_name, is_active"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Standalone Creditor Self-Reference",
+                                               "note":  "Creditors assigned to crdtr_grp_id = 1 (the internal default group) are standalone — they have no meaningful group membership. Rather than NULLing the parent and top parent columns, these creditors self-reference: their parent_group and top_parent fields point back to their own creditor_id, creditor_key, and creditor_name. This avoids NULL handling in every consumer query and allows consistent GROUP BY top_parent_name behavior.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Group 1 Exclusion",
+                                               "note":  "The CTE anchor excludes crdtr_grp_id = 1 (DefGrp / Internal Creditor Group) to prevent duplicate path resolution. Group 1 is a system default, not a real parent. Including it would create false hierarchy paths for creditors that happen to be in the default group.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Full Population vs Activity-Filtered",
+                                               "note":  "This table includes ALL creditors regardless of transaction history or recency. This differs from the legacy Jira_ClientTblRanked table which filters to 13 months of activity. Full population ensures the crosswalk works for any creditor the B2B system references, even inactive or dormant ones.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Sync-ClientHierarchy.ps1",
+                                                     "note":  "Rebuild script that performs the full MERGE. Reads crs5_oltp.dbo.crdtr and crs5_oltp.dbo.crdtr_grp via the AG listener. Registered in ProcessRegistry for daily execution.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "B2B.ProcessConfig",
+                                                     "note":  "The B2B module will use ClientHierarchy to resolve Integration CREDITOR_NAME (CE/CB codes) from CLIENTS_ACCTS to the full DM hierarchy for client grouping and display.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
                        "name":  "Component_Registry",
                        "description":  "Catalog of logical components in the xFACts platform. Each component groups related database objects, scripts, and Control Center files into a single versioned unit. Component_Registry defines what groupings exist; Object_Registry holds the individual object membership; System_Metadata tracks version history against these components.",
                        "module":  "dbo",
@@ -4150,7 +4328,47 @@
 
               ],
     "scripts":  [
-
+                    {
+                        "name":  "Sync-ClientHierarchy.ps1",
+                        "description":  "Rebuilds dbo.ClientHierarchy from crs5_oltp creditor and creditor group tables using a recursive CTE to resolve the full group hierarchy in a single pass. Uses MERGE to insert new creditors, update changed metadata, and delete creditors removed from the source. The CTE walks all groups regardless of soft-delete status, capturing the hierarchy as it exists in DM. Active flags at creditor, parent group, and top parent levels enable discrepancy detection.",
+                        "module":  "dbo",
+                        "category":  "Shared Infrastructure",
+                        "dataFlow":  "Reads crs5_oltp.dbo.crdtr and crs5_oltp.dbo.crdtr_grp on AVG-PROD-LSNR via a recursive CTE that resolves the entire creditor group hierarchy. Writes to dbo.ClientHierarchy via MERGE (insert new, update changed, delete removed). After the MERGE, stamps last_refreshed_dttm on unchanged rows so the timestamp reflects the sync cycle. Registered in ProcessRegistry for daily orchestrator execution.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Full Hierarchy Walk",
+                                                "note":  "The CTE does not filter on crdtr_grp_sft_dlt_flg. Soft-deleted groups are walked the same as active groups to capture the real DM hierarchy. Active flags at each level (creditor, parent group, top parent) let consumers identify discrepancies without going back to source tables.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Unresolved Group Safety Net",
+                                                "note":  "Creditors whose group chain cannot be resolved through the CTE (e.g., circular references, groups pointing to non-existent parents) fall back to self-reference, the same treatment as standalone creditors in Group 1. This prevents NULL failures in the MERGE while still including the creditor in the table.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Timestamp Touch Pass",
+                                                "note":  "The MERGE only updates rows where column values actually changed. Rows that matched but had no differences are not touched, leaving their last_refreshed_dttm stale. A follow-up UPDATE stamps these rows so last_refreshed_dttm always reflects that the sync ran, enabling staleness detection.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "dbo.ClientHierarchy",
+                                                      "note":  "Target table rebuilt by this script via MERGE. The script is the sole writer to this table.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "crs5_oltp.dbo.crdtr",
+                                                      "note":  "Source table for creditor records. All creditors are included regardless of status.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "crs5_oltp.dbo.crdtr_grp",
+                                                      "note":  "Source table for creditor group hierarchy. The recursive CTE walks this table from top-level groups down to leaf groups. All groups are included regardless of soft-delete flag.",
+                                                      "sortOrder":  3
+                                                  }
+                                              ]
+                    }
                 ],
     "xeSessions":  [
 
