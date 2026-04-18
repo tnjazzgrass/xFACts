@@ -1,0 +1,594 @@
+{
+    "tables":  [
+                   {
+                       "name":  "INT_ClientRegistry",
+                       "description":  "Local mirror of the client roster maintained in Integration.etl.tbl_B2B_CLIENTS_MN on AVG-PROD-LSNR. Captures the four columns present in the source table — client_id, client_name, is_active, is_automated — synced daily so that B2B module queries can resolve client names and activity flags without cross-server joins. This registry serves as one side of the B2B-to-DM bridge: client_id joins to B2B.ClientCrosswalk to reach DM creditors via dbo.ClientHierarchy. Active/automated flags are normalized from the source INT columns (which use 0/1 values as Y/N switches) to BIT for consistency with xFACts conventions. Integration appears to maintain CLIENTS_MN manually, so rows are largely static — the last_synced_dttm column tracks when each row was confirmed present during the most recent sync.",
+                       "module":  "B2B",
+                       "category":  "B2B",
+                       "dataFlow":  "Sync-B2BConfig.ps1 runs daily on the orchestrator and queries Integration.etl.tbl_B2B_CLIENTS_MN on AVG-PROD-LSNR. The four source columns (CLIENT_ID, CLIENT_NAME, ACTIVE_FLAG, AUTOMATED) are read and MERGEd into this table, with ACTIVE_FLAG and AUTOMATED normalized from 0/1 INT values to BIT. New clients are inserted, changed names or flags trigger updates, and last_synced_dttm is refreshed on every observed row. Rows that disappear from the source are not automatically deleted — they remain available for name resolution on historical workflow records. The Collect-B2BWorkflow.ps1 script does not read this table directly; instead, the Control Center B2B page and Monitor-B2B.ps1 join to it when they need to resolve client IDs surfaced via the crosswalk to displayable names and activity flags.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "client_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Integration client identifier from tbl_B2B_CLIENTS_MN.CLIENT_ID. Primary key. Matched as BIGINT to the source type to avoid conversion errors during sync. Used as the join key to B2B.ClientCrosswalk for resolving clients to their associated DM creditors."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "client_name",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Client display name from tbl_B2B_CLIENTS_MN.CLIENT_NAME. Used for all client-facing display in the Control Center and in alerts. Truncation is not expected at VARCHAR(128) but would trigger a sync error if it occurred, surfacing the need to widen."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether the client is currently active on the Integration side. Normalized to BIT from the source INT column (tbl_B2B_CLIENTS_MN.ACTIVE_FLAG) which carries 0/1 values used as a Y/N switch. Inactive clients are retained in the registry so that historical workflow rows referencing them can still resolve a name, but filter-by-active views in the UI would exclude them."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "is_automated",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether the client is processed through automated pipelines. Normalized to BIT from the source INT column (tbl_B2B_CLIENTS_MN.AUTOMATED). Useful for distinguishing expected-automated flows from manual or ad-hoc flows when evaluating schedule adherence alerts."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "last_synced_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "Timestamp of the most recent sync cycle that observed this row in the source table. Defaults to GETDATE() on insert and is updated on every sync pass. Rows whose last_synced_dttm falls behind the most recent sync run indicate clients that have disappeared from the source — a rare event but one worth surfacing for investigation."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_INT_ClientRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "client_id"
+                                       },
+                                       {
+                                           "name":  "IX_INT_ClientRegistry_client_name",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "client_name",
+                                           "includedColumns":  "is_active, is_automated"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Not Redundant with ClientCrosswalk",
+                                               "note":  "At first glance the crosswalk and the client registry may appear to overlap since both reference client_id. They serve different purposes. The registry is a roster — it answers \"what is client N\" by providing name and activity flags, and includes every client in Integration regardless of whether that client has ever been observed touching DM data. The crosswalk is a bridge — it answers \"which DM creditors does client N touch\" based on observational evidence from record-level tables like CLIENTS_ACCTS. A client can exist in the registry with no crosswalk entries (never sent a file), and every crosswalk entry has a row in the registry by definition. Keeping them separate preserves that distinction and avoids putting observational metadata onto an authoritative roster.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Type Matching on client_id",
+                                               "note":  "The client_id column is BIGINT rather than INT to match the Integration source exactly. Previous experience with narrowing BIGINT sources to INT targets has produced conversion errors during sync when unexpected values appeared. BIGINT is marginally more storage but eliminates a class of avoidable failures.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Local Mirror vs Live Query",
+                                               "note":  "Integration is available on the same AG listener as xFACts, so this table technically could have been replaced with a query against Integration directly at each point of use. A local mirror was chosen because client name resolution happens on every B2B Control Center page render and on every alert generation. Having the roster local keeps that path fast and makes xFACts resilient to Integration availability for display purposes. The cost is 718 rows refreshed daily — trivial storage, trivial sync time.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Flag Normalization to BIT",
+                                               "note":  "The source columns ACTIVE_FLAG and AUTOMATED are INT in Integration but carry only 0 and 1 values, effectively used as boolean switches. xFACts convention for boolean columns is BIT with an is_ prefix (is_active, is_automated). The sync MERGE normalizes the source INT to BIT via a simple CASE; any unexpected non-0-non-1 value would fail the BIT cast and surface as a sync error, which is the desired behavior — we would want to know if Integration started using 2 or 3 for something.",
+                                               "sortOrder":  4
+                                           },
+                                           {
+                                               "topic":  "Disappeared Rows Not Deleted",
+                                               "note":  "When Sync-B2BConfig.ps1 runs, rows in the source that previously existed but are no longer there are not deleted from this table. Historical workflow records and crosswalk entries reference client_id values; hard-deleting a client would leave those references unable to resolve to a name. The last_synced_dttm column instead serves as the staleness indicator — if a row has not been refreshed in the last cycle, it has disappeared from the source and should be investigated, but the row itself remains for referential purposes.",
+                                               "sortOrder":  5
+                                           }
+                                       ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Sync-B2BConfig.ps1",
+                                                     "note":  "The exclusive writer to this table. Runs daily under the orchestrator, reads Integration.etl.tbl_B2B_CLIENTS_MN, and MERGEs changes into this registry. Also maintains B2B.INT_ScheduleConfig in the same script.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "ClientCrosswalk",
+                                                     "note":  "client_id is the join key from this registry to B2B.ClientCrosswalk. The crosswalk is the mapping layer that translates B2B client_id values to DM creditor_key values via observational evidence from Integration record-level tables. Together, the registry and crosswalk form the complete B2B-side identity resolution layer.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "SI_ProcessBaseline",
+                       "description":  "Per-process execution fingerprint used by the B2B collector to detect activity. Each row captures the \"empty run\" baseline for a Scheduler_FA_* workflow — the consistent child workflow count and total child step count that appear when the process runs and finds nothing to do. Activity detection compares the actual total_child_steps of each execution against baseline_total_steps; runs that exceed the baseline processed data. Baselines are recalculated by the collector on every cycle, sampling recent executions to find the most common (child_count, total_child_steps) combination per service_name. Frequent recalculation compensates for b2bi\u0027s aggressive ~2-3 day purge window, which keeps the baseline responsive to the limited sample available at any given time.",
+                       "module":  "B2B",
+                       "category":  "B2B",
+                       "dataFlow":  "Collect-B2BWorkflow.ps1 recalculates baselines at the start of every cycle by sampling Scheduler_FA_* parent workflows from the last two days of b2bi.dbo.WORKFLOW_CONTEXT on FA-INT-DBP. The sample query groups each service_name\u0027s executions by (child_count, total_child_steps) and selects the most common combination as the baseline fingerprint. Results are MERGEd into this table by service_name — new processes are inserted, existing rows are updated, and rows for processes that no longer appear in the sample window are retained (b2bi\u0027s short retention window would otherwise cause baselines to be deleted whenever a process goes idle). The collector then reads this table for each parent workflow it processes, joining by service_name to determine whether the current execution\u0027s total_child_steps exceeds baseline_total_steps. The result drives the had_activity flag on B2B.SI_WorkflowTracking. The future Monitor-B2B.ps1 reads baseline_occurrences and total_executions_sampled to flag processes with weak confidence baselines. The Control Center B2B page will surface baselines alongside workflow executions for investigation views.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "service_name",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Sterling workflow process name, sourced from b2bi.dbo.WORKFLOW_CONTEXT.SERVICE_NAME at STEP_ID = 0. All tracked processes use the Scheduler_FA_* naming convention. Acts as the primary key — one baseline per distinct process."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "process_direction",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Data flow direction inferred from the service name pattern. FROM_* processes are INBOUND (partner-to-FAC), TO_* processes are OUTBOUND (FAC-to-partner), all other Scheduler_FA_* processes are classified INTERNAL. Used by the collector to determine the activity detection approach — INBOUND relies on step count deviation from baseline, OUTBOUND relies on SFTPClientPut presence."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "baseline_child_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Most common child workflow count across sampled executions for this process. Children are spawned via InvokeBusinessProcessService and tracked through b2bi.dbo.WORKFLOW_LINKAGE. The fingerprint for an \"empty run\" — the count that consistently appears when the process finds nothing to process."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "baseline_total_steps",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Most common total child step count across sampled executions for this process. Calculated as the sum of sub-step rows (STEP_ID \u003e 0) across all children linked to the parent workflow via WORKFLOW_LINKAGE. The primary activity detection metric — executions where total_child_steps exceeds this baseline processed data."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "baseline_occurrences",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Number of sampled executions that matched the baseline fingerprint exactly (same child_count + same total_child_steps). Confidence indicator — a baseline with 46 of 48 matching occurrences is high-confidence; one with 10 of 40 indicates the process may not have a clean \"empty\" state or is still being characterized."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "total_executions_sampled",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Total number of executions in the b2bi sample window used to compute this baseline. Serves as the denominator for confidence math. Low sample counts typically reflect processes that run infrequently combined with b2bi\u0027s aggressive purge retention."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "max_observed_steps",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Highest total_child_steps value seen across the sample window. Useful for outlier detection by the Monitor script — a current run significantly above this watermark may indicate an exceptional event (very large file, unusual condition) worth surfacing."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "last_calculated_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this baseline row was last recalculated by the collector. Updated on every collector cycle as the baseline refresh is not gated."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_SI_ProcessBaseline",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "service_name"
+                                       },
+                                       {
+                                           "name":  "IX_SI_ProcessBaseline_process_direction",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "process_direction",
+                                           "includedColumns":  "baseline_total_steps, baseline_occurrences, total_executions_sampled"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_SI_ProcessBaseline_baseline_child_count",
+                                                    "definition":  "([baseline_child_count]\u003e=(0))"
+                                                },
+                                                {
+                                                    "name":  "CK_SI_ProcessBaseline_baseline_occurrences",
+                                                    "definition":  "([baseline_occurrences]\u003e=(0))"
+                                                },
+                                                {
+                                                    "name":  "CK_SI_ProcessBaseline_baseline_total_steps",
+                                                    "definition":  "([baseline_total_steps]\u003e=(0))"
+                                                },
+                                                {
+                                                    "name":  "CK_SI_ProcessBaseline_max_observed_steps",
+                                                    "definition":  "([max_observed_steps]\u003e=(0))"
+                                                },
+                                                {
+                                                    "name":  "CK_SI_ProcessBaseline_process_direction",
+                                                    "definition":  "([process_direction]=\u0027INTERNAL\u0027 OR [process_direction]=\u0027OUTBOUND\u0027 OR [process_direction]=\u0027INBOUND\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_SI_ProcessBaseline_total_executions_sampled",
+                                                    "definition":  "([total_executions_sampled]\u003e=(0))"
+                                                }
+                                            ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Baseline Refresh on Every Cycle",
+                                               "note":  "Baselines are recalculated on every collector cycle with no time-based gating. This was a deliberate choice in response to b2bi\u0027s aggressive ~2-3 day purge retention. A given process may only have one or two recent executions visible at any moment, and gating refreshes to once per N hours would risk missing the brief window where newly-observed executions are available to refine the baseline. The baseline query is lightweight (grouped aggregates over recent Scheduler_FA_* parents and their linked children) and runs in well under a second, making the per-cycle overhead negligible compared to the benefit of continuous baseline accuracy.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Inbound vs Outbound Detection Semantics",
+                                               "note":  "The process_direction column exists to let the collector apply the right activity detection logic per row. INBOUND processes run frequently and usually find nothing — their baseline represents the \"no file to pull\" state, and any execution exceeding the baseline step count is treated as real activity. OUTBOUND processes run on a schedule and are expected to deliver data every time — there is no meaningful \"empty baseline\" to compare against, so activity detection falls to scanning child workflow steps for SFTPClientPut as proof of file delivery. The baseline row still exists for OUTBOUND processes (useful for volume outlier detection via max_observed_steps), but the collector branches on direction when deciding how to interpret it.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "No Surrogate Key",
+                                               "note":  "service_name is the natural primary key and the correlation key used throughout the B2B module. A surrogate identity column was considered and rejected — one baseline per process is a clean one-to-one relationship with no need for synthetic identifiers. The service_name is stable, already indexed as the PK, and used directly in joins by the collector and Monitor script.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "process_direction",
+                                                "value":  "INBOUND",
+                                                "meaning":  "Partner-to-FAC data flow. Service names follow the Scheduler_FA_FROM_* pattern. These processes typically run frequently (hourly or more), usually find nothing to pull, and are detected as active when total_child_steps exceeds the baseline — indicating a file was found and processed.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "process_direction",
+                                                "value":  "OUTBOUND",
+                                                "meaning":  "FAC-to-partner data flow. Service names follow the Scheduler_FA_TO_* pattern. These processes typically run once daily and are expected to deliver data every execution. Activity detection relies on SFTPClientPut presence in child workflow steps rather than baseline deviation.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "process_direction",
+                                                "value":  "INTERNAL",
+                                                "meaning":  "Internal or utility processes that do not fit the FROM_/TO_ pattern. Includes maintenance and housekeeping processes (e.g., Scheduler_FA_DM_ENOTICE). Baselines are still captured for outlier detection, but these processes are treated as informational in the Monitor script rather than triggering direction-specific alerting.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Collect-B2BWorkflow.ps1",
+                                                     "note":  "The B2B collector both maintains and consumes this table. On every cycle it recalculates baseline fingerprints from recent b2bi.dbo.WORKFLOW_CONTEXT data and MERGEs into this table. It then reads the baseline for each Scheduler_FA_* parent workflow it processes, using baseline_total_steps to set the had_activity flag on B2B.SI_WorkflowTracking rows.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "SI_WorkflowTracking",
+                       "description":  "Execution record for Sterling parent workflows. Captures one row per Scheduler_FA_* parent workflow (STEP_ID = 0) from b2bi.dbo.WORKFLOW_CONTEXT on FA-INT-DBP. Individual sub-step and child workflow rows are not persisted — instead, their metrics are rolled up into aggregate columns on the parent row (total child count, total step count across children, SFTP and translation indicators). The had_activity flag is set by the collector using direction-aware logic: inbound and internal processes compare total_child_steps against the baseline in B2B.SI_ProcessBaseline, outbound processes use the presence of SFTPClientPut in child steps. Workflow_id is the primary key and serves as the correlation key to Integration.etl.tbl_B2B_CLIENTS_BATCH_STATUS.RUN_ID for enrichment queries. All rows are retained indefinitely; archival will be introduced if volume grows large enough to warrant it.",
+                       "module":  "B2B",
+                       "category":  "B2B",
+                       "dataFlow":  "Collect-B2BWorkflow.ps1 runs on a short cycle against b2bi on FA-INT-DBP. For each new or in-flight Scheduler_FA_* parent workflow, the collector reads the parent row from WORKFLOW_CONTEXT (STEP_ID = 0), traverses WORKFLOW_LINKAGE to identify spawned children, and aggregates sub-step rows from each child to produce the rollup metrics. The SFTP and translation flags are set by scanning child step service names for SFTPClientGet, SFTPClientPut, and Translation matches. B2B.SI_ProcessBaseline is read by service_name to compare actual total_child_steps against baseline_total_steps for inbound/internal activity detection; outbound detection uses has_sftp_put directly. Results are MERGEd into this table by workflow_id — new workflows inserted, in-flight workflows (NULL end_time) updated as they complete. The future Monitor-B2B.ps1 reads incomplete and recently-completed rows to evaluate alerting conditions — missing scheduled processes, parent-level failures, and unexpected has_sftp_put = 0 for outbound processes. The Control Center B2B page queries this table for process status overview, failure feeds, file transfer activity, and volume trends.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "workflow_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Unique parent workflow identifier from b2bi.dbo.WORKFLOW_CONTEXT.WORKFLOW_ID (STEP_ID = 0). Serves as primary key and correlation key to Integration.etl.tbl_B2B_CLIENTS_BATCH_STATUS.RUN_ID for cross-source enrichment queries. BIGINT sized to accommodate long-term Sterling workflow ID growth."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "workflow_def_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Workflow definition identifier from b2bi WFD_ID. Pairs with workflow_def_version to identify the specific template version executed. Useful for detecting process changes over time by correlating with b2bi.dbo.WFD entries."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "workflow_def_version",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Workflow definition version from b2bi WFD_VERSION. Sterling processes often accumulate multiple template versions over time as Integration team updates definitions. Tracking version per execution enables before/after analysis when behavior changes are suspected."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "service_name",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Process name from b2bi SERVICE_NAME. Always Scheduler_FA_* for monitored processes — the Scheduler_ prefix is added by Sterling at execution time relative to the WFD template name. Used to join to B2B.SI_ProcessBaseline for activity detection lookup."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "status_code",
+                                           "dataType":  "smallint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Execution status code from b2bi BASIC_STATUS. Key values: 0 = Success, 1 = Warning/Soft Error, 10 = SFTP Status (normal), 100 = Process Stopped, 300 = Service Exception, 450 = Service Interrupted, 900 = Unknown. Observed failures historically cluster at the sub-step level rather than parent level; parent-level non-success values are rare and warrant investigation."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "status_message",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Detailed status text from b2bi ADV_STATUS. Supplements status_code with human-readable context when Sterling writes one. Often empty on successful runs."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "start_time",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Parent workflow execution start timestamp from b2bi START_TIME. Indexed as the primary time-series access point for operational queries and Control Center time-range views."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "end_time",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Parent workflow execution end timestamp from b2bi END_TIME. NULL when the workflow was still running at the time of collection — the next cycle will pick up the completed row. Duration is derived as end_time minus start_time at query time rather than stored as a computed column."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "node_executed",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Sterling node that executed the workflow, from b2bi NODEEXECUTED. Useful for infrastructure correlation when troubleshooting node-specific failures or load distribution questions."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "child_workflow_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Number of child workflows spawned via InvokeBusinessProcessService, counted from b2bi.dbo.WORKFLOW_LINKAGE where ROOT_WF_ID = this workflow_id. Always 2 levels deep (parent and children) — no grandchild workflows observed in FA processes. Compared against baseline_child_count in B2B.SI_ProcessBaseline for activity detection."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "total_child_steps",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Sum of sub-step rows (STEP_ID \u003e 0) across all linked child workflows. The primary activity detection metric for inbound and internal processes — when this value exceeds baseline_total_steps for the service_name, the execution processed data. Large deviations indicate high-volume processing."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "max_child_steps",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Largest single-child step count among the linked children. Useful for identifying which child workflow performed the bulk of the work in multi-child executions. Set at collection time from the same WORKFLOW_LINKAGE rollup query that populates total_child_steps."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "has_sftp_get",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Indicates any child workflow contained an SFTPClientGet sub-step, signaling an inbound file retrieval occurred. Primary activity signal for inbound processes when present alongside elevated total_child_steps."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "has_sftp_put",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Indicates any child workflow contained an SFTPClientPut sub-step, signaling an outbound file delivery occurred. The primary activity detection signal for outbound processes — their had_activity flag is driven by this column rather than baseline comparison."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "has_translation",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Indicates any child workflow contained a Translation sub-step, signaling data transformation occurred. Present alongside SFTP operations when Sterling mapped source files to target formats during processing."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "had_activity",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Direction-aware activity flag computed by the collector. For INBOUND and INTERNAL processes, set to 1 when total_child_steps exceeds baseline_total_steps from B2B.SI_ProcessBaseline. For OUTBOUND processes, set to 1 when has_sftp_put = 1 (a file was delivered). Provides a single consistent signal for consumers — the Monitor script and Control Center can ask \"did this run do something?\" without needing to know direction-specific detection rules."
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "collected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "Timestamp when this row was inserted by the B2B collector. Distinct from start_time (when Sterling ran the workflow). Used to identify recently collected rows during in-flight update passes when end_time is NULL."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_SI_WorkflowTracking",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "workflow_id"
+                                       },
+                                       {
+                                           "name":  "IX_SI_WorkflowTracking_had_activity",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "start_time",
+                                           "includedColumns":  "service_name, total_child_steps, has_sftp_put, has_sftp_get"
+                                       },
+                                       {
+                                           "name":  "IX_SI_WorkflowTracking_service_name_start_time",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "service_name, start_time",
+                                           "includedColumns":  "status_code, total_child_steps, had_activity, has_sftp_put, has_sftp_get"
+                                       },
+                                       {
+                                           "name":  "IX_SI_WorkflowTracking_start_time",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "start_time",
+                                           "includedColumns":  "service_name, status_code, had_activity"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_SI_WorkflowTracking_child_workflow_count",
+                                                    "definition":  "([child_workflow_count] IS NULL OR [child_workflow_count]\u003e=(0))"
+                                                },
+                                                {
+                                                    "name":  "CK_SI_WorkflowTracking_max_child_steps",
+                                                    "definition":  "([max_child_steps] IS NULL OR [max_child_steps]\u003e=(0))"
+                                                },
+                                                {
+                                                    "name":  "CK_SI_WorkflowTracking_total_child_steps",
+                                                    "definition":  "([total_child_steps] IS NULL OR [total_child_steps]\u003e=(0))"
+                                                }
+                                            ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Parent Rows Only with Child Rollup",
+                                               "note":  "Sterling workflow executions produce roughly 35 sub-step and child workflow rows for every parent row — roughly 160,000 sub-step rows per day in total versus roughly 4,600 parent rows. Persisting all of them would produce massive row volumes for marginal additional value since the useful signal is aggregate (did children spawn, did they run lots of steps, did any of them perform SFTP or translation operations). This table captures only parent rows with the aggregates rolled up into columns. If specific child workflow detail becomes needed later — for example, per-file tracking from SFTPClientPut rows — a dedicated child-detail table can be added alongside this one rather than denormalizing child detail onto the parent.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Direction-Aware had_activity Flag",
+                                               "note":  "The had_activity flag is set by the collector using different logic per process_direction. Inbound and internal processes use baseline deviation (total_child_steps \u003e baseline_total_steps from B2B.SI_ProcessBaseline) because they run frequently and usually find nothing, so any step count above the \"empty run\" fingerprint indicates processing occurred. Outbound processes use SFTPClientPut presence (has_sftp_put = 1) because they are expected to deliver data on every execution and there is no meaningful \"empty baseline\" to compare against. Encoding direction-aware logic in the collector and exposing a single flag gives consumers a consistent contract — the Monitor script and Control Center queries do not need to branch on direction.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Correlation Key to Integration",
+                                               "note":  "b2bi WORKFLOW_ID equals Integration RUN_ID with full fidelity (confirmed 20-of-20 match rate during discovery). This makes workflow_id the correlation key for enriching parent workflow executions with business data from Integration.etl.tbl_B2B_CLIENTS_BATCH_STATUS and its related tables. Because b2bi (FA-INT-DBP) and Integration (AVG-PROD-LSNR) live on separate servers without linked server connectivity, enrichment queries run in the collector as separate SQL calls rather than a cross-database join — Integration data is fetched by workflow_id and merged in PowerShell before the UPSERT to this table.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "In-Flight Detection via NULL end_time",
+                                               "note":  "Rows with NULL end_time represent workflows still executing at the time of collection. The collector picks these up on subsequent cycles and updates them as they complete. Because Sterling workflow executions are typically short (seconds to minutes) and the collector runs frequently, most rows reach terminal state within one or two cycles. Indefinite retention of NULL end_time rows is not a concern in practice — if a workflow truly never terminates, that is itself an alert condition the Monitor script will surface.",
+                                               "sortOrder":  4
+                                           },
+                                           {
+                                               "topic":  "Conservative Check Constraints",
+                                               "note":  "Only NULL-tolerant \u003e= 0 bounds are enforced on the count columns. Candidate additional constraints — status_code range bound, end_time \u003e= start_time — were considered but deliberately skipped for initial deployment. Sterling is a legacy black box and our understanding of the data it produces is still developing. Constraints can be added via ALTER TABLE as patterns stabilize; restrictive constraints up front risk rejecting legitimate but unexpected data during discovery.",
+                                               "sortOrder":  5
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "0",
+                                                "meaning":  "Success. Normal workflow completion with no errors or warnings. The vast majority of observed parent workflow executions carry this status.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "had_activity",
+                                                "value":  "1",
+                                                "meaning":  "The workflow processed data. For inbound and internal processes: total_child_steps exceeded the baseline in B2B.SI_ProcessBaseline. For outbound processes: a file was delivered (has_sftp_put = 1).",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "had_activity",
+                                                "value":  "0",
+                                                "meaning":  "The workflow ran but did no meaningful work. For inbound and internal processes: total_child_steps matched the baseline fingerprint for an \"empty run.\" For outbound processes: no SFTPClientPut step was found, meaning no file was delivered — which for outbound is an alert condition, not a normal state.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "1",
+                                                "meaning":  "Warning or soft error. Workflow completed but Sterling flagged something worth logging. Rare at parent level — typically seen at sub-step level.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "10",
+                                                "meaning":  "SFTP Status. Normal status code for SFTP-related workflow activity. Not an error — observed alongside successful SFTP file transfer processes.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "100",
+                                                "meaning":  "Process Stopped. Sterling terminated the workflow before normal completion. Observed historically clustering at sub-step level on infrastructure-related events; parent-level occurrence warrants investigation.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "300",
+                                                "meaning":  "Service Exception. A Sterling service encountered an unhandled exception. Observed at sub-step level with adapter services (e.g., AS2LightweightJDBCAdapter) during infrastructure disruption.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "450",
+                                                "meaning":  "Service Interrupted. A Sterling service was interrupted during execution — typically shutdown or resource-related rather than logic error.",
+                                                "sortOrder":  6
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "900",
+                                                "meaning":  "Unknown. Sterling could not determine a specific status. Observed on BUSINESS_PROCESS_MARK entries at identical timestamps to parent success — likely purge service activity rather than real processing failure.",
+                                                "sortOrder":  7
+                                            }
+                                        ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "SI_ProcessBaseline",
+                                                     "note":  "Joined by service_name during collection. The collector reads baseline_total_steps for each parent workflow\u0027s service_name and compares against total_child_steps to set had_activity for inbound and internal processes. No foreign key is enforced because SI_ProcessBaseline rows may lag behind newly-observed processes — a workflow can arrive for a service_name that does not yet have a baseline, in which case had_activity is left NULL until the baseline catches up.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Collect-B2BWorkflow.ps1",
+                                                     "note":  "The B2B collector is the exclusive writer to this table. It inserts new parent workflows, updates in-flight rows as they complete, and populates both the b2bi-sourced columns and the computed had_activity flag. No other process writes to this table.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   }
+               ],
+    "procedures":  [
+
+                   ],
+    "triggers":  [
+
+                 ],
+    "functions":  [
+
+                  ],
+    "views":  [
+
+              ],
+    "scripts":  [
+
+                ],
+    "xeSessions":  [
+
+                   ],
+    "ddlTriggers":  [
+
+                    ]
+}
