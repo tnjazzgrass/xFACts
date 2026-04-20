@@ -72,6 +72,8 @@ The "typical" MAIN execution most people envision: GET_DOCS to pull files, loop 
 
 **Example:** ACADIA NB (WF 7990812) — see `B2B_ProcessAnatomy_NewBusiness.md`
 
+**Variant: PGP-encrypted inbound NB.** Some NB configurations have `PGP_PASSPHRASE` populated, indicating the source sends PGP-encrypted files. In these cases, `FA_CLA_UNPGP` runs inside PREP_SOURCE to decrypt before translation. Observed in DENVER HEALTH NB. Absent from ACADIA NB. This is a per-entity configuration, not a separate execution path — PGP decryption is inline within Path A's PREP_SOURCE phase.
+
 ### Path B: Internal Operation / SP Executor
 MAIN serves as a thin wrapper to execute an Integration stored procedure. Minimal sub-workflow pattern: GET_DOCS (no-op) → POST_TRANSLATION → PREP_COMM_CALL → COMM_CALL (all degenerate).
 
@@ -98,21 +100,50 @@ MAIN does NOT invoke the standard file-processing sub-workflow stack. Instead it
 
 **Example:** ACADIA CMT FILE_DELETION (WF 7992163) — full anatomy pending (`B2B_ProcessAnatomy_FileDeletion.md` planned)
 
-### Possible Path D: Polling Worker (Early Exit)
-We've observed MAIN runs with step counts as low as 16 — BELOW the empty-run skeleton of Path B (49 steps). These runs:
-- Don't invoke any Inline Begin sub-workflows
-- Consist of JDBC adapter queries, wait services, and decision engine calls
-- Appear to "check something, find it not ready, exit cleanly"
+### Path D: File Relay / Passthrough (SFTP_PULL OUTBOUND)
+MAIN performs a two-stage SFTP operation: pulls files from one SFTP endpoint and pushes them to another, with no translation or business logic in between. No FA_CLIENTS_* sub-workflow chain in the standard NB/PMT sense.
 
-Pattern observed in ACADIA EO pipeline parallel workers. Not yet fully understood — included for completeness.
+**Signature:**
+- PROCESS_TYPE = SFTP_PULL
+- COMM_METHOD = OUTBOUND
+- FILE_FILTER populated
+- GET_DOCS_TYPE = SFTP_PULL with GET_DOCS_LOC set
+- PUT_DOCS_TYPE = SFTP_PUSH with PUT_DOCS_LOC set
+- TRANSLATION_MAP empty
+- Processing flags empty (no PREPARE_SOURCE, no WORKERS_COMP, no DUP_CHECK)
+- `SEND_EMPTY_FILES=Y` commonly set (sends the push even if nothing was pulled)
+- Multi-Client Case 1 is common: one MAIN run often carries 2 Client blocks for different file-pattern pairs from the same entity
 
-**Implication for the collector:** not all MAIN runs are "attempting to do the same thing and failing early." Some MAIN runs are intentionally short-lived polling workers. Need to decide whether these count as "a unit of work" in SI_ExecutionTracking.
+**Examples:** COACHELLA VALLEY ANESTHESIA (CLIENT_ID 10745, SEQ_ID 5+6), MSN HEALTHCARE SOLUTION (CLIENT_ID 10734, SEQ_ID 10+11). Both observed failing at 04:00:04 on SSH_DISCONNECT.
+
+**Note on naming:** `PROCESS_TYPE = SFTP_PULL` describes what the process *does* (an SFTP pull operation) rather than a direction. `COMM_METHOD = OUTBOUND` indicates the pulled file's final destination is outbound to another SFTP endpoint.
+
+### Path E: Short-Circuit (Minimal Work)
+MAIN runs that invoke `FA_CLIENTS_GET_DOCS` and `FA_CLIENTS_COMM_CALL` but not the full file-processing stack. Low step counts (16-33 observed) and short durations.
+
+**Example (WF 7999286, ACADIA EO worker on 2026-04-20):**
+- Invoked `FA_CLIENTS_GET_DOCS` at step 9, ended at step 14 (immediate return, likely no files)
+- Invoked `FA_CLIENTS_COMM_CALL` at step 25, ended at step 30
+- 33 total steps, 2.2 second duration
+- No TRANS, no ACCOUNTS_LOAD, no FILE_MERGE, no DUP_CHECK, etc.
+
+**Interpretation (tentative):** MAIN entered its processing flow, attempted a GET_DOCS for its assigned Client block, found nothing to retrieve, and proceeded directly to a degenerate COMM_CALL before exiting. Not a pure "poll and exit" pattern as originally hypothesized — the worker did enter processing logic, but had nothing to process.
+
+**Distinction from Path B (SP Executor):** Path B has POST_TRANSLATION in its flow and CLIENT_ID=328. Path E has the standard entity CLIENT_ID and no POST_TRANSLATION call.
+
+**Implication for the collector:** these are legitimate "no work happened" runs for real entities. They should probably be captured in execution tracking but clearly flagged as `did_work = false` or equivalent.
 
 ---
 
 ## Dispatch Patterns
 
 `FA_CLIENTS_MAIN` is never a root. It is always invoked by something. Five distinct dispatch patterns have been observed.
+
+**Important distinguishing principle:** Simultaneous MAIN starts are NOT sufficient to identify Pattern 5. Scheduling collision between independent dispatchers is common (many entities have 04:00, 05:00, or other round-hour schedules). Multiple MAIN children starting at the same second may be:
+- Two or more independent Pattern 4 pullers on colliding schedules (each spawning their own children), OR
+- A single Pattern 5 dispatcher spawning coordinated workers
+
+The distinguishing feature of Pattern 5 is **shared multi-Client ProcessData across the worker set**, NOT simultaneous start time. Always check WORKFLOW_LINKAGE to confirm a common parent before classifying.
 
 ### Pattern 1 — Schedule-Fired Named Workflow
 
@@ -129,9 +160,20 @@ A named workflow (typically entity-specific) fires on its own schedule in Sterli
 
 ### Pattern 2 — GET_LIST Dispatcher Loop
 
-`FA_CLIENTS_GET_LIST` fires on a schedule, iterates configured processes (likely by reading CLIENTS_FILES + CLIENTS_PARAM), and invokes `FA_CLIENTS_MAIN` for each. This is the dispatcher pattern documented in Page 1 of Rober's Visio.
+`FA_CLIENTS_GET_LIST` fires hourly at :05 past the hour. It iterates configured processes (likely by reading CLIENTS_FILES + CLIENTS_PARAM), and invokes `FA_CLIENTS_MAIN` for each.
 
-**Live data:** 17 GET_LIST runs per day. Each run spawns multiple MAIN invocations (count not yet verified).
+**Observed spawn counts** (7-hour window on April 20):
+
+| Hour | Children Spawned |
+|------|-----------------:|
+| 05:05 | 164 |
+| 09:05 | 59 |
+| 07:05 | 29 |
+| 08:05 | 27 |
+| 10:05 | 18 |
+| 06:05 | 13 |
+
+Spawn count varies dramatically by hour. 05:05 is a peak dispatch window. Pattern needs further investigation to understand what GET_LIST iterates vs. what the named workflows handle independently.
 
 ### Pattern 3 — Periodic Internal Operation Scanner
 
@@ -141,37 +183,83 @@ A periodic workflow (`FA_FROM_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` and its `_ARC` v
 
 ### Pattern 4 — Periodic Puller
 
-Entity-specific puller workflows (`FA_FROM_*_PULL`) fire on entity schedules, pull files via SFTP, and invoke MAIN per file processed.
+Entity-specific puller workflows (`FA_FROM_*_PULL`) fire on entity schedules, pull files via SFTP, and invoke MAIN per file found (or once per configured process for multi-SEQ setups).
 
 **Examples:**
 - `FA_FROM_REVSPRING_IB_BD_PULL`: 14 runs per day
-- `FA_FROM_ACCRETIVE_IB_BD_PULL`: observed spawning **three MAIN children** in a single invocation (three files found in one scan)
+- `FA_FROM_ACCRETIVE_IB_BD_PULL`: observed spawning **12 MAIN children** in a single invocation on April 20 (high-volume day)
+- `FA_FROM_MONUMENT_HEALTH_IB_EO_PULL`: consistently spawns 7 children per invocation (observed at 07:30, 08:30, 09:30)
+- `FA_FROM_COACHELLA_VALLEY_ANESTHESIA_IB_BD_SFTP_PULL`: spawns 2 MAIN children per invocation (one per configured SEQ_ID; SEQ 5 and SEQ 6 run as parallel children)
 
 **Characteristics:**
 - Each puller has its own schedule
-- Can spawn 1 or more MAINs per invocation depending on what's found
-- These are File Processes (Path A of MAIN)
+- Can spawn 1 or many MAINs per invocation (observed 1-12+)
+- Children can be near-simultaneous (<1 sec spread) OR spread over time, depending on the puller's internal loop logic
+- These are File Processes (usually Path A or Path D of MAIN)
 
-### Pattern 5 — Parallel Phased Workers
+### Pattern 5 — Multi-Worker Dispatch with Shared Multi-Client ProcessData
 
-**A dispatcher workflow fires MULTIPLE MAIN children simultaneously, each with the same multi-Client ProcessData containing an orchestrated pipeline of phases.** The 4 workers appear to function as polling workers — each checks conditions for its assigned phase, does work if ready, exits cleanly if not.
+**A dispatcher workflow fires MULTIPLE MAIN children (always 4 observed), each carrying the same multi-Client ProcessData.** The workers execute *different* sub-workflow sequences despite identical ProcessData input, which means something — not yet identified — causes each worker to process a different portion of the shared configuration.
 
-**Example:** `FA_FROM_ACADIA_HEALTHCARE_IB_EO` spawned 4 MAIN children simultaneously on 2026-04-19 14:00:03. Each carried identical ProcessData with 4 Client blocks:
-- SEQ_ID 1: SPECIAL_PROCESS (orchestration/merging — calls external Python exe)
-- SEQ_ID 2: NEW_BUSINESS
-- SEQ_ID 3: PAYMENT
-- SEQ_ID 8: ENCOUNTER
-- Linked via `PREV_SEQ` field: 2→1, 3→2, 8→3 (sequential dependencies)
+**Known Pattern 5 dispatchers:** `FA_FROM_ACADIA_HEALTHCARE_IB_EO`. No others confirmed. Several other EO workflows dispatch multiple children but may be Pattern 4 multi-SEQ rather than Pattern 5.
 
-Observed step counts for the 4 workers: 16, 19, 21 (failed on SFTP), 33. Very short — most workers exited without meaningful work.
+**Canonical observation (WF 7999275, 2026-04-20 10:00):**
 
-**Characteristics:**
-- Multi-Client ProcessData shared across all MAIN workers
-- Workers coordinate via JDBC checks (presumably consulting a shared state table)
-- Many runs may have 0 or 1 worker do meaningful work while others exit fast
-- Potential for failures on one worker while others succeed
+The dispatcher itself ran briefly (49 steps, 8 seconds) and spawned 4 MAIN children within 237ms:
 
-**Open question:** exactly how the coordination works — whether the 4 workers run truly independently and self-select their phase, or whether some external state controls who does what. **To be verified with the Apps team.**
+| Worker | Started | Duration | Steps | First Inline Begin | Activity |
+|---|---|---|---|---|---|
+| 7999286 | 10:00:08.673 | 2.2 sec | 33 | GET_DOCS @ step 9 | GET_DOCS + COMM_CALL only (Path E — short-circuit) |
+| 7999287 | 10:00:08.770 | 92 sec | 152 | GET_DOCS @ step 12 | Full NB pattern (GET_DOCS, ARCHIVE, PREP_SOURCE, TRANS, ACCOUNTS_LOAD, FILE_MERGE, WORKERS_COMP, DUP_CHECK, PREP_COMM_CALL, COMM_CALL) |
+| 7999288 | 10:00:08.847 | 173 sec | 137 | GET_DOCS @ step 15 | Abbreviated pattern (GET_DOCS, ARCHIVE, PREP_SOURCE, TRANS, FILE_MERGE, PREP_COMM_CALL, COMM_CALL) — NO ACCOUNTS_LOAD, NO WORKERS_COMP, NO DUP_CHECK |
+| 7999289 | 10:00:08.910 | 258 sec | 91 | GET_DOCS @ step 18 | Only GET_DOCS and ARCHIVE visible in Inline Begin markers; long runtime suggests substantial non-Inline work (e.g., long-running ENCOUNTER_LOAD child) |
+
+### Observations That Don't Yet Add Up
+
+**1. Workers do different things despite identical ProcessData.** Worker 7999287 ran the full NB pattern. Worker 7999288 ran a pattern missing the NB-distinctive ACCOUNTS_LOAD/WORKERS_COMP/DUP_CHECK steps. Worker 7999289 barely invoked any sub-workflows in Inline Begin markers. Worker 7999286 short-circuited. Same ProcessData input → four different execution paths.
+
+**2. Workers activate sequentially with ~90-second offsets.** All 4 started within 237ms but their first `FA_CLIENTS_GET_DOCS` invocations were staggered:
+- 7999286: GET_DOCS at start+2 sec
+- 7999287: GET_DOCS at start+72 sec
+- 7999288: GET_DOCS at start+161 sec
+- 7999289: GET_DOCS at start+251 sec
+
+That's ~90 seconds between activations, linearly. Something external is controlling when each worker begins processing. Between start and their first GET_DOCS, the workers are presumably polling JDBC state or waiting on coordination signals — the exact mechanism is not visible in Inline Begin markers and has not been traced.
+
+**3. Pattern 5 does not always exhibit this behavior.** The April 19 ACADIA EO observation showed 4 workers with step counts 16/19/21/33 — all four short. Either that was a "nothing to do today" day, or the coordination mechanism behaves differently under different conditions. Without a broader sample we can't distinguish.
+
+**4. WORKFLOW_LINKAGE shows non-inline sub-workflow children.** In the WF 7999275 tree, 10 additional WORKFLOW_IDs appear as children of the 4 workers:
+- Worker 7999287: 4 children (VITAL, ENCOUNTER_LOAD, ARCHIVE x2)
+- Worker 7999288: 4 children (VITAL, ENCOUNTER_LOAD, ARCHIVE x2)
+- Worker 7999289: 2 children (VITAL, ENCOUNTER_LOAD)
+
+These are sub-workflows invoked via `InvokeBusinessProcessService` (not inline), each of which gets its own WORKFLOW_ID. Their presence does not mean the worker is processing "ENCOUNTER data" — it means that somewhere in the worker's flow (possibly deep inside ACCOUNTS_LOAD or similar), these sub-workflows were invoked.
+
+### What Remains Unknown
+
+- **How workers differentiate their work.** Four workers with identical ProcessData should execute identically. They don't. Something outside ProcessData is assigning work — but what, and where that assignment is stored, is unclear.
+- **What the workers do during their pre-activation wait.** The 90-second intervals before first GET_DOCS are not represented in Inline Begin markers. Likely JDBC polling or shared-state checks, but not confirmed.
+- **Whether the 4-worker count is always 4 or varies.** Observed 4 twice (April 19 and April 20). Sample size too small.
+- **How failures in one worker affect the others.** If worker 7999288 had failed, would 7999289 still activate 90 seconds later? Would the tree's overall STATUS reflect partial completion?
+- **The meaning of `PREV_SEQ`.** The ProcessData's 4 Client blocks have PREV_SEQ chaining (2→1, 3→2, 8→3). Whether Sterling enforces this declaratively or it's documentation/metadata is not determined.
+
+### Implication for Collector Grain
+
+The grain question (one row per Client block × one row per worker = up to 16 rows for a single conceptual pipeline run) is **still unresolved and is now more nuanced**:
+
+- If the 4 workers each process a DIFFERENT Client block, then there's really only 1 row of meaningful work per Client block. But how to identify which worker did which Client block is unclear.
+- If the 4 workers all share state and coordinate, the "one row per worker per Client block" grain creates 16 rows where some are real and some are ghost/empty.
+
+**Options A-D (see Execution Tracking Grain Proposal section) are still in play.** The new data does not conclusively favor one option over another, but **Option D** ("write only the Client block that actually did work, detected by sub-workflow invocations") looks more appealing now that we can see worker 7999286 clearly didn't do real work while 7999287 clearly did.
+
+### Honest Assessment
+
+Pattern 5 is the least-understood dispatch pattern. The mechanism that differentiates the 4 workers' behavior is not visible in ProcessData, not visible in WORKFLOW_CONTEXT's Inline Begin markers, and not (so far) resolvable without either:
+- Reading the `FA_CLIENTS_MAIN` BPML definition directly from `DATA_TABLE`
+- Direct explanation from someone who built the ACADIA EO workflow
+- More traces across varied conditions to see what changes
+
+This is a known gap in our architecture understanding. It's documented here to avoid further speculation.
 
 ---
 
@@ -260,7 +348,9 @@ From a 24-hour sample (April 18–19, 2026):
 
 Filter for the collector: `WFD.NAME = 'FA_CLIENTS_MAIN'` (simplest) or presence of DOCUMENT-type TRANS_DATA (more defensive).
 
-**Why FA_CLIENTS_VITAL has 888 runs vs. 820 for MAIN:** VITAL is a sub-workflow invoked inside ACCOUNTS_LOAD. It shows in WF_INST_S because each VITAL invocation has its own WORKFLOW_ID.
+**Updated observation (April 20):** 679 MAIN runs in a 7-hour window projects to ~2,300 per day — volume is notably higher on some days than the 820/day sample above.
+
+**Why FA_CLIENTS_VITAL has more runs than MAIN:** VITAL is a sub-workflow invoked inside ACCOUNTS_LOAD. It shows in WF_INST_S because each VITAL invocation has its own WORKFLOW_ID. The ratio varies with daily file volume (higher ratio = more multi-file NB runs).
 
 ---
 
@@ -285,7 +375,7 @@ ORDER BY CREATION_DATE ASC, DATA_ID ASC
 
 **Wrapper:** `<?xml version='1.0' encoding='UTF-8'?><r><Client>...</Client></r>`
 
-Outer element is `<r>`, not `<r>` as the original planning doc stated. Multiple `<Client>` blocks may appear (multi-Client).
+Outer element is `<r>`. Multiple `<Client>` blocks may appear (multi-Client).
 
 **Process type field:** `<PROCESS_TYPE>` (sourced from CLIENTS_FILES). Rober's Visio showed `<CLIENT_TYPE>` — older schema since renamed.
 
@@ -293,10 +383,15 @@ Outer element is `<r>`, not `<r>` as the original planning doc stated. Multiple 
 
 Multi-Client ProcessData appears in two fundamentally different scenarios:
 
-**Case 1 — Parallel file types for one entity (e.g., PMT ACH + CC)**
-PAY N SECONDS has 2 Client blocks — one for ACH payments, one for credit card. The MAIN workflow processes both file types together as parallel sequential imports within a single run. Both arrive at DM as separate batches.
+**Case 1 — Parallel file patterns for one entity**
+One MAIN run processes multiple configured SEQs for the same entity, typically because the entity sends multiple file types that should be handled together. Examples:
+- PAY N SECONDS: 2 Client blocks — ACH payments and credit card payments processed in one MAIN run
+- COACHELLA VALLEY ANESTHESIA (SFTP_PULL OUTBOUND): 2 Client blocks (SEQ_ID 5 and 6) with different file filters and pull paths
+- MSN HEALTHCARE SOLUTION (SFTP_PULL OUTBOUND): 2 Client blocks (SEQ_ID 10 and 11)
 
-**Case 2 — Sequential pipeline phases (e.g., ACADIA EO)**
+In Case 1, all Client blocks fire in one MAIN run; `PREV_SEQ` is empty.
+
+**Case 2 — Sequential pipeline phases (ACADIA EO)**
 ACADIA EO has 4 Client blocks linked by `PREV_SEQ`: SPECIAL_PROCESS (orchestration) → NEW_BUSINESS → PAYMENT → ENCOUNTER. These are **sequential phases** of a pipeline, not parallel types. The dispatcher (`FA_FROM_ACADIA_HEALTHCARE_IB_EO`) spawns **multiple parallel MAIN workers, all sharing the same 4-Client ProcessData** (Pattern 5), and the workers coordinate via JDBC to execute the phases.
 
 **Distinguishing the two cases:**
@@ -307,38 +402,68 @@ ACADIA EO has 4 Client blocks linked by `PREV_SEQ`: SPECIAL_PROCESS (orchestrati
 
 ### PREV_SEQ Field
 
-Previously unexplained. Now understood: `PREV_SEQ` is a **sequential dependency reference**. A Client block with `PREV_SEQ=1` says "this phase depends on phase SEQ_ID 1 completing first."
+`PREV_SEQ` is a **sequential dependency reference**. A Client block with `PREV_SEQ=1` says "this phase depends on phase SEQ_ID 1 completing first."
 
 Whether Sterling enforces this or it's metadata-only is unclear — **to be verified with the Apps team.**
 
 ### Failed Runs Have ProcessData
 
-**Resolved open question:** when a MAIN workflow fails (STATUS=1), ProcessData is still written at Step 0, BEFORE the failure occurs. The collector can extract ProcessData for failed runs normally.
+When a MAIN workflow fails (STATUS=1), ProcessData is still written at Step 0, BEFORE the failure occurs. The collector can extract ProcessData for failed runs normally — observed across multiple failure types (PGP decrypt failure, SSH disconnect, translation errors).
 
-**Failure signal location:** the failing step in WORKFLOW_CONTEXT has `BASIC_STATUS > 0` (typically = 1) and `ADV_STATUS` contains the error message. Example from a traced failure: step 15 (`SFTPClientBeginSession`) had `BASIC_STATUS=1` and `ADV_STATUS="Connection Failure! Could not complete connection to specified host:"`. This step-level information is the source of truth for failure detail; WF_INST_S.STATUS just reflects that a failure occurred.
+### Failure Signal — Nuanced
+
+The architecture doc previously said "the failing step has `BASIC_STATUS > 0`." This is true but incomplete. Real failure detection requires understanding three things:
+
+**1. The reported failure step** — the step where `BASIC_STATUS` first becomes > 0. This is where Sterling records the failure state transition. Example: in a DENVER HEALTH NB failure, step 77 (Translation) had `BASIC_STATUS=1`.
+
+**2. The root cause step** — may be earlier than the reported failure, and may have `BASIC_STATUS=0` despite being the real cause. Some services encode errors in `ADV_STATUS` without setting `BASIC_STATUS`. Example: in that same DENVER HEALTH failure, step 54 (`FA_CLA_UNPGP`) had `BASIC_STATUS=0` but `ADV_STATUS="255"` — the PGP decrypt exit code, which is the actual root cause. The later Translation failure was a downstream consequence of having nothing to translate.
+
+**3. Base Sterling services can fail directly** — services like `SFTPClientBeginSession`, `AS3FSAdapter`, `AS2LightweightJDBCAdapter`, and `Translation` are base Sterling services, not FA_CLIENTS_* sub-workflows. They do NOT have `Inline Begin` markers. Failures at this level show up in `WORKFLOW_CONTEXT` but scanning only for sub-workflow invocations will miss them.
+
+**Collector implication:** capture the failure **span** — the first error-coded step (by ADV_STATUS or BASIC_STATUS) through the final BASIC_STATUS>0 step. Record both the root cause step and the reported failure step. Don't rely solely on `BASIC_STATUS > 0`.
 
 ### Known Fields (Partial Inventory — ~70+ fields)
 
-(Full list as in previous revision — sections on Identity, Process categorization, File input/output, Translation, SQL hooks, Sub-workflow flags, Archive, Processing helpers, Notification, Executable paths, Custom BP hooks, DM config.)
+(Full list as in previous revisions — sections on Identity, Process categorization, File input/output, Translation, SQL hooks, Sub-workflow flags, Archive, Processing helpers, Notification, Executable paths, Custom BP hooks, DM config.)
 
-**New since prior revision:**
-- `PREV_SEQ` — sequential phase dependency reference (see above)
-- `COMM_CALL_CLA_EXE_PATH` — external executable invocation. Observed value:  `\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_PAYGROUND\FA_MERGE_PLACEMENT_FILES.exe $0 $1 $2 $3`. Sterling can invoke external Python executables during COMM_CALL phase for SPECIAL_PROCESS pipeline orchestration.
+**Recently observed fields:**
+- `PREV_SEQ` — sequential phase dependency reference
+- `COMM_CALL_CLA_EXE_PATH` — external executable invocation. Observed value: `\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_PAYGROUND\FA_MERGE_PLACEMENT_FILES.exe $0 $1 $2 $3`. Sterling can invoke external Python executables during COMM_CALL phase for SPECIAL_PROCESS pipeline orchestration.
 - `COMM_CALL_WORKING_DIR` — working directory for the external exe
 - `MISC_REC1` (more context) — observed as pipe-delimited FILE_FILTER list for SPECIAL_PROCESS pipeline orchestration: `acadia.2*FEOPF2*|acadia.2*FEOTRN*|acadia.2*FEOPFT*`
-- `GET_DOCS_DLT` — delete-after-get flag (observed Y for ENCOUNTER process type)
+- `GET_DOCS_DLT` — delete-after-get flag. Values observed include `Y`, specific path strings like `/Archive/`, or empty.
 - `ENCOUNTER_MAP` — specific translation map for ENCOUNTER process type
+- `SEND_EMPTY_FILES` — whether to push even if no file was pulled (observed in SFTP_PULL OUTBOUND)
+- `GET_DOCS_PROFILE_ID` / `PUT_DOCS_PROFILE_ID` — references to stored SFTP connection profiles
 
-### PRE_ARCHIVE / POST_ARCHIVE Semantics — Resolved
+### PRE_ARCHIVE / POST_ARCHIVE Semantics
 
 Current Sterling uses `Y` / empty (and possibly `N` explicitly) for these fields. Paths in Rober's 2021 Visio were dev-environment configurations, not production.
 
+### Sensitive Data in ProcessData
+
+**ProcessData may contain credentials in plaintext.** Observed sensitive fields:
+
+- `PGP_PASSPHRASE` — populated for entities sending PGP-encrypted files. Contains the decryption passphrase in plaintext. Example observed: DENVER HEALTH NB.
+- Other plaintext secrets (e.g., Python API keys) have been seen in Integration-side artifacts and may also appear in ProcessData fields.
+
+**Implications for architecture:**
+- Any raw ProcessData persistence (e.g., `SI_ProcessDataCache`) will copy credentials from Sterling's own data into xFACts
+- This extends the credential footprint — backups, disaster-recovery copies, user access, support screenshots all become potential exposure surfaces
+- Even for internal systems, stored plaintext credentials typically require tighter access controls, audit logging, and explicit treatment in data-handling policies
+
+**Design options for `SI_ProcessDataCache` to be decided before build:**
+- **Redact known sensitive fields** before persistence (field allowlist — parse, strip sensitive tags, re-serialize)
+- **Store only a parsed field subset** (never the raw XML)
+- **Encrypt raw XML at rest** (column-level encryption or equivalent)
+- **Shorten retention** (days rather than indefinite) for raw ProcessData
+- Combination of the above
+
+This is a new open design question — see Open Design Questions section.
+
 ### Storage Strategy
 
-The field inventory is large (~70 fields) and mostly empty per run. Strategy for `SI_ProcessDataCache`:
-- Always persist the raw decompressed XML
-- Parse a targeted subset into structured columns in SI_ExecutionTracking
-- Leave the rest queryable via cached XML for edge cases
+The field inventory is large (~70 fields) and mostly empty per run. Strategy for `SI_ProcessDataCache` pending resolution of the credential handling question above.
 
 ---
 
@@ -350,14 +475,58 @@ Multiple varieties of "nothing happened" MAIN runs have been observed:
 
 **~16-step Polling Worker** (ACADIA EO phased workers that didn't pick up work): No sub-workflows at all. JDBC checks + waits + decisions + exit.
 
-**Failed runs** (varies): step count depends on when the failure occurs. ProcessData is written normally. The failing step's `BASIC_STATUS` and `ADV_STATUS` identify the failure.
+**Failed runs** (varies): step count depends on when the failure occurs. ProcessData is written normally. The failing step's `BASIC_STATUS` and `ADV_STATUS` identify the failure (with caveats — see Failure Signal section).
 
 **Real File Processes with no files** (Pattern 1 scheduled runs that find nothing): not yet explicitly traced, but expected to resemble the Internal Op skeleton.
 
 **Collector implication:** "no work happened" is not a single condition. Different short-run signatures correspond to different reasons. The collector should probably capture:
 - Count of `FA_CLIENTS_TRANS` invocations — if 0, no data was translated
 - Count of each major sub-workflow invocation
-- Whether any step has `BASIC_STATUS > 0` — failure signal
+- Whether any step has `BASIC_STATUS > 0` or anomalous `ADV_STATUS` — failure signal
+
+---
+
+## Known Failure Modes
+
+Catalog of concrete failures observed during investigation. Not exhaustive — additions as new modes are encountered.
+
+### SSH_DISCONNECT_BY_APPLICATION at SFTPClientBeginSession
+
+**Signature:**
+- Step ~12, `SERVICE_NAME = SFTPClientBeginSession`, `BASIC_STATUS = 1`
+- `ADV_STATUS = "com.sterlingcommerce.perimeter.api.ClosedConduitException:SSH_DISCONNECT_BY_APPLICATION:SFTP session channel closed by server."`
+- Workflow aborts the GET_DOCS phase entirely
+
+**Cause:** remote SFTP server actively closing the SSH session during connection. Could originate server-side (remote maintenance windows, keep-alive rejection, IP blocking) or Sterling-side (certificate/key issues, connection pool exhaustion, network appliance disruption).
+
+**Observed clustering** (24-hour sample, April 19-20):
+
+| Hour of Day | Affected Workflows | Failure Step Instances |
+|-------------|-------------------:|----------------------:|
+| 04 | 4  | 8  |
+| 10 | 2  | 4  |
+| 16 | 12 | 24 |
+
+The 16:00 hour is the largest observed cluster. Clustering at hours 6 apart (04, 10, 16) is suggestive but not fully understood — could indicate remote-server scheduled activity or Sterling-side periodic events. **Worth monitoring.**
+
+**Scope note:** SFTPClientBeginSession is a base Sterling service, not a FA_CLIENTS_* sub-workflow. It has NO `Inline Begin` marker. Scanning only for sub-workflow invocations will miss this failure.
+
+### FA_CLA_UNPGP Exit Code 255
+
+**Signature:**
+- Step ~54 (within PREP_SOURCE phase), `SERVICE_NAME = FA_CLA_UNPGP`, `BASIC_STATUS = 0`, `ADV_STATUS = "255"`
+- Step ~55: `AS3FSAdapter` with `ADV_STATUS = "No files to collect"`
+- Later in the workflow: Translation fails with `BASIC_STATUS = 1`
+
+**Cause:** PGP decryption via `FA_CLA_UNPGP` command-line adapter failed. 255 is a generic process failure exit code. Possible underlying causes:
+- Source sent corrupted PGP file
+- Source sent a non-encrypted file when encrypted was expected
+- Pulled file is truncated or zero-byte
+- PGP passphrase no longer matches source's signing key
+
+**Only applies to configurations where `PGP_PASSPHRASE` is populated** in ProcessData. Observed on DENVER HEALTH NB.
+
+**Critical detection nuance:** The root cause step has `BASIC_STATUS = 0`. The `BASIC_STATUS > 0` signal only fires later at Translation. Collectors scanning for `BASIC_STATUS > 0` will detect the workflow failed but will point to the wrong step.
 
 ---
 
@@ -377,13 +546,13 @@ Based on the Three Identity Scopes, execution tracking needs at least a two-leve
 
 **Proposed grain:** one row per `(WORKFLOW_ID, CLIENT_ID, SEQ_ID)` from ProcessData.
 
-**Known complication:** Pattern 5 (Parallel Phased Workers) breaks this grain. Four concurrent MAIN workers each carrying 4 Client blocks = 16 rows for 1 conceptual pipeline invocation. **This needs resolution before collector build.**
+**Known complication:** Pattern 5 (Multi-Worker Dispatch with Shared Multi-Client ProcessData) breaks this grain. Four concurrent MAIN workers each carrying 4 Client blocks = up to 16 rows for 1 conceptual pipeline invocation. **This needs resolution before collector build.**
 
 Possible resolutions (to discuss):
 - **Option A:** Accept redundancy. Write 16 rows. Add a `root_workflow_id` column for clustering and a `did_work` flag for filtering. Aggregate views roll up.
 - **Option B:** Write one row per unique (ROOT_WF_ID, CLIENT_ID, SEQ_ID), with the collector responsible for deduplicating across sibling workers. More complex collector logic but cleaner data.
 - **Option C:** Change grain to one row per WORKFLOW_ID (regardless of Client count), with Client details in a child table. Deviates from the original design but handles Pattern 5 naturally.
-- **Option D:** Keep current grain for Patterns 1-4, but for Pattern 5 only write the Client block that actually did work (detected by which worker had sub-workflow invocations). More complex but most semantically clean.
+- **Option D:** Keep current grain for Patterns 1-4, but for Pattern 5 only write the Client block that actually did work (detected by which worker had sub-workflow invocations). More complex but most semantically clean. **Current leaning** based on the WF 7999275 trace — we saw clearly idle workers (7999286 short-circuited) alongside working ones (7999287 ran full NB), and capturing only the working ones avoids 16 rows of mostly-noise.
 
 No decision yet. **Open design question.**
 
@@ -393,10 +562,10 @@ No decision yet. **Open design question.**
 - `process_type`, `comm_method`, `business_type`
 - `translation_map`, `file_filter`, `get_docs_type` (targeted subset of ProcessData)
 - `run_class` (FILE_PROCESS / INTERNAL_OP / UNCLASSIFIED)
-- `execution_path` (STANDARD / SP_EXECUTOR / SFTP_CLEANUP / POLLING_EXIT) — new dimension reflecting MAIN's polymorphic paths
+- `execution_path` (STANDARD / SP_EXECUTOR / SFTP_CLEANUP / FILE_RELAY / POLLING_EXIT) — reflects MAIN's polymorphic paths
 - `file_count` — derived from TRANS invocation count
 - `workflow_start_time`, `workflow_end_time`, `duration_ms`
-- `status`, `state`, `status_message`, `failure_step_id`, `failure_service_name`
+- `status`, `state`, `status_message`, `failure_step_id`, `failure_service_name`, `root_cause_step_id`, `root_cause_service_name`
 - `had_trans`, `had_vital`, `had_accounts_load` — sub-workflow invocation flags
 - `collected_dttm`, `processdata_cache_id`
 
@@ -406,7 +575,7 @@ Grain: one row per `(WORKFLOW_ID, CLIENT_ID, SEQ_ID, FILE_INDEX, DM_CREDITOR_KEY
 
 ### ProcessData Cache — `SI_ProcessDataCache`
 
-Grain: one row per MAIN run. Preserves raw decompressed XML.
+Grain: one row per MAIN run. Preserves decompressed XML. **See "Sensitive Data in ProcessData" above for credential-handling design options.**
 
 ---
 
@@ -428,7 +597,7 @@ Distinct PROCESS_TYPE × COMM_METHOD pairs observed in `tbl_B2B_CLIENTS_FILES` (
 
 | # | PROCESS_TYPE | COMM_METHOD | Anatomy Status | Notes |
 |--:|---|---|---|---|
-| 1 | NEW_BUSINESS | INBOUND | ✅ Live-traced (ACADIA) | See `B2B_ProcessAnatomy_NewBusiness.md` |
+| 1 | NEW_BUSINESS | INBOUND | ✅ Live-traced (ACADIA), ⚠️ PGP variant (DENVER HEALTH) | See `B2B_ProcessAnatomy_NewBusiness.md`. PGP variant needs separate documentation. |
 | 2 | FILE_DELETION | INBOUND | ⚠️ Partially traced (ACADIA) | Path C of MAIN; SFTP remote cleanup. Anatomy doc pending team confirmation of lifecycle |
 | 3 | SPECIAL_PROCESS | INBOUND | ⚠️ ProcessData seen (ACADIA EO) | Pipeline orchestration role with external Python exe; internal-op usage separately (CLIENT_ID 328) |
 | 4 | ENCOUNTER | INBOUND | ⚠️ ProcessData seen (ACADIA EO) | Minimal config; GET_DOCS_DLT=Y; ENCOUNTER_MAP specific |
@@ -450,7 +619,7 @@ Distinct PROCESS_TYPE × COMM_METHOD pairs observed in `tbl_B2B_CLIENTS_FILES` (
 | 20 | ACKNOWLEDGMENT | OUTBOUND | ❌ Not yet | |
 | 21 | SFTP_PUSH | OUTBOUND | ❌ Not yet | |
 | 22 | SFTP_PUSH_ED25519 | OUTBOUND | ❌ Not yet | Unusual — key algorithm elevated to process type |
-| 23 | SFTP_PULL | OUTBOUND | ❌ Not yet | Unusual — PULL is typically inbound |
+| 23 | SFTP_PULL | OUTBOUND | ⚠️ Characterized (COACHELLA VALLEY, MSN HEALTHCARE) | File relay/passthrough — Path D of MAIN. Often Multi-Client Case 1 (2+ Client blocks per MAIN). |
 | 24 | BDL | INBOUND | ❌ Not yet | Bulk Data Load |
 | 25 | STANDARD_BDL | INBOUND | ❌ Not yet | Relationship to BDL unclear |
 | 26 | NCOA | INBOUND | ❌ Not yet | National Change of Address |
@@ -459,7 +628,7 @@ Distinct PROCESS_TYPE × COMM_METHOD pairs observed in `tbl_B2B_CLIENTS_FILES` (
 | 29 | FULL_INVENTORY | INBOUND | ❌ Not yet | |
 | 30 | CORE_PROCESS | (empty) | ❌ Not yet | Empty COMM_METHOD — possibly state-mgmt process |
 
-**Progress:** 1 fully traced, 4 partially characterized from this session. 25 remaining.
+**Progress:** 1 fully traced (NB baseline), 6 partially characterized (FILE_DELETION, SPECIAL_PROCESS, ENCOUNTER, PAYMENT, NOTES OB, SFTP_PULL OB). 23 remaining.
 
 ---
 
@@ -482,19 +651,26 @@ Same as previous revision — `FileGatewayReroute`, `Schedule_*`, `TimeoutEvent`
 | PRE_ARCHIVE / POST_ARCHIVE | Y/N flags | Y / empty (not paths) |
 | GET_DOCS_TYPE values | `SFTP_PULL` | Also `FSA_PULL` (File System Adapter) and likely others |
 | Collector grain | "per workflow run" (ambiguous) | Proposed (WORKFLOW_ID, CLIENT_ID, SEQ_ID) — **but Pattern 5 complicates this; unresolved** |
-| All MAIN runs are file processes | Implied | **WRONG** — MAIN serves multiple execution paths (Standard, SP Executor, SFTP Cleanup, Polling Worker) |
+| All MAIN runs are file processes | Implied | **WRONG** — MAIN serves multiple execution paths (Standard, SP Executor, SFTP Cleanup, File Relay, Polling) |
 | FTP_FILES_LIST workflows | File scanners | Actually SP-executor Internal Operations |
 | ProcessData field count | ~30 fields | ~70+ fields |
 | Integration table role | Mostly deprecated | CLIENTS_MN/CLIENTS_FILES/CLIENTS_PARAM are authoritative config sources worth syncing (not for execution tracking) |
 | Entity terminology | "Client" | "Entity" more accurate |
 | Three identity scopes | Not addressed | Sterling Entity (CLIENT_ID) ≠ Sterling Process ((CLIENT_ID, SEQ_ID)) ≠ DM Creditor |
-| **NEW: FILE_DELETION process type** | Not addressed | Remote SFTP source cleanup after file processing; Path C of MAIN |
-| **NEW: Multi-Client has two modes** | Not addressed | Parallel (PMT ACH/CC) vs. Sequential Pipeline (ACADIA EO with PREV_SEQ chaining) |
-| **NEW: Pattern 5 dispatcher** | Not addressed | Parallel Phased Workers — dispatcher spawns multiple MAINs with same multi-Client ProcessData |
-| **NEW: PREV_SEQ meaning** | Not addressed | Sequential dependency reference for pipeline phases |
-| **NEW: MAIN execution paths** | Implied monolithic | At least 3 distinct paths (Standard/SP Executor/SFTP Cleanup); possibly 4 with Polling |
-| **NEW: External executable invocation** | Not addressed | `COMM_CALL_CLA_EXE_PATH` can invoke Python exes (e.g., FA_MERGE_PLACEMENT_FILES.exe for ACADIA EO orchestration) |
-| **NEW: Failed MAIN runs have ProcessData** | Unknown | ✅ Verified — ProcessData written at Step 0 before failure occurs |
+| FILE_DELETION process type | Not addressed | Remote SFTP source cleanup after file processing; Path C of MAIN |
+| Multi-Client has two modes | Not addressed | Parallel (PMT, SFTP_PULL OB) vs. Sequential Pipeline (ACADIA EO with PREV_SEQ chaining) |
+| Pattern 5 dispatcher | Not addressed | Parallel Phased Workers — dispatcher spawns multiple MAINs with same multi-Client ProcessData. ACADIA EO confirmed as Pattern 5. |
+| PREV_SEQ meaning | Not addressed | Sequential dependency reference for pipeline phases |
+| MAIN execution paths | Implied monolithic | At least 5 distinct paths (Standard/SP Executor/SFTP Cleanup/File Relay/Polling) |
+| External executable invocation | Not addressed | `COMM_CALL_CLA_EXE_PATH` can invoke Python exes (e.g., FA_MERGE_PLACEMENT_FILES.exe for ACADIA EO orchestration) |
+| Failed MAIN runs have ProcessData | Unknown | ✅ Verified — ProcessData written at Step 0 before failure occurs |
+| **NEW: Path D (File Relay)** | Not addressed | SFTP_PULL OUTBOUND processes — pull-then-push with no translation. Observed COACHELLA VALLEY and MSN HEALTHCARE. |
+| **NEW: PGP decryption in NB** | Not addressed | Some NB configs use `FA_CLA_UNPGP` within PREP_SOURCE when `PGP_PASSPHRASE` is populated (DENVER HEALTH observed). |
+| **NEW: ProcessData contains plaintext credentials** | Not addressed | `PGP_PASSPHRASE` stored in plaintext. Design question for `SI_ProcessDataCache` around credential handling. |
+| **NEW: Failure signal nuance** | Simple "BASIC_STATUS > 0" | Root cause may have `BASIC_STATUS=0` with error-coded `ADV_STATUS`. Collector needs to capture the failure span, not just the reported failure step. |
+| **NEW: Base services fail without Inline markers** | Not addressed | SFTPClientBeginSession, AS3FSAdapter, Translation, etc. fail directly. Scanning for Inline Begin markers alone will miss these. |
+| **NEW: Scheduling collision** | Not addressed | Multiple independent Pattern 4 dispatchers often collide at round-hour schedules. Simultaneity does not imply Pattern 5. |
+| **NEW: Pattern 2 spawn counts** | Rough estimate | Measured 13-164 children per GET_LIST run; 05:05 is peak. |
 
 ---
 
@@ -502,24 +678,27 @@ Same as previous revision — `FileGatewayReroute`, `Schedule_*`, `TimeoutEvent`
 
 | Item | Status | How to Resolve |
 |------|--------|----------------|
+| 🎯 **`FA_CLIENTS_MAIN` BPML read** (next-session priority) | ❌ Pending — highest-leverage action | Query WFD_XML for WFD_ID=798, pull compressed XML from DATA_TABLE.DATA_OBJECT, decompress. Inspect branching logic for Path A-E divergence and Pattern 5 worker coordination. Time-boxed 45 min. |
 | ProcessData schema | ✅ Resolved | — |
 | Empty-file run behavior (Internal Op) | ✅ Resolved | — |
 | ProcessData lookup pattern | ✅ Resolved | — |
 | PRE_ARCHIVE/POST_ARCHIVE semantics | ✅ Resolved | — |
 | Failed workflow ProcessData | ✅ Resolved (has ProcessData) | — |
-| Pattern 5 multi-Client semantics | ⚠️ Partially resolved; coordination mechanism unclear | Ask Apps team; also observe a successful ACADIA EO run |
+| Pattern 5 coordination mechanism | ❌ Investigation ceiling hit via queries alone | BPML read (top of this table). Possibly unresolvable otherwise — original architect is gone. |
 | Empty-run behavior on File Process (not Internal Op) | ❌ Not verified | Find a Pattern 1/4 File Process that fired with no files and trace |
-| GET_LIST spawn count and source filter | ❌ Not verified | Walk WORKFLOW_LINKAGE from a GET_LIST root; trace GET_LIST's early steps |
-| Multi-Client prevalence outside PMT, ACADIA EO | ❌ Not verified | Sample across process types |
-| `AUTOMATED` field semantics | ❌ Speculative | Ask Apps team |
-| `RUN_FLAG` field semantics | ❌ Speculative | Ask Apps team |
-| `PREV_SEQ` enforcement | ❌ Not verified | Ask Apps team; observe successful pipeline run |
+| GET_LIST spawn count and source filter | ⚠️ Counts measured (13-164/run); source filter unknown | Walk WORKFLOW_LINKAGE from a GET_LIST root; trace GET_LIST's early steps |
+| Multi-Client prevalence outside PMT, ACADIA EO, SFTP_PULL OB | ❌ Not verified | Sample across process types |
+| `AUTOMATED` field semantics | ❌ Speculative | Ask Apps team (low-confidence they'll know) |
+| `RUN_FLAG` field semantics | ❌ Speculative | Ask Apps team (low-confidence they'll know) |
+| `PREV_SEQ` enforcement | ❌ Not verified | Likely answered by BPML read; also observe successful pipeline run |
 | FILE_DELETION lifecycle details (pickup → processing → cleanup timing) | ⚠️ Hypothesized based on evidence | Confirm with Apps team |
 | Internal Entity IDs beyond 328 | ❌ Not verified | Build up list as encountered |
-| Collector grain resolution (Pattern 5 complication) | ❌ Design question | Decide among Options A-D |
-| Remaining 25 process-type anatomies | ❌ Not yet traced | Continue discovery per investigation strategy |
-| `PREPARE_COMM_CALL` invocation mechanism (no marker observed) | ❌ Not verified | Inspect non-Inline Begin steps in known runs |
+| Collector grain resolution (Pattern 5 complication) | ❌ Design question | Commit after BPML read — Option D preferred, Option A fallback |
+| Remaining process-type anatomies | ❌ Not yet traced | Continue discovery as operationally needed; no longer a build prerequisite |
+| `PREPARE_COMM_CALL` invocation mechanism (no marker observed) | ❌ Not verified | Likely answered by BPML read |
 | `COMM_CALL_CLA_EXE_PATH` Python exe role and ownership | ❌ Not verified | Ask Apps team |
+| SSH_DISCONNECT clustering pattern (hours 04, 10, 16) | ⚠️ Dispatcher-level data captured | Check `GET_DOCS_PROFILE_ID` across affected dispatchers to test "shared Sterling-side SFTP profile" hypothesis |
+| ProcessData credential handling for SI_ProcessDataCache | ❌ Design question | Decide among redact / parsed-subset-only / encrypt-at-rest / short-retention options |
 
 ---
 
@@ -560,8 +739,9 @@ For future cleanup of the planning doc:
 
 ## Document Relationship to Other Docs
 
-- **`B2B_Module_Planning.md`** — direction and phase plan. Slated for cleanup.
+- **`B2B_Module_Planning.md`** — direction and phase plan.
 - **`B2B_ProcessAnatomy_*.md`** — per-process-type companion documents.
+- **`B2B_Reference_Queries.md`** — investigation queries and snippets.
 - **`BPs_Flow.vsdx`** (Rober Makram, circa 2021) — historical architect's diagram. Useful foundation with known divergences from current behavior.
 
 ---
@@ -584,4 +764,6 @@ For future cleanup of the planning doc:
 | April 19, 2026 (initial) | Initial creation. Four-pattern dispatch model, FA_CLIENTS_MAIN as universal grain, ProcessData schema uncertainties, inbound/outbound shapes, open items. |
 | April 19, 2026 (rev 2) | Empty Internal Op MAIN run traced. Run Classification dimension added. Pattern 3 reclassified as SP executors. Field inventory expanded to ~70+. |
 | April 20, 2026 (rev 3) | Live NB trace (ACADIA WF 7990812). Three Identity Scopes added. Configuration Source (CLIENTS_FILES + CLIENTS_PARAM) documented. Entity naming direction. 30-process investigation inventory. |
-| April 20, 2026 (rev 4) | **Major revision after FILE_DELETION trace and ACADIA EO pipeline discovery.** Additions: (1) **MAIN's Polymorphic Execution Paths** — Path A (Standard), Path B (SP Executor), Path C (SFTP Cleanup), possible Path D (Polling Worker); (2) **Pattern 5 — Parallel Phased Workers** — dispatcher spawns multiple MAINs with shared multi-Client ProcessData; (3) **Multi-Client has two modes** — parallel types (PMT) vs. sequential pipeline (ACADIA EO); (4) **`PREV_SEQ` explained** as sequential dependency reference; (5) **Failed runs have ProcessData** — verified; (6) **Grain complication from Pattern 5** — 4 workers × 4 Client blocks = 16 rows vs. 1 pipeline; Options A-D proposed; (7) **FILE_DELETION characterized** as remote SFTP source cleanup (Path C of MAIN), pending team confirmation of lifecycle; (8) **External executable invocation** (COMM_CALL_CLA_EXE_PATH) discovered; (9) Open Questions for Apps team formalized. |
+| April 20, 2026 (rev 4) | Major revision after FILE_DELETION trace and ACADIA EO pipeline discovery. Added MAIN's Polymorphic Execution Paths (A/B/C/possible D), Pattern 5 Parallel Phased Workers, Multi-Client two modes, PREV_SEQ, failure ProcessData, grain complication, FILE_DELETION as Path C, external executable invocation, Apps team questions formalized. |
+| April 20, 2026 (rev 5) | **Major revision from failure trace session (WF 7998314 DENVER HEALTH NB, and WFs 7994488-7994491 SFTP_PULL OUTBOUND failures).** Additions: (1) **Path D introduced** — SFTP_PULL OUTBOUND file relay/passthrough. Moved former "Polling Worker" to Path E. (2) **NB PGP variant** documented — `FA_CLA_UNPGP` decryption step within PREP_SOURCE when `PGP_PASSPHRASE` is populated. (3) **Known Failure Modes section** — SSH_DISCONNECT_BY_APPLICATION (with 24-hour clustering data: 04/10/16 hours) and FA_CLA_UNPGP exit 255. (4) **Failure signal nuance** — root cause step may have BASIC_STATUS=0 with error in ADV_STATUS; collector must capture failure span. (5) **Base services fail without Inline markers** — SFTPClientBeginSession, AS3FSAdapter, Translation are direct failure points. (6) **Scheduling collision** explicitly called out as NOT Pattern 5. (7) **Pattern 2 spawn counts measured** (13-164/run). (8) **Pattern 4 Multi-SEQ behavior** documented. (9) **ProcessData credential exposure** — PGP_PASSPHRASE stored plaintext; design question for SI_ProcessDataCache. (10) Multiple `execution_path` values proposed including FILE_RELAY. (11) Process type #23 (SFTP_PULL OB) promoted from ❌ to ⚠️. |
+| April 20, 2026 (rev 6) | **Major revision from ACADIA EO Pattern 5 trace (WF 7999275).** Substantial rewrite of Pattern 5 section with honest "what we observed vs. what remains unknown" framing. Key findings: (1) **Workers execute different sub-workflow patterns despite identical ProcessData** — observed full NB pattern on one worker, abbreviated pattern on another, short-circuit on a third. (2) **Workers activate sequentially with ~90-second offsets** — all 4 start within 237ms but their first GET_DOCS invocations are staggered 72/161/251 seconds after start. Something external controls activation timing. (3) **Non-inline sub-workflow invocations appear as separate rows in WORKFLOW_LINKAGE** — VITAL, ENCOUNTER_LOAD, and ARCHIVE children get their own WORKFLOW_IDs. (4) **Path E reclassified** from "Polling Worker" to "Short-Circuit (Minimal Work)" based on observed behavior — worker 7999286 did invoke GET_DOCS and COMM_CALL (not pure poll/exit as previously hypothesized). (5) **Previous "self-select phase via JDBC" hypothesis withdrawn** in favor of honest "coordination mechanism is not visible in our data." (6) **Grain question deepened** — Option D (only write the Client block that did real work) looks more attractive given evidence of clearly idle workers. (7) **Ceiling on investigation acknowledged** — full Pattern 5 understanding likely requires reading the FA_CLIENTS_MAIN BPML definition or direct knowledge from the ACADIA EO workflow's author. Pattern 5 coordination mechanism now explicitly documented as an unresolved gap rather than a hypothesis pending team confirmation. (8) **BPML read added as top-priority investigation item** with specific guidance on what to look for — referenced in planning doc as next-session priority. |
