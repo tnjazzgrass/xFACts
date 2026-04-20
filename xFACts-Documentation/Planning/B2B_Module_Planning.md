@@ -55,15 +55,51 @@ The investigation phase is ongoing. Key conclusions that shape where we're heade
 
 **`FA_CLIENTS_MAIN` is the universal unit of work.** Every meaningful Sterling workflow run is driven by MAIN (WFD_ID 798). Dispatch patterns vary, but MAIN is consistent.
 
-**MAIN is polymorphic.** It takes multiple fundamentally different execution paths depending on ProcessData — Standard File Processing, SP Executor (Internal Operation), SFTP Cleanup (FILE_DELETION), and possibly Polling Worker. This has significant implications for run classification and the collector's job.
+**MAIN is polymorphic.** It takes at least five different execution paths depending on ProcessData — Standard File Processing, SP Executor (Internal Operation), SFTP Cleanup (FILE_DELETION), File Relay/Passthrough (SFTP_PULL OUTBOUND), and Polling Worker. This has significant implications for run classification and the collector's job.
 
-**Five dispatch patterns exist.** Schedule-fired named workflow, GET_LIST dispatcher loop, Periodic Internal Operation Scanner, Periodic Puller, and Parallel Phased Workers. Pattern 5 (Parallel Phased Workers) is the operationally important one for ACADIA EO and complicates execution tracking grain.
+**Five dispatch patterns exist.** Schedule-fired named workflow, GET_LIST dispatcher loop, Periodic Internal Operation Scanner, Periodic Puller, and Parallel Phased Workers. Pattern 5 (Parallel Phased Workers) is the operationally important one for ACADIA EO and complicates execution tracking grain. Scheduling collision between independent Pattern 4 pullers is common and creates *apparent* simultaneity that is not Pattern 5 — always verify via WORKFLOW_LINKAGE.
 
 **Three identity scopes coexist.** Sterling Entity (CLIENT_ID), Sterling Process (CLIENT_ID, SEQ_ID), and DM Creditor Key. These are distinct and "client" means different things depending on context. The xFACts B2B schema uses "Entity" to reflect the mixed nature of configured targets (real customers, vendors, internal services).
 
-**There are still significant unknowns.** Most process types (25 of 30 identified) have not yet been traced. Pattern 5 grain resolution is unresolved. Several configuration field semantics (AUTOMATED, RUN_FLAG, PREV_SEQ enforcement) are speculative. The Integration team has 16 questions pending that will resolve several of these.
+**Failure detection requires nuance.** A simple `BASIC_STATUS > 0` scan is not enough. The root cause step may have `BASIC_STATUS = 0` with the error encoded in `ADV_STATUS` (e.g., `FA_CLA_UNPGP` exit code 255). Base Sterling services (`SFTPClientBeginSession`, `AS3FSAdapter`, `Translation`, etc.) can fail directly without a wrapping `Inline Begin` marker. The collector must capture the failure span — root cause step plus reported failure step — not just one step.
 
-**The roadmap defers table design until investigation is sufficient.** `SI_ExecutionTracking` in particular cannot have final column definitions until the Pattern 5 grain question is resolved and enough process-type anatomies are traced to validate the planned extraction approach works universally.
+**ProcessData contains plaintext credentials.** Observed fields include `PGP_PASSPHRASE`. Any architecture decision involving persistence of raw ProcessData in `SI_ProcessDataCache` must explicitly address credential handling. This is a new open design question.
+
+**There are still significant unknowns.** Many process types have not yet been traced. Pattern 5 grain resolution is unresolved. Several configuration field semantics (`AUTOMATED`, `RUN_FLAG`, `PREV_SEQ` enforcement) are speculative. The Integration team has 16 questions pending that will resolve several of these.
+
+**The roadmap defers table design until investigation is sufficient.** `SI_ExecutionTracking` in particular cannot have final column definitions until the Pattern 5 grain question is resolved, the credential handling for `SI_ProcessDataCache` is decided, and enough process-type anatomies are traced to validate the planned extraction approach works universally.
+
+**Pattern 5 understanding has hit an investigation ceiling.** Two live traces of `FA_FROM_ACADIA_HEALTHCARE_IB_EO` have shown that workers execute different sub-workflow patterns despite identical ProcessData input, and that they activate sequentially with ~90-second offsets. The mechanism that differentiates them is not visible in ProcessData, not visible in WORKFLOW_CONTEXT Inline Begin markers, and not (so far) resolvable through queries alone. Breaking through this requires either reading the `FA_CLIENTS_MAIN` BPML definition directly from `DATA_TABLE` or direct knowledge from the workflow's original author. Team feedback may not resolve this — the Integration team's day-to-day work is at a layer above Sterling's internals. This gap is flagged explicitly so future sessions can plan around it (e.g., build flexible schema, let patterns emerge from data vs. try to fully model Pattern 5 first).
+
+---
+
+## 🎯 Next Session Priority — BPML Read
+
+**First action next session: read the `FA_CLIENTS_MAIN` BPML definition directly from `DATA_TABLE`.**
+
+**Rationale:** The original architect is no longer at FAC and team feedback is likely to be thin (~4-5 of 16 questions answered, likely couched in "I think"). The BPML is the most reliable remaining knowledge source — it IS the architect's intent, in source form.
+
+**Approach:**
+1. Query `WFD_XML` for `WFD_ID = 798` (`FA_CLIENTS_MAIN`) to get the data key
+2. Pull the gzip-compressed XML from `DATA_TABLE.DATA_OBJECT`
+3. Decompress (same pattern as ProcessData)
+4. Inspect the BPML structure for key branching logic
+
+**Specifically look for:**
+- How Path A/B/C/D/E divergence is decided (what branches early based on what ProcessData fields)
+- How Pattern 5 workers differentiate — is there a JDBC query at the top that assigns a SEQ to the worker based on position/order? Is there a lock/lease mechanism on a shared table? Is the wait progression (~90 sec offsets) built into the BPML or externally coordinated?
+- How failures propagate (what's wrapped in on-fault handlers, what isn't)
+- Whether `PREV_SEQ` is referenced anywhere (confirms enforcement vs. metadata-only)
+
+**Time-box: ~45 minutes.** If we're not gaining clarity by then, we stop and build anyway. One session cost.
+
+**Exit criteria (either path is acceptable):**
+- BPML read provides enough clarity to commit to Option D for the grain question confidently, OR
+- BPML read doesn't bridge the gap, and we commit to Option A (accept redundancy, filter with `did_work` flag) as the bulletproof fallback
+
+Either way, end of next session = architecture committed, grain question closed, ready to design `SI_ExecutionTracking` DDL.
+
+**After the BPML phase (same session or next):** shift from "investigate to understand" to "build to accumulate real data." Start designing and deploying `SI_ExecutionTracking` + `SI_ProcessDataCache` + collector, informed by whichever grain option we committed to. Further process-type anatomies become "nice to have as they arise" rather than "required before building."
 
 ---
 
@@ -137,7 +173,7 @@ Current and planned tables supporting the B2B module. Column-level design is def
 | `B2B.INT_ProcessConfig` | INT_ | To design | Field-level configuration mirror of `tbl_B2b_CLIENTS_PARAM` |
 | `B2B.SI_ScheduleRegistry` | SI_ | To design | Sterling SCHEDULE mirror with parsed structured timing XML |
 | `B2B.SI_ExecutionTracking` | SI_ | To design (grain pending) | Per-execution tracking header — grain blocked on Pattern 5 resolution |
-| `B2B.SI_ProcessDataCache` | SI_ | To design | Decompressed ProcessData XML storage per MAIN run |
+| `B2B.SI_ProcessDataCache` | SI_ | To design (credential handling pending) | Decompressed ProcessData XML storage per MAIN run |
 
 ---
 
@@ -163,12 +199,14 @@ Five phases, flattened from the earlier seven-phase structure. Phases overlap at
 - Document each process type's anatomy in its own companion doc (see Process Anatomy Progress Tracker below)
 - Maintain and revise `B2B_ArchitectureOverview.md` as new patterns and edge cases are discovered
 - Resolve the Pattern 5 grain question (Options A-D in architecture doc) before committing to `SI_ExecutionTracking` structure
+- Resolve the ProcessData credential handling question before committing to `SI_ProcessDataCache` structure
 - Complete `INT_EntityRegistry` rename/alter path so it can serve as the entity-name source instead of the current scaffolded-but-empty state
 - Track Integration team answers as they arrive (see Open Questions section)
 
 **Exit criteria:**
 - Majority of operationally important process types traced (at minimum: all process types with live runs observed in-window)
 - Pattern 5 grain question resolved
+- Credential handling question resolved
 - Grain-breaking edge cases documented or ruled out
 - Integration team answers received on critical configuration field semantics (especially AUTOMATED, RUN_FLAG, PREV_SEQ)
 
@@ -179,9 +217,9 @@ Five phases, flattened from the earlier seven-phase structure. Phases overlap at
 - Design and deploy `B2B.INT_EntityRegistry` (rename + alter of existing `INT_ClientRegistry`)
 - Design and deploy `B2B.INT_ProcessRegistry` and `B2B.INT_ProcessConfig`
 - Design and deploy `B2B.SI_ScheduleRegistry`
-- Design and deploy `B2B.SI_ExecutionTracking` and `B2B.SI_ProcessDataCache`
+- Design and deploy `B2B.SI_ExecutionTracking` and `B2B.SI_ProcessDataCache` (incorporating credential handling decision)
 - Build `Sync-B2BSchedules.ps1` (schedule extraction + parsing)
-- Build `Collect-B2BExecution.ps1` (core MAIN execution collector)
+- Build `Collect-B2BExecution.ps1` (core MAIN execution collector with robust failure detection)
 - Run new collectors in parallel with Phase 1 collectors; validate
 - Evaluate whether Phase 1 tables should be retired, merged, or retained alongside new tables
 
@@ -215,7 +253,7 @@ Mirrors the investigation inventory in `B2B_ArchitectureOverview.md`. Updated as
 
 | # | PROCESS_TYPE | COMM_METHOD | Status | Anatomy Doc |
 |--:|---|---|---|---|
-| 1 | NEW_BUSINESS | INBOUND | ✅ | `B2B_ProcessAnatomy_NewBusiness.md` |
+| 1 | NEW_BUSINESS | INBOUND | ✅ (standard) / ⚠️ (PGP variant) | `B2B_ProcessAnatomy_NewBusiness.md`; PGP variant needs separate coverage |
 | 2 | FILE_DELETION | INBOUND | ⚠️ | Planned |
 | 3 | SPECIAL_PROCESS | INBOUND | ⚠️ | Planned (pipeline orchestration use case) |
 | 4 | ENCOUNTER | INBOUND | ⚠️ | Planned |
@@ -237,7 +275,7 @@ Mirrors the investigation inventory in `B2B_ArchitectureOverview.md`. Updated as
 | 20 | ACKNOWLEDGMENT | OUTBOUND | ❌ | — |
 | 21 | SFTP_PUSH | OUTBOUND | ❌ | — |
 | 22 | SFTP_PUSH_ED25519 | OUTBOUND | ❌ | — |
-| 23 | SFTP_PULL | OUTBOUND | ❌ | — |
+| 23 | SFTP_PULL | OUTBOUND | ⚠️ | File relay / passthrough — Path D of MAIN; multi-SEQ Case 1 common. Planned |
 | 24 | BDL | INBOUND | ❌ | — |
 | 25 | STANDARD_BDL | INBOUND | ❌ | — |
 | 26 | NCOA | INBOUND | ❌ | — |
@@ -246,7 +284,20 @@ Mirrors the investigation inventory in `B2B_ArchitectureOverview.md`. Updated as
 | 29 | FULL_INVENTORY | INBOUND | ❌ | — |
 | 30 | CORE_PROCESS | (empty) | ❌ | — |
 
-**Progress: 1 fully traced, 5 partially characterized, 24 untraced.**
+**Progress: 1 fully traced (NB standard), 6 partially characterized (NB PGP variant, FILE_DELETION, SPECIAL_PROCESS, ENCOUNTER, PAYMENT, NOTES OB, SFTP_PULL OB). 23 untraced.**
+
+---
+
+## Known Failure Modes (Cumulative)
+
+Discovered during investigation. Full detail in `B2B_ArchitectureOverview.md`.
+
+| Mode | Signature | Operational Note |
+|------|-----------|------------------|
+| SSH_DISCONNECT_BY_APPLICATION | SFTPClientBeginSession step ~12, BASIC_STATUS=1 | Observed clustering at hours 04/10/16 (24-hour sample). May be remote maintenance windows or Sterling-side periodic activity. |
+| FA_CLA_UNPGP exit 255 | Step ~54, BASIC_STATUS=0, ADV_STATUS="255" | PGP decrypt failed. Only applies to configs with `PGP_PASSPHRASE` populated. Root cause detection requires scanning ADV_STATUS, not just BASIC_STATUS. |
+
+More modes will be added as encountered. This table is a quick-reference complement to the architecture doc's deeper treatment.
 
 ---
 
@@ -281,11 +332,12 @@ Decisions that must be made before Phase 3 can start in earnest.
 
 | # | Question | Resolution Path |
 |--:|---|---|
-| 1 | `SI_ExecutionTracking` grain — how to handle Pattern 5 Parallel Phased Workers (16 rows per 1 conceptual pipeline invocation vs. deduplicated / child-table / pipeline-rollup alternatives) | Decide among Options A-D in architecture doc. Likely needs ACADIA EO to be traced more thoroughly before settling. |
+| 1 | `SI_ExecutionTracking` grain — how to handle Pattern 5 Parallel Phased Workers (16 rows per 1 conceptual pipeline invocation vs. deduplicated / child-table / pipeline-rollup alternatives) | Next-session BPML read (see Next Session Priority section above) should resolve or close this. Options D (preferred) or A (fallback) committed after BPML read. |
 | 2 | Relationship between Phase 1 `SI_WorkflowTracking` and planned `SI_ExecutionTracking` — coexist, merge, or supersede | Revisit after `SI_ExecutionTracking` has been populated. |
-| 3 | Whether to persist ProcessData raw XML indefinitely or age out | Depends on storage observations and whether downstream queries ever re-parse raw XML. |
-| 4 | Whether `SI_BusinessDataTracking` (record-count summaries from Translation outputs) is worth building | Defer until monitoring use cases make the case for it. |
-| 5 | How to represent empty / polling / skeleton MAIN runs in execution tracking — suppress, flag, or treat same as work-performing runs | Needs trace of representative empty runs first (Path B, Path D observed; Pattern 1 empty not yet observed). |
+| 3 | ProcessData credential handling for `SI_ProcessDataCache` — how to prevent plaintext credentials (`PGP_PASSPHRASE`, etc.) from being persisted in xFACts. Options: redact known sensitive fields / parsed subset only / encrypt at rest / short retention / combination | Decide before building `SI_ProcessDataCache`. |
+| 4 | Whether to persist ProcessData indefinitely or age out | Depends on storage observations, downstream query needs, AND the credential handling decision (stricter retention if credentials are present). |
+| 5 | Whether `SI_BusinessDataTracking` (record-count summaries from Translation outputs) is worth building | Defer until monitoring use cases make the case for it. |
+| 6 | How to represent empty / polling / skeleton MAIN runs in execution tracking — suppress, flag, or treat same as work-performing runs | Needs trace of representative empty runs first (Path B, Path E observed; Pattern 1 empty not yet observed). |
 
 ---
 
@@ -294,13 +346,15 @@ Decisions that must be made before Phase 3 can start in earnest.
 Items that would improve understanding but don't block the build directly. Tracked so they don't get lost.
 
 - Empty-run behavior on Pattern 1/4 File Processes (not yet observed in-trace)
-- GET_LIST spawn count and source filter (what exactly it iterates)
-- Multi-Client prevalence outside PMT and ACADIA EO
+- GET_LIST iteration source — what exactly does it iterate (spawn counts measured: 13-164 children per run, with 05:05 as peak)
+- Multi-Client prevalence outside PMT, ACADIA EO, and SFTP_PULL OB
 - Internal Entity IDs beyond 328
 - `PREPARE_COMM_CALL` invocation mechanism (no marker observed in NB trace)
 - `COMM_CALL_CLA_EXE_PATH` Python exe role and ownership (covered by Integration team question #8)
 - Sterling data retention exact thresholds per table
 - Full inventory of stored procedures invoked via POST_TRANS_SQL_QUERY
+- **SSH_DISCONNECT clustering** (hours 04/10/16) — investigate which workflows are affected, which remote endpoints, any Sterling-side common factor
+- **Scheduling collision quantification** — how often do independent entities have colliding round-hour schedules, and does it introduce contention
 
 ---
 
@@ -357,4 +411,6 @@ Useful for interpreting workflow names at a glance.
 | April 16, 2026 | Phase 1 foundation complete; document updated to reflect deployed tables and scripts |
 | April 17-18, 2026 | Deep investigation of b2bi internals: DATA_TABLE compression, timing XML grammar, WORKFLOW_CONTEXT ↔ TRANS_DATA linkage, ProcessData discovery, sub-workflow pattern cataloging |
 | April 18, 2026 | Architecture shifted from hybrid (b2bi + Integration) to pure-b2bi; Integration tables retired from core architecture; new tables introduced; 7-phase plan established |
-| April 20, 2026 | **Major rewrite to roadmap-only scope.** Architectural detail extracted to `B2B_ArchitectureOverview.md`; process-type specifics extracted to `B2B_ProcessAnatomy_*.md` docs; reference queries extracted to `B2B_Reference_Queries.md`. This document now focused on: Executive Summary, Pain Points / Infrastructure, Current Understanding, Table Inventory (status only, no column detail), 5-phase plan (flattened from 7), Process Anatomy Progress Tracker, Open Questions tracking. Column specs, sub-workflow pattern deep-dives, ProcessData field catalogs, multi-Client handling details, and empty/failed-run discussions all removed as they now live authoritatively in the architecture doc. Entity terminology direction incorporated (INT_ClientRegistry to be renamed INT_EntityRegistry). INT_ProcessRegistry and INT_ProcessConfig added to inventory. Five blocking open design questions formalized. Integration team 16-question tracker added. |
+| April 20, 2026 (rev 1) | Major rewrite to roadmap-only scope. Architectural detail extracted to `B2B_ArchitectureOverview.md`; process-type specifics extracted to `B2B_ProcessAnatomy_*.md` docs; reference queries extracted to `B2B_Reference_Queries.md`. 5-phase plan (flattened from 7). Process Anatomy Progress Tracker added. 16-question Integration team tracker added. Five open design questions formalized. |
+| April 20, 2026 (rev 2) | **Updated with findings from failure trace session** (DENVER HEALTH NB and SFTP_PULL OUTBOUND failures). Changes: (1) **Current Understanding** — MAIN polymorphism expanded from 3-4 paths to 5 (Path D added: File Relay/Passthrough). Failure signal nuance added. ProcessData credential exposure added. Scheduling collision clarified as not Pattern 5. (2) **Progress Tracker** — SFTP_PULL OUTBOUND (#23) moved from ❌ to ⚠️. NB split into standard vs. PGP variant. Progress stats updated. (3) **New section: Known Failure Modes** — SSH_DISCONNECT_BY_APPLICATION with hourly clustering data; FA_CLA_UNPGP exit 255. (4) **Open Design Questions** — added credential handling for SI_ProcessDataCache as blocking design question. (5) **Open Investigation Items** — added SSH_DISCONNECT clustering and scheduling collision quantification. (6) **Phase 2 exit criteria** and **Phase 3 prerequisites** — added credential handling decision as a Phase 2 exit item. |
+| April 20, 2026 (rev 3) | **Updated after ACADIA EO Pattern 5 deep trace (WF 7999275).** Added "Pattern 5 understanding has hit an investigation ceiling" paragraph to Current Understanding — honest acknowledgment that queries alone cannot resolve the coordination mechanism and that team feedback may not bridge the gap. Architecture doc rev 6 contains the full detailed findings (workers execute different sub-workflow patterns despite identical ProcessData; sequential activation with ~90-second offsets; withdrawn "self-select via JDBC" hypothesis). Path E reclassified from "Polling Worker" to "Short-Circuit (Minimal Work)." Option D in grain proposal now flagged as current leaning. **Added "🎯 Next Session Priority — BPML Read" section** as an unmissable top-level action item directing next session to read `FA_CLIENTS_MAIN` BPML from `DATA_TABLE`, with specific guidance on what to look for and time-boxed to 45 min. Grain question resolution path updated to reference this step. This revision is primarily about epistemic honesty: documenting what we don't know as clearly as what we do, AND ensuring the agreed-on next action is unmissable when the next session opens. |
