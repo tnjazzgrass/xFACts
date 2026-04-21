@@ -874,7 +874,8 @@
         <p>The import file lands on the DM file share, gets registered via the REST API, and the import is triggered. From there, DM&rsquo;s internal processing takes over. You can monitor import progress on the <strong>Batch Monitoring</strong> page under the BDL section.</p>
 
         <h3>Error Recovery</h3>
-        <p>If an import fails, the error is displayed in the results pane. DM requires a <strong>new file with a new name</strong> for retry &mdash; you cannot re-submit the same filename. Go back to Step 1 and start fresh; the system generates a unique batch ID for each submission.</p>
+        <p>If an import fails, the error is displayed in the results pane. In most cases, DM requires a <strong>new file with a new name</strong> for retry &mdash; go back to Step 1 and start fresh; the system generates a unique batch ID for each submission.</p>
+        <p>However, if the file was successfully registered with DM but the import trigger failed (typically a timing issue where the file wasn&rsquo;t ready yet), a <span style="display:inline-block;padding:1px 7px;font-size:0.7rem;font-weight:600;color:#dcdcaa;border:1px solid #dcdcaa;border-radius:3px;vertical-align:middle;">RETRY</span> badge will appear next to the <span style="display:inline-block;padding:1px 7px;font-size:0.7rem;font-weight:600;color:#ef4444;border:1px solid #ef4444;border-radius:3px;vertical-align:middle;">FAILED</span> status in the Import History panel. Clicking it re-fires the import trigger against the existing registered file without needing to start over. The retry is available to the user who ran the original import and to page admins.</p>
 
         <h3>File Size Limits</h3>
         <p>The practical limit is approximately 250,000 rows per import. For larger datasets, split the file and run them sequentially.</p>
