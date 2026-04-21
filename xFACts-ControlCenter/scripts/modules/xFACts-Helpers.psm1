@@ -1694,6 +1694,14 @@ function Build-BDLXml {
         if ($nonNullifiable) { $nonNullifiable | ForEach-Object { $nonNullifiableSet[$_.element_name] = $true } }
     }
 
+    # ── Get boolean fields (for true/false normalization) ───────────
+    $booleanFields = @{}
+    $boolFieldRows = Invoke-XFActsQuery -Query @"
+        SELECT element_name FROM Tools.Catalog_BDLElementRegistry
+        WHERE format_id = @formatId AND data_type = 'boolean'
+"@ -Parameters @{ formatId = $formatInfo[0].format_id }
+    if ($boolFieldRows) { $boolFieldRows | ForEach-Object { $booleanFields[$_.element_name] = $true } }
+
     # ── Get wrapper info from catalog ───────────────────────────────
     $wrapperInfo = Invoke-XFActsQuery -Query @"
         SELECT w.type_name AS wrapper_type, we.element_name AS entity_element
@@ -1824,6 +1832,11 @@ function Build-BDLXml {
 
             # XML-escape the value
             $valStr = $valStr.Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;').Replace('"', '&quot;').Replace("'", '&apos;')
+
+            # Boolean normalization: DM only accepts 'true' or 'false' in XML
+            if ($booleanFields.ContainsKey($col)) {
+                $valStr = if ($valStr -in @('Y','y','yes','Yes','YES','1','true','True','TRUE')) { 'true' } else { 'false' }
+            }
 
             [void]$sb.AppendLine("        <${col}>${valStr}</${col}>")
         }
