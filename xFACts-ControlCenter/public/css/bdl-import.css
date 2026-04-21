@@ -1152,6 +1152,34 @@ a { color: #9cdcfe; }
     pointer-events: none;
 }
 
+/* Retry badge on failed import rows in history */
+.history-retry-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #dcdcaa;
+    border: 1px solid #dcdcaa;
+    border-radius: 3px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+.history-retry-badge:hover {
+    background: rgba(220, 220, 170, 0.15);
+    color: #fff;
+}
+.history-retry-pending {
+    opacity: 0.5;
+    cursor: wait;
+    pointer-events: none;
+}
+.history-retry-success {
+    color: #4ec9b0;
+    border-color: #4ec9b0;
+    pointer-events: none;
+}
+
 .history-import-user {
     color: #666;
     font-size: 9px;
