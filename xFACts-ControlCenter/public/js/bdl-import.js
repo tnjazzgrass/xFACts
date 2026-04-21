@@ -517,7 +517,10 @@ var BDL = (function () {
             if (f.field_description) html += '<div class="fixed-value-desc">' + escapeHtml(f.field_description.substring(0, 120)) + '</div>';
             if (f.import_guidance) html += '<div class="fixed-value-guidance">' + escapeHtml(f.import_guidance) + '</div>';
             html += '</div><div class="fixed-value-input">';
-            if (f.lookup_table) {
+			if (isBooleanField(f)) {
+                if (!existingVal) { existingVal = 'N'; assignment.fixedValues[f.element_name] = 'N'; }
+                html += buildBooleanSelect(fieldId, existingVal, 'onchange="BDL.assignmentFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)"');
+            } else if (f.lookup_table) {
                 html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.assignmentFieldSearch(' + aIdx + ',\'' + f.element_name + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
             } else {
                 html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.assignmentFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)">';
@@ -555,7 +558,9 @@ var BDL = (function () {
                 var existingVal = assignment.valueMap[uv.value] || '';
                 var safeTV = escapeHtml(uv.value).replace(/'/g, "\\'");
                 html += '<div class="trigger-grid-row"><span class="trigger-val"><code>' + escapeHtml(uv.value) + '</code></span><span class="trigger-input-cell">';
-                if (condField && condField.lookup_table) {
+				if (condField && isBooleanField(condField)) {
+                    html += buildBooleanSelect(fieldId, existingVal, 'onchange="BDL.conditionalValueChanged(' + aIdx + ',\'' + safeTV + '\',this)"');
+                } else if (condField && condField.lookup_table) {
                     html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.conditionalValueSearch(' + aIdx + ',\'' + safeTV + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
                 } else {
                     html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="(skip)" value="' + escapeHtml(existingVal) + '" oninput="BDL.conditionalValueChanged(' + aIdx + ',\'' + safeTV + '\',this)">';
@@ -579,7 +584,14 @@ var BDL = (function () {
                 var displayName = hasDisplayName(f) ? f.display_name : f.element_name;
                 html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(displayName);
                 if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
-                html += '</div><div class="fixed-value-input"><input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)"></div></div>';
+                html += '</div><div class="fixed-value-input">';
+                if (isBooleanField(f)) {
+                    if (!existingVal) { existingVal = 'N'; assignment.sharedFields[f.element_name] = 'N'; }
+                    html += buildBooleanSelect(fieldId, existingVal, 'onchange="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)"');
+                } else {
+                    html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)">';
+                }
+                html += '</div></div>';
             });
             html += '</div>';
         }
@@ -613,7 +625,14 @@ var BDL = (function () {
                 var dn = hasDisplayName(f) ? f.display_name : f.element_name;
                 html += '<div class="fixed-value-row"><div class="fixed-value-label">' + escapeHtml(dn);
                 if (hasDisplayName(f)) html += '<div class="fixed-value-element">' + f.element_name + '</div>';
-                html += '</div><div class="fixed-value-input"><input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)"></div></div>';
+                html += '</div><div class="fixed-value-input">';
+                if (isBooleanField(f)) {
+                    if (!existingVal) { existingVal = 'N'; assignment.sharedFields[f.element_name] = 'N'; }
+                    html += buildBooleanSelect(fieldId, existingVal, 'onchange="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)"');
+                } else {
+                    html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.sharedFieldChanged(' + aIdx + ',\'' + f.element_name + '\',this)">';
+                }
+                html += '</div></div>';
             });
             html += '</div>';
         }
@@ -947,7 +966,10 @@ var BDL = (function () {
         var html = '<div class="fixed-value-row"><div class="fixed-value-label">Value for all rows';
         if (field && field.import_guidance) html += '<div class="fixed-value-guidance">' + escapeHtml(field.import_guidance) + '</div>';
         html += '</div><div class="fixed-value-input">';
-        if (field && field.lookup_table) {
+        if (field && isBooleanField(field)) {
+            if (!existingVal) { existingVal = 'N'; fa.value = 'N'; }
+            html += buildBooleanSelect(fieldId, existingVal, 'onchange="BDL.fieldAssignmentValueChanged(\'' + elementName + '\',this)"');
+        } else if (field && field.lookup_table) {
             html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldAssignmentSearch(\'' + elementName + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
         } else {
             html += '<input type="text" id="' + fieldId + '" class="fixed-value-text" placeholder="Enter value" value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldAssignmentValueChanged(\'' + elementName + '\',this)">';
@@ -985,7 +1007,9 @@ var BDL = (function () {
                 var existingVal = fa.valueMap[uv.value] || '';
                 var safeTV = escapeHtml(uv.value).replace(/'/g, "\\'");
                 html += '<div class="trigger-grid-row"><span class="trigger-val"><code>' + escapeHtml(uv.value) + '</code></span><span class="trigger-input-cell">';
-                if (field && field.lookup_table) {
+                if (field && isBooleanField(field)) {
+                    html += buildBooleanSelect(fieldId, existingVal, 'onchange="BDL.fieldCondValueChanged(\'' + safeElem + '\',\'' + safeTV + '\',this)"');
+                } else if (field && field.lookup_table) {
                     html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="Type to search..." value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldCondValueSearch(\'' + safeElem + '\',\'' + safeTV + '\',this)" autocomplete="off"><div class="fixed-value-suggestions" id="sug-' + fieldId + '"></div>';
                 } else {
                     html += '<input type="text" id="' + fieldId + '" class="trigger-grid-input" placeholder="(skip)" value="' + escapeHtml(existingVal) + '" oninput="BDL.fieldCondValueChanged(\'' + safeElem + '\',\'' + safeTV + '\',this)">';
@@ -1462,6 +1486,13 @@ var BDL = (function () {
     }
 
     function buildFieldMeta(f) { var p = []; if (f.data_type) p.push(f.data_type); if (f.max_length) p.push('max ' + f.max_length); if (f.lookup_table) p.push('&#128270; ' + f.lookup_table); if (f.is_import_required) p.push('required'); return p.join(' \u00b7 '); }
+	function isBooleanField(f) { return f && (f.data_type || '').toLowerCase() === 'boolean'; }
+    function buildBooleanSelect(fieldId, existingVal, onchangeAttr) {
+        var nSel = '', ySel = '';
+        if (existingVal === 'Y' || existingVal === 'y' || existingVal === 'yes' || existingVal === 'true' || existingVal === '1') ySel = ' selected';
+        else nSel = ' selected';
+        return '<select id="' + fieldId + '" class="fixed-value-text boolean-select" ' + onchangeAttr + '><option value="N"' + nSel + '>N</option><option value="Y"' + ySel + '>Y</option></select>';
+    }
     function isMappingDisabled() { var wrap = document.getElementById('mapping-panels-wrap'); return wrap && wrap.classList.contains('mapping-disabled'); }
     function sourceClick(h) { if (isMappingDisabled()) return; var a = document.getElementById('map-validate-area'); a._selectedSource = (a._selectedSource === h) ? null : h; refreshMappingPanels(); }
     function targetClick(el) { if (isMappingDisabled()) return; var a = document.getElementById('map-validate-area'); if (!a._selectedSource) return; curState().columnMapping[a._selectedSource] = el; a._selectedSource = null; refreshMappingPanels(); }
@@ -1544,7 +1575,7 @@ var BDL = (function () {
                 if (maxLen && tr.length > maxLen) { lenErrs.total++; if (lenErrs.items.length < MAX_SAMPLES) lenErrs.items.push({ row: i + 1, value: tr.substring(0, 50), length: tr.length }); }
                 if (dt === 'int' || dt === 'long' || dt === 'short') { if (!/^-?\d+$/.test(tr)) { typeErrs.total++; if (typeErrs.items.length < MAX_SAMPLES) typeErrs.items.push({ row: i + 1, value: tr.substring(0, 30) }); } }
                 else if (dt === 'decimal') { if (!/^-?\d+(\.\d+)?$/.test(tr)) { typeErrs.total++; if (typeErrs.items.length < MAX_SAMPLES) typeErrs.items.push({ row: i + 1, value: tr.substring(0, 30) }); } }
-                else if (dt === 'boolean') { if (['true', 'false', '1', '0', 'yes', 'no'].indexOf(tr.toLowerCase()) === -1) { typeErrs.total++; if (typeErrs.items.length < MAX_SAMPLES) typeErrs.items.push({ row: i + 1, value: tr.substring(0, 30) }); } }
+                else if (dt === 'boolean') { if (['true', 'false', '1', '0', 'yes', 'no', 'y', 'n'].indexOf(tr.toLowerCase()) === -1) { typeErrs.total++; if (typeErrs.items.length < MAX_SAMPLES) typeErrs.items.push({ row: i + 1, value: tr.substring(0, 30) }); } }
                 if (lookupMap && tr !== '') { if (!lookupMap[tr.toUpperCase()]) { var uKey = tr.toUpperCase(); if (!lookupMiss.uv[uKey]) lookupMiss.uv[uKey] = { display: tr, count: 0 }; lookupMiss.uv[uKey].count++; lookupMiss.total++; } }
             }
             if (emptyCount > 0) warnings.push({ type: 'required_empty', field: colName, sourceColumn: sourceCol, message: emptyCount.toLocaleString() + ' row(s) have empty values for required field', rowCount: emptyCount, hasLookup: !!lookupSet, lookupValues: lookupSet, samples: [] });
