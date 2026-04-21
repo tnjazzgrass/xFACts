@@ -2091,13 +2091,41 @@ var BDL = (function () {
         html += '<span class="history-import-env env-' + envLower + '">' + escapeHtml(imp.environment || '') + '</span>';
         html += '<span class="history-import-entity">' + escapeHtml(entityName) + '</span>';
         html += '<span class="history-import-filename">' + escapeHtml(fnShort) + '</span>';
-        html += '<span class="history-import-status"><span class="history-status-badge history-status-' + escapeHtml(status) + '">' + escapeHtml(status) + '</span></span>';
+        html += '<span class="history-import-status"><span class="history-status-badge history-status-' + escapeHtml(status) + '">' + escapeHtml(status) + '</span>';
+        if (imp.status === 'FAILED' && imp.file_registry_id && imp.log_id && imp.file_registry_status === 'READY') {
+            html += '<span class="history-retry-badge" onclick="event.stopPropagation(); BDL.retryImportTrigger(' + imp.log_id + ',this)">RETRY</span>';
+        }
+        html += '</span>';
         html += '<span class="history-import-count">' + total.toLocaleString() + '</span>';
         html += '<span class="history-import-count-success">' + (succ > 0 ? succ.toLocaleString() : '') + '</span>';
         html += '<span class="history-import-count-fail">'    + (fail > 0 ? fail.toLocaleString() : '') + '</span>';
         html += '<span class="history-import-user">' + userCell + '</span>';
         html += '</div>';
         return html;
+    }
+
+    function retryImportTrigger(logId, badgeEl) {
+        if (badgeEl) { badgeEl.textContent = '...'; badgeEl.classList.add('history-retry-pending'); }
+        fetch('/api/bdl-import/retry-trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ log_id: logId })
+        })
+        .then(function (r) { return r.json().then(function (d) { d._httpStatus = r.status; return d; }); })
+        .then(function (data) {
+            if (data._httpStatus >= 400 || data.error) {
+                showAlert(data.error || 'Retry failed', { title: 'Retry Failed', icon: '&#10005;', iconColor: '#f48771' });
+                if (badgeEl) { badgeEl.textContent = 'Retry'; badgeEl.classList.remove('history-retry-pending'); }
+            } else {
+                if (badgeEl) { badgeEl.textContent = 'Submitted'; badgeEl.classList.remove('history-retry-pending'); badgeEl.classList.add('history-retry-success'); }
+                historyMonthCache = {};
+                setTimeout(function () { loadHistory(); }, 1500);
+            }
+        })
+        .catch(function (err) {
+            showAlert(err.message, { title: 'Retry Error', icon: '&#10005;', iconColor: '#f48771' });
+            if (badgeEl) { badgeEl.textContent = 'Retry'; badgeEl.classList.remove('history-retry-pending'); }
+        });
     }
 
     function toggleHistoryDay(dateKey) {
@@ -2270,6 +2298,7 @@ var BDL = (function () {
         toggleHistoryYear: toggleHistoryYear,
         toggleHistoryMonth: toggleHistoryMonth,
         toggleHistoryDay: toggleHistoryDay,
+        retryImportTrigger: retryImportTrigger,
         stopHistoryPolling: stopHistoryPolling
     };
 })();
