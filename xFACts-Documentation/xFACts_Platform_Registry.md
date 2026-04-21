@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-21 10:43:33
+Generated: 2026-04-21 16:38:51
 
 ## Module Registry
 
@@ -62,7 +62,6 @@ Generated: 2026-04-21 10:43:33
 
 | component_name | object_name | object_category | object_type | object_path | description |
 | --- | --- | --- | --- | --- | --- |
-| B2B | INT_ClientRegistry | Database | Table | B2B | Trimmed local mirror of Integration.etl.tbl_B2B_CLIENTS_MN client roster. Provides client_id-to-name resolution and activity flags for the B2B module without requiring cross-server lookups. |
 | BatchOps | BDL_BatchTracking | Database | Table |  | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
@@ -400,6 +399,8 @@ Generated: 2026-04-21 10:43:33
 
 | module_name | category | setting_name | setting_value | data_type | description |
 | --- | --- | --- | --- | --- | --- |
+| B2B | B2B | b2b_alerting_enabled | 0 | BIT | Master on/off switch for B2B module alerting. |
+| B2B | B2B | b2b_collect_lookback_days | 7 | INT | Number of days back that Collect-B2BExecution.ps1 scans for FA_CLIENTS_MAIN workflow runs in b2bi. |
 | BatchOps | BDL | bdl_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file reaches FAILED status in File_Registry |
 | BatchOps | BDL | bdl_alert_stall_routing | 1 | ALERT_MODE | Alert destination(s) when BDL partition processing stalls |
 | BatchOps | BDL | bdl_alerting_enabled | 0 | BIT | Master on/off switch for all BDL batch alerting |
