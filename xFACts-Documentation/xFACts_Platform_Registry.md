@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-21 05:37:27
+Generated: 2026-04-21 10:43:33
 
 ## Module Registry
 
@@ -63,8 +63,6 @@ Generated: 2026-04-21 05:37:27
 | component_name | object_name | object_category | object_type | object_path | description |
 | --- | --- | --- | --- | --- | --- |
 | B2B | INT_ClientRegistry | Database | Table | B2B | Trimmed local mirror of Integration.etl.tbl_B2B_CLIENTS_MN client roster. Provides client_id-to-name resolution and activity flags for the B2B module without requiring cross-server lookups. |
-| B2B | SI_ProcessBaseline | Database | Table | B2B | Per-process execution fingerprint capturing the "empty run" baseline (child workflow count and total step count) for Scheduler_FA_* workflows. Used by the B2B collector for activity detection by comparing actual runs against the baseline. |
-| B2B | SI_WorkflowTracking | Database | Table | B2B | Execution record for Sterling parent workflows (Scheduler_FA_*). One row per parent workflow captured from b2bi with rolled-up child workflow metrics and activity detection flags. |
 | BatchOps | BDL_BatchTracking | Database | Table |  | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
