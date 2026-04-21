@@ -1796,6 +1796,59 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             return
         }
 
+        # ── Step 6b: Poll File_Registry until READY ──────────────────────
+        $maxWaitSeconds = 30
+        $pollIntervalSeconds = 2
+        $elapsed = 0
+        $fileReady = $false
+
+        $targetDbConfig = Invoke-XFActsQuery -Query @"
+            SELECT db_instance FROM Tools.EnvironmentConfig
+            WHERE config_id = @configId AND is_active = 1
+"@ -Parameters @{ configId = $configId }
+
+        if ($targetDbConfig -and $targetDbConfig.Count -gt 0 -and -not [string]::IsNullOrEmpty($targetDbConfig[0].db_instance)) {
+            $pollInstance = $targetDbConfig[0].db_instance
+            $pollConnString = "Server=$pollInstance;Database=crs5_oltp;Integrated Security=True;Application Name=xFACts BDL-PollReady;"
+
+            while ($elapsed -lt $maxWaitSeconds) {
+                try {
+                    $pollConn = New-Object System.Data.SqlClient.SqlConnection($pollConnString)
+                    $pollConn.Open()
+                    $pollCmd = $pollConn.CreateCommand()
+                    $pollCmd.CommandText = "SELECT file_stts_cd FROM dbo.File_Registry WHERE File_registry_id = @regId"
+                    $pollCmd.Parameters.AddWithValue("@regId", $fileRegistryId) | Out-Null
+                    $pollCmd.CommandTimeout = 10
+                    $statusCd = $pollCmd.ExecuteScalar()
+                    $pollConn.Close()
+
+                    if ($statusCd -eq 3) { $fileReady = $true; break }
+                }
+                catch { }
+                finally { if ($pollConn -and $pollConn.State -eq 'Open') { $pollConn.Close() } }
+
+                Start-Sleep -Seconds $pollIntervalSeconds
+                $elapsed += $pollIntervalSeconds
+            }
+        }
+        else {
+            # No db_instance configured — skip polling, fire immediately (legacy behavior)
+            $fileReady = $true
+        }
+
+        if (-not $fileReady) {
+            $waitMsg = "File registry $fileRegistryId did not reach READY status within ${maxWaitSeconds}s. Use the Retry button in Import History once the file is ready."
+
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog
+                SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; errorMsg = $waitMsg }
+
+            Write-PodeJsonResponse -Value @{ error = $waitMsg; log_id = $logId; file_registry_id = $fileRegistryId } -StatusCode 500
+            return
+        }
+
         # ── Step 7: Trigger BDL import (POST /fileregistry/{id}/bdlimport)
         try {
             $importResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$fileRegistryId/bdlimport" `
@@ -1871,6 +1924,137 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 
         # ── Final response ──────────────────────────────────────────────
         Write-PodeJsonResponse -Value $primaryResult
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# POST /api/bdl-import/retry-trigger
+# Retries the BDL import trigger for a failed import that has a file_registry_id.
+# The file was registered with DM but the trigger call failed (e.g., file not
+# yet in READY status). This endpoint re-fires the trigger without re-registering.
+# Access: original executed_by user OR admin tier on /bdl-import page.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $body = $WebEvent.Data
+        $logId = $body.log_id
+
+        if (-not $logId) {
+            Write-PodeJsonResponse -Value @{ error = 'log_id is required' } -StatusCode 400
+            return
+        }
+
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
+
+        # ── Validate the import log row ──────────────────────────────────
+        $logRow = Invoke-XFActsQuery -Query @"
+            SELECT log_id, environment, entity_type, file_registry_id, status,
+                   executed_by, server_config_id, source_filename
+            FROM Tools.BDL_ImportLog
+            WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId }
+
+        if (-not $logRow -or $logRow.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = "Import log $logId not found" } -StatusCode 404
+            return
+        }
+
+        $row = $logRow[0]
+
+        # Must be FAILED with a file_registry_id
+        if ($row.status -ne 'FAILED') {
+            Write-PodeJsonResponse -Value @{ error = "Import $logId is not in FAILED status (current: $($row.status))" } -StatusCode 400
+            return
+        }
+
+        if (-not $row.file_registry_id -or $row.file_registry_id -is [System.DBNull]) {
+            Write-PodeJsonResponse -Value @{ error = "Import $logId has no file_registry_id — file was never registered with DM. A full re-import is needed." } -StatusCode 400
+            return
+        }
+
+        # ── Access check: must be original user or admin tier ────────────
+        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
+        $isPageAdmin = $access.HasAccess -and $access.Tier -eq 'admin'
+        $isOriginalUser = $row.executed_by -eq $user
+
+        if (-not $isOriginalUser -and -not $isPageAdmin) {
+            Write-PodeJsonResponse -Value @{ error = 'Only the original user or an admin can retry this import' } -StatusCode 403
+            return
+        }
+
+        # ── Resolve environment → API URL + credentials ──────────────────
+        $environment = $row.environment
+        $configId = $row.server_config_id
+
+        $apiServer = Invoke-XFActsQuery -Query @"
+            SELECT api_base_url FROM dbo.ServerRegistry
+            WHERE environment = @env AND is_api_primary = 1 AND tools_enabled = 1
+"@ -Parameters @{ env = $environment }
+
+        if (-not $apiServer -or $apiServer.Count -eq 0) {
+            Write-PodeJsonResponse -Value @{ error = "No primary API server configured for $environment" } -StatusCode 500
+            return
+        }
+
+        $apiBaseUrl = $apiServer[0].api_base_url
+        $fileRegistryId = $row.file_registry_id
+
+        # ── Get DM API credentials ───────────────────────────────────────
+        try {
+            $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
+        }
+        catch {
+            Write-PodeJsonResponse -Value @{ error = "Failed to retrieve DM API credentials: $($_.Exception.Message)" } -StatusCode 500
+            return
+        }
+
+        $authHeader = $creds.AuthHeader
+        $apiHeaders = @{
+            'Authorization' = $authHeader
+            'Content-Type'  = 'application/vnd.fico.dm.v1+json'
+        }
+
+        # ── Fire the trigger ─────────────────────────────────────────────
+        try {
+            $importResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$fileRegistryId/bdlimport" `
+                -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
+
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog
+                SET status = 'SUBMITTED',
+                    error_message = NULL,
+                    completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId }
+
+            Write-PodeJsonResponse -Value @{
+                success          = $true
+                log_id           = [int]$logId
+                file_registry_id = $fileRegistryId
+                environment      = $environment
+                status           = 'SUBMITTED'
+                message          = "Import trigger retry successful for file registry $fileRegistryId"
+            }
+        }
+        catch {
+            $retryError = "Retry trigger failed: $($_.Exception.Message)"
+
+            Invoke-XFActsNonQuery -Query @"
+                UPDATE Tools.BDL_ImportLog
+                SET error_message = @errorMsg,
+                    completed_dttm = GETDATE()
+                WHERE log_id = @logId
+"@ -Parameters @{ logId = $logId; errorMsg = $retryError }
+
+            Write-PodeJsonResponse -Value @{
+                error            = $retryError
+                log_id           = [int]$logId
+                file_registry_id = $fileRegistryId
+            } -StatusCode 500
+        }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
