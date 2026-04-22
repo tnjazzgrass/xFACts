@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-21 16:38:51
+Generated: 2026-04-22 12:29:01
 
 ## Module Registry
 
@@ -62,6 +62,8 @@ Generated: 2026-04-21 16:38:51
 
 | component_name | object_name | object_category | object_type | object_path | description |
 | --- | --- | --- | --- | --- | --- |
+| B2B | SI_ScheduleRegistry | Database | Table | B2B | Master catalog of IBM Sterling B2B Integrator schedules sourced from b2bi.dbo.SCHEDULE. Stores one row per SCHEDULEID with parsed TIMINGXML structure for auditing, monitoring, and Control Center display. |
+| B2B | Collect-B2BExecution.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-B2BExecution.ps1 | B2B module collector. Synchronizes the schedule registry from b2bi.dbo.SCHEDULE; additional execution-tracking steps are stubbed pending Block 2 implementation. |
 | BatchOps | BDL_BatchTracking | Database | Table |  | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
