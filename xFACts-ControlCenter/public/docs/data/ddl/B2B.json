@@ -1,573 +1,349 @@
 {
     "tables":  [
                    {
-                       "name":  "INT_ClientRegistry",
-                       "description":  "Local mirror of the client roster maintained in Integration.etl.tbl_B2B_CLIENTS_MN on AVG-PROD-LSNR. Captures the four columns present in the source table — client_id, client_name, is_active, is_automated — synced daily so that B2B module queries can resolve client names and activity flags without cross-server joins. This registry serves as one side of the B2B-to-DM bridge: client_id joins to B2B.ClientCrosswalk to reach DM creditors via dbo.ClientHierarchy. Active/automated flags are normalized from the source INT columns (which use 0/1 values as Y/N switches) to BIT for consistency with xFACts conventions. Integration appears to maintain CLIENTS_MN manually, so rows are largely static — the last_synced_dttm column tracks when each row was confirmed present during the most recent sync.",
+                       "name":  "SI_ScheduleRegistry",
+                       "description":  "Master catalog of IBM Sterling B2B Integrator schedules. Stores one row per SCHEDULEID from b2bi.dbo.SCHEDULE with parsed TIMINGXML structure and a human-readable schedule description. The collector fully synchronizes this table with b2bi on each cycle: new schedules are inserted, changed schedules are re-parsed and updated, and schedules no longer present in b2bi are removed. This table is the authoritative source for \"what schedules exist in Sterling, when they run, and their current operational status\" for the xFACts B2B module.",
                        "module":  "B2B",
                        "category":  "B2B",
-                       "dataFlow":  "Sync-B2BConfig.ps1 runs daily on the orchestrator and queries Integration.etl.tbl_B2B_CLIENTS_MN on AVG-PROD-LSNR. The four source columns (CLIENT_ID, CLIENT_NAME, ACTIVE_FLAG, AUTOMATED) are read and MERGEd into this table, with ACTIVE_FLAG and AUTOMATED normalized from 0/1 INT values to BIT. New clients are inserted, changed names or flags trigger updates, and last_synced_dttm is refreshed on every observed row. Rows that disappear from the source are not automatically deleted — they remain available for name resolution on historical workflow records. The Collect-B2BWorkflow.ps1 script does not read this table directly; instead, the Control Center B2B page and Monitor-B2B.ps1 join to it when they need to resolve client IDs surfaced via the crosswalk to displayable names and activity flags.",
+                       "dataFlow":  "Collect-B2BExecution.ps1 fully synchronizes this table with b2bi.dbo.SCHEDULE on every collection cycle. The collector queries all rows from SCHEDULE, fetches each TIMINGXML blob from b2bi.dbo.DATA_TABLE, decompresses the gzip content, parses the XML into the structured columns (run_day_mask, run_times_explicit, run_range_start/end, run_interval_minutes, excluded_dates, etc.), generates the human-readable schedule_description, and MERGEs the result. New schedules are INSERTed; existing schedules are re-parsed if the timing_xml_handle has changed; schedules no longer present in b2bi are DELETEd from the registry. The Control Center B2B page (future) reads this table to display the schedule modal/panel. No other xFACts components currently read this table; it will become a join target for SI_ExecutionTracking in Phase 3 Block 2 to correlate observed workflow runs against their expected schedules.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
-                                           "name":  "client_id",
-                                           "dataType":  "bigint",
+                                           "name":  "schedule_id",
+                                           "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Integration client identifier from tbl_B2B_CLIENTS_MN.CLIENT_ID. Primary key. Matched as BIGINT to the source type to avoid conversion errors during sync. Used as the join key to B2B.ClientCrosswalk for resolving clients to their associated DM creditors."
+                                           "description":  "Primary key. SCHEDULEID value from b2bi.dbo.SCHEDULE. Immutable identifier assigned by Sterling."
                                        },
                                        {
                                            "ordinal":  2,
-                                           "name":  "client_name",
-                                           "dataType":  "varchar",
+                                           "name":  "service_name",
+                                           "dataType":  "nvarchar",
                                            "length":  "128",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Client display name from tbl_B2B_CLIENTS_MN.CLIENT_NAME. Used for all client-facing display in the Control Center and in alerts. Truncation is not expected at VARCHAR(128) but would trigger a sync error if it occurred, surfacing the need to widen."
+                                           "description":  "SERVICENAME from b2bi.dbo.SCHEDULE. Name of the Sterling workflow (business process) this schedule fires. Examples: \"FA_CLIENTS_GET_LIST\", \"FA_AMSURG_MHS_IB_BD_NB\", \"BackupService\"."
                                        },
                                        {
                                            "ordinal":  3,
-                                           "name":  "is_active",
-                                           "dataType":  "bit",
+                                           "name":  "schedule_type",
+                                           "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Whether the client is currently active on the Integration side. Normalized to BIT from the source INT column (tbl_B2B_CLIENTS_MN.ACTIVE_FLAG) which carries 0/1 values used as a Y/N switch. Inactive clients are retained in the registry so that historical workflow rows referencing them can still resolve a name, but filter-by-active views in the UI would exclude them."
+                                           "description":  "SCHEDULETYPE from b2bi.dbo.SCHEDULE. Sterling-internal integer classifying schedule type. Semantics defined by Sterling, not xFACts; captured for lineage and future correlation."
                                        },
                                        {
                                            "ordinal":  4,
-                                           "name":  "is_automated",
-                                           "dataType":  "bit",
+                                           "name":  "schedule_type_id",
+                                           "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Whether the client is processed through automated pipelines. Normalized to BIT from the source INT column (tbl_B2B_CLIENTS_MN.AUTOMATED). Useful for distinguishing expected-automated flows from manual or ad-hoc flows when evaluating schedule adherence alerts."
+                                           "description":  "SCHEDULETYPEID from b2bi.dbo.SCHEDULE. Sterling-internal secondary classifier. Semantics defined by Sterling; captured for lineage."
                                        },
                                        {
                                            "ordinal":  5,
-                                           "name":  "last_synced_dttm",
-                                           "dataType":  "datetime",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "(getdate())",
-                                           "description":  "Timestamp of the most recent sync cycle that observed this row in the source table. Defaults to GETDATE() on insert and is updated on every sync pass. Rows whose last_synced_dttm falls behind the most recent sync run indicate clients that have disappeared from the source — a rare event but one worth surfacing for investigation."
-                                       }
-                                   ],
-                       "indexes":  [
-                                       {
-                                           "name":  "PK_INT_ClientRegistry",
-                                           "type":  "CLUSTERED",
-                                           "isUnique":  true,
-                                           "isPrimaryKey":  true,
-                                           "isUniqueConstraint":  false,
-                                           "keyColumns":  "client_id"
-                                       },
-                                       {
-                                           "name":  "IX_INT_ClientRegistry_client_name",
-                                           "type":  "NONCLUSTERED",
-                                           "isUnique":  false,
-                                           "isPrimaryKey":  false,
-                                           "isUniqueConstraint":  false,
-                                           "keyColumns":  "client_name",
-                                           "includedColumns":  "is_active, is_automated"
-                                       }
-                                   ],
-                       "designNotes":  [
-                                           {
-                                               "topic":  "Not Redundant with ClientCrosswalk",
-                                               "note":  "At first glance the crosswalk and the client registry may appear to overlap since both reference client_id. They serve different purposes. The registry is a roster — it answers \"what is client N\" by providing name and activity flags, and includes every client in Integration regardless of whether that client has ever been observed touching DM data. The crosswalk is a bridge — it answers \"which DM creditors does client N touch\" based on observational evidence from record-level tables like CLIENTS_ACCTS. A client can exist in the registry with no crosswalk entries (never sent a file), and every crosswalk entry has a row in the registry by definition. Keeping them separate preserves that distinction and avoids putting observational metadata onto an authoritative roster.",
-                                               "sortOrder":  1
-                                           },
-                                           {
-                                               "topic":  "Type Matching on client_id",
-                                               "note":  "The client_id column is BIGINT rather than INT to match the Integration source exactly. Previous experience with narrowing BIGINT sources to INT targets has produced conversion errors during sync when unexpected values appeared. BIGINT is marginally more storage but eliminates a class of avoidable failures.",
-                                               "sortOrder":  2
-                                           },
-                                           {
-                                               "topic":  "Local Mirror vs Live Query",
-                                               "note":  "Integration is available on the same AG listener as xFACts, so this table technically could have been replaced with a query against Integration directly at each point of use. A local mirror was chosen because client name resolution happens on every B2B Control Center page render and on every alert generation. Having the roster local keeps that path fast and makes xFACts resilient to Integration availability for display purposes. The cost is 718 rows refreshed daily — trivial storage, trivial sync time.",
-                                               "sortOrder":  3
-                                           },
-                                           {
-                                               "topic":  "Flag Normalization to BIT",
-                                               "note":  "The source columns ACTIVE_FLAG and AUTOMATED are INT in Integration but carry only 0 and 1 values, effectively used as boolean switches. xFACts convention for boolean columns is BIT with an is_ prefix (is_active, is_automated). The sync MERGE normalizes the source INT to BIT via a simple CASE; any unexpected non-0-non-1 value would fail the BIT cast and surface as a sync error, which is the desired behavior — we would want to know if Integration started using 2 or 3 for something.",
-                                               "sortOrder":  4
-                                           },
-                                           {
-                                               "topic":  "Disappeared Rows Not Deleted",
-                                               "note":  "When Sync-B2BConfig.ps1 runs, rows in the source that previously existed but are no longer there are not deleted from this table. Historical workflow records and crosswalk entries reference client_id values; hard-deleting a client would leave those references unable to resolve to a name. The last_synced_dttm column instead serves as the staleness indicator — if a row has not been refreshed in the last cycle, it has disappeared from the source and should be investigated, but the row itself remains for referential purposes.",
-                                               "sortOrder":  5
-                                           }
-                                       ],
-                       "relationshipNotes":  [
-                                                 {
-                                                     "relatedObject":  "Sync-B2BConfig.ps1",
-                                                     "note":  "The exclusive writer to this table. Runs daily under the orchestrator, reads Integration.etl.tbl_B2B_CLIENTS_MN, and MERGEs changes into this registry. Also maintains B2B.INT_ScheduleConfig in the same script.",
-                                                     "sortOrder":  1
-                                                 },
-                                                 {
-                                                     "relatedObject":  "ClientCrosswalk",
-                                                     "note":  "client_id is the join key from this registry to B2B.ClientCrosswalk. The crosswalk is the mapping layer that translates B2B client_id values to DM creditor_key values via observational evidence from Integration record-level tables. Together, the registry and crosswalk form the complete B2B-side identity resolution layer.",
-                                                     "sortOrder":  2
-                                                 }
-                                             ]
-                   },
-                   {
-                       "name":  "SI_ProcessBaseline",
-                       "description":  "Per-process execution fingerprint used by the B2B collector to detect activity. Each row captures the \"empty run\" baseline for a Scheduler_FA_* workflow — the consistent child workflow count and total child step count that appear when the process runs and finds nothing to do. Activity detection compares the actual total_child_steps of each execution against baseline_total_steps; runs that exceed the baseline processed data. Baselines are recalculated by the collector on every cycle, sampling recent executions to find the most common (child_count, total_child_steps) combination per service_name. Frequent recalculation compensates for b2bi\u0027s aggressive ~2-3 day purge window, which keeps the baseline responsive to the limited sample available at any given time.",
-                       "module":  "B2B",
-                       "category":  "B2B",
-                       "dataFlow":  "Collect-B2BWorkflow.ps1 recalculates baselines at the start of every cycle by sampling Scheduler_FA_* parent workflows from the last two days of b2bi.dbo.WORKFLOW_CONTEXT on FA-INT-DBP. The sample query groups each service_name\u0027s executions by (child_count, total_child_steps) and selects the most common combination as the baseline fingerprint. Results are MERGEd into this table by service_name — new processes are inserted, existing rows are updated, and rows for processes that no longer appear in the sample window are retained (b2bi\u0027s short retention window would otherwise cause baselines to be deleted whenever a process goes idle). The collector then reads this table for each parent workflow it processes, joining by service_name to determine whether the current execution\u0027s total_child_steps exceeds baseline_total_steps. The result drives the had_activity flag on B2B.SI_WorkflowTracking. The future Monitor-B2B.ps1 reads baseline_occurrences and total_executions_sampled to flag processes with weak confidence baselines. The Control Center B2B page will surface baselines alongside workflow executions for investigation views.",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "service_name",
-                                           "dataType":  "varchar",
-                                           "length":  "200",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Sterling workflow process name, sourced from b2bi.dbo.WORKFLOW_CONTEXT.SERVICE_NAME at STEP_ID = 0. All tracked processes use the Scheduler_FA_* naming convention. Acts as the primary key — one baseline per distinct process."
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "process_direction",
-                                           "dataType":  "varchar",
-                                           "length":  "10",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Data flow direction inferred from the service name pattern. FROM_* processes are INBOUND (partner-to-FAC), TO_* processes are OUTBOUND (FAC-to-partner), all other Scheduler_FA_* processes are classified INTERNAL. Used by the collector to determine the activity detection approach — INBOUND relies on step count deviation from baseline, OUTBOUND relies on SFTPClientPut presence."
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "baseline_child_count",
+                                           "name":  "execution_timer",
                                            "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Most common child workflow count across sampled executions for this process. Children are spawned via InvokeBusinessProcessService and tracked through b2bi.dbo.WORKFLOW_LINKAGE. The fingerprint for an \"empty run\" — the count that consistently appears when the process finds nothing to process."
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "baseline_total_steps",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Most common total child step count across sampled executions for this process. Calculated as the sum of sub-step rows (STEP_ID \u003e 0) across all children linked to the parent workflow via WORKFLOW_LINKAGE. The primary activity detection metric — executions where total_child_steps exceeds this baseline processed data."
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "baseline_occurrences",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Number of sampled executions that matched the baseline fingerprint exactly (same child_count + same total_child_steps). Confidence indicator — a baseline with 46 of 48 matching occurrences is high-confidence; one with 10 of 40 indicates the process may not have a clean \"empty\" state or is still being characterized."
+                                           "description":  "EXECUTIONTIMER from b2bi.dbo.SCHEDULE. Sterling-internal execution mode flag. Has three distinct observed values across all active schedules (0, 1, 2) — value 1 is dominant. Semantics defined by Sterling; captured for classification research."
                                        },
                                        {
                                            "ordinal":  6,
-                                           "name":  "total_executions_sampled",
-                                           "dataType":  "int",
+                                           "name":  "source_status",
+                                           "dataType":  "nvarchar",
+                                           "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Total number of executions in the b2bi sample window used to compute this baseline. Serves as the denominator for confidence math. Low sample counts typically reflect processes that run infrequently combined with b2bi\u0027s aggressive purge retention."
+                                           "description":  "STATUS value from b2bi.dbo.SCHEDULE. Sterling-managed state of the schedule itself — not xFACts-managed. Observed values include ACTIVE, HOLD. Pass-through from Sterling; interpret against Sterling documentation if needed."
                                        },
                                        {
                                            "ordinal":  7,
-                                           "name":  "max_observed_steps",
-                                           "dataType":  "int",
+                                           "name":  "execution_status",
+                                           "dataType":  "nvarchar",
+                                           "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Highest total_child_steps value seen across the sample window. Useful for outlier detection by the Monitor script — a current run significantly above this watermark may indicate an exceptional event (very large file, unusual condition) worth surfacing."
+                                           "description":  "EXECUTIONSTATUS value from b2bi.dbo.SCHEDULE. Sterling scheduler state for the schedule\u0027s execution pipeline — not xFACts-managed. Typical value observed is WAIT. Pass-through from Sterling."
                                        },
                                        {
                                            "ordinal":  8,
-                                           "name":  "last_calculated_dttm",
-                                           "dataType":  "datetime",
+                                           "name":  "timing_xml_handle",
+                                           "dataType":  "nvarchar",
+                                           "length":  "255",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "(getdate())",
-                                           "description":  "When this baseline row was last recalculated by the collector. Updated on every collector cycle as the baseline refresh is not gated."
-                                       }
-                                   ],
-                       "indexes":  [
-                                       {
-                                           "name":  "PK_SI_ProcessBaseline",
-                                           "type":  "CLUSTERED",
-                                           "isUnique":  true,
-                                           "isPrimaryKey":  true,
-                                           "isUniqueConstraint":  false,
-                                           "keyColumns":  "service_name"
-                                       },
-                                       {
-                                           "name":  "IX_SI_ProcessBaseline_process_direction",
-                                           "type":  "NONCLUSTERED",
-                                           "isUnique":  false,
-                                           "isPrimaryKey":  false,
-                                           "isUniqueConstraint":  false,
-                                           "keyColumns":  "process_direction",
-                                           "includedColumns":  "baseline_total_steps, baseline_occurrences, total_executions_sampled"
-                                       }
-                                   ],
-                       "checkConstraints":  [
-                                                {
-                                                    "name":  "CK_SI_ProcessBaseline_baseline_child_count",
-                                                    "definition":  "([baseline_child_count]\u003e=(0))"
-                                                },
-                                                {
-                                                    "name":  "CK_SI_ProcessBaseline_baseline_occurrences",
-                                                    "definition":  "([baseline_occurrences]\u003e=(0))"
-                                                },
-                                                {
-                                                    "name":  "CK_SI_ProcessBaseline_baseline_total_steps",
-                                                    "definition":  "([baseline_total_steps]\u003e=(0))"
-                                                },
-                                                {
-                                                    "name":  "CK_SI_ProcessBaseline_max_observed_steps",
-                                                    "definition":  "([max_observed_steps]\u003e=(0))"
-                                                },
-                                                {
-                                                    "name":  "CK_SI_ProcessBaseline_process_direction",
-                                                    "definition":  "([process_direction]=\u0027INTERNAL\u0027 OR [process_direction]=\u0027OUTBOUND\u0027 OR [process_direction]=\u0027INBOUND\u0027)"
-                                                },
-                                                {
-                                                    "name":  "CK_SI_ProcessBaseline_total_executions_sampled",
-                                                    "definition":  "([total_executions_sampled]\u003e=(0))"
-                                                }
-                                            ],
-                       "designNotes":  [
-                                           {
-                                               "topic":  "Baseline Refresh on Every Cycle",
-                                               "note":  "Baselines are recalculated on every collector cycle with no time-based gating. This was a deliberate choice in response to b2bi\u0027s aggressive ~2-3 day purge retention. A given process may only have one or two recent executions visible at any moment, and gating refreshes to once per N hours would risk missing the brief window where newly-observed executions are available to refine the baseline. The baseline query is lightweight (grouped aggregates over recent Scheduler_FA_* parents and their linked children) and runs in well under a second, making the per-cycle overhead negligible compared to the benefit of continuous baseline accuracy.",
-                                               "sortOrder":  1
-                                           },
-                                           {
-                                               "topic":  "Inbound vs Outbound Detection Semantics",
-                                               "note":  "The process_direction column exists to let the collector apply the right activity detection logic per row. INBOUND processes run frequently and usually find nothing — their baseline represents the \"no file to pull\" state, and any execution exceeding the baseline step count is treated as real activity. OUTBOUND processes run on a schedule and are expected to deliver data every time — there is no meaningful \"empty baseline\" to compare against, so activity detection falls to scanning child workflow steps for SFTPClientPut as proof of file delivery. The baseline row still exists for OUTBOUND processes (useful for volume outlier detection via max_observed_steps), but the collector branches on direction when deciding how to interpret it.",
-                                               "sortOrder":  2
-                                           },
-                                           {
-                                               "topic":  "No Surrogate Key",
-                                               "note":  "service_name is the natural primary key and the correlation key used throughout the B2B module. A surrogate identity column was considered and rejected — one baseline per process is a clean one-to-one relationship with no need for synthetic identifiers. The service_name is stable, already indexed as the PK, and used directly in joins by the collector and Monitor script.",
-                                               "sortOrder":  3
-                                           }
-                                       ],
-                       "statusValues":  [
-                                            {
-                                                "column":  "process_direction",
-                                                "value":  "INBOUND",
-                                                "meaning":  "Partner-to-FAC data flow. Service names follow the Scheduler_FA_FROM_* pattern. These processes typically run frequently (hourly or more), usually find nothing to pull, and are detected as active when total_child_steps exceeds the baseline — indicating a file was found and processed.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "process_direction",
-                                                "value":  "OUTBOUND",
-                                                "meaning":  "FAC-to-partner data flow. Service names follow the Scheduler_FA_TO_* pattern. These processes typically run once daily and are expected to deliver data every execution. Activity detection relies on SFTPClientPut presence in child workflow steps rather than baseline deviation.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "process_direction",
-                                                "value":  "INTERNAL",
-                                                "meaning":  "Internal or utility processes that do not fit the FROM_/TO_ pattern. Includes maintenance and housekeeping processes (e.g., Scheduler_FA_DM_ENOTICE). Baselines are still captured for outlier detection, but these processes are treated as informational in the Monitor script rather than triggering direction-specific alerting.",
-                                                "sortOrder":  3
-                                            }
-                                        ],
-                       "relationshipNotes":  [
-                                                 {
-                                                     "relatedObject":  "Collect-B2BWorkflow.ps1",
-                                                     "note":  "The B2B collector both maintains and consumes this table. On every cycle it recalculates baseline fingerprints from recent b2bi.dbo.WORKFLOW_CONTEXT data and MERGEs into this table. It then reads the baseline for each Scheduler_FA_* parent workflow it processes, using baseline_total_steps to set the had_activity flag on B2B.SI_WorkflowTracking rows.",
-                                                     "sortOrder":  1
-                                                 }
-                                             ]
-                   },
-                   {
-                       "name":  "SI_WorkflowTracking",
-                       "description":  "Execution record for Sterling parent workflows. Captures one row per Scheduler_FA_* parent workflow (STEP_ID = 0) from b2bi.dbo.WORKFLOW_CONTEXT on FA-INT-DBP. Individual sub-step and child workflow rows are not persisted — instead, their metrics are rolled up into aggregate columns on the parent row (total child count, total step count across children, SFTP and translation indicators). The had_activity flag is set by the collector using direction-aware logic: inbound and internal processes compare total_child_steps against the baseline in B2B.SI_ProcessBaseline, outbound processes use the presence of SFTPClientPut in child steps. Workflow_id is the primary key and serves as the correlation key to Integration.etl.tbl_B2B_CLIENTS_BATCH_STATUS.RUN_ID for enrichment queries. All rows are retained indefinitely; archival will be introduced if volume grows large enough to warrant it.",
-                       "module":  "B2B",
-                       "category":  "B2B",
-                       "dataFlow":  "Collect-B2BWorkflow.ps1 runs on a short cycle against b2bi on FA-INT-DBP. For each new or in-flight Scheduler_FA_* parent workflow, the collector reads the parent row from WORKFLOW_CONTEXT (STEP_ID = 0), traverses WORKFLOW_LINKAGE to identify spawned children, and aggregates sub-step rows from each child to produce the rollup metrics. The SFTP and translation flags are set by scanning child step service names for SFTPClientGet, SFTPClientPut, and Translation matches. B2B.SI_ProcessBaseline is read by service_name to compare actual total_child_steps against baseline_total_steps for inbound/internal activity detection; outbound detection uses has_sftp_put directly. Results are MERGEd into this table by workflow_id — new workflows inserted, in-flight workflows (NULL end_time) updated as they complete. The future Monitor-B2B.ps1 reads incomplete and recently-completed rows to evaluate alerting conditions — missing scheduled processes, parent-level failures, and unexpected has_sftp_put = 0 for outbound processes. The Control Center B2B page queries this table for process status overview, failure feeds, file transfer activity, and volume trends.",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "workflow_id",
-                                           "dataType":  "bigint",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Unique parent workflow identifier from b2bi.dbo.WORKFLOW_CONTEXT.WORKFLOW_ID (STEP_ID = 0). Serves as primary key and correlation key to Integration.etl.tbl_B2B_CLIENTS_BATCH_STATUS.RUN_ID for cross-source enrichment queries. BIGINT sized to accommodate long-term Sterling workflow ID growth."
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "workflow_def_id",
-                                           "dataType":  "bigint",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Workflow definition identifier from b2bi WFD_ID. Pairs with workflow_def_version to identify the specific template version executed. Useful for detecting process changes over time by correlating with b2bi.dbo.WFD entries."
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "workflow_def_version",
-                                           "dataType":  "int",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Workflow definition version from b2bi WFD_VERSION. Sterling processes often accumulate multiple template versions over time as Integration team updates definitions. Tracking version per execution enables before/after analysis when behavior changes are suspected."
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "service_name",
-                                           "dataType":  "varchar",
-                                           "length":  "200",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Process name from b2bi SERVICE_NAME. Always Scheduler_FA_* for monitored processes — the Scheduler_ prefix is added by Sterling at execution time relative to the WFD template name. Used to join to B2B.SI_ProcessBaseline for activity detection lookup."
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "status_code",
-                                           "dataType":  "smallint",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Execution status code from b2bi BASIC_STATUS. Key values: 0 = Success, 1 = Warning/Soft Error, 10 = SFTP Status (normal), 100 = Process Stopped, 300 = Service Exception, 450 = Service Interrupted, 900 = Unknown. Observed failures historically cluster at the sub-step level rather than parent level; parent-level non-success values are rare and warrant investigation."
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "status_message",
-                                           "dataType":  "varchar",
-                                           "length":  "500",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Detailed status text from b2bi ADV_STATUS. Supplements status_code with human-readable context when Sterling writes one. Often empty on successful runs."
-                                       },
-                                       {
-                                           "ordinal":  7,
-                                           "name":  "start_time",
-                                           "dataType":  "datetime",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Parent workflow execution start timestamp from b2bi START_TIME. Indexed as the primary time-series access point for operational queries and Control Center time-range views."
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "end_time",
-                                           "dataType":  "datetime",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Parent workflow execution end timestamp from b2bi END_TIME. NULL when the workflow was still running at the time of collection — the next cycle will pick up the completed row. Duration is derived as end_time minus start_time at query time rather than stored as a computed column."
+                                           "description":  "TIMINGXML handle from b2bi.dbo.SCHEDULE — a DATA_ID pointer into b2bi.dbo.DATA_TABLE where the gzip-compressed TIMINGXML blob is stored. Captured for lineage traceability; the collector decompresses this at collection time and stores the result in timing_xml."
                                        },
                                        {
                                            "ordinal":  9,
-                                           "name":  "node_executed",
+                                           "name":  "source_system_name",
+                                           "dataType":  "nvarchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SYSTEMNAME from b2bi.dbo.SCHEDULE. Sterling cluster node that owns the schedule (e.g., \"node1\"). Relevant if Sterling is ever run multi-node."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "source_user_id",
+                                           "dataType":  "nvarchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "USERID from b2bi.dbo.SCHEDULE. User account that created or owns the schedule in Sterling (typically \"admin\")."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "timing_pattern_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Derived classifier for the schedule\u0027s timing pattern. See status_value entries for valid values and their meanings. Used for UI filtering and classification. Derived by collector from timing_xml structure."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "run_day_mask",
+                                           "dataType":  "char",
+                                           "length":  "7",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CHAR(7) bitmap-style string representing days of week the schedule runs. Position order: Sun-Mon-Tue-Wed-Thu-Fri-Sat. Each position is either the first letter of that day (S/M/T/W/T/F/S) if the schedule runs that day, or a dash (-) if it does not. Examples: \"SMTWTFS\" = every day (ofWeek=-1), \"-MTWTF-\" = Mon-Fri, \"S-----S\" = Sat and Sun. NULL when timing_pattern_type is MONTHLY (ofMonth only)."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "run_days_of_month",
                                            "dataType":  "varchar",
                                            "length":  "100",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Sterling node that executed the workflow, from b2bi NODEEXECUTED. Useful for infrastructure correlation when troubleshooting node-specific failures or load distribution questions."
-                                       },
-                                       {
-                                           "ordinal":  10,
-                                           "name":  "child_workflow_count",
-                                           "dataType":  "int",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Number of child workflows spawned via InvokeBusinessProcessService, counted from b2bi.dbo.WORKFLOW_LINKAGE where ROOT_WF_ID = this workflow_id. Always 2 levels deep (parent and children) — no grandchild workflows observed in FA processes. Compared against baseline_child_count in B2B.SI_ProcessBaseline for activity detection."
-                                       },
-                                       {
-                                           "ordinal":  11,
-                                           "name":  "total_child_steps",
-                                           "dataType":  "int",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Sum of sub-step rows (STEP_ID \u003e 0) across all linked child workflows. The primary activity detection metric for inbound and internal processes — when this value exceeds baseline_total_steps for the service_name, the execution processed data. Large deviations indicate high-volume processing."
-                                       },
-                                       {
-                                           "ordinal":  12,
-                                           "name":  "max_child_steps",
-                                           "dataType":  "int",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Largest single-child step count among the linked children. Useful for identifying which child workflow performed the bulk of the work in multi-child executions. Set at collection time from the same WORKFLOW_LINKAGE rollup query that populates total_child_steps."
-                                       },
-                                       {
-                                           "ordinal":  13,
-                                           "name":  "has_sftp_get",
-                                           "dataType":  "bit",
-                                           "nullable":  true,
-                                           "identity":  false,
-                                           "description":  "Indicates any child workflow contained an SFTPClientGet sub-step, signaling an inbound file retrieval occurred. Primary activity signal for inbound processes when present alongside elevated total_child_steps."
+                                           "description":  "Comma-delimited list of days of month the schedule runs, when ofMonth is used in TIMINGXML. Example: \"1,15\" for a twice-monthly schedule. NULL when the schedule uses ofWeek instead."
                                        },
                                        {
                                            "ordinal":  14,
-                                           "name":  "has_sftp_put",
-                                           "dataType":  "bit",
+                                           "name":  "run_times_explicit",
+                                           "dataType":  "nvarchar",
+                                           "length":  "500",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Indicates any child workflow contained an SFTPClientPut sub-step, signaling an outbound file delivery occurred. The primary activity detection signal for outbound processes — their had_activity flag is driven by this column rather than baseline comparison."
+                                           "description":  "Comma-delimited list of explicit HH:MM times the schedule runs, when the TIMINGXML contains \u003ctime\u003e elements. Example: \"05:00,06:00,07:00,...,18:00\" for a schedule with 14 hourly fire times. NULL when the schedule uses \u003ctimeRange\u003e instead."
                                        },
                                        {
                                            "ordinal":  15,
-                                           "name":  "has_translation",
-                                           "dataType":  "bit",
+                                           "name":  "run_interval_minutes",
+                                           "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Indicates any child workflow contained a Translation sub-step, signaling data transformation occurred. Present alongside SFTP operations when Sterling mapped source files to target formats during processing."
+                                           "description":  "Interval in minutes between runs, parsed from \u003cinterval\u003e inside \u003ctimeRange\u003e. Example: 60 for hourly. NULL for schedules using explicit \u003ctime\u003e entries."
                                        },
                                        {
                                            "ordinal":  16,
-                                           "name":  "had_activity",
-                                           "dataType":  "bit",
+                                           "name":  "run_range_start",
+                                           "dataType":  "char",
+                                           "length":  "5",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Direction-aware activity flag computed by the collector. For INBOUND and INTERNAL processes, set to 1 when total_child_steps exceeds baseline_total_steps from B2B.SI_ProcessBaseline. For OUTBOUND processes, set to 1 when has_sftp_put = 1 (a file was delivered). Provides a single consistent signal for consumers — the Monitor script and Control Center can ask \"did this run do something?\" without needing to know direction-specific detection rules."
+                                           "description":  "HH:MM start of the run window, parsed from the first four chars of \u003crange\u003e inside \u003ctimeRange\u003e. Example: \"05:05\". NULL for schedules using explicit \u003ctime\u003e entries."
                                        },
                                        {
                                            "ordinal":  17,
-                                           "name":  "collected_dttm",
+                                           "name":  "run_range_end",
+                                           "dataType":  "char",
+                                           "length":  "5",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HH:MM end of the run window, parsed from the last four chars of \u003crange\u003e inside \u003ctimeRange\u003e. Example: \"15:05\". NULL for schedules using explicit \u003ctime\u003e entries."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "run_on_minute",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Value from \u003conMinute\u003e inside \u003ctimeRange\u003e, captured for lineage completeness. Observed value is 0 for virtually every schedule; the actual minute marker of fire times is derived from run_range_start. Retained for forensic purposes."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "excluded_dates",
+                                           "dataType":  "nvarchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Comma-delimited list of MM-DD dates the schedule skips, when \u003cexcludedDates\u003e is populated. Example: \"01-01,12-25\" for a schedule that excludes New Year\u0027s Day and Christmas. NULL when no exclusions configured."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "first_run_time_of_day",
+                                           "dataType":  "char",
+                                           "length":  "5",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HH:MM of the earliest run time on any active day, derived from either the minimum \u003ctime\u003e value or the start of the \u003ctimeRange\u003e. Useful for \"will this run in the next hour\" queries. NULL only when parsing cannot determine a value (i.e., timing_pattern_type = UNKNOWN)."
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "last_run_time_of_day",
+                                           "dataType":  "char",
+                                           "length":  "5",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "HH:MM of the latest run time on any active day. Useful for \"when is the last fire of the day\" queries. NULL only when timing_pattern_type = UNKNOWN."
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "expected_runs_per_day",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total number of times per day this schedule is expected to fire. For explicit-time patterns, count of \u003ctime\u003e entries. For interval patterns, derived from range span and interval. Useful for volume planning and Phase 4 schedule-adherence monitoring."
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "schedule_description",
+                                           "dataType":  "nvarchar",
+                                           "length":  "500",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Human-readable summary generated at parse time. Intended for Control Center display (schedule modal) and ad-hoc query results. Examples: \"Daily at 04:00\", \"Mon-Fri at 14:00\", \"Every 60 min at :05, 05:05-15:05, Mon-Fri (excl. 01-01, 12-25)\", \"Days 1,15 of month at 09:00\"."
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "timing_xml",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Full decompressed TIMINGXML content from b2bi.dbo.DATA_TABLE, captured at collection time. Stored raw as the forensic safety net: if the grammar evolves beyond what the parser handles, or the parser has a bug, the raw content is preserved for re-parse without re-fetching from b2bi (which purges aggressively)."
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "last_modified_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "(getdate())",
-                                           "description":  "Timestamp when this row was inserted by the B2B collector. Distinct from start_time (when Sterling ran the workflow). Used to identify recently collected rows during in-flight update passes when end_time is NULL."
+                                           "description":  "Timestamp of the most recent change to any column on this row. Set to GETDATE() on INSERT by default; updated by the collector on every detected change."
                                        }
                                    ],
                        "indexes":  [
                                        {
-                                           "name":  "PK_SI_WorkflowTracking",
+                                           "name":  "PK_SI_ScheduleRegistry",
                                            "type":  "CLUSTERED",
                                            "isUnique":  true,
                                            "isPrimaryKey":  true,
                                            "isUniqueConstraint":  false,
-                                           "keyColumns":  "workflow_id"
+                                           "keyColumns":  "schedule_id"
                                        },
                                        {
-                                           "name":  "IX_SI_WorkflowTracking_had_activity",
+                                           "name":  "IX_SI_ScheduleRegistry_service_name",
                                            "type":  "NONCLUSTERED",
                                            "isUnique":  false,
                                            "isPrimaryKey":  false,
                                            "isUniqueConstraint":  false,
-                                           "keyColumns":  "start_time",
-                                           "includedColumns":  "service_name, total_child_steps, has_sftp_put, has_sftp_get"
+                                           "keyColumns":  "service_name",
+                                           "includedColumns":  "source_status, schedule_description"
                                        },
                                        {
-                                           "name":  "IX_SI_WorkflowTracking_service_name_start_time",
+                                           "name":  "IX_SI_ScheduleRegistry_source_status",
                                            "type":  "NONCLUSTERED",
                                            "isUnique":  false,
                                            "isPrimaryKey":  false,
                                            "isUniqueConstraint":  false,
-                                           "keyColumns":  "service_name, start_time",
-                                           "includedColumns":  "status_code, total_child_steps, had_activity, has_sftp_put, has_sftp_get"
+                                           "keyColumns":  "source_status",
+                                           "includedColumns":  "service_name, schedule_description"
                                        },
                                        {
-                                           "name":  "IX_SI_WorkflowTracking_start_time",
+                                           "name":  "IX_SI_ScheduleRegistry_timing_pattern_type",
                                            "type":  "NONCLUSTERED",
                                            "isUnique":  false,
                                            "isPrimaryKey":  false,
                                            "isUniqueConstraint":  false,
-                                           "keyColumns":  "start_time",
-                                           "includedColumns":  "service_name, status_code, had_activity"
+                                           "keyColumns":  "timing_pattern_type"
                                        }
                                    ],
                        "checkConstraints":  [
                                                 {
-                                                    "name":  "CK_SI_WorkflowTracking_child_workflow_count",
-                                                    "definition":  "([child_workflow_count] IS NULL OR [child_workflow_count]\u003e=(0))"
-                                                },
-                                                {
-                                                    "name":  "CK_SI_WorkflowTracking_max_child_steps",
-                                                    "definition":  "([max_child_steps] IS NULL OR [max_child_steps]\u003e=(0))"
-                                                },
-                                                {
-                                                    "name":  "CK_SI_WorkflowTracking_total_child_steps",
-                                                    "definition":  "([total_child_steps] IS NULL OR [total_child_steps]\u003e=(0))"
+                                                    "name":  "CK_SI_ScheduleRegistry_timing_pattern_type",
+                                                    "definition":  "([timing_pattern_type]=\u0027UNKNOWN\u0027 OR [timing_pattern_type]=\u0027MIXED\u0027 OR [timing_pattern_type]=\u0027INTERVAL\u0027 OR [timing_pattern_type]=\u0027MONTHLY\u0027 OR [timing_pattern_type]=\u0027WEEKLY\u0027 OR [timing_pattern_type]=\u0027DAILY\u0027)"
                                                 }
                                             ],
                        "designNotes":  [
                                            {
-                                               "topic":  "Parent Rows Only with Child Rollup",
-                                               "note":  "Sterling workflow executions produce roughly 35 sub-step and child workflow rows for every parent row — roughly 160,000 sub-step rows per day in total versus roughly 4,600 parent rows. Persisting all of them would produce massive row volumes for marginal additional value since the useful signal is aggregate (did children spawn, did they run lots of steps, did any of them perform SFTP or translation operations). This table captures only parent rows with the aggregates rolled up into columns. If specific child workflow detail becomes needed later — for example, per-file tracking from SFTPClientPut rows — a dedicated child-detail table can be added alongside this one rather than denormalizing child detail onto the parent.",
+                                               "topic":  "Raw XML Stored Inline",
+                                               "summary":  "The decompressed TIMINGXML is always stored inline in the timing_xml column alongside the parsed structural columns. This is a deliberate redundancy choice.",
+                                               "note":  "The grammar variety observed across 506 active schedules in b2bi produced 73 distinct structural patterns. The parser handles the documented grammar (timingxml/TimingXML root elements, ofWeek/ofMonth day specifiers, \u003ctime\u003e and \u003ctimeRange\u003e time specifiers, excludedDates), but Sterling has been observed to evolve schedule configurations over time, and a future schedule may introduce grammar that the parser does not recognize. By capturing the raw decompressed XML on every row, the forensic record is preserved regardless of parser coverage. If the parser ever needs to be extended, historical rows can be re-parsed against the same timing_xml column without re-fetching from b2bi, which purges aggressively.",
                                                "sortOrder":  1
                                            },
                                            {
-                                               "topic":  "Direction-Aware had_activity Flag",
-                                               "note":  "The had_activity flag is set by the collector using different logic per process_direction. Inbound and internal processes use baseline deviation (total_child_steps \u003e baseline_total_steps from B2B.SI_ProcessBaseline) because they run frequently and usually find nothing, so any step count above the \"empty run\" fingerprint indicates processing occurred. Outbound processes use SFTPClientPut presence (has_sftp_put = 1) because they are expected to deliver data on every execution and there is no meaningful \"empty baseline\" to compare against. Encoding direction-aware logic in the collector and exposing a single flag gives consumers a consistent contract — the Monitor script and Control Center queries do not need to branch on direction.",
+                                               "topic":  "Full Sync, Not Soft Delete",
+                                               "summary":  "The collector fully synchronizes this table with b2bi.dbo.SCHEDULE on each cycle. Schedules that disappear from b2bi are DELETEd from this registry rather than soft-marked.",
+                                               "note":  "Schedules are master data, not operational history. The registry\u0027s purpose is to represent \"what is configured in Sterling right now\" for join and display purposes. If schedule X is removed from Sterling, we do not need to retain a row here — execution history is tracked separately in SI_ExecutionTracking via captured WORKFLOW_ID values, which are independent of the schedule registry. A DELETE on this table does not lose anything that matters, and it keeps the table lean with no lifecycle audit columns (no first_seen, last_seen, is_deleted_in_source, deleted_in_source_dttm). If operational interest in \"when did schedule X go away\" ever arises, that tracking belongs in a different table with explicit audit semantics.",
                                                "sortOrder":  2
                                            },
                                            {
-                                               "topic":  "Correlation Key to Integration",
-                                               "note":  "b2bi WORKFLOW_ID equals Integration RUN_ID with full fidelity (confirmed 20-of-20 match rate during discovery). This makes workflow_id the correlation key for enriching parent workflow executions with business data from Integration.etl.tbl_B2B_CLIENTS_BATCH_STATUS and its related tables. Because b2bi (FA-INT-DBP) and Integration (AVG-PROD-LSNR) live on separate servers without linked server connectivity, enrichment queries run in the collector as separate SQL calls rather than a cross-database join — Integration data is fetched by workflow_id and merged in PowerShell before the UPSERT to this table.",
+                                               "topic":  "run_day_mask as CHAR(7) Bitmap",
+                                               "summary":  "The run_day_mask column uses a fixed-width CHAR(7) string where each position represents a day of the week, rather than separate BIT columns or an integer bitmap.",
+                                               "note":  "Position order is Sun-Mon-Tue-Wed-Thu-Fri-Sat. Each position is either the first letter of that day (S/M/T/W/T/F/S) when the schedule runs that day, or a dash (-) when it does not. This format is directly human-readable in ad-hoc queries (a Mon-Fri schedule shows as \"-MTWTF-\") and supports fast LIKE-based filtering (e.g., \"schedules that run Monday\" becomes WHERE run_day_mask LIKE \u0027_M_____\u0027). Seven separate BIT columns would have been more normalized but produce wider rows and noisier query output; an integer bitmap would have been more compact but unreadable without decoding. CHAR(7) with letter-or-dash is the readable compromise.",
                                                "sortOrder":  3
                                            },
                                            {
-                                               "topic":  "In-Flight Detection via NULL end_time",
-                                               "note":  "Rows with NULL end_time represent workflows still executing at the time of collection. The collector picks these up on subsequent cycles and updates them as they complete. Because Sterling workflow executions are typically short (seconds to minutes) and the collector runs frequently, most rows reach terminal state within one or two cycles. Indefinite retention of NULL end_time rows is not a concern in practice — if a workflow truly never terminates, that is itself an alert condition the Monitor script will surface.",
+                                               "topic":  "Parsed Structure vs. Raw XML: Intent",
+                                               "summary":  "The parsed structural columns (run_day_mask, run_times_explicit, run_range_start/end, run_interval_minutes, excluded_dates) and the schedule_description column are both derived from timing_xml at parse time.",
+                                               "note":  "Why duplicate the information? Different access patterns. Structured columns support fast queries (\"which schedules run in the next hour\", \"which schedules are weekday-only\", \"which schedules exclude holidays\"). The schedule_description supports display — Control Center modal, report output, ad-hoc investigation — without requiring UI-side parse logic. Raw timing_xml supports forensic re-parse if the grammar evolves. All three views of the same information, each serving a distinct use case. Because the source of truth is b2bi.dbo.SCHEDULE and the collector owns all derivation, the three representations cannot drift.",
                                                "sortOrder":  4
                                            },
                                            {
-                                               "topic":  "Conservative Check Constraints",
-                                               "note":  "Only NULL-tolerant \u003e= 0 bounds are enforced on the count columns. Candidate additional constraints — status_code range bound, end_time \u003e= start_time — were considered but deliberately skipped for initial deployment. Sterling is a legacy black box and our understanding of the data it produces is still developing. Constraints can be added via ALTER TABLE as patterns stabilize; restrictive constraints up front risk rejecting legitimate but unexpected data during discovery.",
+                                               "topic":  "onMinute is Vestigial in Practice",
+                                               "summary":  "The run_on_minute column captures the \u003conMinute\u003e value from TIMINGXML timeRange patterns, but observed values across all active schedules are uniformly 0.",
+                                               "note":  "The \u003conMinute\u003e element appears in every \u003ctimeRange\u003e block in every observed schedule, always with value 0. The actual minute marker of fire times (e.g., 05:05 hourly firing at :05 past each hour) is anchored by the minute portion of the range_start value, not by onMinute. This appears to be a Sterling grammar element that is either vestigial, reserved for future use, or overridden by the range definition in practice. The column is retained for lineage completeness, but the schedule_description generator uses the range_start minute rather than run_on_minute to describe the actual fire pattern.",
                                                "sortOrder":  5
+                                           },
+                                           {
+                                               "topic":  "Columns Dropped From Source SCHEDULE Table",
+                                               "summary":  "Nine columns from b2bi.dbo.SCHEDULE are intentionally not captured in this table.",
+                                               "note":  "Dropped columns (all verified constant across 506 active schedules): PARAMS (never populated), EXECUTIONDATE (always 0), EXECUTIONHOUR (always 0), EXECUTIONMINUTE (always 0), EXECUTIONCOUNT (always -1), EXECUTIONCURCOUNT (always 0), ORGANIZATIONKEY (always a single space character — a Sterling multi-tenancy field not used at FAC), XAPIMETHOD (always NULL), XAPIXML (always NULL). Capturing them would add width with no information value. If any of these ever becomes populated with meaningful data in the future, the raw timing_xml column does not help — these live directly on the SCHEDULE row, not in TIMINGXML. They would need to be added to both the table schema and the collector projection. Low-risk given their observed uniformity, but flagged here for future review if Sterling behavior changes.",
+                                               "sortOrder":  6
                                            }
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "status_code",
-                                                "value":  "0",
-                                                "meaning":  "Success. Normal workflow completion with no errors or warnings. The vast majority of observed parent workflow executions carry this status.",
+                                                "column":  "timing_pattern_type",
+                                                "value":  "DAILY",
+                                                "meaning":  "Schedule runs every day (ofWeek=\"-1\"), one or more explicit \u003ctime\u003e fire points per day. Most common pattern; covers schedules like \"Daily at 04:00\" or \"Daily at 05:00, 06:00, ..., 18:00\".",
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "had_activity",
-                                                "value":  "1",
-                                                "meaning":  "The workflow processed data. For inbound and internal processes: total_child_steps exceeded the baseline in B2B.SI_ProcessBaseline. For outbound processes: a file was delivered (has_sftp_put = 1).",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "had_activity",
-                                                "value":  "0",
-                                                "meaning":  "The workflow ran but did no meaningful work. For inbound and internal processes: total_child_steps matched the baseline fingerprint for an \"empty run.\" For outbound processes: no SFTPClientPut step was found, meaning no file was delivered — which for outbound is an alert condition, not a normal state.",
+                                                "column":  "timing_pattern_type",
+                                                "value":  "WEEKLY",
+                                                "meaning":  "Schedule runs on specific days of the week (ofWeek=\"1\" through \"7\") with one or more explicit \u003ctime\u003e fire points. Covers patterns like \"Mon-Fri at 14:00\" or \"Sundays at 11:00\".",
                                                 "sortOrder":  2
                                             },
                                             {
-                                                "column":  "status_code",
-                                                "value":  "1",
-                                                "meaning":  "Warning or soft error. Workflow completed but Sterling flagged something worth logging. Rare at parent level — typically seen at sub-step level.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "status_code",
-                                                "value":  "10",
-                                                "meaning":  "SFTP Status. Normal status code for SFTP-related workflow activity. Not an error — observed alongside successful SFTP file transfer processes.",
+                                                "column":  "timing_pattern_type",
+                                                "value":  "MONTHLY",
+                                                "meaning":  "Schedule runs on specific days of the month (ofMonth=\"N\") with one or more explicit \u003ctime\u003e fire points. Covers patterns like \"1st of month at 10:41\" or \"1st and 15th at 09:00\".",
                                                 "sortOrder":  3
                                             },
                                             {
-                                                "column":  "status_code",
-                                                "value":  "100",
-                                                "meaning":  "Process Stopped. Sterling terminated the workflow before normal completion. Observed historically clustering at sub-step level on infrastructure-related events; parent-level occurrence warrants investigation.",
+                                                "column":  "timing_pattern_type",
+                                                "value":  "INTERVAL",
+                                                "meaning":  "Schedule uses \u003ctimeRange\u003e pattern with \u003cinterval\u003e and \u003conMinute\u003e — fires every N minutes within a defined HH:MM-HH:MM window. Covers patterns like \"Every 60 min, 05:35-23:35, daily\" and \"Every 5 min, 00:00-23:59, daily\".",
                                                 "sortOrder":  4
                                             },
                                             {
-                                                "column":  "status_code",
-                                                "value":  "300",
-                                                "meaning":  "Service Exception. A Sterling service encountered an unhandled exception. Observed at sub-step level with adapter services (e.g., AS2LightweightJDBCAdapter) during infrastructure disruption.",
+                                                "column":  "timing_pattern_type",
+                                                "value":  "MIXED",
+                                                "meaning":  "Schedule uses \u003ctimeRange\u003e pattern on specific days of week. Example: the FA_CLIENTS_GET_LIST schedule fires every 60 min from 05:05-15:05 on Mon-Fri only.",
                                                 "sortOrder":  5
                                             },
                                             {
-                                                "column":  "status_code",
-                                                "value":  "450",
-                                                "meaning":  "Service Interrupted. A Sterling service was interrupted during execution — typically shutdown or resource-related rather than logic error.",
+                                                "column":  "timing_pattern_type",
+                                                "value":  "UNKNOWN",
+                                                "meaning":  "TIMINGXML content did not match any of the documented grammar patterns the parser handles. The raw XML is captured in timing_xml for inspection and parser extension. Rows with this classification should be investigated — either the grammar has evolved or the parser has a gap.",
                                                 "sortOrder":  6
-                                            },
-                                            {
-                                                "column":  "status_code",
-                                                "value":  "900",
-                                                "meaning":  "Unknown. Sterling could not determine a specific status. Observed on BUSINESS_PROCESS_MARK entries at identical timestamps to parent success — likely purge service activity rather than real processing failure.",
-                                                "sortOrder":  7
                                             }
-                                        ],
-                       "relationshipNotes":  [
-                                                 {
-                                                     "relatedObject":  "SI_ProcessBaseline",
-                                                     "note":  "Joined by service_name during collection. The collector reads baseline_total_steps for each parent workflow\u0027s service_name and compares against total_child_steps to set had_activity for inbound and internal processes. No foreign key is enforced because SI_ProcessBaseline rows may lag behind newly-observed processes — a workflow can arrive for a service_name that does not yet have a baseline, in which case had_activity is left NULL until the baseline catches up.",
-                                                     "sortOrder":  1
-                                                 },
-                                                 {
-                                                     "relatedObject":  "Collect-B2BWorkflow.ps1",
-                                                     "note":  "The B2B collector is the exclusive writer to this table. It inserts new parent workflows, updates in-flight rows as they complete, and populates both the b2bi-sourced columns and the computed had_activity flag. No other process writes to this table.",
-                                                     "sortOrder":  2
-                                                 }
-                                             ]
+                                        ]
                    }
                ],
     "procedures":  [
@@ -583,7 +359,30 @@
 
               ],
     "scripts":  [
-
+                    {
+                        "name":  "Collect-B2BExecution.ps1",
+                        "description":  "Collector for the B2B module. Synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE on every execution: pulls all schedule rows with their TIMINGXML blobs in a single joined query, decompresses and parses the timing XML into structured columns and a human-readable description, and upserts the registry via per-row INSERT or UPDATE. Schedules no longer present in b2bi are deleted from the registry. Runs under the xFACts orchestrator in FIRE_AND_FORGET mode with Windows auth to both servers; the b2bi source is read from FA-INT-DBP and the xFACts target is the AG listener.",
+                        "module":  "B2B",
+                        "category":  "B2B",
+                        "dataFlow":  "On every cycle, the collector issues a single JOIN query against b2bi.dbo.SCHEDULE and b2bi.dbo.DATA_TABLE on FA-INT-DBP to fetch all schedule rows and their gzip-compressed TIMINGXML blobs. Each blob is decompressed in-memory and parsed into the structured columns on B2B.SI_ScheduleRegistry (timing_pattern_type, run_day_mask, run_times_explicit, run_range_start/end, run_interval_minutes, excluded_dates, etc.) along with a human-readable schedule_description. The collector then reads the existing registry snapshot from the xFACts database on AVG-PROD-LSNR, compares each source row to its tracked counterpart by schedule_id, and issues INSERT for new schedules, UPDATE for schedules where timing_xml_handle, source_status, or execution_status has changed, and DELETE for registry rows whose schedule_id no longer appears in b2bi. Configuration values (b2b_alerting_enabled, b2b_collect_lookback_days) are read from dbo.GlobalConfig at startup. Orchestration context (TaskId, ProcessId) is passed in by the engine; on completion the Complete-OrchestratorTask callback updates Orchestrator.TaskLog and Orchestrator.ProcessRegistry.",
+                        "relationshipNotes":  [
+                                                  {
+                                                      "relatedObject":  "B2B.SI_ScheduleRegistry",
+                                                      "note":  "This is the sole writer of B2B.SI_ScheduleRegistry. The collector issues per-row INSERT, UPDATE, and DELETE statements against this table based on diff with b2bi.dbo.SCHEDULE.",
+                                                      "sortOrder":  1
+                                                  },
+                                                  {
+                                                      "relatedObject":  "Orchestrator.ProcessRegistry",
+                                                      "note":  "The collector is registered in Orchestrator.ProcessRegistry as module B2B, process Collect-B2BExecution. Scheduling and run mode are controlled there; runtime status fields (running_count, last_execution_status, last_duration_ms) are updated by the Complete-OrchestratorTask callback at the end of each run.",
+                                                      "sortOrder":  2
+                                                  },
+                                                  {
+                                                      "relatedObject":  "xFACts-OrchestratorFunctions.ps1",
+                                                      "note":  "Dot-sourced at script startup. Provides Initialize-XFActsScript for SQL module loading and application identity tagging, Get-SqlData and Invoke-SqlNonQuery for database access, and Complete-OrchestratorTask for the orchestrator completion callback.",
+                                                      "sortOrder":  3
+                                                  }
+                                              ]
+                    }
                 ],
     "xeSessions":  [
 
