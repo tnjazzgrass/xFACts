@@ -2,7 +2,7 @@
 
 ## Purpose of This Document
 
-Reference document capturing the architectural model of IBM Sterling B2B Integrator as it is configured and operated at FAC. Built from a combination of live `b2bi` database investigation, direct reads of the workflow BPML definitions stored in `WFD_XML` / `DATA_TABLE`, reads of the Integration stored procedures that assemble Sterling's execution state, the original architect's Visio flow document (`BPs_Flow.vsdx`, authored by Rober Makram circa April 2021), direct inspection of Integration configuration tables, and operational observations.
+Reference document capturing the architectural model of IBM Sterling B2B Integrator as it is configured and operated at FAC. Built from a combination of live `b2bi` database investigation, direct reads of the workflow BPML definitions stored in `WFD_XML` / `DATA_TABLE`, reads of the Integration stored procedures that assemble Sterling's execution state, the original architect's Visio flow document (`BPs_Flow.vsdx`, authored by Rober Makram circa April 2021), direct inspection of Integration configuration tables, operational observations, and clarifications from FAC's File Processing Supervisor.
 
 Intended audience: Dirk and the xFACts build effort. Eventually will serve as the source material for Control Center help pages under the B2B module. This is a reference document for understanding and building — not a finished publication.
 
@@ -22,24 +22,28 @@ From the xFACts collector's perspective, **the target is simple: every `FA_CLIEN
 
 Everything else in `b2bi.dbo.WF_INST_S` is either a **dispatcher** (invokes MAIN via `FA_CLIENTS_GET_LIST` or directly), a **sub-workflow** (invoked by MAIN), or **Sterling infrastructure** (unrelated to MAIN — utility, housekeeping, gateway plumbing).
 
+**ETL_CALL note.** `FA_CLIENTS_ETL_CALL` is a parallel dispatch target invoked when a Client has `ETL_PATH` populated. Confirmed by File Processing Supervisor to be deprecated — no `CLIENTS_PARAM` rows have `ETL_PATH` populated. ETL_CALL is excluded from the v1 collector scope. Its characterization is preserved in this document for reference and to support rapid re-integration if it ever gets revived.
+
 ---
 
 ## The Coordination Layer (Integration Database)
 
 Sterling's workflow execution is coordinated by a set of tables and stored procedures in the **Integration database** (on AVG-PROD-LSNR). Sterling BPMLs write to and read from these tables via the `AVG_PROD_LSNR_INTEGRATION` JDBC pool. This layer was partially hypothesized before the BPML reads; direct reading of the workflow definitions has now revealed its full structure.
 
-### Integration Tables Used by Sterling Workflows
+**Architectural stance:** xFACts does not mirror Integration tables into local `INT_*` tables. Instead, the B2B collector **live-joins** to Integration tables on each collection cycle as needed for enrichment. The Integration database is on the AG (AVG-PROD-LSNR, same cluster as the xFACts database), making live-join latency acceptable for batch collection work. This direction was chosen over mirroring to reduce maintenance surface and sync burden — see `B2B_Module_Planning.md` → Lessons Learned → Integration Mirror Tables for context.
 
-| Table | Purpose | Populated By |
-|-------|---------|--------------|
-| `etl.tbl_B2B_CLIENTS_MN` | Entity roster (CLIENT_ID, CLIENT_NAME, flags) | Human configuration |
-| `etl.tbl_B2B_CLIENTS_FILES` | Process-level classification per (CLIENT_ID, SEQ_ID); includes `RUN_FLAG`, `AUTOMATED`, `FILE_MERGE`, `PROCESS_TYPE`, `COMM_METHOD`, `ACTIVE_FLAG` | Human configuration + `RUN_FLAG` updated by scheduler and `FA_CLIENTS_GET_LIST` at runtime |
-| `etl.tbl_B2b_CLIENTS_PARAM` | Field-level configuration per (CLIENT_ID, SEQ_ID, PARAMETER_NAME) — the key-value store that feeds into ProcessData | Human configuration |
-| `etl.tbl_B2B_CLIENTS_SETTINGS` | Global settings (DATABASE_SERVER, DM_*_PATH, DEF_*_ARCHIVE, PYTHON_KEY, etc.) | Human configuration |
-| `ETL.tbl_B2B_CLIENTS_BATCH_STATUS` | Per-run execution state machine row | `FA_CLIENTS_GET_LIST` and `FA_CLIENTS_MAIN` at runtime |
-| `ETL.tbl_B2B_CLIENTS_TICKETS` | Failure ticket log with ticket type classification | Sterling workflow `onFault` handlers |
-| `ETL.tbl_B2B_CLIENTS_BATCH_FILES` | File-level audit log — scope-limited: only zero-size and `FILE_DELETION` files are recorded | `FA_CLIENTS_GET_DOCS` during file-collection loop (only the `ZeroSize?` branch writes here) |
-| `DBO.tbl_FA_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` | List of files discovered on SFTP endpoints by Pattern 3 polling workflows | `FA_FROM_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` and variants every ~10 minutes |
+### Integration Tables Referenced By Sterling Workflows
+
+| Table | Purpose | Populated By | xFACts Use |
+|-------|---------|--------------|------------|
+| `etl.tbl_B2B_CLIENTS_MN` | Entity roster (CLIENT_ID, CLIENT_NAME, flags) | Human configuration | Live-joined by collector for entity name enrichment; not mirrored |
+| `etl.tbl_B2B_CLIENTS_FILES` | Process-level classification per (CLIENT_ID, SEQ_ID); includes `RUN_FLAG`, `AUTOMATED`, `FILE_MERGE`, `PROCESS_TYPE`, `COMM_METHOD`, `ACTIVE_FLAG` | Human configuration + `RUN_FLAG` updated by scheduler and `FA_CLIENTS_GET_LIST` at runtime | Live-joined by collector for process classification; not mirrored |
+| `etl.tbl_B2b_CLIENTS_PARAM` | Field-level configuration per (CLIENT_ID, SEQ_ID, PARAMETER_NAME) — the key-value store that feeds into ProcessData | Human configuration | Not routinely queried — ProcessData captures the same values at runtime per-execution |
+| `etl.tbl_B2B_CLIENTS_SETTINGS` | Global settings (DATABASE_SERVER, DM_*_PATH, DEF_*_ARCHIVE, PYTHON_KEY, etc.) | Human configuration | Not routinely queried — Settings/Values node in ProcessData captures the active settings at execution time |
+| `ETL.tbl_B2B_CLIENTS_BATCH_STATUS` | Per-run execution state machine row | `FA_CLIENTS_GET_LIST` and `FA_CLIENTS_MAIN` at runtime | Live-joined by collector for enrichment and disagreement detection |
+| `ETL.tbl_B2B_CLIENTS_TICKETS` | Failure ticket log with ticket type classification | Sterling workflow `onFault` handlers | Live-joined by collector for ticket_type enrichment on failed runs |
+| `ETL.tbl_B2B_CLIENTS_BATCH_FILES` | File-level audit log — scope-limited: only zero-size and `FILE_DELETION` files are recorded | `FA_CLIENTS_GET_DOCS` during file-collection loop (only the `ZeroSize?` branch writes here) | Potentially live-joined for FILE_DELETION activity detail — decision pending based on Block 3 investigation |
+| `DBO.tbl_FA_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` | List of files discovered on SFTP endpoints by Pattern 3 polling workflows | `FA_FROM_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` and variants every ~10 minutes | Not currently used — possible future "expected vs. processed" comparison downstream |
 
 ### Integration Stored Procedures Used by Sterling Workflows
 
@@ -74,7 +78,7 @@ Sterling workflows log failures by inserting rows into `tbl_B2B_CLIENTS_TICKETS`
 
 Additional ticket types may exist from other workflows we have not yet read. Ticket rows include `CLIENT_ID`, `SEQ_ID`, `RUN_ID` (Sterling WORKFLOW_ID), `CLIENT_NAME`, and insert timestamp — useful for correlating failures back to Sterling workflows without parsing WORKFLOW_CONTEXT.
 
-**Note on missing ticket types:** Not every Sterling workflow's onFault handler writes to TICKETS. `FA_CLIENTS_ETL_CALL`, for example, updates BATCH_STATUS to -1 on fault but does NOT insert a TICKETS row. Ticket presence is a valid failure signal when present, but absence is not definitive evidence of success.
+**Note on missing ticket types:** Not every Sterling workflow's onFault handler writes to TICKETS. `FA_CLIENTS_ETL_CALL`, for example, updates BATCH_STATUS to -1 on fault but does NOT insert a TICKETS row. Ticket presence is a valid failure signal when present, but absence is not definitive evidence of success. (Moot for v1 collector since ETL_CALL is excluded; retained here for completeness.)
 
 ### The `BATCH_FILES` Table — File-Level Audit (Partial)
 
@@ -97,8 +101,8 @@ Both tables are written to from Sterling BPMLs — meaning they only get written
 
 **xFACts collector architecture implication:**
 - Primary source: `b2bi.dbo.WF_INST_S` filtered to `FA_CLIENTS_MAIN` runs
-- Enrichment: join to `tbl_B2B_CLIENTS_BATCH_STATUS` on `RUN_ID = WORKFLOW_ID`
-- Enrichment: join to `tbl_B2B_CLIENTS_TICKETS` on `RUN_ID = WORKFLOW_ID`
+- Enrichment: live-join to `tbl_B2B_CLIENTS_BATCH_STATUS` on `RUN_ID = WORKFLOW_ID` (PowerShell in-memory hash-join after separate queries; no linked server)
+- Enrichment: live-join to `tbl_B2B_CLIENTS_TICKETS` on `RUN_ID = WORKFLOW_ID`
 - Deep failure context: WORKFLOW_CONTEXT parsing for step-level detail (captured selectively, not for every run)
 - Configuration: ProcessData from `TRANS_DATA` for field-level snapshots
 
@@ -139,7 +143,7 @@ MAIN RUN (WORKFLOW_ID)
 
 **Important clarification from BPML read:** MAIN's rules all reference `//Result/Client[1]/...`, meaning each MAIN execution processes exactly one Client block from its perspective. When a dispatcher (like the ACADIA EO wrapper) spawns multiple MAIN children from a multi-SEQ configuration, each MAIN child gets its own ProcessData with exactly one `<Client>` block at `//Result/Client[1]`. The full multi-SEQ configuration may be present in `//PrimaryDocument` for reference but MAIN only operates on `//Result`.
 
-See "Execution Tracking Grain Proposal" below for how this maps to the collector schema.
+See "Execution Tracking Design" below for how this maps to the collector schema. The future `SI_ExecutionDetail` table (see `B2B_Module_Planning.md`) is the home for the File and DM Creditor breakdown grain layers.
 
 ---
 
@@ -164,13 +168,15 @@ A named workflow fires on a Sterling SCHEDULE and invokes `FA_CLIENTS_MAIN` dire
 
 ### Pattern 2 — Scheduler-Fired `FA_CLIENTS_GET_LIST`
 
-`FA_CLIENTS_GET_LIST` fires on its own schedule (observed hourly at `:05` past the hour), with no `CLIENT_ID` / `SEQ_ID` / `PROCESS_TYPE` / `SEQUENTIAL` parameters set. Its stored procedure (`USP_B2B_CLIENTS_GET_LIST`) follows the "Branch 1" path (the `@CLIENT_ID IS NULL` code path), which:
+`FA_CLIENTS_GET_LIST` fires on its own schedule, with no `CLIENT_ID` / `SEQ_ID` / `PROCESS_TYPE` / `SEQUENTIAL` parameters set. Per File Processing Supervisor clarification, this schedule is **5:05am – 3:05pm Monday–Friday every 1 hour** — so GET_LIST fires at :05 past each hour within that window (11 fires per business day).
+
+The stored procedure (`USP_B2B_CLIENTS_GET_LIST`) follows the "Branch 1" path (the `@CLIENT_ID IS NULL` code path), which:
 
 1. Selects `CLIENTS_FILES` rows where `RUN_FLAG = 1 AND AUTOMATED = 1` (combined with either `FILE_MERGE = 1` or `COMM_METHOD = 'OUTBOUND'`) — these are the "merge-enabled inbound" or "outbound" configs.
 2. Separately selects CLIENTS_FILES rows that have matching files discovered in `tbl_FA_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` (the Pattern 3-populated discovered-files table) — these are "per-file inbound" configs.
 3. UNION ALLs both sets, PIVOTs CLIENTS_PARAM into ~65 Client-block columns, and returns them.
 
-GET_LIST then loops over the returned rows and invokes `FA_CLIENTS_MAIN` (or `FA_CLIENTS_ETL_CALL`, if ETL_PATH is populated) **asynchronously** for each row. See "`FA_CLIENTS_GET_LIST` Detail" below.
+GET_LIST then loops over the returned rows and invokes `FA_CLIENTS_MAIN` (or `FA_CLIENTS_ETL_CALL`, if ETL_PATH is populated — which in practice is never) **asynchronously** for each row. See "`FA_CLIENTS_GET_LIST` Detail" below.
 
 **Observed spawn counts** (7-hour window on April 20):
 
@@ -232,7 +238,7 @@ GET_LIST's stored procedure (`USP_B2B_CLIENTS_GET_LIST`) follows "Branch 2" (the
 | Pattern | Dispatcher | How MAIN is Reached | Parameter Signature |
 |---------|-----------|---------------------|---------------------|
 | 1 | Named workflow on schedule | Direct | N/A (wrapper doesn't call GET_LIST) |
-| 2 | `FA_CLIENTS_GET_LIST` on schedule | Via GET_LIST → SP Branch 1 | No parameters set |
+| 2 | `FA_CLIENTS_GET_LIST` on schedule (5:05am-3:05pm M-F hourly) | Via GET_LIST → SP Branch 1 | No parameters set |
 | 3 | `FA_FROM_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` | Direct (MAIN runs as SP executor) | CLIENT_ID = internal pseudo-client |
 | 4 | Named entity wrapper (e.g., `FA_FROM_*_PULL`, `FA_FROM_ACADIA_HEALTHCARE_IB_EO`) | Via inlined GET_LIST → SP Branch 2 | At least one of CLIENT_ID, SEQ_IDS, PROCESS_TYPE; optional SEQUENTIAL |
 
@@ -264,7 +270,7 @@ Because GET_LIST underlies both Pattern 2 and Pattern 4, its behavior is foundat
    - **Branch 2** (`@CLIENT_ID IS NOT NULL`) — wrapper mode: filter by `AUTOMATED=2` + matching CLIENT_ID and at least one of (SEQ_ID / PROCESS_TYPE / SEQ_IDS).
 5. **Loop over returned rows**:
    - Copy `Client[ClientCounter]` to `//Result` in ProcessData (this becomes MAIN's `//Result/Client[1]`)
-   - Branch on `ETL?` rule: if `ETL_PATH` is populated, invoke `FA_CLIENTS_ETL_CALL`; otherwise invoke `FA_CLIENTS_MAIN`
+   - Branch on `ETL?` rule: if `ETL_PATH` is populated, invoke `FA_CLIENTS_ETL_CALL`; otherwise invoke `FA_CLIENTS_MAIN`. In practice ETL_PATH is never populated (ETL_CALL deprecated).
    - Both invocations use `InvokeBusinessProcessService` (NOT inline) with no `INVOKE_MODE` specified — Sterling's default is async, so **MAIN children are fired in rapid succession** (~100-200ms apart) rather than sequentially with wait
    - UPDATE `tbl_B2B_CLIENTS_FILES SET RUN_FLAG = 0 WHERE CLIENT_ID = ? AND SEQ_ID = ?` — releases the currently-executing flag
    - Increment `ClientCounter`
@@ -277,16 +283,19 @@ Three operations:
 2. INSERT into `tbl_B2B_CLIENTS_TICKETS` with ticket type `'CLIENTS GET LIST'`
 3. Invoke `EmailOnError` workflow
 
-### The `AUTOMATED` Field Semantics (Resolved)
+### The `AUTOMATED` Field Semantics
 
-- **`AUTOMATED = 1`** — Scheduler-dispatched. The SP's Branch 1 filters for these, combined with `RUN_FLAG = 1`. The scheduler's responsibility is to set `RUN_FLAG = 1` before dispatch; GET_LIST clears it to 0 after each MAIN completes.
-- **`AUTOMATED = 2`** — Wrapper-dispatched. The SP's Branch 2 filters for these. No `RUN_FLAG` gating needed — the caller already knows exactly which SEQs to run.
+Per File Processing Supervisor confirmation:
+- **`AUTOMATED = 1`** — Uses the `FA_CLIENTS_GET_LIST` business process to pick up files for processing. GET_LIST is scheduled to run 5:05am–3:05pm Monday–Friday every 1 hour. The SP's Branch 1 filters for these, combined with `RUN_FLAG = 1`.
+- **`AUTOMATED = 2`** — A scheduled business process is set up to run at specific scheduled times. The SP's Branch 2 filters for these. No `RUN_FLAG` gating needed — the caller already knows exactly which SEQs to run.
 
-### `RUN_FLAG` Semantics (Resolved)
+### `RUN_FLAG` Semantics
 
-`RUN_FLAG` is a "currently executing" flag for `AUTOMATED=1` configs only. Something external (scheduler? Integration-side code?) sets it to 1 to indicate "this SEQ is queued / running"; GET_LIST clears it to 0 in the loop after each corresponding MAIN invocation returns. Purpose: prevent concurrent dispatch of the same (CLIENT_ID, SEQ_ID).
+Per File Processing Supervisor confirmation: `RUN_FLAG` is used specifically for processes with `AUTOMATED = 1`. When `RUN_FLAG = 1` AND `AUTOMATED = 1`, files get picked up and processed when GET_LIST kicks off at :05 past the hour. Purpose: prevent concurrent dispatch and flag "ready to process" state.
 
-### `SEQUENTIAL` Semantics (Resolved)
+The scheduler's responsibility is to set `RUN_FLAG = 1` before dispatch; GET_LIST clears it to 0 in the loop after each corresponding MAIN invocation returns.
+
+### `SEQUENTIAL` Semantics
 
 `SEQUENTIAL = 1` affects how the SP computes `PREV_SEQ` in the result set:
 
@@ -295,9 +304,9 @@ Three operations:
 
 The `PREV_SEQ` value then flows into MAIN's ProcessData, and MAIN's `Wait?` rule polls BATCH_STATUS for the dependency.
 
-### Discovery of `FA_CLIENTS_ETL_CALL`
+### `FA_CLIENTS_ETL_CALL` Dispatch Path (Deprecated)
 
-The BPML reveals a parallel dispatch target we had not previously characterized:
+The BPML reveals a parallel dispatch target that has been deprecated:
 
 ```xml
 <choice name="Choice Start">
@@ -314,7 +323,7 @@ The BPML reveals a parallel dispatch target we had not previously characterized:
 </choice>
 ```
 
-When a Client block has `ETL_PATH` populated, GET_LIST invokes `FA_CLIENTS_ETL_CALL` instead of `FA_CLIENTS_MAIN`. We have not yet read `FA_CLIENTS_ETL_CALL`'s BPML. This is likely the path for Integration ETL stored procedure invocations that don't need file processing (the `@ETLAP` table population in the SP — currently commented out — suggests this was part of a legacy ETL automation pattern). **Added to open investigation items.**
+When a Client block has `ETL_PATH` populated, GET_LIST would invoke `FA_CLIENTS_ETL_CALL` instead of `FA_CLIENTS_MAIN`. Confirmed no `CLIENTS_PARAM` rows currently have `ETL_PATH` populated — so in practice this code path is never taken. The v1 xFACts collector excludes `FA_CLIENTS_ETL_CALL` tracking entirely.
 
 ---
 
@@ -451,11 +460,11 @@ Three operations:
 
 GET_DOCS branches at its top level on the `GET_DOCS_TYPE` field from the current Client block:
 
-**1. `SFTP_PULL`** — The most complex branch. Opens an SFTP session, lists the remote directory, loops through discovered files (up to `noofdocs`), and for each file either retrieves it or skips it based on the `ZeroSize?` rule. Each file is then either deleted from the remote source or moved to a remote archive path based on the `DocDelete?` vs `DocArchive?` rules.
+**1. `SFTP_PULL`** — The most complex branch. Opens an SFTP session to the Joker server (FAC's SFTP endpoint), lists the remote directory, loops through discovered files (up to `noofdocs`), and for each file either retrieves it or skips it based on the `ZeroSize?` rule. Each file is then either deleted from the remote source or moved to a remote archive path based on the `DocDelete?` vs `DocArchive?` rules.
 
 **2. `FSA_PULL`** — File System Adapter pickup from a local or network folder path. Simple — just invokes `AS3FSAdapter` with `FS_COLLECT` action, using the Client's `GET_DOCS_LOC` as the collection folder and `FILE_FILTER` as the filter pattern.
 
-**3. `API_PULL`** — **Newly discovered**. Invokes a Python executable via `CommandLineAdapter2` to fetch files (the exe path comes from the Client's `GET_DOCS_API` field), then calls `FS_COLLECT` against the landing folder to pick up what was downloaded. After completion, GET_DOCS mutates `GET_DOCS_TYPE` from `API_PULL` to `FSA_PULL` — so downstream references in MAIN see `FSA_PULL`, not `API_PULL`. API_PULL is effectively a "Python download prelude to FSA_PULL."
+**3. `API_PULL`** — Invokes a Python executable via `CommandLineAdapter2` to fetch files (the exe path comes from the Client's `GET_DOCS_API` field), then calls `FS_COLLECT` against the landing folder to pick up what was downloaded. After completion, GET_DOCS mutates `GET_DOCS_TYPE` from `API_PULL` to `FSA_PULL` — so downstream references in MAIN see `FSA_PULL`, not `API_PULL`. API_PULL is effectively a "Python download prelude to FSA_PULL."
 
 Python working directory for API_PULL: `\\kingkong\Data_Processing\Pervasive\Python_EXE_files\!Python_Working`. Timeout: 36,000,000 ms (10 hours).
 
@@ -468,16 +477,16 @@ Python working directory for API_PULL: `\\kingkong\Data_Processing\Pervasive\Pyt
 5. Set `noofdocs = count(//Files/File)`.
 6. Loop through files up to `noofdocs` (or just once if `FILE_ID > 0`, for single-file mode):
    - Evaluate `ZeroSize?`:
-     - **True path (`ZeroSize` branch):** file is zero-size AND not a `*_PULL` process type (without `GET_EMPTY_DOCS=Y` override), OR `PROCESS_TYPE = 'FILE_DELETION'`. Skip the SFTPClientGet. Go directly to delete-or-archive. Insert a row into `tbl_B2B_CLIENTS_BATCH_FILES` with `COMM_METHOD='SFTP_GET'` for audit.
+     - **True path (`ZeroSize` branch):** file is zero-size AND not a `*_PULL` process type (without `GET_EMPTY_DOCs=Y` override), OR `PROCESS_TYPE = 'FILE_DELETION'`. Skip the SFTPClientGet. Go directly to delete-or-archive. Insert a row into `tbl_B2B_CLIENTS_BATCH_FILES` with `COMM_METHOD='SFTP_GET'` for audit.
      - **False path (`PickupDoc` branch):** `SFTPClientGet` to retrieve the file. Then delete-or-archive based on `GET_DOCS_DLT` value.
 7. End SFTP session.
 8. If `BatchFileInsert?` rule evaluates true (`PROCESS_TYPE != 'SFTP_PULL'`), invoke a final translation using map `FA_CLIENTS_BATCH_FILES_X2S` — apparently generates an insert-set for the batch/files in structured form. Translation map source not yet analyzed.
 
 ### How `FILE_DELETION` Works
 
-**Resolution of Integration Team Questions #1 and #9.**
+**Resolution of Integration Team Questions #1 and #9. Confirmed by File Processing Supervisor:** FILE_DELETION is only configured for clients that submit un-needed files. Files are picked up by GET_LIST and deleted from the Joker SFTP server (but remain in ftpbackup).
 
-`FILE_DELETION` is NOT a separate code path. It operates by setting `PROCESS_TYPE = 'FILE_DELETION'`, which causes the `ZeroSize?` rule to evaluate true for EVERY file regardless of actual size:
+Mechanically, `FILE_DELETION` is NOT a separate code path. It operates by setting `PROCESS_TYPE = 'FILE_DELETION'`, which causes the `ZeroSize?` rule to evaluate true for EVERY file regardless of actual size:
 
 ```
 ZeroSize? condition: 
@@ -525,13 +534,13 @@ New or previously-undocumented fields identified:
 
 ---
 
-## `FA_CLIENTS_ETL_CALL` Detail
+## `FA_CLIENTS_ETL_CALL` Detail (Deprecated — Reference Only)
 
-`FA_CLIENTS_ETL_CALL` is the alternative dispatch target `FA_CLIENTS_GET_LIST` uses when the current Client block has `ETL_PATH` populated (see "`FA_CLIENTS_GET_LIST` Detail" — Discovery of `FA_CLIENTS_ETL_CALL"). Reading its BPML (version 1 — has never been edited since creation, suggesting either very stable or rarely used) reveals a significantly different processing model than MAIN.
+`FA_CLIENTS_ETL_CALL` is the alternative dispatch target `FA_CLIENTS_GET_LIST` uses when the current Client block has `ETL_PATH` populated. **Confirmed deprecated by File Processing Supervisor** — no `CLIENTS_PARAM` rows currently have `ETL_PATH` populated, so this code path is never taken in practice. Retained in this document for reference and to support rapid re-integration should it ever be revived.
 
-### What It Actually Does
+### What It Does (If Invoked)
 
-**ETL_CALL is a thin wrapper that invokes Pervasive Cosmos 9's Design Engine (`djengine.exe`) to execute a macro-based ETL transformation.** It is NOT a SQL stored procedure executor. The command line invoked:
+ETL_CALL is a thin wrapper that invokes Pervasive Cosmos 9's Design Engine (`djengine.exe`) to execute a macro-based ETL transformation. It is NOT a SQL stored procedure executor. The command line invoked:
 
 ```
 "C:\Program Files (x86)\Pervasive\Cosmos9\Common\djengine.exe" -mf $MARCOS_PATH $ETL_PATH
@@ -541,7 +550,7 @@ Where:
 - `$MARCOS_PATH` — the `MARCOS_PATH` setting from `tbl_B2B_CLIENTS_SETTINGS` via the Settings/Values node. Likely a typo of "MACROS" that became canonical. Presumed to be a root directory path for Pervasive macro files.
 - `$ETL_PATH` — per-Client path to the specific Pervasive transformation file (likely a `.tf.xml` or `.djm` macro). This is a file path, not a SP name.
 
-This reveals a **legacy ETL subsystem** we were previously unaware of. FAC has a Pervasive Cosmos 9 installation (`C:\Program Files (x86)\Pervasive\Cosmos9\`) on the Sterling app server that handles some class of transformations via macro-driven ETL. Pervasive Cosmos was later rebranded as Actian DataConnect.
+FAC has a Pervasive Cosmos 9 installation (`C:\Program Files (x86)\Pervasive\Cosmos9\`) on the Sterling app server — a legacy ETL subsystem. Pervasive Cosmos was later rebranded as Actian DataConnect.
 
 ### Execution Flow
 
@@ -550,30 +559,21 @@ This reveals a **legacy ETL subsystem** we were previously unaware of. FAC has a
 3. If `PREV_SEQ` is set, enter `StatusUpdate` polling loop:
    - Wait 1 second
    - SELECT BATCH_STATUS from predecessor row (via CLIENT_ID + PREV_SEQ + PARENT_ID)
-   - Loop while `Ready != 3` (see caveat below)
+   - Loop while `Ready != 3`
 4. Invoke `djengine.exe` with MARCOS_PATH and ETL_PATH parameters.
 5. UPDATE own BATCH_STATUS to `1` on success.
 6. If any fault, onFault sets own BATCH_STATUS = -1 and invokes `EmailOnError`.
 
-### Divergences From MAIN — Flagged for Further Investigation
+### Known Divergences From MAIN
 
-ETL_CALL differs from MAIN in several ways that may be deliberate design choices or may be quirks/bugs. We flag them rather than confidently calling them bugs:
+ETL_CALL differs from MAIN in several ways that may be deliberate design choices or quirks/bugs. Documented here for completeness should ETL_CALL ever be revived:
 
-**1. WAIT? condition is more restrictive.** ETL_CALL's `WAIT?` rule waits while `Ready != 3` — meaning it only exits the polling loop when the predecessor's BATCH_STATUS is exactly `3`. MAIN's equivalent exits on values 3, 4, or 5 (any "done" state) and short-circuits on -1 (upstream failed). ETL_CALL's logic would keep polling indefinitely if the predecessor ends at 2, 4, 5, or -1. **If ETL_CALL is only ever chained after processes that end at BATCH_STATUS=3 (non-NB/PAY file processes with files), it works as intended. Otherwise this is a hang risk.**
+1. WAIT? condition is more restrictive — only exits on BATCH_STATUS=3 (MAIN exits on 3, 4, or 5)
+2. No `-2` to `-1` conversion in the SELECT
+3. Success terminal state is `1`, not a value in the 3-5 "done" range — so ETL_CALL cannot be a PREV_SEQ predecessor without causing an infinite polling loop
+4. No `TICKETS` insert in onFault
 
-**2. No `-2` to `-1` conversion in the SELECT.** MAIN's Wait? SELECT has `CASE WHEN BATCH_STATUS = -2 THEN -1 ELSE BATCH_STATUS END`. ETL_CALL's is just `SELECT BATCH_STATUS` — so a predecessor at -2 gets returned literally. -2 != 3, so polling continues. Reinforces the hang risk above.
-
-**3. Success terminal state is `1`, not a value in the 3-5 "done" range.** MAIN ends at values 2/3/4/5 depending on process type and outcome. ETL_CALL's tail UPDATE hardcodes `BATCH_STATUS = 1`, which is in MAIN's "in progress" polling range. This means: **any downstream MAIN or ETL_CALL run that uses this ETL_CALL as its PREV_SEQ predecessor will hang forever in its polling loop**, because `1` satisfies MAIN's `Wait?` condition (in 0-2 range) and doesn't satisfy ETL_CALL's exit condition (Ready == 3). So ETL_CALL cannot be a predecessor in a PREV_SEQ chain. It can only be a leaf.
-
-**4. No `TICKETS` insert in onFault.** ETL_CALL's onFault only sets BATCH_STATUS=-1 and fires EmailOnError. No row goes into `tbl_B2B_CLIENTS_TICKETS`. So failures in ETL_CALL will NOT appear in the tickets table — they'll only be visible via BATCH_STATUS=-1 and via the EmailOnError outputs.
-
-**Collector implication:** when building the monitoring layer, ETL_CALL runs need dedicated handling. They don't follow MAIN's BATCH_STATUS conventions and they don't leave TICKETS records on failure. If ETL_CALL is actually used anywhere in production, we need to query BATCH_STATUS for `BATCH_STATUS = -1 AND RUN_ID IN (ETL_CALL workflow IDs)` as an alternate failure detection path.
-
-**Question for the team:** does anyone actually use ETL_CALL? Version 1 has never been edited. If no configured Clients have `ETL_PATH` populated, ETL_CALL may be effectively dead code.
-
-### Credential Exposure Extension
-
-`ETL_PATH` points to a Pervasive macro file. Those macro files may contain embedded credentials for data source connections (database connection strings, FTP credentials, etc.). If we decide to mirror `INT_ProcessConfig` and it contains `ETL_PATH` values, we're not directly exposing credentials — but the filesystem location they point to is on the Sterling app server and may merit discussion.
+If ETL_CALL ever gets revived, the collector will need dedicated handling for these divergences. Currently moot.
 
 ---
 
@@ -581,7 +581,7 @@ ETL_CALL differs from MAIN in several ways that may be deliberate design choices
 
 Not every MAIN run is a file process. Some MAIN runs exist to execute Integration stored procedures. The collector must distinguish these.
 
-**Note:** PROCESS_TYPE alone cannot distinguish. `SPECIAL_PROCESS` is used by both legitimate entity processes (ACADIA SEQ_ID 6 and ACADIA EO SEQ_ID 1) and internal housekeeping (CLIENT_ID 328). The classification signal is the **configuration signature**, not the process type name.
+**Note:** PROCESS_TYPE alone cannot distinguish. `SPECIAL_PROCESS` is used by both legitimate entity processes (ACADIA SEQ_ID 6 and ACADIA EO SEQ_ID 1) and internal housekeeping (CLIENT_ID 328). Per File Processing Supervisor clarification, **SPECIAL_PROCESS is a catch-all for process configurations that "don't fit the standard process types"** — so expect variety in what SPECIAL_PROCESS runs actually do. The classification signal is the **configuration signature**, not the process type name.
 
 ### File Process
 
@@ -664,7 +664,7 @@ Each iteration of the loop **copies one Client block** from `PrimaryDocument` (t
 
 **Implication for execution tracking:** The grain is naturally one row per `(WORKFLOW_ID, Client[1].CLIENT_ID, Client[1].SEQ_ID)` — which for MAIN is effectively **one row per MAIN run** (the Client[1] is a function of the WORKFLOW_ID). No special handling needed for "multi-Client" cases.
 
-### PREV_SEQ Semantics (Resolved)
+### PREV_SEQ Semantics
 
 `PREV_SEQ` is a **declaratively enforced sequential dependency reference**. It is NOT metadata-only.
 
@@ -703,14 +703,14 @@ Detail retained from prior revisions. Sections on Identity, Process categorizati
 - `ENCOUNTER_MAP` — specific translation map for ENCOUNTER process type
 - `SEND_EMPTY_FILES` — whether to push even if no file was pulled (observed in SFTP_PULL OUTBOUND)
 - `GET_DOCS_PROFILE_ID` / `PUT_DOCS_PROFILE_ID` — references to stored SFTP connection profiles
-- `ETL_PATH` — when populated, GET_LIST routes to `FA_CLIENTS_ETL_CALL` instead of MAIN (path to Pervasive Cosmos macro file)
+- `ETL_PATH` — deprecated; if populated would route to ETL_CALL, but no configurations currently use it
 - `GET_DOCS_TYPE` — one of `SFTP_PULL`, `FSA_PULL`, `API_PULL`; note that GET_DOCS may mutate `API_PULL` to `FSA_PULL` mid-workflow
 - `GET_DOCS_API` — Python exe path used by GET_DOCS when `GET_DOCS_TYPE = 'API_PULL'`
 - `CUSTOM_FILE_FILTER` — `Y` flag that triggers dynamic XPath evaluation of `FILE_FILTER`
 - `GET_EMPTY_DOCS` — `Y` flag that overrides the zero-size skip in GET_DOCS
 - `FILE_ID` — when nonzero, forces GET_DOCS into single-file mode (no iterative loop)
 
-### Settings Block (Newly Characterized)
+### Settings Block
 
 ProcessData also includes a `//Settings/Values/...` node populated by `USP_B2B_CLIENTS_GET_SETTINGS`. Fields include:
 
@@ -719,31 +719,23 @@ ProcessData also includes a `//Settings/Values/...` node populated by `USP_B2B_C
 - `DM_NB_PATH`, `DM_PAY_PATH`, `DM_BDL_PATH` — standard delivery paths per process type
 - `DEF_PRE_ARCHIVE`, `DEF_POST_ARCHIVE` — default archive roots, concatenated when entity's PRE/POST_ARCHIVE is set to `'Y'`
 - `PYTHON_KEY` — **plaintext credential**
-- `MARCOS_PATH` — root directory for Pervasive Cosmos 9 macro files, passed to `djengine.exe -mf` as the first argument by `FA_CLIENTS_ETL_CALL`. Name appears to be a typo of "MACROS" that became canonical.
+- `MARCOS_PATH` — root directory for Pervasive Cosmos 9 macro files, passed to `djengine.exe -mf` as the first argument by `FA_CLIENTS_ETL_CALL`. Moot in current operation since ETL_CALL is deprecated.
 
 ### Sensitive Data in ProcessData
 
-**ProcessData may contain credentials in plaintext.** Observed sensitive fields:
+ProcessData may contain credentials in plaintext:
 
 - `PGP_PASSPHRASE` — populated for entities sending PGP-encrypted files. Contains the decryption passphrase in plaintext. Example observed: DENVER HEALTH NB.
 - `PYTHON_KEY` (in Settings) — plaintext Python API key per the GET_SETTINGS SP inventory.
 - Other plaintext secrets may appear in less-commonly-set fields.
 
-**Implications for architecture:**
+**Architectural decision on credential handling (resolved):** Capture ProcessData raw — the full decompressed XML is stored in `SI_ExecutionTracking.process_data_xml` as an NVARCHAR(MAX) column alongside the parsed field columns. Rationale:
 
-- Any raw ProcessData persistence (e.g., `SI_ProcessDataCache`) will copy credentials from Sterling's own data into xFACts
-- The Settings block is part of ProcessData for all GET_LIST-dispatched runs (Pattern 2 and 4), so credentials from Settings would also be persisted
-- This extends the credential footprint — backups, disaster-recovery copies, user access, support screenshots all become potential exposure surfaces
+- These credentials already exist in plaintext in Integration's `tbl_B2B_CLIENTS_SETTINGS` and in Sterling's own configuration — all under the same backup/DR scope as xFACts
+- Capturing in xFACts does not meaningfully expand exposure
+- Redaction belongs at the UI layer (Phase 5), not at storage — the forensic value of the raw XML is significant and should not be lost to pre-processing
 
-**Design options for `SI_ProcessDataCache` to be decided before build:**
-
-- **Redact known sensitive fields** before persistence (field allowlist — parse, strip sensitive tags, re-serialize)
-- **Store only a parsed field subset** (never the raw XML)
-- **Encrypt raw XML at rest** (column-level encryption or equivalent)
-- **Shorten retention** (days rather than indefinite) for raw ProcessData
-- Combination of the above
-
-This is an open design question — see Open Design Questions in `B2B_Module_Planning.md`.
+This decision moots the earlier-planned `SI_ProcessDataCache` table. One row per execution, raw XML inline.
 
 ---
 
@@ -812,11 +804,19 @@ The 16:00 hour is the largest observed cluster. Clustering at hours 6 apart (04,
 
 ## Execution Tracking Design
 
-Based on the Three Identity Scopes and the now-understood dispatcher/MAIN model:
+This section is the build spec for `SI_ExecutionTracking` — the core v1 deliverable of the B2B module. Complemented by forward-looking design notes for `SI_ExecutionDetail` (future).
+
+### Design Principles
+
+**"Collect everything possible up front."** We do not process the same things each day, so sampling-based column design is unreliable. There will almost certainly be runs in the next few weeks representing configurations we haven't looked at yet. It's much easier to drop a column after the fact than to add one on the fly because a new execution crashed the collector and we have to do a fix while it's live. So every known ProcessData field gets its own parsed column AND the raw ProcessData XML is stored on the same row for future-proofing against fields we don't yet recognize.
+
+**Single-table design.** Raw ProcessData XML lives as an `NVARCHAR(MAX)` column on `SI_ExecutionTracking` itself — no separate cache table. This aligns with the "as few scripts and tables as possible" principle and simplifies the collector (one write path, one MERGE).
+
+**Forward-looking columns for future detail table.** The design includes columns that will become useful when `SI_ExecutionDetail` (Phase 3 Block 3) is built — notably `merged_output_file_name` (the single post-merge file that downstream Batch Monitoring will see) and `has_detail_captured` (bit, supports incremental backfill when detail extraction turns on). This avoids retrofit pain later.
 
 ### Header Level — `SI_ExecutionTracking`
 
-**Proposed grain:** one row per `FA_CLIENTS_MAIN` `WORKFLOW_ID`.
+**Grain:** one row per `FA_CLIENTS_MAIN` `WORKFLOW_ID`.
 
 Since each MAIN run processes exactly one Client (at `//Result/Client[1]`), the natural grain is simply "one row per MAIN run." Client[1]'s CLIENT_ID and SEQ_ID become columns on that row. There is no multi-Client grain explosion because MAIN doesn't operate on multiple Clients per run.
 
@@ -826,7 +826,7 @@ Since each MAIN run processes exactly one Client (at `//Result/Client[1]`), the 
 
 The prior open question about Pattern 5 grain (one row per Client block × one row per worker = 16 rows for 1 conceptual pipeline) is **no longer relevant**. That framing was based on the incorrect model of "4 workers sharing one multi-Client ProcessData." The correct model is "GET_LIST loops over 4 SP result rows, invoking MAIN once per row, each with single-Client ProcessData." So 4 MAIN runs = 4 rows in SI_ExecutionTracking. One row per conceptual phase. Clean.
 
-### Columns (Refined)
+### Columns
 
 The column design reflects the Source of Truth stance: b2bi fields are authoritative, Integration fields are enrichment, and several derived "disagreement" flags turn the b2bi-vs-Integration gap into actionable alert signals rather than silent data loss.
 
@@ -836,7 +836,6 @@ The column design reflects the Source of Truth stance: b2bi fields are authorita
 - `b2bi_status` (WF_INST_S.STATUS)
 - `b2bi_state` (WF_INST_S.STATE)
 - `step_count` (count of WORKFLOW_CONTEXT rows)
-- `workflow_class` — distinguishes `MAIN` runs from `ETL_CALL` runs (both are tracked, but have different semantic conventions)
 
 **Workflow tree (from `b2bi.dbo.WORKFLOW_LINKAGE`):**
 - `parent_workflow_id` — immediate parent (typically a Pattern 4 wrapper or GET_LIST)
@@ -848,6 +847,10 @@ The column design reflects the Source of Truth stance: b2bi fields are authorita
 - `process_type`, `comm_method`, `business_type`
 - `translation_map`, `file_filter`, `get_docs_type`
 - `run_class` — derived classification: `FILE_PROCESS` / `INTERNAL_OP` / `UNCLASSIFIED`
+- All other ~70 parsed ProcessData fields (per the Known Fields inventory above) — one column each, captured every time for "collect everything" coverage
+
+**Raw ProcessData (forensic — from ProcessData / `TRANS_DATA`):**
+- `process_data_xml` — NVARCHAR(MAX), the full decompressed ProcessData XML. Credentials are captured raw per the architectural decision documented above; UI-layer redaction planned for Phase 5.
 
 **Failure detail (from `b2bi.dbo.WORKFLOW_CONTEXT` — AUTHORITATIVE):**
 - `root_cause_step_id`, `root_cause_service_name`, `root_cause_adv_status`
@@ -859,7 +862,7 @@ The column design reflects the Source of Truth stance: b2bi fields are authorita
 - `trans_invocation_count` — proxy for file count processed
 - `archive_invocation_count` — proxy for archive phase activity (pre/post/post2)
 
-**Integration enrichment (SUPPLEMENTARY — never gating):**
+**Integration enrichment (SUPPLEMENTARY — never gating; populated via live-join in collector):**
 - `int_batch_status` — BATCH_STATUS.BATCH_STATUS value, or NULL if row missing
 - `int_batch_parent_id` — BATCH_STATUS.PARENT_ID (Integration-side dispatcher RUN_ID)
 - `int_batch_finish_date` — BATCH_STATUS.FINISH_DATE
@@ -871,24 +874,67 @@ The column design reflects the Source of Truth stance: b2bi fields are authorita
 - `int_status_inconsistent` — b2bi reports FAILED but Integration doesn't reflect failure state
 - `alert_infrastructure_failure` — b2bi FAILED + Integration blind (either missing or in-progress); this is the "Sterling crashed before reporting" signal
 
+**Forward-looking for detail/lifecycle (populated when identifiable):**
+- `merged_output_file_name` — the single output filename produced by `FA_CLIENTS_FILE_MERGE` (for NB/PAYMENT file processes). This is the bridge to Batch Monitoring — DM sees this merged file, not the individual source files. Source file list lives in `SI_ExecutionDetail` when that table is built.
+- `merged_output_file_size` — if extractable
+- `has_detail_captured` — bit, default 0; flipped to 1 when Block 3 detail extraction processes this row. Supports incremental backfill when detail collection turns on.
+
+**Lookback optimization (completion tracking):**
+- `is_complete` — BIT NOT NULL DEFAULT 0. Flipped to 1 when the row has reached a terminal state in both b2bi and Integration. Enables the lookback query to exclude already-finalized rows on every cycle. See "Lookback Optimization" subsection below.
+- `completed_dttm` — DATETIME2(3) NULL. When the row transitioned to `is_complete = 1`.
+- `completed_status` — NVARCHAR(50) NULL. Snapshot of the terminal status at completion (e.g., `'SUCCESS'`, `'FAILED'`, `'INFRASTRUCTURE_FAILURE'`). Lets alert evaluation skip rows without re-reading all the status columns.
+
 **Metadata:**
 - `collected_dttm` — when the collector wrote this row
-- `processdata_cache_id` — pointer to `SI_ProcessDataCache` if that table is built and credential handling is resolved
+- `last_enriched_dttm` — last time Integration enrichment was attempted (supports re-enrichment windows for lagging BATCH_STATUS updates)
+
+### Lookback Optimization (`is_complete` pattern)
+
+Every cycle, the collector queries `b2bi.dbo.WF_INST_S` for `FA_CLIENTS_MAIN` runs within a 3-day lookback window. At ~2,300 MAIN runs/day, a naïve implementation would reprocess ~6,900 workflow_ids per cycle — most of which are already in `SI_ExecutionTracking` in a terminal state and have no new information to capture.
+
+The `is_complete` flag short-circuits that waste. Every cycle's workload scales with "new + in-flight" runs, not total lookback volume:
+
+```sql
+-- Step 1 query pattern (conceptual)
+SELECT w.WORKFLOW_ID, w.WFD_ID, ...
+FROM b2bi.dbo.WF_INST_S w
+WHERE w.START_TIME >= @lookback_start
+  AND w.WFD_ID = 798  -- FA_CLIENTS_MAIN
+  AND NOT EXISTS (
+      SELECT 1 FROM B2B.SI_ExecutionTracking t
+      WHERE t.workflow_id = w.WORKFLOW_ID
+        AND t.is_complete = 1
+  )
+```
+
+**Terminal-state criteria** for flipping `is_complete = 1`:
+
+| b2bi state | Integration state | Transition to is_complete = 1? |
+|---|---|---|
+| SUCCESS | BATCH_STATUS in (2, 3, 4, 5) | Yes — both sides agree on terminal success |
+| FAILED | BATCH_STATUS = -1 | Yes — both sides agree on terminal failure |
+| FAILED | NULL / in-progress / row missing | Yes — but with `completed_status = 'INFRASTRUCTURE_FAILURE'` (the disagreement is itself terminal for this row; no further Integration update will change our interpretation) |
+| SUCCESS | NULL / in-progress | **No** — wait for Integration to catch up (re-enrichment will retry on subsequent cycles) |
+| RUNNING / LAUNCHED | any | **No** — workflow still in progress on Sterling side |
+
+**Manual override:** setting `is_complete = 1` on any row excludes it from future processing AND future alert evaluation. This is the intended escape hatch for known-bad workflows that would otherwise generate repeated alerts — a row manually flipped is "we've seen this, we've decided it doesn't need attention, move on."
+
+The collector will not automatically flip `is_complete` back from 1 to 0 under any circumstances. Manual intervention is required to re-examine a row (which is rare and appropriate — a completed workflow is a settled historical record, not a live target).
 
 ### Integration Source Trust Matrix
 
-Different Integration tables have different trust levels based on their population mechanism. The collector must not treat them uniformly.
+Different Integration tables have different trust levels based on their population mechanism. The collector must not treat them uniformly. All queries are **live-joined** from the collector; no tables are mirrored locally.
 
-| Integration Table | Trust as Execution Source | Trust as Enrichment | How We Use It |
+| Integration Table | Trust as Execution Source | Trust as Enrichment | How the Collector Uses It |
 |---|---|---|---|
-| `tbl_B2B_CLIENTS_MN` | — (not an execution source) | HIGH | Mirror into `INT_EntityRegistry` for display names |
-| `tbl_B2B_CLIENTS_FILES` | — (not an execution source) | HIGH | Mirror into `INT_ProcessRegistry`; reference for "configured but never runs" detection |
-| `tbl_B2b_CLIENTS_PARAM` | — (not an execution source) | HIGH | Mirror into `INT_ProcessConfig`; field-level config reference |
-| `tbl_B2B_CLIENTS_SETTINGS` | — (not an execution source) | MEDIUM | Mirror into `INT_Settings` with credential redaction |
-| `tbl_B2B_CLIENTS_BATCH_STATUS` | **LOW** — never use as primary | MEDIUM | Join for enrichment; monitor for disagreement with b2bi as alert signal |
-| `tbl_B2B_CLIENTS_TICKETS` | LOW (incomplete coverage) | MEDIUM as classification signal | Join for ticket_type enrichment; never treat absence as "no failure" |
-| `tbl_B2B_CLIENTS_BATCH_FILES` | LOW (scope-limited) | HIGH **within its scope** (zero-size + FILE_DELETION) | Use for FILE_DELETION activity metrics specifically |
-| `tbl_FA_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` | — (it's discovery input, not execution) | Reference only | Possible "expected vs. processed" comparison downstream |
+| `tbl_B2B_CLIENTS_MN` | — (not an execution source) | HIGH | Live-join for entity name enrichment on captured execution rows |
+| `tbl_B2B_CLIENTS_FILES` | — (not an execution source) | HIGH | Live-join if additional process-level classification needed; typically ProcessData already has it |
+| `tbl_B2b_CLIENTS_PARAM` | — (not an execution source) | HIGH | Not routinely queried — ProcessData captures the same values at runtime |
+| `tbl_B2B_CLIENTS_SETTINGS` | — (not an execution source) | MEDIUM | Not routinely queried — Settings/Values node in ProcessData captures the active settings |
+| `tbl_B2B_CLIENTS_BATCH_STATUS` | **LOW** — never use as primary | MEDIUM | Live-join for enrichment; monitor for disagreement with b2bi as alert signal |
+| `tbl_B2B_CLIENTS_TICKETS` | LOW (incomplete coverage) | MEDIUM as classification signal | Live-join for ticket_type enrichment; never treat absence as "no failure" |
+| `tbl_B2B_CLIENTS_BATCH_FILES` | LOW (scope-limited) | HIGH **within its scope** (zero-size + FILE_DELETION) | Potentially live-joined for FILE_DELETION activity metrics; decision pending Block 3 design |
+| `tbl_FA_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` | — (it's discovery input, not execution) | Reference only | Possible future "expected vs. processed" comparison downstream |
 
 **Key principle:** Integration tables that are HIGH trust are config-derived (static, human-maintained) or scope-limited-but-complete-within-scope. Integration tables that are LOW trust are written by Sterling BPMLs at runtime and can be missed when those BPMLs fail in specific ways.
 
@@ -905,20 +951,28 @@ The combinations of b2bi state and Integration state, interpreted as actionable 
 | SUCCESS | NULL or in-progress | **Anomaly** — b2bi says done but Integration wasn't updated | Medium-severity investigation flag |
 | Row missing in b2bi | Any value | **Shouldn't happen** — BATCH_STATUS row exists for workflow that doesn't | Anomaly to investigate (indicates a collection-lag or deeper issue) |
 
-The "Sterling crashed before reporting" row is the one that directly addresses the historical concern of "failures that weren't reflected in Integration." Under the current architecture these weren't surfaced. Under the new architecture they become named alert classes with their own severity.
+The "Sterling crashed before reporting" row is the one that directly addresses the historical concern of "failures that weren't reflected in Integration." Under the old architecture these weren't surfaced. Under the new architecture they become named alert classes with their own severity.
 
 ### Collector Flow — `Collect-B2BExecution.ps1`
 
-The planned collector follows a b2bi-primary-then-enrich pattern. This is the high-level structure (concrete implementation design is for Phase 3):
+The planned collector follows a b2bi-primary-then-enrich pattern, handling both schedule sync and execution tracking in a single script.
 
 ```
-Per collection cycle (frequency TBD — likely 1-5 min):
+Per collection cycle (target frequency: every 5 minutes):
 
-1. [b2bi primary] Query WF_INST_S for FA_CLIENTS_MAIN and FA_CLIENTS_ETL_CALL
-   runs that started since the last high-water mark.
-   -> This produces the list of workflow_ids that need a row in SI_ExecutionTracking.
-      Every real execution is captured here, regardless of whether Integration
-      recorded it.
+0. [Schedule sync] Query b2bi.SCHEDULE for all schedules; decompress TIMINGXML
+   for any new or changed entries; issue per-row INSERT/UPDATE/DELETE to match
+   SI_ScheduleRegistry against b2bi. Cheap; runs every cycle but typically
+   reports 0 changes after initial populate.
+
+1. [b2bi primary] Query WF_INST_S for FA_CLIENTS_MAIN runs that started within
+   the 3-day lookback window AND whose workflow_id is NOT already marked
+   is_complete = 1 in SI_ExecutionTracking.
+   -> Anti-join against is_complete = 1 rows so terminal workflows are
+      invisible to subsequent cycles. Per-cycle workload scales with
+      "new + in-flight" count, not total lookback volume.
+   -> This produces the list of workflow_ids that need a (new) row or a
+      (still-in-flight) refresh in SI_ExecutionTracking.
 
 2. [b2bi enrichment] For each captured workflow_id:
    a. Query WORKFLOW_LINKAGE for parent_workflow_id + root_workflow_id.
@@ -926,60 +980,199 @@ Per collection cycle (frequency TBD — likely 1-5 min):
    c. If the workflow failed: deep-scan WORKFLOW_CONTEXT for root-cause and
       reported-failure steps (capturing the failure span, not just the final step).
    d. Query TRANS_DATA for ProcessData; decompress gzip; parse //Result/Client[1]
-      fields.
-   e. [OPTIONAL, depends on credential decision] If SI_ProcessDataCache is built,
-      cache the decompressed blob (or redacted subset) against processdata_cache_id.
+      fields into their columns; store raw decompressed XML in process_data_xml.
+   e. Extract merged_output_file_name if FA_CLIENTS_FILE_MERGE was invoked.
 
-3. [Integration enrichment — bulk join] After accumulating a batch of b2bi results:
+3. [Integration enrichment — bulk live-join] After accumulating a batch of b2bi results:
    a. Bulk query Integration.BATCH_STATUS for matching RUN_IDs.
    b. Bulk query Integration.TICKETS for matching RUN_IDs.
-   c. In-memory hash-join both result sets onto the b2bi-keyed rows.
-   d. Compute int_status_missing, int_status_inconsistent,
+   c. (As needed) Bulk query Integration.CLIENTS_MN for entity name lookups.
+   d. In-memory hash-join in PowerShell onto the b2bi-keyed rows.
+   e. Compute int_status_missing, int_status_inconsistent,
       alert_infrastructure_failure flags.
 
-4. [Write] MERGE into SI_ExecutionTracking.
+4. [Completion assessment] For each row, evaluate whether both sides have
+   reached a terminal state per the Lookback Optimization criteria above.
+   Rows meeting the terminal criteria get is_complete = 1, completed_dttm =
+   GETDATE(), and completed_status set to the appropriate terminal label.
+   Rows still in flight (e.g., b2bi SUCCESS but Integration still in-progress)
+   remain is_complete = 0 for re-evaluation on a later cycle.
 
-5. [Advance] Update high-water mark.
+5. [Write] MERGE into SI_ExecutionTracking.
+
+6. [Advance] Update high-water mark.
 ```
 
-**Why this ordering:** b2bi is polled first and independently so Integration-side failures can never cause us to miss execution data. Integration is queried in bulk at the end rather than per-row for efficiency. The disagreement flags are computed from the joined result rather than requiring a separate reconciliation pass.
+**Why this ordering:** b2bi is polled first and independently so Integration-side failures can never cause us to miss execution data. Integration is queried in bulk at the end rather than per-row for efficiency. The disagreement flags are computed from the joined result rather than requiring a separate reconciliation pass. Schedule sync runs first because it's cheap and independent — if it fails, execution collection still proceeds.
+
+**Initial operation:** manual runs first (pre-schedule) to validate correctness and timing. Once observed stable, cron at 5-minute intervals.
+
+**One-time historical backfill:** after the collector is validated, a one-time backfill run will pull whatever history is still available against Integration tables (BATCH_STATUS, TICKETS) for runs that have already been purged from b2bi but still have Integration traces. This is expected to be partial — b2bi's aggressive purging means most history is already gone — but every row we recover is value. Rows recovered via backfill will have `b2bi_status`, `b2bi_state`, ProcessData, and WORKFLOW_CONTEXT detail all NULL (because b2bi no longer has them), but `int_*` columns will be populated.
 
 ### Operational Risks to Monitor During Build
 
 Things to watch for once the collector is running:
 
 1. **Volume.** Roughly 2,300 MAIN runs/day observed. Each requires WF_INST_S row + 5-200 WORKFLOW_CONTEXT rows + 1 ProcessData blob. Batch sizes and collection cadence need tuning.
-2. **ProcessData decompression cost.** Compressed blobs are typically 5-20 KB; decompression is cheap per-blob but accumulates. May want to defer decompression until row-write rather than per-query.
-3. **Cross-server latency.** b2bi (FA-INT-DBP) and Integration (AVG-PROD-LSNR) are separate servers with no linked server. Each collection cycle makes separate DB calls. Acceptable for batch collection; would need rethinking for real-time UI.
-4. **Disagreement rate calibration.** If `alert_infrastructure_failure` fires on 5%+ of runs, it's noise. If it fires on <0.1%, it's high-signal. Rate is unknowable until we're collecting. Threshold tuning will happen after initial observation period.
-5. **ETL_CALL inclusion semantics.** ETL_CALL runs share the SI_ExecutionTracking table but have different BATCH_STATUS conventions (terminal value is 1 rather than 3-5; no TICKETS writes on fault). The `workflow_class` column plus ETL_CALL-specific interpretation rules will be needed in the collector. If ETL_CALL turns out to be unused in practice, this simplifies.
-6. **High-water mark robustness.** Collection restart, clock skew, or a collector crash mid-cycle shouldn't produce duplicate or missed rows. The MERGE pattern handles duplicates; for missed rows we'll need an overlap/reconciliation pass or a "collected" high-water that's advanced only after successful write.
+2. **ProcessData decompression cost.** Compressed blobs are typically 5-20 KB; decompression is cheap per-blob but accumulates. Raw XML column storage is estimated ~40GB at 3-year retention — acceptable.
+3. **Cross-server latency.** b2bi (FA-INT-DBP) and Integration (AVG-PROD-LSNR) are separate servers with no linked server. Each collection cycle makes separate DB calls. Acceptable for batch collection.
+4. **Disagreement rate calibration.** If `alert_infrastructure_failure` fires on 5%+ of runs, it's noise. If it fires on <0.1%, it's high-signal. Rate is unknowable until we're collecting. Threshold tuning happens after initial observation period.
+5. **High-water mark robustness.** Collection restart, clock skew, or a collector crash mid-cycle shouldn't produce duplicate or missed rows. The MERGE pattern handles duplicates; the 3-day lookback handles missed rows within b2bi retention.
+6. **Enrichment lag.** BATCH_STATUS and TICKETS may be updated after the initial b2bi row capture (e.g., a late tail UPDATE). The `is_complete` flag handles this naturally — rows where b2bi is SUCCESS but Integration is still in-flight remain `is_complete = 0` and get re-enriched on subsequent cycles until Integration catches up. `last_enriched_dttm` supports re-enrichment budgeting (e.g., "don't re-query rows enriched within the last 2 minutes").
+7. **Manual override of `is_complete`.** Operators may flip `is_complete = 1` on individual rows to silence repeated alerts from known-bad workflows. This is by design — the manual override treats a row as settled regardless of what the data says. Monitor for overuse: if many rows are being manually flipped, investigate whether the alert logic itself needs tuning rather than using manual flips as a patch.
 
-### Detail Level — `SI_ExecutionDetail` (Deferred to Phase 4+)
+### Detail Level — `SI_ExecutionDetail` (Future — Phase 3 Block 3)
 
-Grain: one row per `(WORKFLOW_ID, FILE_INDEX, DM_CREDITOR_KEY)`. Source: Translation output XML parsed per MAIN run. Build first at header level; add detail when header is validated.
+Middle-grain extraction layer for per-file and per-creditor-within-file summary information. **Design deferred** until the "skinny" Translation output pattern is reliably identified across process types — this is a prerequisite investigation item.
 
-### ProcessData Cache — `SI_ProcessDataCache`
+**Current working understanding:**
+- Source: Translation output documents per MAIN run. Each run produces multiple DOCUMENT rows in TRANS_DATA (~12 observed in one NB run); 3-4 of those are XML outputs containing different segments of import data.
+- Target: the **"skinny" output** — characterized by a file-name header followed by individual account rows with balance and intended creditor keys. This is distinct from the denser demographic/full-data XML outputs which carry much more than we need for summary grain.
+- Identification across process types: not yet established. NB observations are a starting point; each other process type's Translation output structure needs investigation as anatomies are traced.
 
-Grain: one row per MAIN run. Preserves decompressed XML. **See "Sensitive Data in ProcessData" above for credential-handling design options.** Deferring this table's build until the credential-handling decision is made; the core collector can operate without it.
+**Grain (working assumption):** one row per `(workflow_id, file_index, dm_creditor_key)`, with an "unmatched" bucket for records not matched to a creditor. The single merged output filename lives on `SI_ExecutionTracking` (not duplicated here) — the detail table focuses on the per-source-file breakdown.
+
+**Collector integration:** the same `Collect-B2BExecution.ps1` gains a toggleable detail-extraction pipeline step when this block activates. The `has_detail_captured` bit on `SI_ExecutionTracking` supports incremental backfill — rows with `has_detail_captured = 0` are eligible for extraction.
+
+**Role in lifecycle bridging:** this table (plus the merged-output-filename on `SI_ExecutionTracking`) is the B2B module's contribution to the File Monitoring → B2B → Batch Monitoring lifecycle view. Upstream File Monitoring has the source file list with submission timestamps; `SI_ExecutionDetail` will tie those source files to MAIN runs that processed them; `SI_ExecutionTracking.merged_output_file_name` will tie each run to the single merged output that Batch Monitoring will see on the DM side.
 
 ---
 
-## Integration Source Table Mirrors (Proposed)
+## SI_ScheduleRegistry — Schedule Catalog
 
-Mirror tables in the xFACts B2B schema to provide local read access to Integration's configuration. Renaming: "Entity" rather than "Client" to reflect mixed entity nature (customers, vendors, internal services).
+This section documents the other Sterling data asset the collector maintains: a structured mirror of Sterling's own schedule registry. This is distinct from execution tracking — it's about *when things are supposed to run*, not *what has run*. Putting it in its own top-level section reflects the multi-functional nature of `Collect-B2BExecution.ps1`: the collector is the home for any b2bi data that needs to land in xFACts, not just execution data.
 
-- **`B2B.INT_EntityRegistry`** — replaces the scaffolded-but-empty `B2B.INT_ClientRegistry`. Source: `tbl_B2B_CLIENTS_MN`. Approach: `sp_rename` the existing table + alter to add classification columns.
-- **`B2B.INT_ProcessRegistry`** (new). Source: `tbl_B2B_CLIENTS_FILES`. Grain: one row per (CLIENT_ID, SEQ_ID).
-- **`B2B.INT_ProcessConfig`** (new). Source: `tbl_B2b_CLIENTS_PARAM`. Grain: one row per (CLIENT_ID, SEQ_ID, PARAMETER_NAME).
-- **`B2B.INT_Settings`** (new). Source: `tbl_B2B_CLIENTS_SETTINGS`. Grain: one row per PARAMETER_NAME. Potentially credentialed (PYTHON_KEY) — subject to same handling decisions as ProcessData.
+**Status:** ✅ Built and populated as of April 22, 2026.
 
-**Not mirrored** (queried directly via join from collector):
+### Purpose
 
-- `tbl_B2B_CLIENTS_BATCH_STATUS` — high-churn; cheaper to query live and join than to replicate
-- `tbl_B2B_CLIENTS_TICKETS` — low-volume but append-only; may or may not be mirrored depending on retention needs
+Sterling's `b2bi.dbo.SCHEDULE` table stores timing definitions for every scheduled workflow in the environment. The timing information is encoded in a gzip-compressed XML blob (`TIMINGXML` column, resolved via `DATA_TABLE`) with its own small grammar. `SI_ScheduleRegistry` captures each schedule as one row, with the TIMINGXML parsed into structured query-friendly columns plus a human-readable description string.
 
-DDL drafts deferred until process-type investigation is more complete.
+This registry serves three near-term and long-term purposes:
+
+1. **Reference for the Control Center** — a queryable catalog of what schedules exist and when they fire, without every CC page needing to crack TIMINGXML itself.
+2. **Foundation for Phase 4 schedule-adherence monitoring** — comparing actual runs (captured in `SI_ExecutionTracking`) against expected schedules (captured here) surfaces the "this daily process didn't run today" case that's currently invisible to the Apps team.
+3. **Operational visibility into Sterling-native services** — the registry captures Sterling's own internal maintenance schedules (BackupService, BPExpirator, IndexBusinessProcessService, etc.) alongside FAC-owned workflows. If Sterling's housekeeping stops running, we see it.
+
+### Grain and Naming Convention
+
+**Grain:** one row per `b2bi.dbo.SCHEDULE.SCHEDULEID`.
+
+**Naming convention:** `FA_*` prefix identifies FAC-owned workflows; all other names are Sterling-native services. The registry captures both — it's a full mirror of Sterling's schedule population. Consumers (CC pages, monitoring logic) filter by naming convention or by `source_status` as needed.
+
+### Column Design
+
+25 columns total. Grouped by role:
+
+**Source identity (from `b2bi.dbo.SCHEDULE` — authoritative):**
+- `schedule_id` — PK, maps directly to SCHEDULE.SCHEDULEID
+- `service_name` — workflow name that this schedule fires
+- `schedule_type`, `schedule_type_id`, `execution_timer` — Sterling's internal schedule-type identifiers
+- `source_status` — SCHEDULE.STATUS (`ACTIVE` / `INACTIVE` — used by CC filtering)
+- `execution_status` — SCHEDULE.EXECUTIONSTATUS (Sterling's live status)
+- `timing_xml_handle` — the raw TIMINGXML foreign key (SCHEDULE.TIMINGXML, an int that references DATA_TABLE)
+- `source_system_name` — SCHEDULE.SYSTEMNAME
+- `source_user_id` — SCHEDULE.USERID (who last modified)
+
+**Parsed timing structure (from decompressed TIMINGXML):**
+- `timing_pattern_type` — one of `DAILY`, `WEEKLY`, `MONTHLY`, `INTERVAL`, `MIXED`, `UNKNOWN`. Classification is derived from which XML elements are present (see Pattern Classification below).
+- `run_day_mask` — CHAR(7). Week-day mask in Sun-Mon-Tue-Wed-Thu-Fri-Sat position order. Letter for day present, `-` for day absent. Examples: `SMTWTFS` = every day; `-MTWTF-` = Mon-Fri; `S-----S` = weekends only. Position is authoritative, not the letter (the two S's for Sun/Sat share a letter but different positions).
+- `run_days_of_month` — comma-separated day numbers for MONTHLY patterns (e.g., `1,15` or `5`)
+- `run_times_explicit` — comma-separated HH:MM times for DAILY/WEEKLY/MONTHLY patterns (e.g., `05:00,06:00,07:00,08:00,09:00,10:00,11:00,12:00,13:00,14:00,15:00,16:00,17:00,18:00`)
+- `run_interval_minutes` — integer interval in minutes for INTERVAL/MIXED patterns
+- `run_range_start`, `run_range_end` — HH:MM window bounds for INTERVAL/MIXED patterns
+- `run_on_minute` — minute offset for INTERVAL patterns (currently always 0 or NULL in observed data; captured for completeness)
+- `excluded_dates` — comma-separated MM-DD dates to skip (e.g., `01-01,12-25` for New Year's and Christmas)
+
+**Derived / computed columns:**
+- `first_run_time_of_day`, `last_run_time_of_day` — earliest and latest HH:MM in the day (supports "does this run during business hours?" queries without parsing the detail columns)
+- `expected_runs_per_day` — estimated daily run count based on pattern + times (supports volume comparison against `SI_ExecutionTracking`)
+- `schedule_description` — human-readable rendering of the full schedule. Built from the parsed columns per pattern-type rules. Example: `"Every 60 min at :05, 05:05-15:05, Mon-Fri (excl. 01-01,12-25)"` for `FA_CLIENTS_GET_LIST`.
+
+**Preservation:**
+- `timing_xml` — NVARCHAR(MAX) storing the raw decompressed TIMINGXML for any schedule the parser couldn't fully classify (`timing_pattern_type = 'UNKNOWN'`) or for forensic inspection. Not indexed.
+
+**Metadata:**
+- `last_modified_dttm` — when the collector last wrote this row
+
+### Pattern Classification
+
+Sterling's TIMINGXML grammar supports several timing patterns. The parser classifies each into one of six types based on element presence:
+
+| Pattern Type | TIMINGXML Indicators | Meaning | Example |
+|---|---|---|---|
+| `DAILY` | `<day ofWeek="-1">` (every day) with `<time>` entries (no `<timeRange>`) | Runs every day at one or more fixed times | `FA_FROM_REVSPRING_IB_BD_PULL` — 14 explicit times 05:00-18:00 |
+| `WEEKLY` | `<day ofWeek="N">` for specific days, with `<time>` entries | Runs on specific weekdays at fixed times | `FA_TO_JEFFERSON_DAVIS_OB_BD_S2P_RM` — Mondays at 11:06 |
+| `MONTHLY` | `<day ofMonth="N">` entries, with `<time>` entries | Runs on specific days of the month | `FA_TO_FAST_PACE_OB_BD_S2D_NT` — day 3 at 10:00 |
+| `INTERVAL` | `<day ofWeek="-1">` with `<timeRange>` (range+interval+onMinute) | Runs repeatedly across a time range every day | `BPExpirator` — every 15 min, 00:00-23:59, daily |
+| `MIXED` | `<day ofWeek="N">` for specific days with `<timeRange>` | Runs at intervals within a range on specific days | `FA_CLIENTS_GET_LIST` — every 60 min, 05:05-15:05, Mon-Fri |
+| `UNKNOWN` | Anything the parser doesn't recognize — malformed, truncated, or novel pattern structure | Fallback bucket. `timing_xml` column preserves the raw payload for manual review. |
+
+**Current distribution** (604 rows as of April 22, 2026):
+
+| Type | Count |
+|---|---:|
+| DAILY | 231 |
+| WEEKLY | 172 |
+| MONTHLY | 167 |
+| INTERVAL | 29 |
+| MIXED | 5 |
+| UNKNOWN | 0 |
+
+Zero UNKNOWN rows across the full population — the parser handles every observed TIMINGXML variant cleanly. This is a meaningful confidence signal: Sterling's TIMINGXML grammar is narrower than it could be in theory, and Sterling's schedule authoring surface reliably produces parseable output.
+
+### Collection Pattern
+
+The collector fetches schedules via a single JOIN query against `b2bi.dbo.SCHEDULE` and `b2bi.dbo.DATA_TABLE`:
+
+```sql
+SELECT s.SCHEDULEID, s.SERVICENAME, s.SCHEDULETYPE, s.SCHEDULETYPEID,
+       s.EXECUTIONTIMER, s.STATUS, s.EXECUTIONSTATUS, s.TIMINGXML,
+       s.SYSTEMNAME, s.USERID,
+       dt.DATA_OBJECT AS TIMING_BLOB
+FROM dbo.SCHEDULE s
+LEFT JOIN dbo.DATA_TABLE dt ON dt.DATA_ID = s.TIMINGXML
+WHERE s.TIMINGXML IS NOT NULL AND s.TIMINGXML <> ''
+ORDER BY s.SCHEDULEID
+```
+
+One round trip retrieves all schedules and all their compressed blobs. This is a meaningful savings over the naïve approach (one query for schedules, then one per-schedule query for TIMINGXML); at 604 schedules, the savings is ~600 avoided round trips per cycle.
+
+Each compressed blob is decompressed in-memory (gzip via `System.IO.Compression.GZipStream`) and parsed by the TIMINGXML parser. The collector then compares the decoded structure to the existing registry row and issues per-row `INSERT`, `UPDATE`, or `DELETE` as appropriate:
+
+- **INSERT** — schedule_id not present in registry
+- **UPDATE** — any of `timing_xml_handle`, `source_status`, `execution_status` differs (other derived columns are updated implicitly)
+- **DELETE** — schedule_id in registry but no longer in source
+
+The registry is idle-stable: on a cycle with no Sterling-side schedule changes, the collector reports 0/0/0/0 (inserts/updates/deletes/errors) without writing anything.
+
+### Collection Performance
+
+Observed in production (604 schedules, April 22, 2026):
+
+- **First-run populate:** ~4.5 seconds (604 INSERTs including full XML parse for each row)
+- **Idle cycle:** <1 second (reads source, compares, finds no changes, exits)
+- **Typical change cycle:** 1-2 seconds (a handful of schedule updates between cycles is uncommon)
+
+Runtime is dominated by the TIMINGXML decompression loop, not SQL round trips. At steady state, the collector's schedule-sync step is essentially free against the orchestrator's 5-minute cadence budget.
+
+### Design Principles Applied
+
+- **Lean registry design.** No `first_seen` / `last_seen` / `is_deleted_in_source` columns. Deletions are by row removal rather than flag; schedule_id disappearing from `b2bi.dbo.SCHEDULE` triggers an explicit DELETE rather than a logical delete. This reflects a design philosophy: when the source table authoritatively says "this schedule exists now," audit columns tracking "when we first saw it" are unneeded complexity.
+- **Capture everything Sterling has.** Both ACTIVE and INACTIVE schedules are captured; both FAC-owned and Sterling-native services. Filtering happens at the query layer in the consumer (CC page, monitoring logic), not at the registry boundary. This avoids having to remember later "what did we choose to exclude, and would we want it back now?"
+- **Raw TIMINGXML preservation.** For any row classified as `UNKNOWN`, the raw decompressed XML is retained in `timing_xml` for inspection. This is cheap insurance — if we ever encounter a schedule pattern the parser doesn't handle, we have the source material to extend the classifier.
+
+---
+
+## Integration Source Query Reference
+
+Since no Integration tables are mirrored, the collector performs live queries against the Integration DB for enrichment. Key patterns (detailed query text in `B2B_Reference_Queries.md`):
+
+- **Entity name lookup** — `SELECT CLIENT_ID, CLIENT_NAME FROM Integration.etl.tbl_B2B_CLIENTS_MN WHERE CLIENT_ID IN (...)` — bulk-query in cycle, hash-join in PowerShell memory
+- **BATCH_STATUS enrichment** — `SELECT CLIENT_ID, SEQ_ID, RUN_ID, PARENT_ID, BATCH_STATUS, FINISH_DATE FROM Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS WHERE RUN_ID IN (...)` 
+- **TICKETS enrichment** — `SELECT RUN_ID, TICKET_TYPE, TICKET_CREATED FROM Integration.ETL.tbl_B2B_CLIENTS_TICKETS WHERE RUN_ID IN (...)`
+
+**Cross-server constraint:** no linked server exists between FA-INT-DBP (b2bi) and AVG-PROD-LSNR (Integration). All cross-server joining happens in PowerShell via in-memory hash-join after separate `Invoke-Sqlcmd` calls. This is the standing pattern for the collector.
 
 ---
 
@@ -990,8 +1183,8 @@ Distinct PROCESS_TYPE × COMM_METHOD pairs observed in `tbl_B2B_CLIENTS_FILES` (
 | # | PROCESS_TYPE | COMM_METHOD | Anatomy Status | Notes |
 |--:|---|---|---|---|
 | 1 | NEW_BUSINESS | INBOUND | ✅ Live-traced (ACADIA), ⚠️ PGP variant (DENVER HEALTH) | See `B2B_ProcessAnatomy_NewBusiness.md`. PGP variant needs separate documentation. |
-| 2 | FILE_DELETION | INBOUND | ⚠️ Partially traced (ACADIA) | SFTP remote cleanup. Actual delete logic lives in `FA_CLIENTS_GET_DOCS`, not MAIN. |
-| 3 | SPECIAL_PROCESS | INBOUND | ⚠️ ProcessData seen (ACADIA EO) | Pipeline orchestration role with external Python exe; internal-op usage separately (CLIENT_ID 328) |
+| 2 | FILE_DELETION | INBOUND | ⚠️ Partially traced (ACADIA) | SFTP remote cleanup on Joker server. Only configured for clients that submit un-needed files. Delete logic lives in `FA_CLIENTS_GET_DOCS`, not MAIN. |
+| 3 | SPECIAL_PROCESS | INBOUND | ⚠️ ProcessData seen (ACADIA EO) | Catch-all for non-standard processes. Seen as pipeline orchestration role with external Python exe; internal-op usage separately (CLIENT_ID 328). |
 | 4 | ENCOUNTER | INBOUND | ⚠️ ProcessData seen (ACADIA EO) | Minimal config; GET_DOCS_DLT=Y; ENCOUNTER_MAP specific |
 | 5 | PAYMENT | INBOUND | ⚠️ Prior session (PAY N SECONDS) + ProcessData seen (ACADIA EO) | Needs re-verification |
 | 6 | NOTES | OUTBOUND | ⚠️ Prior session (LIVEVOX IVR) | Needs re-verification |
@@ -1033,59 +1226,56 @@ Same as previous revisions — `FileGatewayReroute`, `Schedule_*`, `TimeoutEvent
 
 ## Things Clarified Since Original Planning Doc
 
-Cumulative list with this revision's additions marked.
+Cumulative list. Highlights only — revision log has per-revision detail.
 
 | Topic | Planning Doc Said | Now Verified |
 |-------|-------------------|-------------|
 | ProcessData wrapper | `<r>` | `<r>` (verified) |
 | Process type field | `PROCESS_TYPE` | `PROCESS_TYPE` (verified) |
 | ProcessData lookup pattern | `CREATION_DATE <= Step0.START_TIME` | `ORDER BY CREATION_DATE ASC` (created ~10 ms after Step 0) |
-| Multiple DOCUMENT rows per MAIN | Implied single | Multiple exist; ProcessData is the first chronologically |
+| Multiple DOCUMENT rows per MAIN | Implied single | Multiple exist; ProcessData is the first chronologically; other rows include Translation outputs (target for future detail extraction) |
 | PRE_ARCHIVE / POST_ARCHIVE | Y/N flags | Y / empty (not paths) |
-| GET_DOCS_TYPE values | `SFTP_PULL` | Also `FSA_PULL` (File System Adapter) and others |
+| GET_DOCS_TYPE values | `SFTP_PULL` | Also `FSA_PULL` and `API_PULL` (mutates to FSA_PULL) |
 | Collector grain | "per workflow run" | One row per MAIN WORKFLOW_ID (simplified given single-Client nature of MAIN) |
-| MAIN execution paths | Polymorphic (5 paths) | **CORRECTED** — MAIN is a single linear sequence with ~22 conditional rules. "Paths" were differing evaluations of the same rules, not structurally different branches. |
+| MAIN execution paths | Polymorphic (5 paths) | **CORRECTED** — MAIN is a single linear sequence with ~22 conditional rules |
 | FTP_FILES_LIST workflows | File scanners | SP-executor Internal Operations that populate the discovered-files table consumed by Pattern 2 |
 | ProcessData field count | ~30 fields | ~70+ fields plus a Settings sub-block |
-| Integration table role | Mostly deprecated | **CORRECTED** — Integration is an active coordination layer. CLIENTS_FILES/PARAM/MN/SETTINGS are config; BATCH_STATUS/TICKETS are runtime state. |
+| Integration table role | Mostly deprecated | **CORRECTED** — Integration is an active coordination layer. Queried live by collector, not mirrored. |
 | Entity terminology | "Client" | "Entity" more accurate |
 | Three identity scopes | Not addressed | Sterling Entity (CLIENT_ID) ≠ Sterling Process ((CLIENT_ID, SEQ_ID)) ≠ DM Creditor |
-| FILE_DELETION process type | Not addressed | Remote SFTP source cleanup; logic lives in `FA_CLIENTS_GET_DOCS`, not MAIN |
-| Multi-Client ProcessData modes | Parallel vs. Sequential | **CORRECTED** — MAIN only ever operates on Client[1]. Multiple Client blocks appear in PrimaryDocument for reference but MAIN doesn't process them. The perception of "4 workers on the same ProcessData" was incorrect. |
-| Pattern 5 coordination | Mysterious — workers execute differently despite "identical" ProcessData | **RESOLVED** — workers have different ProcessData (different Client[1]). GET_LIST loop copies one Client per iteration to //Result, then invokes MAIN async. BATCH_STATUS + PREV_SEQ coordinate the sequential dependency. |
-| Pattern 5 ~90-second worker offsets | Mysterious external coordination | **RESOLVED** — natural consequence of each phase's actual runtime. Worker 2 polls for worker 1's completion in BATCH_STATUS; polling unblocks when worker 1 writes its tail UPDATE. |
-| Path E (Short-Circuit) | "Polling worker pattern" | **CORRECTED** — not a pattern. It's any MAIN run where `Continue?` evaluates false, which only happens when PREV_SEQ dependency has BATCH_STATUS = -1. Mechanism is "skip-because-upstream-failed." |
-| Dispatch pattern count | 5 | **CORRECTED** — 4. Prior Pattern 5 was Pattern 4 with specific GET_LIST parameters (SEQUENTIAL=1 + multi-SEQ_IDS). |
-| PREV_SEQ meaning | "Sequential dependency reference, enforcement unclear" | **RESOLVED** — declaratively enforced via BATCH_STATUS polling loop. Set by `USP_B2B_CLIENTS_GET_LIST` based on GET_DOCS_LOC adjacency or explicit SEQUENTIAL flag. |
-| `AUTOMATED` field values | Speculative | **RESOLVED** — 1=scheduler-dispatched (SP Branch 1, needs RUN_FLAG), 2=wrapper-dispatched (SP Branch 2, no RUN_FLAG needed). |
-| `RUN_FLAG` field | Speculative | **RESOLVED** — "currently executing" flag for AUTOMATED=1 configs. Set before dispatch; GET_LIST clears to 0 after MAIN completes. |
-| `FA_CLIENTS_GET_LIST` iteration source | Unknown | **RESOLVED** — `USP_B2B_CLIENTS_GET_LIST` with two branches (AUTOMATED=1 vs AUTOMATED=2) plus joins to discovered-files table for per-file inbound cases. |
-| `tbl_FA_CLIENTS_FTP_FILES_LIST_IB_D2S_RC` table | Not known | **DISCOVERED** — the discovered-files table populated by Pattern 3 and consumed by Pattern 2 for per-file inbound dispatch. Explains the architecture link between Patterns 2 and 3. |
-| `tbl_B2B_CLIENTS_BATCH_STATUS` | Not known | **DISCOVERED** — per-run state machine table. Not authoritative (b2bi is), but valuable enrichment source. |
-| `tbl_B2B_CLIENTS_TICKETS` | Not known | **DISCOVERED** — failure ticket log with ticket type classification. Includes 'MAP ERROR' from MAIN's onFault and 'CLIENTS GET LIST' from GET_LIST's onFault. |
-| `tbl_B2B_CLIENTS_SETTINGS` | Not known | **DISCOVERED** — global settings table read at start of every GET_LIST run and injected into ProcessData as the Settings/Values node. Contains PYTHON_KEY among other things. |
-| `FA_CLIENTS_ETL_CALL` workflow | Not known | **DISCOVERED** — parallel dispatch target in GET_LIST. Invoked when Client block has ETL_PATH populated. Role not yet characterized. |
-| Settings contain credentials | Not considered | `PYTHON_KEY` is stored plaintext in tbl_B2B_CLIENTS_SETTINGS and flows into ProcessData via GET_SETTINGS SP. |
+| FILE_DELETION process type | Not addressed | Remote SFTP source cleanup on Joker server; logic lives in `FA_CLIENTS_GET_DOCS`. Only for clients submitting un-needed files. |
+| Multi-Client ProcessData modes | Parallel vs. Sequential | **CORRECTED** — MAIN only ever operates on Client[1] |
+| Pattern 5 coordination | Mysterious | **RESOLVED** — workers have different ProcessData; BATCH_STATUS + PREV_SEQ coordinate |
+| Dispatch pattern count | 5 | **CORRECTED** — 4. Prior Pattern 5 was Pattern 4 with specific GET_LIST parameters |
+| PREV_SEQ meaning | "Sequential dependency reference, enforcement unclear" | **RESOLVED** — declaratively enforced via BATCH_STATUS polling loop |
+| `AUTOMATED` field values | Speculative | **RESOLVED** — 1=GET_LIST-dispatched (5:05am-3:05pm M-F hourly); 2=Scheduler-dispatched |
+| `RUN_FLAG` field | Speculative | **RESOLVED** — "currently executing" flag for AUTOMATED=1 configs |
+| GET_LIST schedule | "Hourly at :05" inferred | **RESOLVED** — 5:05am-3:05pm M-F every 1 hour (confirmed by File Processing Supervisor) |
+| `SPECIAL_PROCESS` meaning | Unclear | **RESOLVED** — catch-all for process configurations that don't fit standard types (confirmed by File Processing Supervisor) |
+| `tbl_B2B_CLIENTS_BATCH_STATUS` | Not known | **DISCOVERED** — per-run state machine table. Not authoritative (b2bi is); live-joined for enrichment. |
+| `tbl_B2B_CLIENTS_TICKETS` | Not known | **DISCOVERED** — failure ticket log. Live-joined for classification enrichment. |
+| `tbl_B2B_CLIENTS_SETTINGS` | Not known | **DISCOVERED** — global settings table injected into ProcessData via GET_SETTINGS SP |
+| `FA_CLIENTS_ETL_CALL` workflow | Not known | **DISCOVERED — now deprecated.** Pervasive Cosmos macro executor. Not used in current production config. Excluded from v1 collector scope. |
+| Settings contain credentials | Not considered | `PYTHON_KEY` stored plaintext in SETTINGS and flows into ProcessData. Captured raw; redaction at UI layer. |
 | Failed MAIN runs have ProcessData | Unknown | ✅ Verified — ProcessData written at Step 0 before failure occurs |
-| Path D (File Relay) | Distinct path | **REFRAMED** — SFTP_PULL OUTBOUND processes trigger a minimal rule set (most rules evaluate false for this process type). Not a distinct code path, just a specific rule evaluation pattern. |
-| PGP decryption in NB | Not addressed | Inline within PREP_SOURCE when `PGP_PASSPHRASE` is populated (DENVER HEALTH observed). |
-| ProcessData contains plaintext credentials | Not addressed | `PGP_PASSPHRASE` and `PYTHON_KEY` both observed. Design question for SI_ProcessDataCache. |
-| Failure signal nuance | Simple "BASIC_STATUS > 0" | Root cause may have `BASIC_STATUS=0` with error-coded `ADV_STATUS`. Collector needs to capture the failure span. |
-| Base services fail without Inline markers | Not addressed | SFTPClientBeginSession, AS3FSAdapter, Translation, etc. fail directly. Scanning for Inline Begin markers alone will miss these. |
-| Scheduling collision | Not addressed | Multiple independent Pattern 4 dispatchers often collide at round-hour schedules. Simultaneity does not imply a single dispatcher. |
-| FA_CLIENTS_ARCHIVE invoked 3 times per MAIN | Not addressed | PreArchive, PostArchive, PostArchive2 — all gated by different rules. Explains multiple ARCHIVE children in WORKFLOW_LINKAGE. |
-| FA_CLIENTS_VITAL invoked up to N+1 times | Not addressed | N in-loop invocations (one per file) + 1 post-loop invocation when PostTranslationVITAL=Y. Explains VITAL count exceeding MAIN count. |
-| Integration as source of truth | Implicit assumption | **CORRECTED** — b2bi is the source of truth. Integration is a convenience layer that may not reflect infrastructure-level failures. See Source of Truth Stance section. |
-| FILE_DELETION implementation | Assumed to be a distinct MAIN execution path | **CORRECTED** — FILE_DELETION lives entirely in `FA_CLIENTS_GET_DOCS`, not MAIN. It operates by setting `PROCESS_TYPE='FILE_DELETION'` which makes GET_DOCS's `ZeroSize?` rule evaluate true for every file, forcing skip-retrieve-then-delete. Not a special code path; clever configuration-driven reuse of existing loop structure. |
-| GET_DOCS_TYPE values | `SFTP_PULL`, `FSA_PULL` | **Extended** — add `API_PULL` (Python exe download prelude that mutates to FSA_PULL after execution). |
-| `tbl_B2B_CLIENTS_BATCH_FILES` table | Not known | **DISCOVERED** — file-level audit log populated by GET_DOCS. Scope-limited: only zero-size and FILE_DELETION files. Normal file pickups are NOT recorded. |
-| `FA_CLIENTS_ETL_CALL` role | Not known | **DISCOVERED** — thin wrapper that invokes Pervasive Cosmos 9 `djengine.exe` to execute macro-based ETL transformations. Entirely separate execution subsystem from MAIN. Version 1 — never edited since creation. May be effectively dead code if no configured Clients have `ETL_PATH` populated. |
-| `MARCOS_PATH` setting | Purpose unclear | **RESOLVED** — root directory for Pervasive Cosmos macro files. Likely "MACROS" typo. Passed to `djengine.exe -mf` by ETL_CALL. |
-| ETL_CALL BATCH_STATUS conventions | Assumed same as MAIN | **DIVERGENT** — ETL_CALL's Wait? rule only exits on BATCH_STATUS=3 (not 3-5); its tail UPDATE sets BATCH_STATUS=1 (in polling range, not done range); its onFault does NOT write to TICKETS. ETL_CALL cannot be a PREV_SEQ predecessor for MAIN without causing an infinite polling loop. Collector should treat ETL_CALL runs specially. |
-| `E:\Utilities\FA_FILE_CHECK.java` utility | Not known | **DISCOVERED** — Java task invoked by GET_DOCS during SFTP_PULL after LIST but before iteration. Validates files somehow (source not yet read). Runs on Sterling app server. |
-| Pervasive Cosmos 9 dependency | Not known | **DISCOVERED** — FAC has a Pervasive Cosmos 9 (now Actian DataConnect) installation on the Sterling app server at `C:\Program Files (x86)\Pervasive\Cosmos9\`. Used by ETL_CALL for macro-based ETL. Legacy ETL subsystem. |
-| Translation map `FA_CLIENTS_BATCH_FILES_X2S` | Not known | **DISCOVERED** — invoked by GET_DOCS after the file loop completes for non-SFTP_PULL processes. Purpose and output inspection needed. Likely generates structured SQL inserts for batch file metadata. |
-| GET_DOCS has its own onFault | Assumed yes | **CORRECTED** — GET_DOCS does NOT have its own onFault. SFTP failures bubble up to MAIN's onFault, which writes the 'MAP ERROR' TICKETS row. |
+| PGP decryption in NB | Not addressed | Inline within PREP_SOURCE when `PGP_PASSPHRASE` is populated |
+| ProcessData contains plaintext credentials | Not addressed | `PGP_PASSPHRASE` and `PYTHON_KEY` both observed. **Captured raw** — already in plaintext in Integration/Sterling config, no meaningful exposure expansion. UI-layer redaction planned for Phase 5. |
+| Failure signal nuance | Simple "BASIC_STATUS > 0" | Root cause may have `BASIC_STATUS=0` with error-coded `ADV_STATUS`. Collector captures failure span. |
+| Base services fail without Inline markers | Not addressed | SFTPClientBeginSession, AS3FSAdapter, Translation, etc. fail directly. |
+| Scheduling collision | Not addressed | Multiple independent Pattern 4 dispatchers often collide at round-hour schedules. |
+| FA_CLIENTS_ARCHIVE invoked 3 times per MAIN | Not addressed | PreArchive, PostArchive, PostArchive2 |
+| FA_CLIENTS_VITAL invoked up to N+1 times | Not addressed | N in-loop (one per file) + 1 post-loop when PostTranslationVITAL=Y |
+| Integration as source of truth | Implicit assumption | **CORRECTED** — b2bi is the source of truth. |
+| Integration mirroring strategy | Mirror INT_* tables | **CORRECTED** — no mirroring. Live-join from collector. |
+| FILE_DELETION implementation | Assumed distinct MAIN path | **CORRECTED** — lives in GET_DOCS via ZeroSize? rule with `PROCESS_TYPE='FILE_DELETION'` |
+| `MARCOS_PATH` setting | Purpose unclear | **RESOLVED** — Pervasive Cosmos macro root. Moot in current operation (ETL_CALL deprecated). |
+| `ACADIA SEQ_ID 9` | Mystery | **RESOLVED** — Appears misconfigured; likely incomplete development work (confirmed by File Processing Supervisor) |
+| `tbl_B2B_CLIENTS_BATCH_FILES` | Not known | **DISCOVERED** — file-level audit. Scope-limited to zero-size and FILE_DELETION files. |
+| `SI_ExecutionDetail` (middle-grain detail layer) | Not addressed | **ADDED** as future Phase 3 Block 3 deliverable supporting file lifecycle bridging |
+| `SI_ExecutionTracking` merged_output_file_name column | Not addressed | **ADDED** forward-looking column to support future lifecycle bridge without retrofit |
+| TIMINGXML grammar coverage | Unknown whether parser would handle all production variants | **RESOLVED** — Block 1 deploy processed all 604 production schedules with zero parse errors across 73 distinct observed patterns. Grammar coverage is now considered solid for the operational scope. |
+| Sterling-native schedules inclusion | Earlier drafts implicitly assumed FAC-only scope | **DECIDED** — registry captures both FAC-owned (`FA_*`) and Sterling-native (`BackupService`, `BPExpirator`, `IndexBusinessProcessService`, etc.) schedules. Naming convention filters at the consumer layer. |
+| `is_complete` lookback flag on `SI_ExecutionTracking` | Not originally specified | **ADDED** — enables anti-join in the 3-day lookback query so per-cycle workload scales with "new + in-flight" count, not total lookback volume. Also serves as manual override to silence known-bad workflows. |
 
 ---
 
@@ -1096,54 +1286,25 @@ Cumulative list with this revision's additions marked.
 | `FA_CLIENTS_MAIN` BPML read | ✅ Done (v48 read end-to-end) | — |
 | `FA_CLIENTS_GET_LIST` BPML read | ✅ Done (v19 read end-to-end) | — |
 | `FA_CLIENTS_GET_DOCS` BPML read | ✅ Done (v37 read end-to-end) | — |
-| `FA_CLIENTS_ETL_CALL` BPML read | ✅ Done (v1 read end-to-end) | — |
+| `FA_CLIENTS_ETL_CALL` BPML read | ✅ Done (v1 read end-to-end) — deprecated | — |
 | `USP_B2B_CLIENTS_GET_LIST` SP read | ✅ Done | — |
 | `USP_B2B_CLIENTS_GET_SETTINGS` SP read | ✅ Done | — |
 | Representative Pattern 4 wrapper BPMLs read | ✅ Done (ACCRETIVE, COACHELLA, MONUMENT, ACADIA EO) | — |
 | Pattern 5 coordination mechanism | ✅ Resolved | — |
-| FILE_DELETION lifecycle details | ✅ Resolved (GET_DOCS ZeroSize? rule) | — |
-| `FA_CLIENTS_ETL_CALL` role | ✅ Resolved (Pervasive Cosmos macro executor) | — |
-| Whether ETL_CALL is actually in use anywhere | ❌ Unknown | Query CLIENTS_PARAM for rows with PARAMETER_NAME='ETL_PATH' to find any configured Clients using it. If count is 0, ETL_CALL is effectively dead code. |
+| FILE_DELETION lifecycle details | ✅ Resolved | — |
+| `FA_CLIENTS_ETL_CALL` role | ✅ Resolved (Pervasive Cosmos macro executor) — deprecated | — |
+| Whether ETL_CALL is actually in use | ✅ Resolved — **confirmed deprecated** by File Processing Supervisor; no CLIENTS_PARAM rows with ETL_PATH | — |
+| ACADIA SEQ_ID 9 purpose | ✅ Resolved — misconfigured / incomplete dev work (confirmed by File Processing Supervisor) | — |
+| SPECIAL_PROCESS semantic meaning | ✅ Resolved — catch-all for non-standard process types (confirmed by File Processing Supervisor) | — |
+| Joker SFTP server role | ✅ Resolved — FAC's SFTP endpoint; FILE_DELETION removes files from here; ftpbackup retains them | — |
+| **"Skinny" Translation output row pattern** | ❌ **Key Block 3 prerequisite** — not yet identified across process types | Per process type, inspect the DOCUMENT rows produced per MAIN run; identify which one consistently contains file-name header + account-with-creditor rows vs. the denser demographic XMLs |
 | `E:\Utilities\FA_FILE_CHECK.java` source | ❌ Not read | Read from the Sterling app server filesystem when access is available. Understand what it validates. |
 | Translation map `FA_CLIENTS_BATCH_FILES_X2S` content | ❌ Not analyzed | Extract via SQL from Sterling's map storage. Understand what it produces from the batch-files document. |
-| Pervasive macro files inventory (what's in `MARCOS_PATH`) | ❌ Not inventoried | Browse `MARCOS_PATH` (unknown location — likely under `\\kingkong\Data_Processing\Pervasive\`) if ETL_CALL is used anywhere. |
-| ETL_CALL BATCH_STATUS convention divergences | ⚠️ Documented but not tested | Observe real ETL_CALL execution if any occurs; verify whether polling-hang risk is theoretical or ever manifests |
 | Empty-run behavior on File Process (Pattern 4 puller finds nothing) | ❌ Not verified | Find a Pattern 4 puller that ran with no files discovered and trace |
 | Multi-Client prevalence in raw ProcessData | ⚠️ Partial | Sample ProcessData across process types to see how PrimaryDocument is typically shaped |
 | Internal Entity IDs beyond 328 | ❌ Not verified | Build up list as encountered |
 | SSH_DISCONNECT clustering pattern (hours 04, 10, 16) | ⚠️ Dispatcher-level data captured | Check `GET_DOCS_PROFILE_ID` across affected dispatchers to test "shared Sterling-side SFTP profile" hypothesis |
-| ProcessData credential handling for SI_ProcessDataCache | ❌ Design question | Decide among redact / parsed-subset-only / encrypt-at-rest / short-retention options |
 | BATCH_STATUS column default value (for 0/1 values the Wait? rule polls for) | ❌ Not verified | Query column definition in Integration DB |
-| Whether `@ETLAP` SP branch (currently commented out) hints at deprecated ETL paths | ⚠️ Observation only | Ask team if ETLAP tracking was a past pattern |
-
----
-
-## Open Questions — Apps Team (Revised)
-
-Many questions previously open have been resolved by the BPML and SP reads. Remaining for the team:
-
-1. ~~FILE_DELETION lifecycle~~ — ✅ Resolved (GET_DOCS ZeroSize? rule with PROCESS_TYPE='FILE_DELETION')
-2. ~~ACADIA EO pipeline coordination~~ — ✅ Resolved
-3. ~~`PREV_SEQ` semantics~~ — ✅ Resolved
-4. ~~`AUTOMATED` field values~~ — ✅ Resolved
-5. ~~`RUN_FLAG` field~~ — ✅ Resolved
-6. ~~`FA_CLIENTS_GET_LIST` dispatcher~~ — ✅ Resolved
-7. **`SPECIAL_PROCESS` usage convention** — still unclear; ACADIA EO uses it for pipeline orchestration but other usages may exist
-8. **External Python executable inventory** — `FA_FILE_REMOVE_SPECIAL_CHARACTERS.exe` and `FA_MERGE_PLACEMENT_FILES.exe` observed in MAIN; `GET_DOCS_API` per-Client Python exes in GET_DOCS's API_PULL branch. Full inventory of Python exes invoked by Sterling workflows would help scope maintenance.
-9. ~~FILE_DELETION scope~~ — ✅ Resolved (universal to SFTP_PULL inbound processes with PROCESS_TYPE='FILE_DELETION')
-10. **Internal CLIENT_IDs inventory** — still building
-11. ~~Other Integration tables of interest~~ — much more now known; BATCH_FILES added to inventory this session
-12. **Legacy naming** (CLA, PV) — CLA confirmed = "Command Line Adapter"; PV meaning still unclear
-13. **Sterling SCHEDULE table authority** — implicit; SCHEDULE fires named workflows that either invoke MAIN directly (Pattern 1) or wrap GET_LIST (Patterns 2 & 4)
-14. **ACADIA SEQ_ID 9 mystery** — still open
-15. **FA_PAYGROUND naming** — still open
-16. **Process type definitions** — NCOA, ITS, ACKNOWLEDGMENT, CORE_PROCESS, EMAIL_SCRUB, FULL_INVENTORY, BDL vs STANDARD_BDL, REMIT, FILE_EMAIL, NOTES_EMAIL, NOTE vs NOTES — still open
-17. ~~`FA_CLIENTS_ETL_CALL` role~~ — ✅ Resolved (Pervasive Cosmos macro executor)
-18. **Known infrastructure-failure cases** (where BPML onFault did not write to Integration) — useful examples would help validate our "disagreement as alert" logic
-19. **NEW: Is ETL_CALL actually in use?** — query CLIENTS_PARAM for any rows with PARAMETER_NAME='ETL_PATH'. If zero, ETL_CALL is dead code. If some exist, who uses it and for what?
-20. **NEW: `MARCOS_PATH` location** — what's the actual filesystem path? Inventory of Pervasive macro files at that location would help understand what ETL_CALL does when it's used.
-21. **NEW: `E:\Utilities\FA_FILE_CHECK.java`** — what does this Java utility validate? Source lives on the Sterling app server.
-22. **NEW: Translation map `FA_CLIENTS_BATCH_FILES_X2S`** — invoked by GET_DOCS for non-SFTP_PULL processes. Purpose and output?
 
 ---
 
@@ -1162,9 +1323,9 @@ Many questions previously open have been resolved by the BPML and SP reads. Rema
 |-----------|-------|
 | Purpose | Architectural reference for Sterling B2B, shared by all Process Anatomy docs |
 | Created | April 19, 2026 |
-| Last Updated | April 20, 2026 |
+| Last Updated | April 22, 2026 |
 | Status | Living document — updated iteratively as investigation progresses |
-| Sources | Live `b2bi` database (FA-INT-DBP), Integration DB on AVG-PROD-LSNR, BPML definitions extracted from `WFD_XML` / `DATA_TABLE` (FA_CLIENTS_MAIN v48, FA_CLIENTS_GET_LIST v19, FA_CLIENTS_GET_DOCS v37, FA_CLIENTS_ETL_CALL v1, FA_FROM_ACADIA_HEALTHCARE_IB_EO v13, FA_FROM_ACCRETIVE_IB_BD_PULL v1, FA_FROM_COACHELLA_VALLEY_ANESTHESIA_IB_BD_SFTP_PULL v1, FA_FROM_MONUMENT_HEALTH_IB_EO_PULL v2), Integration stored procedure definitions (`USP_B2B_CLIENTS_GET_LIST`, `USP_B2B_CLIENTS_GET_SETTINGS`), `BPs_Flow.vsdx` (Rober Makram), prior xFACts investigation sessions |
+| Sources | Live `b2bi` database (FA-INT-DBP), Integration DB on AVG-PROD-LSNR, BPML definitions extracted from `WFD_XML` / `DATA_TABLE` (FA_CLIENTS_MAIN v48, FA_CLIENTS_GET_LIST v19, FA_CLIENTS_GET_DOCS v37, FA_CLIENTS_ETL_CALL v1, four dispatcher wrappers), Integration stored procedure definitions, `BPs_Flow.vsdx` (Rober Makram), clarifications from File Processing Supervisor (Melissa), prior xFACts investigation sessions |
 | Maintainer | xFACts build (Dirk + Claude collaboration) |
 
 ### Revision Log
@@ -1173,10 +1334,12 @@ Many questions previously open have been resolved by the BPML and SP reads. Rema
 |------|----------|
 | April 19, 2026 (initial) | Initial creation. Four-pattern dispatch model, FA_CLIENTS_MAIN as universal grain, ProcessData schema uncertainties, inbound/outbound shapes, open items. |
 | April 19, 2026 (rev 2) | Empty Internal Op MAIN run traced. Run Classification dimension added. Pattern 3 reclassified as SP executors. Field inventory expanded to ~70+. |
-| April 20, 2026 (rev 3) | Live NB trace (ACADIA WF 7990812). Three Identity Scopes added. Configuration Source (CLIENTS_FILES + CLIENTS_PARAM) documented. Entity naming direction. |
-| April 20, 2026 (rev 4) | Major revision after FILE_DELETION trace and ACADIA EO pipeline discovery. Added MAIN's Polymorphic Execution Paths (A/B/C/possible D), Pattern 5 Parallel Phased Workers, Multi-Client two modes, PREV_SEQ, failure ProcessData, grain complication, FILE_DELETION as Path C, external executable invocation, Apps team questions formalized. |
-| April 20, 2026 (rev 5) | Major revision from failure trace session. Added Path D (File Relay), NB PGP variant, Known Failure Modes (SSH_DISCONNECT, FA_CLA_UNPGP), failure signal nuance, base services failing without Inline markers, scheduling collision, Pattern 2 spawn counts, Pattern 4 multi-SEQ, ProcessData credential exposure. |
-| April 20, 2026 (rev 6) | Major revision from ACADIA EO Pattern 5 trace. Honest acknowledgment of investigation ceiling via queries alone. BPML read added as top-priority investigation item. |
-| April 20, 2026 (rev 7) | **MAJOR REWRITE after direct BPML and stored procedure reads.** Six BPMLs read end-to-end (FA_CLIENTS_MAIN v48, FA_CLIENTS_GET_LIST v19, four dispatcher wrappers). Both key Integration SPs read (USP_B2B_CLIENTS_GET_LIST, USP_B2B_CLIENTS_GET_SETTINGS). Changes: (1) **New "Coordination Layer" section** introducing Integration tables, SPs, BATCH_STATUS state machine, and the TICKETS failure log. (2) **Source of Truth stance** formalized — b2bi is authoritative, Integration is enrichment, disagreement is an alert signal. (3) **MAIN reframed** from "5 polymorphic paths" to "one linear sequence with 22 conditional rules." Full rule catalog and sub-workflow invocation map added. (4) **Dispatch pattern count corrected** from 5 to 4 — prior "Pattern 5" was Pattern 4 with specific parameters. (5) **GET_LIST detail section** added with full mechanism, SP branching logic, and parameter semantics. (6) **AUTOMATED / RUN_FLAG / SEQUENTIAL / PREV_SEQ all resolved** via SP code analysis. (7) **New discovered tables** documented: BATCH_STATUS, TICKETS, SETTINGS, FTP_FILES_LIST. (8) **FA_CLIENTS_ETL_CALL** flagged as new open item — a parallel dispatch target we hadn't previously known about. (9) **Grain question resolved** — one row per MAIN WORKFLOW_ID, no multi-Client explosion since MAIN only operates on Client[1]. (10) **PYTHON_KEY credential exposure** in Settings added to credential-handling scope. (11) **Integration Team Questions table** updated — 10 of 18 resolved by BPML/SP reads, 2 new ones added. (12) **Still Unverified** list trimmed substantially; most prior items resolved. |
-| April 20, 2026 (rev 8) | **Added after GET_DOCS and ETL_CALL BPML reads.** Two more BPMLs read end-to-end (FA_CLIENTS_GET_DOCS v37, FA_CLIENTS_ETL_CALL v1). Additions: (1) **New section "`FA_CLIENTS_GET_DOCS` Detail"** — covers three GET_DOCS_TYPE variants (SFTP_PULL, FSA_PULL, API_PULL), the SFTP_PULL loop structure, the ZeroSize? rule, and resolves FILE_DELETION implementation (it lives entirely in GET_DOCS, operating via ZeroSize? rule forcing skip-retrieve-then-delete for every file). (2) **New section "`FA_CLIENTS_ETL_CALL` Detail"** — reveals ETL_CALL invokes Pervasive Cosmos 9 `djengine.exe` for macro-based ETL (not SQL stored procedures as previously assumed). Four BATCH_STATUS convention divergences from MAIN documented (more restrictive Wait? condition, no -2→-1 conversion, success terminal state of 1 not 3, no TICKETS on fault). Flagged that ETL_CALL cannot be a PREV_SEQ predecessor without causing polling hangs. Version 1 never edited — possibly dead code. (3) **New Integration table**: `tbl_B2B_CLIENTS_BATCH_FILES` — file-level audit log; scope-limited to zero-size and FILE_DELETION files only. (4) **`MARCOS_PATH` resolved** — root directory for Pervasive Cosmos macros (likely "MACROS" typo). (5) **New ProcessData fields documented**: GET_DOCS_TYPE API_PULL variant, GET_DOCS_API, CUSTOM_FILE_FILTER, GET_EMPTY_DOCS, FILE_ID; expanded GET_DOCS_DLT semantics. (6) **New utility/map discoveries**: `E:\Utilities\FA_FILE_CHECK.java` (Java file validator on Sterling app server), translation map `FA_CLIENTS_BATCH_FILES_X2S`. (7) **Pervasive Cosmos 9 ETL subsystem** newly documented as an unexpected legacy component of FAC's Sterling installation. (8) **Things Clarified** table expanded with 10 new entries covering all GET_DOCS/ETL_CALL findings. (9) **Still Unverified** updated — GET_DOCS and ETL_CALL moved to ✅ Done; 5 new items added (ETL_CALL usage census, Java source read, translation map analysis, Pervasive macro inventory, ETL_CALL divergence verification). (10) **Apps Team questions** — 2 more resolved, 4 new items added. |
-| April 20, 2026 (rev 9) | **Formalized Execution Tracking Design as next-steps build path.** Section renamed from "Execution Tracking Grain Proposal (Resolved)" to "Execution Tracking Design" — it is no longer a proposal but the committed design for Phase 3. Substantive additions: (1) **Refined column list** organized by source with explicit AUTHORITATIVE vs. SUPPLEMENTARY labeling; adds `workflow_class` column distinguishing MAIN from ETL_CALL runs. (2) **New "Integration Source Trust Matrix"** — table explicitly classifying each Integration table by trust level (HIGH/MEDIUM/LOW) as execution source vs. enrichment source, along with how each table is used by the collector. Directly addresses the historical concern of "lack of faith in what the Integration tables are capturing." (3) **New "Disagreement Flag Columns"** on SI_ExecutionTracking: `int_status_missing`, `int_status_inconsistent`, `alert_infrastructure_failure`. Turns b2bi-vs-Integration gaps into actionable signals rather than silent data loss. (4) **New "Disagreement Interpretation Matrix"** — concrete mapping of b2bi-state × Integration-state combinations to alert severities, including the "Sterling crashed before reporting" case that was historically invisible. (5) **New "Collector Flow" pseudocode** — concrete step-by-step for `Collect-B2BExecution.ps1`: b2bi primary → b2bi enrichment → Integration bulk-join → MERGE → high-water advance. (6) **New "Operational Risks to Monitor During Build"** — volume, decompression cost, cross-server latency, disagreement rate calibration, ETL_CALL inclusion semantics, high-water mark robustness. (7) **SI_ProcessDataCache** explicitly marked as deferred behind credential-handling decision; core collector operates independently of it. |
+| April 20, 2026 (rev 3) | Live NB trace (ACADIA WF 7990812). Three Identity Scopes added. Configuration Source documented. Entity naming direction. |
+| April 20, 2026 (rev 4) | Major revision after FILE_DELETION trace and ACADIA EO pipeline discovery. |
+| April 20, 2026 (rev 5) | Major revision from failure trace session. Added Path D (File Relay), NB PGP variant, Known Failure Modes, failure signal nuance. |
+| April 20, 2026 (rev 6) | Major revision from ACADIA EO Pattern 5 trace. BPML read added as top-priority investigation item. |
+| April 20, 2026 (rev 7) | **MAJOR REWRITE after direct BPML and stored procedure reads.** Six BPMLs read end-to-end. Source of Truth stance formalized. Dispatch pattern count corrected to 4. MAIN reframed from polymorphic paths to single linear sequence with 22 rules. GET_LIST detail and SP branching logic documented. AUTOMATED/RUN_FLAG/SEQUENTIAL/PREV_SEQ resolved. New Integration tables documented. Grain resolved. |
+| April 20, 2026 (rev 8) | Added GET_DOCS and ETL_CALL details. API_PULL variant documented. FILE_DELETION implementation resolved. BATCH_FILES table discovered. Pervasive Cosmos 9 ETL subsystem documented. |
+| April 20, 2026 (rev 9) | Execution Tracking Design formalized. Trust Matrix and Disagreement Matrix added. Collector Flow pseudocode. Operational Risks listed. |
+| April 22, 2026 (rev 10) | **Reset and realignment revision.** (1) Integration mirroring strategy removed entirely — docs now reflect live-join-only enrichment approach. The "Integration Source Table Mirrors (Proposed)" section deleted; Trust Matrix reframed for live-join usage. (2) File Processing Supervisor (Melissa) clarifications folded in: GET_LIST schedule is 5:05am-3:05pm M-F hourly; FILE_DELETION is Joker SFTP cleanup for clients submitting un-needed files (files retained in ftpbackup); SPECIAL_PROCESS confirmed as catch-all for non-standard process types; ACADIA SEQ_ID 9 confirmed as misconfigured/incomplete dev work; AUTOMATED/RUN_FLAG operational semantics confirmed; Sterling SCHEDULE table authority confirmed. (3) ETL_CALL confirmed deprecated (no CLIENTS_PARAM rows with ETL_PATH); marked as "Deprecated — Reference Only" in its section; excluded from v1 collector scope; ETL_PATH / MARCOS_PATH marked moot. (4) "Joker" SFTP server reference added throughout. (5) ProcessData credential handling resolved — capture raw; redact at UI layer in Phase 5. `SI_ProcessDataCache` table concept eliminated; raw XML stored inline in `SI_ExecutionTracking.process_data_xml`. (6) Execution Tracking Design section expanded with explicit Design Principles block ("collect everything possible up front", single-table design, forward-looking columns). (7) Forward-looking columns documented: `merged_output_file_name`, `merged_output_file_size`, `has_detail_captured`, `last_enriched_dttm`. (8) `SI_ExecutionDetail` (future Phase 3 Block 3) added as the middle-grain detail layer supporting the file lifecycle bridge between File Monitoring and Batch Monitoring. Grain and column design deferred pending "skinny" Translation output investigation across process types. (9) Collector flow updated to describe single-script design handling schedule sync + execution tracking + enrichment + disagreement flag computation in one pipeline. One-time historical Integration backfill documented. 3-day lookback window on every cycle documented. (10) New open investigation item: identifying the "skinny" Translation output row pattern across process types (Block 3 prerequisite). |
+| April 22, 2026 (rev 11) | **Block 1 (Schedule Registry) deployed.** (1) New top-level section **"SI_ScheduleRegistry — Schedule Catalog"** added between Execution Tracking Design and Integration Source Query Reference. Documents the 25-column design, pattern classification scheme (DAILY/WEEKLY/MONTHLY/INTERVAL/MIXED/UNKNOWN), single-JOIN fetch pattern, per-row upsert logic, lean-registry design philosophy, and observed collection performance. Parser processed all 604 production schedules with zero errors across 73 distinct patterns. (2) **New `is_complete` / `completed_dttm` / `completed_status` columns** on `SI_ExecutionTracking` documented in the Columns section. New subsection **"Lookback Optimization"** added explaining the anti-join pattern and the terminal-state transition criteria. Manual override pattern documented (operator flip of `is_complete = 1` to silence known-bad workflow alerts). (3) **Collector flow pseudocode updated** to incorporate the `is_complete` anti-join on step 1 and the completion-assessment step at step 4. Enrichment lag operational risk updated to reference the `is_complete = 0` re-enrichment path naturally. New operational risk #7 added for manual override monitoring. (4) **Things Clarified table** extended with three Block 1 entries: TIMINGXML grammar coverage confirmed across 604 schedules, Sterling-native vs FAC-owned schedule inclusion decision, `is_complete` lookback flag rationale. Sections preserved verbatim: Core Architectural Insight, Coordination Layer (and all subsections), Three Identity Scopes, Dispatch Patterns, GET_LIST/MAIN/GET_DOCS/ETL_CALL details, ProcessData Document, Known Failure Modes, Integration Source Trust Matrix, Disagreement Interpretation Matrix, Process Type Investigation Status, Still Unverified items. |
