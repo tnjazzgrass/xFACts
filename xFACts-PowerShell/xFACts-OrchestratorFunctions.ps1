@@ -22,6 +22,13 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-04-22  Added -MaxBinaryLength parameter to Get-SqlData and Invoke-SqlNonQuery
+            (parallel to existing -MaxCharLength). Optional; when specified,
+            passed through to Invoke-Sqlcmd -MaxBinaryLength. Required for
+            queries returning large VARBINARY data (e.g., Sterling b2bi
+            TRANS_DATA compressed XML blobs). Invoke-Sqlcmd default is 1024
+            bytes — anything larger gets silently truncated mid-blob, which
+            breaks gzip decompression downstream without raising an error.
 2026-03-16  Added Send-TeamsAlert shared function for Teams alert queuing with
             mandatory dedup against Teams.RequestLog. Replaces inline INSERT
             pattern used by individual scripts. No opt-out for dedup — callers
@@ -271,6 +278,14 @@ function Get-SqlData {
         or text data (XE sessions, DMV XML plans, replication XML, etc.).
         When omitted, Invoke-Sqlcmd uses its default (4000).
 
+    .PARAMETER MaxBinaryLength
+        Maximum byte length for VARBINARY columns. When specified, passed to
+        Invoke-Sqlcmd -MaxBinaryLength. Required for queries returning large
+        binary blobs (Sterling b2bi TRANS_DATA/DATA_TABLE compressed XML, etc.).
+        When omitted, Invoke-Sqlcmd uses its default (1024) — which silently
+        truncates larger blobs mid-stream without raising an error. Always
+        specify this for any query that selects a VARBINARY(MAX) column.
+
     .EXAMPLE
         $results = Get-SqlData -Query "SELECT * FROM dbo.ServerRegistry WHERE is_monitored = 1"
 
@@ -281,6 +296,11 @@ function Get-SqlData {
     .EXAMPLE
         # Large text/XML data
         $xeData = Get-SqlData -Query "SELECT target_data FROM sys.dm_xe_session_targets" -MaxCharLength 2147483647
+
+    .EXAMPLE
+        # Large binary data (compressed blobs)
+        $blobData = Get-SqlData -Query "SELECT DATA_OBJECT FROM dbo.TRANS_DATA WHERE WF_ID = 12345" `
+            -Instance 'FA-INT-DBP' -DatabaseName 'b2bi' -MaxBinaryLength 20971520
     #>
     param(
         [Parameter(Mandatory)]
@@ -289,7 +309,8 @@ function Get-SqlData {
         [string]$Instance = $script:XFActsServerInstance,
         [string]$DatabaseName = $script:XFActsDatabase,
         [int]$Timeout = 300,
-        [int]$MaxCharLength = 0
+        [int]$MaxCharLength = 0,
+        [int]$MaxBinaryLength = 0
     )
 
     try {
@@ -306,6 +327,9 @@ function Get-SqlData {
 
         if ($MaxCharLength -gt 0) {
             $params['MaxCharLength'] = $MaxCharLength
+        }
+        if ($MaxBinaryLength -gt 0) {
+            $params['MaxBinaryLength'] = $MaxBinaryLength
         }
 
         Invoke-Sqlcmd @params
@@ -345,6 +369,11 @@ function Invoke-SqlNonQuery {
         Invoke-Sqlcmd -MaxCharLength. Typically not needed for non-query
         operations but included for parity with Get-SqlData.
 
+    .PARAMETER MaxBinaryLength
+        Maximum byte length for VARBINARY columns. When specified, passed to
+        Invoke-Sqlcmd -MaxBinaryLength. Typically not needed for non-query
+        operations but included for parity with Get-SqlData.
+
     .EXAMPLE
         $ok = Invoke-SqlNonQuery -Query "UPDATE dbo.SomeTable SET status = 'DONE' WHERE id = 1"
         if (-not $ok) { Write-Log "Update failed" "ERROR" }
@@ -360,7 +389,8 @@ function Invoke-SqlNonQuery {
         [string]$Instance = $script:XFActsServerInstance,
         [string]$DatabaseName = $script:XFActsDatabase,
         [int]$Timeout = 300,
-        [int]$MaxCharLength = 0
+        [int]$MaxCharLength = 0,
+        [int]$MaxBinaryLength = 0
     )
 
     try {
@@ -377,6 +407,9 @@ function Invoke-SqlNonQuery {
 
         if ($MaxCharLength -gt 0) {
             $params['MaxCharLength'] = $MaxCharLength
+        }
+        if ($MaxBinaryLength -gt 0) {
+            $params['MaxBinaryLength'] = $MaxBinaryLength
         }
 
         Invoke-Sqlcmd @params
