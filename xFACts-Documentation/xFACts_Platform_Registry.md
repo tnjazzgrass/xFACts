@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-22 12:29:01
+Generated: 2026-04-23 11:12:12
 
 ## Module Registry
 
@@ -62,8 +62,9 @@ Generated: 2026-04-22 12:29:01
 
 | component_name | object_name | object_category | object_type | object_path | description |
 | --- | --- | --- | --- | --- | --- |
+| B2B | SI_ExecutionTracking | Database | Table | B2B | Per-workflow execution tracking for IBM Sterling B2B Integrator FA_CLIENTS_MAIN runs. One row per WORKFLOW_ID with full ProcessData configuration, workflow tree linkage, sub-workflow invocation summary, and terminal status sourced from b2bi. |
 | B2B | SI_ScheduleRegistry | Database | Table | B2B | Master catalog of IBM Sterling B2B Integrator schedules sourced from b2bi.dbo.SCHEDULE. Stores one row per SCHEDULEID with parsed TIMINGXML structure for auditing, monitoring, and Control Center display. |
-| B2B | Collect-B2BExecution.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-B2BExecution.ps1 | B2B module collector. Synchronizes the schedule registry from b2bi.dbo.SCHEDULE; additional execution-tracking steps are stubbed pending Block 2 implementation. |
+| B2B | Collect-B2BExecution.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-B2BExecution.ps1 | B2B module collector. Runs two workloads each cycle: synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE (Block 1), and collects per-workflow execution tracking rows into B2B.SI_ExecutionTracking from b2bi.dbo.WF_INST_S and related tables for FA_CLIENTS_MAIN runs in the configured lookback window (Block 2). Uses an is_complete anti-join to skip terminal workflows on subsequent cycles. Runs under the xFACts orchestrator in FIRE_AND_FORGET mode. |
 | BatchOps | BDL_BatchTracking | Database | Table |  | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
@@ -402,7 +403,7 @@ Generated: 2026-04-22 12:29:01
 | module_name | category | setting_name | setting_value | data_type | description |
 | --- | --- | --- | --- | --- | --- |
 | B2B | B2B | b2b_alerting_enabled | 0 | BIT | Master on/off switch for B2B module alerting. |
-| B2B | B2B | b2b_collect_lookback_days | 7 | INT | Number of days back that Collect-B2BExecution.ps1 scans for FA_CLIENTS_MAIN workflow runs in b2bi. |
+| B2B | B2B | b2b_collect_lookback_days | 3 | INT | Number of days back that Collect-B2BExecution.ps1 scans for FA_CLIENTS_MAIN workflow runs in b2bi. |
 | BatchOps | BDL | bdl_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file reaches FAILED status in File_Registry |
 | BatchOps | BDL | bdl_alert_stall_routing | 1 | ALERT_MODE | Alert destination(s) when BDL partition processing stalls |
 | BatchOps | BDL | bdl_alerting_enabled | 0 | BIT | Master on/off switch for all BDL batch alerting |
