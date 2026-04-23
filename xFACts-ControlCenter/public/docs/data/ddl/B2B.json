@@ -1,6 +1,1119 @@
 {
     "tables":  [
                    {
+                       "name":  "SI_ExecutionTracking",
+                       "description":  "Per-workflow execution tracking for IBM Sterling B2B Integrator FA_CLIENTS_MAIN runs. One row per WORKFLOW_ID capturing the full b2bi-side picture of a run: core execution identity and timing, workflow tree linkage (parent/root), all 73 ProcessData configuration fields parsed from the MAIN run\u0027s \u003cResult\u003e\u003cClient\u003e block, derived classification (run_class), raw decompressed ProcessData XML for forensic drill-down, failure detail from WORKFLOW_CONTEXT, and sub-workflow invocation summary. The is_complete flag drives a collector anti-join that excludes terminal rows from future cycles.",
+                       "module":  "B2B",
+                       "category":  "B2B",
+                       "dataFlow":  "Populated by Collect-B2BExecution.ps1 against b2bi on FA-INT-DBP. Each cycle: the collector determines a lookback window from GlobalConfig (b2b_collect_lookback_days, default 3), queries WF_INST_S joined to WFD to find FA_CLIENTS_MAIN runs within the window, anti-joins against already-terminal rows in this table (is_complete = 1), and processes the remainder. For each target workflow it reads WORKFLOW_LINKAGE for parent/root IDs, fetches and decompresses the first DOCUMENT TRANS_DATA row to get ProcessData, parses the XML into the 73 structured columns, scans WORKFLOW_CONTEXT to compute sub-workflow invocation flags and step counts, evaluates terminal state from END_TIME/STATUS, and writes the row via INSERT (new) or UPDATE (still-in-flight from prior cycle).",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "workflow_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Primary key. WORKFLOW_ID from b2bi.dbo.WF_INST_S. Sterling-assigned identifier for a FA_CLIENTS_MAIN execution; equals Integration.etl.tbl_B2B_* RUN_ID."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "workflow_start_time",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "START_TIME from b2bi.dbo.WF_INST_S. When Sterling launched this MAIN workflow."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "workflow_end_time",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "END_TIME from b2bi.dbo.WF_INST_S. When the workflow reached a terminal state. NULL while in-flight."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "duration_ms",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Workflow runtime in milliseconds, computed from END_TIME - START_TIME. NULL while in-flight."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "b2bi_status",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "STATUS from b2bi.dbo.WF_INST_S. Sterling status code: 0 = completed successfully, 1 = terminated with errors. NULL while in-flight."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "b2bi_state",
+                                           "dataType":  "varchar",
+                                           "length":  "30",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "STATE from b2bi.dbo.WF_INST_S. Sterling internal state code (observed uniformly as 1 on terminal rows). Captured for lineage completeness."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "step_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Total number of WORKFLOW_CONTEXT step rows recorded for this workflow. Rough proxy for execution complexity."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "parent_workflow_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "P_WF_ID from b2bi.dbo.WORKFLOW_LINKAGE. The immediate parent workflow (typically the DISPATCHER that launched this MAIN). NULL for top-level workflows with no parent."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "root_workflow_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "ROOT_WF_ID from b2bi.dbo.WORKFLOW_LINKAGE. Highest ancestor in the workflow tree. Used for pipeline rollup (\"all MAIN runs under this dispatcher\")."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "client_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CLIENT_ID from ProcessData. Identifies the client this run services. Client 328 (INTEGRATION TOOLS) is a pseudo-client for internal SP-executor runs."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "seq_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SEQ_ID from ProcessData. Identifies the configured process variant within the client. A single client can have multiple SEQ_IDs for different file types or pipelines."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "client_name",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CLIENT_NAME from ProcessData. Display name of the client."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "process_type",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PROCESS_TYPE from ProcessData. Named configuration pattern (e.g., SPECIAL_PROCESS, SFTP_PUSH_ED25519, EMAIL_SCRUB, NEW_BUSINESS, PAYMENT, NOTES_OUTBOUND)."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "comm_method",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "COMM_METHOD from ProcessData. Direction and transport class: INBOUND, OUTBOUND, or a specific transport name."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "file_id",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "FILE_ID from ProcessData. Sterling-side file identifier used in file_registry lookup. May be 0 for runs that do not process files."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "pre_archive",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PRE_ARCHIVE flag from ProcessData. Y/N — whether source files are archived before translation."
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "translation_map",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "TRANSLATION_MAP from ProcessData. Sterling map name that transforms the source file to the target format."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "workers_comp",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "WORKERS_COMP flag from ProcessData. Y/N — workers\u0027 compensation flag, client-specific semantics."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "dup_check",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DUP_CHECK from ProcessData. Either a Y/N flag or the name of a duplicate-check SP to invoke."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "prepare_source",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PREPARE_SOURCE flag from ProcessData. Y/N — whether the preparation pipeline step runs before translation."
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "post_archive",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_ARCHIVE flag from ProcessData. Y/N — whether post-translation output is archived."
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "file_filter",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "FILE_FILTER from ProcessData. File name pattern or XPath filter expression the workflow uses to identify source files. Can be very long for complex filters."
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "mail_to",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "MAIL_TO from ProcessData. Comma-separated primary email recipient list for workflow notifications. NULL when no email dispatch is configured."
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "mail_cc",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "MAIL_CC from ProcessData. Comma-separated CC email recipient list. NULL when no CC is configured."
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "get_docs_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "GET_DOCS_TYPE from ProcessData. Method for picking up inbound files: SFTP_PULL, FSA_PULL, API_PULL, etc. Populated presence is a FILE_PROCESS classification signal."
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "get_docs_loc",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "GET_DOCS_LOC from ProcessData. Source location (path, URL, or endpoint identifier) where inbound files are picked up."
+                                       },
+                                       {
+                                           "ordinal":  27,
+                                           "name":  "put_docs_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PUT_DOCS_TYPE from ProcessData. Method for delivering outbound files: SFTP_PUSH, FSA_PUSH, etc. Populated presence is a FILE_PROCESS classification signal."
+                                       },
+                                       {
+                                           "ordinal":  28,
+                                           "name":  "put_docs_loc",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PUT_DOCS_LOC from ProcessData. Destination location where outbound files are delivered."
+                                       },
+                                       {
+                                           "ordinal":  29,
+                                           "name":  "file_rename",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "FILE_RENAME from ProcessData. Either a Y/N flag or an XPath expression that computes the rename target."
+                                       },
+                                       {
+                                           "ordinal":  30,
+                                           "name":  "prepare_comm_call",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PREPARE_COMM_CALL flag from ProcessData. Y/N — whether the pre-communication preparation step runs."
+                                       },
+                                       {
+                                           "ordinal":  31,
+                                           "name":  "comm_call",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "COMM_CALL flag from ProcessData. Y/N — whether the communication-call step fires in the pipeline."
+                                       },
+                                       {
+                                           "ordinal":  32,
+                                           "name":  "business_type",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "BUSINESS_TYPE from ProcessData. Business domain classifier: BD (business data), EO (early-out), EOBD, BDEO. Distinguishes pipeline variants for the same client."
+                                       },
+                                       {
+                                           "ordinal":  33,
+                                           "name":  "convert_to_csv",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CONVERT_TO_CSV from ProcessData. Either a Y/N flag or the delimiter character for conversion."
+                                       },
+                                       {
+                                           "ordinal":  34,
+                                           "name":  "auto_release",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "AUTO_RELEASE flag from ProcessData. Y/N — whether batches created by the run are automatically released for processing."
+                                       },
+                                       {
+                                           "ordinal":  35,
+                                           "name":  "put_docs_profile_id",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PUT_DOCS_PROFILE_ID from ProcessData. Sterling transport profile identifier for outbound delivery."
+                                       },
+                                       {
+                                           "ordinal":  36,
+                                           "name":  "sql_query",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SQL_QUERY from ProcessData. User-authored SQL the workflow runs (typically for data sourcing). Can be very long for complex queries."
+                                       },
+                                       {
+                                           "ordinal":  37,
+                                           "name":  "mdos",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "MDOS from ProcessData. Medical date-of-service identifier. Format and usage vary by client."
+                                       },
+                                       {
+                                           "ordinal":  38,
+                                           "name":  "send_empty_files",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SEND_EMPTY_FILES flag from ProcessData. Y/N — whether empty output files are sent or suppressed."
+                                       },
+                                       {
+                                           "ordinal":  39,
+                                           "name":  "get_docs_dlt",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "GET_DOCS_DLT from ProcessData. Either a Y/N flag or an archive path for delete-after-pickup behavior."
+                                       },
+                                       {
+                                           "ordinal":  40,
+                                           "name":  "prep_translation_map",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PREP_TRANSLATION_MAP from ProcessData. Optional preparation-phase map name, applied before the main translation_map."
+                                       },
+                                       {
+                                           "ordinal":  41,
+                                           "name":  "gzip",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "GZIP flag from ProcessData. Y/N — whether output files are gzip-compressed."
+                                       },
+                                       {
+                                           "ordinal":  42,
+                                           "name":  "email_xslt",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "EMAIL_XSLT from ProcessData. Reference to the XSLT stylesheet used to render email body content."
+                                       },
+                                       {
+                                           "ordinal":  43,
+                                           "name":  "pgp_passphrase",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PGP_PASSPHRASE from ProcessData. PGP passphrase stored in plaintext in the Sterling configuration."
+                                       },
+                                       {
+                                           "ordinal":  44,
+                                           "name":  "unzip_filter",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "UNZIP_FILTER from ProcessData. File pattern applied when extracting archive files."
+                                       },
+                                       {
+                                           "ordinal":  45,
+                                           "name":  "unzip_password",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "UNZIP_PASSWORD from ProcessData. Password for zip extraction, stored in plaintext in the Sterling configuration."
+                                       },
+                                       {
+                                           "ordinal":  46,
+                                           "name":  "encounter_map",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "ENCOUNTER_MAP from ProcessData. Named map for healthcare encounter data transformation."
+                                       },
+                                       {
+                                           "ordinal":  47,
+                                           "name":  "pv_fn_address",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PV_FN_ADDRESS from ProcessData. Address validation behavior enum (e.g., when and how addresses are checked)."
+                                       },
+                                       {
+                                           "ordinal":  48,
+                                           "name":  "get_docs_profile_id",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "GET_DOCS_PROFILE_ID from ProcessData. Sterling transport profile identifier for inbound pickup."
+                                       },
+                                       {
+                                           "ordinal":  49,
+                                           "name":  "pdf_file",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PDF_FILE flag from ProcessData. Y/N — whether the workflow handles PDF file outputs."
+                                       },
+                                       {
+                                           "ordinal":  50,
+                                           "name":  "custom_bp_pre_translation",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CUSTOM_BP_PRE_TRANSLATION from ProcessData. Name of a custom Sterling business process invoked before the main translation phase."
+                                       },
+                                       {
+                                           "ordinal":  51,
+                                           "name":  "custom_bp_pre_process",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CUSTOM_BP_PRE_PROCESS from ProcessData. Name of a custom Sterling business process invoked before any processing."
+                                       },
+                                       {
+                                           "ordinal":  52,
+                                           "name":  "sql_query_data_source",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SQL_QUERY_DATA_SOURCE from ProcessData. Named data source (JDBC pool reference) used to execute sql_query."
+                                       },
+                                       {
+                                           "ordinal":  53,
+                                           "name":  "prep_encode_from",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PREP_ENCODE_FROM from ProcessData. Source encoding name for the preparation phase encoding conversion."
+                                       },
+                                       {
+                                           "ordinal":  54,
+                                           "name":  "prep_encode_to",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PREP_ENCODE_TO from ProcessData. Target encoding name for the preparation phase encoding conversion."
+                                       },
+                                       {
+                                           "ordinal":  55,
+                                           "name":  "post_translation",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_TRANSLATION flag from ProcessData. Y/N — whether the post-translation step runs."
+                                       },
+                                       {
+                                           "ordinal":  56,
+                                           "name":  "post_trans_sql_query",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_TRANS_SQL_QUERY from ProcessData. SQL statement or XPath concat() expression executed in the post-translation phase. Values starting with \"EXEC Integration.\" or \"concat(\u0027EXEC Integration.\" indicate SP-executor runs (INTERNAL_OP classification)."
+                                       },
+                                       {
+                                           "ordinal":  57,
+                                           "name":  "post_translation_map",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_TRANSLATION_MAP from ProcessData. Sterling map name used in the post-translation step."
+                                       },
+                                       {
+                                           "ordinal":  58,
+                                           "name":  "cla_exe_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CLA_EXE_PATH from ProcessData. Path to an external executable invoked by the workflow."
+                                       },
+                                       {
+                                           "ordinal":  59,
+                                           "name":  "pre_keyword_replace_from",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PRE_KEYWORD_REPLACE_FROM from ProcessData. Keyword to replace in content during pre-translation text substitution."
+                                       },
+                                       {
+                                           "ordinal":  60,
+                                           "name":  "pre_keyword_replace_to",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PRE_KEYWORD_REPLACE_TO from ProcessData. Replacement value paired with pre_keyword_replace_from."
+                                       },
+                                       {
+                                           "ordinal":  61,
+                                           "name":  "post_keyword_replace_from",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_KEYWORD_REPLACE_FROM from ProcessData. Keyword to replace in content during post-translation text substitution."
+                                       },
+                                       {
+                                           "ordinal":  62,
+                                           "name":  "post_keyword_replace_to",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_KEYWORD_REPLACE_TO from ProcessData. Replacement value paired with post_keyword_replace_from."
+                                       },
+                                       {
+                                           "ordinal":  63,
+                                           "name":  "post_translation_overwrite",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_TRANSLATION_OVERWRITE flag from ProcessData. Y/N — whether post-translation writes overwrite existing output."
+                                       },
+                                       {
+                                           "ordinal":  64,
+                                           "name":  "misc_rec1",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "MISC_REC1 from ProcessData. Miscellaneous delimited-string field for client-specific extra configuration. Semantics vary."
+                                       },
+                                       {
+                                           "ordinal":  65,
+                                           "name":  "get_docs_api",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "GET_DOCS_API from ProcessData. Path to the API-pickup Python executable (or equivalent script path) when pickup uses a custom API invocation."
+                                       },
+                                       {
+                                           "ordinal":  66,
+                                           "name":  "post_translation_vital",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_TRANSLATION_VITAL flag from ProcessData. Y/N — whether post-translation failure fails the whole run or is treated as non-fatal."
+                                       },
+                                       {
+                                           "ordinal":  67,
+                                           "name":  "get_empty_docs",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "GET_EMPTY_DOCS flag from ProcessData. Y/N — whether empty source files are processed or skipped at pickup."
+                                       },
+                                       {
+                                           "ordinal":  68,
+                                           "name":  "email_subject",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "EMAIL_SUBJECT from ProcessData. Often an XPath concat() expression that builds the subject line at runtime from workflow context."
+                                       },
+                                       {
+                                           "ordinal":  69,
+                                           "name":  "post_trans_file_rename",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "POST_TRANS_FILE_RENAME from ProcessData. Either a Y/N flag or an XPath-driven filename pattern for post-translation output."
+                                       },
+                                       {
+                                           "ordinal":  70,
+                                           "name":  "pre_sql_query",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PRE_SQL_QUERY from ProcessData. SQL executed in the pre-translation phase."
+                                       },
+                                       {
+                                           "ordinal":  71,
+                                           "name":  "comm_call_sql_query",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "COMM_CALL_SQL_QUERY from ProcessData. SQL executed as part of the communication-call step."
+                                       },
+                                       {
+                                           "ordinal":  72,
+                                           "name":  "comm_call_cla_exe_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "COMM_CALL_CLA_EXE_PATH from ProcessData. Path to the external executable invoked by the communication-call step. Populated presence is a FILE_PROCESS classification signal (e.g., ACADIA EO merge orchestrator, REVSPRING email scrubber)."
+                                       },
+                                       {
+                                           "ordinal":  73,
+                                           "name":  "comm_call_working_dir",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "COMM_CALL_WORKING_DIR from ProcessData. Working directory for the comm_call_cla_exe_path invocation."
+                                       },
+                                       {
+                                           "ordinal":  74,
+                                           "name":  "dm_batch_split",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "DM_BATCH_SPLIT flag from ProcessData. Y/N — whether the workflow splits its output into multiple DM batches."
+                                       },
+                                       {
+                                           "ordinal":  75,
+                                           "name":  "translation_staging",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "TRANSLATION_STAGING flag from ProcessData. Y/N — whether translation output is staged before final delivery."
+                                       },
+                                       {
+                                           "ordinal":  76,
+                                           "name":  "staging_cla_exe_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "STAGING_CLA_EXE_PATH from ProcessData. Path to the external executable invoked during the staging phase."
+                                       },
+                                       {
+                                           "ordinal":  77,
+                                           "name":  "custom_file_filter",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CUSTOM_FILE_FILTER flag from ProcessData. Y/N — whether a custom file-filter evaluator is used in place of the default."
+                                       },
+                                       {
+                                           "ordinal":  78,
+                                           "name":  "file_clean_up",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "FILE_CLEAN_UP flag from ProcessData. Y/N — whether source files are cleaned up (deleted) after successful processing."
+                                       },
+                                       {
+                                           "ordinal":  79,
+                                           "name":  "pre_dm_merge",
+                                           "dataType":  "char",
+                                           "length":  "1",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PRE_DM_MERGE flag from ProcessData. Y/N — whether a pre-DM-merge step runs before batch submission."
+                                       },
+                                       {
+                                           "ordinal":  80,
+                                           "name":  "etl_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "ETL_PATH from ProcessData. Legacy ETL path field."
+                                       },
+                                       {
+                                           "ordinal":  81,
+                                           "name":  "log_file_path",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "LOG_FILE_PATH from ProcessData. Target path for run-specific log output."
+                                       },
+                                       {
+                                           "ordinal":  82,
+                                           "name":  "prev_seq",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "PREV_SEQ from ProcessData. SEQ_ID of the sequential predecessor run (when the client pipeline chains multiple SEQ_IDs in order). NULL for standalone SEQs."
+                                       },
+                                       {
+                                           "ordinal":  83,
+                                           "name":  "address_check",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "ADDRESS_CHECK from ProcessData. Reserved for future expansion."
+                                       },
+                                       {
+                                           "ordinal":  84,
+                                           "name":  "run_class",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-derived classification of what this workflow represents. See status_value rows on this column for the value catalog. Computed from CLIENT_ID, POST_TRANS_SQL_QUERY, FILE_FILTER, GET_DOCS_TYPE, PUT_DOCS_TYPE, COMM_CALL_CLA_EXE_PATH, and PROCESS_TYPE per the rules in Collect-B2BExecution.ps1 ConvertTo-RunClass."
+                                       },
+                                       {
+                                           "ordinal":  85,
+                                           "name":  "process_data_xml",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Full decompressed ProcessData XML captured from the first DOCUMENT TRANS_DATA row at workflow launch. Forensic safety net — preserved in case the parser needs extension against future Sterling grammar changes, without re-fetching from b2bi (which purges aggressively, ~48hr retention)."
+                                       },
+                                       {
+                                           "ordinal":  86,
+                                           "name":  "root_cause_step_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "STEP_ID of the earliest WORKFLOW_CONTEXT row with BASIC_STATUS not in (0, 10) — the first step where the workflow entered a non-success state. NULL when the workflow completed successfully or is still in-flight."
+                                       },
+                                       {
+                                           "ordinal":  87,
+                                           "name":  "root_cause_service_name",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SERVICE_NAME of the root-cause step. Identifies the Sterling service that first reported non-success status."
+                                       },
+                                       {
+                                           "ordinal":  88,
+                                           "name":  "root_cause_adv_status",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "ADV_STATUS text from the root-cause step. Often contains stack-trace-style diagnostic detail. Stored as VARCHAR(MAX) because content can be long."
+                                       },
+                                       {
+                                           "ordinal":  89,
+                                           "name":  "failure_step_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "STEP_ID of the final failing step (may differ from root_cause_step_id when a later step propagated the failure)."
+                                       },
+                                       {
+                                           "ordinal":  90,
+                                           "name":  "failure_service_name",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "SERVICE_NAME of the final failing step."
+                                       },
+                                       {
+                                           "ordinal":  91,
+                                           "name":  "status_message",
+                                           "dataType":  "varchar",
+                                           "length":  "1000",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-composed failure summary combining step, service, BASIC_STATUS, and a truncated ADV_STATUS snippet. Designed for at-a-glance display without needing to open root_cause_adv_status."
+                                       },
+                                       {
+                                           "ordinal":  92,
+                                           "name":  "had_trans",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-computed flag. 1 when WORKFLOW_CONTEXT contains an \"Inline Begin FA_CLIENTS_TRANS\" ADV_STATUS marker — indicates the translation sub-workflow was invoked."
+                                       },
+                                       {
+                                           "ordinal":  93,
+                                           "name":  "had_vital",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-computed flag. 1 when the VITAL sub-workflow was invoked during this run."
+                                       },
+                                       {
+                                           "ordinal":  94,
+                                           "name":  "had_accounts_load",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-computed flag. 1 when the FA_CLIENTS_ACCOUNTS_LOAD sub-workflow was invoked (new-business pipeline signal)."
+                                       },
+                                       {
+                                           "ordinal":  95,
+                                           "name":  "had_comm_call",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-computed flag. 1 when the communication-call sub-workflow was invoked."
+                                       },
+                                       {
+                                           "ordinal":  96,
+                                           "name":  "had_archive",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-computed flag. 1 when any archive sub-workflow was invoked (pre- or post-archive)."
+                                       },
+                                       {
+                                           "ordinal":  97,
+                                           "name":  "trans_invocation_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-computed count of FA_CLIENTS_TRANS invocations observed in WORKFLOW_CONTEXT. Acts as a proxy for the number of files processed in the run."
+                                       },
+                                       {
+                                           "ordinal":  98,
+                                           "name":  "archive_invocation_count",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Collector-computed count of archive sub-workflow invocations observed in WORKFLOW_CONTEXT."
+                                       },
+                                       {
+                                           "ordinal":  99,
+                                           "name":  "merged_output_file_name",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Reserved for Block 3 (execution detail). When the workflow produces a single merged output file, its name is captured here; NULL otherwise."
+                                       },
+                                       {
+                                           "ordinal":  100,
+                                           "name":  "merged_output_file_size",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Reserved for Block 3 (execution detail). Byte size of the merged output file when present."
+                                       },
+                                       {
+                                           "ordinal":  101,
+                                           "name":  "has_detail_captured",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Flag indicating whether the forthcoming Block 3 execution detail extraction has run for this workflow. 0 by default; set to 1 when per-file/per-creditor detail has been captured in a related detail table."
+                                       },
+                                       {
+                                           "ordinal":  102,
+                                           "name":  "is_complete",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Collector-derived flag. 1 when the workflow has reached a terminal state in b2bi (END_TIME populated); 0 while still in-flight. Drives the anti-join that excludes terminal rows from future collection cycles."
+                                       },
+                                       {
+                                           "ordinal":  103,
+                                           "name":  "completed_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Timestamp when the collector first observed the workflow in a terminal state. NULL for in-flight rows."
+                                       },
+                                       {
+                                           "ordinal":  104,
+                                           "name":  "completed_status",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable terminal status. See status_value rows for the value catalog. Derived from b2bi_status at completion time."
+                                       },
+                                       {
+                                           "ordinal":  105,
+                                           "name":  "collected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "Timestamp of the most recent INSERT or UPDATE against this row by Collect-B2BExecution.ps1."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_SI_ExecutionTracking",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "workflow_id"
+                                       },
+                                       {
+                                           "name":  "IX_SI_ExecutionTracking_client_seq",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "client_id, seq_id, workflow_start_time",
+                                           "includedColumns":  "workflow_id, b2bi_status"
+                                       },
+                                       {
+                                           "name":  "IX_SI_ExecutionTracking_incomplete_startTime",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "is_complete, workflow_start_time",
+                                           "includedColumns":  "b2bi_status, b2bi_state"
+                                       },
+                                       {
+                                           "name":  "IX_SI_ExecutionTracking_root_workflow",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "root_workflow_id",
+                                           "includedColumns":  "workflow_start_time, b2bi_status"
+                                       },
+                                       {
+                                           "name":  "IX_SI_ExecutionTracking_startTime",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "workflow_start_time",
+                                           "includedColumns":  "workflow_id, client_id, seq_id, process_type, comm_method"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_SI_ExecutionTracking_run_class",
+                                                    "definition":  "([run_class]=\u0027UNCLASSIFIED\u0027 OR [run_class]=\u0027INTERNAL_OP\u0027 OR [run_class]=\u0027FILE_PROCESS\u0027 OR [run_class] IS NULL)"
+                                                }
+                                            ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "is_complete anti-join lookback optimization",
+                                               "note":  "The collector evaluates each workflow exactly once in terminal state. On every cycle it queries b2bi WF_INST_S for MAIN runs in the lookback window, then anti-joins against this table\u0027s is_complete = 1 rows to exclude already-terminal workflows from further processing. Only net-new runs and still-in-flight runs get re-evaluated. This keeps per-cycle work bounded at roughly \"new arrivals + currently running\" rather than scaling with total table size. The partial index IX_SI_ExecutionTracking_incomplete_startTime supports the in-flight lookup directly.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "ProcessData parsed structure and raw XML both retained",
+                                               "note":  "The parsed ProcessData columns and the raw process_data_xml column are both derived from the same source — the decompressed ProcessData blob from TRANS_DATA at workflow launch. The parsed columns support fast filtered queries (\"all runs with file_filter X\"). The raw XML is the forensic safety net: if Sterling configuration evolves to use grammar the parser does not handle, historical rows can be re-parsed against the retained XML without re-fetching from b2bi (which has ~48 hour retention). Both representations are populated by the same collector pass so they cannot drift.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Sub-workflow detection via ADV_STATUS \"Inline Begin\" pattern",
+                                               "note":  "Sterling records sub-workflow invocations in WORKFLOW_CONTEXT.ADV_STATUS as text markers like \"Inline Begin FA_CLIENTS_TRANS+\u003cID\u003e+\u003cVER\u003e\" rather than in a structured column. The collector scans ADV_STATUS for these markers to compute had_trans, had_vital, had_accounts_load, had_comm_call, had_archive, trans_invocation_count, and archive_invocation_count. This approach was validated against known-good workflow types and is resilient to Sterling version bumps because it does not depend on specific WFD_ID values.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "run_class classification priority order",
+                                               "note":  "INTERNAL_OP signals are evaluated before FILE_PROCESS signals. A workflow that has both an Integration SP executor signal (e.g., POST_TRANS_SQL_QUERY starting with \"EXEC Integration.\") AND file-processing signals (e.g., FILE_FILTER populated) classifies as INTERNAL_OP — the SP-executor pattern is the dominant work. Only workflows with no INTERNAL_OP signal and no FILE_PROCESS signal land in UNCLASSIFIED. In production, UNCLASSIFIED should be empty in steady state; a non-zero count indicates a new workflow pattern that needs characterization.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "run_class",
+                                                "value":  "FILE_PROCESS",
+                                                "meaning":  "Standard real-client file processing — inbound pickup, outbound delivery, or external exe orchestration. Matched when FILE_FILTER, GET_DOCS_TYPE, or PUT_DOCS_TYPE is populated, or when COMM_CALL_CLA_EXE_PATH is populated, or when PROCESS_TYPE is in the push-operation whitelist (SFTP_PUSH, SFTP_PUSH_ED25519).",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "Workflow ran to completion without error. Corresponds to b2bi_status = 0 with END_TIME populated.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Workflow reached a terminal state but with errors. Corresponds to b2bi_status = 1 with END_TIME populated. Inspect status_message, root_cause_service_name, and root_cause_adv_status for diagnostic detail.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "run_class",
+                                                "value":  "INTERNAL_OP",
+                                                "meaning":  "Integration SP executor run — the workflow\u0027s primary work is invoking an Integration stored procedure, not processing files. Matched when CLIENT_ID = 328 (INTEGRATION TOOLS pseudo-client) or when POST_TRANS_SQL_QUERY starts with \"EXEC Integration.\" or with the XPath wrapper \"concat(\u0027EXEC Integration.\".",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "run_class",
+                                                "value":  "UNCLASSIFIED",
+                                                "meaning":  "Workflow did not match any current classification rule. In steady state this bucket should be empty. A non-zero count indicates a new workflow pattern that needs investigation and a classifier extension.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "STATUS_\u003cn\u003e",
+                                                "meaning":  "Workflow reached a terminal state with a b2bi_status value other than 0 or 1 (not observed in production at time of writing). The literal pattern shown here is \"STATUS_\" followed by the raw numeric value; investigate any occurrence.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Run distribution by class and completion status",
+                                           "description":  "At-a-glance summary of what\u0027s been collected: how workflows split across classifications and whether they reached terminal state.",
+                                           "sql":  "SELECT run_class,\r\n       COUNT(*) AS total_runs,\r\n       SUM(CASE WHEN is_complete = 1 THEN 1 ELSE 0 END) AS completed,\r\n       SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS in_flight,\r\n       SUM(CASE WHEN completed_status = \u0027FAILED\u0027 THEN 1 ELSE 0 END) AS failed\r\nFROM B2B.SI_ExecutionTracking\r\nGROUP BY run_class\r\nORDER BY total_runs DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Recent failures with diagnostic detail",
+                                           "description":  "Last 50 failed workflows with the root-cause step, service, and status message for quick triage.",
+                                           "sql":  "SELECT TOP 50\r\n       workflow_id,\r\n       workflow_start_time,\r\n       client_name,\r\n       process_type,\r\n       comm_method,\r\n       root_cause_step_id,\r\n       root_cause_service_name,\r\n       status_message\r\nFROM B2B.SI_ExecutionTracking\r\nWHERE completed_status = \u0027FAILED\u0027\r\nORDER BY workflow_start_time DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Per-client volume for a given day",
+                                           "description":  "Run counts and failure counts grouped by client for a specific date.",
+                                           "sql":  "SELECT client_id,\r\n       client_name,\r\n       COUNT(*) AS run_count,\r\n       SUM(CASE WHEN completed_status = \u0027FAILED\u0027 THEN 1 ELSE 0 END) AS fail_count,\r\n       AVG(duration_ms) AS avg_duration_ms\r\nFROM B2B.SI_ExecutionTracking\r\nWHERE CAST(workflow_start_time AS DATE) = CAST(GETDATE() AS DATE)\r\nGROUP BY client_id, client_name\r\nORDER BY run_count DESC;",
+                                           "sortOrder":  3
+                                       },
+                                       {
+                                           "name":  "Pipeline rollup — all MAIN runs under a dispatcher",
+                                           "description":  "Given a root_workflow_id (typically a dispatcher), show every MAIN run it spawned and their outcomes.",
+                                           "sql":  "SELECT workflow_id,\r\n       workflow_start_time,\r\n       client_name,\r\n       process_type,\r\n       run_class,\r\n       completed_status,\r\n       duration_ms\r\nFROM B2B.SI_ExecutionTracking\r\nWHERE root_workflow_id = @RootWorkflowId\r\nORDER BY workflow_start_time;",
+                                           "sortOrder":  4
+                                       },
+                                       {
+                                           "name":  "Currently in-flight workflows",
+                                           "description":  "Workflows the collector has seen start but has not yet observed terminate.",
+                                           "sql":  "SELECT workflow_id,\r\n       workflow_start_time,\r\n       DATEDIFF(MINUTE, workflow_start_time, GETDATE()) AS minutes_running,\r\n       client_name,\r\n       process_type,\r\n       step_count\r\nFROM B2B.SI_ExecutionTracking\r\nWHERE is_complete = 0\r\nORDER BY workflow_start_time;",
+                                           "sortOrder":  5
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "B2B.SI_ScheduleRegistry",
+                                                     "note":  "No declared FK, but the two tables correlate conceptually: SI_ScheduleRegistry describes when Sterling MAIN workflows are expected to fire, and SI_ExecutionTracking records when they actually fired.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Collect-B2BExecution.ps1",
+                                                     "note":  "Sole writer of this table. All INSERT and UPDATE operations against SI_ExecutionTracking originate from this collector. No other script, procedure, or Control Center route mutates this table.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "Integration.etl.tbl_B2B_*",
+                                                     "note":  "On the AVG-PROD-LSNR Integration database, etl.tbl_B2B_* tables carry the structured post-workflow batch history. The workflow_id column in this table equals Integration RUN_ID.",
+                                                     "sortOrder":  3
+                                                 },
+                                                 {
+                                                     "relatedObject":  "b2bi.dbo.WF_INST_S",
+                                                     "note":  "Source table for workflow_id, workflow_start_time, workflow_end_time, b2bi_status, b2bi_state. Joined to b2bi.dbo.WFD on WFD_ID + WFD_VERSION to filter NAME = \u0027FA_CLIENTS_MAIN\u0027.",
+                                                     "sortOrder":  4
+                                                 },
+                                                 {
+                                                     "relatedObject":  "b2bi.dbo.WORKFLOW_LINKAGE",
+                                                     "note":  "Source table for parent_workflow_id and root_workflow_id. Columns C_WF_ID, P_WF_ID, and ROOT_WF_ID are queried; ROOT_WF_ID is pre-computed by Sterling so no walk-up traversal is needed.",
+                                                     "sortOrder":  5
+                                                 },
+                                                 {
+                                                     "relatedObject":  "b2bi.dbo.WORKFLOW_CONTEXT",
+                                                     "note":  "Source table for step_count, failure diagnostic fields, and the ADV_STATUS \"Inline Begin\" markers that drive sub-workflow invocation flags and counts.",
+                                                     "sortOrder":  6
+                                                 },
+                                                 {
+                                                     "relatedObject":  "b2bi.dbo.TRANS_DATA",
+                                                     "note":  "Source table for ProcessData — the first DOCUMENT row (REFERENCE_TABLE=\u0027DOCUMENT\u0027, PAGE_INDEX=0, ordered by CREATION_DATE ASC, DATA_ID ASC) contains the gzip-compressed ProcessData blob that yields the 73 parsed columns and process_data_xml.",
+                                                     "sortOrder":  7
+                                                 }
+                                             ]
+                   },
+                   {
                        "name":  "SI_ScheduleRegistry",
                        "description":  "Master catalog of IBM Sterling B2B Integrator schedules. Stores one row per SCHEDULEID from b2bi.dbo.SCHEDULE with parsed TIMINGXML structure and a human-readable schedule description. The collector fully synchronizes this table with b2bi on each cycle: new schedules are inserted, changed schedules are re-parsed and updated, and schedules no longer present in b2bi are removed. This table is the authoritative source for \"what schedules exist in Sterling, when they run, and their current operational status\" for the xFACts B2B module.",
                        "module":  "B2B",
@@ -361,10 +1474,47 @@
     "scripts":  [
                     {
                         "name":  "Collect-B2BExecution.ps1",
-                        "description":  "Collector for the B2B module. Synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE on every execution: pulls all schedule rows with their TIMINGXML blobs in a single joined query, decompresses and parses the timing XML into structured columns and a human-readable description, and upserts the registry via per-row INSERT or UPDATE. Schedules no longer present in b2bi are deleted from the registry. Runs under the xFACts orchestrator in FIRE_AND_FORGET mode with Windows auth to both servers; the b2bi source is read from FA-INT-DBP and the xFACts target is the AG listener.",
+                        "description":  "Collector for the B2B module. Two workloads each cycle: (1) synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE — inserts new schedules, updates changed ones, deletes schedules no longer in b2bi; (2) collects per-workflow execution tracking rows into B2B.SI_ExecutionTracking for FA_CLIENTS_MAIN runs in the lookback window (GlobalConfig b2b_collect_lookback_days, default 3) — inserts new workflows, updates still-in-flight ones, skips already-terminal rows via is_complete anti-join. Reads exclusively from b2bi on FA-INT-DBP and writes to the xFACts AG. Runs under the orchestrator in FIRE_AND_FORGET mode.",
                         "module":  "B2B",
                         "category":  "B2B",
-                        "dataFlow":  "On every cycle, the collector issues a single JOIN query against b2bi.dbo.SCHEDULE and b2bi.dbo.DATA_TABLE on FA-INT-DBP to fetch all schedule rows and their gzip-compressed TIMINGXML blobs. Each blob is decompressed in-memory and parsed into the structured columns on B2B.SI_ScheduleRegistry (timing_pattern_type, run_day_mask, run_times_explicit, run_range_start/end, run_interval_minutes, excluded_dates, etc.) along with a human-readable schedule_description. The collector then reads the existing registry snapshot from the xFACts database on AVG-PROD-LSNR, compares each source row to its tracked counterpart by schedule_id, and issues INSERT for new schedules, UPDATE for schedules where timing_xml_handle, source_status, or execution_status has changed, and DELETE for registry rows whose schedule_id no longer appears in b2bi. Configuration values (b2b_alerting_enabled, b2b_collect_lookback_days) are read from dbo.GlobalConfig at startup. Orchestration context (TaskId, ProcessId) is passed in by the engine; on completion the Complete-OrchestratorTask callback updates Orchestrator.TaskLog and Orchestrator.ProcessRegistry.",
+                        "dataFlow":  "Block 1 (schedule sync): Single JOIN query against b2bi.dbo.SCHEDULE and b2bi.dbo.DATA_TABLE on FA-INT-DBP fetches all schedule rows with their gzip-compressed TIMINGXML blobs. Each blob is decompressed in-memory and parsed into the structured columns and human-readable schedule_description. The collector MERGEs against the existing registry: INSERTs new schedules, UPDATEs schedules whose timing_xml_handle / source_status / execution_status have changed, and DELETEs registry rows whose schedule_id no longer appears in b2bi.\r\n\r\nBlock 2 (execution collection): Reads the lookback window from GlobalConfig (b2b_collect_lookback_days). Queries b2bi.dbo.WF_INST_S joined to b2bi.dbo.WFD on WFD_ID + WFD_VERSION filtered by NAME = \u0027FA_CLIENTS_MAIN\u0027 within the window. Loads hash sets of already-terminal workflow_ids and already-in-flight workflow_ids from B2B.SI_ExecutionTracking. For each b2bi row not in the terminal set, the collector: queries WORKFLOW_LINKAGE for parent/root IDs, fetches and decompresses the first DOCUMENT TRANS_DATA row for ProcessData (passing -MaxBinaryLength 20971520 to avoid silent 1024-byte truncation), parses the 73 ProcessData fields, scans WORKFLOW_CONTEXT for step counts and ADV_STATUS \"Inline Begin\" sub-workflow markers, derives run_class, determines terminal state from END_TIME/STATUS, and INSERTs (new) or UPDATEs (still-in-flight) the row. GlobalConfig values b2b_alerting_enabled and b2b_collect_lookback_days are read at startup. Orchestration context (TaskId, ProcessId) is passed in by the engine; on completion Complete-OrchestratorTask updates Orchestrator.TaskLog and Orchestrator.ProcessRegistry.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Two workloads, one collector",
+                                                "note":  "The script performs both Block 1 (schedule sync) and Block 2 (execution collection) in every cycle. Rather than splitting into two separate scripts, the single-collector design keeps the orchestrator footprint minimal, shares all the b2bi connection and parsing machinery, and lets the two workloads benefit from the same GlobalConfig, logging, and RBAC setup. Both workloads are independent — a failure in one does not block the other. Execution order is Block 1 first (faster, builds the registry used for future schedule-adherence checks), then Block 2 (the long-running workload).",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "is_complete anti-join for bounded per-cycle work",
+                                                "note":  "Block 2 would scale linearly with lookback window size if every MAIN workflow were re-evaluated each cycle. The is_complete anti-join pattern bounds work to \"new arrivals + still-in-flight\" by loading hash sets of terminal and in-flight workflow_ids from SI_ExecutionTracking and skipping any b2bi row already in the terminal set. Terminal rows are never re-read from b2bi; in-flight rows are refreshed until they go terminal, then become dormant. Partial index IX_SI_ExecutionTracking_incomplete_startTime supports the in-flight lookup with minimal memory footprint.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Name-based workflow filter survives version bumps",
+                                                "note":  "Sterling assigns a new WFD_ID to every published version of a workflow definition. Filtering by WFD_ID directly would break every time the FA_CLIENTS_MAIN workflow gets republished. The collector instead joins WF_INST_S to WFD on WFD_ID + WFD_VERSION and filters by WFD.NAME = \u0027FA_CLIENTS_MAIN\u0027. This is resilient to version bumps and matches the actual lookup pattern used across the documented query library.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "VARBINARY fetch uses -MaxBinaryLength",
+                                                "note":  "b2bi stores ProcessData and TIMINGXML as gzip-compressed VARBINARY(MAX). The collector passes -MaxBinaryLength 20971520 (20MB) on every VARBINARY fetch — both Block 1 schedule TIMINGXML and Block 2 ProcessData — via the matching parameter on Get-SqlData.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "topic":  "Sub-workflow detection via ADV_STATUS markers",
+                                                "note":  "Sub-workflow invocations within a FA_CLIENTS_MAIN run are recorded in WORKFLOW_CONTEXT.ADV_STATUS as text markers like \"Inline Begin FA_CLIENTS_TRANS+\u003cID\u003e+\u003cVER\u003e\" rather than in a structured column. The collector scans ADV_STATUS using pattern matching to populate had_trans, had_vital, had_accounts_load, had_comm_call, had_archive, and the two invocation count columns. This text-based detection is resilient to Sterling version bumps because it does not depend on specific WFD_IDs.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "topic":  "run_class classification priority",
+                                                "note":  "ConvertTo-RunClass evaluates INTERNAL_OP signals before FILE_PROCESS signals. A workflow with both an Integration SP executor signal (POST_TRANS_SQL_QUERY starting with \"EXEC Integration.\" or \"concat(\u0027EXEC Integration.\") AND a file-process signal (FILE_FILTER, GET_DOCS_TYPE, PUT_DOCS_TYPE, COMM_CALL_CLA_EXE_PATH, or PROCESS_TYPE in the push whitelist) is classified INTERNAL_OP — the SP executor is the dominant work pattern. Only workflows matching neither signal set land in UNCLASSIFIED.",
+                                                "sortOrder":  6
+                                            },
+                                            {
+                                                "topic":  "Sterling STATUS/STATE semantics",
+                                                "note":  "Terminal state is detected from END_TIME populated on WF_INST_S. Sterling WF_INST_S.STATUS = 0 means completed successfully; STATUS = 1 means terminated with errors. STATE is a separate numeric state code observed uniformly as 1 on terminal rows and is not consulted by the collector — the completed_status column derives strictly from STATUS.",
+                                                "sortOrder":  7
+                                            }
+                                        ],
                         "relationshipNotes":  [
                                                   {
                                                       "relatedObject":  "B2B.SI_ScheduleRegistry",
@@ -373,13 +1523,23 @@
                                                   },
                                                   {
                                                       "relatedObject":  "Orchestrator.ProcessRegistry",
-                                                      "note":  "The collector is registered in Orchestrator.ProcessRegistry as module B2B, process Collect-B2BExecution. Scheduling and run mode are controlled there; runtime status fields (running_count, last_execution_status, last_duration_ms) are updated by the Complete-OrchestratorTask callback at the end of each run.",
+                                                      "note":  "The collector is registered in Orchestrator.ProcessRegistry as module B2B, process Collect-B2BExecution. Scheduling and run mode are controlled there; runtime status fields (running_count, last_execution_status, last_duration_ms) are updated by the Complete-OrchestratorTask callback at the end of each run. dependency_group bucket = 10 (collectors).",
                                                       "sortOrder":  2
                                                   },
                                                   {
                                                       "relatedObject":  "xFACts-OrchestratorFunctions.ps1",
-                                                      "note":  "Dot-sourced at script startup. Provides Initialize-XFActsScript for SQL module loading and application identity tagging, Get-SqlData and Invoke-SqlNonQuery for database access, and Complete-OrchestratorTask for the orchestrator completion callback.",
+                                                      "note":  "Dot-sourced at script startup. Provides Initialize-XFActsScript for SQL module loading and application identity tagging, Get-SqlData and Invoke-SqlNonQuery for database access (including -MaxBinaryLength for VARBINARY blob reads from b2bi TRANS_DATA), and Complete-OrchestratorTask for the orchestrator completion callback.",
                                                       "sortOrder":  3
+                                                  },
+                                                  {
+                                                      "relatedObject":  "B2B.SI_ExecutionTracking",
+                                                      "note":  "Sole writer of B2B.SI_ExecutionTracking. Each cycle INSERTs new FA_CLIENTS_MAIN workflows discovered in b2bi within the lookback window, UPDATEs in-flight rows from prior cycles, and skips rows with is_complete = 1.",
+                                                      "sortOrder":  4
+                                                  },
+                                                  {
+                                                      "relatedObject":  "b2bi (IBM Sterling B2B Integrator)",
+                                                      "note":  "Reads from b2bi. All cross-database correlation happens in PowerShell memory. Reads: dbo.SCHEDULE, dbo.DATA_TABLE (TIMINGXML and ProcessData blobs), dbo.WF_INST_S, dbo.WFD, dbo.WORKFLOW_LINKAGE, dbo.WORKFLOW_CONTEXT, dbo.TRANS_DATA. b2bi retention drives the lookback and the decision to retain ProcessData XML.",
+                                                      "sortOrder":  5
                                                   }
                                               ]
                     }
