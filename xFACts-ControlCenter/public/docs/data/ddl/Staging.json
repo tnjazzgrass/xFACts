@@ -261,6 +261,73 @@
                                    ]
                    },
                    {
+                       "name":  "BDL_CONSUMER_TAG_dpharrell_20260422_134329",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "_row_number",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "_skip",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))"
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "_trigger_value",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "_assignment_index",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "tag_shrt_nm",
+                                           "dataType":  "varchar",
+                                           "length":  "8",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "cnsmr_tag_assgn_dt",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "cnsmr_tag_sft_delete_flg",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       }
+                                   ]
+                   },
+                   {
                        "name":  "BDL_PHONE_dhirt_20260421_155153",
                        "columns":  [
                                        {
