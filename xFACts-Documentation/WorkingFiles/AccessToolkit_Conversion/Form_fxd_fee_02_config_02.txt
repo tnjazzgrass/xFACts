@@ -1,0 +1,36 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_fxd_fee_02_config_02"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub addCrAct_Click()
+
+    DoCmd.OpenForm "fxd_fee_02_config_03", acNormal
+    DoCmd.Close acForm, "fxd_fee_02_config_01", acSaveNo
+
+End Sub
+
+Private Sub backFeeConfig_Click()
+
+    DoCmd.OpenForm "fxd_fee_01_main", acNormal
+    DoCmd.Close acForm, "fxd_fee_02_config_02", acSaveNo
+
+End Sub
+
+Private Sub Form_AfterUpdate()
+
+    Me.fxd_fee_02_config_02_crdtr.Requery
+
+End Sub
+
+Private Sub regAccnt_Click()
+
+    DoCmd.OpenForm "fxd_fee_02_config_register", acNormal
+
+End Sub
