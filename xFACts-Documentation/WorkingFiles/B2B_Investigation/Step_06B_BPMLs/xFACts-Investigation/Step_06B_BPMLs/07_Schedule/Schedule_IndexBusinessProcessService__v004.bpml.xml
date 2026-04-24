@@ -1,0 +1,95 @@
+<process name="Schedule_IndexBusinessProcessService">
+     <rule name="obtainLock">
+          <condition>controlLock ='true' </condition>
+      </rule>
+      <sequence>
+      <assign to='controlLock'>false</assign>
+   <operation name="SetLock">
+      <participant name="SystemLockService"/>
+      <output message="Xout">
+        <assign to="RELEASELOCK_FROMRECOVER">true</assign>
+        <assign to="LOCK_KEY">INDEXBP</assign>
+        <assign to="DURATION">86400000</assign>
+	<assign to="CLEAR_ON_START_UP">true</assign>
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+       <assign to='controlLock'>true</assign>
+       <operation name="Service">
+          <participant name="IndexBusinessProcessService"/>
+          <output message="Xout">
+	     <assign to="max_business_processes">5000</assign>
+             <assign to="." from="*"></assign>
+          </output>
+          <input message="Xin">
+             <assign to="." from="*"></assign>
+ 	     <assign to="." from="Status_Rpt('StatusRpt')"></assign>
+          </input>
+       </operation>
+
+    <operation name="unLock">
+      <participant name="SystemLockService"/>
+      <output message="Xout">
+        <assign to="ACTION">unlock</assign>
+        <assign to="LOCK_KEY">INDEXBP</assign>
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+   <onFault>
+        <sequence name="LockFaild">
+        <choice>
+         <select>
+            <case ref="obtainLock" activity="proceedWithLocking"/>
+            <case ref="obtainLock" negative="true" activity="stopWithoutLocking"/>
+         </select>
+        <sequence name="proceedWithLocking">
+          <operation>
+           <participant name="SystemLockService"/>
+           <output message="Xout">
+            <assign to="ACTION">unlock</assign>
+            <assign to="LOCK_KEY">INDEXBP</assign>
+            <assign to="." from="*"></assign>
+           </output>
+           <input message="Xin">
+             <assign to="." from="*"></assign>
+           </input>
+          </operation>
+          </sequence>
+          <sequence name="stopWithoutLocking">
+            <assign to="Document/Msg" append="true">Failed to obtain a lock.!</assign>
+          </sequence>
+          </choice>
+
+          <assign to="Document/Status" append="true">Failed!</assign>
+          <assign to="Document/Msg" append="true">Indexing failed!</assign>
+          <assign to="Document/CurrentHost" append="true">FA-INT-APPP</assign>
+          <assign to="Document/CurrentPort" append="true">4000</assign>
+          <assign to="Document/DetailMsg" append="true" from="/ProcessData/StatusRpt/text()"></assign>
+	  <assign to="sandbox_smtp_host" from="sci-get-property('sandbox.cfg','SI_ADMIN_SMTP_HOST')"></assign>	
+          <operation name="SMTP Send">
+          <participant name="SMTP_SEND_ADAPTER"/>
+          <output message="SMTP_SEND_ADAPTERInputMessage">
+            <assign to="xport-smtp-mailfrom">datahelp@frost-arnett.com</assign>
+            <assign to="xport-smtp-mailhost" from="//sandbox_smtp_host/text()"></assign>
+            <assign to="xport-smtp-mailport">25</assign>
+            <assign to="xport-smtp-mailto">datahelp@frost-arnett.com</assign>
+            <assign to="xport-smtp-mailsubject">Automated Event Notification - Indexing Failed</assign>
+            <assign to="PrimaryDocument" from="DOMToDoc(Document)/@*"></assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        </sequence>
+      </onFault>
+
+      </sequence>
+     </process>
