@@ -1,0 +1,140 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_pay_batch_03_add_cnsmr"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub addConPay_Click()
+Dim dB As Database
+Dim err As Integer, cnt As Long
+Dim curr_bal As Double, pay_amt As Double
+Dim strSQL As String, sql As String, sqlt As String
+Dim rec As Recordset, rs As ADODB.Recordset, rst As ADODB.Recordset
+
+    Set dB = CurrentDb
+
+'ERROR CHECK
+    err = 0
+    
+'ERROR  Consumer number not filled in
+        If IsNull(Me.nConsumer) = True Then
+            MsgBox "Please enter a consumer number to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+            err = err + 1
+        End If
+        
+'ERROR  Payment amount not filled in
+        If err = 0 And IsNull(Me.nAmount) = True Then
+            MsgBox "Please enter a valid payment amount to proceed.", vbOKOnly, "MISSING OR INVALID PAYMENT DATA"
+            err = err + 1
+        End If
+        
+'FORM IS FILLED OUT - TRY TO ADD PAYMENTS
+        If err = 0 Then
+        '   Look for eligible accounts under this consumer
+            strSQL = "SELECT * FROM vw_xfacts_payable_accnts WHERE CONSUMER_AGENCY_ID = " & Me.nConsumer & " ORDER BY place_date, account_id;"
+            sqlt = "SELECT SUM(account_curr_bal) AS eBal FROM vw_xfacts_payable_accnts WHERE CONSUMER_AGENCY_ID = " & Me.nConsumer & ";"
+            
+                Select Case [Forms]![pay_batch_01_main]![runEnv]
+                
+                    Case 1
+                        OpenDMrect rs, strSQL
+                        OpenDMrect rst, sqlt
+                        
+                    Case 2
+                        OpenDMrecg rs, strSQL
+                        OpenDMrecg rst, sqlt
+                        
+                    Case 3
+                        OpenDMrecs rs, strSQL
+                        OpenDMrecs rst, sqlt
+                    
+                End Select
+ 
+ 'ERROR         No eligible payments found
+                If rs.EOF Then
+                
+                    err = err + 1
+                    MsgBox "No accounts eligible for payment found for this consumer in the environment selected. Please check the consumer number and try again.", vbOKOnly, "NO ELIGIBLE ACCOUNTS"
+                    
+                End If
+ 
+ 'ERROR         Creditor Overpayment
+                If err = 0 And Me.nLocation = "CREDITOR" Then
+                
+                    If Me.nAmount > rst!eBal Then
+                        
+                        err = err + 1
+                        MsgBox "The payment amount you entered would result in an overpayment and that is prohibited on creditor payments.", vbOKOnly, "CREDITOR OVERPAYMENT"
+                    
+                    End If
+                
+                End If
+            
+            rst.Close
+            
+'NO ERRORS  Pull accounts into temp table to parse payments
+            If err = 0 Then
+            
+                dB.Execute ("DELETE FROM payment_sub;")
+                
+                    Do Until rs.EOF
+                    
+                        dB.Execute ("INSERT INTO payment_sub (cnsmr_num, cnsmr_id, cnsmr_bal, accnt_num, accnt_id, plc_dt, accnt_bal, acs_tag) VALUES('" & rs!CONSUMER_AGENCY_ID & "', '" & rs!consumer_id & "', " & rs!consumer_bal & ", '" & rs!ACCOUNT_AGENCY_ID & "', '" & rs!account_id & "', '" & rs!place_date & "', " & rs!account_curr_bal & ", '" & rs!tag_shrt_nm & "');")
+                    
+                    rs.MoveNext
+                    Loop
+                    
+                    rs.Close
+            
+                pay_amt = Me.nAmount
+            
+                Set rec = dB.OpenRecordset("SELECT * FROM payment_sub WHERE accnt_num NOT IN (SELECT PayAccountNumber FROM payment_info WHERE xProc = 'N') ORDER BY plc_dt, accnt_num;")
+            
+                    Do Until rec.EOF
+                    
+                        dB.Execute ("UPDATE payment_sub SET pay_amt = " & IIf(pay_amt >= Round(rec!accnt_bal, 2), Round(rec!accnt_bal, 2), pay_amt) & " WHERE accnt_id = '" & rec!accnt_id & "';")
+                        pay_amt = pay_amt - IIf(pay_amt >= Round(rec!accnt_bal, 2), Round(rec!accnt_bal, 2), pay_amt)
+                    
+                    rec.MoveNext
+                    Loop
+            
+                If pay_amt > 0 Then
+                    
+                    rec.MoveLast
+                    dB.Execute ("UPDATE payment_sub SET pay_amt = " & rec!pay_amt + pay_amt & " WHERE accnt_id = '" & rec!accnt_id & "';")
+                
+                End If
+            
+                pay_amt = 0
+            
+            Set rec = dB.OpenRecordset("SELECT * FROM payment_sub WHERE pay_amt > 0 ORDER BY plc_dt, accnt_num;")
+            
+                Do Until rec.EOF
+        
+                    sql = "INSERT INTO payment_info (PayConsumerNumber, PayAccountNumber, PayAmt, PayType, PayLocation, PayEnterDate, PayTenderDate, PayMemoCode, PayComment, xUser, xType)"
+                    sql = sql & " SELECT " & Me.nConsumer & ", " & rec!accnt_num & ", " & rec!pay_amt & ", '" & Me.nType & "', '" & Me.nLocation & "', '" & Format(Me.nDate, "yyyy-MM-dd") & "', '" & Format(Me.nDate, "yyyy-MM-dd") & "', '" & Me.nMemo & "', '" & [Forms]![pay_batch_01_main]![JIRA] & ": Payment batch', '" & [Forms]![pay_batch_01_main]![usr] & "', 'PAY';"
+                    dB.Execute sql
+                    
+                rec.MoveNext
+                Loop
+    
+            End If
+        
+        End If
+    
+    dB.Close
+    
+    Forms![pay_batch_01_main]![pay_batch_02_detail].Form.Requery
+    DoCmd.Close acForm, "pay_batch_03_add_cnsmr", acSaveNo
+
+End Sub
+
+Private Sub canConPay_Click()
+
+    DoCmd.Close acForm, "pay_batch_03_add_cnsmr", acSaveNo
+
+End Sub
