@@ -1,0 +1,26 @@
+<process name = "FA_FROM_CLIENTS_FTP_FILES_LIST_IB_D2S_RC_ARC"> 
+  <sequence name="SeqStart">
+    <operation name="AssignService">
+      <participant name="AssignService"/>
+      <output message="outmsg">
+        <assign to="CLIENT_ID">328</assign>
+        <assign to="SEQ_ID">13</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="Invoke Business Process Service">
+      <participant name="InlineInvokeBusinessProcessService"/>
+      <output message="InvokeBusinessProcessServiceTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="WFD_NAME">FA_CLIENTS_GET_LIST</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+  </sequence>
+</process>
