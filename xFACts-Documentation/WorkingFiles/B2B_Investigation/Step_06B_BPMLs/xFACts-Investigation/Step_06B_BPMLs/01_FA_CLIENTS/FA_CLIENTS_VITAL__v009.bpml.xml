@@ -1,0 +1,59 @@
+<process name="FA_CLIENTS_VITAL">
+  <rule name="NB?">
+    <condition>//Result/Client[1]/PROCESS_TYPE/text() = &apos;NEW_BUSINESS&apos;</condition>
+  </rule>
+
+  <sequence name="VITAL_INSERT">
+    <operation name="AssignService">
+      <participant name="AssignService"/>
+      <output message="outmsg">
+        <assign to="." from="DOMToDoc(VITAL,&apos;&apos;,&apos;&apos;,&apos;VITAL&apos;)"></assign>
+        <assign to="SavedPrimaryDocument" from="//PrimaryDocument/@SCIObjectID"></assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="Release Service">
+      <participant name="ReleaseService"/>
+      <output message="outmsg">
+        <assign to="TARGET">/ProcessData/*[name()= &apos;PrimaryDocument&apos; or name()= &apos;DocumentName&apos; or name()= &apos;BodyName&apos; or name()= &apos;DocumentInitialId&apos; or name()= &apos;VITAL&apos;]</assign>
+      </output>
+      <input message="inmsg">
+      </input>
+    </operation>
+
+    <operation name="AssignService">
+      <participant name="AssignService"/>
+      <output message="outmsg">
+        <assign to="/ProcessData/PrimaryDocument" from="//Document/@SCIObjectID"></assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="Translation">
+      <participant name="Translation"/>
+      <output message="TranslationTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="map_name">FA_CLIENTS_MP_VITAL</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="Release Service">
+      <participant name="ReleaseService"/>
+      <output message="outmsg">
+        <assign to="TARGET">Document</assign>
+      </output>
+      <input message="inmsg">
+      </input>
+    </operation>
+
+    <assign name="Assign" to="PrimaryDocument" from="//SavedPrimaryDocument/@SCIObjectID"></assign>
+  </sequence>
+</process>
