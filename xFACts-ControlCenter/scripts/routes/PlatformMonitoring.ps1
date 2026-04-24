@@ -122,7 +122,7 @@ Add-PodeRoute -Method Get -Path '/platform-monitoring' -Authentication 'ADLogin'
             <!-- BOTTOM: 3-column -->
             <div class="pm-bottom-section">
                 <div class="pm-col-frame">
-                    <div class="section-header"><h3 class="section-title">Process Breakdown <span class="pm-info-icon" onclick="PM.showInfo('process-breakdown')">?</span></h3><span class="refresh-badge-action" title="Refreshes on server or time range selection">&#128260;</span></div>
+                    <div class="section-header"><h3 class="section-title platform-title">Process Breakdown <span class="pm-info-icon" onclick="PM.showInfo('process-breakdown')">?</span></h3><span class="refresh-badge-action" title="Refreshes on server or time range selection">&#128260;</span></div>
                     <div class="pm-table-scroll" id="process-table-wrap"><div class="pm-loading">Loading...</div></div>
                 </div>
                 <div class="pm-col-frame pm-chart-col">
