@@ -1,0 +1,26 @@
+<process name="FA_TO_UNIVERSITY_HOSPITAL_OF_NEW_JERSEY_OB_BD_S2D_NT">
+  <sequence name="SeqStart">
+  <operation name="AssignService">
+	<participant name="AssignService"/>
+	<output message="outmsg">
+	<assign to="CLIENT_ID">430</assign>
+	<assign to="SEQ_ID">8</assign>
+	</output>
+	<input message="inmsg">
+	<assign to="." from="*"/>
+	</input>
+	</operation>
+
+    <operation name="Invoke Business Process Service">
+      <participant name="InlineInvokeBusinessProcessService"/>
+      <output message="InvokeBusinessProcessServiceTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="WFD_NAME">FA_CLIENTS_GET_LIST</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+  </sequence>
+</process>
