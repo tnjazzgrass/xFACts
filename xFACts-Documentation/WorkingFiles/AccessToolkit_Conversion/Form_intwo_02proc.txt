@@ -1,0 +1,164 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_intwo_02proc"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Private Sub intwoBack_Click()
+
+    DoCmd.OpenForm "intwo_01main", acNormal
+    DoCmd.Close acForm, "intwo_02proc", acSaveNo
+
+End Sub
+
+Private Sub procIntWO_Click()
+Dim dB As Database
+Dim sql1 As String, sql2 As String, sql3 As String, sql4 As String
+Dim recCnt As Integer, cpay As Currency, i As Currency, p As Currency, err As Integer
+Dim rst1 As Recordset, rst2 As Recordset, rst3 As Recordset, rst4 As Recordset, rst5 As Recordset
+
+    Set dB = CurrentDb
+    err = 0
+    
+    dB.Execute ("UPDATE wo_base_account SET NewPayPri = AccntDuePri;")
+    
+    '   Select all the CPJs to be evaluated
+        sql1 = "SELECT * FROM wo_base_consumer WHERE xType = 'RPY' ORDER BY cnsmr_id;"
+        
+        Set rst1 = dB.OpenRecordset(sql1)
+        
+            Do Until rst1.EOF
+            
+            sql2 = "SELECT * FROM wo_base_account WHERE OrigCPJ_id = '" & rst1!OrigCPJ_id & "' AND xType = 'RPY' ORDER BY cnsmr_accnt_plcmnt, cnsmr_accnt_id;"
+            Set rst2 = dB.OpenRecordset(sql2)
+            
+            sql3 = "SELECT DISTINCT OrigCPJ_id, SUM([NewPayPri]) AS rPd FROM wo_base_account WHERE OrigCPJ_id = '" & rst1!OrigCPJ_id & "' GROUP BY OrigCPJ_id;"
+            Set rst3 = dB.OpenRecordset(sql3)
+              
+            cpay = rst1!OrigPayAmt - rst3!rPd
+            
+                Do Until rst2.EOF
+    
+                    'i = IIf(Round((rst2!AccntDueInt * 100), 2) / 100 <= cpay, Round((rst2!AccntDueInt * 100), 2) / 100, cpay)
+                    i = IIf(Int(100 * rst2!AccntDueInt) / 100 <= cpay, Int(100 * rst2!AccntDueInt) / 100, cpay)
+                    dB.Execute ("UPDATE wo_base_account SET NewPayInt = " & i & " WHERE cnsmr_accnt_id = " & rst2!cnsmr_accnt_id & ";")
+                
+                cpay = cpay - i
+                rst2.MoveNext
+                Loop
+    
+                i = 0
+                cpay = 0
+                
+            rst1.MoveNext
+            Loop
+            
+            dB.Execute ("UPDATE wo_base_account SET NewPayAmt = NewPayPri + NewPayInt;")
+            
+        rst1.MoveFirst
+        
+        Do Until rst1.EOF
+        
+            sql3 = "SELECT DISTINCT OrigCPJ_id, SUM([NewPayAmt]) AS rPd FROM wo_base_account WHERE OrigCPJ_id = '" & rst1!OrigCPJ_id & "' GROUP BY OrigCPJ_id;"
+            Set rst3 = dB.OpenRecordset(sql3)
+        
+            dB.Execute ("UPDATE wo_base_consumer SET NewPayAmt = " & rst3!rPd & " WHERE OrigCPJ_id = '" & rst1!OrigCPJ_id & "' AND xType = 'RPY';")
+            
+        rst1.MoveNext
+        Loop
+    
+        rst1.Close
+        
+        Set rst4 = dB.OpenRecordset("SELECT ConsumerNumber, cnsmr_id, OrigCPJ_id, OrigPayAmt, NewPayAmt, OrigPayAmt - NewPayAmt AS PayDiff, xType FROM wo_base_consumer WHERE xType = 'RPY' AND OrigPayAmt <> NewPayAmt;")
+        
+        If rst4.EOF Then
+
+            Select Case Me.runEnv
+            
+                Case 1
+                    
+                    dB.Close
+                    DoCmd.Close acForm, "intwo_02proc", acSaveNo
+                    intWO ("test")
+                
+                Case 2
+                
+                    dB.Close
+                    DoCmd.Close acForm, "intwo_02proc", acSaveNo
+                    intWO ("stage")
+                
+                Case 3
+                
+                    dB.Close
+                    DoCmd.Close acForm, "intwo_02proc", acSaveNo
+                    intWO ("prod")
+                
+            End Select
+            
+        Else
+        
+            Do Until rst4.EOF
+                
+                p = rst4!PayDiff
+                
+                Set rst5 = dB.OpenRecordset("SELECT AccountNumber, OrigCPJ_id, NewPayInt, AccntDueInt, AccntDueInt - NewPayInt AS PayDiff FROM wo_base_account WHERE xType = 'RPY' AND OrigCPJ_id = '" & rst4!OrigCPJ_id & "' ORDER BY AccntDueInt - NewPayInt DESC, AccountNumber;")
+                    
+                    Do Until rst5.EOF
+                    
+                    If rst5!PayDiff < 0.01 And p > 0 Then
+                        dB.Execute ("UPDATE wo_base_account SET NewPayInt = NewPayInt + .01, NewPayAmt = NewPayAmt + .01 WHERE AccountNumber = '" & rst5!AccountNUmber & "';")
+                        dB.Execute ("UPDATE wo_base_consumer SET NewPayAmt = NewPayAmt + .01 WHERE OrigCPJ_id = '" & rst5!OrigCPJ_id & "' AND xType = 'RPY';")
+                        p = p - 0.01
+                    End If
+                    
+                    rst5.MoveNext
+                    Loop
+                
+                p = 0
+                
+            rst4.MoveNext
+            Loop
+            
+            Set rst4 = dB.OpenRecordset("SELECT ConsumerNumber, cnsmr_id, OrigCPJ_id, OrigPayAmt, NewPayAmt, OrigPayAmt - NewPayAmt AS PayDiff, xType FROM wo_base_consumer WHERE xType = 'RPY' AND OrigPayAmt <> NewPayAmt;")
+            
+            If rst4.EOF Then
+
+                Select Case Me.runEnv
+                
+                    Case 1
+                        
+                        dB.Close
+                        DoCmd.Close acForm, "intwo_02proc", acSaveNo
+                        intWO ("test")
+                    
+                    Case 2
+                    
+                        dB.Close
+                        DoCmd.Close acForm, "intwo_02proc", acSaveNo
+                        intWO ("stage")
+                    
+                    Case 3
+                        
+                        dB.Close
+                        DoCmd.Close acForm, "intwo_02proc", acSaveNo
+                        intWO ("prod")
+                    
+                End Select
+            
+            Else
+                
+                MsgBox "There is a discrepancy between the amount reversed and the amount being reallocated. Please investigate, correct and retry the process.", vbExclamation, "ERROR PROCESSING PAYMENT REALLOCATION"
+                
+            End If
+            
+        End If
+
+'    db.Close
+
+    DoCmd.OpenForm "intwo_01main", acNormal
+    DoCmd.Close acForm, "intwo_02proc", acSaveNo
+    
+End Sub
