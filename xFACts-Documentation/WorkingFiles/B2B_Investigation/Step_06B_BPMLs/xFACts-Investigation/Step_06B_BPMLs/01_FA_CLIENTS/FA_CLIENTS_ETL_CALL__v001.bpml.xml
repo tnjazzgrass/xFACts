@@ -1,0 +1,160 @@
+<process name="FA_CLIENTS_ETL_CALL">
+  <rule name="WAIT?">
+    <condition>//Result/Client[1]/PREV_SEQ/text() != &apos;&apos; and (//Ready/text() = -999 or //Ready/text() != 3)</condition>
+  </rule>
+
+  <sequence name="ETL_CALL">
+    <operation name="Release Service">
+      <participant name="ReleaseService"/>
+      <output message="outmsg">
+        <assign to="TARGET">INVOKE_ID_LIST</assign>
+      </output>
+      <input message="inmsg">
+      </input>
+    </operation>
+
+    <operation name="This Service">
+      <participant name="This"/>
+      <output message="thisRequest">
+      </output>
+      <input message="inmsg">
+        <assign to="thisProcessInstance" from="this/node()"></assign>
+      </input>
+    </operation>
+
+    <operation name="Lightweight JDBC Adapter">
+      <participant name="AS2LightweightJDBCAdapter"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="param1" from="number(//Result/Client[1]/CLIENT_ID/text())"></assign>
+        <assign to="param2" from="number(//Result/Client[1]/SEQ_ID/text())"></assign>
+        <assign to="param3" from="number(//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+        <assign to="param4" from="number(//parentID/INVOKE_ID_LIST/text())"></assign>
+        <assign to="paramtype1">Integer</assign>
+        <assign to="paramtype2">Integer</assign>
+        <assign to="paramtype3">Integer</assign>
+        <assign to="paramtype4">Integer</assign>
+        <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+        <assign to="query_type">INSERT</assign>
+        <assign to="result_name">Result</assign>
+        <assign to="row_name">Client</assign>
+        <assign to="sql">INSERT INTO INTEGRATION.ETL.tbl_B2B_CLIENTS_BATCH_STATUS(CLIENT_ID,SEQ_ID,RUN_ID,PARENT_ID) VALUES(?,?,?,?)</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <assign name="Assign" to="Ready">-999</assign>
+    <sequence name="StatusUpdate">
+      <choice name="Choice Start">
+        <select>
+          <case ref="WAIT?" activity="WaitProcess"/>
+        </select>
+
+        <sequence name="WaitProcess">
+          <operation name="Wait">
+            <participant name="WaitService"/>
+            <output message="WaitServiceTypeInputMessage">
+              <assign to="." from="*"></assign>
+              <assign to="WAIT_INTERVAL">1</assign>
+            </output>
+            <input message="inmsg">
+              <assign to="." from="*"></assign>
+            </input>
+          </operation>
+
+          <operation name="Lightweight JDBC Adapter">
+            <participant name="AS2LightweightJDBCAdapter"/>
+            <output message="LightweightJDBCAdapterTypeInputMessage">
+              <assign to="." from="*"></assign>
+              <assign to="param1" from="number(//Result/Client[1]/CLIENT_ID/text())"></assign>
+              <assign to="param2" from="number(//Result/Client[1]/PREV_SEQ/text())"></assign>
+              <assign to="param3" from="number(//parentID/INVOKE_ID_LIST/text())"></assign>
+              <assign to="paramtype1">Integer</assign>
+              <assign to="paramtype2">Integer</assign>
+              <assign to="paramtype3">Integer</assign>
+              <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+              <assign to="query_type">SELECT</assign>
+              <assign to="result_name">Result</assign>
+              <assign to="row_name">Ready</assign>
+              <assign to="sql">SELECT BATCH_STATUS FROM ETL.tbl_B2B_CLIENTS_BATCH_STATUS WHERE CLIENT_ID = ? AND SEQ_ID = ?  AND PARENT_ID = ?</assign>
+            </output>
+            <input message="inmsg">
+              <assign to="Ready" from="DocToDOM(PrimaryDocument)//Ready/BATCH_STATUS[1]/text()"></assign>
+            </input>
+          </operation>
+
+          <repeat name="Repeat" ref="StatusUpdate"/>
+
+        </sequence>
+      </choice>
+    </sequence>
+    <operation name="Command Line 2 Adapter">
+      <participant name="FA_PERVASIVE_ETL"/>
+      <output message="CmdLine2InputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="authentication">Yes</assign>
+        <assign to="cmdLine">&quot;C:\Program Files (x86)\Pervasive\Cosmos9\Common\djengine.exe&quot; -mf $0 $1</assign>
+        <assign to="inputDelete">false</assign>
+        <assign to="parm0" from="//Settings/Values/MARCOS_PATH/text()"></assign>
+        <assign to="parm1" from="//Result/Client[1]/ETL_PATH/text()"></assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="Lightweight JDBC Adapter">
+      <participant name="AS2LightweightJDBCAdapter"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="param1" from="number(//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+        <assign to="paramtype1">Integer</assign>
+        <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+        <assign to="query_type">UPDATE</assign>
+        <assign to="result_name">Result</assign>
+        <assign to="row_name">Client</assign>
+        <assign to="sql">UPDATE INTEGRATION.ETL.tbl_B2B_CLIENTS_BATCH_STATUS SET BATCH_STATUS = 1 WHERE RUN_ID = ?</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <onFault>
+      <sequence name="on_Fail">
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="AS2LightweightJDBCAdapter"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="param1" from="number(//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+            <assign to="paramtype1">Integer</assign>
+            <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+            <assign to="query_type">UPDATE</assign>
+            <assign to="result_name">Result</assign>
+            <assign to="row_name">Client</assign>
+            <assign to="sql">UPDATE INTEGRATION.ETL.tbl_B2B_CLIENTS_BATCH_STATUS SET BATCH_STATUS = -1 WHERE RUN_ID = ?</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Invoke Business Process Service">
+          <participant name="InvokeBusinessProcessService"/>
+          <output message="InvokeBusinessProcessServiceTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="INVOKE_MODE">ASYNC</assign>
+            <assign to="NOTIFY_PARENT_ON_ERROR">ALL</assign>
+            <assign to="WFD_NAME">EmailOnError</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </onFault>
+  </sequence>
+</process>
