@@ -265,7 +265,7 @@
     
     <!-- Open Transactions Slide Panel -->
     <div id="trans-overlay" class="slide-panel-overlay" onclick="closeTransPanel()"></div>
-    <div id="trans-panel" class="slide-panel">
+    <div id="trans-panel" class="slide-panel wide">
         <div class="slide-panel-header">
             <h3>Open Transactions</h3>
             <button class="modal-close" onclick="closeTransPanel()">&times;</button>
