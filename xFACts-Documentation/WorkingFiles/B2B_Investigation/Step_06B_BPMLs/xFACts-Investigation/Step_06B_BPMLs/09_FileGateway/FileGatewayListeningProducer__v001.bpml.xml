@@ -1,0 +1,16 @@
+<process name="FileGatewayListeningProducer">
+  <sequence> 
+   <operation name="ListProd">
+     <participant name="FileGatewayListeningProducerService"/>
+           <output message="outmsg">
+				 <assign to="protocoltype">STANDARD</assign>
+				<assign to="unlock">false</assign>
+				<assign to="updatePolled">false</assign>				
+       	       <assign to="." from="*"/>
+           </output>
+           <input message="inmsg">
+             	<assign to="." from="*"></assign>
+           </input>
+  </operation>
+  </sequence>
+</process>
