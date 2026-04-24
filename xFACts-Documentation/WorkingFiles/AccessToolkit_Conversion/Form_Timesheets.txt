@@ -1,0 +1,62 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_Timesheets"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+
+
+Private Sub closeTime_Click()
+    DoCmd.Close acForm, "Timesheets", acSaveNo
+    DoCmd.OpenForm "Apps Toolkit", acNormal
+End Sub
+
+Private Sub Glance_Click()
+    DoCmd.RefreshRecord
+End Sub
+
+Private Sub newWeek_Click()
+    DoCmd.OpenQuery "tx_q_new_week", acViewNormal
+    DoCmd.Close acForm, "Timesheets", acSaveNo
+    DoCmd.OpenForm "Timesheets", acNormal
+End Sub
+
+Private Sub PersonName_AfterUpdate()
+    ' Find the record that matches the control.
+    Dim rs As Object
+
+    Set rs = Me.Recordset.Clone
+    rs.FindFirst "[person_id] = " & Str(Nz(Me![PersonName], 0))
+    If Not rs.EOF Then Me.Bookmark = rs.Bookmark
+    Me.Refresh
+
+End Sub
+
+Private Sub runDaySum_Click()
+DoCmd.OpenQuery "tx_q_sum_day", acViewNormal, acReadOnly
+End Sub
+
+Private Sub runProjSum_Click()
+DoCmd.OpenQuery "tx_q_sum_proj", acViewNormal, acReadOnly
+End Sub
+
+Private Sub runWeekSum_Click()
+DoCmd.OpenQuery "tx_q_sum_week", acViewNormal, acReadOnly
+End Sub
+
+Private Sub WeekEnd_AfterUpdate()
+
+    ' Find the record that matches the control.
+    Dim rs As Object
+
+    Set rs = Me.Recordset.Clone
+    rs.FindFirst "[week_id] = " & Str(Nz(Me![WeekEnd], 0))
+    If Not rs.EOF Then Me.Bookmark = rs.Bookmark
+    Me.Refresh
+
+End Sub
