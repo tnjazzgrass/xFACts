@@ -1,0 +1,60 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_Call REST Hold Consumer"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub exit_Click()
+
+    DoCmd.OpenForm "Call REST API", acNormal
+    DoCmd.Close acForm, "Call REST Hold Consumer", acSaveNo
+    
+End Sub
+
+Private Sub hld_cnsmr_Click()
+Dim dB As Database
+Dim dt As Recordset
+Dim httpReq As New XMLHTTP60
+Dim sURL As String, edt As String
+Dim response As String, jBody As String, sql As String
+
+    Set dB = CurrentDb
+
+    Set dt = dB.OpenRecordset("SELECT * FROM unix_dates WHERE Today = #" & Me.hld_dt & "#;")
+    
+    edt = dt!unix_date
+
+        Select Case Me.runEnv
+        
+            Case 1
+                sURL = "http://DM-TEST-APP/dm-rest-services/api/"
+            
+            Case 2
+                sURL = "http://DM-STAGE-APP/dm-rest-services/api/"
+            
+            Case 3
+                sURL = "http://DM-PROD-APP/dm-rest-services/api/"
+                
+        End Select
+    
+        jBody = "{" & Chr(10)
+        jBody = jBody & "    ""tagShortName"": """ & Me.hld_tg & """," & Chr(10)
+        jBody = jBody & "    ""holdEndDate"": " & edt & Chr(10)
+        jBody = jBody & "}"
+        
+        Debug.Print jBody
+        
+        httpReq.Open "POST", sURL & "consumers/" & Me.cnsmr_id & "/hold", False, Me.APIuser, Me.APIpass
+        httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+        httpReq.setRequestHeader "Authorization", Me.authCode
+        httpReq.sEnd (jBody)
+            
+        response = httpReq.responseText
+        
+    MsgBox response, vbInformation, "CONSUMER HOLD ATTEMPTED"
+
+End Sub
