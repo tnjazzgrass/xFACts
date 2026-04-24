@@ -1,0 +1,644 @@
+<process name = "FA_CLIENTS_PREP_SOURCE">  
+  <rule name="FileRename?">
+    <condition>string(//Result/Client[1]/FILE_RENAME/text()) != &apos;&apos; and string(//Result/Client[1]/FILE_RENAME/text()) != &apos;N&apos;</condition>
+  </rule>
+
+  <rule name="Convert2CSV?">
+    <condition>string(//Result/Client[1]/CONVERT_TO_CSV/text()) != &apos;&apos; and string(//Result/Client[1]/CONVERT_TO_CSV/text()) != &apos;N&apos; and string(//Result/Client[1]/TRANSLATION_MAP/text()) = &apos;&apos;</condition>
+  </rule>
+
+  <rule name="SQLCall?">
+    <condition>//Result/Client[1]/SQL_QUERY/text() != &apos;&apos; and number(//currentdoc/text()) = 1</condition>
+  </rule>
+
+  <rule name="XSLXToCSV?">
+    <condition>string(//Result/Client[1]/CONVERT_TO_CSV/text()) != &apos;&apos; and string(//Result/Client[1]/CONVERT_TO_CSV/text()) != &apos;N&apos; and string(//Result/Client[1]/TRANSLATION_MAP/text()) != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="UnPGP?">
+    <condition>string(//Result/Client[1]/PGP_PASSPHRASE/text()) != &apos;&apos; and string(//Result/Client[1]/PGP_PASSPHRASE/text()) != &apos;N&apos;</condition>
+  </rule>
+
+  <rule name="UnZip?">
+    <condition>string(//Result/Client[1]/UNZIP_FILTER/text()) != &apos;&apos; and string(//Result/Client[1]/UNZIP_FILTER/text()) != &apos;N&apos;</condition>
+  </rule>
+
+  <rule name="PDFFile?">
+    <condition>string(//Result/Client[1]/PDF_FILE/text()) = &apos;Y&apos;</condition>
+  </rule>
+
+  <rule name="EncodeConvert?">
+    <condition>string(//Result/Client[1]/PREP_ENCODE_FROM/text()) != &apos;&apos; and string(//Result/Client[1]/PREP_ENCODE_TO/text()) != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="CustomCLA?">
+    <condition>string(//Result/Client[1]/CLA_EXE_PATH/text()) != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="PreKeyWordReplace?">
+    <condition>string(//Result/Client[1]/PRE_KEYWORD_REPLACE_FROM/text()) != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="PreSQLQuery?">
+    <condition>//Result/Client[1]/PRE_SQL_QUERY/text() != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="FileRenameXPath?">
+    <condition>string(//Result/Client[1]/FILE_RENAME/text()) != &apos;Y&apos;</condition>
+  </rule>
+
+  <rule name="CustomCLAFSA?">
+    <condition>string(//Result/Client[1]/COMM_METHOD/text()) != &apos;OUTBOUND&apos;</condition>
+  </rule>
+
+  <rule name="FirstFile?">
+    <condition>number(//currentdoc/text()) = 1</condition>
+  </rule>
+
+  <rule name="PrepUsed?">
+    <condition>string(//Result/Client[1]/PREP_TRANSLATION_MAP/text()) != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="InboundPrepUsed?">
+    <condition>string(//Result/Client[1]/PREP_TRANSLATION_MAP/text()) != &apos;&apos; and string(//Result/Client[1]/COMM_METHOD/text()) != &apos;OUTBOUND&apos;</condition>
+  </rule>
+
+  <sequence name="Prep_Source">
+    <choice name="Choice Start">
+      <select>
+        <case ref="UnPGP?" activity="UnPGP"/>
+      </select>
+
+      <sequence name="UnPGP">
+        <operation name="Command Line 2 Adapter">
+          <participant name="FA_CLA_UNPGP"/>
+          <output message="CmdLine2InputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="inputDelete">false</assign>
+            <assign to="parm0" from="translate(concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2),&apos;\&apos;,concat(//assignedFilename/text(),if(boolean(string(//Result/Client[1]/UNZIP_FILTER/text()) != &apos;&apos; and string(//Result/Client[1]/UNZIP_FILTER/text()) != &apos;N&apos;),&apos;.PGPOUT.zip&apos;,&apos;.PGPOUT&apos;))),&apos;\&apos;,&apos;/&apos;)"></assign>
+            <assign to="parm1" from="string(//Result/Client[1]/PGP_PASSPHRASE/text())"></assign>
+            <assign to="parm2" from="translate(concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2),&apos;\&apos;,//assignedFilename/text()),&apos;\&apos;,&apos;/&apos;)"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="File System Adapter">
+          <participant name="AS3FSAdapter"/>
+          <output message="FileSystemInputMessage">
+            <assign to="Action">FS_COLLECT</assign>
+            <assign to="assignFilename">false</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="collectionFolder" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2))   "></assign>
+            <assign to="collectMultiple">false</assign>
+            <assign to="collectZeroByteFiles">true</assign>
+            <assign to="deleteAfterCollect">false</assign>
+            <assign to="docStorageType">db</assign>
+            <assign to="fileModTimeThreshold">2</assign>
+            <assign to="filter" from="concat(//assignedFilename/text(),if(boolean(string(//Result/Client[1]/UNZIP_FILTER/text()) != &apos;&apos; and string(//Result/Client[1]/UNZIP_FILTER/text()) != &apos;N&apos;),&apos;.PGPOUT.zip&apos;,&apos;.PGPOUT&apos;))"></assign>
+            <assign to="noFilesSetSuccess">true</assign>
+            <assign to="useSubFolders">false</assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Release Service">
+          <participant name="ReleaseService"/>
+          <output message="outmsg">
+            <assign to="TARGET">/ProcessData/*[name() = &apos;Document&apos;]</assign>
+          </output>
+          <input message="inmsg">
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="Convert2CSV?" activity="Convert2CSV"/>
+      </select>
+
+      <sequence name="Convert2CSV">
+        <operation name="JavaTaskFS">
+          <participant name="JavaTaskFS"/>
+          <output message="Xout">
+            <assign to="javaFile">E:\Utilities\FA_CONVERT_FILE_TO_CSV.java</assign>
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="Xin">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="UnZip?" activity="UnZip"/>
+      </select>
+
+      <sequence name="UnZip">
+        <operation name="AssignService">
+          <participant name="AssignService"/>
+          <output message="outmsg">
+            <assign to="message_to_child/Result/Client/PRE_ARCHIVE" from="//Result/Client[1]/PRE_ARCHIVE/text()"></assign>
+            <assign to="message_to_child/PreArchiveFlag">1</assign>
+            <assign to="message_to_child/time" from="//time/text()"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Compression Service">
+          <participant name="CompressionService"/>
+          <output message="compressionInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="bpml_name">FA_CLIENTS_ARCHIVE</assign>
+            <assign to="compression_action">Decompress</assign>
+            <assign to="decompress_result">start_bpml</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Sleep Service">
+          <participant name="SleepService"/>
+          <output message="SleepServiceInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="SLEEP_INTERVAL">5</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Command Line 2 Adapter">
+          <participant name="CommandLineAdapter2"/>
+          <output message="CmdLine2InputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools\FA_FILE_REMOVE_SPECIAL_CHARACTERS.exe &quot;$0&quot; &quot;$1&quot; &quot;$2&quot; &quot;$3&quot; &quot;$4&quot; &quot;$5&quot; &quot;$6&quot; &quot;$7&quot;</assign>
+            <assign to="parm0" from="string(//Settings/Values/DATABASE_SERVER/text())"></assign>
+            <assign to="parm1" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2),&apos;\&apos;)"></assign>
+            <assign to="parm2" from="string(//Result/Client[1]/UNZIP_FILTER/text())"></assign>
+            <assign to="parm3" from="string(//Result/Client[1]/CLIENT_ID/text())"></assign>
+            <assign to="parm4" from="string(//Result/Client[1]/SEQ_ID/text())"></assign>
+            <assign to="parm5" from="string(//Result/Client[1]/CLIENT_NAME/text())"></assign>
+            <assign to="parm6" from="string(//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+            <assign to="parm7" from="string(//Result/Client[1]/FILE_CLEAN_UP/text())"></assign>
+            <assign to="setSoTimeout">1200000</assign>
+            <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="File System Adapter">
+          <participant name="AS3FSAdapter"/>
+          <output message="FileSystemInputMessage">
+            <assign to="Action">FS_COLLECT</assign>
+            <assign to="assignFilename">false</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="collectionFolder" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2))   "></assign>
+            <assign to="collectMultiple">false</assign>
+            <assign to="collectZeroByteFiles">false</assign>
+            <assign to="deleteAfterCollect">true</assign>
+            <assign to="docStorageType">db</assign>
+            <assign to="fileModTimeThreshold">3</assign>
+            <assign to="filter" from="//Result/Client[1]/UNZIP_FILTER/text()"></assign>
+            <assign to="noFilesSetSuccess">true</assign>
+            <assign to="sortBy">FS_DATE</assign>
+            <assign to="useSubFolders">false</assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Release Service">
+          <participant name="ReleaseService"/>
+          <output message="outmsg">
+            <assign to="TARGET">/ProcessData/*[name()= &apos;message_to_child&apos; or name() = &apos;CLA2&apos; or name() = &apos;FileName&apos;]</assign>
+          </output>
+          <input message="inmsg">
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="XSLXToCSV?" activity="XSLXToCSV"/>
+      </select>
+
+      <sequence name="XSLXToCSV">
+        <operation name="Sleep Service">
+          <participant name="SleepService"/>
+          <output message="SleepServiceInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="SLEEP_INTERVAL">10</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Command Line 2 Adapter">
+          <participant name="FA_CLA_DEFAULT"/>
+          <output message="CmdLine2InputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools\FA_CLIENTS_CONVERT_XLSX2CSV.exe &quot;$0&quot; &quot;$1&quot;</assign>
+            <assign to="inputDelete">false</assign>
+            <assign to="outputDelete">false</assign>
+            <assign to="parm0" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2),&apos;\&apos;,//assignedFilename/text())    "></assign>
+            <assign to="parm1" from="string(//Result/Client[1]/CONVERT_TO_CSV/text())"></assign>
+            <assign to="setSoTimeout">1200000</assign>
+            <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="File System Adapter">
+          <participant name="AS3FSAdapter"/>
+          <output message="FileSystemInputMessage">
+            <assign to="Action">FS_COLLECT</assign>
+            <assign to="assignFilename">false</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="collectionFolder" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2))"></assign>
+            <assign to="collectMultiple">false</assign>
+            <assign to="collectZeroByteFiles">false</assign>
+            <assign to="deleteAfterCollect">false</assign>
+            <assign to="docStorageType">db</assign>
+            <assign to="fileModTimeThreshold">5</assign>
+            <assign to="filter" from="//assignedFilename/text()"></assign>
+            <assign to="noFilesSetSuccess">true</assign>
+            <assign to="thresholdWait">true</assign>
+            <assign to="useSubFolders">false</assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="PDFFile?" activity="PDFFile"/>
+      </select>
+
+      <sequence name="PDFFile">
+        <operation name="Get Document Information Service">
+          <participant name="GetDocumentInfoService"/>
+          <output message="GetDocumentInfoServiceTypeInputMessage">
+            <assign to="DOCUMENT_ID" from="//PrimaryDocument/@SCIObjectID"></assign>
+            <assign to="DocumentCharEncoding">UTF-8</assign>
+            <assign to="DocumentContentSubType">PDF</assign>
+            <assign to="DocumentContentType">Application</assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="This Service">
+          <participant name="This"/>
+          <output message="assignRequest">
+            <assign to="from" from="&apos;PrimaryDocument/@SCIObjectID&apos;"></assign>
+            <assign to="to" from="concat(&apos;SFTPPrimDoc&apos;,currentdoc/text())"></assign>
+          </output>
+          <input message="assignResponse">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="EncodeConvert?" activity="EncodeConvert"/>
+      </select>
+
+      <sequence name="EncodeConvert">
+        <operation name="Encoding Conversion">
+          <participant name="EncodingConversion"/>
+          <output message="EncodingConversionTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="input_encoding" from="//Result/Client[1]/PREP_ENCODE_FROM/text()"></assign>
+            <assign to="output_encoding" from="//Result/Client[1]/PREP_ENCODE_TO/text()"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="FileRename?" activity="RenameDoc"/>
+      </select>
+
+      <sequence name="RenameDoc">
+        <operation name="Release Service">
+          <participant name="ReleaseService"/>
+          <output message="outmsg">
+            <assign to="TARGET">/ProcessData/*[name()= &apos;DocumentName&apos; or name()= &apos;BodyName&apos; or name()= &apos;DocumentInitialId&apos;]</assign>
+          </output>
+          <input message="inmsg">
+          </input>
+        </operation>
+
+        <choice name="Choice Start">
+          <select>
+            <case ref="FileRenameXPath?" negative="true" activity="SimpleRename"/>
+            <case ref="FileRenameXPath?" activity="CustomRename"/>
+          </select>
+
+          <sequence name="SimpleRename">
+            <operation name="JavaTaskFS">
+              <participant name="JavaTaskFS"/>
+              <output message="Xout">
+                <assign to="javaFile">E:\Utilities\FA_FILE_RENAME.java</assign>
+                <assign to="Action">FS_EXTRACT</assign>
+                <assign to="." from="*"></assign>
+              </output>
+              <input message="Xin">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+          <sequence name="CustomRename">
+            <operation name="This Service">
+              <participant name="This"/>
+              <output message="assignRequest">
+                <assign to="from" from="//Result/Client/FILE_RENAME/text()"></assign>
+                <assign to="to" from="&apos;//tmpFileRename&apos;"></assign>
+              </output>
+              <input message="assignResponse">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+        </choice>
+        <operation name="Get Document Information Service">
+          <participant name="GetDocumentInfoService"/>
+          <output message="GetDocumentInfoServiceTypeInputMessage">
+            <assign to="BodyName" from="//tmpFileRename/text()"></assign>
+            <assign to="DOCUMENT_ID" from="//PrimaryDocument/@SCIObjectID"></assign>
+            <assign to="updateMetaDataOnly">true</assign>
+            <assign to="DocumentName" from="//tmpFileRename/text()"></assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="This Service">
+          <participant name="This"/>
+          <output message="assignRequest">
+            <assign to="from" from="&apos;PrimaryDocument/@SCIObjectID&apos;"></assign>
+            <assign to="to" from="concat(&apos;SFTPPrimDoc&apos;,currentdoc/text())"></assign>
+          </output>
+          <input message="assignResponse">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="CustomCLA?" activity="CustomCLA"/>
+      </select>
+
+      <sequence name="CustomCLA">
+        <operation name="Command Line 2 Adapter">
+          <participant name="FA_CLA_DEFAULT"/>
+          <output message="CmdLine2InputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="cmdLine" from="concat(string(//Result/Client[1]/CLA_EXE_PATH/text()),&apos; &quot;$0&quot;&apos;, &apos; &quot;$1&quot;&apos;, &apos; &quot;$2&quot;&apos;, &apos; &quot;$3&quot;&apos;, &apos; &quot;$4&quot;&apos;)"></assign>
+            <assign to="inputDelete">false</assign>
+            <assign to="outputDelete">false</assign>
+            <assign to="parm0" from="//Settings/Values/DATABASE_SERVER/text()"></assign>
+            <assign to="parm1" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2),&apos;\&apos;,//assignedFilename/text())    "></assign>
+            <assign to="parm2" from="if(boolean(string(//Result/Client[1]/MISC_REC1/text()) = &apos;&apos;),&apos;HOLDER&apos;,//Result/Client[1]/MISC_REC1/text())"></assign>
+            <assign to="parm3" from="//thisProcessInstance/INVOKE_ID_LIST/text()"></assign>
+            <assign to="parm4" from="//Settings/Values/PYTHON_KEY/text()"></assign>
+            <assign to="setSoTimeout">36000000</assign>
+            <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\!Python_Working</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <choice name="Choice Start">
+          <select>
+            <case ref="CustomCLAFSA?" activity="CustomCLAFSA"/>
+          </select>
+
+          <sequence name="CustomCLAFSA">
+            <operation name="File System Adapter">
+              <participant name="AS3FSAdapter"/>
+              <output message="FileSystemInputMessage">
+                <assign to="Action">FS_COLLECT</assign>
+                <assign to="assignFilename">false</assign>
+                <assign to="bootstrap">false</assign>
+                <assign to="collectionFolder" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2))"></assign>
+                <assign to="collectMultiple">false</assign>
+                <assign to="collectZeroByteFiles">false</assign>
+                <assign to="deleteAfterCollect">false</assign>
+                <assign to="docStorageType">db</assign>
+                <assign to="fileModTimeThreshold">5</assign>
+                <assign to="filter" from="//assignedFilename/text()"></assign>
+                <assign to="noFilesSetSuccess">true</assign>
+                <assign to="thresholdWait">true</assign>
+                <assign to="useSubFolders">false</assign>
+                <assign to="." from="*"></assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+        </choice>
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="PrepUsed?" activity="PrepUsed"/>
+      </select>
+
+      <sequence name="PrepUsed">
+        <choice name="Choice Start">
+          <select>
+            <case ref="InboundPrepUsed?" activity="InboundPrepUsed"/>
+          </select>
+
+          <sequence name="InboundPrepUsed">
+            <operation name="Command Line 2 Adapter - Prep Source">
+              <participant name="CommandLineAdapter2"/>
+              <output message="CmdLine2InputMessage">
+                <assign to="." from="*"></assign>
+                <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools\FA_FILE_REMOVE_SPECIAL_CHARACTERS.exe &quot;$0&quot; &quot;$1&quot; &quot;$2&quot; &quot;$3&quot; &quot;$4&quot; &quot;$5&quot; &quot;$6&quot; &quot;$7&quot;</assign>
+                <assign to="parm0" from="string(//Settings/Values/DATABASE_SERVER/text())"></assign>
+                <assign to="parm1" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2),&apos;\&apos;)"></assign>
+                <assign to="parm2" from="string(//assignedFilename/text())"></assign>
+                <assign to="parm3" from="string(//Result/Client[1]/CLIENT_ID/text())"></assign>
+                <assign to="parm4" from="string(//Result/Client[1]/SEQ_ID/text())"></assign>
+                <assign to="parm5" from="string(//Result/Client[1]/CLIENT_NAME/text())"></assign>
+                <assign to="parm6" from="string(//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+                <assign to="parm7" from="string(//Result/Client[1]/FILE_CLEAN_UP/text())"></assign>
+                <assign to="setSoTimeout">1200000</assign>
+                <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools</assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+            <operation name="File System Adapter">
+              <participant name="AS3FSAdapter"/>
+              <output message="FileSystemInputMessage">
+                <assign to="Action">FS_COLLECT</assign>
+                <assign to="assignFilename">false</assign>
+                <assign to="bootstrap">false</assign>
+                <assign to="collectionFolder" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2))"></assign>
+                <assign to="collectMultiple">false</assign>
+                <assign to="collectZeroByteFiles">false</assign>
+                <assign to="deleteAfterCollect">false</assign>
+                <assign to="docStorageType">db</assign>
+                <assign to="fileModTimeThreshold">5</assign>
+                <assign to="filter" from="//assignedFilename/text()"></assign>
+                <assign to="noFilesSetSuccess">true</assign>
+                <assign to="thresholdWait">true</assign>
+                <assign to="useSubFolders">false</assign>
+                <assign to="." from="*"></assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+        </choice>
+        <operation name="Translation">
+          <participant name="Translation"/>
+          <output message="TranslationTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="map_name" from="//Result/Client[1]/PREP_TRANSLATION_MAP/text()"></assign>
+            <assign to="output_to_process_data">NO</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="SQLCall?" activity="SQLCall"/>
+      </select>
+
+      <sequence name="SQLCall">
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="AS2LightweightJDBCAdapter"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="pool" from="if(boolean(//Result/Client[1]/SQL_QUERY_DATA_SOURCE/text()!= &apos;&apos;),//Result/Client[1]/SQL_QUERY_DATA_SOURCE/text(),&apos;AVG_PROD_LSNR_INTEGRATION&apos;)"></assign>
+            <assign to="query_type">ACTION</assign>
+            <assign to="result_name">Result</assign>
+            <assign to="row_name">Client</assign>
+            <assign to="sql" from="//Result/Client[1]/SQL_QUERY/text()"></assign>
+          </output>
+          <input message="inmsg">
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="PreSQLQuery?" activity="PreSQLCall"/>
+      </select>
+
+      <sequence name="PreSQLCall">
+        <choice name="Choice Start">
+          <select>
+            <case ref="FirstFile?" activity="FirstFile"/>
+          </select>
+
+          <sequence name="FirstFile">
+            <operation name="This Service">
+              <participant name="This"/>
+              <output message="assignRequest">
+                <assign to="from" from="//Result/Client/PRE_SQL_QUERY/text()"></assign>
+                <assign to="to" from="&apos;//Result/Client/PRE_SQL_QUERY&apos;"></assign>
+              </output>
+              <input message="assignResponse">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+        </choice>
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="AS2LightweightJDBCAdapter"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="pool" from="if(boolean(//Result/Client[1]/SQL_QUERY_DATA_SOURCE/text()!= &apos;&apos;),//Result/Client[1]/SQL_QUERY_DATA_SOURCE/text(),&apos;AVG_PROD_LSNR_INTEGRATION&apos;)"></assign>
+            <assign to="query_type">ACTION</assign>
+            <assign to="result_name">Result</assign>
+            <assign to="row_name">Client</assign>
+            <assign to="sql" from="//Result/Client/PRE_SQL_QUERY/text()"></assign>
+          </output>
+          <input message="inmsg">
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="PreKeyWordReplace?" activity="PreKeyWordReplace"/>
+      </select>
+
+      <sequence name="PreKeyWordReplace">
+        <operation name="DocKeyword Replace">
+          <participant name="DocKeywordReplace"/>
+          <output message="outmsg">
+            <assign to="." from="*"></assign>
+            <assign to="literal_mode">true</assign>
+            <assign to="keywordtype1">string</assign>
+            <assign to="keyword1" from="string(//Result/Client[1]/PRE_KEYWORD_REPLACE_FROM/text())"></assign>
+            <assign to="replace1" from="string(//Result/Client[1]/PRE_KEYWORD_REPLACE_TO/text())"></assign>
+            <assign to="replacetype1">string</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+  </sequence>
+</process>
+
