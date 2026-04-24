@@ -1,0 +1,53 @@
+<process name="Schedule_DocumentStatsArchive">
+      <sequence>
+   <operation name="SetLock">
+      <participant name="SystemLockService"/>
+      <output message="Xout">
+        <assign to="LOCK_KEY">ARCHIVE_DOCSTATS</assign>
+        <assign to="DURATION">86400000</assign>
+	<assign to="CLEAR_ON_START_UP">true</assign>
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+       <operation name="Service">
+          <participant name="DocumentStatsArchive"/>
+          <output message="Xout">
+             <assign to="." from="*"></assign>
+          </output>
+          <input message="Xin">
+             <assign to="." from="*"></assign>
+          </input>
+       </operation>
+
+    <operation name="unLock">
+      <participant name="SystemLockService"/>
+      <output message="Xout">
+        <assign to="ACTION">unlock</assign>
+        <assign to="LOCK_KEY">ARCHIVE_DOCSTATS</assign>
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+   <onFault>
+     <operation>
+      <participant name="SystemLockService"/>
+      <output message="Xout">
+        <assign to="ACTION">unlock</assign>
+        <assign to="LOCK_KEY">ARCHIVE_DOCSTATS</assign>
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+     </operation>
+   </onFault>
+      </sequence>
+     </process>
+    
