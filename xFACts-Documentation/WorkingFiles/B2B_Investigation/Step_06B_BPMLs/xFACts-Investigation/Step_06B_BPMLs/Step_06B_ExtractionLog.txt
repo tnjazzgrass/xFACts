@@ -1,0 +1,48 @@
+Step 6B BPML Extraction - started 04/24/2026 13:21:07
+Server: FA-INT-DBP   Database: b2bi
+OutputDir: E:\xFACts-Investigation\Step_06B_BPMLs
+IncludeDormantFAClients: True
+
+Retrieved 429 rows from b2bi
+
+
+========================================================================
+EXTRACTION COMPLETE
+========================================================================
+
+Total BPMLs queried      : 429
+Successfully extracted   : 429
+Missing blob (no row)    : 0
+Decompression errors     : 0
+
+Total compressed bytes   : 192,602
+Total XML bytes written  : 656,139
+Compression ratio        : 3.41x
+
+Preamble length distribution:
+    7 bytes : 404 files
+    8 bytes : 2 files
+    9 bytes : 13 files
+   12 bytes : 1 files
+   13 bytes : 7 files
+   20 bytes : 1 files
+   32 bytes : 1 files
+
+Output directory : E:\xFACts-Investigation\Step_06B_BPMLs
+Manifest         : E:\xFACts-Investigation\Step_06B_BPMLs\Step_06B_ExtractionManifest.csv
+Log              : E:\xFACts-Investigation\Step_06B_BPMLs\Step_06B_ExtractionLog.txt
+
+Elapsed          : 45.6 seconds
+
+Per-family extraction counts:
+  01_FA_CLIENTS             28 (28 ok)
+  02_FA_FROM               104 (104 ok)
+  03_FA_TO                 228 (228 ok)
+  04_FA_DM                   5 (5 ok)
+  05_FA_OTHER               31 (31 ok)
+  06_FA_Specialized          3 (3 ok)
+  07_Schedule               17 (17 ok)
+  08_Sterling_Infra          7 (7 ok)
+  09_FileGateway             2 (2 ok)
+  11_AFT_FILE_REMOVE         2 (2 ok)
+  12_OTHER                   2 (2 ok)
