@@ -1,0 +1,223 @@
+<process name="Recover.bpml">
+<rule name="startRecover">
+<condition>RECOVER="TRUE"</condition>
+</rule>
+<rule name="obtainLock">
+<condition>controlLock ='true' </condition>
+</rule>
+
+<sequence name="main">
+<assign to="controlLock">false</assign>
+<operation name="2">
+  <participant name="CleanLockService"/>
+  <output message="Xout">
+     <assign to="RELEASE_LOCK_FROM_RECOVER">true</assign>
+     <assign to="." from="*"></assign>
+  </output>
+  <input message="Xin">
+     <assign to="." from="*"></assign>
+  </input>
+</operation>
+
+    <sequence>
+      <operation name="SetLock">
+        <participant name="SystemLockService" />
+        <output message="Xout">
+          <assign to="RELEASELOCK_FROMRECOVER">true</assign>
+          <assign to="LOCK_KEY">RECOVERBP</assign>
+          <assign to="DURATION">86400000</assign>
+          <assign to="CLEAR_ON_START_UP">true</assign>
+          <assign to="." from="*"></assign>
+        </output>
+        <input message="Xin">
+          <assign to="." from="*"></assign>
+        </input>
+      </operation>
+      <onFault>
+        <sequence name="SeqRetry">
+          <operation name="Wait">
+            <participant name="WaitService" />
+            <output message="Xout">
+              <assign to="WAIT_INTERVAL">30</assign>
+              <assign to="." from="*"></assign>
+            </output>
+            <input message="Xin">
+              <assign to="." from="*"></assign>
+            </input>
+          </operation>
+          <operation name="LockRetry">
+            <participant name="SystemLockService" />
+            <output message="Xout">
+              <assign to="RELEASELOCK_FROMRECOVER">true</assign>
+              <assign to="LOCK_KEY">RECOVERBP</assign>
+              <assign to="DURATION">86400000</assign>
+              <assign to="CLEAR_ON_START_UP">true</assign>
+              <assign to="." from="*"></assign>
+            </output>
+            <input message="Xin">
+              <assign to="." from="*"></assign>
+            </input>
+          </operation>
+        </sequence>
+      </onFault>
+    </sequence>
+
+<assign to="controlLock">true</assign>
+<operation name="2">
+  <participant name="BPReportService"/>
+  <output message="Xout">
+    <assign to="STATE">active halting waiting_on_io SYSTEM_SHUTDOWN ASYNC_QUEUED</assign>
+    <assign to="." from="*"></assign>
+  </output>
+  <input message="Xin">
+    <assign to="." from="*"></assign>
+  </input>
+</operation>
+<sequence name="findList">
+<choice>
+<select>
+  <case ref="startRecover" activity="recover" />
+  <case ref="startRecover" negative="true" activity="msgRecoverOnly"/>
+</select>
+<sequence name="recover">
+  
+  <operation name="1">
+    <participant name="TestSleepService"/>
+    <output message="Xout">
+      <assign to="SLEEP_INTERVAL">10</assign>
+      <assign to="." from="*"></assign>
+    </output>
+    <input message="Xin">
+      <assign to="." from="*"></assign>
+    </input>
+  </operation>
+
+  <operation name="2">
+     <participant name="BPReportService"/>
+     <output message="Xout">
+      	<assign to="STATE">active halting waiting_on_io ASYNC_QUEUED</assign>
+        <assign to="." from="*"></assign>
+     </output>
+     <input message="Xin">
+        <assign to="." from="*"></assign>
+     </input>
+  </operation>
+
+   <operation name="5">
+      <participant name="BPStateFilterService"/>
+      <output message="Xout">
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+   <operation name="6">
+      <participant name="BPMarkService"/>
+      <output message="Xout">
+        <assign to="." from="*"/>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
+
+   <operation name="7">
+      <participant name="BPStartService"/>
+      <output message="Xout">
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="8">
+      <participant name="MessageRecoveryService"/>
+      <output message="Xout">
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+</sequence>
+
+<sequence name="msgRecoverOnly">
+    <operation name="1">
+      <participant name="MessageRecoveryService"/>
+      <output message="Xout">
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="Xin">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+</sequence>
+</choice>
+<operation name="unLock">
+  <participant name="SystemLockService"/>
+  <output message="Xout">
+    <assign to="ACTION">unlock</assign>
+    <assign to="LOCK_KEY">RECOVERBP</assign>
+    <assign to="." from="*"></assign>
+  </output>
+  <input message="Xin">
+    <assign to="." from="*"></assign>
+  </input>
+</operation>
+</sequence>
+<onFault>
+      <sequence name="LockFaild">
+        <choice>
+          <select>
+            <case ref="obtainLock" activity="proceedWithLocking"/>
+            <case ref="obtainLock" negative="true" activity="stopWithoutLocking"/>
+          </select>
+
+          <sequence name="proceedWithLocking">
+            <operation>
+              <participant name="SystemLockService"/>
+              <output message="Xout">
+                <assign to="ACTION">unlock</assign>
+                <assign to="LOCK_KEY">RECOVERBP</assign>
+                <assign to="." from="*"></assign>
+              </output>
+              <input message="Xin">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+          <sequence name="stopWithoutLocking">
+            <assign to="Document/Msg" append="true">Failed to obtain a lock.!</assign>
+          </sequence>
+        </choice>
+        <assign to="Document/Status" append="true">Failed!</assign>
+        <assign to="Document/Msg" append="true">Recovery failed!</assign>
+        <assign to="Document/CurrentHost" append="true">FA-INT-APPP</assign>
+        <assign to="Document/CurrentPort" append="true">4000</assign>
+        <assign to="Document/DetailMsg" from="/ProcessData/StatusRpt/text()" append="true"></assign>
+        <operation name="SMTP Send">
+          <participant name="SMTP_SEND_ADAPTER"/>
+          <output message="SMTP_SEND_ADAPTERInputMessage">
+            <assign to="xport-smtp-mailfrom">datahelp@frost-arnett.com</assign>
+            <assign to="xport-smtp-mailhost">frostarnett-com01c.mail.protection.outlook.com</assign>
+            <assign to="xport-smtp-mailport">25</assign>
+            <assign to="xport-smtp-mailto">datahelp@frost-arnett.com</assign>
+            <assign to="xport-smtp-mailsubject">Automated Event Notification - Recovery Failed</assign>
+            <assign to="PrimaryDocument" from="DOMToDoc(Document)/@*"></assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+      </sequence>
+    </onFault>
+</sequence>
+</process>
+
+
