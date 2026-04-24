@@ -1,0 +1,62 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_fxd_fee_02_config_04"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+
+Private Sub addNB_Click()
+Dim dB As Database
+Dim err As Integer
+Dim sql As String, iSQL As String
+Dim rst As Recordset, rs2 As Recordset, chk As Recordset
+
+    Set dB = CurrentDb
+    err = 0
+
+       'Check selections
+        If IsNull(Me.key.Value) Then
+            err = err + 1
+            MsgBox "Please select a creditor key to create an account for.", vbCritical, "NO CREDITOR SELECTED"
+        End If
+        
+        If IsNull(Me.fee.Value) Then
+            err = err + 1
+            MsgBox "Please select a fee type to create an account for.", vbCritical, "NO FEE SELECTED"
+        End If
+    
+        If err = 0 Then
+            Set chk = dB.OpenRecordset("SELECT COUNT(*) AS exist FROM ff_dm_accnt WHERE ffdm_fee_cd = '" & Me.fee.Value & "' AND ffdm_crdtr_id = '" & Me.key.Value & "' AND ffdm_env = '" & Me.env.Value & "' AND ffdm_accnt_active = 'Y';")
+            
+            If chk!exist > 0 Then
+            
+                err = err + 1
+                MsgBox "An active account already exists for this creditor for this fee in this environment.", vbCritical, "ACCOUNT EXISTS"
+                
+            Else
+            
+                sql = "INSERT INTO crdtr_fee_dm_accnt (a,b)"
+                sql = sql & Chr(13) & "    VALUES (a,b);"
+                
+                dB.Execute (sql)
+                
+                MsgBox "Account added to queue, ready for new business import to DM.", vbCritical, "ACCOUNT ADDED TO QUEUE"
+                
+            End If
+            
+        End If
+        
+    dB.Close
+
+End Sub
+
+Private Sub backNBadd_Click()
+
+    DoCmd.OpenForm "fxd_fee_02_config_03", acNormal
+    DoCmd.Close acForm, "fxd_fee_02_config_04", acSaveNo
+
+End Sub
