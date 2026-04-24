@@ -1,0 +1,12 @@
+<process name="TimeoutEvent"> 
+    <operation name="EventExpirator">
+        <participant name="EventService"/>
+        <output message="EventTypeOutputMessage">
+            <assign to="." from="*"></assign>
+        </output>
+        <input message="inmsg">
+            <assign to="." from="*"></assign>
+        </input>
+    </operation>
+</process>
+
