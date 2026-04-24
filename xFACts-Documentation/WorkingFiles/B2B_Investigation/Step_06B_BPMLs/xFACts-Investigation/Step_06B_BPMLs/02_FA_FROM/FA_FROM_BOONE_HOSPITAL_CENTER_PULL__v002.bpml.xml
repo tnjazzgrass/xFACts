@@ -1,0 +1,25 @@
+<process name="FA_FROM_BOONE_HOSPITAL_CENTER_PULL">
+  <sequence name="SeqStart">
+  <operation name="AssignService">
+	<participant name="AssignService"/>
+	<output message="outmsg">
+	<assign to="CLIENT_ID">269</assign>
+	<assign to="PROCESS_TYPE">SFTP_PULL</assign>
+	</output>
+	<input message="inmsg">
+	<assign to="." from="*"/>
+	</input>
+	</operation>
+
+    <operation name="Invoke Business Process Service">
+      <participant name="InlineInvokeBusinessProcessService"/>
+      <output message="InvokeBusinessProcessServiceTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="WFD_NAME">FA_CLIENTS_GET_LIST</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+  </sequence>
+</process>
