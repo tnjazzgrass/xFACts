@@ -1,0 +1,443 @@
+<process name="FA_CLIENTS_PREP_COMM_CALL">
+  <rule name="NB?">
+    <condition>//Result/Client[1]/PROCESS_TYPE/text() = &apos;NEW_BUSINESS&apos;</condition>
+  </rule>
+
+  <rule name="Payment?">
+    <condition>//Result/Client[1]/PROCESS_TYPE/text() = &apos;PAYMENT&apos;</condition>
+  </rule>
+
+  <rule name="FileRename?">
+    <condition>//Result/Client[1]/FILE_RENAME/text() = &apos;Y&apos;</condition>
+  </rule>
+
+  <rule name="AnyMoreDocs?">
+    <condition>currentdoc &lt;= noofdocs</condition>
+  </rule>
+
+  <rule name="BDL?">
+    <condition>//Result/Client[1]/PROCESS_TYPE/text() = &apos;BDL&apos;</condition>
+  </rule>
+
+  <rule name="OutBoundSFTP">
+    <condition>//Result/Client[1]/COMM_METHOD/text() = &apos;OUTBOUND&apos; and //Result/Client[1]/PUT_DOCS_TYPE/text() = &apos;SFTP_PUSH&apos;</condition>
+  </rule>
+
+  <rule name="GetDocs?">
+    <condition>currentdoc &lt;= noofdocs</condition>
+  </rule>
+
+  <rule name="EmptyFiles?">
+    <condition>(//FILELIST/SIZE[number(//currentdoc/text())]/text() &gt; 0 and //Result/Client[1]/SEND_EMPTY_FILES/text() = &apos;N&apos;) or string(//Result/Client[1]/SEND_EMPTY_FILES/text()) != &apos;N&apos;</condition>
+  </rule>
+
+  <rule name="FSAPush?">
+    <condition>//Result/Client[1]/PUT_DOCS_TYPE/text() = &apos;FSA_PUSH&apos;</condition>
+  </rule>
+
+  <rule name="BatchFilesInsert?">
+    <condition>count(//Files/*) &gt; 0</condition>
+  </rule>
+
+  <sequence name="SendDoc">
+    <choice name="Choice Start">
+      <select>
+        <case ref="NB?" activity="DMSendNB"/>
+      </select>
+
+      <sequence name="DMSendNB">
+        <assign name="Assign" to="DMBatchType">NB</assign>
+        <operation name="File System Adapter">
+          <participant name="AS2Extract"/>
+          <output message="FileSystemInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="assignedFilename" from="//FinalFileName/text()"></assign>
+            <assign to="assignFilename">true</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="extractionFolder" from="//Settings/Values/DM_NB_PATH/text()"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="Payment?" activity="DMSendPay"/>
+      </select>
+
+      <sequence name="DMSendPay">
+        <assign name="Assign" to="DMBatchType">PAYMENT</assign>
+        <operation name="File System Adapter">
+          <participant name="AS2Extract"/>
+          <output message="FileSystemInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="assignedFilename" from="//FinalFileName/text()"></assign>
+            <assign to="assignFilename">true</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="extractionFolder" from="//Settings/Values/DM_PAY_PATH/text()"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="BDL?" activity="DMSendBDL"/>
+      </select>
+
+      <sequence name="DMSendBDL">
+        <assign name="Assign" to="DMBatchType">BDL</assign>
+        <operation name="File System Adapter">
+          <participant name="AS2Extract"/>
+          <output message="FileSystemInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="extractionFolder" from="//Settings/Values/DM_BDL_PATH/text()"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="FileRename?" activity="FileRename"/>
+      </select>
+
+      <sequence name="FileRename">
+        <assign name="Assign" to="currentdoc">1</assign>
+        <sequence name="DocsLoop">
+          <choice name="Choice Start">
+            <select>
+              <case ref="AnyMoreDocs?" activity="RenameFiles"/>
+            </select>
+
+            <sequence name="RenameFiles">
+              <operation name="Release Service">
+                <participant name="ReleaseService"/>
+                <output message="outmsg">
+                  <assign to="TARGET">/ProcessData/*[contains(name(),&apos;Document&apos;)]</assign>
+                </output>
+                <input message="inmsg">
+                </input>
+              </operation>
+
+              <operation name="AssignService">
+                <participant name="AssignService"/>
+                <output message="outmsg">
+                  <assign to="//PrimaryDocument" from="//*[ name() =  concat(&apos;SavedPrimDoc&apos;,//currentdoc/text())]/@SCIObjectID"></assign>
+                  <assign to="//assignedFilename" from="if(boolean(//Result/Client[1]/GET_DOCS_TYPE/text() = &apos;FSA_PULL&apos;),string(//*[ name() =  concat(&apos;FSA_Document&apos;,//currentdoc/text())]/@filename),string(//Files/File[number(//currentdoc)]/Name/text()))"></assign>
+                </output>
+                <input message="inmsg">
+                  <assign to="." from="*"></assign>
+                </input>
+              </operation>
+
+              <operation name="JavaTaskFS">
+                <participant name="JavaTaskFS"/>
+                <output message="Xout">
+                  <assign to="javaFile">E:\Utilities\FA_FILE_RENAME.java</assign>
+                  <assign to="Action">FS_EXTRACT</assign>
+                  <assign to="." from="*"></assign>
+                </output>
+                <input message="Xin">
+                  <assign to="." from="*"></assign>
+                </input>
+              </operation>
+
+              <operation name="Get Document Information Service">
+                <participant name="GetDocumentInfoService"/>
+                <output message="GetDocumentInfoServiceTypeInputMessage">
+                  <assign to="BodyName" from="//tmpFileRename/text()"></assign>
+                  <assign to="DOCUMENT_ID" from="//PrimaryDocument/@SCIObjectID"></assign>
+                  <assign to="updateMetaDataOnly">true</assign>
+                  <assign to="DocumentName" from="//tmpFileRename/text()"></assign>
+                  <assign to="." from="*"></assign>
+                </output>
+                <input message="inmsg">
+                  <assign to="." from="*"></assign>
+                </input>
+              </operation>
+
+              <operation name="This Service">
+                <participant name="This"/>
+                <output message="assignRequest">
+                  <assign to="from" from="&apos;PrimaryDocument/@SCIObjectID&apos;"></assign>
+                  <assign to="to" from="concat(&apos;SavedPrimDoc&apos;,currentdoc/text())"></assign>
+                </output>
+                <input message="assignResponse">
+                  <assign to="." from="*"></assign>
+                </input>
+              </operation>
+
+              <assign name="Assign" to="currentdoc" from="currentdoc+1"></assign>
+              <repeat name="Repeat" ref="DocsLoop"/>
+
+            </sequence>
+          </choice>
+        </sequence>
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="OutBoundSFTP" activity="OutSFTP"/>
+      </select>
+
+      <sequence name="OutSFTP">
+        <operation name="SFTP Client Begin Session Service">
+          <participant name="SFTPClientBeginSession"/>
+          <output message="SFTPClientBeginSessionServiceTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="PreferredAuthenticationMethod">password</assign>
+            <assign to="ProfileId" from="//Result/Client[1]/PUT_DOCS_PROFILE_ID/text()"></assign>
+            <assign to="SFTPClientAdapter">SFTPClientAdapter</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="SFTP Client CD Service">
+          <participant name="SFTPClientCd"/>
+          <output message="SFTPClientCdServiceTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="CdUp">YES</assign>
+            <assign to="Directory" from="//Result/Client[1]/PUT_DOCS_LOC/text()"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="AssignService">
+          <participant name="AssignService"/>
+          <output message="outmsg">
+            <assign to="currentdoc">1</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <sequence name="FileLoop">
+          <choice name="Choice Start">
+            <select>
+              <case ref="GetDocs?" activity="DropFile"/>
+            </select>
+
+            <sequence name="DropFile">
+              <choice name="Choice Start">
+                <select>
+                  <case ref="EmptyFiles?" activity="FileSize"/>
+                </select>
+
+                <sequence name="FileSize">
+                  <operation name="Release Service">
+                    <participant name="ReleaseService"/>
+                    <output message="outmsg">
+                      <assign to="TARGET">/ProcessData/*[name()= &apos;DocumentName&apos; or name()= &apos;BodyName&apos; or name()= &apos;DocumentInitialId&apos; or name()= &apos;PrimaryDocument&apos; or name()= &apos;assignedFilename&apos; or name() = &apos;DocumentList&apos;]</assign>
+                    </output>
+                    <input message="inmsg">
+                    </input>
+                  </operation>
+
+                  <operation name="AssignService">
+                    <participant name="AssignService"/>
+                    <output message="outmsg">
+                      <assign to="/ProcessData/PrimaryDocument" from="//*[ name() =  concat(&apos;SavedPrimDoc&apos;,//currentdoc/text())]/@SCIObjectID"></assign>
+                      <assign to="//Files/File" from="&apos;&apos;" append="true"></assign>
+                    </output>
+                    <input message="inmsg">
+                      <assign to="." from="*"></assign>
+                    </input>
+                  </operation>
+
+                  <operation name="SFTP Client PUT Service">
+                    <participant name="SFTPClientPut"/>
+                    <output message="SFTPClientPutServiceTypeInputMessage">
+                      <assign to="." from="*"></assign>
+                      <assign to="DocumentId" from="//*[ name() =  concat(&apos;SavedPrimDoc&apos;,//currentdoc/text())]/@SCIObjectID"></assign>
+                    </output>
+                    <input message="inmsg">
+                      <assign to="." from="*"></assign>
+                      <assign to="//Files/File/Name" from="substring-before(substring-after(Status_Rpt(&apos;StatusReport&apos;),&apos;&lt;File name&gt;&apos;),&apos;&lt;/File name&gt;&apos;)"></assign>
+                      <assign to="//Files/File/Size" from="substring-before(substring-before(substring-after(Status_Rpt(&apos;StatusReport&apos;),&apos;&lt;File size&gt;&apos;),&apos;&lt;/&apos;),&apos; &apos;)"></assign>
+                    </input>
+                  </operation>
+
+                  <assign name="Assign" to="//Files/File/Type">SFTP_PUT</assign>
+                </sequence>
+              </choice>
+              <assign name="Assign" to="currentdoc" from="currentdoc+1"></assign>
+              <repeat name="Repeat" ref="FileLoop"/>
+
+            </sequence>
+          </choice>
+        </sequence>
+        <choice name="Choice Start">
+          <select>
+            <case ref="BatchFilesInsert?" activity="BatchFilesInsert"/>
+          </select>
+
+          <sequence name="BatchFilesInsert">
+            <operation name="AssignService">
+              <participant name="AssignService"/>
+              <output message="outmsg">
+                <assign to="." from="DOMToDoc(//Files,&apos;&apos;,&apos;&apos;,&apos;Files&apos;)"></assign>
+                <assign to="/ProcessData/PrimaryDocument" from="//Document/@SCIObjectID"></assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+            <operation name="Translation">
+              <participant name="Translation"/>
+              <output message="TranslationTypeInputMessage">
+                <assign to="." from="*"></assign>
+                <assign to="map_name">FA_CLIENTS_BATCH_FILES_X2S</assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+        </choice>
+        <operation name="SFTP Client End Session Service">
+          <participant name="SFTPClientEndSession"/>
+          <output message="SFTPClientEndSessionServiceTypeInputMessage">
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="FSAPush?" activity="FSAPush"/>
+      </select>
+
+      <sequence name="FSAPush">
+        <operation name="AssignService">
+          <participant name="AssignService"/>
+          <output message="outmsg">
+            <assign to="currentdoc">1</assign>
+            <assign to="Files" from="&apos;&apos;"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <sequence name="FileLoop2">
+          <choice name="Choice Start">
+            <select>
+              <case ref="GetDocs?" activity="DropFile2"/>
+            </select>
+
+            <sequence name="DropFile2">
+              <choice name="Choice Start">
+                <select>
+                  <case ref="EmptyFiles?" activity="FileSize2"/>
+                </select>
+
+                <sequence name="FileSize2">
+                  <operation name="Release Service">
+                    <participant name="ReleaseService"/>
+                    <output message="outmsg">
+                      <assign to="TARGET">/ProcessData/*[name()= &apos;DocumentName&apos; or name()= &apos;BodyName&apos; or name()= &apos;DocumentInitialId&apos; or name()= &apos;PrimaryDocument&apos; or name()= &apos;assignedFilename&apos; or name() = &apos;DocumentList&apos;]</assign>
+                    </output>
+                    <input message="inmsg">
+                    </input>
+                  </operation>
+
+                  <operation name="AssignService">
+                    <participant name="AssignService"/>
+                    <output message="outmsg">
+                      <assign to="/ProcessData/PrimaryDocument" from="//*[ name() =  concat(&apos;SavedPrimDoc&apos;,//currentdoc/text())]/@SCIObjectID"></assign>
+                      <assign to="//Files/File" from="&apos;&apos;" append="true"></assign>
+                    </output>
+                    <input message="inmsg">
+                      <assign to="." from="*"></assign>
+                    </input>
+                  </operation>
+
+                  <operation name="File System Adapter">
+                    <participant name="AS3FSAdapter"/>
+                    <output message="FileSystemInputMessage">
+                      <assign to="Action">FS_EXTRACT</assign>
+                      <assign to="assignFilename">false</assign>
+                      <assign to="bootstrap">false</assign>
+                      <assign to="collectMultiple">false</assign>
+                      <assign to="collectZeroByteFiles">false</assign>
+                      <assign to="docStorageType">db</assign>
+                      <assign to="extractionFolder" from="//Result/Client[1]/PUT_DOCS_LOC/text()"></assign>
+                      <assign to="noFilesSetSuccess">true</assign>
+                      <assign to="useSubFolders">false</assign>
+                      <assign to="." from="*"></assign>
+                    </output>
+                    <input message="inmsg">
+                      <assign to="." from="*"></assign>
+                      <assign to="//Files/File/Name" from="substring-after(Status_Rpt(&apos;StatusReport&apos;),&apos;written to &apos;)"></assign>
+                      <assign to="//Files/File/Size" from="substring-before(Status_Rpt(&apos;StatusReport&apos;),&apos; &apos;)"></assign>
+                    </input>
+                  </operation>
+
+                  <assign name="Assign" to="//Files/File/Type">FSA_PUT</assign>
+                </sequence>
+              </choice>
+              <assign name="Assign" to="currentdoc" from="currentdoc+1"></assign>
+              <repeat name="Repeat" ref="FileLoop2"/>
+
+            </sequence>
+          </choice>
+        </sequence>
+        <choice name="Choice Start">
+          <select>
+            <case ref="BatchFilesInsert?" activity="BatchFilesInsert2"/>
+          </select>
+
+          <sequence name="BatchFilesInsert2">
+            <operation name="AssignService">
+              <participant name="AssignService"/>
+              <output message="outmsg">
+                <assign to="." from="DOMToDoc(//Files,&apos;&apos;,&apos;&apos;,&apos;Files&apos;)"></assign>
+                <assign to="/ProcessData/PrimaryDocument" from="//Document/@SCIObjectID"></assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+            <operation name="Translation">
+              <participant name="Translation"/>
+              <output message="TranslationTypeInputMessage">
+                <assign to="." from="*"></assign>
+                <assign to="map_name">FA_CLIENTS_BATCH_FILES_X2S</assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+        </choice>
+      </sequence>
+    </choice>
+  </sequence>
+</process>
