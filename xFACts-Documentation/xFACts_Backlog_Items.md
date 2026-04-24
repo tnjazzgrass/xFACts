@@ -121,6 +121,14 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 ---
 
+## ServerOps
+
+| Type | Item | Priority | Notes |
+|------|------|----------|-------|
+| Enhance | Server Health revamp | Medium | Lead Blocker → Blocked Sessions consolidation, Top Wait Types (new) → Longest Wait consolidation + slideout, new tempdb pressure card + slideout, and admin-gated in-slideout KILL badges with the showConfirm() + ActionAuditLog audit flow. |
+
+---
+
 ## ControlCenter
 
 ### Admin
