@@ -35,6 +35,8 @@
 #   - Windows AD authentication via form login (fac.local)
 #   - RBAC via xFACts-Helpers.psm1 (roles resolved from AD groups)
 #   - User info available in routes via $WebEvent.Auth.User
+#   - Failed login surfaces an error banner and preserves the attempted
+#     username so users only need to re-type the password
 # ============================================================================
 
 Import-Module Pode
@@ -102,6 +104,9 @@ Start-PodeServer {
     # Windows AD Authentication
     # ScriptBlock runs after successful AD validation
     # to log the LOGIN_SUCCESS event with full context.
+    # On failure, Pode redirects to FailureUrl. The endware
+    # below stashes the attempted username in the session so
+    # the login page can prefill it on the next render.
     # ------------------------------------------
     New-PodeAuthScheme -Form | Add-PodeAuthWindowsAd -Name 'ADLogin' `
         -Fqdn $script:Config.ADDomain -DirectGroups `
@@ -156,7 +161,9 @@ Start-PodeServer {
     # ------------------------------------------
     # Request Logging Endware
     # Logs all non-static requests to dbo.API_RequestLog.
-    # Also detects failed login attempts for RBAC audit.
+    # Also detects failed login attempts for RBAC audit and
+    # stashes the attempted username in the session so the
+    # login page can prefill it on the next render.
     # ------------------------------------------
     Add-PodeEndware -ScriptBlock {
         try {
@@ -206,9 +213,16 @@ Start-PodeServer {
                 sourceApp   = 'ControlCenter'
             }
             
-            # Detect failed login attempts: POST to /auth/login with no authenticated user
+            # Detect failed login attempts: POST to /auth/login with no authenticated user.
+            # Log to RBAC_AuditLog and stash attempted username as a flash message so
+            # the login page can prefill it on the next render. Flash messages are
+            # one-shot: auto-cleared after being read.
             if ($endpoint -eq '/auth/login' -and $method -eq 'POST' -and -not $WebEvent.Auth.User) {
                 $attemptedUser = $WebEvent.Data.username
+                
+                if ($attemptedUser) {
+                    Add-PodeFlashMessage -Name 'LoginFailure' -Message $attemptedUser
+                }
                 
                 Invoke-XFActsQuery -Query @"
                     INSERT INTO dbo.RBAC_AuditLog 
@@ -231,6 +245,10 @@ Start-PodeServer {
     
     # ------------------------------------------
     # Login Page Route
+    # On failed login, Pode redirects here. We check for a LoginFailure flash
+    # message - present only when the user just failed a login attempt. The
+    # message value is the attempted username, which we prefill into the form
+    # so the user only needs to re-enter their password.
     # ------------------------------------------
     Add-PodeRoute -Method Get -Path '/login' -ScriptBlock {
         # Check if already logged in
@@ -238,6 +256,35 @@ Start-PodeServer {
             Move-PodeResponseUrl -Url '/'
             return
         }
+        
+        # Read (and auto-clear) login failure flash message.
+        # Get-PodeFlashMessage returns an array; we want the first value.
+        $flashValues = @(Get-PodeFlashMessage -Name 'LoginFailure')
+        $hasError = $flashValues.Count -gt 0
+        $prefillUser = if ($hasError) { $flashValues[0] } else { '' }
+        
+        # HTML-escape the prefill value to prevent injection
+        $safeUser = if ($prefillUser) {
+            [System.Net.WebUtility]::HtmlEncode($prefillUser)
+        } else {
+            ''
+        }
+        
+        # Error banner markup - rendered only on failed login
+        $errorBanner = if ($hasError) {
+            @'
+        <div class="login-error" role="alert">
+            Invalid username or password. Please try again.
+        </div>
+'@
+        } else {
+            ''
+        }
+        
+        # Autofocus: on error with a prefilled username, focus the password field.
+        # Otherwise, focus the username field.
+        $usernameAutofocus = if ($hasError -and $safeUser) { '' } else { ' autofocus' }
+        $passwordAutofocus = if ($hasError -and $safeUser) { ' autofocus' } else { '' }
         
         $html = @"
 <!DOCTYPE html>
@@ -278,6 +325,16 @@ Start-PodeServer {
             color: #888;
             font-size: 14px;
             margin: 0;
+        }
+        .login-error {
+            background: #3a1f1f;
+            border: 1px solid #7a3a3a;
+            color: #f0a0a0;
+            border-radius: 4px;
+            padding: 10px 12px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            text-align: center;
         }
         .form-group {
             margin-bottom: 20px;
@@ -332,14 +389,15 @@ Start-PodeServer {
             <h1>xFACts Control Center</h1>
             <p>Sign in with your network credentials</p>
         </div>
+$errorBanner
         <form method="POST" action="/auth/login">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" placeholder="Enter your username" required autofocus>
+                <input type="text" id="username" name="username" placeholder="Enter your username" value="$safeUser" required$usernameAutofocus>
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                <input type="password" id="password" name="password" placeholder="Enter your password" required$passwordAutofocus>
             </div>
             <button type="submit" class="login-btn">Sign In</button>
         </form>
