@@ -1,0 +1,67 @@
+<process name="FA_CLIENTS_ENCOUNTER_ID">
+  <sequence name="ENCOUNTER_ID">
+  <operation name="This Service">
+      <participant name="This"/>
+      <output message="thisRequest">
+      </output>
+      <input message="inmsg">
+        <assign to="EncounterID" from="this/node()"></assign>
+      </input>
+    </operation>
+	<operation name="Command Line 2 Adapter Lock">
+	  <participant name="FA_CLA_DEFAULT"/>
+	  <output message="CmdLine2InputMessage">
+		<assign to="." from="*"></assign>
+		<assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_IBM_FILE_LOCK\FA_IBM_FILE_LOCK.exe $0 $1</assign>
+		<assign to="inputDelete">false</assign>
+		<assign to="outputDelete">false</assign>
+		<assign to="parm0" from="if(boolean(//Settings/Values/DATABASE_SERVER/text() = &apos;AVG-PROD-LSNR&apos;),&apos;PROD&apos;,&apos;TEST&apos;)"></assign>
+		<assign to="parm1" from="//EncounterID/INVOKE_ID_LIST/text()"></assign>
+		<assign to="setSoTimeout">36000000</assign>
+		<assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_IBM_FILE_LOCK</assign>
+	  </output>
+	  <input message="inmsg">
+		<assign to="." from="*"></assign>
+	  </input>
+	</operation>
+    <operation name="Lightweight JDBC Adapter">
+      <participant name="AS2LightweightJDBCAdapter"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="param1" from="number(//ENCOUNTER_INFO/ENC_ID_ADD/text())"></assign>
+        <assign to="param2" from="number(//ENCOUNTER_INFO/SERV_ID_ADD/text())"></assign>
+        <assign to="param3" from="number(//ENCOUNTER_INFO/ENC_ID_ADD/text())"></assign>
+        <assign to="param4" from="number(//ENCOUNTER_INFO/SERV_ID_ADD/text())"></assign>
+        <assign to="paramtype1">Integer</assign>
+        <assign to="paramtype2">Integer</assign>
+        <assign to="paramtype3">Integer</assign>
+        <assign to="paramtype4">Integer</assign>
+        <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+        <assign to="query_type">SELECT</assign>
+        <assign to="result_name">ENCOUNTER</assign>
+        <assign to="row_name">ENCOUNTER_ID</assign>
+        <assign to="sql">DECLARE @ENC INT, @SERV INT = 0   SET TRANSACTION ISOLATION LEVEL SERIALIZABLE  BEGIN  SELECT @ENC = (SELECT CTR_3 from Integration.dbo.FAI_FILE_ID) SELECT @SERV = (SELECT CTR_4 from Integration.dbo.FAI_FILE_ID) UPDATE Integration.dbo.FAI_FILE_ID  SET  CTR_3 = @ENC +?, CTR_4 = @SERV + ? END  select CTR_3-?+1 CTR_3,CTR_4-?+1 CTR_4 from  Integration.dbo.FAI_FILE_ID</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+	<operation name="Command Line 2 Adapter Unlock">
+	  <participant name="FA_CLA_DEFAULT"/>
+	  <output message="CmdLine2InputMessage">
+		<assign to="." from="*"></assign>
+		<assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_IBM_FILE_LOCK\FA_IBM_FILE_LOCK.exe $0 $1</assign>
+		<assign to="inputDelete">false</assign>
+		<assign to="outputDelete">false</assign>
+		<assign to="parm0" from="if(boolean(//Settings/Values/DATABASE_SERVER/text() = &apos;AVG-PROD-LSNR&apos;),&apos;PROD&apos;,&apos;TEST&apos;)"></assign>
+		<assign to="parm1" from="//EncounterID/INVOKE_ID_LIST/text()"></assign>
+		<assign to="setSoTimeout">36000000</assign>
+		<assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_IBM_FILE_LOCK</assign>
+	  </output>
+	  <input message="inmsg">
+		<assign to="." from="*"></assign>
+	  </input>
+	</operation>
+    <assign name="Assign" to="." from="DocToDOM(PrimaryDocument)"></assign>
+  </sequence>
+</process>
