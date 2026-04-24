@@ -1,0 +1,19 @@
+<process name="FA_ULS_TO_VESPA_OB_PY">
+  <sequence name="PythonExec">
+    <operation name="Command Line 2 Adapter">
+      <participant name="FA_CLA_DEFAULT"/>
+      <output message="CmdLine2InputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\UNLIMITED_SYSTEMS\FA_UNLIMITED_SYSTEMS_SFTP_PULL_AND_PUSH.exe</assign>
+        <assign to="inputDelete">false</assign>
+        <assign to="outputDelete">false</assign>
+        <assign to="setSoTimeout">18000000</assign>
+        <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\UNLIMITED_SYSTEMS</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+  </sequence>
+</process>
