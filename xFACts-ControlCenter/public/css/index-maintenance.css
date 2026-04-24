@@ -1,6 +1,6 @@
 /* ============================================================================
    xFACts Control Center - Index Maintenance Styles
-   Location: E:\xFACts-ControlCenter\static\css\index-maintenance.css
+   Location: E:\xFACts-ControlCenter\public\css\index-maintenance.css
    Version: Tracked in dbo.System_Metadata (component: ServerOps.Index)
    ============================================================================ */
 
@@ -833,23 +833,12 @@ h1 {
     margin-bottom: 4px;
 }
 
-.schedule-hour-labels .schedule-day-label {
-    /* Empty spacer to align with day labels */
-}
-
 .schedule-hour-label {
     width: 28px;
     font-size: 9px;
     color: #666;
     text-align: center;
 }
-
-/* Highlight current hour */
-/* Current hour highlighting - disabled for now
-.schedule-cell.current-hour {
-    box-shadow: 0 0 0 2px #569cd6;
-}
-*/
 
 /* Drag selection highlight */
 .schedule-cell.drag-selected {
@@ -926,11 +915,31 @@ h1 {
     }
 }
 
-/* Slideout panels: base styles provided by engine-events.css (.slide-panel, .slide-panel-overlay, etc.) */
-/* Index Maintenance uses .open trigger class, .wide and .auto-height size modifiers */
-
-/* Override: wider panels for long index names */
-.slide-panel.wide { width: 950px; right: -970px; }
+/* ----------------------------------------------------------------------------
+   Slideout Panel Width Overrides
+   ----------------------------------------------------------------------------
+   Base styles come from engine-events.css (.slide-panel is 480px default,
+   .slide-panel.wide is 700px). engine-events.css loads AFTER this file,
+   so page-level .slide-panel.wide overrides would be cascaded over. We
+   use ID-scoped selectors to raise specificity above the shared rule.
+   ---------------------------------------------------------------------------- */
+#queue-panel.slide-panel.wide,
+#sync-panel.slide-panel.wide,
+#scan-panel.slide-panel.wide,
+#execute-panel.slide-panel.wide,
+#stats-panel.slide-panel.wide,
+#schedule-panel.slide-panel.wide {
+    width: 950px;
+    right: -970px;
+}
+#queue-panel.slide-panel.wide.open,
+#sync-panel.slide-panel.wide.open,
+#scan-panel.slide-panel.wide.open,
+#execute-panel.slide-panel.wide.open,
+#stats-panel.slide-panel.wide.open,
+#schedule-panel.slide-panel.wide.open {
+    right: 0;
+}
 
 /* ----------------------------------------------------------------------------
    Clickable Elements
