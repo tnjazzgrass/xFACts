@@ -1,0 +1,162 @@
+<process name="FA_CLIENTS_POST_TRANSLATION">
+  <rule name="PostTranslation?">
+    <condition>string(//Result/Client[1]/POST_TRANSLATION_MAP/text()) != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="PostSQLCall?">
+    <condition>//Result/Client[1]/POST_TRANS_SQL_QUERY/text() != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="PostFileRename?">
+    <condition>string(//Result/Client[1]/POST_TRANS_FILE_RENAME/text()) != &apos;&apos; and string(//Result/Client[1]/POST_TRANS_FILE_RENAME/text()) != &apos;N&apos;</condition>
+  </rule>
+
+  <rule name="PostKeyWordReplace?">
+    <condition>string(//Result/Client[1]/POST_KEYWORD_REPLACE_FROM/text()) != &apos;&apos;</condition>
+  </rule>
+
+  <rule name="PostTranslationOverWrite?">
+    <condition>string(//Result/Client[1]/POST_TRANSLATION_OVERWRITE/text()) = &apos;Y&apos;</condition>
+  </rule>
+
+  <sequence name="PostTranslation">
+    <choice name="Choice Start">
+      <select>
+        <case ref="PostSQLCall?" activity="PostSQLCall"/>
+      </select>
+
+      <sequence name="PostSQLCall">
+        <operation name="This Service">
+          <participant name="This"/>
+          <output message="assignRequest">
+            <assign to="from" from="//Result/Client/POST_TRANS_SQL_QUERY/text()"></assign>
+            <assign to="to" from="&apos;//Result/Client/POST_TRANS_SQL_QUERY&apos;"></assign>
+          </output>
+          <input message="assignResponse">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="AS2LightweightJDBCAdapter"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="pool" from="if(boolean(//Result/Client[1]/SQL_QUERY_DATA_SOURCE/text()!= &apos;&apos;),//Result/Client[1]/SQL_QUERY_DATA_SOURCE/text(),&apos;AVG_PROD_LSNR_INTEGRATION&apos;)"></assign>
+            <assign to="query_type">ACTION</assign>
+            <assign to="result_name">Result</assign>
+            <assign to="row_name">Client</assign>
+            <assign to="sql" from="//Result/Client/POST_TRANS_SQL_QUERY/text()"></assign>
+          </output>
+          <input message="inmsg">
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="PostTranslation?" activity="PostTranslationMap"/>
+      </select>
+
+      <sequence name="PostTranslationMap">
+        <operation name="Translation">
+          <participant name="Translation"/>
+          <output message="TranslationTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="map_name" from="//Result/Client[1]/POST_TRANSLATION_MAP/text()"></assign>
+            <assign to="output_to_process_data">NO</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <choice name="Choice Start">
+          <select>
+            <case ref="PostFileRename?" activity="PostFileRename"/>
+          </select>
+
+          <sequence name="PostFileRename">
+            <operation name="Release Service">
+              <participant name="ReleaseService"/>
+              <output message="outmsg">
+                <assign to="TARGET">/ProcessData/*[name()= &apos;DocumentName&apos; or name()= &apos;BodyName&apos; or name()= &apos;DocumentInitialId&apos;]</assign>
+              </output>
+              <input message="inmsg">
+              </input>
+            </operation>
+
+            <assign name="Assign" to="FinalFileName" from="if(boolean(string(//assignedFilename[count(//assignedFilename)]/text()) = &apos;&apos;),//FinalFileName/text(),//assignedFilename[count(//assignedFilename)]/text())"></assign>
+            <operation name="Get Document Information Service">
+              <participant name="GetDocumentInfoService"/>
+              <output message="GetDocumentInfoServiceTypeInputMessage">
+                <assign to="BodyName" from="//FinalFileName/text()"></assign>
+                <assign to="DOCUMENT_ID" from="//PrimaryDocument/@SCIObjectID"></assign>
+                <assign to="updateMetaDataOnly">true</assign>
+                <assign to="DocumentName" from="//FinalFileName/text()"></assign>
+                <assign to="." from="*"></assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"></assign>
+              </input>
+            </operation>
+
+          </sequence>
+        </choice>
+        <assign name="Assign" to="MergedFiles" from="//PrimaryDocument/@SCIObjectID"></assign>
+      </sequence>
+    </choice>
+    <choice name="Choice Start">
+      <select>
+        <case ref="PostKeyWordReplace?" activity="PostKeyWordReplace"/>
+      </select>
+
+      <sequence name="PostKeyWordReplace">
+        <operation name="DocKeyword Replace">
+          <participant name="DocKeywordReplace"/>
+          <output message="outmsg">
+            <assign to="." from="*"></assign>
+            <assign to="literal_mode">true</assign>
+            <assign to="keywordtype1">string</assign>
+            <assign to="keyword1" from="string(//Result/Client[1]/POST_KEYWORD_REPLACE_FROM/text())"></assign>
+            <assign to="replace1" from="string(//Result/Client[1]/POST_KEYWORD_REPLACE_TO/text())"></assign>
+            <assign to="replacetype1">string</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+    <choice>
+      <select>
+        <case ref="PostTranslationOverWrite?" activity="PostTranslationOverWrite"/>
+      </select>
+
+      <sequence name="PostTranslationOverWrite">
+        <operation name="Release Service">
+          <participant name="ReleaseService"/>
+          <output message="outmsg">
+            <assign to="TARGET">/ProcessData/*[starts-with(name(), &apos;SavedPrimDoc&apos;) or name() = &apos;Files&apos;]</assign>
+          </output>
+          <input message="inmsg">
+          </input>
+        </operation>
+
+        <operation name="AssignService">
+          <participant name="AssignService"/>
+          <output message="outmsg">
+            <assign to="//Files/File/Name" from="//FinalFileName/text()"></assign>
+            <assign to="//SavedPrimDoc1" from="//PrimaryDocument/@SCIObjectID"></assign>
+            <assign to="noofdocs" from="count(//Files/File)"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </choice>
+  </sequence>
+</process>
