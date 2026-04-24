@@ -1757,12 +1757,55 @@ var BDL = (function () {
         var existing = document.getElementById('promote-area'); if (existing) existing.remove();
         var promoteDiv = document.createElement('div'); promoteDiv.id = 'promote-area'; promoteDiv.className = 'promote-area';
         promoteSecondsRemaining = promoteData.cooldownSeconds; promoteReady = false;
-        promoteDiv.innerHTML = '<div class="promote-card" id="promote-card" onclick="BDL.promoteCardClicked()"><div class="promote-card-header"><span class="promote-card-icon">&#9650;</span><span class="promote-card-title">Promote to Production</span></div><div class="promote-card-timer" id="promote-timer">' + formatCountdown(promoteSecondsRemaining) + '</div><div class="promote-card-hint" id="promote-hint">Review your ' + escapeHtml(sourceEnv) + ' results before promoting</div></div>';
+        promoteDiv.innerHTML = '<div class="promote-card" id="promote-card" onclick="BDL.promoteCardClicked()">' +
+            '<div class="promote-card-header">' +
+                '<span class="promote-card-icon">&#128274;</span>' +
+                '<span class="promote-card-title">Promote to Production</span>' +
+                '<span class="promote-card-status" id="promote-status">Locked</span>' +
+            '</div>' +
+            '<div class="promote-card-timer" id="promote-timer">' +
+                '<span class="promote-card-timer-prefix">Available in</span>' +
+                formatCountdown(promoteSecondsRemaining) +
+            '</div>' +
+            '<div class="promote-card-hint" id="promote-hint">This button unlocks when the cooldown timer expires. Use this time to verify your ' + escapeHtml(sourceEnv) + ' import results in Debt Manager.</div>' +
+            '</div>';
         resultsPane.parentNode.insertBefore(promoteDiv, resultsPane.nextSibling); startPromoteCountdown();
     }
     function formatCountdown(seconds) { var m = Math.floor(seconds / 60), s = seconds % 60; return (m > 0 ? m + ':' : '') + (m > 0 && s < 10 ? '0' : '') + s + (m === 0 ? 's' : ''); }
-    function startPromoteCountdown() { if (promoteCountdownTimer) clearInterval(promoteCountdownTimer); promoteCountdownTimer = setInterval(function () { promoteSecondsRemaining--; var timerEl = document.getElementById('promote-timer'), hintEl = document.getElementById('promote-hint'), card = document.getElementById('promote-card'); if (promoteSecondsRemaining <= 0) { clearInterval(promoteCountdownTimer); promoteCountdownTimer = null; promoteReady = true; if (timerEl) timerEl.textContent = 'Ready'; if (hintEl) hintEl.textContent = 'Click to promote to Production'; if (card) card.classList.add('promote-ready'); } else { if (timerEl) timerEl.textContent = formatCountdown(promoteSecondsRemaining); } }, 1000); }
-    function promoteCardClicked() { if (!promoteReady) { var hintEl = document.getElementById('promote-hint'); if (hintEl) { hintEl.textContent = 'Please verify your results in the lower environment first'; hintEl.classList.add('promote-hint-flash'); setTimeout(function () { hintEl.classList.remove('promote-hint-flash'); }, 1500); } return; } promoteToProduction(); }
+    function startPromoteCountdown() {
+        if (promoteCountdownTimer) clearInterval(promoteCountdownTimer);
+        promoteCountdownTimer = setInterval(function () {
+            promoteSecondsRemaining--;
+            var timerEl = document.getElementById('promote-timer'),
+                hintEl = document.getElementById('promote-hint'),
+                statusEl = document.getElementById('promote-status'),
+                iconEl = document.querySelector('#promote-card .promote-card-icon'),
+                card = document.getElementById('promote-card');
+            if (promoteSecondsRemaining <= 0) {
+                clearInterval(promoteCountdownTimer);
+                promoteCountdownTimer = null;
+                promoteReady = true;
+                if (timerEl) timerEl.textContent = 'Click to promote this import to Production';
+                if (hintEl) hintEl.textContent = 'Your test import results have had time for review. Click the card above to begin the Production promotion.';
+                if (statusEl) statusEl.textContent = 'Ready';
+                if (iconEl) iconEl.innerHTML = '&#10003;';
+                if (card) card.classList.add('promote-ready');
+            } else {
+                if (timerEl) timerEl.innerHTML = '<span class="promote-card-timer-prefix">Available in</span>' + formatCountdown(promoteSecondsRemaining);
+            }
+        }, 1000);
+    }
+    function promoteCardClicked() {
+        if (!promoteReady) {
+            var hintEl = document.getElementById('promote-hint');
+            if (hintEl) {
+                hintEl.classList.add('promote-hint-flash');
+                setTimeout(function () { hintEl.classList.remove('promote-hint-flash'); }, 1500);
+            }
+            return;
+        }
+        promoteToProduction();
+    }
     function promoteToProduction() { if (!promoteData || !promoteData.prodConfigId) return; fetch('/api/bdl-import/environments').then(function (r) { return r.json(); }).then(function (data) { var prodEnv = (data.environments || []).find(function (e) { return e.config_id === promoteData.prodConfigId; }); if (!prodEnv) { showAlert('Production environment configuration not found.', { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' }); return; } showPromoteProdAdvisory(prodEnv); }).catch(function (err) { showAlert('Failed to load environments: ' + err.message, { title: 'Promote Error', icon: '&#10005;', iconColor: '#f48771' }); }); }
     function showPromoteProdAdvisory(prodEnv) {
         var existing = document.getElementById('prod-advisory-modal'); if (existing) existing.remove();
