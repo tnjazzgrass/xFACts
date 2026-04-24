@@ -1,0 +1,79 @@
+<!--
+/*
+ * (C) Copyright 2004 Sterling Commerce, Inc. ALL RIGHTS RESERVED
+ *
+ * ** Trade Secret Notice **
+ *
+ * This software, and the information and know-how it contains, is
+ * proprietary and confidential and constitutes valuable trade secrets
+ * of Sterling Commerce, Inc., its affiliated companies or its or
+ * their licensors, and may not be used for any unauthorized purpose
+ * or disclosed to others without the prior written permission of the
+ * applicable Sterling Commerce entity. This software and the
+ * information and know-how it contains have been provided
+ * pursuant to a license agreement which contains prohibitions
+ * against and/or restrictions on its copying, modification and use.
+ * Duplication, in whole or in part, if and when permitted, shall
+ * bear this notice and the Sterling Commerce, Inc. copyright
+ * legend. As and when provided to any governmental entity,
+ * government contractor or subcontractor subject to the FARs,
+ * this software is provided with RESTRICTED RIGHTS under
+ * Title 48 CFR 52.227-19.
+ * Further, as and when provided to any governmental entity,
+ * government contractor or subcontractor subject to DFARs,
+ * this software is provided pursuant to the customary
+ * Sterling Commerce license, as described in Title 48
+ * CFR 227-7202 with respect to commercial software and commercial
+ * software documentation.
+ */
+-->
+<!--
+	AFTRoutePurgeArchiveMailboxes
+      Queries database for purge routes.  Purges corresponding messages from archive mailboxes.
+-->
+<process name="AFTPurgeArchiveMailboxes">
+	<rule name="moreMessages">
+		<condition>index &lt; count</condition>
+	</rule>
+	<sequence name="main">
+		<operation name="Message Query Lightweight JDBC Adapter">
+			<participant name="LightweightJDBCAdapterQuery"/>
+			<output message="LightweightJDBCAdapterTypeInputMessage">
+				<assign to="pool">mssqlPool</assign>
+				<assign to="query_type">SELECT</assign>
+				<assign to="result_name">result</assign>
+				<assign to="row_name">row</assign>
+				<assign to="sql">SELECT m.MESSAGE_ID FROM MBX_MESSAGE m INNER JOIN MBX_MAILBOX b ON (b.MAILBOX_ID = m.MAILBOX_ID) LEFT JOIN DATA_FLOW d ON (d.ROOT_DOCUMENT = m.DOC_ID) WHERE d.ROOT_DOCUMENT IS NULL AND b.PATH LIKE '%/archive'</assign>
+				<assign to="." from="*"/>
+			</output>
+			<input message="inmsg">
+				<assign to="." from="DocToDOM (PrimaryDocument)/row"/>
+			</input>
+		</operation>
+		<assign to="count" from="count(row)" append="true"/>
+		<assign to="index">0</assign>
+		<choice name="moreMessages">
+			<select>
+				<case ref="moreMessages" activity="deleteMessage"/>
+			</select>
+			<sequence name="deleteMessage">
+				<assign to="index" from="index + 1"/>
+				<operation name="Mailbox Delete Service">
+					<participant name="MailboxDelete"/>
+					<output message="MailboxDeleteServiceTypeInputMessage">
+						<assign to="MessageId" from="string(/ProcessData/row[number(/ProcessData/index)]/MESSAGE_ID)"/>
+					</output>
+					<input message="inmsg">
+						
+					</input>
+				</operation>
+				<repeat name="Repeat" ref="moreMessages"/>
+				<onFault>
+					<sequence name="onFaultSequence">
+					    <repeat name="Repeat" ref="moreMessages"/>
+					</sequence>
+				</onFault>
+			</sequence>
+		</choice>
+	</sequence>
+</process>
