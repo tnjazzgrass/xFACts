@@ -1,0 +1,55 @@
+<process name="Alert">
+	<sequence name="AlertMain">
+		<operation name="AlertLock">
+			<participant name="SystemLockService"/>
+			<output message="Xout">
+				<assign to="LOCK_KEY">ALERTLOCK</assign>
+				<assign to="DURATION">86400000</assign>
+				<assign to="CLEAR_ON_START_UP">true</assign>
+                                <assign to="USER">SystemLockService</assign>
+				<assign to="." from="*"></assign>
+			</output>
+			<input message="Xin">
+				<assign to="." from="*"></assign>
+			</input>
+		</operation>
+	
+		<operation name="Alert Process Report">
+			<participant name="AlertService"/>
+			<output message="AlertServiceTypeInputMessage">
+			</output>
+			<input message="inmsg">
+			</input>
+		</operation>
+		
+		<operation name="AlertUnLock">
+		<participant name="SystemLockService"/>
+		<output message="Xout">
+			<assign to="ACTION">unlock</assign>
+			<assign to="LOCK_KEY">ALERTLOCK</assign>
+                        <assign to="USER">SystemLockService</assign>
+			<assign to="." from="*"></assign>
+		</output>
+		<input message="Xin">
+			<assign to="." from="*"></assign>
+		</input>
+		</operation>
+		
+		<onFault>
+			<operation>
+			<participant name="SystemLockService"/>
+			<output message="Xout">
+				<assign to="ACTION">unlock</assign>
+				<assign to="LOCK_KEY">ALERTLOCK</assign>
+                                <assign to="USER">SystemLockService</assign>
+				<assign to="." from="*"></assign>
+			</output>
+			<input message="Xin">
+				<assign to="." from="*"></assign>
+			</input>
+			</operation>
+		</onFault>
+ 	</sequence>
+</process>
+
+
