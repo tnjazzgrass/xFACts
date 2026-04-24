@@ -1,0 +1,76 @@
+<process name="FA_CLIENTS_WORKERS_COMP">
+  <rule name="Add?">
+    <condition>//WrksCmp/Values/WrksCmp/text() != &apos;param1=,,&apos;</condition>
+  </rule>
+
+  <sequence name="WorkersCompCheck">
+    <operation name="Command Line 2 Adapter">
+      <participant name="FA_CLA_WRKS_COMP"/>
+      <output message="CmdLine2InputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\Workers_Comp\FA_CLIENTS_WORKERS_COMP.exe $0 $1 $2 $3</assign>
+        <assign to="inputDelete">false</assign>
+        <assign to="outputDelete">false</assign>
+        <assign to="parm0" from="//thisProcessInstance/INVOKE_ID_LIST/text()"></assign>
+        <assign to="parm1">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\Workers_Comp\workcomplist.json</assign>
+        <assign to="parm2" from="if(boolean(//Settings/Values/DATABASE_SERVER/text() = &apos;AVG-PROD-LSNR&apos;),&apos;PROD&apos;,&apos;TEST&apos;)"></assign>
+        <assign to="parm3">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\Workers_Comp\workcompcustom.json</assign>
+        <assign to="setSoTimeout">36000000</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="Lightweight JDBC Adapter">
+      <participant name="AS2LightweightJDBCAdapter"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+        <assign to="query_type">SELECT</assign>
+        <assign to="result_name">WrksCmp</assign>
+        <assign to="row_name">Values</assign>
+        <assign to="sql" from="concat(&apos;exec [faint].[USP_B2B_CLIENTS_WORKERS_COMP_CHECK]  &apos;,//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+        <assign to="." from="DocToDOM(PrimaryDocument)"></assign>
+      </input>
+    </operation>
+
+    <operation name="AssignService">
+      <participant name="AssignService"/>
+      <output message="outmsg">
+        <assign to="." from="DocToDOM(PrimaryDocument)"></assign>
+        <assign to="PrimaryDocument" from="//MergedFiles/@SCIObjectID"></assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <choice name="Choice Start">
+      <select>
+        <case ref="Add?" activity="AddTag"/>
+      </select>
+
+      <sequence name="AddTag">
+        <operation name="XSLT Service">
+          <participant name="XSLTService"/>
+          <output message="XSLTServiceTypeInputMessage">
+            <assign to="additional_xslt_params" from="//WrksCmp/Values/WrksCmp/text()"></assign>
+            <assign to="xml_input_from">PrimaryDoc</assign>
+            <assign to="xml_input_validation">NO</assign>
+            <assign to="xslt_name">FA_WORKERS_COMP</assign>
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <assign name="Assign" to="MergedFiles" from="//PrimaryDocument/@SCIObjectID"></assign>
+      </sequence>
+    </choice>
+  </sequence>
+</process>
