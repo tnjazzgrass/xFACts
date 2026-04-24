@@ -392,10 +392,17 @@ async function loadOpenTransactions() {
 }
 
 function copyKillScript() {
-    if (!openTransData || openTransData.length === 0) { alert('No open transactions.'); return; }
+    if (!openTransData || openTransData.length === 0) {
+        showAlert('No open transactions to generate a KILL script for.', {
+            title: 'Nothing to Copy',
+            icon: '&#9432;',
+            iconColor: '#569cd6'
+        });
+        return;
+    }
     var script = '-- Kill script for open transactions\n-- Server: ' + getCurrentServer() + '\n\n';
-    openTransData.forEach(function(r) { script += 'KILL ' + r.session_id + '; -- ' + (r.login_name||'') + '\n'; });
-    navigator.clipboard.writeText(script).then(function() { alert('KILL script copied!'); });
+    openTransData.forEach(function(r) { script += 'KILL ' + r.session_id + '; -- ' + (r.login_name || '') + '\n'; });
+    copyToClipboard(script, 'KILL script copied to clipboard.');
 }
 
 // ============================================================================
@@ -502,10 +509,52 @@ function escapeHtml(text) {
 }
 
 function copyBlockerKillScript() {
-    if (!blockingData.blockers || blockingData.blockers.length === 0) { alert('No blockers to kill.'); return; }
+    if (!blockingData.blockers || blockingData.blockers.length === 0) {
+        showAlert('No lead blockers to generate a KILL script for.', {
+            title: 'Nothing to Copy',
+            icon: '&#9432;',
+            iconColor: '#569cd6'
+        });
+        return;
+    }
     var script = '-- Kill script for lead blockers\n-- Server: ' + getCurrentServer() + '\n-- WARNING: Review before executing!\n\n';
-    blockingData.blockers.forEach(function(b) { script += 'KILL ' + b.spid + '; -- ' + (b.login_name||'') + ' - ' + (b.program_name||'') + '\n'; });
-    navigator.clipboard.writeText(script).then(function() { alert('KILL script copied!'); });
+    blockingData.blockers.forEach(function(b) { script += 'KILL ' + b.spid + '; -- ' + (b.login_name || '') + ' - ' + (b.program_name || '') + '\n'; });
+    copyToClipboard(script, 'KILL script copied to clipboard.');
+}
+
+/**
+ * Copies text to the clipboard using document.execCommand('copy'), which works
+ * over HTTP. navigator.clipboard.writeText() silently fails on non-HTTPS.
+ * Shows a styled alert modal on success or failure. Used by the KILL script
+ * copy buttons; can be used for any future copy-to-clipboard needs.
+ */
+function copyToClipboard(text, successMessage) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    ta.style.left = '-9999px';
+    ta.setAttribute('readonly', '');
+    document.body.appendChild(ta);
+    ta.select();
+
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+
+    if (ok) {
+        showAlert(successMessage || 'Copied to clipboard.', {
+            title: 'Copied',
+            icon: '&#10003;',
+            iconColor: '#4ec9b0'
+        });
+    } else {
+        showAlert('Unable to copy to the clipboard. Your browser may have blocked the action.', {
+            title: 'Copy Failed',
+            icon: '&#10005;',
+            iconColor: '#f48771'
+        });
+    }
 }
 
 // ============================================================================
