@@ -127,143 +127,7 @@ h1 {
     font-size: 12px;
     color: #888;
 }
-.loading { color: #888; font-size: 13px; }
-.empty-state { color: #666; font-size: 13px; font-style: italic; }
 .hidden { display: none !important; }
-
-/* ── Notice Recon Status Cards ────────────────────────────────────────────── */
-.nr-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 10px;
-}
-.nr-card {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 12px;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-}
-.nr-card:hover {
-    border-color: #4ec9b0;
-}
-.nr-card.selected {
-    border-color: #569cd6;
-    background: rgba(86, 156, 214, 0.05);
-}
-.nr-card.status-success {
-    border-color: #4ec9b0;
-    background: rgba(78, 201, 176, 0.05);
-}
-.nr-card.status-warning {
-    border-color: #cca700;
-    background: rgba(204, 167, 0, 0.05);
-}
-.nr-card.status-error {
-    border-color: #f14c4c;
-    background: rgba(241, 76, 76, 0.05);
-}
-.nr-card.status-running {
-    border-color: #569cd6;
-    background: rgba(86, 156, 214, 0.05);
-}
-.nr-card.status-pending { }
-
-.nr-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-.nr-process-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: #4ec9b0;
-}
-.nr-status-badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-.nr-status-badge.success { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
-.nr-status-badge.warning { background: rgba(204, 167, 0, 0.15); color: #cca700; }
-.nr-status-badge.error   { background: rgba(241, 76, 76, 0.15); color: #f14c4c; }
-.nr-status-badge.running { background: rgba(86, 156, 214, 0.15); color: #569cd6; }
-
-.nr-card-metrics {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-}
-.nr-metric {
-    display: flex;
-    flex-direction: column;
-}
-.nr-metric-label {
-    font-size: 10px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-.nr-metric-value {
-    font-size: 14px;
-    color: #d4d4d4;
-    font-weight: 500;
-}
-.nr-card-time {
-    margin-top: 8px;
-    font-size: 11px;
-    color: #666;
-}
-
-/* ── Notice Recon Step Detail ─────────────────────────────────────────────── */
-.nr-steps {
-    width: 100%;
-}
-.nr-step-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-.nr-step-table th {
-    text-align: left;
-    padding: 6px 10px;
-    color: #888;
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid #404040;
-    white-space: nowrap;
-}
-.nr-step-table td {
-    padding: 5px 10px;
-    border-bottom: 1px solid #2d2d2d;
-    color: #d4d4d4;
-    vertical-align: top;
-}
-.nr-step-table tr:hover td { background: #2a2a2a; }
-
-.step-status {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 8px;
-    display: inline-block;
-}
-.step-status.success { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
-.step-status.warning { background: rgba(204, 167, 0, 0.15); color: #cca700; }
-.step-status.error   { background: rgba(241, 76, 76, 0.15); color: #f14c4c; }
-
-.step-message {
-    color: #999;
-    font-size: 11px;
-    max-width: 400px;
-}
 
 /* ── Tool Cards ───────────────────────────────────────────────────────────── */
 .tool-cards {
@@ -304,3 +168,105 @@ h1 {
     font-size: 11px;
     color: #888;
 }
+
+/* ── Notice Recon Tile ────────────────────────────────────────────────────── */
+/* The Notice Recon tile replaces the tool-icon with a row of per-process    */
+/* status badges. Badges are individually clickable; the tile itself is not. */
+.tool-card.notice-recon-tile {
+    cursor: default;
+}
+.tool-card.notice-recon-tile:hover {
+    border-color: #333;
+}
+
+.nr-badges {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    height: 28px;
+    align-items: stretch;
+}
+.nr-badge {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: filter 0.15s, border-color 0.15s;
+}
+.nr-badge:hover {
+    filter: brightness(1.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Status variants - colors match engine-events.css engine-bar palette */
+.nr-badge.success {
+    background: rgba(34, 197, 94, 0.18);
+    color: #22c55e;
+    border-color: rgba(34, 197, 94, 0.35);
+}
+.nr-badge.warning {
+    background: rgba(220, 220, 170, 0.18);
+    color: #dcdcaa;
+    border-color: rgba(220, 220, 170, 0.35);
+}
+.nr-badge.error {
+    background: rgba(244, 135, 113, 0.18);
+    color: #f48771;
+    border-color: rgba(244, 135, 113, 0.35);
+}
+.nr-badge.running {
+    background: rgba(86, 156, 214, 0.18);
+    color: #569cd6;
+    border-color: rgba(86, 156, 214, 0.35);
+}
+.nr-badge.pending {
+    background: rgba(68, 68, 68, 0.4);
+    color: #888;
+    border-color: #444;
+}
+
+/* Future-ready badges: process is configured but not yet deployed */
+.nr-badge.future {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+/* ── Detail Slideout Width Override ───────────────────────────────────────── */
+/* The shared .slide-panel.wide is 700px which cramps the step detail table. */
+/* Scope the override to this page's detail panel via its ID.                */
+#nr-detail-panel.slide-panel.wide {
+    width: 1000px;
+    right: -1020px;
+}
+#nr-detail-panel.slide-panel.wide.open {
+    right: 0;
+}
+
+/* ── Slideout Status Pill ─────────────────────────────────────────────────── */
+/* Used inside the summary stats and steps table in the detail slideout.     */
+.nr-status-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-block;
+}
+.nr-status-pill.success { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
+.nr-status-pill.warning { background: rgba(204, 167, 0, 0.15); color: #cca700; }
+.nr-status-pill.error   { background: rgba(241, 76, 76, 0.15); color: #f14c4c; }
+.nr-status-pill.running { background: rgba(86, 156, 214, 0.15); color: #569cd6; }
+.nr-status-pill.pending { background: rgba(68, 68, 68, 0.4); color: #888; }
