@@ -1,0 +1,13 @@
+<process name="FileGatewayReroute">
+        <sequence name="doReroute">
+          <operation name="Filegateway Reroute Service">
+            <participant name="FilegatewayRerouteService"/>
+            <output message="Xout">
+              <assign to="." from="*"></assign>
+            </output>
+            <input message="Xin">
+              <assign to="." from="*"></assign>
+            </input>
+          </operation>
+</sequence>
+</process>
