@@ -1,0 +1,215 @@
+<process name="FA_DM_ITS_REQST">
+  <rule name="AnyMoreDocs?">
+    <condition>currentdoc &lt;= noofdocs</condition>
+  </rule>
+
+  <sequence name="Receive File">
+    <operation name="Lightweight JDBC Adapter">
+      <participant name="AS2LightweightJDBCAdapter"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+        <assign to="query_type">SELECT</assign>
+        <assign to="result_name">Settings</assign>
+        <assign to="row_name">Values</assign>
+        <assign to="sql">EXEC faint.USP_B2B_CLIENTS_GET_SETTINGS</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+        <assign to="." from="DocToDOM(PrimaryDocument)"></assign>
+      </input>
+    </operation>
+
+    <assign name="Assign" to="." from="DocToDOM(PrimaryDocument)"></assign>
+    <operation name="Timestamp Utility">
+      <participant name="TimestampUtilService"/>
+      <output message="TimestampUtilServiceTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="action">current_time</assign>
+        <assign to="format">yyyyMMdd</assign>
+        <assign to="scale">day</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="This Service">
+      <participant name="This"/>
+      <output message="thisRequest">
+      </output>
+      <input message="inmsg">
+        <assign to="thisProcessInstance" from="this/node()"></assign>
+      </input>
+    </operation>
+
+    <operation name="AssignService">
+      <participant name="AssignService"/>
+      <output message="outmsg">
+        <assign to="//Result/Client/GET_DOCS_TYPE" from="&apos;SFTP_PULL&apos;"></assign>
+        <assign to="//Result/Client/GET_DOCS_LOC" from="&apos;integration_process&apos;"></assign>
+        <assign to="//Result/Client/FILE_FILTER" from="&apos;integration_process.DM-*ESmt1_*-NOTICEFILE.xml.gzip*&apos;"></assign>
+        <assign to="//Result/Client/FILE_ID" from="&apos;0&apos;"></assign>
+        <assign to="//PreArchiveFlag" from="&apos;1&apos;"></assign>
+        <assign to="//Result/Client/PRE_ARCHIVE" from="&apos;\\kingkong\dpbackup\Client_Data_Archive\Inbound\integration_process&apos;"></assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <operation name="Invoke Business Process Service">
+      <participant name="InlineInvokeBusinessProcessService"/>
+      <output message="InvokeBusinessProcessServiceTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="NOTIFY_PARENT_ON_ERROR">ALL</assign>
+        <assign to="WFD_NAME">FA_CLIENTS_GET_DOCS</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+    <assign name="Assign" to="noofdocs" from="if(boolean(//Result/Client[1]/GET_DOCS_TYPE/text() = &apos;FSA_PULL&apos;),//FSA_DocumentCount/text(),count(//DocumentList/DocumentId))"></assign>
+    <assign name="Assign" to="currentdoc">1</assign>
+    <sequence name="LoopThruDocs">
+      <choice name="Choice Start">
+        <select>
+          <case ref="AnyMoreDocs?" activity="ExtractAndProcess"/>
+        </select>
+
+        <sequence name="ExtractAndProcess">
+          <assign name="Assign" to="/ProcessData/PrimaryDocument" from="if(boolean(//Result/Client[1]/GET_DOCS_TYPE/text() = &apos;FSA_PULL&apos;),//*[ name() =  concat(&apos;FSA_Document&apos;,//currentdoc/text())]/@SCIObjectID,//*[ name() =  concat(&apos;SFTPPrimDoc&apos;,//currentdoc/text())]/@SCIObjectID)"></assign>
+          <assign name="Assign" to="assignedFilename" from="if(boolean(//Result/Client[1]/GET_DOCS_TYPE/text() = &apos;FSA_PULL&apos;),string(//*[ name() =  concat(&apos;FSA_Document&apos;,//currentdoc/text())]/@filename),string(//Files/File[number(//currentdoc)]/Name/text()))"></assign>
+          <operation name="Invoke Business Process Service">
+            <participant name="InvokeBusinessProcessService"/>
+            <output message="InvokeBusinessProcessServiceTypeInputMessage">
+              <assign to="." from="*"></assign>
+              <assign to="INVOKE_MODE">INLINE</assign>
+              <assign to="NOTIFY_PARENT_ON_ERROR">ALL</assign>
+              <assign to="WFD_NAME">FA_CLIENTS_ARCHIVE</assign>
+            </output>
+            <input message="inmsg">
+              <assign to="." from="*"></assign>
+            </input>
+          </operation>
+
+          <operation name="Command Line 2 Adapter">
+            <participant name="FA_CLA_DM_API"/>
+            <output message="CmdLine2InputMessage">
+              <assign to="." from="*"></assign>
+              <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools\FA_FILE_TOOL_GZ2X.exe $0 $1</assign>
+              <assign to="inputDelete">false</assign>
+              <assign to="outputDelete">false</assign>
+              <assign to="parm0" from="concat(//Result/Client/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2),&apos;\&apos;,//assignedFilename/text())"></assign>
+              <assign to="parm1" from="//thisProcessInstance/INVOKE_ID_LIST/text()"></assign>
+              <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_INT_Tools</assign>
+            </output>
+            <input message="inmsg">
+              <assign to="." from="*"></assign>
+              <assign to="." from="Status_Rpt(&apos;StatusReport&apos;)"></assign>
+            </input>
+          </operation>
+
+          <operation name="Release Service">
+            <participant name="ReleaseService"/>
+            <output message="outmsg">
+              <assign to="TARGET">PrimaryDocument</assign>
+            </output>
+            <input message="inmsg">
+            </input>
+          </operation>
+
+          <operation name="File System Adapter">
+            <participant name="AS3FSAdapter"/>
+            <output message="FileSystemInputMessage">
+              <assign to="Action">FS_COLLECT</assign>
+              <assign to="assignFilename">false</assign>
+              <assign to="bootstrap">false</assign>
+              <assign to="collectionFolder" from="concat(//Result/Client[1]/PRE_ARCHIVE/text(),&apos;\&apos;,substring(//time/text(),1,4),&apos;\&apos;,substring(//time/text(),5,2),&apos;\&apos;,substring(//time/text(),7,2))    "></assign>
+              <assign to="collectMultiple">false</assign>
+              <assign to="collectZeroByteFiles">false</assign>
+              <assign to="deleteAfterCollect">false</assign>
+              <assign to="docStorageType">db</assign>
+              <assign to="filter" from="concat(//assignedFilename/text(),&apos;_&apos;,//thisProcessInstance/INVOKE_ID_LIST/text(),&apos;.xml&apos;)"></assign>
+              <assign to="noFilesSetSuccess">true</assign>
+              <assign to="useSubFolders">false</assign>
+              <assign to="." from="*"></assign>
+            </output>
+            <input message="inmsg">
+              <assign to="." from="*"></assign>
+            </input>
+          </operation>
+
+          <operation name="Translation">
+            <participant name="Translation"/>
+            <output message="TranslationTypeInputMessage">
+              <assign to="." from="*"></assign>
+              <assign to="map_name">FA_TR_X2S_REQST_FROM_DM</assign>
+              <assign to="output_to_process_data">NO</assign>
+            </output>
+            <input message="inmsg">
+              <assign to="." from="*"></assign>
+              <assign to="." from="Status_Rpt(&apos;StatusReport&apos;)"></assign>
+            </input>
+          </operation>
+
+          <assign name="Assign" to="currentdoc" from="currentdoc+1"></assign>
+          <repeat name="LoopBack" ref="LoopThruDocs"/>
+
+        </sequence>
+      </choice>
+    </sequence>
+    <operation name="Command Line 2 Adapter">
+      <participant name="FA_CLA_DM_API"/>
+      <output message="CmdLine2InputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_ITS_REQST\FA_ITS_API_CALLS.exe $0</assign>
+        <assign to="inputDelete">false</assign>
+        <assign to="outputDelete">false</assign>
+        <assign to="parm0" from="if(boolean(//Settings/Values/DATABASE_SERVER/text() = &apos;AVG-PROD-LSNR&apos;),&apos;DM-PROD-APP3&apos;,&apos;DM-TEST-APP&apos;)"></assign>
+        <assign to="setSoTimeout">36000000</assign>
+        <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_ITS_REQST</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+        <assign to="." from="Status_Rpt(&apos;StatusReport&apos;)"></assign>
+      </input>
+    </operation>
+
+    <onFault>
+      <sequence name="on_Fail">
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="AS2LightweightJDBCAdapter"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="param1" from="number(//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+            <assign to="paramtype1">Integer</assign>
+            <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+            <assign to="query_type">UPDATE</assign>
+            <assign to="result_name">Result</assign>
+            <assign to="row_name">Client</assign>
+            <assign to="sql">UPDATE INTEGRATION.ETL.tbl_B2B_CLIENTS_BATCH_STATUS SET BATCH_STATUS = -1 WHERE RUN_ID = ?</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Invoke Business Process Service">
+          <participant name="InvokeBusinessProcessService"/>
+          <output message="InvokeBusinessProcessServiceTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="INVOKE_MODE">ASYNC</assign>
+            <assign to="NOTIFY_PARENT_ON_ERROR">ALL</assign>
+            <assign to="WFD_NAME">EmailOnError</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </onFault>
+  </sequence>
+</process>
