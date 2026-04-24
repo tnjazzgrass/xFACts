@@ -1,0 +1,15 @@
+<process name="Schedule_BPExpirator">
+      <sequence>
+       <operation name="Service">
+          <participant name="BPExpirator"/>
+          <output message="Xout">
+             <assign to="." from="*" />
+             <assign to="WFD_NAME" from="'TimeoutEvent'" />
+          </output>
+          <input message="Xin">
+             <assign to="." from="*" />
+          </input>
+       </operation>
+      </sequence>
+     </process>
+    
