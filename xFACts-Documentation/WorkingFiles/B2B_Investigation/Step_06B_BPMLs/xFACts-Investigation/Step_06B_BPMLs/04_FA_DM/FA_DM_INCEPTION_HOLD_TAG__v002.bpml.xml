@@ -1,0 +1,72 @@
+<process name="FA_DM_INCEPTION_HOLD_TAG">
+  <sequence name="Receive File">
+    <operation name="Lightweight JDBC Adapter">
+      <participant name="AS2LightweightJDBCAdapter"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+        <assign to="query_type">SELECT</assign>
+        <assign to="result_name">Settings</assign>
+        <assign to="row_name">Values</assign>
+        <assign to="sql">EXEC faint.USP_B2B_CLIENTS_GET_SETTINGS</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+        <assign to="." from="DocToDOM(PrimaryDocument)"></assign>
+      </input>
+    </operation>
+
+    <assign name="Assign" to="." from="DocToDOM(PrimaryDocument)"></assign>
+    <operation name="Command Line 2 Adapter">
+      <participant name="FA_CLA_DM_API"/>
+      <output message="CmdLine2InputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\Inception_Hold_Tag\FA_INCEPTION_ACCTS_HOLD_TAG.exe $0</assign>
+        <assign to="inputDelete">false</assign>
+        <assign to="outputDelete">false</assign>
+        <assign to="parm0" from="if(boolean(//Settings/Values/DATABASE_SERVER/text() = &apos;AVG-PROD-LSNR&apos;),&apos;DM-PROD-APP3&apos;,&apos;DM-TEST-APP&apos;)"></assign>
+        <assign to="setSoTimeout">3600000</assign>
+        <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\Inception_Hold_Tag</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+        <assign to="." from="Status_Rpt(&apos;StatusReport&apos;)"></assign>
+      </input>
+    </operation>
+
+    <onFault>
+      <sequence name="on_Fail">
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="AS2LightweightJDBCAdapter"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="param1" from="number(//thisProcessInstance/INVOKE_ID_LIST/text())"></assign>
+            <assign to="paramtype1">Integer</assign>
+            <assign to="pool">AVG_PROD_LSNR_INTEGRATION</assign>
+            <assign to="query_type">UPDATE</assign>
+            <assign to="result_name">Result</assign>
+            <assign to="row_name">Client</assign>
+            <assign to="sql">UPDATE INTEGRATION.ETL.tbl_B2B_CLIENTS_BATCH_STATUS SET BATCH_STATUS = -1 WHERE RUN_ID = ?</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+        <operation name="Invoke Business Process Service">
+          <participant name="InvokeBusinessProcessService"/>
+          <output message="InvokeBusinessProcessServiceTypeInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="INVOKE_MODE">ASYNC</assign>
+            <assign to="NOTIFY_PARENT_ON_ERROR">ALL</assign>
+            <assign to="WFD_NAME">EmailOnError</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+
+      </sequence>
+    </onFault>
+  </sequence>
+</process>
