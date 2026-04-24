@@ -1,233 +1,233 @@
 {
-    "generated":  "2026-04-24T13:50:54Z",
+    "generated":  "2026-04-24T18:54:03Z",
     "category":  "PowerShell Scripts",
     "file_count":  38,
     "files":  [
                   {
                       "path":  "xFACts-PowerShell/Collect-B2BExecution.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-B2BExecution.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-B2BExecution.ps1?v=20260424185403",
                       "module":  "B2B",
                       "component":  "B2B"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-BackupStatus.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-BackupStatus.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-BackupStatus.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Backup"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-BDLBatchStatus.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-BDLBatchStatus.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-BDLBatchStatus.ps1?v=20260424185403",
                       "module":  "BatchOps",
                       "component":  "BatchOps"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-BSReviewRequests.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-BSReviewRequests.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-BSReviewRequests.ps1?v=20260424185403",
                       "module":  "DeptOps",
                       "component":  "DeptOps.BusinessServices"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-DMVMetrics.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-DMVMetrics.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-DMVMetrics.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.ServerHealth"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-JBossMetrics.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-JBossMetrics.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-JBossMetrics.ps1?v=20260424185403",
                       "module":  "JBoss",
                       "component":  "JBoss"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-NBBatchStatus.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-NBBatchStatus.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-NBBatchStatus.ps1?v=20260424185403",
                       "module":  "BatchOps",
                       "component":  "BatchOps"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-PMTBatchStatus.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-PMTBatchStatus.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-PMTBatchStatus.ps1?v=20260424185403",
                       "module":  "BatchOps",
                       "component":  "BatchOps"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-ReplicationHealth.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-ReplicationHealth.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-ReplicationHealth.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Replication"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-ServerHealth.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-ServerHealth.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-ServerHealth.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Disk"
                   },
                   {
                       "path":  "xFACts-PowerShell/Collect-XEEvents.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-XEEvents.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Collect-XEEvents.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.ServerHealth"
                   },
                   {
                       "path":  "xFACts-PowerShell/Consolidate-UploadFiles.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Consolidate-UploadFiles.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Consolidate-UploadFiles.ps1?v=20260424185403",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Pipeline"
                   },
                   {
                       "path":  "xFACts-PowerShell/Distribute-BSReviewRequests.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Distribute-BSReviewRequests.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Distribute-BSReviewRequests.ps1?v=20260424185403",
                       "module":  "DeptOps",
                       "component":  "DeptOps.BusinessServices"
                   },
                   {
                       "path":  "xFACts-PowerShell/Execute-DBCC.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DBCC.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DBCC.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.DBCC"
                   },
                   {
                       "path":  "xFACts-PowerShell/Execute-DmArchive.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DmArchive.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DmArchive.ps1?v=20260424185403",
                       "module":  "DmOps",
                       "component":  "DmOps.Archive"
                   },
                   {
                       "path":  "xFACts-PowerShell/Execute-DmShellPurge.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DmShellPurge.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-DmShellPurge.ps1?v=20260424185403",
                       "module":  "DmOps",
                       "component":  "DmOps.ShellPurge"
                   },
                   {
                       "path":  "xFACts-PowerShell/Execute-IndexMaintenance.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-IndexMaintenance.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Execute-IndexMaintenance.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Index"
                   },
                   {
                       "path":  "xFACts-PowerShell/Generate-DDLReference.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Generate-DDLReference.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Generate-DDLReference.ps1?v=20260424185403",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Pipeline"
                   },
                   {
                       "path":  "xFACts-PowerShell/Invoke-DocPipeline.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Invoke-DocPipeline.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Invoke-DocPipeline.ps1?v=20260424185403",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Pipeline"
                   },
                   {
                       "path":  "xFACts-PowerShell/Monitor-BIDATABuild.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Monitor-BIDATABuild.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Monitor-BIDATABuild.ps1?v=20260424185403",
                       "module":  "BIDATA",
                       "component":  "BIDATA"
                   },
                   {
                       "path":  "xFACts-PowerShell/Monitor-JobFlow.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Monitor-JobFlow.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Monitor-JobFlow.ps1?v=20260424185403",
                       "module":  "JobFlow",
                       "component":  "JobFlow"
                   },
                   {
                       "path":  "xFACts-PowerShell/Process-BackupAWSUpload.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-BackupAWSUpload.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-BackupAWSUpload.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Backup"
                   },
                   {
                       "path":  "xFACts-PowerShell/Process-BackupNetworkCopy.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-BackupNetworkCopy.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-BackupNetworkCopy.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Backup"
                   },
                   {
                       "path":  "xFACts-PowerShell/Process-BackupRetention.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-BackupRetention.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-BackupRetention.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Backup"
                   },
                   {
                       "path":  "xFACts-PowerShell/Process-JiraTicketQueue.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-JiraTicketQueue.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-JiraTicketQueue.ps1?v=20260424185403",
                       "module":  "Jira",
                       "component":  "Jira"
                   },
                   {
                       "path":  "xFACts-PowerShell/Process-TeamsAlertQueue.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-TeamsAlertQueue.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Process-TeamsAlertQueue.ps1?v=20260424185403",
                       "module":  "Teams",
                       "component":  "Teams"
                   },
                   {
                       "path":  "xFACts-PowerShell/Publish-ConfluenceDocumentation.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Publish-ConfluenceDocumentation.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Publish-ConfluenceDocumentation.ps1?v=20260424185403",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Pipeline"
                   },
                   {
                       "path":  "xFACts-PowerShell/Publish-GitHubRepository.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Publish-GitHubRepository.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Publish-GitHubRepository.ps1?v=20260424185403",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Pipeline"
                   },
                   {
                       "path":  "xFACts-PowerShell/Scan-IndexFragmentation.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Scan-IndexFragmentation.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Scan-IndexFragmentation.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Index"
                   },
                   {
                       "path":  "xFACts-PowerShell/Scan-SFTPFiles.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Scan-SFTPFiles.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Scan-SFTPFiles.ps1?v=20260424185403",
                       "module":  "FileOps",
                       "component":  "FileOps"
                   },
                   {
                       "path":  "xFACts-PowerShell/Send-DiskHealthSummary.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Send-DiskHealthSummary.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Send-DiskHealthSummary.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Disk"
                   },
                   {
                       "path":  "xFACts-PowerShell/Send-OpenBatchSummary.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Send-OpenBatchSummary.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Send-OpenBatchSummary.ps1?v=20260424185403",
                       "module":  "BatchOps",
                       "component":  "BatchOps"
                   },
                   {
                       "path":  "xFACts-PowerShell/Start-xFACtsOrchestrator.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Start-xFACtsOrchestrator.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Start-xFACtsOrchestrator.ps1?v=20260424185403",
                       "module":  "Orchestrator",
                       "component":  "Engine.Orchestrator"
                   },
                   {
                       "path":  "xFACts-PowerShell/Sync-ClientHierarchy.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Sync-ClientHierarchy.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Sync-ClientHierarchy.ps1?v=20260424185403",
                       "module":  "dbo",
                       "component":  "Engine.SharedInfrastructure"
                   },
                   {
                       "path":  "xFACts-PowerShell/Sync-IndexRegistry.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Sync-IndexRegistry.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Sync-IndexRegistry.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Index"
                   },
                   {
                       "path":  "xFACts-PowerShell/Update-IndexStatistics.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Update-IndexStatistics.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/Update-IndexStatistics.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Index"
                   },
                   {
                       "path":  "xFACts-PowerShell/xFACts-IndexFunctions.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/xFACts-IndexFunctions.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/xFACts-IndexFunctions.ps1?v=20260424185403",
                       "module":  "ServerOps",
                       "component":  "ServerOps.Index"
                   },
                   {
                       "path":  "xFACts-PowerShell/xFACts-OrchestratorFunctions.ps1",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/xFACts-OrchestratorFunctions.ps1?v=20260424135054",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-PowerShell/xFACts-OrchestratorFunctions.ps1?v=20260424185403",
                       "module":  "Orchestrator",
                       "component":  "Engine.Orchestrator"
                   }
