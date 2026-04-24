@@ -1,0 +1,19 @@
+<process name="FA_TO_PAYGROUND_ALL_CLIENTS_OB_EO_S2J_RPT">
+  <sequence name="PythonExec">
+    <operation name="Command Line 2 Adapter">
+      <participant name="FA_CLA_DEFAULT"/>
+      <output message="CmdLine2InputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="cmdLine">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_PAYGROUND\FA_PAYGROUND_ALL_CLIENTS_OB_EO_S2J_RPT.exe PROD</assign>
+        <assign to="inputDelete">false</assign>
+        <assign to="outputDelete">false</assign>
+        <assign to="setSoTimeout">18000000</assign>
+        <assign to="workingDir">\\kingkong\Data_Processing\Pervasive\Python_EXE_files\FA_PAYGROUND\</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+
+  </sequence>
+</process>
