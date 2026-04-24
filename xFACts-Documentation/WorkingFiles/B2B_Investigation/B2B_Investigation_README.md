@@ -5,7 +5,7 @@ This folder holds the chronological investigation record for the B2B (Sterling B
 ## Navigation
 
 **Start here:**
-- `../Planning/B2B_Roadmap.md` — the authoritative investigation tracker. Go here first to understand current state, what's been decided, and what's next.
+- `../../Planning/B2B_Roadmap.md` — the authoritative investigation tracker. Go here first to understand current state, what's been decided, and what's next. **Read the "Next Session — Start Here" section at the top of the Roadmap before beginning any new session.**
 
 **Step-by-step findings (in order):**
 
@@ -13,13 +13,17 @@ This folder holds the chronological investigation record for the B2B (Sterling B
 |---|---|---|---|
 | 01 | b2bi Database Catalog | ✅ Complete | `Step_01_Database_Catalog/` |
 | 02 | Retention and Archive | ✅ Complete | `Step_02_Retention_and_Archive/` |
-| 03 | Workflow Universe | ✅ Complete | `Step_03_Workflow_Universe/` |
+| 03 | Workflow Universe | ✅ Complete | `Step_03_Workflow_Definition_Catalog+Active_Inventory/` |
 | 04 | WF_INACTIVE | ✅ Complete | `Step_04_WF_INACTIVE/` |
-| 05 | CORRELATION_SET | ✅ Complete | `Step_05_Correlation_Set/` |
+| 05 | CORRELATION_SET | ✅ Complete | `Step_05_CORRELATION_SET/` |
+| 06 | FA_CLIENTS_MAIN Anatomy | 🎯 Next up | `Step_06_MAIN_Anatomy/` *(to be created)* |
 
-**Archived historical docs (reference only, not authoritative):**
-- `Roadmap_v1_pre_investigation.md` — the pre-investigation Roadmap, preserved for audit trail
-- `../Roadmap_v1_pre_investigation.md` — alternate location if above is not available
+**Archived historical material (reference only, not authoritative):**
+
+Under `Legacy/`:
+- `B2B_Roadmap_V1.md` — the pre-investigation Roadmap
+- `B2B_ArchitectureOverview.md`, `B2B_Module_Planning.md`, `B2B_Reference_Queries.md`, `B2B_ProcessAnatomy_NewBusiness.md` — pre-investigation markdown docs (each carries a deprecation header)
+- `B2BInvestigate-*.ps1`, `B2BScheduleTimingXml*.ps1`, etc. — legacy investigation PowerShell scripts
 
 ## Per-step folder structure
 
@@ -37,10 +41,14 @@ These are **working documents** intended to inform the eventual build of a compr
 
 **Hierarchy of trust:**
 1. Roadmap + Step Findings — authoritative investigation state
-2. Archived docs (`B2B_ArchitectureOverview.md`, `B2B_Module_Planning.md`, etc.) — reference only, "trust but verify"
+2. Legacy docs (under `Legacy/`) — reference only, "trust but verify," headers attached
 3. Any earlier statements not captured in the above — do not rely on
 
 **Update policy:**
 - Findings docs are frozen once the step closes (subsequent discoveries go into new steps, not edits to old findings)
 - Roadmap is living and gets refreshed as investigation progresses
-- Archived docs get deprecation headers but are not rewritten
+- Legacy docs retain their deprecation headers but are not rewritten
+
+## Upcoming step — what to know
+
+**Step 6 — FA_CLIENTS_MAIN Anatomy** is the next step and must be executed in a single session with full context. MAIN is the most important workflow in Sterling at FAC, and two previous investigation passes got it wrong. See the "Next Session — Start Here" section of the Roadmap for scope, approach, and required context reading.
