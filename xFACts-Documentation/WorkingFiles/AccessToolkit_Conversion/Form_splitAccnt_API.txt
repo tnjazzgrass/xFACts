@@ -1,0 +1,104 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_splitAccnt_API"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Private Sub runSplitAct_low_Click()
+Dim dB As Database
+Dim rst As Recordset
+Dim httpReq As New XMLHTTP60
+Dim del As Long, bizID As Long, apCnt As Long, gpCnt As Long, cgCnt As Long
+Dim sURL As String, response As String, jBody As String, sql1 As String, aList As String, env As String
+
+    Select Case [Forms]![Call REST API]![runEnv]
+        
+        Case 1
+            env = "TEST"
+            sURL = "http://dm-test-app:8080/dm-rest-services/api/"
+            
+        Case 2
+            env = "STAGE"
+            sURL = "http://dm-stage-app:8080/dm-rest-services/api/"
+              
+    End Select
+    
+    Set dB = CurrentDb
+    
+        'Loop through consumers that need to have accounts split and compose & make API calls
+         Set rst = dB.OpenRecordset("SELECT * FROM Split_accnts_low WHERE Processed = 'N' ORDER BY ConsAgencyID;")
+         
+            Do Until rst.EOF
+
+                'Apply Empty Shell Merge tag to allow the split
+                 jBody = "{"
+                 jBody = jBody & Chr(13) & Chr(10) & """tagShortNames"":[""TC_ESMRG""]"
+                 jBody = jBody & Chr(13) & Chr(10) & "}"
+                
+                 httpReq.Open "POST", sURL & "consumers/" & rst!ConsAgencyID & "/assigntags", False, [Forms]![Call REST API]![APIuser], [Forms]![Call REST API]![APIpass]
+                 httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                 httpReq.setRequestHeader "Authorization", [Forms]![Call REST API]![authCode]
+                 httpReq.sEnd (jBody)
+
+                 response = httpReq.responseText
+                
+                'Compose body of API call
+                 jBody = "{"
+                 jBody = jBody & Chr(13) & Chr(10) & """consumerAgencyId"":" & rst!ConsAgencyID & ","
+                 jBody = jBody & Chr(13) & Chr(10) & """accountIds"":[" & rst!AcctSplit & "],"
+                 jBody = jBody & Chr(13) & Chr(10) & """attachConsumers"":true,"
+                 jBody = jBody & Chr(13) & Chr(10) & """attachLinkedConsumers"":false"
+                 jBody = jBody & Chr(13) & Chr(10) & "}"
+
+                'Make API call
+                 httpReq.Open "POST", sURL & "consumers/" & rst!ConsAgencyID & "/split", False, [Forms]![Call REST API]![APIuser], [Forms]![Call REST API]![APIpass]
+                 httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                 httpReq.setRequestHeader "Authorization", [Forms]![Call REST API]![authCode]
+                 httpReq.sEnd (jBody)
+
+                 response = httpReq.responseText
+
+                'Debug.Print response
+
+                'Update processed status
+                 sql1 = "UPDATE Split_accnts_low SET Processed = 'Y', ResponseString = '" & response & "' WHERE ConsAgencyID = " & rst!ConsAgencyID & ";"
+                     dB.Execute (sql1)
+                     
+                
+
+                'Delete Empty Shell Merge tag
+                 jBody = "{"
+                 jBody = jBody & Chr(13) & Chr(10) & """tagShortNames"":[""TC_ESMRG""]"
+                 jBody = jBody & Chr(13) & Chr(10) & "}"
+                
+                 httpReq.Open "POST", sURL & "consumers/" & rst!ConsAgencyID & "/unassigntags", False, [Forms]![Call REST API]![APIuser], [Forms]![Call REST API]![APIpass]
+                 httpReq.setRequestHeader "Content-Type", "application/vnd.fico.dm.v1+json"
+                 httpReq.setRequestHeader "Authorization", [Forms]![Call REST API]![authCode]
+                 httpReq.sEnd (jBody)
+
+                 response = httpReq.responseText
+
+                 del = Timer + 1
+                 Do While Timer < del
+                     DoEvents
+                 Loop
+
+             rst.MoveNext
+             Loop
+    
+    dB.Execute "INSERT INTO toolUse (toolFunction, toolEnv, toolUser, toolDate) VALUES ('SplitAccnts', '" & env & "', '" & Environ("username") & "', Now())"
+    
+    MsgBox "The split consumer/account APIs have been submitted" & Chr(13) & Chr(10), vbInformation, "API CALLS COMPLETE"
+    
+
+End Sub
+
+Private Sub xSplitAct_low_Click()
+
+    DoCmd.Close acForm, "splitAccnt_API", acSaveNo
+
+End Sub
