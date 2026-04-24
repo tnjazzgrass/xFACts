@@ -2,7 +2,9 @@
    business-intelligence.js — Business Intelligence Departmental Page
    Location: E:\xFACts-ControlCenter\public\js\business-intelligence.js
    
-   Loads Notice Recon execution data, renders status cards and step detail.
+   Renders the Notice Recon tile with per-process status badges and opens
+   a detail slideout when a badge is clicked. To enable a planned process,
+   flip its `active` flag to true in NR_PROCESSES.
    
    Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessIntelligence)
    ============================================================================ */
@@ -10,15 +12,32 @@
 var BI = (function () {
     'use strict';
 
+    // ── Process Configuration ────────────────────────────────────────────
+    // Listed in display order left-to-right. Flip `active` to true when
+    // a planned process goes live; no other code changes required.
+    var NR_PROCESSES = [
+        { name: 'SndRight',   active: true },
+        { name: 'Revspring',  active: true },
+        { name: 'Validation', active: true },
+        { name: 'FAND',       active: false }
+    ];
+
     // ── State ────────────────────────────────────────────────────────────
-    var selectedExecutionId = null;
     var refreshTimer = null;
     var REFRESH_INTERVAL = 60000; // 60 seconds default
+    var executionsByName = {};    // Today's executions keyed by process_name
+    var executionsById = {};      // Same data keyed by execution_id (slideout lookup)
 
     // ── Initialize ───────────────────────────────────────────────────────
     function init() {
+        renderBadgeSkeleton();
         loadRefreshInterval();
         loadNoticeRecon();
+
+        // Close slideout on Escape
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeDetail();
+        });
     }
 
     function loadRefreshInterval() {
@@ -54,192 +73,189 @@ var BI = (function () {
             })
             .then(function (data) {
                 hideConnectionError();
-                renderNoticeReconCards(data.executions || []);
+                updateBadges(data.executions || []);
                 updateTimestamp();
-
-                // If we had a selected execution, reload its steps
-                if (selectedExecutionId) {
-                    loadStepDetail(selectedExecutionId);
-                }
             })
             .catch(function (err) {
                 showConnectionError('Failed to load Notice Recon data: ' + err.message);
             });
     }
 
-    function renderNoticeReconCards(executions) {
-        var container = document.getElementById('nr-cards');
-        var loading = document.getElementById('nr-loading');
-        var empty = document.getElementById('nr-empty');
-
-        loading.classList.add('hidden');
-
-        if (executions.length === 0) {
-            container.classList.add('hidden');
-            empty.classList.remove('hidden');
-            return;
-        }
-
-        empty.classList.add('hidden');
-        container.classList.remove('hidden');
-
-        // Expected processes — show placeholder if not yet run today
-        var expected = ['SndRight', 'Revspring', 'Validation'];
-        var byName = {};
-        executions.forEach(function (ex) { byName[ex.process_name] = ex; });
+    // Render the initial badge row with all processes in 'pending' state.
+    // Applied once on init so the tile has its final layout immediately,
+    // before the first API response arrives.
+    function renderBadgeSkeleton() {
+        var container = document.getElementById('nr-badges');
+        if (!container) return;
 
         var html = '';
-        expected.forEach(function (name) {
-            var ex = byName[name];
-            if (ex) {
-                html += buildExecCard(ex);
-            } else {
-                html += buildPendingCard(name);
-            }
+        NR_PROCESSES.forEach(function (p) {
+            var extraClass = p.active ? '' : ' future';
+            html += '<div class="nr-badge pending' + extraClass + '" '
+                  + 'data-process="' + escAttr(p.name) + '" '
+                  + 'onclick="BI.openDetail(\'' + escAttr(p.name) + '\')">'
+                  + escHtml(p.name)
+                  + '</div>';
         });
-
-        // Any unexpected processes (future-proofing)
-        executions.forEach(function (ex) {
-            if (expected.indexOf(ex.process_name) === -1) {
-                html += buildExecCard(ex);
-            }
-        });
-
         container.innerHTML = html;
-
-        // Reapply selection
-        if (selectedExecutionId) {
-            var sel = container.querySelector('[data-exec-id="' + selectedExecutionId + '"]');
-            if (sel) sel.classList.add('selected');
-        }
     }
 
-    function buildExecCard(ex) {
+    // Update badge colors and internal state caches from the executions list.
+    function updateBadges(executions) {
+        // Rebuild lookup caches
+        executionsByName = {};
+        executionsById = {};
+        executions.forEach(function (ex) {
+            executionsByName[ex.process_name] = ex;
+            executionsById[ex.execution_id] = ex;
+        });
+
+        // Update badge state classes in place (no re-render = no flicker)
+        var container = document.getElementById('nr-badges');
+        if (!container) return;
+
+        NR_PROCESSES.forEach(function (p) {
+            var badge = container.querySelector('[data-process="' + cssEscape(p.name) + '"]');
+            if (!badge) return;
+
+            var ex = executionsByName[p.name];
+            var statusClass = ex ? getStatusClass(ex.status) : 'pending';
+
+            // Reset classes and apply the current status
+            badge.className = 'nr-badge ' + statusClass + (p.active ? '' : ' future');
+        });
+    }
+
+    // ── Detail Slideout ──────────────────────────────────────────────────
+    // Accepts either an execution_id (number) or a process_name (string).
+    // Badge clicks pass the process name; this resolves to the execution.
+    function openDetail(processNameOrId) {
+        var ex = null;
+        var processName = null;
+        var procConfig = null;
+
+        if (typeof processNameOrId === 'string') {
+            processName = processNameOrId;
+            ex = executionsByName[processName] || null;
+            procConfig = NR_PROCESSES.filter(function (p) { return p.name === processName; })[0] || null;
+        } else {
+            ex = executionsById[processNameOrId] || null;
+            if (ex) processName = ex.process_name;
+        }
+
+        var title = document.getElementById('nr-detail-title');
+        var content = document.getElementById('nr-detail-content');
+        var overlay = document.getElementById('nr-detail-overlay');
+        var panel = document.getElementById('nr-detail-panel');
+
+        title.textContent = (processName || 'Notice Recon') + ' — Execution Detail';
+
+        if (ex) {
+            content.innerHTML = renderSummary(ex)
+                + '<div class="slideout-section">'
+                + '<div class="slideout-section-title">Steps</div>'
+                + '<div id="nr-detail-steps" class="loading">Loading steps...</div>'
+                + '</div>';
+
+            fetch('/api/business-intelligence/notice-recon-steps?execution_id=' + ex.execution_id)
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    renderSteps(data.steps || []);
+                })
+                .catch(function (err) {
+                    var stepsEl = document.getElementById('nr-detail-steps');
+                    if (stepsEl) stepsEl.innerHTML = '<div class="slideout-empty">Failed to load steps: ' + escHtml(err.message) + '</div>';
+                });
+        } else {
+            // No execution for this process today
+            var message = (procConfig && !procConfig.active)
+                ? 'This process has not yet been deployed.'
+                : 'This process has not yet run today.';
+            content.innerHTML = '<div class="slideout-empty">' + escHtml(message) + '</div>';
+        }
+
+        overlay.classList.add('open');
+        panel.classList.add('open');
+    }
+
+    function closeDetail() {
+        var overlay = document.getElementById('nr-detail-overlay');
+        var panel = document.getElementById('nr-detail-panel');
+        if (overlay) overlay.classList.remove('open');
+        if (panel) panel.classList.remove('open');
+    }
+
+    function renderSummary(ex) {
         var statusClass = getStatusClass(ex.status);
-        var badgeClass = statusClass;
-        var selected = (ex.execution_id === selectedExecutionId) ? ' selected' : '';
-        var timeStr = ex.start_time ? formatTime(ex.start_time) : '';
         var durationStr = ex.duration_seconds !== null ? formatDuration(ex.duration_seconds) : '-';
+        var timeStr = ex.start_time ? formatTime(ex.start_time) : '-';
 
-        return '<div class="nr-card status-' + statusClass + selected + '" '
-            + 'data-exec-id="' + ex.execution_id + '" '
-            + 'onclick="BI.selectExecution(' + ex.execution_id + ')">'
-            + '<div class="nr-card-header">'
-            + '<span class="nr-process-name">' + escHtml(ex.process_name) + '</span>'
-            + '<span class="nr-status-badge ' + badgeClass + '">' + escHtml(ex.status) + '</span>'
+        return '<div class="slideout-summary">'
+            + '<div class="slideout-stat">'
+            + '<div class="slideout-stat-value"><span class="nr-status-pill ' + statusClass + '">' + escHtml(ex.status) + '</span></div>'
+            + '<div class="slideout-stat-label">Status</div>'
             + '</div>'
-            + '<div class="nr-card-metrics">'
-            + '<div class="nr-metric"><span class="nr-metric-label">Duration</span><span class="nr-metric-value">' + durationStr + '</span></div>'
-            + '<div class="nr-metric"><span class="nr-metric-label">Total Records</span><span class="nr-metric-value">' + formatNumber(ex.total_records) + '</span></div>'
-            + '<div class="nr-metric"><span class="nr-metric-label">DM Updates</span><span class="nr-metric-value">' + formatNumber(ex.records_updated_dm) + '</span></div>'
-            + '<div class="nr-metric"><span class="nr-metric-label">Documents</span><span class="nr-metric-value">' + formatNumber(ex.records_document) + '</span></div>'
+            + '<div class="slideout-stat">'
+            + '<div class="slideout-stat-value">' + durationStr + '</div>'
+            + '<div class="slideout-stat-label">Duration</div>'
             + '</div>'
-            + '<div class="nr-card-time">' + timeStr + '</div>'
-            + '</div>';
-    }
-
-    function buildPendingCard(name) {
-        return '<div class="nr-card status-pending">'
-            + '<div class="nr-card-header">'
-            + '<span class="nr-process-name">' + escHtml(name) + '</span>'
-            + '<span class="nr-status-badge" style="color:#666;">Pending</span>'
+            + '<div class="slideout-stat">'
+            + '<div class="slideout-stat-value">' + formatNumber(ex.total_records) + '</div>'
+            + '<div class="slideout-stat-label">Total Records</div>'
             + '</div>'
-            + '<div class="nr-card-metrics">'
-            + '<div class="nr-metric"><span class="nr-metric-label">Status</span><span class="nr-metric-value" style="color:#666;">Not yet run today</span></div>'
+            + '<div class="slideout-stat">'
+            + '<div class="slideout-stat-value">' + formatNumber(ex.records_updated_dm) + '</div>'
+            + '<div class="slideout-stat-label">DM Updates</div>'
+            + '</div>'
+            + '<div class="slideout-stat">'
+            + '<div class="slideout-stat-value">' + timeStr + '</div>'
+            + '<div class="slideout-stat-label">Start Time</div>'
             + '</div>'
             + '</div>';
     }
 
-    // ── Step Detail ──────────────────────────────────────────────────────
-    function selectExecution(execId) {
-        // Toggle selection
-        if (selectedExecutionId === execId) {
-            selectedExecutionId = null;
-            clearSelection();
-            clearStepDetail();
-            return;
-        }
-
-        selectedExecutionId = execId;
-        highlightSelected(execId);
-        loadStepDetail(execId);
-    }
-
-    function loadStepDetail(execId) {
-        var subtitle = document.getElementById('nr-detail-subtitle');
-        subtitle.textContent = 'Loading steps...';
-
-        fetch('/api/business-intelligence/notice-recon-steps?execution_id=' + execId)
-            .then(function (r) {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-            })
-            .then(function (data) {
-                renderStepDetail(data.steps || []);
-            })
-            .catch(function (err) {
-                subtitle.textContent = 'Failed to load steps: ' + err.message;
-            });
-    }
-
-    function renderStepDetail(steps) {
-        var container = document.getElementById('nr-steps');
-        var subtitle = document.getElementById('nr-detail-subtitle');
+    function renderSteps(steps) {
+        var container = document.getElementById('nr-detail-steps');
+        if (!container) return;
 
         if (steps.length === 0) {
-            container.innerHTML = '';
-            subtitle.textContent = 'No steps found for this execution';
+            container.innerHTML = '<div class="slideout-empty">No steps found for this execution</div>';
             return;
         }
 
-        subtitle.textContent = steps.length + ' steps';
+        container.classList.remove('loading');
 
-        var html = '<table class="nr-step-table">'
+        var html = '<table class="slideout-table">'
             + '<thead><tr>'
-            + '<th>#</th><th>Step</th><th>Status</th><th>Duration</th><th>Rows</th><th>Message</th>'
+            + '<th>#</th><th>Step</th><th>Status</th><th>Duration</th><th class="align-right">Rows</th><th>Message</th>'
             + '</tr></thead><tbody>';
 
         steps.forEach(function (step) {
             var statusClass = getStatusClass(step.status);
             var durationStr = step.duration_seconds > 0 ? step.duration_seconds + 's' : '<1s';
             var rowsStr = step.rows_affected !== null ? formatNumber(step.rows_affected) : '-';
-            var msgStr = step.message || '';
+            var msgStr;
             if (step.error_message) {
                 msgStr = '<span style="color:#ef5350;">' + escHtml(step.error_message) + '</span>';
             } else {
-                msgStr = escHtml(msgStr);
+                msgStr = escHtml(step.message || '');
             }
 
             html += '<tr>'
                 + '<td>' + step.step_number + '</td>'
                 + '<td>' + escHtml(step.step_name) + '</td>'
-                + '<td><span class="step-status ' + statusClass + '">' + escHtml(step.status) + '</span></td>'
+                + '<td><span class="nr-status-pill ' + statusClass + '">' + escHtml(step.status) + '</span></td>'
                 + '<td>' + durationStr + '</td>'
-                + '<td>' + rowsStr + '</td>'
-                + '<td class="step-message">' + msgStr + '</td>'
+                + '<td class="align-right">' + rowsStr + '</td>'
+                + '<td>' + msgStr + '</td>'
                 + '</tr>';
         });
 
         html += '</tbody></table>';
         container.innerHTML = html;
-    }
-
-    function clearStepDetail() {
-        document.getElementById('nr-steps').innerHTML = '';
-        document.getElementById('nr-detail-subtitle').textContent = 'Click a process card above to view steps';
-    }
-
-    // ── Card Selection ───────────────────────────────────────────────────
-    function highlightSelected(execId) {
-        var cards = document.querySelectorAll('.nr-card');
-        cards.forEach(function (c) { c.classList.remove('selected'); });
-        var sel = document.querySelector('[data-exec-id="' + execId + '"]');
-        if (sel) sel.classList.add('selected');
-    }
-
-    function clearSelection() {
-        var cards = document.querySelectorAll('.nr-card');
-        cards.forEach(function (c) { c.classList.remove('selected'); });
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -283,6 +299,21 @@ var BI = (function () {
         return div.innerHTML;
     }
 
+    // For use in HTML attribute values (inside double quotes).
+    function escAttr(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    }
+
+    // Escape a value for safe use inside a querySelector attribute selector.
+    function cssEscape(str) {
+        if (window.CSS && typeof window.CSS.escape === 'function') {
+            return window.CSS.escape(str);
+        }
+        // Minimal fallback for older browsers
+        return String(str).replace(/([^a-zA-Z0-9_-])/g, '\\$1');
+    }
+
     function updateTimestamp() {
         var el = document.getElementById('last-update');
         if (el) {
@@ -313,7 +344,8 @@ var BI = (function () {
     // ── Public API ───────────────────────────────────────────────────────
     return {
         pageRefresh: pageRefresh,
-        selectExecution: selectExecution
+        openDetail: openDetail,
+        closeDetail: closeDetail
     };
 
 })();
