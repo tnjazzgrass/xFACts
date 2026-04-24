@@ -178,84 +178,7 @@ a { color: #9cdcfe; }
     padding: 8px 0;
 }
 
-/* ============================================================================
-   Engine Indicator Cards - Orchestrator process health in header bar
-   ============================================================================ */
-.engine-row {
-    display: flex;
-    gap: 5px;
-}
-
-.engine-card {
-    width: 68px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    padding: 4px 6px;
-    border: 1px solid #383838;
-    border-radius: 3px;
-    background: #252526;
-}
-
-.engine-label {
-    font-size: 9px;
-    color: #888;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-align: center;
-}
-
-.engine-bar {
-    width: 100%;
-    height: 10px;
-    border-radius: 2px;
-    transition: background-color 0.3s, box-shadow 0.3s;
-}
-
-.engine-bar.idle {
-    background: #22c55e;
-    box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
-}
-
-.engine-bar.running {
-    background: #569cd6;
-    box-shadow: 0 0 6px rgba(86, 156, 214, 0.4);
-}
-
-.engine-bar.overdue {
-    background: #dcdcaa;
-    box-shadow: 0 0 6px rgba(220, 220, 170, 0.4);
-}
-
-.engine-bar.critical {
-    background: #f48771;
-    box-shadow: 0 0 6px rgba(244, 135, 113, 0.4);
-}
-
-.engine-bar.disabled {
-    background: #444;
-    box-shadow: none;
-}
-
-.engine-countdown {
-    font-size: 8px;
-    color: #d4d4d4;
-    font-variant-numeric: tabular-nums;
-    height: 10px;
-    line-height: 10px;
-}
-
-.engine-card.card-warning {
-    border-color: #dcdcaa;
-    background: rgba(220, 220, 170, 0.08);
-}
-
-.engine-card.card-critical {
-    border-color: #f48771;
-    background: rgba(244, 135, 113, 0.08);
-}
+/* Engine Indicator Cards: base styles are provided by engine-events.css */
 
 /* ============================================================================
    Pipeline Status - Cards with Badge Pills
@@ -568,22 +491,6 @@ a { color: #9cdcfe; }
 .segment.active-healthy { background: #4ec9b0; }
 .segment.active-warning { background: #dcdcaa; }
 .segment.active-critical { background: #f48771; }
-
-/* Scrollbar styling */
-.active-operations-content::-webkit-scrollbar {
-    width: 8px;
-}
-.active-operations-content::-webkit-scrollbar-track {
-    background: #1e1e1e;
-    border-radius: 4px;
-}
-.active-operations-content::-webkit-scrollbar-thumb {
-    background: #404040;
-    border-radius: 4px;
-}
-.active-operations-content::-webkit-scrollbar-thumb:hover {
-    background: #555;
-}
 
 /* ── Backup Type Badges ── */
 .backup-type-badge {
