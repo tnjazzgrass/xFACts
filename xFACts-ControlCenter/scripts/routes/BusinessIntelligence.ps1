@@ -4,9 +4,12 @@
 # 
 # Departmental dashboard for the Business Intelligence team.
 # Components:
-#   - Notice Recon: Daily reconciliation process status and step detail
-#   - BDL Import: Placeholder card linking to future Tools BDL Import page
-#   - LiveVox / SndRight: Placeholder cards for Phase 2 monitors
+#   - Tools & Processes tile row:
+#       * Notice Recon: Horizontal status badges for daily reconciliation
+#         processes (SndRight, Revspring, Validation, FAND). Each badge
+#         is independently clickable to open a detail slideout.
+#       * BDL Import: Links to Tools BDL Import page.
+#       * LiveVox / SndRight Texting: Placeholder tiles for Phase 2 monitors.
 #
 # CSS: /css/business-intelligence.css, /css/engine-events.css
 # JS:  /js/business-intelligence.js, /js/engine-events.js
@@ -62,6 +65,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
 <html>
 <head>
     <title>Business Intelligence - xFACts Control Center</title>
+    <link rel="stylesheet" href="/css/engine-events.css">
     <link rel="stylesheet" href="/css/business-intelligence.css">
 </head>
 <body>
@@ -83,35 +87,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
     <div id="connection-error" class="connection-error"></div>
     
     <!-- ================================================================ -->
-    <!-- NOTICE RECON STATUS CARDS                                        -->
-    <!-- ================================================================ -->
-    <div class="section" id="notice-recon-section">
-        <div class="section-header">
-            <h2>Notice Reconciliation</h2>
-            <span class="section-subtitle">Daily vendor file processing status</span>
-        </div>
-        <div class="section-body">
-            <div id="nr-loading" class="loading">Loading Notice Recon status...</div>
-            <div id="nr-cards" class="nr-cards hidden"></div>
-            <div id="nr-empty" class="empty-state hidden">No executions found for today</div>
-        </div>
-    </div>
-    
-    <!-- ================================================================ -->
-    <!-- NOTICE RECON STEP DETAIL (expandable)                            -->
-    <!-- ================================================================ -->
-    <div class="section" id="nr-detail-section">
-        <div class="section-header">
-            <h2>Execution Detail</h2>
-            <span id="nr-detail-subtitle" class="section-subtitle">Click a process card above to view steps</span>
-        </div>
-        <div class="section-body">
-            <div id="nr-steps" class="nr-steps"></div>
-        </div>
-    </div>
-    
-    <!-- ================================================================ -->
-    <!-- TOOLS & FUTURE MONITORS                                          -->
+    <!-- TOOLS & PROCESSES                                                -->
     <!-- ================================================================ -->
     <div class="section" id="tools-section">
         <div class="section-header">
@@ -119,6 +95,12 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
         </div>
         <div class="section-body">
             <div class="tool-cards">
+                <!-- Notice Recon: status-badge tile (badges rendered/updated by JS) -->
+                <div class="tool-card notice-recon-tile">
+                    <div class="nr-badges" id="nr-badges"></div>
+                    <div class="tool-label">Notice Recon</div>
+                    <div class="tool-status">Daily Reconciliation</div>
+                </div>
                 <div class="tool-card" id="bdl-import-card" onclick="window.location.href='/bdl-import'">
                     <div class="tool-icon">&#128230;</div>
                     <div class="tool-label">BDL Import</div>
@@ -135,6 +117,20 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
                     <div class="tool-status">Phase 2</div>
                 </div>
             </div>
+        </div>
+    </div>
+    
+    <!-- ================================================================ -->
+    <!-- EXECUTION DETAIL SLIDEOUT                                        -->
+    <!-- ================================================================ -->
+    <div id="nr-detail-overlay" class="slide-panel-overlay" onclick="BI.closeDetail()"></div>
+    <div id="nr-detail-panel" class="slide-panel wide">
+        <div class="slide-panel-header">
+            <h3 id="nr-detail-title">Execution Detail</h3>
+            <button class="modal-close" onclick="BI.closeDetail()" title="Close">&times;</button>
+        </div>
+        <div class="slide-panel-body">
+            <div id="nr-detail-content"></div>
         </div>
     </div>
     
