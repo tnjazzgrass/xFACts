@@ -41,9 +41,17 @@ function onSessionExpired() { }
     var trendChart = null;
     var gaugeChart = null;
     var miniGaugeCharts = {};
+
+    // Process Breakdown table state
     var processData = [];
     var sortCol = 'total_cpu_ms';
     var sortDir = 'desc';
+
+    // Top API Endpoints table state
+    var apiData = [];
+    var apiSortCol = 'call_count';
+    var apiSortDir = 'desc';
+
     var serverImpactData = null;
     var summaryCardData = null;
     var allServersCache = null;
@@ -308,7 +316,8 @@ function onSessionExpired() { }
                 '<p>The <span class="info-label">% xFACts</span> column shows each process\'s share of total xFACts CPU \u2014 useful for comparing which processes are the heaviest <strong>relative to each other</strong>.</p>' +
                 '<p>The <span class="info-label">% Server</span> column puts it in real-world context \u2014 what percentage of the server\'s total CPU did this individual process consume. When every row shows values like 0.07%, 0.02%, 0.01%, that\'s a clear indicator that xFACts processes are not contributing to performance issues.</p>' +
                 '<p>Hover over any row to see a plain-English summary combining both perspectives.</p>' +
-                '<p>Other columns: <strong>Qry</strong> = query count, <strong>CPU</strong> = total CPU time, <strong>Avg</strong> = average query duration, <strong>Reads</strong> = logical reads (data touched in memory).</p>'
+                '<p>Other columns: <strong>Qry</strong> = query count, <strong>CPU</strong> = total CPU time, <strong>Avg</strong> = average query duration, <strong>Reads</strong> = logical reads (data touched in memory).</p>' +
+                '<p><em>Click any column header to sort by that column. Click again to reverse the sort direction.</em></p>'
         },
         'cpu-trend': {
             title: 'CPU Impact Over Time',
@@ -319,7 +328,8 @@ function onSessionExpired() { }
         'api-endpoints': {
             title: 'Top API Endpoints',
             body: '<p>The most-called Control Center API endpoints, ranked by total processing time. This shows which dashboard features are generating the most server-side work.</p>' +
-                '<p>Useful for identifying if a specific endpoint is slow (high Avg ms) or just heavily used (high Calls but low Avg ms).</p>'
+                '<p>Useful for identifying if a specific endpoint is slow (high Avg ms) or just heavily used (high Calls but low Avg ms).</p>' +
+                '<p><em>Click any column header to sort by that column. Click again to reverse the sort direction.</em></p>'
         }
     };
 
@@ -627,25 +637,25 @@ function onSessionExpired() { }
         d.forEach(function(r) { totalXfactsCpu += (r.total_cpu_ms || 0); });
         var serverCpuMs = (serverImpactData && serverImpactData.aggregate) ? serverImpactData.aggregate.capacity_cpu_ms : null;
 
+        // Columns: sortKey is the actual data field used for sorting; the derived
+        // percentage columns share total_cpu_ms as their sort basis, but they must
+        // NOT display the sort arrow — the arrow belongs on the real column only.
         var cols = [
-            { key: 'process_name', label: 'Process', cls: '' },
-            { key: 'query_count', label: 'Qry', cls: 'num' },
-            { key: 'total_cpu_ms', label: 'CPU', cls: 'num' },
-            { key: 'avg_duration_ms', label: 'Avg', cls: 'num' },
-            { key: 'total_logical_reads', label: 'Reads', cls: 'num' },
-            { key: '_pct_xfacts', label: '% xFACts', cls: 'num' },
-            { key: '_pct_server', label: '% Server', cls: 'num' }
+            { key: 'process_name',        label: 'Process',   cls: '',    sortKey: 'process_name' },
+            { key: 'query_count',         label: 'Qry',       cls: 'num', sortKey: 'query_count' },
+            { key: 'total_cpu_ms',        label: 'CPU',       cls: 'num', sortKey: 'total_cpu_ms' },
+            { key: 'avg_duration_ms',     label: 'Avg',       cls: 'num', sortKey: 'avg_duration_ms' },
+            { key: 'total_logical_reads', label: 'Reads',     cls: 'num', sortKey: 'total_logical_reads' },
+            { key: '_pct_xfacts',         label: '% xFACts',  cls: 'num', sortKey: 'total_cpu_ms' },
+            { key: '_pct_server',         label: '% Server',  cls: 'num', sortKey: 'total_cpu_ms' }
         ];
 
         var html = '<table class="pm-table"><thead><tr>';
         cols.forEach(function(c) {
-            var arrow = '';
-            var sortKey = c.key;
-            // Map virtual columns to their sort basis
-            if (sortKey === '_pct_xfacts' || sortKey === '_pct_server') sortKey = 'total_cpu_ms';
-            if (sortKey === sortCol) arrow = '<span class="sort-arrow">' + (sortDir === 'asc' ? '\u25B2' : '\u25BC') + '</span>';
-            var onclick = ' onclick="PM.sortProcess(\'' + sortKey + '\')"';
-            html += '<th class="' + c.cls + '"' + onclick + '>' + c.label + arrow + '</th>';
+            // Arrow displays only on the column whose OWN key matches the sort column.
+            // Derived % columns (which sort via total_cpu_ms) don't get the indicator.
+            var arrow = (c.key === sortCol) ? '<span class="sort-arrow">' + (sortDir === 'asc' ? '\u25B2' : '\u25BC') + '</span>' : '';
+            html += '<th class="' + c.cls + '" onclick="PM.sortProcess(\'' + c.sortKey + '\')">' + c.label + arrow + '</th>';
         });
         html += '</tr></thead><tbody>';
 
@@ -687,7 +697,8 @@ function onSessionExpired() { }
             .then(function(data) {
                 if (!data) return;
                 if (data.Error) return;
-                renderApiTable(data);
+                apiData = data.top_endpoints || [];
+                renderApiTable();
                 setText('card-api-reqs', fmtCompact(data.total_requests));
                 setText('card-api-rpm', data.requests_per_min !== null ? data.requests_per_min : '-');
                 setText('card-api-avg', data.avg_duration_ms > 0 ? Math.round(data.avg_duration_ms) : '0');
@@ -700,13 +711,34 @@ function onSessionExpired() { }
             }).catch(function() {});
     }
 
-    function renderApiTable(data) {
+    function renderApiTable() {
         var wrap = document.getElementById('api-table-wrap');
-        var eps = data.top_endpoints || [];
-        if (eps.length === 0) { wrap.innerHTML = '<div class="pm-loading">No API data</div>'; return; }
+        if (!apiData || apiData.length === 0) { wrap.innerHTML = '<div class="pm-loading">No API data</div>'; return; }
 
-        var html = '<table class="pm-api-table"><thead><tr><th>Endpoint</th><th class="num">Calls</th><th class="num">Avg ms</th><th class="num">Max ms</th></tr></thead><tbody>';
-        eps.forEach(function(ep) {
+        var d = apiData.slice();
+        d.sort(function(a, b) {
+            var va = a[apiSortCol], vb = b[apiSortCol];
+            if (va === null || va === undefined) va = (typeof vb === 'string') ? '' : 0;
+            if (vb === null || vb === undefined) vb = (typeof va === 'string') ? '' : 0;
+            if (typeof va === 'string') return apiSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+            return apiSortDir === 'desc' ? vb - va : va - vb;
+        });
+
+        var cols = [
+            { key: 'endpoint',   label: 'Endpoint', cls: '' },
+            { key: 'call_count', label: 'Calls',    cls: 'num' },
+            { key: 'avg_ms',     label: 'Avg ms',   cls: 'num' },
+            { key: 'max_ms',     label: 'Max ms',   cls: 'num' }
+        ];
+
+        var html = '<table class="pm-api-table"><thead><tr>';
+        cols.forEach(function(c) {
+            var arrow = (c.key === apiSortCol) ? '<span class="sort-arrow">' + (apiSortDir === 'asc' ? '\u25B2' : '\u25BC') + '</span>' : '';
+            html += '<th class="' + c.cls + '" onclick="PM.sortApi(\'' + c.key + '\')">' + c.label + arrow + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+
+        d.forEach(function(ep) {
             html += '<tr><td class="endpoint" title="' + esc(ep.endpoint) + '">' + esc(ep.endpoint) + '</td>' +
                 '<td class="num">' + fmtCompact(ep.call_count) + '</td>' +
                 '<td class="num">' + fmtNum(ep.avg_ms) + '</td>' +
@@ -714,6 +746,12 @@ function onSessionExpired() { }
         });
         html += '</tbody></table>';
         wrap.innerHTML = html;
+    }
+
+    function sortApi(col) {
+        if (apiSortCol === col) apiSortDir = apiSortDir === 'desc' ? 'asc' : 'desc';
+        else { apiSortCol = col; apiSortDir = col === 'endpoint' ? 'asc' : 'desc'; }
+        renderApiTable();
     }
 
     // ========================================================================
@@ -959,5 +997,19 @@ function onSessionExpired() { }
     function esc(s) { if (!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
     document.addEventListener('DOMContentLoaded', init);
-    return { selectServer: selectServer, setRange: setRange, openDateModal: openDateModal, closeDateModal: closeDateModal, applyCustomRange: applyCustomRange, sortProcess: sortProcess, showInfo: showInfo, closeInfo: closeInfo, openSlideout: openSlideout, closeSlideout: closeSlideout, toggleSqlRow: toggleSqlRow, pageRefresh: pageRefresh };
+    return {
+        selectServer: selectServer,
+        setRange: setRange,
+        openDateModal: openDateModal,
+        closeDateModal: closeDateModal,
+        applyCustomRange: applyCustomRange,
+        sortProcess: sortProcess,
+        sortApi: sortApi,
+        showInfo: showInfo,
+        closeInfo: closeInfo,
+        openSlideout: openSlideout,
+        closeSlideout: closeSlideout,
+        toggleSqlRow: toggleSqlRow,
+        pageRefresh: pageRefresh
+    };
 })();
