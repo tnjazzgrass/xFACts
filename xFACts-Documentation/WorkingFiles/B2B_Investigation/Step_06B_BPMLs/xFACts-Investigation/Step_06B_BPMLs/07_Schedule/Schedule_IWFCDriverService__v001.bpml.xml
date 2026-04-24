@@ -1,0 +1,125 @@
+<process name="Schedule_IWFCDriverService">
+<rule name="Exist-PDOC">
+   <condition>count(//NODE_NAME) &gt; 0</condition>
+</rule>
+<rule name="loopIwfc">
+   <condition>i &lt; count</condition>
+</rule>
+<sequence>
+<operation name="SetLock">
+        <participant name="SystemLockService"/>
+           <output message="Xout">
+                <assign to="RELEASELOCK_FROMRECOVER">true</assign>
+                <assign to="LOCK_KEY">StartIWFCFromFiles</assign>
+                <assign to="DURATION">86400000</assign>
+                <assign to="CLEAR_ON_START_UP">true</assign>
+                <assign to="." from="*"/>
+           </output>
+           <input message="Xin">
+                <assign to="." from="*"/>
+           </input>
+</operation>
+<operation name="LightweightJDBCEngineService">
+        <participant name="LightweightJDBCEngineService"/>
+           <output message="LightweightJDBCAdapterTypeInputMessage">
+                <assign to="sql">select NODE_NAME from OPS_NODE_INFO where NODE_STATUS = 200</assign>
+                <assign to="pool">mssqlPool</assign>
+                <assign to="row_name">row</assign>
+                <assign to="query_type">SELECT</assign>
+                <assign to="result_name">result</assign>
+                <assign to="." from="*"/>
+           </output>
+           <input message="inmsg">
+                <assign to="." from="*"/>
+           </input>
+</operation>
+<assign to="." from="DocToDOM(PrimaryDocument,'false')"/>
+<sequence name="checkPDoc">
+<choice name="exist pdoc">
+<select>
+<case ref="Exist-PDOC" activity="eachNode"/>
+<case ref="Exist-PDOC" negative="true" activity="oneNode"/>
+</select>
+<sequence name="eachNode">
+<assign to="count" from="count(//NODE_NAME/text())"/>
+<assign to="i">0</assign>
+<choice name="loopNode">
+<select>
+<case ref="loopIwfc" activity="restartIwfc"/>
+</select>
+<sequence name="restartIwfc">
+<assign to="i" from="i + 1"/>
+<assign to="preferredNode" from="(//NODE_NAME)[number(//i/text())]/text()" append="false"></assign>
+<operation name="Service">
+        <participant name="IWFCDriverService"/>
+            <output message="Xout">
+                <assign to="." from="*"/>
+            </output>
+            <input message="Xin">
+                <assign to="." from="*"/>
+            </input>
+</operation>
+<repeat ref="loopNode"/>
+<onFault>
+<choice name="restartLoop">
+<select>
+<case ref="loopIwfc" activity="errorRestartIwfc"/>
+</select>
+<sequence name="errorRestartIwfc">
+<repeat ref="loopNode"/>
+</sequence>
+</choice>
+</onFault>
+</sequence>
+</choice>
+</sequence>
+<sequence name="oneNode">
+<operation name="Service">
+        <participant name="IWFCDriverService"/>
+           <output message="Xout">
+              <assign to="." from="*"/>
+           </output>
+           <input message="Xin">
+              <assign to="." from="*"/>
+           </input>
+</operation>
+</sequence>
+</choice>
+<operation name="release">
+        <participant name="ReleaseService"/>
+           <output message="Xout">
+               <assign to="TARGET" from="'preferredNode'"/>
+               <assign to="." from="*"/>
+           </output>
+           <input message="Xin">
+               <assign to="." from="*"/>
+           </input>
+</operation>
+</sequence>
+<operation name="unLock">
+        <participant name="SystemLockService"/>
+           <output message="Xout">
+                <assign to="ACTION">unlock</assign>
+                <assign to="LOCK_KEY">StartIWFCFromFiles</assign>
+                <assign to="." from="*"/>
+           </output>
+           <input message="Xin">
+                <assign to="." from="*"/>
+           </input>
+</operation>
+<onFault>
+<operation>
+        <participant name="SystemLockService"/>
+           <output message="Xout">
+                <assign to="ACTION">unlock</assign>
+                <assign to="LOCK_KEY">StartIWFCFromFiles</assign>
+                <assign to="." from="*"/>
+           </output>
+           <input message="Xin">
+                <assign to="." from="*"/>
+           </input>
+</operation>
+</onFault>
+</sequence>
+</process>
+    
