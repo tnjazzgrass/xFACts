@@ -216,6 +216,15 @@
                                        },
                                        {
                                            "ordinal":  8,
+                                           "name":  "exception_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Number of consumers in the candidate batch that failed runtime TC_ARCH re-verification and were removed before the delete sequence ran. See DmOps.Archive_ConsumerExceptionLog for the per-consumer detail."
+                                       },
+                                       {
+                                           "ordinal":  9,
                                            "name":  "total_rows_deleted",
                                            "dataType":  "bigint",
                                            "nullable":  false,
@@ -224,7 +233,7 @@
                                            "description":  "Sum of all rows deleted across all tables in the delete sequence. In preview mode, this is the count of rows that would be deleted."
                                        },
                                        {
-                                           "ordinal":  9,
+                                           "ordinal":  10,
                                            "name":  "tables_processed",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -233,7 +242,7 @@
                                            "description":  "Number of tables in the delete sequence that had rows deleted (non-zero row count)."
                                        },
                                        {
-                                           "ordinal":  10,
+                                           "ordinal":  11,
                                            "name":  "tables_skipped",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -242,7 +251,7 @@
                                            "description":  "Number of tables in the delete sequence that had zero rows and were skipped."
                                        },
                                        {
-                                           "ordinal":  11,
+                                           "ordinal":  12,
                                            "name":  "tables_failed",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -251,7 +260,7 @@
                                            "description":  "Number of tables in the delete sequence where the DELETE operation failed. Any value greater than zero results in a Failed batch status."
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  13,
                                            "name":  "duration_ms",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -259,7 +268,7 @@
                                            "description":  "Total batch execution time in milliseconds. NULL while the batch is still running. Measured from script start to completion of cleanup."
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  14,
                                            "name":  "status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -269,7 +278,7 @@
                                            "description":  "Final outcome of the batch execution."
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  15,
                                            "name":  "error_message",
                                            "dataType":  "varchar",
                                            "length":  "2000",
@@ -278,7 +287,7 @@
                                            "description":  "Error detail when status is Failed. NULL on successful completion. Captures the first failure message from the delete sequence."
                                        },
                                        {
-                                           "ordinal":  15,
+                                           "ordinal":  16,
                                            "name":  "batch_retry",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -287,7 +296,7 @@
                                            "description":  "Set to 1 when a retry batch has been created to reprocess this failed batch. Used by the retry check query (status = Failed AND batch_retry = 0) to identify unresolved failures. Set immediately at retry batch creation, not conditional on retry success."
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  17,
                                            "name":  "retry_batch_id",
                                            "dataType":  "bigint",
                                            "nullable":  true,
@@ -295,7 +304,7 @@
                                            "description":  "Points to the batch_id that was created to retry this failed batch. NULL for non-failed batches and for failed batches that have not yet been retried. Populated at the same time as batch_retry. Provides audit trail linkage from original failure to retry attempt."
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  18,
                                            "name":  "bidata_status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -304,7 +313,7 @@
                                            "description":  "Outcome of the BIDATA P-to-C migration step for this batch. NULL for batches that ran before this feature was added."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  19,
                                            "name":  "executed_by",
                                            "dataType":  "varchar",
                                            "length":  "128",
@@ -444,6 +453,134 @@
                                            "sortOrder":  3
                                        }
                                    ]
+                   },
+                   {
+                       "name":  "Archive_ConsumerExceptionLog",
+                       "description":  "Audit trail of consumers selected as TC_ARCH-eligible at the start of a batch but removed by runtime re-verification because one or more of their accounts no longer carry TA_ARCH. The DM tagging job was correct when it ran — the consumer state changed afterward, typically a new account merging in. This is a state-change audit, not an error log. Captures which batch detected the change plus confirmation flags that the cnsmr_Tag soft-delete and the cnsmr_accnt_ar_log AR event both succeeded.",
+                       "module":  "DmOps",
+                       "category":  "Archive",
+                       "dataFlow":  "Execute-DmConsumerArchive.ps1 writes one row per consumer that fails runtime TC_ARCH re-verification within a batch. The script first inserts the row with both confirmation flags at 0, then performs the soft-delete UPDATE on crs5_oltp.dbo.cnsmr_Tag and the consumer-level AR event INSERT into crs5_oltp.dbo.cnsmr_accnt_ar_log, updating tag_removed and ar_event_written to 1 as each operation succeeds.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "exception_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Surrogate primary key for the exception row."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "batch_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Foreign key to Archive_BatchLog identifying the batch that detected this exception. Joins to Archive_BatchLog.batch_id."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "cnsmr_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "The consumer removed from the batch by re-verification. References crs5_oltp.dbo.cnsmr.cnsmr_id (no FK constraint — cross-database)."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Standard agency identifier captured at exception time for cross-system reconciliation. Matches crs5_oltp.dbo.cnsmr.cnsmr_idntfr_agncy_id."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "detected_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the runtime re-verification check identified this consumer as no longer eligible. Defaults to GETDATE() at insert time."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "tag_removed",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Confirmation that the soft-delete UPDATE against crs5_oltp.dbo.cnsmr_Tag (setting cnsmr_tag_sft_delete_flg = \u0027Y\u0027 on the consumer\u0027s active TC_ARCH row) succeeded. 0 = update failed or not yet attempted, 1 = update confirmed."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "ar_event_written",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((0))",
+                                           "description":  "Confirmation that the AR event INSERT into crs5_oltp.dbo.cnsmr_accnt_ar_log (consumer-level event with cnsmr_accnt_id = NULL, actn_cd/rslt_cd = CC) succeeded. 0 = insert failed or not yet attempted, 1 = insert confirmed."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Archive_ConsumerExceptionLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "exception_id"
+                                       },
+                                       {
+                                           "name":  "IX_Archive_ConsumerExceptionLog_batch_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "batch_id"
+                                       },
+                                       {
+                                           "name":  "IX_Archive_ConsumerExceptionLog_cnsmr_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "cnsmr_id"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "State-Change Audit, Not Error Log",
+                                               "note":  "Exceptions captured here are not errors. The TC_ARCH apply-job correctly identified each consumer as eligible at the time it ran. Between that point and when the archive process picks the consumer up, the consumer state changed — typically a new account merged in without TA_ARCH. The runtime re-verification catches the drift and removes the consumer from the batch with full audit trail.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "No Reason Column",
+                                               "note":  "Only one reason for an exception exists by design: at least one account on the consumer lacks TA_ARCH at runtime.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Two Confirmation Bits",
+                                               "note":  "tag_removed and ar_event_written are tracked separately because the operations target different tables in crs5_oltp.",
+                                               "sortOrder":  3
+                                           }
+                                       ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "Archive_BatchLog",
+                                                     "note":  "Operational link via batch_id (no FK constraint). Every exception row carries the batch_id of the batch that detected it. Joining to Archive_BatchLog by batch_id provides the operational context (schedule mode, batch size, status, duration) for when the exception occurred. The exception_count column on Archive_BatchLog provides a pre-aggregated count for fast batch-level visibility.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "cnsmr_Tag (crs5_oltp.dbo)",
+                                                     "note":  "No FK constraint (cross-database) but operationally critical. tag_removed = 1 indicates Execute-DmConsumerArchive.ps1 successfully soft-deleted the consumer\u0027s active TC_ARCH row in crs5_oltp.dbo.cnsmr_Tag (cnsmr_tag_sft_delete_flg = \u0027Y\u0027). After the soft-delete the consumer falls out of the candidate pool naturally on subsequent batches.",
+                                                     "sortOrder":  2
+                                                 },
+                                                 {
+                                                     "relatedObject":  "cnsmr_accnt_ar_log (crs5_oltp.dbo)",
+                                                     "note":  "No FK constraint (cross-database) but operationally critical. ar_event_written = 1 indicates a consumer-level AR event was inserted.",
+                                                     "sortOrder":  3
+                                                 }
+                                             ]
                    },
                    {
                        "name":  "Archive_ConsumerLog",
