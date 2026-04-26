@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-26 07:43:28
+Generated: 2026-04-26 11:36:07
 
 ## Module Registry
 
@@ -122,6 +122,7 @@ Generated: 2026-04-26 07:43:28
 | DeptOps.ClientRelations | ClientRelations.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\ClientRelations.ps1 | Client Relations CC page route |
 | DmOps.Archive | Archive_BatchDetail | Database | Table | DmOps | Per-table operation detail within each archive batch — delete order, rows affected, duration, and status |
 | DmOps.Archive | Archive_BatchLog | Database | Table | DmOps | Batch-level execution summary for archive processing — one row per batch with counts, timing, and status |
+| DmOps.Archive | Archive_ConsumerExceptionLog | Database | Table | DmOps | Audit trail of TC_ARCH-tagged consumers removed from a batch by runtime re-verification — one row per excepted consumer with confirmation flags for tag removal and AR event writes |
 | DmOps.Archive | Archive_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer and account archived — tall skinny log for BI cross-reference and reconciliation |
 | DmOps.Archive | Archive_Schedule | Database | Table | DmOps | Weekly schedule grid controlling archive execution mode per hour — blocked, full batch, or reduced batch |
 | DmOps.Archive | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
@@ -459,11 +460,15 @@ Generated: 2026-04-26 07:43:28
 | DeptOps | BS_ReviewRequest | bs_distribution_enabled | 1 | BIT | Master on/off switch for automated review request distribution |
 | DmOps | Archive | alerting_enabled | 0 | BIT | Master switch for archive alerting: 1 = Teams alerts active, 0 = alerting suppressed. Does not affect archive execution. |
 | DmOps | Archive | archive_abort | 0 | BIT | Emergency shutoff: 1 = stop after current batch completes. Overrides schedule and enabled flag. Reset to 0 manually after investigation. |
-| DmOps | Archive | batch_size | 25000 | INT | Number of consumers per batch during full-mode schedule windows |
-| DmOps | Archive | batch_size_reduced | 500 | INT | Number of consumers per batch during reduced-mode schedule windows |
+| DmOps | Archive | batch_size | 10 | INT | Number of consumers per batch during full-mode schedule windows |
+| DmOps | Archive | batch_size_reduced | 10 | INT | Number of consumers per batch during reduced-mode schedule windows |
 | DmOps | Archive | bidata_build_job_name | BIDATA Daily Build | VARCHAR | SQL Agent job name for the BIDATA Daily Build. Used by pre-flight check to detect build-in-progress on bidata_instance server. |
 | DmOps | Archive | bidata_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting the BIDATA database for P-to-C migration. Production: DM-PROD-REP. |
 | DmOps | Archive | chunk_size | 5000 | INT | Maximum rows per DELETE operation — larger tables are deleted in chunks of this size |
+| DmOps | Archive | tag_removal_actn_cd | CC | VARCHAR | Action code short value used when writing the AR event for TC_ARCH tag removal. |
+| DmOps | Archive | tag_removal_msg_txt | Consumer archive tag removed - ineligible account(s) detected | VARCHAR | AR event message text written when TC_ARCH is removed from a consumer that no longer meets archive eligibility (one or more accounts lack TA_ARCH). |
+| DmOps | Archive | tag_removal_rslt_cd | CC | VARCHAR | Result code short value used when writing the AR event for TC_ARCH tag removal. |
+| DmOps | Archive | tag_removal_user | sqlmon | VARCHAR | DM username attributed to TC_ARCH tag removals (cnsmr_Tag soft-delete and AR event insert).  |
 | DmOps | Archive | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
 | DmOps | ShellPurge | alerting_enabled | 0 | BIT | Master switch for shell purge alerting: 1 = Teams alerts active, 0 = alerting suppressed |
 | DmOps | ShellPurge | batch_size | 25000 | INT | Number of shell consumers per batch during full-mode schedule windows |
