@@ -298,6 +298,7 @@ Settings in `dbo.GlobalConfig` follow a consistent structure:
 - **category:** The component within the module (e.g., `Disk`, `Activity_XE`, `Index`). NULL only if the setting is truly module-wide with no component affiliation.
 - **setting_name:** Lowercase with underscores (e.g., `fragmentation_threshold`, `retention_days`).
 - **description:** Required for every setting. No blank descriptions.
+- **data_type:** Required for every setting. Current settings include ALERT_MODE (custom for alerting), BIT, DECIMAL, INT, VARCHAR. See current contents of GlobalConfig in PlatformRegistry for further clarification.
 
 New configurable thresholds, intervals, and behavioral flags should always go in GlobalConfig rather than being hardcoded in scripts or procedures. The standard pattern for Control Center refresh intervals is `refresh_<pagename>_seconds` — see Section 4.1 for details.
 
