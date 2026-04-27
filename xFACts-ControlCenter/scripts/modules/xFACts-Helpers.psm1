@@ -1301,31 +1301,45 @@ function Invoke-CRS5WriteQuery {
 # ============================================================================
 
 $script:DmOpsRemainingCache = @{
-    ArchiveRemaining   = $null
-    ShellRemaining     = $null
-    ExclusionCount     = $null
-    BaselineDttm       = $null
-    TargetInstance     = $null
-    CacheMaxAgeMinutes = 60
+    ArchiveConsumersRemaining = $null
+    ArchiveAccountsRemaining  = $null
+    ShellRemaining            = $null
+    ExclusionCount            = $null
+    BaselineDttm              = $null
+    TargetInstance            = $null
+    CacheMaxAgeMinutes        = 60
 }
 
 function Get-RemainingCounts {
     <#
     .SYNOPSIS
-        Returns cached remaining counts for DmOps archive and shell purge processes.
+        Returns cached remaining counts for DmOps unified consumer archive and shell purge processes.
         Queries crs5_oltp via the secondary replica on first call and when cache expires.
         Exclusion count is always fresh from the xFACts database.
+    .DESCRIPTION
+        Archive baselines are gated on the TC_ARCH consumer tag — the unified consumer archive
+        operates on consumers (not accounts) and only on consumers carrying TC_ARCH (set by the
+        nightly DM JobFlow apply-job when every account on the consumer carries TA_ARCH).
+        Two archive baselines are returned:
+          - ArchiveConsumersRemaining: count of consumers currently tagged TC_ARCH
+          - ArchiveAccountsRemaining:  count of accounts on those TC_ARCH-tagged consumers
+        The page subtracts work-since-baseline (consumer_count and account_count from
+        Archive_BatchLog) to estimate live remaining counts between cache refreshes.
+        ShellRemaining covers naturally-occurring shells (existing WFAPURGE backlog plus
+        ongoing shells from new-business loads, consumer merges, manual activity) — unchanged
+        from the prior account-level archive era.
     .RETURNS
-        Hashtable with ArchiveRemaining, ShellRemaining, ExclusionCount, BaselineDttm, TargetInstance
+        Hashtable with ArchiveConsumersRemaining, ArchiveAccountsRemaining, ShellRemaining,
+        ExclusionCount, BaselineDttm, TargetInstance
     #>
     $cache = $script:DmOpsRemainingCache
     $now = Get-Date
-    
+
     # Check if cache is still valid
     if ($cache.BaselineDttm -and ($now - $cache.BaselineDttm).TotalMinutes -lt $cache.CacheMaxAgeMinutes) {
         return $cache
     }
-    
+
     # Get target instance from DmOps GlobalConfig
     $targetConfig = Invoke-XFActsQuery -Query @"
         SELECT setting_value FROM dbo.GlobalConfig
@@ -1333,33 +1347,45 @@ function Get-RemainingCounts {
           AND setting_name = 'target_instance' AND is_active = 1
 "@
     $targetInstance = if ($targetConfig -and $targetConfig.Count -gt 0) { $targetConfig[0].setting_value } else { 'AVG-PROD-LSNR' }
-    
+
     try {
-        # Archive remaining: TA_ARCH tagged accounts
+        # Archive remaining: TC_ARCH-tagged consumers and the accounts on those consumers.
+        # Single query returns both counts to keep this a single OLTP round-trip per refresh.
         $archiveResult = Invoke-CRS5ReadQuery -TargetInstance $targetInstance -Query @"
-            SELECT COUNT(cat.cnsmr_accnt_id) AS remaining_count
-            FROM crs5_oltp.dbo.cnsmr_accnt_tag cat
-            INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = cat.tag_id
-                AND cat.cnsmr_accnt_sft_delete_flg = 'N'
-                AND t.tag_shrt_nm = 'TA_ARCH'
-"@ -TimeoutSeconds 30
-        
-        # Shell remaining: WFAPURGE workgroup consumers
+            SELECT
+                (SELECT COUNT(*)
+                 FROM crs5_oltp.dbo.cnsmr_Tag ct
+                 INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
+                 WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
+                   AND t.tag_shrt_nm = 'TC_ARCH') AS consumers_remaining,
+                (SELECT COUNT(*)
+                 FROM crs5_oltp.dbo.cnsmr_accnt ca
+                 WHERE ca.cnsmr_id IN (
+                     SELECT ct.cnsmr_id
+                     FROM crs5_oltp.dbo.cnsmr_Tag ct
+                     INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
+                     WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
+                       AND t.tag_shrt_nm = 'TC_ARCH'
+                 )) AS accounts_remaining
+"@ -TimeoutSeconds 60
+
+        # Shell remaining: WFAPURGE workgroup consumers (naturally-occurring shells)
         $shellResult = Invoke-CRS5ReadQuery -TargetInstance $targetInstance -Query @"
             SELECT COUNT(c.cnsmr_id) AS remaining_count
             FROM crs5_oltp.dbo.cnsmr c
             INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
                 AND w.wrkgrp_shrt_nm = 'WFAPURGE'
 "@ -TimeoutSeconds 30
-        
+
         # Exclusion count from xFACts (always fresh, cheap)
         $exclusionResult = Invoke-XFActsQuery -Query @"
             SELECT COUNT(DISTINCT cnsmr_id) AS exclusion_count
             FROM DmOps.ShellPurge_ExclusionLog
 "@
-        
+
         # Update cache
-        $cache.ArchiveRemaining = if ($archiveResult -and $archiveResult.Count -gt 0) { [long]$archiveResult[0].remaining_count } else { $null }
+        $cache.ArchiveConsumersRemaining = if ($archiveResult -and $archiveResult.Count -gt 0) { [long]$archiveResult[0].consumers_remaining } else { $null }
+        $cache.ArchiveAccountsRemaining  = if ($archiveResult -and $archiveResult.Count -gt 0) { [long]$archiveResult[0].accounts_remaining }  else { $null }
         $cache.ShellRemaining = if ($shellResult -and $shellResult.Count -gt 0) { [long]$shellResult[0].remaining_count } else { $null }
         $cache.ExclusionCount = if ($exclusionResult -and $exclusionResult.Count -gt 0) { [long]$exclusionResult[0].exclusion_count } else { 0 }
         $cache.BaselineDttm = $now
@@ -1368,7 +1394,7 @@ function Get-RemainingCounts {
     catch {
         Write-Host "WARNING: Failed to refresh remaining counts from crs5_oltp ($targetInstance): $($_.Exception.Message)"
     }
-    
+
     return $cache
 }
 
