@@ -372,6 +372,8 @@ a { color: #9cdcfe; }
 
 .today-stat-value.archive { color: #569cd6; }
 .today-stat-value.purge { color: #c586c0; }
+.today-stat-value.warn { color: #dcdcaa; }
+.today-stat-value.danger { color: #f48771; }
 
 .today-mode-breakdown {
     font-size: 10px;
@@ -382,10 +384,74 @@ a { color: #9cdcfe; }
 .today-mode-breakdown .reduced { color: #dcdcaa; }
 
 /* ----------------------------------------------------------------------------
+   Inline Status Badges (used by today stats, batch rows, batch detail slide-out)
+   ---------------------------------------------------------------------------- */
+.status-badge,
+.bidata-badge,
+.mode-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 14px;
+}
+
+/* Status: success/failed/skipped/running */
+.status-badge.success { color: #4ec9b0; background: #1f3a30; border-color: #2d5a47; }
+.status-badge.failed  { color: #f48771; background: #3d2020; border-color: #6d3030; }
+.status-badge.skipped { color: #888;    background: #2a2a2a; border-color: #404040; }
+.status-badge.running { color: #569cd6; background: #1f2a3a; border-color: #2d4d6e; }
+.status-badge.unknown { color: #666;    background: #252526; border-color: #404040; }
+
+/* BIDATA migration status */
+.bidata-badge.success { color: #4ec9b0; background: #1f3a30; border-color: #2d5a47; }
+.bidata-badge.failed  { color: #f48771; background: #3d2020; border-color: #6d3030; }
+.bidata-badge.skipped { color: #888;    background: #2a2a2a; border-color: #404040; }
+.bidata-badge.running { color: #569cd6; background: #1f2a3a; border-color: #2d4d6e; }
+.bidata-badge.unknown { color: #666;    background: #252526; border-color: #404040; }
+
+/* Schedule mode: full / reduced / manual / retry */
+.mode-badge.full    { color: #4ec9b0; background: #1f3a30; border-color: #2d5a47; }
+.mode-badge.reduced { color: #dcdcaa; background: #3d3520; border-color: #5a4d28; }
+.mode-badge.manual  { color: #c586c0; background: #2e1f3d; border-color: #4d3a5a; }
+.mode-badge.retry   { color: #569cd6; background: #1f2a3a; border-color: #2d4d6e; }
+.mode-badge.unknown { color: #666;    background: #252526; border-color: #404040; }
+
+/* delete_order prefix coloring (Archive Phase 2 / UDEFs / BIDATA / Consumer halves)
+   A = account-level Phase 2, AU = account-level UDEF, AB = BIDATA migration,
+   C = consumer-level Phase 2, CU = consumer-level UDEF */
+.order-prefix {
+    display: inline-block;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-weight: 700;
+    padding: 0 4px;
+    border-radius: 2px;
+    margin-right: 1px;
+    font-size: 11px;
+}
+.order-prefix.order-a   { color: #569cd6; background: #1f2a3a; }
+.order-prefix.order-au  { color: #9cdcfe; background: #1f2a3a; }
+.order-prefix.order-ab  { color: #4ec9b0; background: #1f3a30; }
+.order-prefix.order-c   { color: #c586c0; background: #2e1f3d; }
+.order-prefix.order-cu  { color: #d8a8d8; background: #2e1f3d; }
+
+/* ----------------------------------------------------------------------------
    Execution History — Year/Month/Day Accordion
    ---------------------------------------------------------------------------- */
 .history-tree {
     font-size: 13px;
+    /* Viewport constraint: history scrolls internally so abort buttons,
+       totals tiles, and Today section stay visible regardless of how many
+       batches are expanded. Offset accounts for: nav (40), page padding (40),
+       header bar (~80), lifetime totals (~120), Today section (~120),
+       section chrome (~40). Adjust if the layout above changes. */
+    max-height: calc(100vh - 600px);
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 /* Year header */
@@ -507,7 +573,51 @@ a { color: #9cdcfe; }
 .day-table tr:hover { background: #2a2a2a; }
 .day-table tr.row-failed td { color: #f48771; }
 
-/* Mode breakdown in tables */
+.day-table .expand-cell {
+    width: 24px;
+    text-align: center;
+}
+
+/* Day rows are clickable and expand to show per-batch sub-table */
+.day-table tr.day-row {
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.day-table tr.day-row:hover td {
+    background: #2d2d2d;
+}
+
+.day-table tr.day-row.row-warn td {
+    color: #dcdcaa;
+}
+
+.day-table .cell-fail {
+    color: #f48771;
+    font-size: 10px;
+}
+
+.day-table .cell-warn {
+    color: #dcdcaa;
+}
+
+.cell-fail[title], .cell-warn[title] {
+    cursor: help;
+}
+
+/* Per-day batch-list expand row (sub-row beneath a day-row) */
+.day-batches td {
+    padding: 0 0 10px 28px;
+    background: transparent;
+}
+
+.day-batches-content {
+    padding-top: 4px;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* Mode breakdown in tables (legacy mode column variants) */
 .mode-breakdown {
     font-size: 10px;
     color: #666;
@@ -521,6 +631,91 @@ a { color: #9cdcfe; }
     font-size: 10px;
     width: 12px;
     flex-shrink: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   Batch Row Table (per-day individual batches under a day-row expand)
+   Two-line header: row 1 has rowspan grouping context fields; row 2 sits
+   under a "Counts" group header for the numeric metrics.
+   ---------------------------------------------------------------------------- */
+.batch-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.batch-table thead th {
+    text-align: left;
+    padding: 4px 6px;
+    color: #888;
+    font-weight: 500;
+    font-size: 10px;
+    border-bottom: 1px solid #404040;
+    white-space: nowrap;
+    background: #1f1f1f;
+}
+
+.batch-table thead th.right {
+    text-align: right;
+}
+
+.batch-table thead th.batch-counts-header {
+    text-align: center;
+    color: #569cd6;
+    border-bottom: 1px solid #2d4d6e;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.batch-table tbody td {
+    padding: 5px 6px;
+    border-bottom: 1px solid #2a2a2a;
+    color: #d4d4d4;
+    white-space: nowrap;
+}
+
+.batch-table tbody td.right {
+    text-align: right;
+}
+
+.batch-table tbody tr.batch-row {
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.batch-table tbody tr.batch-row:hover td {
+    background: #2d2d2d;
+}
+
+.batch-table tbody tr.row-failed td {
+    color: #f48771;
+}
+
+.batch-table tbody tr.row-warn td {
+    color: #dcdcaa;
+}
+
+.batch-table .batch-id {
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: #569cd6;
+    font-weight: 600;
+}
+
+.batch-table .retry-badge {
+    background: #3d3520;
+    color: #dcdcaa;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 2px;
+    margin-left: 4px;
+    border: 1px solid #5a4d28;
+}
+
+.batch-table .cell-warn {
+    color: #dcdcaa;
+    font-weight: 600;
 }
 
 /* ----------------------------------------------------------------------------
@@ -678,7 +873,7 @@ a { color: #9cdcfe; }
 .schedule-mode-btn:hover { border-color: #569cd6; color: #d4d4d4; }
 
 /* ----------------------------------------------------------------------------
-   Slide Panel (shared pattern)
+   Slide Panel (shared pattern — schedule modal, batch detail)
    ---------------------------------------------------------------------------- */
 .slide-panel-overlay {
     display: none;
@@ -708,6 +903,9 @@ a { color: #9cdcfe; }
 
 .slide-panel.wide { width: 780px; right: -780px; }
 .slide-panel.wide.active { right: 0; }
+
+.slide-panel.extra-wide { width: 980px; right: -980px; }
+.slide-panel.extra-wide.active { right: 0; }
 
 .slide-panel.auto-height {
     height: auto;
@@ -750,7 +948,127 @@ a { color: #9cdcfe; }
     flex: 1;
 }
 
-/* Idle overlay (shared with engine-events) */
+/* ----------------------------------------------------------------------------
+   Batch Detail Slide-out — header summary + sortable detail table
+   Rendered inside .slide-panel.extra-wide for the BatchDetail step list.
+   ---------------------------------------------------------------------------- */
+.batch-detail-header {
+    background: #252526;
+    border: 1px solid #404040;
+    border-radius: 4px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    font-size: 12px;
+}
+
+.batch-detail-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 18px;
+    margin-bottom: 6px;
+    align-items: center;
+}
+
+.batch-detail-line:last-child {
+    margin-bottom: 0;
+}
+
+.batch-detail-header .bd-label {
+    color: #888;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-right: 4px;
+}
+
+.batch-detail-header .bd-value {
+    color: #d4d4d4;
+    font-weight: 500;
+}
+
+.batch-detail-error {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #3d2020;
+    color: #f48771;
+    border: 1px solid #6d3030;
+    border-radius: 3px;
+    font-size: 12px;
+    word-break: break-word;
+}
+
+.batch-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.batch-detail-table thead th {
+    text-align: left;
+    padding: 5px 6px;
+    color: #888;
+    font-weight: 500;
+    font-size: 10px;
+    border-bottom: 1px solid #404040;
+    background: #1f1f1f;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.batch-detail-table thead th.right {
+    text-align: right;
+}
+
+.batch-detail-table thead th[data-col]:hover {
+    color: #d4d4d4;
+}
+
+.batch-detail-table thead th.sorted-asc::after {
+    content: ' \25B2';
+    color: #569cd6;
+    font-size: 9px;
+}
+
+.batch-detail-table thead th.sorted-desc::after {
+    content: ' \25BC';
+    color: #569cd6;
+    font-size: 9px;
+}
+
+.batch-detail-table tbody td {
+    padding: 4px 6px;
+    border-bottom: 1px solid #2a2a2a;
+    color: #d4d4d4;
+}
+
+.batch-detail-table tbody td.right {
+    text-align: right;
+}
+
+.batch-detail-table tbody tr:hover td {
+    background: #2a2a2a;
+}
+
+.batch-detail-table tbody tr.row-failed td {
+    color: #f48771;
+}
+
+.batch-detail-table .bd-error-cell {
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #f48771;
+    font-size: 10px;
+}
+
+/* ----------------------------------------------------------------------------
+   Idle overlay (shared with engine-events)
+   ---------------------------------------------------------------------------- */
 .idle-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
