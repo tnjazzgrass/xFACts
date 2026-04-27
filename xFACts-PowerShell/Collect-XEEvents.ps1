@@ -1768,6 +1768,16 @@ function Parse-AGHealthEvent {
 }
 
 function Insert-AGHealthEvent {
+    <#
+    .SYNOPSIS
+        Inserts a parsed AGHealth event into Activity_XE_AGHealth and returns
+        the new event_id, or $null on failure.
+
+    .DESCRIPTION
+        Returns the IDENTITY value of the inserted row so the caller can pass
+        it to Send-AGHealthAlert for alerting and to UPDATE alert_sent later.
+        Replaces an earlier version that returned $true/$false.
+    #>
     param(
         [int]$ServerId,
         [string]$ServerName,
@@ -1777,7 +1787,7 @@ function Insert-AGHealthEvent {
         [long]$SourceOffset,
         [bool]$RetainRawXml
     )
-    
+
     # Escape single quotes for SQL
     $serverNameSafe = $ServerName -replace "'", "''"
     $prevState = if ($Event.previous_state) { $Event.previous_state -replace "'", "''" } else { $null }
@@ -1790,14 +1800,15 @@ function Insert-AGHealthEvent {
     $ddlPhase = if ($Event.ddl_phase) { $Event.ddl_phase -replace "'", "''" } else { $null }
     $ddlStmt = if ($Event.ddl_statement) { $Event.ddl_statement -replace "'", "''" } else { $null }
     $sourceFileSafe = if ($SourceFile) { $SourceFile -replace "'", "''" } else { $null }
-    
+
     # Handle raw XML based on config flag
     $rawXmlValue = "NULL"
     if ($RetainRawXml -and $Event.raw_event_xml) {
         $rawXmlSafe = $Event.raw_event_xml -replace "'", "''"
         $rawXmlValue = "'$rawXmlSafe'"
     }
-    
+
+    # OUTPUT clause returns the new identity value to the caller
     $query = @"
 INSERT INTO ServerOps.Activity_XE_AGHealth (
     server_id, server_name, event_timestamp, event_type, session_name,
@@ -1807,6 +1818,7 @@ INSERT INTO ServerOps.Activity_XE_AGHealth (
     ddl_action, ddl_phase, ddl_statement,
     raw_event_xml, source_file, source_offset
 )
+OUTPUT INSERTED.event_id AS new_event_id
 VALUES (
     $ServerId,
     '$serverNameSafe',
@@ -1829,8 +1841,238 @@ VALUES (
     $SourceOffset
 )
 "@
-    
-    return Invoke-SqlNonQuery -Query $query
+
+    $result = Get-SqlData -Query $query
+    if ($null -ne $result -and $null -ne $result.new_event_id) {
+        return [long]$result.new_event_id
+    }
+    return $null
+}
+
+# ========================================
+# AG HEALTH ALERTING
+# ========================================
+# Pattern note: This section is the prototype for future broader XE alerting.
+# When alerting is added for SystemHealth, BlockedProcess, or Deadlock, follow
+# the same pattern: a Test-* function that decides if the event is alertable,
+# and a Send-* function that builds the Teams payload, calls Send-TeamsAlert,
+# and updates alert_sent on the source table. Each session type gets its own
+# pair so the decision logic stays clear and the alert text can be tailored.
+
+function Test-AGHealthAlertable {
+    <#
+    .SYNOPSIS
+        Decides whether a parsed AGHealth event warrants a Teams alert.
+
+    .DESCRIPTION
+        Returns $true when ANY of the following are true:
+          - availability_replica_state_change to PRIMARY_NORMAL or NOT_AVAILABLE
+          - availability_replica_state_change where previous role was PRIMARY*
+            and current role is not PRIMARY* (a primary stepping down)
+          - availability_replica_manager_state_change with current_state = OFFLINE
+          - error_reported with error_severity >= 16
+
+        Returns $false otherwise. The decision logic intentionally excludes the
+        flurry of severity-10 informational role-change messages (Error 1480)
+        that accompany every failover.
+    #>
+    param([hashtable]$Event)
+
+    if ($null -eq $Event) { return $false }
+
+    $eventType = $Event.event_type
+    $prev = $Event.previous_state
+    $curr = $Event.current_state
+
+    # State change to PRIMARY or NOT_AVAILABLE
+    if ($eventType -eq 'availability_replica_state_change') {
+        if ($curr -eq 'PRIMARY_NORMAL' -or $curr -eq 'NOT_AVAILABLE') {
+            return $true
+        }
+        # Primary stepping down (RESOLVING, NOT_AVAILABLE, anything non-PRIMARY)
+        if ($prev -like 'PRIMARY*' -and $curr -notlike 'PRIMARY*') {
+            return $true
+        }
+        return $false
+    }
+
+    # AG manager going offline on a node
+    if ($eventType -eq 'availability_replica_manager_state_change') {
+        if ($curr -eq 'OFFLINE') {
+            return $true
+        }
+        return $false
+    }
+
+    # High-severity errors
+    if ($eventType -eq 'error_reported') {
+        if ($Event.error_severity -ge 16) {
+            return $true
+        }
+        return $false
+    }
+
+    return $false
+}
+
+function Send-AGHealthAlert {
+    <#
+    .SYNOPSIS
+        Sends a Teams alert for an alertable AGHealth event and marks the
+        source row as alerted.
+
+    .DESCRIPTION
+        Called immediately after a successful Insert-AGHealthEvent when
+        Test-AGHealthAlertable returned $true. Selects the appropriate routing
+        value based on event type, decodes the bitmask (0=None, 1=Teams, 2=Jira,
+        3=Both), and queues the alert through Send-TeamsAlert. Updates
+        Activity_XE_AGHealth.alert_sent on confirmed queue.
+
+        Routing values are read from script scope ($aghealthStateChangeRouting
+        and $aghealthCriticalErrorRouting) which are populated in Step 1 from
+        GlobalConfig.
+
+        Uses the row's event_id as the dedup TriggerValue, which guarantees
+        each distinct AG event produces at most one alert ever.
+
+        Jira routing (-band 2) is reserved for a future Send-JiraTicket
+        wrapper. Today it logs a placeholder message but does not dispatch.
+
+    .PARAMETER EventId
+        The event_id returned by Insert-AGHealthEvent.
+
+    .PARAMETER ServerName
+        The server the event was captured on (DM-PROD-DB or DM-PROD-REP).
+
+    .PARAMETER Event
+        The parsed event hashtable from Parse-AGHealthEvent.
+    #>
+    param(
+        [Parameter(Mandatory)][long]$EventId,
+        [Parameter(Mandatory)][string]$ServerName,
+        [Parameter(Mandatory)][hashtable]$Event
+    )
+
+    # ----------------------------------------------------------
+    # Determine alert category, title, and applicable routing
+    # ----------------------------------------------------------
+    $title = $null
+    $triggerType = $null
+    $routing = 0
+    $alertCategory = 'CRITICAL'  # default for state changes and severity 16+
+
+    if ($Event.event_type -eq 'availability_replica_state_change' -and
+        $Event.current_state -eq 'PRIMARY_NORMAL') {
+        $title = "Availability Group Failover: $ServerName is now PRIMARY"
+        $triggerType = 'AG_STATE_CHANGE'
+        $routing = $aghealthStateChangeRouting
+    }
+    elseif ($Event.event_type -eq 'availability_replica_state_change' -and
+            $Event.previous_state -like 'PRIMARY*' -and
+            $Event.current_state -notlike 'PRIMARY*') {
+        $title = "Availability Group Event: $ServerName is no longer PRIMARY"
+        $triggerType = 'AG_STATE_CHANGE'
+        $routing = $aghealthStateChangeRouting
+    }
+    elseif ($Event.event_type -eq 'availability_replica_state_change' -and
+            $Event.current_state -eq 'NOT_AVAILABLE') {
+        $title = "Availability Group Event: $ServerName replica is unavailable"
+        $triggerType = 'AG_STATE_CHANGE'
+        $routing = $aghealthStateChangeRouting
+    }
+    elseif ($Event.event_type -eq 'availability_replica_manager_state_change' -and
+            $Event.current_state -eq 'OFFLINE') {
+        $title = "Availability Group Event: $ServerName has gone offline"
+        $triggerType = 'AG_STATE_CHANGE'
+        $routing = $aghealthStateChangeRouting
+    }
+    elseif ($Event.event_type -eq 'error_reported') {
+        $title = "Availability Group Critical Error on $ServerName"
+        $triggerType = 'AG_CRITICAL_ERROR'
+        $routing = $aghealthCriticalErrorRouting
+    }
+    else {
+        # Defensive: shouldn't reach here if Test-AGHealthAlertable was the gate.
+        Write-Log "  AGHealth alert: no title mapping for event_type=$($Event.event_type) - skipping" "WARN"
+        return
+    }
+
+    # ----------------------------------------------------------
+    # Honor routing value: 0 = silenced for this category
+    # ----------------------------------------------------------
+    if ($routing -le 0) {
+        Write-Log "  AGHealth event detected but routing=0, skipped (event_id=$EventId, $triggerType)" "INFO"
+        return
+    }
+
+    # ----------------------------------------------------------
+    # Build alert body (used by all destinations)
+    # ----------------------------------------------------------
+    $bodyLines = @()
+    $bodyLines += "**Server:** $ServerName"
+    if ($Event.availability_group_name) {
+        $bodyLines += "**Availability Group:** $($Event.availability_group_name)"
+    }
+    $bodyLines += "**Event Time:** $($Event.event_timestamp.ToString('yyyy-MM-dd HH:mm:ss'))"
+    $bodyLines += "**Event Type:** $($Event.event_type)"
+    if ($Event.previous_state -or $Event.current_state) {
+        $prevText = if ($Event.previous_state) { $Event.previous_state } else { '(none)' }
+        $currText = if ($Event.current_state) { $Event.current_state } else { '(none)' }
+        $bodyLines += "**State:** $prevText -> $currText"
+    }
+    if ($Event.error_number) {
+        $bodyLines += "**Error Number:** $($Event.error_number)"
+    }
+    if ($Event.error_severity) {
+        $bodyLines += "**Severity:** $($Event.error_severity)"
+    }
+    if ($Event.error_message) {
+        $msg = $Event.error_message
+        if ($msg.Length -gt 500) { $msg = $msg.Substring(0, 500) + '...' }
+        $bodyLines += "**Message:** $msg"
+    }
+    $body = $bodyLines -join "`n"
+
+    # ----------------------------------------------------------
+    # Dispatch to enabled destinations (bitmask: 1=Teams, 2=Jira)
+    # ----------------------------------------------------------
+    $anyQueued = $false
+
+    # Teams branch
+    if ($routing -band 1) {
+        $queued = Send-TeamsAlert `
+            -SourceModule 'ServerOps' `
+            -AlertCategory $alertCategory `
+            -Title $title `
+            -Message $body `
+            -Color 'attention' `
+            -TriggerType $triggerType `
+            -TriggerValue ([string]$EventId)
+
+        if ($queued) {
+            Write-Log "    AGHealth alert queued (event_id=$EventId): $title [Teams]" "SUCCESS"
+            $anyQueued = $true
+        }
+    }
+
+    # Jira branch (reserved for future Send-JiraTicket wrapper).
+    # When that wrapper exists, replace the Write-Log below with the dispatch
+    # call and set $anyQueued = $true on success.
+    if ($routing -band 2) {
+        Write-Log "    AGHealth alert: Jira routing requested but Send-JiraTicket not yet implemented (event_id=$EventId, $triggerType)" "WARN"
+    }
+
+    # ----------------------------------------------------------
+    # Mark source row as alerted only when something actually queued
+    # ----------------------------------------------------------
+    if ($anyQueued) {
+        $updateQuery = @"
+UPDATE ServerOps.Activity_XE_AGHealth
+SET alert_sent = 1, alert_sent_dttm = GETDATE()
+WHERE event_id = $EventId
+"@
+        Invoke-SqlNonQuery -Query $updateQuery | Out-Null
+    }
 }
 
 # ========================================
@@ -1868,8 +2110,18 @@ Write-Log "  Found $($serverCheck.enabled_count) server(s) with Activity monitor
 # ----------------------------------------
 $retainBlockedProcessXml = (Get-ConfigValue -SettingName "blocked_process_retain_raw_xml") -eq "1"
 $retainAGHealthXml = (Get-ConfigValue -SettingName "aghealth_retain_raw_xml") -eq "1"
+
+# Alerting config: master switch + per-condition routing.
+# Routing values: 0=None, 1=Teams, 2=Jira, 3=Both. Decoded with -band in Send-AGHealthAlert.
+$alertsEnabled = (Get-ConfigValue -SettingName "xe_alerting_enabled") -eq "1"
+$aghealthStateChangeRouting   = [int](Get-ConfigValue -SettingName "aghealth_alert_state_change_routing")
+$aghealthCriticalErrorRouting = [int](Get-ConfigValue -SettingName "aghealth_alert_critical_error_routing")
+
 Write-Log "Config: blocked_process_retain_raw_xml = $retainBlockedProcessXml"
 Write-Log "Config: aghealth_retain_raw_xml = $retainAGHealthXml"
+Write-Log "Config: xe_alerting_enabled = $alertsEnabled"
+Write-Log "Config: aghealth_alert_state_change_routing = $aghealthStateChangeRouting"
+Write-Log "Config: aghealth_alert_critical_error_routing = $aghealthCriticalErrorRouting"
 
 # ----------------------------------------
 # Step 2: Get list of servers to collect from
@@ -2334,17 +2586,25 @@ WHEN NOT MATCHED THEN
                 $eventData = $event.event_data
                 $fileName = $event.file_name
                 $fileOffset = $event.file_offset
-                
+
                 # Always track position
                 $lastFile = $fileName
                 $lastOff = $fileOffset
-                
+
                 # Parse and insert AGHealth event
                 $parsed = Parse-AGHealthEvent -EventXml $eventData
                 if ($null -ne $parsed) {
-                    $result = Insert-AGHealthEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset -RetainRawXml $retainAGHealthXml
-                    if ($result) {
+                    $newEventId = Insert-AGHealthEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset -RetainRawXml $retainAGHealthXml
+                    if ($null -ne $newEventId) {
                         $sessionEvents++
+
+                        # Alerting: scoped to this collection cycle only.
+                        # The $events array represents events newly read from the XE file
+                        # since the last collection offset, so historical rows in the
+                        # table are never reconsidered here.
+                        if ($alertsEnabled -and (Test-AGHealthAlertable -Event $parsed)) {
+                            Send-AGHealthAlert -EventId $newEventId -ServerName $serverName -Event $parsed
+                        }
                     }
                 }
                 else {
