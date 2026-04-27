@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-27 10:47:36
+Generated: 2026-04-27 12:08:21
 
 ## Module Registry
 
@@ -128,7 +128,7 @@ Generated: 2026-04-27 10:47:36
 | DmOps.Archive | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
 | DmOps.Archive | dmops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dmops-ref.html | DM Operations reference documentation page |
 | DmOps.Archive | dmops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dmops.html | DM Operations narrative documentation page |
-| DmOps.Archive | Execute-DmArchive.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmArchive.ps1 | Account-level archive execution — registry-driven batch deletion of tagged accounts from crs5_oltp |
+| DmOps.Archive | Execute-DmConsumerArchive.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmConsumerArchive.ps1 | Unified consumer-level archive execution — TC_ARCH-driven batch deletion of consumers and all linked accounts/transactions from crs5_oltp, with mid-batch BIDATA P-to-C migration |
 | DmOps.Archive | DmOperations-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1 | DM Operations CC API endpoints |
 | DmOps.Archive | dm-operations.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\dm-operations.css | DM Operations CC styles |
 | DmOps.Archive | dm-operations.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\dm-operations.js | DM Operations CC client-side logic |
