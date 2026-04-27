@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-26 11:36:07
+Generated: 2026-04-27 10:47:36
 
 ## Module Registry
 
@@ -460,8 +460,8 @@ Generated: 2026-04-26 11:36:07
 | DeptOps | BS_ReviewRequest | bs_distribution_enabled | 1 | BIT | Master on/off switch for automated review request distribution |
 | DmOps | Archive | alerting_enabled | 0 | BIT | Master switch for archive alerting: 1 = Teams alerts active, 0 = alerting suppressed. Does not affect archive execution. |
 | DmOps | Archive | archive_abort | 0 | BIT | Emergency shutoff: 1 = stop after current batch completes. Overrides schedule and enabled flag. Reset to 0 manually after investigation. |
-| DmOps | Archive | batch_size | 10 | INT | Number of consumers per batch during full-mode schedule windows |
-| DmOps | Archive | batch_size_reduced | 10 | INT | Number of consumers per batch during reduced-mode schedule windows |
+| DmOps | Archive | batch_size | 5000 | INT | Number of consumers per batch during full-mode schedule windows |
+| DmOps | Archive | batch_size_reduced | 500 | INT | Number of consumers per batch during reduced-mode schedule windows |
 | DmOps | Archive | bidata_build_job_name | BIDATA Daily Build | VARCHAR | SQL Agent job name for the BIDATA Daily Build. Used by pre-flight check to detect build-in-progress on bidata_instance server. |
 | DmOps | Archive | bidata_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting the BIDATA database for P-to-C migration. Production: DM-PROD-REP. |
 | DmOps | Archive | chunk_size | 5000 | INT | Maximum rows per DELETE operation — larger tables are deleted in chunks of this size |
@@ -488,6 +488,7 @@ Generated: 2026-04-26 11:36:07
 | JobFlow | Monitoring | ValidationRetryEnabled | 1 | BIT | Enable automatic retry of missed flow validations |
 | Orchestrator |  | orchestrator_drain_mode | 0 | INT | Drain mode: stops new process launches while in-flight ones finish |
 | Orchestrator | Engine | heartbeat_interval_seconds | 60 | INT | Seconds between orchestrator engine heartbeats |
+| ServerOps | Activity_DMV | dmv_alerting_enabled | 1 | BIT | Master on/off switch for all DMV-based alerting |
 | ServerOps | Activity_DMV | dmv_retention_days | 90 | INT | Days to keep DMV snapshot data |
 | ServerOps | Activity_DMV | incident_hadr_spike_critical_ms | 5000000 | INT | AG sync wait spike threshold for critical incidents (milliseconds) |
 | ServerOps | Activity_DMV | incident_hadr_spike_warning_ms | 500000 | INT | AG sync wait spike threshold for warning incidents (milliseconds) |
@@ -520,8 +521,11 @@ Generated: 2026-04-26 11:36:07
 | ServerOps | Activity_DMV | threshold_zombie_count_critical | 500 | INT | Zombie connections: critical threshold |
 | ServerOps | Activity_DMV | threshold_zombie_count_warning | 200 | INT | Zombie connections: warning threshold |
 | ServerOps | Activity_DMV | threshold_zombie_idle_minutes | 60 | INT | Minutes idle before a JDBC session counts as a zombie |
+| ServerOps | Activity_XE | aghealth_alert_critical_error_routing | 1 | ALERT_MODE | Alert destination(s) for AG severity 16+ errors. 0=None, 1=Teams, 2=Jira, 3=Both. |
+| ServerOps | Activity_XE | aghealth_alert_state_change_routing | 1 | ALERT_MODE | Alert destination(s) for AG state changes (failover, replica offline). 0=None, 1=Teams, 2=Jira, 3=Both. |
 | ServerOps | Activity_XE | aghealth_retain_raw_xml | 1 | BIT | Keep raw XML data for AG health events |
 | ServerOps | Activity_XE | blocked_process_retain_raw_xml | 1 | BIT | Keep raw XML data for blocked process events |
+| ServerOps | Activity_XE | xe_alerting_enabled | 1 | BIT | Master on/off switch for all XE-based alerting |
 | ServerOps | Backup | alert_threshold_aws_pending_min | 30 | INT | Minutes before a pending AWS upload triggers an alert |
 | ServerOps | Backup | alert_threshold_network_pending_min | 30 | INT | Minutes before a pending network copy triggers an alert |
 | ServerOps | Backup | aws_bucket_name | faitdbredgate | VARCHAR | AWS S3 bucket name for backup uploads |
