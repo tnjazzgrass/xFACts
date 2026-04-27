@@ -2,8 +2,8 @@
 # xFACts Control Center - DM Operations Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1
 # 
-# Renders the DM Operations monitoring dashboard page for account-level
-# archiving and shell consumer purge processes.
+# Renders the DM Operations monitoring dashboard page for the unified consumer
+# archive and shell consumer purge processes.
 # CSS: /css/dm-operations.css
 # JS:  /js/dm-operations.js
 # APIs: DmOperations-API.ps1
@@ -59,7 +59,7 @@
     <div class="header-bar">
         <div>
             <h1><a href="/docs/pages/dmops.html" target="_blank">DM Operations</a></h1>
-            <p class="page-subtitle">Account archiving, shell consumer purge, execution history, schedule management</p>
+            <p class="page-subtitle">Consumer archiving, shell consumer purge, execution history, schedule management</p>
         </div>
         <div class="header-right">
             <div class="refresh-info">
@@ -108,7 +108,7 @@
             <!-- Archive Today -->
             <div class="section">
                 <div class="section-header">
-                    <h2 class="section-title">Account Archive — Today</h2>
+                    <h2 class="section-title">Consumer Archive &mdash; Today</h2>
                     <div class="section-header-right">
                         <button class="action-btn schedule-btn" id="archive-schedule-btn" onclick="openScheduleModal('archive')" title="View/edit archive schedule" style="display:none;">&#128197; Schedule</button>
                         <button class="action-btn abort-btn" id="archive-abort-btn" onclick="toggleAbort('archive')" title="Emergency stop" style="display:none;">&#9632; Abort</button>
@@ -123,7 +123,7 @@
             <!-- Archive Execution History -->
             <div class="section section-fill">
                 <div class="section-header">
-                    <h2 class="section-title">Account Archive — History</h2>
+                    <h2 class="section-title">Consumer Archive &mdash; History</h2>
                     <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
                 <div id="archive-history">
@@ -139,7 +139,7 @@
             <!-- Shell Purge Today -->
             <div class="section">
                 <div class="section-header">
-                    <h2 class="section-title">Shell Purge — Today</h2>
+                    <h2 class="section-title">Shell Purge &mdash; Today</h2>
                     <div class="section-header-right">
                         <button class="action-btn schedule-btn" id="shellpurge-schedule-btn" onclick="openScheduleModal('shellpurge')" title="View/edit shell purge schedule" style="display:none;">&#128197; Schedule</button>
                         <button class="action-btn abort-btn" id="shellpurge-abort-btn" onclick="toggleAbort('shellpurge')" title="Emergency stop" style="display:none;">&#9632; Abort</button>
@@ -154,7 +154,7 @@
             <!-- Shell Purge Execution History -->
             <div class="section section-fill">
                 <div class="section-header">
-                    <h2 class="section-title">Shell Purge — History</h2>
+                    <h2 class="section-title">Shell Purge &mdash; History</h2>
                     <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
                 <div id="shellpurge-history">
@@ -179,6 +179,18 @@
         </div>
         <div class="slide-panel-body" id="schedule-panel-body">
             <div class="loading">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Batch Detail Slide-out (full Archive_BatchDetail / ShellPurge_BatchDetail rows) -->
+    <div id="batch-detail-overlay" class="slide-panel-overlay" onclick="closeBatchDetailPanel()"></div>
+    <div id="batch-detail-panel" class="slide-panel extra-wide">
+        <div class="slide-panel-header">
+            <h3 id="batch-detail-title">Batch Detail</h3>
+            <button class="modal-close" onclick="closeBatchDetailPanel()">&times;</button>
+        </div>
+        <div class="slide-panel-body" id="batch-detail-body">
+            <div class="loading">Loading batch detail&hellip;</div>
         </div>
     </div>
 </body>
