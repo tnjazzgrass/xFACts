@@ -2,7 +2,9 @@
 
 Master working document for the unified consumer archive build. Single source of truth covering design, current state, test results, and outstanding work. Temporary doc — retires once the build is operational and rolled into permanent documentation.
 
-**Last meaningful update:** 2026-04-26, after the 11-batch test campaign on DM-TEST-APP.
+**Last meaningful update:** 2026-04-27, after completing the CC page rework, the registry/metadata deployment, and System_Metadata bumps for `DmOps.Archive` and `ControlCenter.DmOperations`.
+
+**Next session:** Documentation page rewrites (`dmops.html` and `dmops-arch.html`) and the dedicated ShellPurge review session. Both are independent — pick whichever fits the energy.
 
 ---
 
@@ -242,7 +244,7 @@ These ~8 orders account for ~73% of typical batch duration. Everything else is n
 
 ### Lessons Learned
 
-**BIDATA missing-index incident (Test environment, 2026-04-26).** Batch 1's AB1 took 172s migrating 11 rows. Investigation: BIDATA Daily Build on DM-TEST-APP failed earlier that day on the GenAccountTbl build step (`Could not allocate space for object 'dbo.SORT temporary run storage'… filegroup is full` — Error 1105). The build pattern is DROP INDEX → bulk load → CREATE INDEX; the CREATE INDEX phase ran out of sort temp space and aborted, leaving the BIDATA tables as heaps. Subsequent migrations against heap tables required full table scans. After Dirk freed disk space and re-ran the build, AB1 dropped to sub-second range (8.6s for 11,595 rows in batch 3). **No code change needed.** Worth keeping in mind: the script's pre-flight check at startup sees `BIDATA pre-flight: build completed today (status: Failed)` at DEBUG level — could be promoted to WARN or a hard-stop in future iteration (see Outstanding).
+**BIDATA missing-index incident (Test environment, 2026-04-26).** Batch 1's AB1 took 172s migrating 11 rows. Investigation: BIDATA Daily Build on DM-TEST-APP failed earlier that day on the GenAccountTbl build step (`Could not allocate space for object 'dbo.SORT temporary run storage'… filegroup is full` — Error 1105). The build pattern is DROP INDEX → bulk load → CREATE INDEX; the CREATE INDEX phase ran out of sort temp space and aborted, leaving the BIDATA tables as heaps. Subsequent migrations against heap tables required full table scans. After freeing disk space and re-running the build, AB1 dropped to sub-second range (8.6s for 11,595 rows in batch 3). **No code change needed.** Note: this is a Test-environment artifact — Test runs the BIDATA build only weekly, so partial-state heap tables can persist for days between builds. Production runs nightly and the orchestrator wrapper will gate each archive cycle on BIDATA build completion, so this scenario cannot occur in Production.
 
 **Preview-mode bug discovered and fixed mid-session.** Initial unified script propagated a latent bug from the legacy DmArchive/ShellPurge scripts where logging functions wrote to audit tables regardless of preview mode. Corrected to console-only with `$script:XFActsExecute` guards in every logging function. Legacy scripts were not updated — they're not currently in use and will be retired anyway.
 
@@ -252,25 +254,26 @@ These ~8 orders account for ~73% of typical batch duration. Everything else is n
 
 ### Phase 1 Completion (deployment follow-up)
 
-Items required to put the unified script into production rotation:
+Items required to put the unified script into production rotation. **Done** items are kept here briefly for trace; once the build is fully operational this whole section retires with the working doc.
 
-- [ ] **System_Metadata version bump** for `DmOps.Archive` component (Admin UI). Notes: pivot from account-level to consumer-level archive; new unified script `Execute-DmConsumerArchive.ps1` replaces account-level `Execute-DmArchive.ps1`; adds runtime TC_ARCH re-verification with tag soft-delete + AR event for excepted consumers; adds `Archive_ConsumerExceptionLog` table; legacy script archived to Reference. Component description updated to reflect consumer-level model.
-- [ ] **Object_Metadata + Object_Registry** for `Execute-DmConsumerArchive.ps1` (separate deployment script, generated AFTER this design is locked — never bundle with implementation).
-- [ ] **Move legacy archive script** from `E:\xFACts-PowerShell\Execute-DmArchive.ps1` to `E:\xFACts-PowerShell\Reference\Execute-DmArchive_AccountLevel.ps1`.
-- [ ] **ProcessRegistry entry** for `Execute-DmConsumerArchive.ps1` — Pattern 3 (time-based with polling). `dependency_group=10` (collectors). `script_path = 'Execute-DmConsumerArchive.ps1'` (filename only, no path).
-- [ ] **CC page touch-ups** — `DmOperations.ps1`, `DmOperations-API.ps1`, `dm-operations.css`, `dm-operations.js`. Cosmetic adjustments reflecting Archive as primary process and ShellPurge as peripheral. Add exception log display section. Lifetime-totals math may need adjustment.
-- [ ] **Documentation page rewrites** — `dmops.html`, `dmops-arch.html`. Reflect the consumer-level model.
-- [ ] **`.\Generate-DDLReference.ps1 -Execute`** — regenerate JSON after schema changes settle.
-- [ ] **Production batch sizing decision** — start at 5000 (validated in test). Tune via GlobalConfig as production data accumulates.
-- [ ] **Production schedule windows** — reuse existing 7am–11pm pattern (full evenings/weekends, reduced business hours, blocked overnight). The 2-hour buffer to BIDATA's 1am rebuild remains sufficient.
+**Done:**
+
+- [x] **Object_Registry + Object_Metadata** for `Execute-DmConsumerArchive.ps1` deployed via `Deploy_DmConsumerArchive_Registry.sql`. Same script retired the legacy `Execute-DmArchive.ps1` registry/metadata rows.
+- [x] **System_Metadata version bump** for `DmOps.Archive` component applied via Admin UI.
+- [x] **System_Metadata version bump** for `ControlCenter.DmOperations` component applied via Admin UI (covers the 6-tile lifetime totals, TC_ARCH-gated remaining counts, day → batch drill-down, sortable BatchDetail slide-out, and exception/bidata surfacing).
+- [x] **Legacy archive script archived** off the production filesystem.
+- [x] **`.\Generate-DDLReference.ps1 -Execute`** regenerated, `_metadata.json` published.
+
+**Pending:**
+
+- [ ] **ProcessRegistry entry** for `Execute-DmConsumerArchive.ps1` — Pattern 3 (time-based with polling). `dependency_group=10`. `script_path = 'Execute-DmConsumerArchive.ps1'` (filename only). **Deferred:** running manually for now while production behavior is observed; build out when ready to hand off to the orchestrator. The orchestrator entry should include a BIDATA-completion pre-check on each cycle (see Open Decisions).
+- [ ] **Documentation page rewrites** — `dmops.html`, `dmops-arch.html`. Reflect the consumer-level model. *Next session.*
 
 ### Open Decisions
 
 These need a discussion before they're either built or dropped:
 
-- [ ] **Test-BidataBuildInProgress recheck between Steps 7 & 8.** Currently the BIDATA build status is checked once at Step 1 startup. In production with full batch sizes, Step 7 (account-level deletes) will run long enough that the BIDATA Daily Build could kick off mid-batch. A recheck before Step 8 would let us bail to "BIDATA: Skipped" cleanly rather than fight contention. Defensive code change. Low risk, high value. **Recommend implementing.**
-- [ ] **BIDATA build "Failed status" handling at startup.** Today the script logs `BIDATA pre-flight: build completed today (status: Failed)` at DEBUG and proceeds. Three options: (A) hard-stop with a GlobalConfig acknowledgment flag to override, (B) bump log level to WARN so it's visible but proceeds, (C) leave alone. Recommend B as minimal-change.
-- [ ] **BIDATA Test environment refresh** alongside the planned crs5_oltp clone refresh. Test BIDATA had a build failure due to filegroup space — likely accumulated cruft over time. Sized-correctly fresh BIDATA paired with the OLTP clone resets that surface area.
+*All previously open BIDATA decisions resolved — the orchestrator wrapper will gate each cycle on BIDATA build completion, and the script will end nightly ~2 hours before the next build kicks off. No mid-batch recheck required because no batch will ever start during a build window. See Lessons Learned (Section 4) for the historical context that prompted these decisions.*
 
 ### Phase 2 — Step Necessity Audit (post-production)
 
@@ -297,15 +300,16 @@ Validate which of Shell Purge's seven exclusion reasons remain meaningful for na
 | File | Location | Status |
 |---|---|---|
 | `Execute-DmConsumerArchive.ps1` | `E:\xFACts-PowerShell\` | **Deployed, validated** (3,068 lines) |
-| `Execute-DmArchive.ps1` (legacy) | `E:\xFACts-PowerShell\` | **Pending move** to `Reference\Execute-DmArchive_AccountLevel.ps1` |
+| `Execute-DmArchive.ps1` (legacy) | (offline archive) | **Archived** off the production filesystem |
 | `Execute-DmShellPurge.ps1` | `E:\xFACts-PowerShell\` | Unchanged. Continues handling naturally-occurring shells. Preview-mode fix pending under Phase 3. |
 | `xFACts-OrchestratorFunctions.ps1` | `E:\xFACts-PowerShell\` | Unchanged. Provides `$script:XFActsExecute`, `Initialize-XFActsScript`, and all shared platform functions. |
-| `DmOperations.ps1` | `E:\xFACts-ControlCenter\scripts\routes\` | Cosmetic touch-ups pending |
-| `DmOperations-API.ps1` | `E:\xFACts-ControlCenter\scripts\routes\` | Cosmetic touch-ups pending |
-| `dm-operations.css` | `E:\xFACts-ControlCenter\public\css\` | Cosmetic touch-ups pending |
-| `dm-operations.js` | `E:\xFACts-ControlCenter\public\js\` | Cosmetic touch-ups pending |
-| `dmops.html` | `E:\xFACts-ControlCenter\public\docs\pages\` | Rewrite pending |
-| `dmops-arch.html` | `E:\xFACts-ControlCenter\public\docs\pages\arch\` | Rewrite pending |
+| `DmOperations.ps1` | `E:\xFACts-ControlCenter\scripts\routes\` | **Updated** — second slide-panel for batch detail; section title relabels |
+| `DmOperations-API.ps1` | `E:\xFACts-ControlCenter\scripts\routes\` | **Updated** — TC_ARCH-gated remaining counts; new endpoints for batches-by-day and batch-detail; exception/bidata surfacing |
+| `dm-operations.css` | `E:\xFACts-ControlCenter\public\css\` | **Updated** — viewport-constrained history (`max-height: calc(100vh - 600px)`); badge styles; delete_order prefix coloring; `.slide-panel.extra-wide` |
+| `dm-operations.js` | `E:\xFACts-ControlCenter\public\js\` | **Updated** — 6-tile lifetime totals; day → batch drill-down; sortable BatchDetail slide-out; `Execute-DmConsumerArchive` engine subscription |
+| `xFACts-Helpers.psm1` | `E:\xFACts-ControlCenter\scripts\modules\` | **Updated** — `Get-RemainingCounts` rewritten to TC_ARCH-gated query returning consumers + accounts |
+| `dmops.html` | `E:\xFACts-ControlCenter\public\docs\pages\` | Rewrite pending — *next session* |
+| `dmops-arch.html` | `E:\xFACts-ControlCenter\public\docs\pages\arch\` | Rewrite pending — *next session* |
 | `Archive_BatchLog` / `BatchDetail` / `ConsumerLog` / `Schedule` | `DmOps` schema | Unchanged. `Archive_BatchLog.exception_count` column added this initiative. |
 | `Archive_ConsumerExceptionLog` | `DmOps` schema | **Deployed** |
 | `ShellPurge_*` tables | `DmOps` schema | Unchanged |
