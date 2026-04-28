@@ -15,32 +15,29 @@
     <!-- Header -->
     <div class="page-header">
         <h1>DM Operations Architecture</h1>
-        <div class="subtitle">How millions of records get surgically removed from a 10TB production database without breaking anything</div>
+        <div class="subtitle">How millions of consumer records get surgically removed from a 10TB production database without breaking anything</div>
     </div>
 
-    <!-- Navigation (populated by nav.js) -->
-    <div class="doc-nav"></div>
-
-    <!-- Sticky Section Nav -->
+    <!-- Sticky Section Nav (breadcrumb + section links populated by nav.js / inline) -->
     <div class="section-nav">
         <div class="section-nav-top"></div>
         <div class="section-nav-links">
             <a href="#erd">Schema Overview</a>
-            <a href="#archive-process">Account Archive Process</a>
+            <a href="#archive-process">Archive Process</a>
+            <a href="#reverification">Runtime Re-Verification</a>
             <a href="#delete-sequence">The Delete Sequence</a>
-            <a href="#non-blocking">Non-Blocking Design</a>
             <a href="#bidata-migration">BIDATA Migration</a>
-            <a href="#shell-purge">Shell Purge Process</a>
-            <a href="#exclusion-log">The Exclusion Log</a>
+            <a href="#non-blocking">Non-Blocking Design</a>
+            <a href="#shell-purge">Shell Purge</a>
             <a href="#scheduling">Schedule System</a>
-            <a href="#performance">Performance &amp; Optimization</a>
+            <a href="#performance">Performance Notes</a>
             <a href="#connections">How Everything Connects</a>
         </div>
     </div>
 
     <!-- Context Bar -->
     <div class="context-bar">
-        The narrative page tells you <em>what</em> DM Operations does and <em>why</em>. This page tells you <em>how</em>. Two PowerShell scripts, eleven tables, and a carefully ordered sequence of DELETE operations that navigate the foreign key maze of a 1,500-table OLTP database &mdash; all while keeping the reporting warehouse intact.
+        The narrative page tells you <em>what</em> DM Operations does and <em>why</em>. This page tells you <em>how</em>. One unified PowerShell script, a companion shell purge utility, eleven tables, and a carefully ordered sequence of DELETE operations that navigate the foreign key maze of a 1,500-table OLTP database &mdash; all while keeping the reporting warehouse intact.
     </div>
 
     <!-- ============================================ -->
@@ -49,7 +46,7 @@
     <div class="section" id="erd">
         <h2>Schema Overview</h2>
 
-        <p>DM Operations has two components under the DmOps schema: Archive (account-level archiving with BIDATA migration) and ShellPurge (orphaned consumer cleanup). Each has its own set of operational tables, but they share the same schedule grid pattern and GlobalConfig structure.</p>
+        <p>DM Operations has two components under the <code>DmOps</code> schema: <strong>Archive</strong> (consumer-level archiving with embedded BIDATA migration) and <strong>ShellPurge</strong> (orphaned consumer cleanup). Each has its own set of operational tables, but they share the same schedule grid pattern and GlobalConfig structure.</p>
 
         <div class="erd-root" data-schema="DmOps" data-category="Archive"></div>
 
@@ -57,10 +54,10 @@
             <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
             <tbody>
                 <tr><td><code>Archive_BatchLog</code></td><td>One row per archive batch execution &mdash; the primary audit table</td><td>Many (one per batch)</td></tr>
-                <tr><td><code>Archive_BatchDetail</code></td><td>Per-table operation detail within each batch</td><td>~109 per batch (one per delete order)</td></tr>
-                <tr><td><code>Archive_ConsumerLog</code></td><td>Per-account audit trail with BIDATA migration status</td><td>Many (one per account archived)</td></tr>
+                <tr><td><code>Archive_BatchDetail</code></td><td>Per-table operation detail within each batch, prefixed by phase (A/AB/C)</td><td>~230 per batch (one per delete order)</td></tr>
+                <tr><td><code>Archive_ConsumerLog</code></td><td>Per-consumer audit trail with BIDATA migration status</td><td>Many (one per consumer archived)</td></tr>
+                <tr><td><code>Archive_ConsumerExceptionLog</code></td><td>Consumers ejected from a batch by runtime re-verification</td><td>Many (grows as eligibility drift is detected)</td></tr>
                 <tr><td><code>Archive_Schedule</code></td><td>7&times;24 weekly schedule grid (blocked/full/reduced)</td><td>Fixed: 7 rows</td></tr>
-                <tr><td><code>Archive_TableRegistry</code></td><td>Analysis catalog of all crs5_oltp tables with FK ordering</td><td>~1,500 rows (reference only, not used at runtime)</td></tr>
             </tbody>
         </table>
 
@@ -73,52 +70,87 @@
                 <tr><td><code>ShellPurge_BatchDetail</code></td><td>Per-table operation detail within each batch</td><td>~58 per batch</td></tr>
                 <tr><td><code>ShellPurge_ConsumerLog</code></td><td>Per-consumer audit trail</td><td>Many (one per consumer purged)</td></tr>
                 <tr><td><code>ShellPurge_Schedule</code></td><td>7&times;24 weekly schedule grid</td><td>Fixed: 7 rows</td></tr>
-                <tr><td><code>ShellPurge_ExclusionLog</code></td><td>Consumers excluded from purge with reason codes</td><td>~116K rows (grows with discoveries)</td></tr>
+                <tr><td><code>ShellPurge_ConsumerExceptionLog</code></td><td>Consumers excluded from purge with reason codes</td><td>Many (seeded from initial scan, grows with discoveries)</td></tr>
             </tbody>
         </table>
     </div>
 
     <!-- ============================================ -->
-    <!-- SECTION: Account Archive Process -->
+    <!-- SECTION: Archive Process -->
     <!-- ============================================ -->
     <div class="section" id="archive-process">
-        <h2>Account Archive Process</h2>
+        <h2>Archive Process</h2>
 
-        <p>The archive script (<code>Execute-DmArchive.ps1</code>) runs as a continuous batch loop. Each iteration selects a batch of consumers whose accounts carry the <code>TA_ARCH</code> tag, loads their data into temp tables, executes a 109-step delete sequence, migrates financial snapshots to the reporting warehouse, and logs everything before checking the schedule and starting the next batch.</p>
+        <p>The archive script (<code>Execute-DmConsumerArchive.ps1</code>) runs as a continuous batch loop. Each iteration selects a batch of archive-eligible consumers, re-verifies them at the moment of processing, removes their account data, migrates financial snapshots to the reporting warehouse, removes the consumer record itself, and logs everything before checking the schedule and starting the next batch.</p>
 
         <div class="arch-flow">
             <div class="arch-flow-steps">
                 <div class="arch-flow-step blue">
                     <div class="arch-flow-step-title">Pre-Flight</div>
-                    <div class="arch-flow-step-detail">Config, BIDATA check,<br>schedule, abort flag</div>
+                    <div class="arch-flow-step-detail">Config, BIDATA check,<br>schedule, abort flag,<br>startup lookups</div>
                 </div>
                 <span class="arch-flow-arrow">&rarr;</span>
                 <div class="arch-flow-step green">
-                    <div class="arch-flow-step-title">Select &amp; Load</div>
-                    <div class="arch-flow-step-detail">Batch consumers,<br>materialize temp IDs</div>
+                    <div class="arch-flow-step-title">Select &amp; Verify</div>
+                    <div class="arch-flow-step-detail">TC_ARCH consumers,<br>re-verify eligibility,<br>handle exceptions</div>
                 </div>
                 <span class="arch-flow-arrow">&rarr;</span>
                 <div class="arch-flow-step orange">
-                    <div class="arch-flow-step-title">Delete Sequence</div>
-                    <div class="arch-flow-step-detail">109 ordered steps,<br>SNAPSHOT isolation</div>
+                    <div class="arch-flow-step-title">Account Deletes</div>
+                    <div class="arch-flow-step-detail">Phase A:<br>UDEFs + ~117<br>ordered tables</div>
                 </div>
                 <span class="arch-flow-arrow">&rarr;</span>
                 <div class="arch-flow-step purple">
                     <div class="arch-flow-step-title">BIDATA Migration</div>
-                    <div class="arch-flow-step-detail">P &rarr; C atomic<br>for 4 table pairs</div>
+                    <div class="arch-flow-step-detail">Phase AB:<br>P&rarr;C atomic for<br>4 table pairs</div>
                 </div>
                 <span class="arch-flow-arrow">&rarr;</span>
                 <div class="arch-flow-step muted">
-                    <div class="arch-flow-step-title">Log &amp; Loop</div>
-                    <div class="arch-flow-step-detail">Audit trail, schedule<br>re-check, next batch</div>
+                    <div class="arch-flow-step-title">Consumer Deletes</div>
+                    <div class="arch-flow-step-detail">Phase C:<br>UDEFs + ~110<br>ordered tables</div>
                 </div>
             </div>
         </div>
 
-        <p>The script opens a single persistent connection to crs5_oltp at session start and keeps it open for the entire run. This is critical &mdash; the temp tables created during batch loading survive across all operations within the session. A separate connection opens and closes per batch for the BIDATA migration, since that targets a different database on a potentially different server.</p>
+        <p>Eligibility is established by a Debt Manager nightly job that applies the <code>TC_ARCH</code> consumer-level tag to any consumer whose accounts all carry the <code>TA_ARCH</code> account-level tag. The xFACts script trusts that tag at selection time but re-verifies it before doing any work &mdash; tag state can drift between when it&rsquo;s applied and when a batch processes the consumer.</p>
+
+        <p>The script opens a single persistent connection to <code>crs5_oltp</code> at session start and keeps it open for the entire run. This is critical &mdash; the temp tables created during batch loading survive across all operations within the session. A separate connection opens for the BIDATA migration since that targets a different database on a potentially different server.</p>
 
         <div class="tech-tip">
-            <strong>Batch selection is deliberately unordered.</strong> The query that selects consumers for each batch has no ORDER BY clause. This was a performance decision &mdash; adding ORDER BY to the selection query took 49 seconds; without it, 2 milliseconds. The tradeoff is that consumers aren't processed in any predictable sequence, but since they all need to be processed eventually, the order doesn't matter.
+            <strong>Preview mode is real.</strong> Without the <code>-Execute</code> switch, the script runs end-to-end with full console and log output but writes <em>nothing</em> to any database. Logging functions short-circuit. Database write functions emit a <code>[Preview]</code> line describing what they would have done. Re-verification still queries to identify exceptions for accurate reporting, but the corresponding tag-removal UPDATEs are skipped. BIDATA migration is skipped entirely. The single exception is the in-memory cleanup of session-local temp tables, which has to run for the count queries downstream to be accurate &mdash; that operates on data the script itself just put in temp tables, not on production.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Runtime Re-Verification -->
+    <!-- ============================================ -->
+    <div class="section" id="reverification">
+        <h2>Runtime Re-Verification</h2>
+
+        <p>The <code>TC_ARCH</code> tag is applied based on a point-in-time evaluation of consumer state. Between application and processing &mdash; minutes, hours, sometimes longer if the script paused for blocked schedule windows &mdash; new accounts can merge into a consumer through new business loads, account splits, or manual activity. Any new account arrives without <code>TA_ARCH</code>, which immediately invalidates the consumer&rsquo;s archive eligibility. The tag, however, stays in place until xFACts notices and removes it.</p>
+
+        <p>Every batch re-verifies each candidate consumer at the moment of processing using the same eligibility logic the apply-job uses (count of consumer&rsquo;s accounts equals count carrying active <code>TA_ARCH</code>), inverted to find consumers who <em>no longer</em> satisfy that condition. Future changes to eligibility logic can be made in one place and the re-verification query updated to match without behavioral drift.</p>
+
+        <p>For each excepted consumer, the script does four things in order:</p>
+
+        <table class="info-table">
+            <thead><tr><th>#</th><th>Action</th><th>Why this order</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td>Remove from current batch</td><td>Unconditional and first &mdash; guaranteed even if subsequent best-effort writes fail</td></tr>
+                <tr><td>2</td><td>Soft-delete the <code>TC_ARCH</code> row in <code>cnsmr_Tag</code></td><td>Best-effort. The tag is now wrong; remove it so the next nightly re-evaluation re-tags correctly when conditions allow</td></tr>
+                <tr><td>3</td><td>Write an internal AR event to <code>cnsmr_accnt_ar_log</code></td><td>Best-effort. Audit trail of why the tag was removed, paired CC/CC so it&rsquo;s excluded from outbound client reporting</td></tr>
+                <tr><td>4</td><td>Append to <code>Archive_ConsumerExceptionLog</code></td><td>xFACts-side audit with confirmation flags for steps 2 and 3</td></tr>
+            </tbody>
+        </table>
+
+        <p>The batch processes whatever consumers pass the check and finalizes normally with a non-zero <code>exception_count</code>. There&rsquo;s no backfill &mdash; if 200 of 10,000 candidates fail re-verification, the batch processes 9,800 and the 200 are released back to the DM job for future re-tagging once their account state changes. A batch where every candidate fails re-verification finalizes as Success with zero consumers archived and the full exception count logged.</p>
+
+        <div class="tech-tip">
+            <strong>Direct SQL, not API or BDL.</strong> Tag removal could in principle go through the DM API or a BDL file, but neither makes sense at scale. API calls slow under load, DM Jobs require explicit triggering, and stacking small BDLs per batch creates cleanup problems. Two SQL operations against properly indexed tables &mdash; an UPDATE and an INSERT &mdash; are fast, predictable, and don&rsquo;t need any external orchestration.
+        </div>
+
+        <div class="tech-tip">
+            <strong>Configurable values resolved at startup.</strong> The action code, result code, service-account user, and AR message text are stored in GlobalConfig as human-readable values (<code>CC</code>, <code>sqlmon</code>, etc.) and resolved to internal IDs via single-query lookups during script initialization. The Admin UI stays legible &mdash; nobody&rsquo;s editing raw <code>actn_cd</code> bigints &mdash; and operations can update values without code changes. Failed lookups (misconfigured short value, deleted user, missing tag) cause fail-fast exit before opening the persistent connection.
         </div>
     </div>
 
@@ -128,44 +160,31 @@
     <div class="section" id="delete-sequence">
         <h2>The Delete Sequence</h2>
 
-        <p>This is the heart of the archive process. Debt Manager's schema has deep foreign key chains &mdash; deleting an account record requires first deleting from every table that references it, and every table that references those tables, and so on. The delete sequence is a hardcoded, FK-validated order of operations that navigates this dependency tree.</p>
+        <p>This is the heart of the archive process. Debt Manager&rsquo;s schema has deep foreign key chains &mdash; deleting a consumer record requires first deleting from every table that references it, and every table that references those tables, and so on. The delete sequence is a hardcoded, FK-validated order of operations that navigates this dependency tree from the leaves down to the root.</p>
 
-        <p>The sequence has three phases:</p>
+        <p>Because the unified script handles both the account-level and consumer-level halves of the work, all delete operations live in a single namespace distinguished by prefix:</p>
 
         <table class="info-table">
-            <thead><tr><th>Phase</th><th>Scope</th><th>Tables</th></tr></thead>
+            <thead><tr><th>Prefix</th><th>Phase</th><th>Scope</th><th>Rough count</th></tr></thead>
             <tbody>
-                <tr><td><strong>Phase 1: UDEFs</strong></td><td>User-defined extension tables discovered dynamically at runtime</td><td>~11 (varies)</td></tr>
-                <tr><td><strong>Phase 2: Account tables</strong></td><td>All standard tables with FK relationships to the account record</td><td>~98</td></tr>
-                <tr><td><strong>Terminal delete</strong></td><td>The account record itself, after all children are clear</td><td>1</td></tr>
+                <tr><td><code>AU*</code></td><td>Account UDEFs</td><td>User-defined extension tables on accounts, discovered dynamically at runtime</td><td>Variable (~11)</td></tr>
+                <tr><td><code>A1</code> &ndash; <code>A117</code></td><td>Account Phase 2</td><td>Standard tables with FK relationships to the account record</td><td>~117</td></tr>
+                <tr><td><code>AB1</code> &ndash; <code>AB4</code></td><td>BIDATA Migration</td><td>Atomic P&rarr;C migration for the four reporting table pairs</td><td>4</td></tr>
+                <tr><td><code>CU*</code></td><td>Consumer UDEFs</td><td>User-defined extension tables on consumers</td><td>Variable</td></tr>
+                <tr><td><code>C1</code> &ndash; <code>C110</code></td><td>Consumer Phase 2</td><td>Standard tables with FK relationships to the consumer record</td><td>~110</td></tr>
             </tbody>
         </table>
 
-        <p>Every DELETE operation uses SNAPSHOT isolation to avoid blocking production queries, chunked deletes (default 5,000 rows per chunk) to manage transaction log volume, and automatic deadlock retry with exponential backoff. If any table operation fails, the entire batch stops &mdash; no further tables are processed, because the FK chain means later deletes could produce inconsistent results.</p>
+        <p>The single namespace lets the two halves evolve independently &mdash; orders can be added or removed within Phase A without renumbering Phase C, and vice versa. <code>Archive_BatchDetail</code> rows are queryable by prefix (<code>WHERE delete_order LIKE 'A%'</code> shows all account-level work for a batch), which makes time-cost analysis straightforward.</p>
+
+        <p>Every DELETE operation runs under SNAPSHOT isolation to avoid blocking production queries, uses chunked deletes (default 5,000 rows per chunk) to manage transaction log volume, and has automatic deadlock retry with exponential backoff. If any operation fails, the batch stops &mdash; no further orders are processed because the FK chain means later deletes against incomplete state could produce inconsistent results.</p>
 
         <div class="tech-tip">
-            <strong>Pre-materialized intermediate ID sets.</strong> Several tables in the delete sequence don't have a direct foreign key to the account record &mdash; they're two or three joins away. Rather than embedding complex subqueries in every DELETE, the script pre-materializes the intermediate ID sets into temp tables at batch start. This turned a single-consumer delete from 120 seconds down to 0.065 seconds at scale &mdash; an 1,846x improvement.
+            <strong>Pre-materialized intermediate ID sets.</strong> Several tables in the delete sequence don&rsquo;t have a direct foreign key to the account or consumer record &mdash; they&rsquo;re two or three joins away. Rather than embedding complex subqueries in every DELETE, the script pre-materializes the intermediate ID sets into temp tables at batch start. This is the single biggest reason the process can run at production scale: subqueries against billion-row parent tables become single-join lookups against a small temp table.
         </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- SECTION: Non-Blocking Design -->
-    <!-- ============================================ -->
-    <div class="section" id="non-blocking">
-        <h2>Non-Blocking Design</h2>
-
-        <p>Both the archive and shell purge processes operate on a live production database that over 200 people use during business hours. The single most important design requirement is that these processes must never block a user from doing their job. Every DELETE could potentially interfere with someone running a query, pulling a report, or working an account &mdash; so the scripts use a layered strategy to ensure that never happens.</p>
-
-        <p><strong>SNAPSHOT isolation.</strong> Every DELETE statement executes under <code>SET TRANSACTION ISOLATION LEVEL SNAPSHOT</code>. Under normal database operation, a DELETE takes locks on the rows it's modifying, and any SELECT trying to read those same rows has to wait. SNAPSHOT isolation changes this equation. When SNAPSHOT is active, readers don't take shared locks at all &mdash; they read from a point-in-time version of the data maintained in the version store. The result: our DELETEs and user queries can operate on the same tables simultaneously without either one waiting for the other. Users see a consistent view of the data as of when their query started, completely unaware that rows are being deleted underneath them.</p>
-
-        <p><strong>DEADLOCK_PRIORITY LOW.</strong> Even with SNAPSHOT isolation, deadlocks can still occur when two operations try to modify the same rows &mdash; for example, if a DM process updates a record that our script is also trying to delete. When a deadlock happens, SQL Server has to pick a victim. <code>SET DEADLOCK_PRIORITY LOW</code> tells SQL Server to always sacrifice our session, not the user's. The user's operation completes successfully without interruption. Our script catches the deadlock error (SQL Server error 1205), waits 5 seconds, and retries. It will retry up to 10 times before giving up on that chunk. In practice, deadlocks at SNAPSHOT isolation are rare &mdash; the retry exists as a safety net.</p>
-
-        <p><strong>Chunked deletes.</strong> Rather than issuing a single <code>DELETE</code> that removes tens of thousands of rows in one statement (which would hold exclusive locks for the duration and generate a massive transaction log entry), every DELETE is automatically wrapped with <code>DELETE TOP (5000)</code>. The script loops, deleting 5,000 rows at a time, until no more qualifying rows exist. Between each chunk, a 100-millisecond pause gives other operations a window to acquire any locks they need. The chunk size is configurable via GlobalConfig.</p>
-
-        <p><strong>Version store consideration.</strong> SNAPSHOT isolation relies on the version store in tempdb to maintain row versions for concurrent readers. At production batch sizes (25,000 consumers, ~3.5 million rows per batch), the version store will grow during each batch and release after the transaction completes. Production tempdb is sized to accommodate this, but it's worth monitoring during the initial production runs.</p>
 
         <div class="tech-tip">
-            <strong>The retry error codes.</strong> The script recognizes four retryable SQL Server errors: 1204 (lock resource limit exceeded), 1205 (deadlock victim), 1222 (lock timeout), and 3960 (snapshot update conflict). Any other error is treated as a hard failure that stops the batch. After a retry, the isolation level is explicitly reset to READ COMMITTED to prevent a stuck session state on the persistent connection.
+            <strong>Account expansion drops the TA_ARCH filter.</strong> When the account-level temp tables are populated, the script intentionally pulls <em>every</em> account on each archive-eligible consumer &mdash; not just the ones tagged <code>TA_ARCH</code>. By the time a consumer reaches consumer-level archive eligibility, every account already qualifies on the merits, and treating them all uniformly is structurally correct. Filtering at this point would over-engineer a check that was already passed at the consumer level.
         </div>
     </div>
 
@@ -175,43 +194,76 @@
     <div class="section" id="bidata-migration">
         <h2>BIDATA Migration</h2>
 
-        <p>The reporting warehouse (BIDATA) is rebuilt every night from production data. Four tables form the financial reporting core: account demographics, payment details, combined account-payment records, and aggregated payment summaries. Each exists as a pair &mdash; a "P" (production/live) table and a "C" (completed/archived) table &mdash; fronted by a UNION view that the reports read from.</p>
+        <p>The reporting warehouse (BIDATA) is rebuilt every night from production data. Four tables form the financial reporting core: account demographics, payment details, combined account-payment records, and aggregated payment summaries. Each exists as a pair &mdash; a &ldquo;P&rdquo; (production/live) table and a &ldquo;C&rdquo; (completed/archived) table &mdash; fronted by a UNION view that the reports read from.</p>
 
-        <p>When accounts are archived, their P-table rows must be migrated to the corresponding C tables before the next nightly rebuild. Otherwise, the rebuild would regenerate P rows from whatever degraded data remains in the production OLTP &mdash; producing incorrect financial snapshots.</p>
+        <p>When consumers are archived, their P-table rows must be migrated to the corresponding C tables before the next nightly rebuild. Otherwise, the rebuild would either regenerate P rows from degraded OLTP state (producing incorrect snapshots) or lose the financial history entirely.</p>
 
-        <p>The migration for each table pair is atomic: INSERT into C, DELETE from P, wrapped in a single transaction with count validation. If the INSERT count doesn't match the expected source count, the entire transaction rolls back. All four table pairs must succeed or the batch is flagged for review.</p>
+        <p>The migration for each of the four table pairs is atomic: INSERT into C with anonymization and purge flags applied, DELETE from P, wrapped in a single transaction with count validation. If the INSERT count doesn&rsquo;t match the expected source count, the entire transaction rolls back. All four pairs must succeed or the batch flags as failed.</p>
+
+        <h3 style="font-size: 16px; margin-top: 24px;">Why the Migration Sits in the Middle</h3>
+
+        <p>The placement of the BIDATA migration within the unified script is deliberate. It runs <em>after</em> the account-level deletes and <em>before</em> the consumer-level deletes &mdash; not at either end. Each alternative breaks a different invariant:</p>
+
+        <table class="info-table">
+            <thead><tr><th>Placement</th><th>What goes wrong</th></tr></thead>
+            <tbody>
+                <tr><td>At the start, before any deletes</td><td>If migration runs first and the OLTP delete sequence then fails, the next nightly BIDATA build repopulates P from OLTP (the account still exists). C now duplicates P. The UNION view shows duplicate financials. Reporting integrity broken.</td></tr>
+                <tr><td>At the end, after all deletes</td><td>If consumer-level deletes succeed but BIDATA migration then fails, the consumer is gone from OLTP with no reporting record migrated. The next BIDATA build can&rsquo;t regenerate what isn&rsquo;t there. Account history is lost forever. Worst case.</td></tr>
+                <tr><td>In the middle (chosen)</td><td>Account-level deletes complete first, removing accounts from OLTP. BIDATA migrates the financial snapshot to C &mdash; safe because the next BIDATA build won&rsquo;t regenerate P rows for accounts no longer in OLTP. If consumer-level deletes subsequently fail, the consumer is in a recoverable &ldquo;near-shell&rdquo; state. Retry can complete the consumer-level work without compromising BIDATA integrity.</td></tr>
+            </tbody>
+        </table>
 
         <div class="tech-tip">
-            <strong>The timing constraint.</strong> BIDATA rebuilds at 1:00 AM. The archive schedule blocks processing in the hours before the rebuild to ensure no accounts are left in a partially-processed state when the rebuild runs. A future enhancement will add PII anonymization to this step &mdash; scrubbing personal data in the C tables after migration while preserving the financial figures.
+            <strong>BIDATA failure halts the batch &mdash; deliberately.</strong> If the migration fails, the consumer-level deletes are skipped and the consumer is left in near-shell state (accounts gone, consumer record intact, financial snapshot still in P tables awaiting migration). This is recoverable. A retry path picks the consumer back up from <code>Archive_ConsumerLog</code>, skips re-verification (the consumer is past that gate), and completes the consumer-level work. There&rsquo;s no mid-batch abort &mdash; abort flags are checked only between full batches, never partway through one.
+        </div>
+
+        <div class="tech-tip">
+            <strong>Anonymization is on by default.</strong> The C-table INSERT scrubs PII columns (names, addresses, phone numbers, etc.) while preserving every financial figure. The reports never needed the personal data; they need the dollars. A <code>-NoAnonymize</code> switch exists for special cases but is off by default in production. Purge flags are set unconditionally to mark these rows as archived for downstream reporting filters.
         </div>
     </div>
 
     <!-- ============================================ -->
-    <!-- SECTION: Shell Purge Process -->
+    <!-- SECTION: Non-Blocking Design -->
+    <!-- ============================================ -->
+    <div class="section" id="non-blocking">
+        <h2>Non-Blocking Design</h2>
+
+        <p>Both the archive and shell purge processes operate on a live production database that hundreds of people use during business hours. The single most important design requirement is that these processes must never block a user from doing their job. Every DELETE could potentially interfere with someone running a query, pulling a report, or working an account &mdash; so the scripts use a layered strategy to ensure that never happens.</p>
+
+        <p><strong>SNAPSHOT isolation.</strong> Every DELETE statement executes under <code>SET TRANSACTION ISOLATION LEVEL SNAPSHOT</code>. Under normal database operation, a DELETE takes locks on the rows it&rsquo;s modifying, and any SELECT trying to read those same rows has to wait. SNAPSHOT changes this equation. When SNAPSHOT is active, readers don&rsquo;t take shared locks at all &mdash; they read from a point-in-time version of the data maintained in the version store. The result: our DELETEs and user queries can operate on the same tables simultaneously without either one waiting for the other. Users see a consistent view of the data as of when their query started, completely unaware that rows are being deleted underneath them.</p>
+
+        <p><strong>DEADLOCK_PRIORITY LOW.</strong> Even with SNAPSHOT isolation, deadlocks can still occur when two operations try to modify the same rows &mdash; for example, if a DM process updates a record that our script is also trying to delete. When a deadlock happens, SQL Server has to pick a victim. <code>SET DEADLOCK_PRIORITY LOW</code> tells SQL Server to always sacrifice our session, never the user&rsquo;s. The user&rsquo;s operation completes successfully without interruption. Our script catches the deadlock error (SQL Server error 1205), waits, and retries. It will retry several times before giving up on that chunk. In practice, deadlocks at SNAPSHOT isolation are rare &mdash; the retry exists as a safety net.</p>
+
+        <p><strong>Chunked deletes.</strong> Rather than issuing a single <code>DELETE</code> that removes tens of thousands of rows in one statement (which would hold locks for the duration and generate a massive transaction log entry), every DELETE is wrapped with a chunked loop. The script deletes a configurable number of rows at a time, pauses briefly between chunks to give other operations a window, and continues until no qualifying rows remain. The chunk size is configurable via GlobalConfig.</p>
+
+        <p><strong>Version store consideration.</strong> SNAPSHOT isolation relies on the version store in tempdb to maintain row versions for concurrent readers. At production batch sizes, the version store grows during each batch and releases after the transaction completes. Production tempdb is sized to accommodate this, but it&rsquo;s worth monitoring during the initial production runs.</p>
+
+        <div class="tech-tip">
+            <strong>The retry error codes.</strong> The script recognizes four retryable SQL Server errors: 1204 (lock resource limit exceeded), 1205 (deadlock victim), 1222 (lock timeout), and 3960 (snapshot update conflict). Any other error is treated as a hard failure that stops the batch. After a retry, the isolation level is explicitly reset to READ COMMITTED to prevent a stuck session state on the persistent connection.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Shell Purge -->
     <!-- ============================================ -->
     <div class="section" id="shell-purge">
-        <h2>Shell Purge Process</h2>
+        <h2>Shell Purge</h2>
 
-        <p>The shell purge script (<code>Execute-DmShellPurge.ps1</code>) follows the same batch loop pattern as the archive script but targets a different problem. A "shell" is a consumer record with no remaining accounts &mdash; the consumer exists in the system but has nothing attached to it. Shells accumulate from two sources: account archiving (which removes all accounts but leaves the consumer) and consumer merge operations within Debt Manager.</p>
+        <p>A &ldquo;shell&rdquo; is a consumer record with no remaining accounts. Under the unified consumer-level archive, shells aren&rsquo;t typically created by xFACts &mdash; the consumer record is removed in the same batch that removes their accounts. But shells still occur naturally from consumer merges within Debt Manager and from historical artifacts of earlier processes. The shell purge script (<code>Execute-DmShellPurge.ps1</code>) handles those.</p>
 
-        <p>Eligible shells are identified by their placement in the WFAPURGE workgroup &mdash; a Debt Manager nightly job moves qualifying consumers there automatically. The purge script selects from this workgroup, validates candidates against the exclusion log, and executes a 58-step consumer-level delete sequence derived from the vendor's own shell deletion procedure.</p>
+        <p>Shell purge follows the same batch loop pattern as the archive script. Eligible shells are identified by their placement in the WFAPURGE workgroup &mdash; a Debt Manager nightly job moves qualifying consumers there automatically. The purge script selects from this workgroup, validates candidates against the exclusion log, and executes a consumer-level delete sequence derived from the vendor&rsquo;s own shell deletion procedure but reorganized for batch processing, audit logging, and the platform&rsquo;s scheduling and abort mechanisms.</p>
+
+        <h3 style="font-size: 16px; margin-top: 24px;">The Exclusion Log</h3>
+
+        <p>Not every shell can be safely deleted. Some consumers have data in tables that aren&rsquo;t covered by the delete sequence &mdash; either because those tables have no foreign key relationship to the consumer record (orphaned rows are acceptable) or because the data has business significance that warrants preservation.</p>
+
+        <p>The exclusion log tracks these consumers with reason codes. It was seeded with an initial scan of production data and grows incrementally as the purge process discovers new exclusions during batch validation. Excluded consumers are never retried &mdash; once logged, they&rsquo;re filtered out of all future batch selections via a session-cached temp table for performance.</p>
+
+        <p>Suspense transactions get special handling: consumers with records in suspense tracking tables can be optionally included or excluded via a GlobalConfig toggle, allowing the team to make a policy decision about disposition without changing the code.</p>
 
         <div class="tech-tip">
-            <strong>Why not just delete from the vendor proc?</strong> The vendor's stored procedure processes one consumer at a time with no parallelism, no batch control, no scheduling, and no audit trail. The xFACts implementation processes batches of hundreds or thousands, runs within a schedule, logs every operation, and handles exclusions that the vendor proc doesn't account for.
+            <strong>Why not just call the vendor proc?</strong> The vendor&rsquo;s stored procedure processes one consumer at a time, with no parallelism, no batch control, no scheduling awareness, and no audit trail. The xFACts implementation processes batches of hundreds or thousands, runs within a configurable schedule, logs every operation at the per-table level, handles exclusions the vendor proc doesn&rsquo;t account for, and integrates with the platform&rsquo;s alerting and orchestration. Same delete sequence, very different operational characteristics.
         </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- SECTION: The Exclusion Log -->
-    <!-- ============================================ -->
-    <div class="section" id="exclusion-log">
-        <h2>The Exclusion Log</h2>
-
-        <p>Not every shell can be safely deleted. Some consumers have data in tables that aren't covered by the delete sequence &mdash; either because those tables have no foreign key relationship to the consumer record (making orphaned rows acceptable) or because the data has business significance that warrants preservation.</p>
-
-        <p>The exclusion log tracks these consumers with reason codes. It was seeded with an initial scan of production data (~116,000 consumers across 7 exclusion categories) and grows incrementally as the purge process discovers new exclusions during batch validation. Excluded consumers are never retried &mdash; once logged, they're filtered out of all future batch selections via a session-cached temp table for performance.</p>
-
-        <p>Suspense transactions receive special handling. Consumers with records in the suspense tracking tables can be optionally included or excluded via a GlobalConfig toggle, allowing the team to make a policy decision about disposition without changing the code.</p>
     </div>
 
     <!-- ============================================ -->
@@ -220,32 +272,30 @@
     <div class="section" id="scheduling">
         <h2>Schedule System</h2>
 
-        <p>Both processes share the same scheduling model: a 7-day &times; 24-hour grid where each cell has one of three values. "Full" means the process runs at full batch size. "Reduced" means it runs at a smaller batch size to minimize system impact. "Blocked" means it stops and doesn't restart until the next allowed window.</p>
+        <p>Both processes share the same scheduling model: a 7-day &times; 24-hour grid where each cell has one of three values. <strong>Full</strong> means the process runs at full batch size. <strong>Reduced</strong> means it runs at a smaller batch size to minimize system impact. <strong>Blocked</strong> means it stops and doesn&rsquo;t restart until the next allowed window.</p>
 
         <p>The scripts check the schedule after every batch. If the mode changes from Full to Reduced, the batch size adjusts immediately for the next batch. If the mode changes to Blocked, the script exits its batch loop and terminates. The next launch (via the Orchestrator or manual trigger) picks up where it left off.</p>
 
-        <p>The three-state model was chosen over a simple allow/block because the database serves over 200 users during business hours. Running at full speed (10,000-record batches) during the day would create noticeable contention. Reduced mode (100-record batches) keeps the process moving without impacting users. Full mode is reserved for evenings and weekends when the system is quiet.</p>
+        <p>The three-state model was chosen over a simple allow/block because the database serves hundreds of users during business hours. Running at full speed during the day would create noticeable contention. Reduced mode keeps the process moving without impacting users. Full mode is reserved for evenings and weekends when the system is quiet.</p>
+
+        <div class="tech-tip">
+            <strong>Schedule changes don&rsquo;t interrupt batches.</strong> A schedule change made while a batch is in flight has no effect on that batch &mdash; it completes normally. The new mode applies starting with the next batch. This is intentional: pulling the rug out mid-batch could leave a consumer half-archived, and the operational complexity of safely cancelling mid-flight isn&rsquo;t worth it when waiting for batch completion is measured in minutes.
+        </div>
     </div>
 
     <!-- ============================================ -->
-    <!-- SECTION: Performance & Optimization -->
+    <!-- SECTION: Performance Notes -->
     <!-- ============================================ -->
     <div class="section" id="performance">
-        <h2>Performance &amp; Optimization</h2>
+        <h2>Performance Notes</h2>
 
-        <p>The archive process went through extensive optimization during development. The original approach &mdash; processing one consumer at a time with individual queries per table &mdash; took 120 seconds per consumer. The current implementation processes 10,000 consumers in 649 seconds (0.065 seconds each), a 1,846x improvement achieved through four key changes:</p>
+        <p>The archive process went through extensive optimization during development. The biggest single win came from pre-materializing intermediate ID sets into temp tables instead of embedding subqueries in every DELETE &mdash; that took per-consumer cost from minutes to fractions of a second at scale. Other significant gains came from the persistent SQL connection (eliminating per-query connection overhead), a set of supporting indexes added to crs5_oltp specifically for the FK validation paths used during DELETE, and removing ORDER BY from batch selection queries (which dropped selection time from tens of seconds to milliseconds).</p>
 
-        <table class="info-table">
-            <thead><tr><th>Optimization</th><th>Impact</th></tr></thead>
-            <tbody>
-                <tr><td>Persistent SQL connection with session-scoped temp tables</td><td>Eliminated per-query connection overhead; enabled temp table reuse</td></tr>
-                <tr><td>64 FK supporting indexes on crs5_oltp</td><td>Eliminated full table scans during FK validation on DELETE</td></tr>
-                <tr><td>Pre-materialized intermediate ID temp tables</td><td>Replaced deep subqueries with single-join lookups</td></tr>
-                <tr><td>ORDER BY removal from batch selection</td><td>Batch selection from 49 seconds to 2 milliseconds</td></tr>
-            </tbody>
-        </table>
+        <p>At full mode batch size, throughput settles into a few thousand rows per second across the full delete sequence, translating to a fraction of a second of work per consumer. The dominant cost is the consumer-level AR log delete &mdash; the bulk of AR events in Debt Manager are consumer-level (no specific account), so the consumer-level cleanup necessarily handles several times the row volume of the account-level cleanup. Per-row performance is reasonable for a heavily-indexed parent table; it&rsquo;s the row count that drives the time, and there&rsquo;s no architectural fix.</p>
 
-        <p>The shell purge process followed a similar path. Batch selection went from 92 seconds (NOT EXISTS against millions of rows) to under 1 second using the exclusion log pattern. The terminal consumer DELETE went from 121 seconds to 2.2 seconds after 25 FK supporting indexes were added. An overnight test run processed 2.3 million consumers in 9 hours with zero failures.</p>
+        <div class="tech-tip">
+            <strong>The first batch of a session is slower.</strong> Cold buffer cache, plan compilation, and possible statistics updates triggered by the larger volume make the first batch take 3&ndash;4&times; longer than subsequent ones at the same size. This is expected and self-resolves once the working set is hot. Monitoring should be calibrated to expect this rather than alert on it.
+        </div>
     </div>
 
     <!-- ============================================ -->
@@ -257,14 +307,14 @@
         <div class="expand-card">
             <div class="expand-card-title">GlobalConfig</div>
             <div class="expand-card-body">
-                <p>Both processes read their configuration from GlobalConfig entries under module <code>DmOps</code> with category <code>Archive</code> or <code>ShellPurge</code>. Settings include target instance, batch sizes (full and reduced), chunk size for delete operations, alerting toggle, and the abort flag used for emergency stops from the Control Center.</p>
+                <p>Both processes read their configuration from GlobalConfig entries under module <code>DmOps</code> with category <code>Archive</code> or <code>ShellPurge</code>. Settings include target instance, batch sizes (full and reduced), chunk size for delete operations, alerting toggle, the abort flag used for emergency stops from the Control Center, and &mdash; for the archive process &mdash; the human-readable values used to identify the service-account user and AR event codes used during exception logging.</p>
             </div>
         </div>
 
         <div class="expand-card">
             <div class="expand-card-title">ServerRegistry</div>
             <div class="expand-card-body">
-                <p>Each process has an enable flag on the ServerRegistry row for its target server (<code>dmops_archive_enabled</code>, <code>dmops_shell_purge_enabled</code>). The scripts check this on startup and exit immediately if the flag is off. This provides a server-level kill switch independent of the schedule and abort mechanisms.</p>
+                <p>Each process has an enable flag on the ServerRegistry row for its target server (<code>dmops_archive_enabled</code>, <code>dmops_shell_purge_enabled</code>). The scripts check this on startup and exit immediately if the flag is off. This provides a server-level kill switch independent of the schedule and abort mechanisms &mdash; useful for taking a single environment offline without touching configuration.</p>
             </div>
         </div>
 
@@ -278,14 +328,21 @@
         <div class="expand-card">
             <div class="expand-card-title">BIDATA Dependency</div>
             <div class="expand-card-body">
-                <p>The archive process depends on BIDATA for the P-to-C financial migration. The BIDATA nightly build status is tracked in <code>BIDATA.BuildExecution</code>. The archive schedule is designed to avoid running during or immediately before the build window. Shell purging has no BIDATA dependency.</p>
+                <p>The archive process depends on BIDATA for the P&rarr;C financial migration. The BIDATA nightly build status is tracked in <code>BIDATA.BuildExecution</code>. The archive script&rsquo;s pre-flight check confirms the build is complete before the cycle begins, and the schedule blocks processing in the hours before the next build kicks off so no batch can ever start during a build window. Shell purge has no BIDATA dependency.</p>
             </div>
         </div>
 
         <div class="expand-card">
             <div class="expand-card-title">crs5_oltp (Debt Manager OLTP)</div>
             <div class="expand-card-body">
-                <p>Both scripts target crs5_oltp via the AG-aware connection system in xFACts-Helpers.psm1. Read operations (batch selection, ID materialization) use the secondary replica. Write operations (DELETEs) target the primary. When targeting a standalone test instance, both read and write go to the same server via direct connection.</p>
+                <p>Both scripts target <code>crs5_oltp</code> via the AG-aware connection system in <code>xFACts-Helpers.psm1</code>. Read operations (batch selection, ID materialization, re-verification queries) use the secondary replica. Write operations (DELETEs, tag-removal UPDATEs, AR event INSERTs) target the primary. When targeting a standalone test instance, both read and write go to the same server via direct connection.</p>
+            </div>
+        </div>
+
+        <div class="expand-card">
+            <div class="expand-card-title">Shared Orchestrator Functions</div>
+            <div class="expand-card-body">
+                <p>The archive script uses the platform&rsquo;s shared <code>xFACts-OrchestratorFunctions.ps1</code> module for common operations: SQL data access (<code>Get-SqlData</code>, <code>Invoke-SqlNonQuery</code>), logging (<code>Write-Log</code>), Teams alerts (<code>Send-TeamsAlert</code>), preview-mode handling via <code>Initialize-XFActsScript</code>, and orchestrator callback (<code>Complete-OrchestratorTask</code>). Functions defined locally in the script handle DmOps-specific concerns &mdash; persistent connection management, the delete sequence orchestration, BIDATA migration, runtime re-verification &mdash; and don&rsquo;t duplicate platform infrastructure.</p>
             </div>
         </div>
     </div>
@@ -293,6 +350,10 @@
     <!-- Footer -->
     <div class="doc-footer">
         <p><a href="../dmops.html" style="color: var(--accent-blue); text-decoration: none;">&larr; DM Operations</a>
+           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
+           <a href="../cc/dmops-cc.html" style="color: var(--accent-blue); text-decoration: none;">Control Center Guide</a>
+           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
+           <a href="../ref/dmops-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
            &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
            <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
         <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
