@@ -31,12 +31,34 @@
     mode per hour (blocked/full/reduced). Checks schedule between batches.
     Emergency abort via GlobalConfig shell_purge_abort flag.
 
-    Full audit trail: ShellPurge_BatchLog (batch summary),
-    ShellPurge_BatchDetail (per-table operation detail),
-    ShellPurge_ConsumerLog (every consumer purged).
+    Preview vs Execute: when the -Execute switch is omitted, the script
+    runs in PREVIEW mode and performs no writes anywhere — no row inserts
+    into ShellPurge_BatchLog/BatchDetail/ConsumerLog/ConsumerExceptionLog,
+    no DELETE/UPDATE against crs5_oltp tables. Exclusion validation still
+    runs its SELECT queries to identify newly-excepted consumers for
+    accurate preview reporting, but no exception writes occur.
+
+    Full audit trail (execute mode only):
+        ShellPurge_BatchLog              - batch summary
+        ShellPurge_BatchDetail           - per-table operation detail
+        ShellPurge_ConsumerLog           - every consumer purged
+        ShellPurge_ConsumerExceptionLog  - every consumer excepted by validation
 
     CHANGELOG
     ---------
+    2026-04-27  Aligned with shared infrastructure preview-mode contract.
+                Logging functions (New-BatchLogEntry, Update-BatchLogEntry,
+                Write-BatchDetail, Write-ConsumerLog) and the runtime
+                exception-log INSERT now early-return when
+                $script:XFActsExecute is false — preview runs are
+                console-only with zero database writes. Step-Delete /
+                Step-JoinDelete / Step-Update wrappers refactored to read
+                $script:XFActsExecute directly instead of the local
+                $previewOnly variable, matching the DmConsumerArchive
+                pattern. Renamed ShellPurge_ExclusionLog ->
+                ShellPurge_ConsumerExceptionLog (column exclusion_reason ->
+                exception_reason) for consistency with
+                Archive_ConsumerExceptionLog.
     2026-03-30  Phase 2 redesigned from sys.foreign_keys chain analysis.
                 98→101 steps, 34 new FK-required tables, FK ordering corrected.
                 Added Invoke-TargetUpdate/Invoke-TableUpdate/Step-Update for
@@ -70,8 +92,10 @@
     Default: 5000.
 
 .PARAMETER Execute
-    Perform deletions. Without this flag, runs in preview mode — shows
-    what would be deleted without making changes.
+    Switch. Without this switch the script runs in PREVIEW mode — counts
+    rows and emits console + log file output, but performs NO writes
+    anywhere (no audit table inserts, no crs5_oltp DELETE/UPDATE).
+    With -Execute, all operations run normally.
 
 .PARAMETER SingleBatch
     Run one batch only, then exit. Bypasses the batch loop and schedule
@@ -424,12 +448,22 @@ function Test-ShellPurgeAbort {
 # ============================================================================
 # BATCH LOGGING FUNCTIONS
 # ============================================================================
+# All functions below early-return in preview mode ($script:XFActsExecute eq
+# $false) and emit a single console line describing what they would have
+# written. No database writes occur in preview mode.
+# ============================================================================
 
 function New-BatchLogEntry {
     param(
         [string]$ScheduleMode,
         [int]$BatchSizeUsed
     )
+
+    if (-not $script:XFActsExecute) {
+        Write-Log "  [Preview] Would create ShellPurge_BatchLog row (schedule=$ScheduleMode size=$BatchSizeUsed)" "INFO"
+        return
+    }
+
     try {
         $result = Get-SqlData -Query @"
             INSERT INTO DmOps.ShellPurge_BatchLog
@@ -451,6 +485,12 @@ function Update-BatchLogEntry {
         [string]$Status,
         [string]$ErrorMessage = $null
     )
+
+    if (-not $script:XFActsExecute) {
+        Write-Log "  [Preview] Would finalize ShellPurge_BatchLog (status=$Status consumer_count=$($Script:BatchConsumerIds.Count) rows=$($Script:TotalDeleted))" "INFO"
+        return
+    }
+
     if (-not $Script:CurrentBatchId) { return }
 
     $escapedError = if ($ErrorMessage) { $ErrorMessage.Replace("'", "''").Substring(0, [Math]::Min($ErrorMessage.Length, 2000)) } else { $null }
@@ -488,6 +528,8 @@ function Write-BatchDetail {
         [string]$Status,
         [string]$ErrorMessage = $null
     )
+
+    if (-not $script:XFActsExecute) { return }
     if (-not $Script:CurrentBatchId) { return }
 
     $escapedPass = if ($PassDescription) { "'$($PassDescription.Replace("'", "''"))'" } else { "NULL" }
@@ -508,6 +550,13 @@ function Write-BatchDetail {
 }
 
 function Write-ConsumerLog {
+    if (-not $script:XFActsExecute) {
+        if ($Script:BatchConsumerData.Count -gt 0) {
+            Write-Log "  [Preview] Would write $($Script:BatchConsumerData.Count) ShellPurge_ConsumerLog rows" "INFO"
+        }
+        return
+    }
+
     if (-not $Script:CurrentBatchId -or $Script:BatchConsumerData.Count -eq 0) { return }
 
     try {
@@ -769,6 +818,40 @@ function Invoke-TableUpdate {
 }
 
 # ============================================================================
+# STEP WRAPPERS (set $Script:StopProcessing on failure)
+# ============================================================================
+
+function Step-Delete {
+    param([hashtable]$Params)
+    if ($Script:StopProcessing) { return }
+    $ok = Invoke-TableDelete @Params -PreviewOnly (-not $script:XFActsExecute)
+    if (-not $ok) {
+        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
+        $Script:StopProcessing = $true
+    }
+}
+
+function Step-JoinDelete {
+    param([hashtable]$Params)
+    if ($Script:StopProcessing) { return }
+    $ok = Invoke-JoinTableDelete @Params -PreviewOnly (-not $script:XFActsExecute)
+    if (-not $ok) {
+        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
+        $Script:StopProcessing = $true
+    }
+}
+
+function Step-Update {
+    param([hashtable]$Params)
+    if ($Script:StopProcessing) { return }
+    $ok = Invoke-TableUpdate @Params -PreviewOnly (-not $script:XFActsExecute)
+    if (-not $ok) {
+        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
+        $Script:StopProcessing = $true
+    }
+}
+
+# ============================================================================
 # MAIN EXECUTION
 # ============================================================================
 
@@ -779,8 +862,6 @@ Write-Host "================================================================" -F
 Write-Host "  xFACts DM Shell Purge — Consumer-Level" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
-
-$previewOnly = -not $Execute
 
 # ============================================================================
 # STEP 1: Load Configuration & Pre-Flight Checks
@@ -953,7 +1034,7 @@ if (-not $Script:PurgeWorkgroupId) {
     }
 }
 
-# Step 3b: Load exclusion log into temp table on target connection (first batch only)
+# Step 3b: Load exception log into temp table on target connection (first batch only)
 if (-not $Script:ExclusionsLoaded) {
     try {
         $exclCreateCmd = $Script:TargetConnection.CreateCommand()
@@ -962,7 +1043,7 @@ if (-not $Script:ExclusionsLoaded) {
         $exclCreateCmd.ExecuteNonQuery() | Out-Null
         $exclCreateCmd.Dispose()
 
-        $exclData = Get-SqlData -Query "SELECT DISTINCT cnsmr_id FROM DmOps.ShellPurge_ExclusionLog"
+        $exclData = Get-SqlData -Query "SELECT DISTINCT cnsmr_id FROM DmOps.ShellPurge_ConsumerExceptionLog"
         $exclCount = 0
         if ($exclData) {
             $exclIds = @($exclData | ForEach-Object { [long]$_.cnsmr_id })
@@ -978,11 +1059,11 @@ if (-not $Script:ExclusionsLoaded) {
             }
         }
 
-        Write-Log "  Exclusion log loaded: $exclCount consumers" "INFO"
+        Write-Log "  Exception log loaded: $exclCount consumers" "INFO"
         $Script:ExclusionsLoaded = $true
     }
     catch {
-        Write-Log "Failed to load exclusion log: $($_.Exception.Message)" "ERROR"
+        Write-Log "Failed to load exception log: $($_.Exception.Message)" "ERROR"
         Close-TargetConnection
         exit 1
     }
@@ -1015,7 +1096,7 @@ if ($batchResult.Rows.Count -eq 0) {
     break
 }
 
-# Step 3d: Validate batch against exclusion tables (catch new exclusions since seed)
+# Step 3d: Validate batch against exclusion tables (catch new exceptions since seed)
 $exclusionChecks = @(
     @{ Name = 'cnsmr_pymnt_jrnl';              SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj WHERE cpj.cnsmr_id = sc.cnsmr_id)" }
 #    @{ Name = 'dcmnt_rqst';                    SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.dcmnt_rqst dr WHERE dr.dcmnt_rqst_send_to_entty_id = sc.cnsmr_id AND dr.dcmnt_rqst_send_to_entty_assctn_cd = 2)" }
@@ -1055,21 +1136,27 @@ try {
     foreach ($excl in $exclusionChecks) {
         $exclResult = Invoke-TargetQuery -Query $excl.SQL
         if ($exclResult.Rows.Count -gt 0) {
-            Write-Log "    New exclusion: $($exclResult.Rows.Count) consumers have $($excl.Name) data" "WARN"
+            Write-Log "    New exception: $($exclResult.Rows.Count) consumers have $($excl.Name) data" "WARN"
             foreach ($exclRow in $exclResult.Rows) {
                 $exclCnsmrId = [long]$exclRow.cnsmr_id
                 $exclAgencyId = [string]$exclRow.cnsmr_idntfr_agncy_id
                 if (-not $newExclusions.Contains($exclCnsmrId)) {
                     $newExclusions.Add($exclCnsmrId)
                 }
-                # Log to ExclusionLog (xFACts DB via platform wrapper)
-                Invoke-SqlNonQuery -Query @"
-                    IF NOT EXISTS (SELECT 1 FROM DmOps.ShellPurge_ExclusionLog WHERE cnsmr_id = $exclCnsmrId AND exclusion_reason = '$($excl.Name)')
-                    INSERT INTO DmOps.ShellPurge_ExclusionLog (cnsmr_id, cnsmr_idntfr_agncy_id, exclusion_reason)
-                    VALUES ($exclCnsmrId, '$exclAgencyId', '$($excl.Name)')
+                # Log to ConsumerExceptionLog (xFACts DB via platform wrapper).
+                # Skipped in preview mode — exception identification still runs above
+                # for accurate reporting, but no audit writes occur.
+                if ($script:XFActsExecute) {
+                    Invoke-SqlNonQuery -Query @"
+                        IF NOT EXISTS (SELECT 1 FROM DmOps.ShellPurge_ConsumerExceptionLog WHERE cnsmr_id = $exclCnsmrId AND exception_reason = '$($excl.Name)')
+                        INSERT INTO DmOps.ShellPurge_ConsumerExceptionLog (cnsmr_id, cnsmr_idntfr_agncy_id, exception_reason)
+                        VALUES ($exclCnsmrId, '$exclAgencyId', '$($excl.Name)')
 "@ -Timeout 30 | Out-Null
+                }
 
-                # Also add to #shell_exclusions on target so subsequent batches skip this consumer
+                # Also add to #shell_exclusions on target so subsequent batches skip this consumer.
+                # This is session-private temp-table state — safe to do in preview mode and
+                # required so subsequent count queries reflect the post-validation batch composition.
                 try {
                     $addExclCmd = $Script:TargetConnection.CreateCommand()
                     $addExclCmd.CommandText = "IF NOT EXISTS (SELECT 1 FROM #shell_exclusions WHERE cnsmr_id = $exclCnsmrId) INSERT INTO #shell_exclusions (cnsmr_id) VALUES ($exclCnsmrId)"
@@ -1082,15 +1169,19 @@ try {
     }
 
     if ($newExclusions.Count -gt 0) {
-        Write-Log "  Logged $($newExclusions.Count) new exclusion(s) to ShellPurge_ExclusionLog" "INFO"
+        if ($script:XFActsExecute) {
+            Write-Log "  Logged $($newExclusions.Count) new exception(s) to ShellPurge_ConsumerExceptionLog" "INFO"
+        } else {
+            Write-Log "  [Preview] Would log $($newExclusions.Count) new exception(s) to ShellPurge_ConsumerExceptionLog" "INFO"
+        }
     }
 }
 catch {
-    Write-Log "Failed during exclusion validation: $($_.Exception.Message)" "WARN"
+    Write-Log "Failed during exception validation: $($_.Exception.Message)" "WARN"
     # Non-fatal — proceed with the batch as selected, exclusions are a safety net
 }
 
-# Build final consumer lists (excluding any newly discovered exclusions)
+# Build final consumer lists (excluding any newly discovered exceptions)
 $Script:BatchConsumerIds = New-Object System.Collections.Generic.List[long]
 $Script:BatchConsumerData = New-Object System.Collections.Generic.List[PSObject]
 
@@ -1105,7 +1196,7 @@ foreach ($row in $batchResult.Rows) {
 }
 
 if ($Script:BatchConsumerIds.Count -eq 0) {
-    Write-Log "All batch candidates were excluded — retrying next batch" "WARN"
+    Write-Log "All batch candidates were excepted — retrying next batch" "WARN"
     continue
 }
 
@@ -1243,36 +1334,6 @@ $wInstrmnt    = "cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM
 $wJrnl        = "cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
 $wSmmry       = "schdld_pymnt_smmry_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
 $wArLog       = "cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
-
-function Step-Delete {
-    param([hashtable]$Params)
-    if ($Script:StopProcessing) { return }
-    $ok = Invoke-TableDelete @Params -PreviewOnly $previewOnly
-    if (-not $ok) {
-        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $Script:StopProcessing = $true
-    }
-}
-
-function Step-JoinDelete {
-    param([hashtable]$Params)
-    if ($Script:StopProcessing) { return }
-    $ok = Invoke-JoinTableDelete @Params -PreviewOnly $previewOnly
-    if (-not $ok) {
-        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $Script:StopProcessing = $true
-    }
-}
-
-function Step-Update {
-    param([hashtable]$Params)
-    if ($Script:StopProcessing) { return }
-    $ok = Invoke-TableUpdate @Params -PreviewOnly $previewOnly
-    if (-not $ok) {
-        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $Script:StopProcessing = $true
-    }
-}
 
 # ── Phase 1: Consumer-Level UDEF Tables (Dynamic Discovery) ──
 Write-Log "  Phase 1: Consumer-Level UDEF Tables (dynamic)" "INFO"
@@ -1675,12 +1736,12 @@ Write-Host "================================================================" -F
 Write-Host "  Session Summary" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Log "  Mode            : $(if ($previewOnly) { 'PREVIEW' } else { 'EXECUTE' })"
+Write-Log "  Mode            : $(if (-not $script:XFActsExecute) { 'PREVIEW' } else { 'EXECUTE' })"
 Write-Log "  Target          : $($Script:TargetServer)"
 Write-Log "  Batches Run     : $($Script:TotalBatchesRun)"
 Write-Log "  Batches Failed  : $($Script:TotalBatchesFailed)"
 Write-Log "  Total Consumers : $($Script:SessionTotalConsumers)"
-if ($previewOnly) {
+if (-not $script:XFActsExecute) {
     Write-Log "  Rows to Delete  : $($Script:SessionTotalDeleted)"
 } else {
     Write-Log "  Rows Deleted    : $($Script:SessionTotalDeleted)"
@@ -1688,7 +1749,7 @@ if ($previewOnly) {
 Write-Log "  Duration        : $([math]::Round($scriptDuration.TotalSeconds, 1))s"
 Write-Host ""
 
-if ($previewOnly) {
+if (-not $script:XFActsExecute) {
     Write-Host "  *** PREVIEW MODE — No changes were made ***" -ForegroundColor Yellow
     Write-Host "  Run with -Execute to perform actual deletions" -ForegroundColor Yellow
     Write-Host ""
