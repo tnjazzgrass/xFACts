@@ -3,7 +3,7 @@
 # Location: E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1
 # 
 # API endpoints for DM Operations monitoring data.
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.DmOperations)
+# Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
 # ============================================================================
 
 # Note: Get-RemainingCounts and $DmOpsRemainingCache are defined in xFACts-Helpers.psm1
@@ -102,9 +102,7 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
             ArchiveConsumersBaseline      = $null
             ArchiveAccountsBaseline       = $null
             ShellBaseline                 = $null
-            ExclusionCount                = $null
             BaselineDttm                  = $null
-            TargetInstance                = $null
             ArchiveConsumersSinceBaseline = 0
             ArchiveAccountsSinceBaseline  = 0
             ShellSinceBaseline            = 0
@@ -116,9 +114,7 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
             $remaining.ArchiveConsumersBaseline = $cache.ArchiveConsumersRemaining
             $remaining.ArchiveAccountsBaseline  = $cache.ArchiveAccountsRemaining
             $remaining.ShellBaseline            = $cache.ShellRemaining
-            $remaining.ExclusionCount           = $cache.ExclusionCount
             $remaining.BaselineDttm             = if ($cache.BaselineDttm) { $cache.BaselineDttm.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
-            $remaining.TargetInstance           = $cache.TargetInstance
 
             # Subtractive counts: consumers/accounts processed since baseline
             if ($cache.BaselineDttm) {
@@ -839,6 +835,60 @@ Add-PodeRoute -Method Post -Path '/api/dmops/schedule/update-batch' -Authenticat
             $transaction.Rollback()
             throw
         }
+    }
+    catch {
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
+    }
+}
+
+# ----------------------------------------------------------------------------
+# GET /api/dmops/target-servers
+# Returns the configured target_instance for Archive and ShellPurge along with
+# the environment classification from ServerRegistry. Used by the page header
+# to display per-process environment badges (TEST / PROD / Unknown).
+#
+# Read-only, no caching — the values change rarely but should reflect the
+# current GlobalConfig immediately when admins update them.
+# ----------------------------------------------------------------------------
+Add-PodeRoute -Method Get -Path '/api/dmops/target-servers' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
+                gc.category    AS process_category,
+                gc.setting_value AS server_name,
+                sr.environment AS environment
+            FROM dbo.GlobalConfig gc
+            LEFT JOIN dbo.ServerRegistry sr ON sr.server_name = gc.setting_value
+            WHERE gc.module_name = 'DmOps'
+              AND gc.category IN ('Archive', 'ShellPurge')
+              AND gc.setting_name = 'target_instance'
+              AND gc.is_active = 1
+"@
+
+        $archive = [PSCustomObject]@{ Server = $null; Environment = $null }
+        $shell   = [PSCustomObject]@{ Server = $null; Environment = $null }
+
+        if ($rows) {
+            foreach ($r in $rows) {
+                $cat    = [string]$r['process_category']
+                $server = if ($r['server_name'] -is [DBNull]) { $null } else { [string]$r['server_name'] }
+                $env    = if ($r['environment'] -is [DBNull]) { $null } else { [string]$r['environment'] }
+
+                if ($cat -eq 'Archive') {
+                    $archive.Server      = $server
+                    $archive.Environment = $env
+                }
+                elseif ($cat -eq 'ShellPurge') {
+                    $shell.Server      = $server
+                    $shell.Environment = $env
+                }
+            }
+        }
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{
+            Archive    = $archive
+            ShellPurge = $shell
+        })
     }
     catch {
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
