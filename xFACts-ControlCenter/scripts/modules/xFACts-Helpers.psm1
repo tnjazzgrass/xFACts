@@ -1,6 +1,6 @@
 # ============================================================================
 # xFACts Control Center - Helper Functions Module
-# Version: Tracked in dbo.System_Metadata (component: ServerOps.ServerHealth)
+# Version: Tracked in dbo.System_Metadata (component: ControlCenter.Shared)
 # Location: E:\xFACts-ControlCenter\scripts\modules\xFACts-Helpers.psm1
 # 
 # PowerShell module providing database connectivity and RBAC functions.
@@ -1304,9 +1304,9 @@ $script:DmOpsRemainingCache = @{
     ArchiveConsumersRemaining = $null
     ArchiveAccountsRemaining  = $null
     ShellRemaining            = $null
-    ExclusionCount            = $null
     BaselineDttm              = $null
-    TargetInstance            = $null
+    ArchiveTargetInstance     = $null
+    ShellPurgeTargetInstance  = $null
     CacheMaxAgeMinutes        = 60
 }
 
@@ -1315,7 +1315,6 @@ function Get-RemainingCounts {
     .SYNOPSIS
         Returns cached remaining counts for DmOps unified consumer archive and shell purge processes.
         Queries crs5_oltp via the secondary replica on first call and when cache expires.
-        Exclusion count is always fresh from the xFACts database.
     .DESCRIPTION
         Archive baselines are gated on the TC_ARCH consumer tag — the unified consumer archive
         operates on consumers (not accounts) and only on consumers carrying TC_ARCH (set by the
@@ -1328,9 +1327,14 @@ function Get-RemainingCounts {
         ShellRemaining covers naturally-occurring shells (existing WFAPURGE backlog plus
         ongoing shells from new-business loads, consumer merges, manual activity) — unchanged
         from the prior account-level archive era.
+
+        Archive and ShellPurge target_instance values are independent — Archive's queries
+        (TC_ARCH consumers, TC_ARCH accounts) run against its configured target; ShellPurge's
+        WFAPURGE query runs against its own configured target. This allows running one
+        process against TEST while the other points at PROD if needed.
     .RETURNS
         Hashtable with ArchiveConsumersRemaining, ArchiveAccountsRemaining, ShellRemaining,
-        ExclusionCount, BaselineDttm, TargetInstance
+        BaselineDttm, ArchiveTargetInstance, ShellPurgeTargetInstance
     #>
     $cache = $script:DmOpsRemainingCache
     $now = Get-Date
@@ -1340,18 +1344,28 @@ function Get-RemainingCounts {
         return $cache
     }
 
-    # Get target instance from DmOps GlobalConfig
+    # Get Archive and ShellPurge target instances independently from GlobalConfig
     $targetConfig = Invoke-XFActsQuery -Query @"
-        SELECT setting_value FROM dbo.GlobalConfig
-        WHERE module_name = 'DmOps' AND category = 'Archive'
-          AND setting_name = 'target_instance' AND is_active = 1
+        SELECT category, setting_value FROM dbo.GlobalConfig
+        WHERE module_name = 'DmOps'
+          AND category IN ('Archive', 'ShellPurge')
+          AND setting_name = 'target_instance'
+          AND is_active = 1
 "@
-    $targetInstance = if ($targetConfig -and $targetConfig.Count -gt 0) { $targetConfig[0].setting_value } else { 'AVG-PROD-LSNR' }
+    $archiveTargetInstance    = 'AVG-PROD-LSNR'
+    $shellPurgeTargetInstance = 'AVG-PROD-LSNR'
+    if ($targetConfig) {
+        foreach ($row in $targetConfig) {
+            if ($row.category -eq 'Archive')    { $archiveTargetInstance    = [string]$row.setting_value }
+            if ($row.category -eq 'ShellPurge') { $shellPurgeTargetInstance = [string]$row.setting_value }
+        }
+    }
 
     try {
         # Archive remaining: TC_ARCH-tagged consumers and the accounts on those consumers.
         # Single query returns both counts to keep this a single OLTP round-trip per refresh.
-        $archiveResult = Invoke-CRS5ReadQuery -TargetInstance $targetInstance -Query @"
+        # Routes against Archive's configured target_instance.
+        $archiveResult = Invoke-CRS5ReadQuery -TargetInstance $archiveTargetInstance -Query @"
             SELECT
                 (SELECT COUNT(*)
                  FROM crs5_oltp.dbo.cnsmr_Tag ct
@@ -1369,30 +1383,25 @@ function Get-RemainingCounts {
                  )) AS accounts_remaining
 "@ -TimeoutSeconds 60
 
-        # Shell remaining: WFAPURGE workgroup consumers (naturally-occurring shells)
-        $shellResult = Invoke-CRS5ReadQuery -TargetInstance $targetInstance -Query @"
+        # Shell remaining: WFAPURGE workgroup consumers (naturally-occurring shells).
+        # Routes against ShellPurge's configured target_instance.
+        $shellResult = Invoke-CRS5ReadQuery -TargetInstance $shellPurgeTargetInstance -Query @"
             SELECT COUNT(c.cnsmr_id) AS remaining_count
             FROM crs5_oltp.dbo.cnsmr c
             INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
                 AND w.wrkgrp_shrt_nm = 'WFAPURGE'
 "@ -TimeoutSeconds 30
 
-        # Exclusion count from xFACts (always fresh, cheap)
-        $exclusionResult = Invoke-XFActsQuery -Query @"
-            SELECT COUNT(DISTINCT cnsmr_id) AS exclusion_count
-            FROM DmOps.ShellPurge_ExclusionLog
-"@
-
         # Update cache
         $cache.ArchiveConsumersRemaining = if ($archiveResult -and $archiveResult.Count -gt 0) { [long]$archiveResult[0].consumers_remaining } else { $null }
         $cache.ArchiveAccountsRemaining  = if ($archiveResult -and $archiveResult.Count -gt 0) { [long]$archiveResult[0].accounts_remaining }  else { $null }
         $cache.ShellRemaining = if ($shellResult -and $shellResult.Count -gt 0) { [long]$shellResult[0].remaining_count } else { $null }
-        $cache.ExclusionCount = if ($exclusionResult -and $exclusionResult.Count -gt 0) { [long]$exclusionResult[0].exclusion_count } else { 0 }
         $cache.BaselineDttm = $now
-        $cache.TargetInstance = $targetInstance
+        $cache.ArchiveTargetInstance    = $archiveTargetInstance
+        $cache.ShellPurgeTargetInstance = $shellPurgeTargetInstance
     }
     catch {
-        Write-Host "WARNING: Failed to refresh remaining counts from crs5_oltp ($targetInstance): $($_.Exception.Message)"
+        Write-Host "WARNING: Failed to refresh remaining counts from crs5_oltp (Archive: $archiveTargetInstance, ShellPurge: $shellPurgeTargetInstance): $($_.Exception.Message)"
     }
 
     return $cache
