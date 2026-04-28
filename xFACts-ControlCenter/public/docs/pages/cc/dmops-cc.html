@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DM Operations &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1>DM Operations &mdash; Control Center Guide</h1>
+        <div class="subtitle">What you&rsquo;re looking at and what it means</div>
+    </div>
+
+    <!-- Sticky Nav (breadcrumb only) -->
+    <div class="section-nav">
+        <div class="section-nav-top"></div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STICKY REFERENCE ZONE -->
+    <!-- ============================================ -->
+    <div class="sticky-ref-zone">
+
+        <div class="sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="sticky-ref-primary">
+
+                <!-- Key to the Page — horizontal row above mockup -->
+                <div class="key-section">
+                    <div class="key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="key-flip-grid">
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-live"><span class="dot"></span></span></span><span class="key-flip-label">Live Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span class="key-badge-event"><span class="bolt">&#9889;</span></span></span><span class="key-flip-label">Event Badge</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Section refreshes when the relevant engine process completes a batch.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-engine-indicator"><span class="eng-label">Arch</span><div class="eng-bar"></div><span class="eng-cd">&nbsp;</span></div></span><span class="key-flip-label">Engine Indicator</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Shows the orchestrated archive or shell purge process.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><div class="key-metric-card"><div class="mc-value">181K</div><div class="mc-label">Archived</div></div></span><span class="key-flip-label">Lifetime Tile</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">A read-only summary tile showing a running total.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="font-size:11px; color:var(--accent-blue);">&#9654; 2026</span></span><span class="key-flip-label">Expand Row</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">A clickable row in the history tree. Click to expand year &rarr; month &rarr; day, then click a day for the batch list.</div></div>
+                        </div></div>
+                        <div class="key-flip-card"><div class="key-flip-inner">
+                            <div class="key-flip-front"><span class="key-flip-icon"><span style="display:inline-block; padding:2px 8px; background:#3a2a2a; color:#e07070; border:1px solid #5a3030; border-radius:3px; font-size:9px; font-weight:600;">&#9632; Abort</span></span><span class="key-flip-label">Abort Button</span></div>
+                            <div class="key-flip-back"><div class="key-flip-desc">Admin-only stop function. This will stop the script upon completion of the batch.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview — mockup -->
+                <div class="overview-section">
+                    <div class="overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+                    <div class="mock-container">
+
+                        <!-- Header Bar -->
+                        <div class="mock-header">
+                            <div class="mock-header-left">
+                                <div class="mock-page-title">DM Operations</div>
+                                <div class="mock-page-subtitle">Consumer archiving, shell consumer purge, execution history, schedule management</div>
+                            </div>
+                            <div class="mock-header-right">
+                                <div class="mock-live-row">
+                                    <span class="mock-live-dot"></span>
+                                    <span>Live</span> | Updated: <span style="color:#4ec9b0;">3:07:10 PM</span>
+                                </div>
+                                <div class="mock-engine-row" data-section="1" style="position: relative;">
+                                    <a href="#section-1" class="callout-marker" style="position:absolute; top: 8px; right: 110%;">1</a>
+                                    <div class="mock-engine">
+                                        <div class="mock-engine-label">Archive</div>
+                                        <div class="mock-engine-bar" style="background:#333;"></div>
+                                        <div class="mock-engine-cd">&nbsp;</div>
+                                    </div>
+                                    <div class="mock-engine">
+                                        <div class="mock-engine-label">Shells</div>
+                                        <div class="mock-engine-bar" style="background:#333;"></div>
+                                        <div class="mock-engine-cd">&nbsp;</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Lifetime Totals (full width) -->
+                        <div class="mock-section" data-section="2" style="position: relative;">
+                            <a href="#section-2" class="callout-marker" style="position:absolute; top: 6px; left: 12%;">2</a>
+                            <div class="mock-section-header"><span class="mock-section-title">Lifetime Totals</span><span class="mock-badge-event">&#9889;</span></div>
+                            <div class="mock-metric-grid" style="grid-template-columns: repeat(6, 1fr);">
+                                <div class="mock-metric"><div class="mock-metric-label">Consumers Archived</div><div class="mock-metric-value" style="color:#569cd6;">181,610</div><div class="mock-metric-unit">284 batches</div></div>
+                                <div class="mock-metric"><div class="mock-metric-label">Consumers Remaining</div><div class="mock-metric-value" style="color:#4ec9b0;">4,582,815</div><div class="mock-metric-unit">as of 14:29:23</div></div>
+                                <div class="mock-metric"><div class="mock-metric-label">Accounts Archived</div><div class="mock-metric-value" style="color:#569cd6;">383,203</div><div class="mock-metric-unit">39,201,604 rows deleted</div></div>
+                                <div class="mock-metric"><div class="mock-metric-label">Accounts Remaining</div><div class="mock-metric-value" style="color:#4ec9b0;">8,967,742</div><div class="mock-metric-unit">on TC_ARCH consumers</div></div>
+                                <div class="mock-metric"><div class="mock-metric-label">Shells Purged</div><div class="mock-metric-value" style="color:#c586c0;">0</div><div class="mock-metric-unit">0 batches</div></div>
+                                <div class="mock-metric"><div class="mock-metric-label">Shells Remaining</div><div class="mock-metric-value" style="color:#dcdcaa;">6,501,489</div><div class="mock-metric-unit">as of 14:29:23</div></div>
+                            </div>
+                        </div>
+
+                        <!-- Two-column body: Archive (left) + Shell Purge (right) -->
+                        <div class="mock-body">
+                            <div class="mock-col-left">
+
+                                <!-- Archive Today -->
+                                <div class="mock-section" data-section="3" style="position: relative;">
+                                    <a href="#section-3" class="callout-marker" style="position:absolute; top: 8px; left: 28%;">3</a>
+                                    <div class="mock-section-header">
+                                        <span class="mock-section-title">Consumer Archive &mdash; Today</span>
+                                        <span style="display:flex; align-items:center; gap:6px;">
+                                            <span data-section="8" style="position: relative; padding:2px 8px; background:#1e3a3a; color:#4ec9b0; border:1px solid #2a4a4a; border-radius:3px; font-size:9px;">&#128197; Schedule<a href="#section-8" class="callout-marker" style="position:absolute; top: 16px; right: 18px;">8</a></span>
+                                            <span data-section="9" style="position: relative; padding:2px 8px; background:#3a2a2a; color:#e07070; border:1px solid #5a3030; border-radius:3px; font-size:9px;">&#9632; Abort<a href="#section-9" class="callout-marker" style="position:absolute; top: 16px; right: 10px;">9</a></span>
+                                            <span class="mock-badge-event">&#9889;</span>
+                                        </span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-around; padding:8px 4px;">
+                                        <div style="text-align:center;"><div style="font-size:18px; font-weight:600; color:#569cd6;">273</div><div style="font-size:8px; color:#888; text-transform:uppercase;">Batches</div></div>
+                                        <div style="text-align:center;"><div style="font-size:18px; font-weight:600; color:#569cd6;">136,500</div><div style="font-size:8px; color:#888; text-transform:uppercase;">Consumers</div></div>
+                                        <div style="text-align:center;"><div style="font-size:18px; font-weight:600;">298,090</div><div style="font-size:8px; color:#888; text-transform:uppercase;">Accounts</div></div>
+                                        <div style="text-align:center;"><div style="font-size:18px; font-weight:600;">30,109,122</div><div style="font-size:8px; color:#888; text-transform:uppercase;">Rows</div></div>
+                                        <div style="text-align:center;"><div style="font-size:18px; font-weight:600;">6h 14m</div><div style="font-size:8px; color:#888; text-transform:uppercase;">Runtime</div></div>
+                                    </div>
+                                </div>
+
+                                <!-- Archive History -->
+                                <div class="mock-section" data-section="4" style="position: relative;">
+                                    <a href="#section-4" class="callout-marker" style="position:absolute; top: 6px; left: 30%;">4</a>
+                                    <div class="mock-section-header"><span class="mock-section-title">Consumer Archive &mdash; History</span><span class="mock-badge-event">&#9889;</span></div>
+                                    <div style="padding:6px 4px; font-size:9px;">
+                                        <div style="color:#569cd6; margin-bottom:4px;">&#9660; 2026 <span style="float:right; color:#888; font-size:8px;">181,610 consumers &middot; 383,203 accounts</span></div>
+                                        <div style="margin-left:12px; padding:3px 0; border-bottom:1px solid #333; display:flex; gap:8px; color:#888; font-size:8px; text-transform:uppercase;">
+                                            <span style="width:14px;">&nbsp;</span><span style="flex:1;">Month</span><span style="width:40px; text-align:right;">Batches</span><span style="width:50px; text-align:right;">Consumers</span><span style="width:50px; text-align:right;">Accounts</span><span style="width:60px; text-align:right;">Rows</span><span style="width:30px; text-align:right;">Time</span>
+                                        </div>
+                                        <div style="margin-left:12px; padding:3px 0; display:flex; gap:8px;">
+                                            <span style="width:14px; color:#4ec9b0;">&#9660;</span><span style="flex:1; font-weight:600;">April</span><span style="width:40px; text-align:right;">298</span><span style="width:50px; text-align:right;">188,610</span><span style="width:50px; text-align:right;">397,156</span><span style="width:60px; text-align:right;">40,584,827</span><span style="width:30px; text-align:right;">7h 48m</span>
+                                        </div>
+                                        <!-- Day drill row -->
+                                        <div data-section="5" style="position: relative; margin-left:24px; padding:3px 0; display:flex; gap:8px; background:#1a1a1a;">
+                                            <a href="#section-5" class="callout-marker" style="position:absolute; top: 0px; left: -22px;">5</a>
+                                            <span style="width:14px; color:#4ec9b0;">&#9660;</span><span style="width:24px; color:#4ec9b0; font-weight:600;">Mon</span><span style="flex:1;">04/27</span><span style="width:30px; text-align:right;">287</span><span style="width:50px; text-align:right;">143,500</span><span style="width:50px; text-align:right;">312,043</span><span style="width:60px; text-align:right;">31,492,345</span><span style="width:30px; text-align:right;">6h 33m</span><span style="width:18px; text-align:right;">-</span>
+                                        </div>
+                                        <!-- Batch sub-table preview -->
+                                        <div data-section="6" style="position: relative; margin-left:36px; margin-top:4px; padding:6px 4px; background:#202020; border-left:2px solid var(--accent-blue);">
+                                            <a href="#section-6" class="callout-marker" style="position:absolute; top: 28px; left: -28px;">6</a>
+                                            <div style="display:flex; gap:6px; color:#888; font-size:7px; text-transform:uppercase; padding-bottom:2px; border-bottom:1px solid #333;">
+                                                <span style="width:18px;">#</span><span style="width:36px;">Started</span><span style="width:40px;">Mode</span><span style="width:36px; text-align:right;">Duration</span><span style="width:40px;">Status</span><span style="width:40px;">BIDATA</span><span style="width:40px; text-align:right;">Cnsmrs</span><span style="width:36px; text-align:right;">Accts</span><span style="width:48px; text-align:right;">Rows</span><span style="width:18px; text-align:right;">Exc</span>
+                                            </div>
+                                            <div style="display:flex; gap:6px; padding:2px 0; font-size:8px;">
+                                                <span style="width:18px; color:#569cd6;">277</span><span style="width:36px;">14:54:23</span><span style="width:40px;"><span style="background:#3a2a1a; color:#dcdcaa; padding:1px 4px; border-radius:2px; font-size:7px;">REDUCED</span></span><span style="width:36px; text-align:right;">1m 20s</span><span style="width:40px;"><span style="background:#1e3a1e; color:#4ec9b0; padding:1px 4px; border-radius:2px; font-size:7px;">SUCCESS</span></span><span style="width:40px;"><span style="background:#1e3a1e; color:#4ec9b0; padding:1px 4px; border-radius:2px; font-size:7px;">SUCCESS</span></span><span style="width:40px; text-align:right;">500</span><span style="width:36px; text-align:right;">1,439</span><span style="width:48px; text-align:right;">126,751</span><span style="width:18px; text-align:right; color:#888;">-</span>
+                                            </div>
+                                            <div style="display:flex; gap:6px; padding:2px 0; font-size:8px;">
+                                                <span style="width:18px; color:#569cd6;">276</span><span style="width:36px;">14:52:53</span><span style="width:40px;"><span style="background:#3a2a1a; color:#dcdcaa; padding:1px 4px; border-radius:2px; font-size:7px;">REDUCED</span></span><span style="width:36px; text-align:right;">1m 28s</span><span style="width:40px;"><span style="background:#1e3a1e; color:#4ec9b0; padding:1px 4px; border-radius:2px; font-size:7px;">SUCCESS</span></span><span style="width:40px;"><span style="background:#1e3a1e; color:#4ec9b0; padding:1px 4px; border-radius:2px; font-size:7px;">SUCCESS</span></span><span style="width:40px; text-align:right;">500</span><span style="width:36px; text-align:right;">1,080</span><span style="width:48px; text-align:right;">114,685</span><span style="width:18px; text-align:right; color:#888;">-</span>
+                                            </div>
+                                            <div style="color:#666; font-size:7px; padding-top:3px; font-style:italic;">&hellip; (sortable, click any batch row for full per-table detail)</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                            <div class="mock-col-right">
+
+                                <!-- Shell Purge Today -->
+                                <div class="mock-section" data-section="7" style="position: relative;">
+                                    <a href="#section-7" class="callout-marker" style="position:absolute; top: 14px; left: 35%;">7</a>
+                                    <div class="mock-section-header">
+                                        <span class="mock-section-title">Shell Purge &mdash; Today</span>
+                                        <span style="display:flex; align-items:center; gap:6px;">
+                                            <span style="padding:2px 8px; background:#1e3a3a; color:#4ec9b0; border:1px solid #2a4a4a; border-radius:3px; font-size:9px;">&#128197; Schedule</span>
+                                            <span style="padding:2px 8px; background:#3a2a2a; color:#e07070; border:1px solid #5a3030; border-radius:3px; font-size:9px;">&#9632; Abort</span>
+                                            <span class="mock-badge-event">&#9889;</span>
+                                        </span>
+                                    </div>
+                                    <div style="text-align:center; padding:24px 8px; color:#666; font-style:italic; font-size:10px;">No activity today</div>
+                                </div>
+
+                                <!-- Shell Purge History -->
+                                <div class="mock-section">
+                                    <div class="mock-section-header"><span class="mock-section-title">Shell Purge &mdash; History</span><span class="mock-badge-event">&#9889;</span></div>
+                                    <div style="text-align:center; padding:24px 8px; color:#666; font-style:italic; font-size:10px;">No execution history</div>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <!-- Hidden mock modal: Archive Schedule (marker 8) -->
+                        <div class="mock-modal-preview" data-section="8" style="position:absolute; top:75%; left:65%; transform:translate(-50%,-50%); width:62%; background:#1e1e1e; border:2px solid var(--accent-blue); border-radius:6px; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6); overflow:hidden;">
+                            <!-- Header -->
+                            <div style="padding:7px 12px; border-bottom:1px solid #333;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;">
+                                    <span style="color:#4ec9b0; font-size:10px; font-weight:600;">Archive Schedule</span>
+                                    <span style="color:#666; font-size:11px; cursor:pointer;">&times;</span>
+                                </div>
+                            </div>
+                            <div style="padding:8px 12px;">
+                                <!-- Paint mode selector -->
+                                <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; font-size:7px;">
+                                    <span style="color:#888;">Paint mode:</span>
+                                    <span style="padding:2px 7px; background:#264f26; color:#4ec9b0; border:1px solid #4ec9b0; border-radius:2px; font-weight:600;">Full</span>
+                                    <span style="padding:2px 7px; background:#252526; color:#dcdcaa; border:1px solid #404040; border-radius:2px;">Reduced</span>
+                                    <span style="padding:2px 7px; background:#252526; color:#e07070; border:1px solid #404040; border-radius:2px;">Blocked</span>
+                                    <span style="margin-left:auto; color:#666; font-style:italic;">Click or drag to paint cells</span>
+                                </div>
+                                <!-- Legend -->
+                                <div style="display:flex; gap:10px; align-items:center; margin-bottom:6px; font-size:6px; color:#888;">
+                                    <span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:8px;height:8px;background:#264f26;border:1px solid #4ec9b0;border-radius:1px;"></span> Full</span>
+                                    <span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:8px;height:8px;background:#3a2a1a;border:1px solid #dcdcaa;border-radius:1px;"></span> Reduced</span>
+                                    <span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:8px;height:8px;background:#4a1e1e;border:1px solid #6b2d2d;border-radius:1px;"></span> Blocked</span>
+                                </div>
+                                <!-- Hour labels - all 24 -->
+                                <div style="display:flex; margin-bottom:1px; margin-left:24px;"><span style="flex:1;font-size:5px;color:#555;text-align:center;">12a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">1a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">2a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">3a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">4a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">5a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">6a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">7a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">8a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">9a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">10a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">11a</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">12p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">1p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">2p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">3p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">4p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">5p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">6p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">7p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">8p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">9p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">10p</span><span style="flex:1;font-size:5px;color:#555;text-align:center;">11p</span></div>
+                                <!-- Mon: blocked overnight, reduced 7a-6p (with one full at noon-1p? no - keep simple), full 7p-10p, blocked 11p -->
+                                <div style="display:flex;align-items:center;margin-bottom:1px;"><span style="width:24px;flex-shrink:0;font-size:6px;color:#888;">Mon</span><div style="flex:1;display:flex;gap:1px;"><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span></div></div>
+                                <!-- Tue: same pattern -->
+                                <div style="display:flex;align-items:center;margin-bottom:1px;"><span style="width:24px;flex-shrink:0;font-size:6px;color:#888;">Tue</span><div style="flex:1;display:flex;gap:1px;"><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span></div></div>
+                                <!-- Wed -->
+                                <div style="display:flex;align-items:center;margin-bottom:1px;"><span style="width:24px;flex-shrink:0;font-size:6px;color:#888;">Wed</span><div style="flex:1;display:flex;gap:1px;"><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span></div></div>
+                                <!-- Thu -->
+                                <div style="display:flex;align-items:center;margin-bottom:1px;"><span style="width:24px;flex-shrink:0;font-size:6px;color:#888;">Thu</span><div style="flex:1;display:flex;gap:1px;"><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span></div></div>
+                                <!-- Fri: blocked overnight, reduced 7a-4p, full 4p-10p, blocked 11p (matches screenshot) -->
+                                <div style="display:flex;align-items:center;margin-bottom:1px;"><span style="width:24px;flex-shrink:0;font-size:6px;color:#888;">Fri</span><div style="flex:1;display:flex;gap:1px;"><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span></div></div>
+                                <!-- Sat: blocked overnight, reduced 6a, full 7a-10p, blocked 11p -->
+                                <div style="display:flex;align-items:center;margin-bottom:1px;"><span style="width:24px;flex-shrink:0;font-size:6px;color:#888;">Sat</span><div style="flex:1;display:flex;gap:1px;"><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span></div></div>
+                                <!-- Sun -->
+                                <div style="display:flex;align-items:center;"><span style="width:24px;flex-shrink:0;font-size:6px;color:#888;">Sun</span><div style="flex:1;display:flex;gap:1px;"><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#3a2a1a;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#264f26;border-radius:1px;"></span><span style="flex:1;aspect-ratio:1;background:#4a1e1e;border-radius:1px;"></span></div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="sticky-ref-sidebar">
+                <div class="sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The DM Operations page is the live monitoring window into the consumer archive and shell purge processes.</p>
+                    <p>Six lifetime tiles up top, today&rsquo;s activity in the middle, full execution history below &mdash; with click-through drill-down all the way from a year down to the per-table detail of a single batch.</p>
+                    <p>This guide walks through every section, control, and the slide-out panels that aren&rsquo;t visible on the main view.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="sidebar-items">
+                    <div class="sidebar-item" data-marker="1"><span class="sidebar-num">1</span> Engine Indicators</div>
+                    <div class="sidebar-item" data-marker="2"><span class="sidebar-num">2</span> Lifetime Totals</div>
+                    <div class="sidebar-item" data-marker="3"><span class="sidebar-num">3</span> Consumer Archive &mdash; Today</div>
+                    <div class="sidebar-item" data-marker="4"><span class="sidebar-num">4</span> Consumer Archive &mdash; History</div>
+                    <div class="sidebar-item" data-marker="5"><span class="sidebar-num">5</span> Day Drill-Down</div>
+                    <div class="sidebar-item" data-marker="6"><span class="sidebar-num">6</span> Batch List &amp; BatchDetail Slide-out</div>
+                    <div class="sidebar-item" data-marker="7"><span class="sidebar-num">7</span> Shell Purge Sections</div>
+                    <div class="sidebar-item" data-marker="8"><span class="sidebar-num">8</span> Schedule Modal</div>
+                    <div class="sidebar-item" data-marker="9"><span class="sidebar-num">9</span> Abort Button</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="cc-guide-content">
+
+        <div class="guide-section" id="section-1"><div class="section">
+            <h2><span class="section-number">1</span>Engine Indicators</h2>
+            <p>Two cards in the upper right represent the orchestrated processes that feed this page: <strong>Archive</strong> (the unified consumer archive) and <strong>Shells</strong> (the shell purge utility). When the orchestrator is driving them, each card shows a colored bar (green for last-run-succeeded, red for failed) and a countdown to the next scheduled run.</p>
+            <p>Right now both indicators are inactive. The archive script is currently being run manually as it&rsquo;s observed in production for early behavior. Once it&rsquo;s registered in <code>Orchestrator.ProcessRegistry</code> and handed off, the indicators will come alive automatically.</p>
+            <div class="callout info"><p>The same shared engine-events module powers these indicators across every monitoring page in the Control Center. Behavior here will look identical to Server Health and the other dashboards once the script is orchestrated.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-2"><div class="section">
+            <h2><span class="section-number">2</span>Lifetime Totals</h2>
+            <p>Six tiles giving the running totals at a glance. Tiles are not clickable &mdash; they&rsquo;re a quick read; the drill-down lives in the history section.</p>
+            <p><strong>Consumers Archived</strong> &mdash; Total consumers fully removed since the unified archive started. The subtitle shows the running batch count, and adds an exception note when any have occurred.</p>
+            <p><strong>Consumers Remaining</strong> &mdash; The TC_ARCH-tagged consumer pool still awaiting processing. Calculated from a baseline snapshot taken at the start of the run, with subtractive math applied as batches complete &mdash; so the number ticks down throughout the day even between baseline refreshes.</p>
+            <p><strong>Accounts Archived</strong> &mdash; The total account count corresponding to those archived consumers, with total OLTP rows deleted shown as the subtitle. Useful as a sense of the actual volume of work done; consumers are the unit, but accounts are what most people picture.</p>
+            <p><strong>Accounts Remaining</strong> &mdash; Accounts on TC_ARCH-tagged consumers awaiting processing. Same baseline-plus-subtraction math as the consumer count.</p>
+            <p><strong>Shells Purged</strong> &mdash; Total shells removed by the standalone shell purge process. Currently zero because the unified archive doesn&rsquo;t produce shells &mdash; this number will grow as naturally-occurring shells (from merges and historical artifacts) get processed.</p>
+            <p><strong>Shells Remaining</strong> &mdash; The remaining shell pool. If exclusions have been catalogued from prior scans, the subtitle shows the exclusion count instead of the baseline timestamp.</p>
+            <div class="callout info"><p>The remaining counts use a subtractive technique that makes them feel more live than they technically are. The baseline is captured periodically; as batches complete, the page subtracts what the script just removed from the baseline figure. This avoids querying massive parent tables every refresh while still keeping the displayed value in sync with reality.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-3"><div class="section">
+            <h2><span class="section-number">3</span>Consumer Archive &mdash; Today</h2>
+            <p>A row of counters showing what the archive has done so far today: total batches, consumers, accounts, rows deleted, and total runtime. When the script is active, these tick up as each batch completes.</p>
+            <p>Two extra counters appear conditionally and only when something needs attention &mdash; <strong>Exceptions</strong> (consumers ejected by runtime re-verification, in yellow) and <strong>BIDATA Failed</strong> (batches where the financial migration failed, in red). On a clean day, neither shows up. The page stays visually quiet when nothing&rsquo;s wrong.</p>
+            <p>The section header carries two admin-only buttons (Schedule and Abort) plus the event refresh badge. Non-admin users see the section but not the controls.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-4"><div class="section">
+            <h2><span class="section-number">4</span>Consumer Archive &mdash; History</h2>
+            <p>The full execution history, grouped year &rarr; month &rarr; day. Year rows show consumer and account totals; month rows expand to a per-day breakdown; day rows expand again to show the individual batches that ran. State is preserved across refreshes &mdash; if you have April 2026 expanded and the page refreshes itself, April stays open.</p>
+            <p>The columns shift slightly between Archive and Shell Purge: the archive history shows Accounts and an Exceptions column; shell purge history doesn&rsquo;t (shells have neither concept). Day rows that include a failed batch or a BIDATA failure are visually flagged in their parent month&rsquo;s row.</p>
+            <div class="callout tip"><p>This is the easiest way to spot a problem after the fact. Failed batches highlight at the day level, BIDATA failures get a warning glyph in the exception column, and clicking down to the individual batch gives you everything that happened in it.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-5"><div class="section">
+            <h2><span class="section-number">5</span>Day Drill-Down</h2>
+            <p>Click a day row in the month view and it expands inline to show every batch that ran that day &mdash; numbered, time-stamped, with mode (Reduced / Full / Manual / Retry), duration, status, BIDATA status, consumer count, account count, rows deleted, and exception count.</p>
+            <p>Batches that failed get a red row tint. Batches where BIDATA migration failed but the rest succeeded get a yellow tint &mdash; those are the recoverable near-shell cases described on the architecture page. Retry batches get a small <code>R</code> badge with a tooltip pointing back to the original batch.</p>
+            <p>The batch list is fetched on-demand the first time you expand a day, then cached in the browser. Re-expanding the same day during the session reuses the cached data without re-fetching.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-6"><div class="section">
+            <h2><span class="section-number">6</span>Batch List &amp; BatchDetail Slide-out</h2>
+            <p>Clicking any batch row in the day drill-down opens an extra-wide slide-out panel showing the full <code>Archive_BatchDetail</code> for that batch &mdash; the entire ordered delete sequence with per-table results.</p>
+            <p>The slide-out has two parts. The header summarizes the batch &mdash; start/end times, duration, mode, status, BIDATA status, consumer/account/row counts, exception count, table proc/skip/fail tally, and who executed the batch. If the batch is a retry, that&rsquo;s called out. If it failed with an error message, that surfaces as well.</p>
+            <p>Below the header, the per-table table shows every delete operation that ran in this batch with its phase prefix (color-coded: blue for account-level <code>A</code>, purple for BIDATA migration <code>AB</code>, orange for consumer-level <code>C</code>, with a separate tone for the UDEF prefixes <code>AU</code>/<code>CU</code>). Columns: Order, Table, Pass description, Rows affected, Duration, Status, Error.</p>
+            <p>All columns are sortable &mdash; click a header to sort ascending, click again to flip. Useful for finding the slowest tables in a batch or all the tables that skipped (zero qualifying rows is normal &mdash; not every consumer touches every table).</p>
+            <div class="callout tip"><p>The combination of sort-by-duration on this slide-out and the day-level batch list above is the fastest way to investigate &ldquo;which batch was slow and why?&rdquo; The duration column on the day list points you to the slow batch; the slide-out points you to the slow table within it.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-7"><div class="section">
+            <h2><span class="section-number">7</span>Shell Purge Sections</h2>
+            <p>The right column mirrors the archive layout for the shell purge process &mdash; Today on top, History below. The structure is identical except shell purge has no Accounts, Exceptions, or BIDATA concept, so those columns simply don&rsquo;t appear.</p>
+            <p>Currently the shell purge sections show no activity because the unified archive doesn&rsquo;t produce shells &mdash; the consumer record is removed in the same batch as the accounts. Naturally-occurring shells (from consumer merges, historical artifacts of earlier processes) accumulate over time and the standalone shell purge utility processes them on its own schedule.</p>
+            <p>Same admin controls as the archive side: Schedule and Abort buttons in the Today header, both gated to admin role.</p>
+        </div></div>
+
+        <div class="guide-section" id="section-8"><div class="section">
+            <h2><span class="section-number">8</span>Schedule Modal</h2>
+            <p>Clicking Schedule (admin-only) opens a paint-mode 7&times;24 grid where you set each hour of each day to Full, Reduced, or Blocked. Pick a paint color from the buttons at the top, then click or drag to apply it. Changes save automatically when you release the mouse &mdash; there&rsquo;s no Save button to forget.</p>
+            <p>Three modes:</p>
+            <ul>
+                <li><strong>Full (green)</strong> &mdash; the script runs at the configured full batch size. Reserved for evenings, weekends, and other quiet windows.</li>
+                <li><strong>Reduced (yellow)</strong> &mdash; the script runs at the configured reduced batch size. Used during business hours to keep volume up without impacting users.</li>
+                <li><strong>Blocked (red)</strong> &mdash; the script doesn&rsquo;t run during this hour. Used around the BIDATA build window and any other times the system needs to be undisturbed.</li>
+            </ul>
+            <p>Each process has its own schedule &mdash; Archive and Shell Purge can run on different windows. The grid you&rsquo;re editing is identified in the panel title.</p>
+            <div class="callout warning"><p>The script honors the schedule at batch boundaries, not mid-batch. A change that takes a cell from Full to Blocked while a batch is in flight has no effect on that batch &mdash; it completes normally. The new mode applies to the next batch.</p></div>
+        </div></div>
+
+        <div class="guide-section" id="section-9"><div class="section">
+            <h2><span class="section-number">9</span>Abort Button</h2>
+            <p>Clicking Abort (admin-only) sets the GlobalConfig abort flag for the chosen process. The currently-running script checks this flag at every batch boundary &mdash; when it sees the flag set, it finishes the in-flight batch cleanly and exits. No consumer is ever left half-archived.</p>
+            <p>The button is confirmation-gated to prevent accidental triggers. When set, the button label changes to <strong>ABORT SET</strong> and stays that way until cleared. To resume normal operation, click the same button again to clear the flag.</p>
+            <div class="callout warning"><p>Setting Abort doesn&rsquo;t kill an in-flight batch; it stops the script after the current batch finishes. If you need an immediate stop in a true emergency, terminating the running PowerShell session is the heavier option &mdash; but understand the in-flight batch&rsquo;s state will depend on where it was when killed. Abort is the clean stop; session kill is the panic stop.</p></div>
+        </div></div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <p><a href="../dmops.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to DM Operations</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../arch/dmops-arch.html" style="color: var(--accent-blue); text-decoration: none;">Architecture</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../ref/dmops-ref.html" style="color: var(--accent-blue); text-decoration: none;">Reference</a>
+           &nbsp;&bull;&nbsp;
+           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
+        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside page-wrapper to avoid clipping) -->
+<div class="guide-slideout">
+    <div class="guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="slideout-header-controls">
+            <button class="mode-btn active" id="btn-tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="mode-btn" id="btn-showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="guide-slideout-body"></div>
+</div>
+
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>
