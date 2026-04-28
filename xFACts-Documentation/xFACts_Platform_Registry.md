@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-28 09:05:38
+Generated: 2026-04-28 09:13:51
 
 ## Module Registry
 
@@ -172,6 +172,7 @@ Generated: 2026-04-28 09:05:38
 | Documentation.Site | dbcc-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dbcc-arch.html | DBCC Operations architecture page |
 | Documentation.Site | dbcc-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dbcc-ref.html | DBCC Operations DDL reference page |
 | Documentation.Site | dbcc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dbcc.html | DBCC Operations narrative page |
+| Documentation.Site | dmops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\dmops-cc.html | DM Operations Control Center guide page |
 | Documentation.Site | engine-room-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\engine-room-arch.html | Engine Room architecture page |
 | Documentation.Site | engine-room-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\engine-room-ref.html | Engine Room DDL reference page |
 | Documentation.Site | engine-room.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\engine-room.html | Engine Room narrative page |
