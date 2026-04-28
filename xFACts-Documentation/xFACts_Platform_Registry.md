@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-27 13:45:14
+Generated: 2026-04-28 09:05:38
 
 ## Module Registry
 
@@ -135,8 +135,8 @@ Generated: 2026-04-27 13:45:14
 | DmOps.Archive | DmOperations.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1 | DM Operations CC page route |
 | DmOps.ShellPurge | ShellPurge_BatchDetail | Database | Table | DmOps | Per-table operation detail within each shell purge batch — delete order, rows affected, duration, and status |
 | DmOps.ShellPurge | ShellPurge_BatchLog | Database | Table | DmOps | Batch-level execution summary for shell purge processing — one row per batch with counts, timing, and status |
+| DmOps.ShellPurge | ShellPurge_ConsumerExceptionLog | Database | Table | DmOps | Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence — one row per consumer per exclusion reason |
 | DmOps.ShellPurge | ShellPurge_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer purged — batch and consumer ID for reconciliation |
-| DmOps.ShellPurge | ShellPurge_ExclusionLog | Database | Table | DmOps | Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence — one row per consumer per exclusion reason |
 | DmOps.ShellPurge | ShellPurge_Schedule | Database | Table | DmOps | Weekly schedule grid controlling shell purge execution mode per hour — blocked, full batch, or reduced batch |
 | DmOps.ShellPurge | Execute-DmShellPurge.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmShellPurge.ps1 | Consumer shell purge execution — removes orphaned consumer records with no remaining accounts from crs5_oltp |
 | Documentation.Pipeline | Consolidate-UploadFiles.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Consolidate-UploadFiles.ps1 | Collects all platform files into upload folder |
@@ -403,7 +403,7 @@ Generated: 2026-04-27 13:45:14
 
 | module_name | category | setting_name | setting_value | data_type | description |
 | --- | --- | --- | --- | --- | --- |
-| B2B | B2B | b2b_alerting_enabled | 0 | BIT | Master on/off switch for B2B module alerting. |
+| B2B | B2B | b2b_alerting_enabled | 0 | BIT | Master on/off switch for B2B module alerting |
 | B2B | B2B | b2b_collect_lookback_days | 3 | INT | Number of days back that Collect-B2BExecution.ps1 scans for FA_CLIENTS_MAIN workflow runs in b2bi. |
 | BatchOps | BDL | bdl_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file reaches FAILED status in File_Registry |
 | BatchOps | BDL | bdl_alert_stall_routing | 1 | ALERT_MODE | Alert destination(s) when BDL partition processing stalls |
@@ -443,7 +443,7 @@ Generated: 2026-04-27 13:45:14
 | ControlCenter | RBAC | rbac_enforcement_mode | audit | VARCHAR | Access control mode: disabled, audit (log only), or enforce (block) |
 | ControlCenter | Refresh | refresh_backup_seconds | 5 | INT | Backup Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_batch_seconds | 5 | INT | Batch Monitoring page live window refresh interval (seconds) |
-| ControlCenter | Refresh | refresh_bdl-import_seconds | 20 | INT | Polling interval in seconds for the BDL Import wizard's right-column Import History panel. Drives on-demand reconciliation against DM File_Registry while any non-terminal rows are visible. Consumed via /api/config/refresh-interval?page=bdl-import. |
+| ControlCenter | Refresh | refresh_bdl-import_seconds | 20 | INT | Polling interval in seconds for the BDL Import History panel |
 | ControlCenter | Refresh | refresh_bidata_seconds | 30 | INT | BIDATA Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_businessservices_seconds | 60 | INT | Business Services page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_clientrelations_seconds | 1800 | INT | Client Relations page live window refresh interval (seconds) |
@@ -454,31 +454,31 @@ Generated: 2026-04-27 13:45:14
 | ControlCenter | Refresh | refresh_jobflow_seconds | 10 | INT | JobFlow Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_replication_seconds | 10 | INT | Replication Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_serverhealth_seconds | 5 | INT | Server Health page refresh live window interval (seconds) |
-| DeptOps | ApplicationsIntegration | cooldown_balance_sync_seconds | 3600 | INT | Minimum seconds between Balance Sync executions per environment. Enforced via ActionAuditLog. |
-| DeptOps | ApplicationsIntegration | cooldown_release_notices_seconds | 300 | INT | Minimum seconds between Release Notices executions per environment. Enforced via ActionAuditLog. |
+| DeptOps | ApplicationsIntegration | cooldown_balance_sync_seconds | 3600 | INT | Minimum seconds between Balance Sync executions per environment |
+| DeptOps | ApplicationsIntegration | cooldown_release_notices_seconds | 300 | INT | Minimum seconds between Release Notices executions per environment |
 | DeptOps | BS_ReviewRequest | bs_default_assignment_cap | 100 | INT | Default max assignments for new distribution users |
 | DeptOps | BS_ReviewRequest | bs_distribution_enabled | 1 | BIT | Master on/off switch for automated review request distribution |
-| DmOps | Archive | alerting_enabled | 0 | BIT | Master switch for archive alerting: 1 = Teams alerts active, 0 = alerting suppressed. Does not affect archive execution. |
-| DmOps | Archive | archive_abort | 0 | BIT | Emergency shutoff: 1 = stop after current batch completes. Overrides schedule and enabled flag. Reset to 0 manually after investigation. |
+| DmOps | Archive | alerting_enabled | 0 | BIT | Master switch for archive alerting |
+| DmOps | Archive | archive_abort | 0 | BIT | Emergency shutoff. Overrides schedule and enabled flag |
 | DmOps | Archive | batch_size | 5000 | INT | Number of consumers per batch during full-mode schedule windows |
 | DmOps | Archive | batch_size_reduced | 500 | INT | Number of consumers per batch during reduced-mode schedule windows |
-| DmOps | Archive | bidata_build_job_name | BIDATA Daily Build | VARCHAR | SQL Agent job name for the BIDATA Daily Build. Used by pre-flight check to detect build-in-progress on bidata_instance server. |
-| DmOps | Archive | bidata_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting the BIDATA database for P-to-C migration. Production: DM-PROD-REP. |
-| DmOps | Archive | chunk_size | 5000 | INT | Maximum rows per DELETE operation — larger tables are deleted in chunks of this size |
-| DmOps | Archive | tag_removal_actn_cd | CC | VARCHAR | Action code short value used when writing the AR event for TC_ARCH tag removal. |
-| DmOps | Archive | tag_removal_msg_txt | Consumer archive tag removed - ineligible account(s) detected | VARCHAR | AR event message text written when TC_ARCH is removed from a consumer that no longer meets archive eligibility (one or more accounts lack TA_ARCH). |
-| DmOps | Archive | tag_removal_rslt_cd | CC | VARCHAR | Result code short value used when writing the AR event for TC_ARCH tag removal. |
-| DmOps | Archive | tag_removal_user | sqlmon | VARCHAR | DM username attributed to TC_ARCH tag removals (cnsmr_Tag soft-delete and AR event insert).  |
+| DmOps | Archive | bidata_build_job_name | BIDATA Daily Build | VARCHAR | SQL Agent job name for the BIDATA Daily Build |
+| DmOps | Archive | bidata_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting the BIDATA database for BIDATA operations |
+| DmOps | Archive | chunk_size | 5000 | INT | Maximum rows per DELETE operation (deleted in chunks of this size) |
+| DmOps | Archive | tag_removal_actn_cd | CC | VARCHAR | Action code short value used for archiving exceptions |
+| DmOps | Archive | tag_removal_msg_txt | Consumer archive tag removed - ineligible account(s) detected | VARCHAR | AR event message text for archiving exceptions |
+| DmOps | Archive | tag_removal_rslt_cd | CC | VARCHAR | Result code short value used for archiving exceptions |
+| DmOps | Archive | tag_removal_user | sqlmon | VARCHAR | DM username for archiving exceptions |
 | DmOps | Archive | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
-| DmOps | ShellPurge | alerting_enabled | 0 | BIT | Master switch for shell purge alerting: 1 = Teams alerts active, 0 = alerting suppressed |
+| DmOps | ShellPurge | alerting_enabled | 0 | BIT | Master switch for shell purge alerting |
 | DmOps | ShellPurge | batch_size | 25000 | INT | Number of shell consumers per batch during full-mode schedule windows |
 | DmOps | ShellPurge | batch_size_reduced | 500 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
-| DmOps | ShellPurge | chunk_size | 5000 | INT | Maximum rows per DELETE operation — larger tables are deleted in chunks of this size |
-| DmOps | ShellPurge | shell_purge_abort | 0 | BIT | Emergency shutoff: 1 = stop after current batch completes. Reset to 0 manually after investigation. |
+| DmOps | ShellPurge | chunk_size | 5000 | INT | Maximum rows per DELETE operation (deleted in chunks of this size) |
+| DmOps | ShellPurge | shell_purge_abort | 0 | BIT | Emergency shutoff. Overrides schedule and enabled flag |
 | DmOps | ShellPurge | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for shell purge processing |
-| FileOps | Detection | cda_base_path | \\kingkong\dpbackup\Client_Data_Archive | VARCHAR | UNC path to Client Data Archive (fallback location when files not found on SFTP) |
+| FileOps | Detection | cda_base_path | \\kingkong\dpbackup\Client_Data_Archive | VARCHAR | UNC path to Client Data Archive (fallback location) |
 | JBoss | Admin | dm_sharepoint_active_server | DM-PROD-APP2 | VARCHAR | Currently active DM app server in the SharePoint navigation link. |
-| JBoss | Admin | management_api_url | http://dm-prod-app:9990/management | VARCHAR | JBoss Management API base URL on the domain controller. Used by Collect-DmHealthMetrics.ps1 for all Management API calls. |
+| JBoss | Admin | management_api_url | http://dm-prod-app:9990/management | VARCHAR | JBoss Management API base URL on the domain controller |
 | JBoss | App | alerting_enabled | 0 | BIT | Master on/off switch for DmOps alerting |
 | JBoss | App | api_timeout_seconds | 30 | INT | Timeout in seconds for JBoss Management API REST calls |
 | JBoss | App | http_base_path | /CRSServicesWeb/ | VARCHAR | URL path appended to server name for HTTP responsiveness. |
@@ -521,8 +521,8 @@ Generated: 2026-04-27 13:45:14
 | ServerOps | Activity_DMV | threshold_zombie_count_critical | 500 | INT | Zombie connections: critical threshold |
 | ServerOps | Activity_DMV | threshold_zombie_count_warning | 200 | INT | Zombie connections: warning threshold |
 | ServerOps | Activity_DMV | threshold_zombie_idle_minutes | 60 | INT | Minutes idle before a JDBC session counts as a zombie |
-| ServerOps | Activity_XE | aghealth_alert_critical_error_routing | 1 | ALERT_MODE | Alert destination(s) for AG severity 16+ errors. 0=None, 1=Teams, 2=Jira, 3=Both. |
-| ServerOps | Activity_XE | aghealth_alert_state_change_routing | 1 | ALERT_MODE | Alert destination(s) for AG state changes (failover, replica offline). 0=None, 1=Teams, 2=Jira, 3=Both. |
+| ServerOps | Activity_XE | aghealth_alert_critical_error_routing | 1 | ALERT_MODE | Alert destination(s) for AG severity 16+ errors |
+| ServerOps | Activity_XE | aghealth_alert_state_change_routing | 1 | ALERT_MODE | Alert destination(s) for AG state changes |
 | ServerOps | Activity_XE | aghealth_retain_raw_xml | 1 | BIT | Keep raw XML data for AG health events |
 | ServerOps | Activity_XE | blocked_process_retain_raw_xml | 1 | BIT | Keep raw XML data for blocked process events |
 | ServerOps | Activity_XE | xe_alerting_enabled | 1 | BIT | Master on/off switch for all XE-based alerting |
@@ -530,12 +530,12 @@ Generated: 2026-04-27 13:45:14
 | ServerOps | Backup | alert_threshold_network_pending_min | 30 | INT | Minutes before a pending network copy triggers an alert |
 | ServerOps | Backup | aws_bucket_name | faitdbredgate | VARCHAR | AWS S3 bucket name for backup uploads |
 | ServerOps | Backup | aws_path_prefix | xFACts | VARCHAR | Folder prefix within the AWS S3 bucket |
-| ServerOps | Backup | aws_upload_max_retries | 2 | INT | Maximum retry attempts for failed AWS uploads. Total tries = 1 original + this value. |
+| ServerOps | Backup | aws_upload_max_retries | 2 | INT | Maximum retry attempts for failed AWS uploads |
 | ServerOps | Backup | network_backup_root | \\fa-sqldbb\g$\BACKUP\xFACts | VARCHAR | Network share root path for backup copies |
-| ServerOps | Backup | network_copy_max_retries | 2 | INT | Maximum retry attempts for failed network copies. Total tries = 1 original + this value. |
-| ServerOps | DBCC | dbcc_alerting_enabled | 1 | BIT | Master on/off switch for DBCC alerting. When enabled: Teams alert on any non-SUCCESS, Jira ticket on ERRORS_FOUND |
-| ServerOps | DBCC | dbcc_extended_logical_checks | 0 | BIT | Enable EXTENDED_LOGICAL_CHECKS for indexed views, XML indexes, and spatial indexes. Adds execution time. Only relevant with check_type = FULL |
-| ServerOps | DBCC | dbcc_max_dop | 4 | INT | MAXDOP for DBCC CHECKDB execution. Higher values use more CPU/IO but complete faster |
+| ServerOps | Backup | network_copy_max_retries | 2 | INT | Maximum retry attempts for failed network copies |
+| ServerOps | DBCC | dbcc_alerting_enabled | 1 | BIT | Master on/off switch for DBCC alerting |
+| ServerOps | DBCC | dbcc_extended_logical_checks | 0 | BIT | Enable EXTENDED_LOGICAL_CHECKS (Only relevant with check_type = FULL) |
+| ServerOps | DBCC | dbcc_max_dop | 4 | INT | MAXDOP for DBCC CHECKDB execution |
 | ServerOps | Disk | default_threshold_pct | 20.00 | DECIMAL | Default free space alert threshold for new drives (%) |
 | ServerOps | Disk | snapshot_retention_days | 90 | INT | Days to keep disk space snapshot history |
 | ServerOps | Disk | space_request_buffer_pct | 5.00 | DECIMAL | Extra % above threshold when calculating Jira space requests |
@@ -590,11 +590,11 @@ Generated: 2026-04-27 13:45:14
 | ServerOps | Replication | replication_queue_warning_threshold | 5000 | INT | Undistributed commands threshold for warning alert |
 | ServerOps | Replication | replication_tracer_interval_minutes | 5 | INT | Minutes between latency measurement checks |
 | ServerOps | Replication | replication_tracer_wait_seconds | 15 | INT | Seconds to wait for latency results after posting tracer |
-| Shared |  | AGListenerName | AVG-PROD-LSNR | VARCHAR | Always On Availability Group listener name for crs5_oltp. Used by Get-CRS5Connection to determine AG-aware vs direct connection routing. |
+| Shared |  | AGListenerName | AVG-PROD-LSNR | VARCHAR | Always On Availability Group listener name for crs5_oltp |
 | Shared |  | AGName | DMPRODAG | VARCHAR | Availability Group name for primary/secondary detection |
-| Shared | Credentials | master_passphrase | P0w3rSh3LL-M@5t3R | VARCHAR | Global master passphrase for decrypting service-specific passphrases in dbo.Credentials |
+| Shared | Credentials | master_passphrase | P0w3rSh3LL-M@5t3R | VARCHAR | Master passphrase for decrypting service-specific passphrases |
 | Shared | Monitoring | SourceReplica | SECONDARY | VARCHAR | Which AG replica to query for source data (PRIMARY or SECONDARY) |
 | Teams | AlertFailures | alert_failure_lookback_days | 3 | INT | Days to look back when showing failed alerts on Admin page |
 | Teams | Retry | teams_retry_max_attempts | 3 | INT | Max delivery retries before marking an alert as permanently failed |
-| Tools | Operations | bdl_promote_cooldown_seconds | 300 | INT | Countdown timer in seconds before the Promote to Production button activates after a successful non-PROD import. Gives users time to verify their data in Debt Manager before promoting. |
+| Tools | Operations | bdl_promote_cooldown_seconds | 300 | INT | Countdown timer in seconds before the Promote to Production button activates |
 | Tools | Portal | crs5_portal_query_timeout_seconds | 60 | INT | Command timeout in seconds for Client Portal queries against crs5_oltp |
