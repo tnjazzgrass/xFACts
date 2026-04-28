@@ -8,7 +8,7 @@
 # JS:  /js/dm-operations.js
 # APIs: DmOperations-API.ps1
 #
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.DmOperations)
+# Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
 # ============================================================================
 
    Add-PodeRoute -Method Get -Path '/dm-operations' -Authentication 'ADLogin' -ScriptBlock {
@@ -110,6 +110,7 @@
                 <div class="section-header">
                     <h2 class="section-title">Consumer Archive &mdash; Today</h2>
                     <div class="section-header-right">
+                        <span class="target-server-badge env-unknown" id="archive-target-badge" title="Loading target server&hellip;">&hellip;</span>
                         <button class="action-btn schedule-btn" id="archive-schedule-btn" onclick="openScheduleModal('archive')" title="View/edit archive schedule" style="display:none;">&#128197; Schedule</button>
                         <button class="action-btn abort-btn" id="archive-abort-btn" onclick="toggleAbort('archive')" title="Emergency stop" style="display:none;">&#9632; Abort</button>
                         <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
@@ -141,6 +142,7 @@
                 <div class="section-header">
                     <h2 class="section-title">Shell Purge &mdash; Today</h2>
                     <div class="section-header-right">
+                        <span class="target-server-badge env-unknown" id="shellpurge-target-badge" title="Loading target server&hellip;">&hellip;</span>
                         <button class="action-btn schedule-btn" id="shellpurge-schedule-btn" onclick="openScheduleModal('shellpurge')" title="View/edit shell purge schedule" style="display:none;">&#128197; Schedule</button>
                         <button class="action-btn abort-btn" id="shellpurge-abort-btn" onclick="toggleAbort('shellpurge')" title="Emergency stop" style="display:none;">&#9632; Abort</button>
                         <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
