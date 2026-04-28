@@ -3,7 +3,7 @@
 # Location: E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1
 # 
 # API endpoints for DM Operations monitoring data.
-# Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
+# Version: Tracked in dbo.System_Metadata (component: ControlCenter.DmOperations)
 # ============================================================================
 
 # Note: Get-RemainingCounts and $DmOpsRemainingCache are defined in xFACts-Helpers.psm1
@@ -442,7 +442,7 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batches-by-day' -Authenti
                 consumer_count, total_rows_deleted,
                 tables_processed, tables_skipped, tables_failed,
                 duration_ms, status, error_message,
-                batch_retry, retry_batch_id, executed_by
+                executed_by
             FROM DmOps.ShellPurge_BatchLog
             WHERE CAST(batch_start_dttm AS DATE) = CAST(@date AS DATE)
             ORDER BY batch_id DESC
@@ -464,8 +464,6 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batches-by-day' -Authenti
                 duration_ms        = if ($r['duration_ms']        -is [DBNull]) { 0 } else { [long]$r['duration_ms'] }
                 status             = if ($r['status']             -is [DBNull]) { $null } else { [string]$r['status'] }
                 error_message      = if ($r['error_message']      -is [DBNull]) { $null } else { [string]$r['error_message'] }
-                batch_retry        = if ($r['batch_retry']        -is [DBNull]) { 0 } else { [int]$r['batch_retry'] }
-                retry_batch_id     = if ($r['retry_batch_id']     -is [DBNull]) { $null } else { [long]$r['retry_batch_id'] }
                 executed_by        = if ($r['executed_by']        -is [DBNull]) { $null } else { [string]$r['executed_by'] }
             }
         }
@@ -582,7 +580,7 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batch-detail/:batchId' -A
                 consumer_count, total_rows_deleted,
                 tables_processed, tables_skipped, tables_failed,
                 duration_ms, status, error_message,
-                batch_retry, retry_batch_id, executed_by
+                executed_by
             FROM DmOps.ShellPurge_BatchLog
             WHERE batch_id = @batchId
 "@ -Parameters @{ batchId = [long]$batchId }
@@ -632,8 +630,6 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batch-detail/:batchId' -A
                 duration_ms        = if ($s['duration_ms']        -is [DBNull]) { 0 } else { [long]$s['duration_ms'] }
                 status             = if ($s['status']             -is [DBNull]) { $null } else { [string]$s['status'] }
                 error_message      = if ($s['error_message']      -is [DBNull]) { $null } else { [string]$s['error_message'] }
-                batch_retry        = if ($s['batch_retry']        -is [DBNull]) { 0 } else { [int]$s['batch_retry'] }
-                retry_batch_id     = if ($s['retry_batch_id']     -is [DBNull]) { $null } else { [long]$s['retry_batch_id'] }
                 executed_by        = if ($s['executed_by']        -is [DBNull]) { $null } else { [string]$s['executed_by'] }
             }
             Details = $detailRows
