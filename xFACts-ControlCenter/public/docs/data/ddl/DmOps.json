@@ -1516,6 +1516,133 @@
                                    ]
                    },
                    {
+                       "name":  "ShellPurge_ConsumerExceptionLog",
+                       "description":  "Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence. One row per consumer per exception reason. Maintained incrementally as the shell purge script discovers new exceptions during batch validation. Used as a filter in the candidate selection query to avoid re-evaluating expensive NOT EXISTS checks against large tables on every batch.",
+                       "module":  "DmOps",
+                       "category":  "ShellPurge",
+                       "dataFlow":  "Maintained incrementally by Execute-DmShellPurge.ps1 which inserts new excluded consumers discovered during batch validation. Read by the script at session start to load into a temp table on the target connection for per-batch candidate filtering. A consumer may have multiple rows with different exception reasons.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "cnsmr_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Internal consumer ID from crs5_oltp. Part of the composite primary key with exception_reason."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "cnsmr_idntfr_agncy_id",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Agency-assigned consumer identifier. Stored for human-readable reference during triage and reporting."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "exception_reason",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Which exception check flagged this consumer. Matches the table or condition name from the exception check list. A consumer may have multiple rows with different reasons."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "SELECT      exception_reason,      COUNT(*) AS consumer_count  FROM DmOps.ShellPurge_ConsumerExceptionLog  GROUP BY exception_reason  ORDER BY consumer_count DESC;"
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_ShellPurge_ConsumerExceptionLog",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "cnsmr_id, exception_reason"
+                                       },
+                                       {
+                                           "name":  "IX_ShellPurge_ConsumerExceptionLog_reason",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "exception_reason",
+                                           "includedColumns":  "cnsmr_id"
+                                       }
+                                   ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "exception_reason",
+                                                "value":  "cnsmr_pymnt_jrnl",
+                                                "meaning":  "Consumer has rows in cnsmr_pymnt_jrnl. Payment journal data exists that is not deleted by the shell purge sequence.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "exception_reason",
+                                                "value":  "dcmnt_rqst",
+                                                "meaning":  "Consumer has rows in dcmnt_rqst (entity association code 2). Document request data exists that is intentionally left as orphaned historical records.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "exception_reason",
+                                                "value":  "agnt_crdtbl_actvty",
+                                                "meaning":  "Consumer has rows in agnt_crdtbl_actvty via direct cnsmr_id reference.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "exception_reason",
+                                                "value":  "agnt_crdtbl_actvty_via_smmry",
+                                                "meaning":  "Consumer has agnt_crdtbl_actvty records reachable through the schdld_pymnt_smmry chain.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "exception_reason",
+                                                "value":  "bnkrptcy",
+                                                "meaning":  "Consumer has rows in bnkrptcy. Bankruptcy records are retained for legal compliance.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "exception_reason",
+                                                "value":  "schdld_pymnt_smmry",
+                                                "meaning":  "Consumer has rows in schdld_pymnt_smmry. Scheduled payment summary data exists that is not safely deletable without cascading through child tables.",
+                                                "sortOrder":  6
+                                            },
+                                            {
+                                                "column":  "exception_reason",
+                                                "value":  "sspns_trnsctn_cnsmr_idntfr",
+                                                "meaning":  "Consumer has rows in sspns_trnsctn_cnsmr_idntfr. Suspense transaction data may indicate in-flight payment processing. This exception is controlled by the exclude_suspense GlobalConfig setting.",
+                                                "sortOrder":  7
+                                            }
+                                        ],
+                       "queries":  [
+                                       {
+                                           "name":  "Count of excluded consumers per exception reason — shows which tables block the most shells.",
+                                           "description":  "Count of excluded consumers per exception reason — shows which tables block the most shells.",
+                                           "sql":  "SELECT      exception_reason,      COUNT(*) AS consumer_count  FROM DmOps.ShellPurge_ConsumerExceptionLog  GROUP BY exception_reason  ORDER BY consumer_count DESC;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "Consumers with multiple exception reasons",
+                                           "description":  "Consumers blocked by more than one exception — may need different remediation approaches.",
+                                           "sql":  "SELECT      cnsmr_id,      cnsmr_idntfr_agncy_id,      COUNT(*) AS reason_count,      STRING_AGG(exception_reason, \u0027, \u0027) AS reasons  FROM DmOps.ShellPurge_ConsumerExceptionLog  GROUP BY cnsmr_id, cnsmr_idntfr_agncy_id  HAVING COUNT(*) \u003e 1  ORDER BY reason_count DESC;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Consumers with only dcmnt_rqst exceptions",
+                                           "description":  "Consumers whose sole exception reason is dcmnt_rqst.",
+                                           "sql":  "SELECT e.cnsmr_id, e.cnsmr_idntfr_agncy_id  FROM DmOps.ShellPurge_ConsumerExceptionLog e  WHERE e.exception_reason = \u0027dcmnt_rqst\u0027    AND NOT EXISTS (        SELECT 1 FROM DmOps.ShellPurge_ConsumerExceptionLog e2        WHERE e2.cnsmr_id = e.cnsmr_id          AND e2.exception_reason \u003c\u003e \u0027dcmnt_rqst\u0027    );",
+                                           "sortOrder":  3
+                                       }
+                                   ]
+                   },
+                   {
                        "name":  "ShellPurge_ConsumerLog",
                        "description":  "Audit trail of every consumer purged. One row per consumer per batch. Captures the minimum identifying fields needed for reconciliation and historical reference.",
                        "module":  "DmOps",
@@ -1583,133 +1710,6 @@
                                                "referencedColumn":  "batch_id"
                                            }
                                        ]
-                   },
-                   {
-                       "name":  "ShellPurge_ExclusionLog",
-                       "description":  "Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence. One row per consumer per exclusion reason. Seeded by a one-time population script, then maintained incrementally as the shell purge script discovers new exclusions during batch validation. Used as a filter in the candidate selection query to avoid re-evaluating expensive NOT EXISTS checks against large tables on every batch.",
-                       "module":  "DmOps",
-                       "category":  "ShellPurge",
-                       "dataFlow":  "Initially seeded by Seed-ShellPurge-ExclusionLog.sql which scans all WFAPURGE shell consumers against each exclusion table. Maintained incrementally by Execute-DmShellPurge.ps1 which inserts new exclusions discovered during batch validation. Read by the script at session start to load into a temp table on the target connection for per-batch candidate filtering. A consumer may have multiple rows with different exclusion reasons.",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "cnsmr_id",
-                                           "dataType":  "bigint",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Internal consumer ID from crs5_oltp. Part of the composite primary key with exclusion_reason."
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "cnsmr_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "50",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Agency-assigned consumer identifier. Stored for human-readable reference during triage and reporting."
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "exclusion_reason",
-                                           "dataType":  "varchar",
-                                           "length":  "50",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "description":  "Which exclusion check flagged this consumer. Matches the table or condition name from the exclusion check list. A consumer may have multiple rows with different reasons."
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "created_dttm",
-                                           "dataType":  "datetime",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "(getdate())",
-                                           "description":  "When this exclusion was detected. Defaulted to GETDATE()."
-                                       }
-                                   ],
-                       "indexes":  [
-                                       {
-                                           "name":  "PK_ShellPurge_ExclusionLog",
-                                           "type":  "CLUSTERED",
-                                           "isUnique":  true,
-                                           "isPrimaryKey":  true,
-                                           "isUniqueConstraint":  false,
-                                           "keyColumns":  "cnsmr_id, exclusion_reason"
-                                       },
-                                       {
-                                           "name":  "IX_ShellPurge_ExclusionLog_reason",
-                                           "type":  "NONCLUSTERED",
-                                           "isUnique":  false,
-                                           "isPrimaryKey":  false,
-                                           "isUniqueConstraint":  false,
-                                           "keyColumns":  "exclusion_reason",
-                                           "includedColumns":  "cnsmr_id"
-                                       }
-                                   ],
-                       "statusValues":  [
-                                            {
-                                                "column":  "exclusion_reason",
-                                                "value":  "cnsmr_pymnt_jrnl",
-                                                "meaning":  "Consumer has rows in cnsmr_pymnt_jrnl. Payment journal data exists that is not deleted by the shell purge sequence.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "exclusion_reason",
-                                                "value":  "dcmnt_rqst",
-                                                "meaning":  "Consumer has rows in dcmnt_rqst (entity association code 2). Document request data exists that is intentionally left as orphaned historical records.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "exclusion_reason",
-                                                "value":  "agnt_crdtbl_actvty",
-                                                "meaning":  "Consumer has rows in agnt_crdtbl_actvty via direct cnsmr_id reference.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "exclusion_reason",
-                                                "value":  "agnt_crdtbl_actvty_via_smmry",
-                                                "meaning":  "Consumer has agnt_crdtbl_actvty records reachable through the schdld_pymnt_smmry chain.",
-                                                "sortOrder":  4
-                                            },
-                                            {
-                                                "column":  "exclusion_reason",
-                                                "value":  "bnkrptcy",
-                                                "meaning":  "Consumer has rows in bnkrptcy. Bankruptcy records are retained for legal compliance.",
-                                                "sortOrder":  5
-                                            },
-                                            {
-                                                "column":  "exclusion_reason",
-                                                "value":  "schdld_pymnt_smmry",
-                                                "meaning":  "Consumer has rows in schdld_pymnt_smmry. Scheduled payment summary data exists that is not safely deletable without cascading through child tables.",
-                                                "sortOrder":  6
-                                            },
-                                            {
-                                                "column":  "exclusion_reason",
-                                                "value":  "sspns_trnsctn_cnsmr_idntfr",
-                                                "meaning":  "Consumer has rows in sspns_trnsctn_cnsmr_idntfr. Suspense transaction data may indicate in-flight payment processing. This exclusion is controlled by the exclude_suspense GlobalConfig setting.",
-                                                "sortOrder":  7
-                                            }
-                                        ],
-                       "queries":  [
-                                       {
-                                           "name":  "Exclusion summary by reason",
-                                           "description":  "Count of excluded consumers per exclusion reason — shows which tables block the most shells.",
-                                           "sql":  "SELECT\r\n    exclusion_reason,\r\n    COUNT(*) AS consumer_count\r\nFROM DmOps.ShellPurge_ExclusionLog\r\nGROUP BY exclusion_reason\r\nORDER BY consumer_count DESC;",
-                                           "sortOrder":  1
-                                       },
-                                       {
-                                           "name":  "Consumers with multiple exclusion reasons",
-                                           "description":  "Consumers blocked by more than one exclusion — may need different remediation approaches.",
-                                           "sql":  "SELECT\r\n    cnsmr_id,\r\n    cnsmr_idntfr_agncy_id,\r\n    COUNT(*) AS reason_count,\r\n    STRING_AGG(exclusion_reason, \u0027, \u0027) AS reasons\r\nFROM DmOps.ShellPurge_ExclusionLog\r\nGROUP BY cnsmr_id, cnsmr_idntfr_agncy_id\r\nHAVING COUNT(*) \u003e 1\r\nORDER BY reason_count DESC;",
-                                           "sortOrder":  2
-                                       },
-                                       {
-                                           "name":  "Consumers excluded only by dcmnt_rqst",
-                                           "description":  "Consumers whose sole exclusion reason is dcmnt_rqst — candidates for review if the dcmnt_rqst exclusion is relaxed.",
-                                           "sql":  "SELECT e.cnsmr_id, e.cnsmr_idntfr_agncy_id\r\nFROM DmOps.ShellPurge_ExclusionLog e\r\nWHERE e.exclusion_reason = \u0027dcmnt_rqst\u0027\r\n  AND NOT EXISTS (\r\n      SELECT 1 FROM DmOps.ShellPurge_ExclusionLog e2\r\n      WHERE e2.cnsmr_id = e.cnsmr_id\r\n        AND e2.exclusion_reason \u003c\u003e \u0027dcmnt_rqst\u0027\r\n  );",
-                                           "sortOrder":  3
-                                       }
-                                   ]
                    },
                    {
                        "name":  "ShellPurge_Schedule",
