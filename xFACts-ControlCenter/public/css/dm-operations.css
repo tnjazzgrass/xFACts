@@ -1,7 +1,7 @@
 /* ============================================================================
    xFACts Control Center - DM Operations Styles
    Location: E:\xFACts-ControlCenter\public\css\dm-operations.css
-   Version: Tracked in dbo.System_Metadata (component: ControlCenter.DmOperations)
+   Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
    ============================================================================ */
 
 /* Base Layout */
@@ -340,6 +340,40 @@ a { color: #9cdcfe; }
 .schedule-btn:hover {
     color: #d4d4d4;
     border-color: #569cd6;
+}
+
+/* ----------------------------------------------------------------------------
+   Target Server Badge
+   Per-process environment indicator shown in Today section headers.
+   Border-and-text-only style (no fill); color reflects environment classification
+   from ServerRegistry. Sized to align with adjacent Schedule and Abort buttons.
+   ---------------------------------------------------------------------------- */
+.target-server-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: default;
+    line-height: 1;
+}
+
+.target-server-badge.env-test {
+    color: #dcdcaa;
+    border: 1px solid #dcdcaa;
+}
+
+.target-server-badge.env-prod {
+    color: #f48771;
+    border: 1px solid #f48771;
+}
+
+.target-server-badge.env-unknown {
+    color: #888;
+    border: 1px solid #888;
 }
 
 /* ----------------------------------------------------------------------------
