@@ -1,7 +1,7 @@
 // ============================================================================
 // xFACts Control Center - DM Operations JavaScript
 // Location: E:\xFACts-ControlCenter\public\js\dm-operations.js
-// Version: Tracked in dbo.System_Metadata (component: ControlCenter.DmOperations)
+// Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
 // ============================================================================
 
 // ============================================================================
@@ -211,6 +211,51 @@ async function loadExecutionHistory() {
     }
 }
 
+// ----------------------------------------------------------------------------
+// Target Server Badges (Archive / ShellPurge)
+// One-shot load on page init — values come from GlobalConfig and rarely change,
+// so they aren't tied to the regular refresh cycle. Reload the page to pick up
+// config changes.
+// ----------------------------------------------------------------------------
+async function loadTargetServers() {
+    try {
+        var data = await engineFetch('/api/dmops/target-servers');
+        if (!data) return;
+        applyTargetBadge('archive-target-badge', data.Archive);
+        applyTargetBadge('shellpurge-target-badge', data.ShellPurge);
+    } catch (error) {
+        console.error('Failed to load target servers:', error);
+    }
+}
+
+function applyTargetBadge(elementId, info) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
+
+    // Reset modifier classes
+    el.classList.remove('env-test', 'env-prod', 'env-unknown');
+
+    var server = info && info.Server ? info.Server : null;
+    var env    = info && info.Environment ? String(info.Environment) : null;
+
+    if (env) {
+        var envUpper = env.toUpperCase();
+        if (envUpper.indexOf('TEST') !== -1) {
+            el.classList.add('env-test');
+        } else if (envUpper.indexOf('PROD') !== -1) {
+            el.classList.add('env-prod');
+        } else {
+            el.classList.add('env-unknown');
+        }
+        el.textContent = env;
+    } else {
+        el.classList.add('env-unknown');
+        el.textContent = 'unknown';
+    }
+
+    el.title = server ? ('Target server: ' + server) : 'No target server configured';
+}
+
 // ============================================================================
 // RENDERING — Lifetime Totals (6 tiles)
 // Tiles: Consumers Archived, Consumers Remaining, Accounts Archived, Accounts Remaining,
@@ -237,11 +282,6 @@ function renderLifetimeTotals(data) {
     var baselineSub = '';
     if (r.BaselineDttm) {
         baselineSub = 'as of ' + r.BaselineDttm.split(' ')[1];
-    }
-
-    var shellRemainingSub = baselineSub;
-    if (r.ExclusionCount > 0) {
-        shellRemainingSub = formatNumber(r.ExclusionCount) + ' excluded';
     }
 
     container.innerHTML =
@@ -281,7 +321,7 @@ function renderLifetimeTotals(data) {
         '<div class="summary-card">' +
             '<div class="summary-card-label">Shells Remaining</div>' +
             '<div class="summary-card-value remaining">' + (shellRemaining !== null ? formatNumber(shellRemaining) : '&mdash;') + '</div>' +
-            '<div class="summary-card-sub">' + (shellRemainingSub || 'awaiting baseline') + '</div>' +
+            '<div class="summary-card-sub">' + (baselineSub || 'awaiting baseline') + '</div>' +
         '</div>';
 }
 
@@ -958,10 +998,17 @@ async function toggleAbort(process) {
     var newState = !currentAbortState[process];
     var label = process === 'archive' ? 'Archive' : 'Shell Purge';
 
+    // Confirm only when SETTING the abort flag — clearing it requires no prompt.
     if (newState) {
-        if (!confirm('Set ' + label + ' abort flag? This will stop the process after the current batch completes.')) {
-            return;
-        }
+        var confirmed = await showConfirm(
+            'Set ' + label + ' abort flag? This will stop the process after the current batch completes.',
+            {
+                title: 'Confirm Abort',
+                confirmLabel: 'Set Abort Flag',
+                confirmClass: 'xf-modal-btn-danger'
+            }
+        );
+        if (!confirmed) return;
     }
 
     try {
@@ -974,7 +1021,11 @@ async function toggleAbort(process) {
         currentAbortState[process] = newState;
         updateAbortButtons();
     } catch (error) {
-        alert('Failed to update abort flag: ' + error.message);
+        showAlert('Failed to update abort flag: ' + error.message, {
+            title: 'Error',
+            icon: '&#10005;',
+            iconColor: '#f48771'
+        });
     }
 }
 
@@ -1055,6 +1106,7 @@ function stopPolling() {
 document.addEventListener('DOMContentLoaded', function() {
     updateAbortButtons();
     pageRefresh();
+    loadTargetServers();
     startPolling();
     connectEngineEvents();
 });
