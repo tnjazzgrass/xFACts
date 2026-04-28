@@ -22,7 +22,7 @@
 
     <!-- Where This Fits -->
     <div class="context-bar">
-        Debt Manager has been collecting data for years. Some of it is still actively worked. A lot of it isn't &mdash; accounts that were returned, paid, or closed long ago, and the orphaned consumer records left behind after those accounts were removed. DM Operations is the systematic process of cleaning out the data that's no longer needed while preserving the financial reporting that depends on it.
+        Debt Manager has been collecting data for years. A lot of it represents consumers who are long since done &mdash; every account paid, returned, settled, or otherwise closed. DM Operations is the systematic process of removing those finished consumers from the production system while preserving the financial reporting their accounts contributed to. Done right, it&rsquo;s invisible: the database gets smaller, queries get faster, backups get shorter, and the reports don&rsquo;t skip a beat.
     </div>
 
     <!-- ============================================ -->
@@ -31,39 +31,58 @@
     <div class="section">
         <h2>The Problem</h2>
 
-        <p>Debt Manager's production database is around 10 terabytes. That's a lot of data, and a significant portion of it belongs to accounts that are no longer active &mdash; returned to the client, paid in full, settled, or otherwise closed. These records have been accumulating for years because there was never a reliable process to remove them.</p>
+        <p>Debt Manager&rsquo;s production database is around 10 terabytes. A meaningful chunk of that belongs to consumers who haven&rsquo;t been actively worked in years &mdash; their accounts are returned, paid, settled, or otherwise closed and there&rsquo;s simply nothing left to do with them. These records have been accumulating because there was never a safe, reliable way to remove them.</p>
 
-        <p>It's not as simple as "just delete the old stuff." Every account touches dozens of related tables &mdash; transactions, payment journals, credit bureau transmissions, balance snapshots, encounter records, tags, notes, and more. Delete things in the wrong order and the database throws errors. Delete the wrong things and financial reports break. Don't delete anything and the database keeps growing, backups keep getting bigger, and queries keep getting slower.</p>
+        <p>It&rsquo;s not as simple as &ldquo;just delete the old stuff.&rdquo; Every account touches dozens of related tables &mdash; transactions, payment journals, credit bureau transmissions, balance snapshots, encounter records, tags, notes. Delete things in the wrong order and the database throws errors. Delete the wrong things and financial reports break. Don&rsquo;t delete anything and the database keeps growing, backups keep getting bigger, and queries keep getting slower.</p>
 
-        <p>To make things more interesting, all of this financial data feeds into a reporting warehouse that hundreds of people use every day. The archived accounts need to disappear from the production system but their financial history has to survive in the reports. It's like removing a chapter from a book while making sure the table of contents still works.</p>
+        <p>Adding to the challenge: all of this data feeds a reporting warehouse that hundreds of people use every day. The archived records need to disappear from production but their financial history has to survive in the reports. It&rsquo;s like removing a chapter from a book while making sure the table of contents still works.</p>
     </div>
 
     <!-- ============================================ -->
-    <!-- SECTION: Two Processes, One Goal -->
+    <!-- SECTION: Why Consumers, Not Accounts -->
     <!-- ============================================ -->
     <div class="section">
-        <h2>Two Processes, One Goal</h2>
+        <h2>Why Consumers, Not Accounts</h2>
 
-        <p>DM Operations has two complementary processes that work together to clean up the database. They're related but they solve different problems.</p>
+        <p>The intuitive way to design archiving is account-by-account: find the accounts that qualify, archive them, move on. That was the original plan, and it tested cleanly against millions of records. But a quirk of how Debt Manager handles money exposed a structural problem.</p>
+
+        <p>When a consumer makes a single payment that gets distributed across multiple accounts &mdash; routine stuff, like a $50 payment splitting $25 to each of two accounts &mdash; Debt Manager records it in two places. There&rsquo;s one consumer-level entry for the full $50, and one account-level entry per receiving account for $25 each. The two views are linked and have to agree.</p>
+
+        <p>If you archive only one of those two accounts, you remove its $25 record but leave the $50 consumer-level record pointing at a single surviving account. The math no longer adds up, and Debt Manager&rsquo;s UI &mdash; which checks for exactly this kind of inconsistency &mdash; refuses to display the consumer&rsquo;s financial activity. There&rsquo;s no clean way to fix it after the fact. You can&rsquo;t adjust the journal without falsifying a financial record. You can&rsquo;t delete it while another account still references it. And there&rsquo;s no &ldquo;split the journal&rdquo; operation because it was never designed to be split.</p>
+
+        <p>The fix was to change what archiving actually means. Instead of &ldquo;delete aged accounts,&rdquo; the process now means &ldquo;delete consumers who have nothing left worth keeping.&rdquo; A consumer becomes archive-eligible only when <em>every</em> one of their accounts qualifies. When that&rsquo;s true, the entire consumer is removed in one pass &mdash; every account, every transaction, every consumer-level record. There&rsquo;s no mismatch state because there&rsquo;s no surviving account to mismatch with.</p>
+
+        <p>This also turns out to be what archiving <em>should</em> structurally mean for a debt collection platform. A consumer with a single still-active account isn&rsquo;t really a candidate for archiving, even if their other ten accounts have been closed for a decade. They become a candidate when they&rsquo;re fully done.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How a Batch Works -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>How a Batch Works</h2>
+
+        <p>The archive process runs as a continuous loop of self-contained batches. Each batch picks up a set of eligible consumers, processes them end-to-end, and only then moves on to the next.</p>
 
         <div class="flow-diagram">
             <div class="flow-steps">
-                <div class="flow-step blue">Identify<br>Candidates</div>
+                <div class="flow-step blue">Select<br>Consumers</div>
                 <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step green">Delete Account<br>Data</div>
+                <div class="flow-step green">Re-Verify<br>Eligibility</div>
                 <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step orange">Preserve<br>Financials</div>
+                <div class="flow-step orange">Remove<br>Account Data</div>
                 <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step purple">Clean Up<br>Shells</div>
+                <div class="flow-step purple">Preserve<br>Financials</div>
+                <span class="flow-arrow">&rarr;</span>
+                <div class="flow-step muted">Remove<br>Consumer</div>
             </div>
-            <div class="flow-caption">Archiving removes the account data. Shell purging cleans up the empty consumer records left behind.</div>
+            <div class="flow-caption">A single batch handles a consumer&rsquo;s entire footprint &mdash; accounts first, financial migration in the middle, consumer record last.</div>
         </div>
 
-        <p><strong>Account Archiving</strong> is the main event. Accounts that have been tagged for archiving get their data systematically removed from over 100 related tables in the correct order. Before any data is deleted from the production system, the financial snapshots are preserved in the reporting warehouse so that reports remain accurate. Once everything is safely migrated, the production data is removed.</p>
+        <p>Eligibility is established by a Debt Manager job that runs nightly: it looks at every consumer, checks whether all of their accounts are tagged for archive, and tags the consumer itself when the answer is yes. The xFACts process then picks those tagged consumers up, batch by batch.</p>
 
-        <p><strong>Shell Purging</strong> handles the aftermath. When all of a consumer's accounts have been archived, the consumer record itself becomes a "shell" &mdash; it exists in the system but has nothing attached to it. Shells also accumulate from other operations like consumer merges. The shell purge process identifies these empty records and removes them, cleaning up roughly 60 related tables per consumer.</p>
+        <p>Tags can go stale between when they&rsquo;re applied and when a batch processes them &mdash; a new account might come in overnight, a merge might add accounts to a previously eligible consumer, the situation changes. So before any data is touched, every consumer in the batch gets re-verified at the moment of processing. If something has changed and the consumer is no longer fully eligible, they&rsquo;re quietly removed from the batch and the now-incorrect tag is taken off them. They&rsquo;ll be picked up again later, when conditions change.</p>
 
-        <p>Together, these two processes are working through approximately 19 million tagged accounts and 6 million shell consumers &mdash; years of accumulated data that's been taking up space and slowing things down.</p>
+        <p>For the consumers that pass re-verification, the process removes their account data first, hands their financial snapshot off to the reporting warehouse, and then removes the consumer record itself. The order matters &mdash; doing the financial handoff before all the account data is cleared, or after the consumer record is gone, would either duplicate data in the reports or lose it entirely. Doing it in the middle is the only safe place.</p>
     </div>
 
     <!-- ============================================ -->
@@ -72,11 +91,11 @@
     <div class="section">
         <h2>Smart Scheduling</h2>
 
-        <p>Both processes are schedule-aware. Every hour of every day has a designated mode: full speed, reduced speed, or blocked. During business hours the processes run at a reduced pace to minimize any impact on the people using the system. Evenings and weekends are full speed. Certain hours are blocked entirely &mdash; particularly the window around the nightly reporting warehouse rebuild, which must complete undisturbed.</p>
+        <p>The archive process is schedule-aware. Every hour of every day has a designated mode: full speed, reduced speed, or blocked. During business hours the process runs at a reduced pace to minimize any impact on the people using the system. Evenings and weekends are full speed. Certain hours are blocked entirely &mdash; particularly the window around the nightly reporting warehouse rebuild, which has to complete undisturbed.</p>
 
-        <p>The schedules are visual grids that administrators can adjust in the Control Center. Need to pause archiving for a deployment? Block those hours. Want to push harder on a weekend? Open up the reduced hours to full. The processes check the schedule after every batch and adjust automatically.</p>
+        <p>The schedule is a visual grid that administrators can adjust in the Control Center. Need to pause archiving for a deployment? Block those hours. Want to push harder on a weekend? Open up the reduced hours to full. The process checks the schedule after every batch and adjusts automatically.</p>
 
-        <p>There's also an emergency stop button. If something unexpected happens &mdash; a report looks wrong, performance dips, or anything seems off &mdash; one click sets the abort flag and the process stops after completing its current batch. No data is left in a half-finished state.</p>
+        <p>There&rsquo;s also an emergency stop button. If something unexpected happens &mdash; a report looks wrong, performance dips, anything seems off &mdash; one click sets the abort flag and the process stops cleanly after finishing its current batch. No consumer is ever left half-archived.</p>
     </div>
 
     <!-- ============================================ -->
@@ -85,9 +104,20 @@
     <div class="section">
         <h2>Protecting the Reports</h2>
 
-        <p>This is the part that keeps everyone honest. The reporting warehouse is rebuilt every night from whatever's in the production database. If we just deleted accounts from production, they'd vanish from the reports the next morning &mdash; and with them, the financial history that clients and internal teams depend on.</p>
+        <p>This is the part that keeps everyone honest. The reporting warehouse is rebuilt every night from whatever&rsquo;s in the production database. If we just deleted consumers from production, their financial history would vanish from the reports the next morning &mdash; and with it, the numbers clients and internal teams rely on.</p>
 
-        <p>The solution is a handoff. Before an account's data is removed from production, its financial snapshot is copied to a permanent archive within the reporting warehouse. The reports are built from a view that combines both the live data and the archived data, so from the report's perspective nothing changes. The account's numbers are still there, still accurate, still in the right client's totals. They're just being served from a different place.</p>
+        <p>The solution is a handoff. Before a consumer&rsquo;s data is removed from production, their financial snapshot is copied into a permanent archive within the reporting warehouse. The reports are built from a view that combines both the live data and the archived data, so from the report&rsquo;s perspective nothing changes. The numbers are still there, still accurate, still in the right client&rsquo;s totals. They&rsquo;re just being served from a different place.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Shells -->
+    <!-- ============================================ -->
+    <div class="section">
+        <h2>What About Shells?</h2>
+
+        <p>A &ldquo;shell&rdquo; is a consumer record with no remaining accounts &mdash; the consumer exists in the system but has nothing attached to it. Under the new archive process, shells aren&rsquo;t typically created in the first place: the consumer record gets removed in the same batch that removes their accounts. Done correctly, the archive process leaves no shells behind.</p>
+
+        <p>Shells still happen for other reasons, though. Consumer merges within Debt Manager produce them naturally. So does the occasional historical artifact from earlier processes. A separate shell purge utility handles these &mdash; same scheduling model, same care around the reporting warehouse, same Control Center visibility &mdash; but it&rsquo;s now a much smaller-volume operation than it once would have been.</p>
     </div>
 
     <!-- ============================================ -->
@@ -96,9 +126,9 @@
     <div class="section">
         <h2>The Control Center View</h2>
 
-        <p>The DM Operations page in the Control Center provides a real-time window into both processes. At a glance you can see how many accounts have been archived, how many shells have been purged, and how many remain. Today's activity shows what's happening right now. The execution history tracks daily totals over time, so you can see the steady progress as millions of records are processed.</p>
+        <p>The DM Operations page in the Control Center is a real-time window into the process. At a glance you can see how many consumers and accounts have been archived to date, how many are still waiting their turn, and how many shells have been purged. Today&rsquo;s activity shows what&rsquo;s happening right now &mdash; live counters that tick upward as batches complete. The execution history tracks daily totals, so you can watch the steady progress as millions of records work their way through.</p>
 
-        <p>Both schedules are accessible from the page, and the abort buttons are right where you need them. If something needs to stop, it stops. If the numbers look good, you let it run.</p>
+        <p>Both schedules &mdash; archive and shell purge &mdash; are accessible from the page, and the abort buttons are right where you need them. Click into a day to see the individual batches that ran, and click into a batch to see the per-table detail of what was processed. If something needs a closer look, the path from &ldquo;something seems off&rdquo; to &ldquo;here&rsquo;s exactly what happened in batch 4,712 last Tuesday&rdquo; is short.</p>
     </div>
 
     <!-- ============================================ -->
@@ -107,14 +137,17 @@
     <div class="section">
         <h2>The Bottom Line</h2>
 
-        <p>DM Operations is doing something that should have been done years ago but never had a safe, reliable way to happen. It's removing millions of records that serve no active purpose while making sure the financial data those records represent is preserved exactly where it needs to be. The database gets smaller, queries get faster, backups get shorter, and the reports don't skip a beat.</p>
+        <p>DM Operations is doing something that should have been done years ago but never had a safe, reliable way to happen. It&rsquo;s removing millions of fully-finished consumer records while making sure their financial history is preserved exactly where it needs to be. The database gets smaller, queries get faster, backups get shorter, and the reports don&rsquo;t skip a beat.</p>
 
-        <p>It's the kind of cleanup that you only notice when it's not being done.</p>
+        <p>It&rsquo;s the kind of cleanup you only notice when it&rsquo;s not being done.</p>
     </div>
 
     <!-- Architecture & Reference Links -->
     <div style="text-align: center;">
-        <a href="arch/dmops-arch.html" class="ref-link">&#x1F527; DM Operations Architecture &mdash; How archiving and shell purging work under the hood</a>
+        <a href="arch/dmops-arch.html" class="ref-link">&#x1F527; DM Operations Architecture &mdash; How archiving works under the hood</a>
+    </div>
+    <div style="text-align: center; margin-top: 8px;">
+        <a href="cc/dmops-cc.html" class="ref-link">&#x1F4FA; DM Operations Control Center Guide &mdash; What you&rsquo;re looking at on the live page</a>
     </div>
     <div style="text-align: center; margin-top: 8px;">
         <a href="ref/dmops-ref.html" class="ref-link">&#x1F4CB; DM Operations Reference &mdash; Full technical details, DDL, and operational queries</a>
