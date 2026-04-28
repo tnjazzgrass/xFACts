@@ -1,7 +1,7 @@
 // ============================================================================
 // xFACts Control Center - DM Operations JavaScript
 // Location: E:\xFACts-ControlCenter\public\js\dm-operations.js
-// Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
+// Version: Tracked in dbo.System_Metadata (component: ControlCenter.DmOperations)
 // ============================================================================
 
 // ============================================================================
@@ -640,7 +640,7 @@ function renderBatches(process, date, batches) {
 
         // Click on the batch row -> open slide-out
         html += '<tr class="batch-row' + rowClass + '" onclick="openBatchDetailPanel(\'' + process + '\',' + b.batch_id + ')" title="Click for full BatchDetail">';
-        html += '<td class="batch-id">' + b.batch_id + (b.batch_retry ? ' <span class="retry-badge" title="Retry of batch ' + b.retry_batch_id + '">R</span>' : '') + '</td>';
+        html += '<td class="batch-id">' + b.batch_id + ((isArchive && b.batch_retry) ? ' <span class="retry-badge" title="Retry of batch ' + b.retry_batch_id + '">R</span>' : '') + '</td>';
         html += '<td>' + escapeHtml(formatTimeOnly(b.batch_start_dttm)) + '</td>';
         html += '<td>' + modeBadge(b.schedule_mode) + '</td>';
         html += '<td class="right">' + formatMs(b.duration_ms) + '</td>';
@@ -722,7 +722,7 @@ function renderBatchDetailPanel(process, data) {
     html += '<span class="bd-label">Executed By</span><span class="bd-value">' + escapeHtml(s.executed_by || '-') + '</span>';
     html += '</div>';
 
-    if (s.batch_retry) {
+    if (isArchive && s.batch_retry) {
         html += '<div class="batch-detail-line"><span class="bd-label">Retry Of</span><span class="bd-value">' + s.retry_batch_id + '</span></div>';
     }
     if (s.error_message) {
