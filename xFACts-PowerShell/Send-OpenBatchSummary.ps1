@@ -16,12 +16,17 @@
     - Reads from AG secondary replica via GlobalConfig setting
     - Queries open New Business batches with status details
     - Sectioned Adaptive Card with active NB and PMT sections, expansion points for BDL/Notices
-    - Direct INSERT into Teams.AlertQueue with card_json
+    - Inserts via shared Send-TeamsAlert function with card_json payload
     - Card color based on overall severity (green=clear, yellow=warning)
-    - No deduplication needed (once-daily scheduled execution)
+    - Dedup keyed by date+hour (one alert per hour even if invoked manually)
 
     CHANGELOG
     ---------
+    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
+                Converted direct INSERT to Send-TeamsAlert with -CardJson parameter
+                trigger_value changed from yyyy-MM-dd to yyyy-MM-dd-HH for future
+                schedule flexibility (orchestrator schedule still controls cadence)
+                Card severity logic and color mapping preserved
     2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
                 Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsNonQuery
                 Updated header to component-level versioning format
@@ -813,67 +818,36 @@ if (-not $Execute) {
 }
 
 # ----------------------------------------
-# Step 5: Insert into Teams.AlertQueue
+# Step 5: Send Teams alert via shared function
 # ----------------------------------------
 if ($Execute) {
-    Write-Log "Inserting into Teams.AlertQueue..." "INFO"
-    
-    $cardJsonSafe = $cardJson -replace "'", "''"
-    
-    # Build plain text summary for audit trail
+    Write-Log "Sending Teams alert..." "INFO"
+
+    # Build plain text summary for the message field (audit/logging fallback)
     $plainParts = @()
     foreach ($result in $checkResults) {
         if ($result.NotMonitored) { continue }
         $plainParts += "$($result.BatchType): $($result.Count) active"
     }
     $plainSummary = "Pre-Maintenance Summary: " + ($plainParts -join ", ") + "."
-    $plainSummarySafe = $plainSummary -replace "'", "''"
-    
-    $colorValue = switch ($alertCategory) {
+
+    # Row color mirrors alert_category (summary severity), distinct from card content colors.
+    # $cardColor (set in Step 3) drives the card container; per-section colors are inside the card.
+    $rowColor = switch ($alertCategory) {
         "CRITICAL" { "attention" }
         "WARNING"  { "warning" }
         "INFO"     { "good" }
         default    { "default" }
     }
-    
-    $insertQuery = @"
-INSERT INTO Teams.AlertQueue (
-    source_module,
-    alert_category,
-    title,
-    message,
-    color,
-    card_json,
-    trigger_type,
-    trigger_value,
-    status,
-    created_dttm
-)
-VALUES (
-    'BatchOps',
-    '$alertCategory',
-    'Pre-Maintenance Processing Summary',
-    '$plainSummarySafe',
-    '$colorValue',
-    '$cardJsonSafe',
-    'OpenBatchSummary',
-    '$(Get-Date -Format "yyyy-MM-dd")',
-    'Pending',
-    GETDATE()
-)
-"@
-    
-    $result = Invoke-SqlNonQuery -Query $insertQuery
-    
-    if ($result) {
-        Write-Log "  Alert queued successfully" "SUCCESS"
-    }
-    else {
-        Write-Log "  Failed to queue alert" "ERROR"
-    }
+
+    Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory $alertCategory `
+        -Title 'Pre-Maintenance Processing Summary' -Message $plainSummary -Color $rowColor `
+        -CardJson $cardJson `
+        -TriggerType 'OpenBatchSummary' `
+        -TriggerValue (Get-Date -Format "yyyy-MM-dd-HH") | Out-Null
 }
 else {
-    Write-Log "[Preview] Would insert into Teams.AlertQueue with card_json" "WARN"
+    Write-Log "[Preview] Would send Teams alert with card_json" "WARN"
 }
 
 # ----------------------------------------
