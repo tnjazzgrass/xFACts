@@ -22,6 +22,12 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-04-28  Added -CardJson optional parameter to Send-TeamsAlert. When provided,
+            the value is written to Teams.AlertQueue.card_json for rich Adaptive
+            Card rendering. Title/Message/Color remain required for the plain-text
+            audit trail. Standardizes all Teams alerting on the shared function
+            regardless of payload type. Replaces direct INSERT pattern previously
+            used by Send-OpenBatchSummary and Send-DiskHealthSummary.
 2026-04-22  Added -MaxBinaryLength parameter to Get-SqlData and Invoke-SqlNonQuery
             (parallel to existing -MaxCharLength). Optional; when specified,
             passed through to Invoke-Sqlcmd -MaxBinaryLength. Required for
@@ -840,6 +846,11 @@ function Send-TeamsAlert {
         alert should pass a unique TriggerValue each time (e.g., include a timestamp 
         or cycle identifier).
 
+        Supports both plain-text alerts and rich Adaptive Card payloads via the
+        optional -CardJson parameter. Title/Message/Color remain required even when
+        a card is supplied — they populate the audit trail and serve as plain-text
+        fallback for clients that cannot render the card.
+
     .PARAMETER SourceModule
         The owning module (e.g., 'ServerOps', 'BatchOps').
 
@@ -862,14 +873,29 @@ function Send-TeamsAlert {
     .PARAMETER TriggerValue
         Dedup key part 2: identifies the specific instance (e.g., tracking_id, batch_id).
 
+    .PARAMETER CardJson
+        Optional Adaptive Card JSON payload for rich card rendering. When supplied,
+        the value is written to Teams.AlertQueue.card_json. Title/Message/Color are
+        still required and populate the audit trail / plain-text fallback.
+
     .OUTPUTS
         [bool] $true if alert was queued, $false if skipped (dedup) or failed.
 
     .EXAMPLE
+        # Plain-text alert
         Send-TeamsAlert -SourceModule 'ServerOps' -AlertCategory 'CRITICAL' `
             -Title '{{FIRE}} Backup Network Copy Failed' `
             -Message "**File:** bigdb_full.sqb`n**Error:** Network timeout after 3 attempts" `
             -TriggerType 'NETWORK_COPY_EXHAUSTED' -TriggerValue '572438'
+
+    .EXAMPLE
+        # Adaptive Card alert (with plain-text fallback)
+        Send-TeamsAlert -SourceModule 'ServerOps' -AlertCategory 'INFO' `
+            -Title 'Disk Health Summary' `
+            -Message 'Disk Health Summary: 5 servers, 18 drives. All drives healthy.' `
+            -Color 'good' `
+            -CardJson $adaptiveCardJson `
+            -TriggerType 'DiskHealthSummary' -TriggerValue '2026-04-28'
     #>
     param(
         [Parameter(Mandatory)]
@@ -891,7 +917,9 @@ function Send-TeamsAlert {
         [string]$TriggerType,
 
         [Parameter(Mandatory)]
-        [string]$TriggerValue
+        [string]$TriggerValue,
+
+        [string]$CardJson = $null
     )
 
     try {
@@ -916,7 +944,9 @@ WHERE trigger_type = '$triggerTypeSafe'
         $titleSafe = $Title -replace "'", "''"
         $messageSafe = $Message -replace "'", "''"
 
-        $insertQuery = @"
+        # Build INSERT — include card_json column only when supplied
+        if ([string]::IsNullOrEmpty($CardJson)) {
+            $insertQuery = @"
 INSERT INTO Teams.AlertQueue (
     source_module, alert_category, title, message, color,
     trigger_type, trigger_value, status, created_dttm
@@ -928,10 +958,27 @@ VALUES (
     'Pending', GETDATE()
 )
 "@
+        }
+        else {
+            $cardJsonSafe = $CardJson -replace "'", "''"
+            $insertQuery = @"
+INSERT INTO Teams.AlertQueue (
+    source_module, alert_category, title, message, color, card_json,
+    trigger_type, trigger_value, status, created_dttm
+)
+VALUES (
+    '$SourceModule', '$AlertCategory', N'$titleSafe',
+    N'$messageSafe', '$Color', N'$cardJsonSafe',
+    '$triggerTypeSafe', '$triggerValueSafe',
+    'Pending', GETDATE()
+)
+"@
+        }
 
         $result = Invoke-SqlNonQuery -Query $insertQuery
         if ($result) {
-            Write-Log "  Teams alert queued: $TriggerType/$TriggerValue" "SUCCESS"
+            $cardSuffix = if ($CardJson) { " (with card)" } else { "" }
+            Write-Log "  Teams alert queued: $TriggerType/$TriggerValue$cardSuffix" "SUCCESS"
             return $true
         }
         else {
