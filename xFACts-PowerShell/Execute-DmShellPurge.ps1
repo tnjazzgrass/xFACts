@@ -124,6 +124,24 @@ DEPLOYMENT REMINDERS
 6. The WFAPURGE workgroup must exist in crs5_oltp.dbo.wrkgrp.
 7. The service account needs DELETE and UPDATE permission on crs5_oltp tables.
 ================================================================================
+
+================================================================================
+NOTES ON EXCLUSIONS DEFINED IN STEP 3D
+================================================================================
+cnsmr_pymnt_jrnl - TBD              
+dcmnt_rqst - These are currently handled nightly by BIDATA and the current build time is minimal. OK to orphan these rows for now.                  
+agnt_crdtbl_actvty - TBD         
+agnt_crdtbl_actvty_via_smmry - TBD  
+agnt_crdt - TBD
+bnkrptcy - per Allison Latsch 10/28/2026:   
+            If there are no accounts attached to them, I would say you're good to remove. If new accounts come in for that consumer, 
+            resulting in a new consumer number, the nice thing is those will batch again and whatever bankruptcy info was in that purged consumer,
+            will likely re-populate in the new one. AND if a client ever questioned a bankruptcy return on a purged consumer, 
+            we have resources where we can do one-off searches to find that info                       
+schdld_pymnt_smmry - TBD          
+sspns_unresolved_cross_consumer - TBD
+================================================================================
+
 #>
 
 [CmdletBinding()]
@@ -1096,14 +1114,14 @@ if ($batchResult.Rows.Count -eq 0) {
     break
 }
 
-# Step 3d: Validate batch against exclusion tables (catch new exceptions since seed)
+# Step 3d: Validate batch against exclusion tables (catch new exceptions since seed) - see header notes for reasons
 $exclusionChecks = @(
     @{ Name = 'cnsmr_pymnt_jrnl';              SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj WHERE cpj.cnsmr_id = sc.cnsmr_id)" }
 #    @{ Name = 'dcmnt_rqst';                    SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.dcmnt_rqst dr WHERE dr.dcmnt_rqst_send_to_entty_id = sc.cnsmr_id AND dr.dcmnt_rqst_send_to_entty_assctn_cd = 2)" }
     @{ Name = 'agnt_crdtbl_actvty';            SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_id = sc.cnsmr_id)" }
     @{ Name = 'agnt_crdtbl_actvty_via_smmry';  SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT sps.schdld_pymnt_smmry_id FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id))" }
     @{ Name = 'agnt_crdt';                     SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdt ac INNER JOIN crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj ON ac.cnsmr_pymnt_jrnl_id = cpj.cnsmr_pymnt_jrnl_id WHERE cpj.cnsmr_id = sc.cnsmr_id)" }
-    @{ Name = 'bnkrptcy';                      SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.bnkrptcy b WHERE b.cnsmr_id = sc.cnsmr_id)" }
+#    @{ Name = 'bnkrptcy';                      SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.bnkrptcy b WHERE b.cnsmr_id = sc.cnsmr_id)" }
     @{ Name = 'schdld_pymnt_smmry';            SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id)" }
     @{ Name = 'sspns_unresolved_cross_consumer'; SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci INNER JOIN crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci ON stci.sspns_trnsctn_cnsmr_idntfr_id = sci.sspns_trnsctn_cnsmr_idntfr_id INNER JOIN crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj ON cpj.sspns_cnsmr_imprt_trnsctn_id = sci.sspns_cnsmr_imprt_trnsctn_id WHERE stci.cnsmr_id = sc.cnsmr_id AND cpj.cnsmr_id != stci.cnsmr_id AND sci.sspns_trnsctn_stts_cd NOT IN (3, 5, 7, 10))" }
 )
