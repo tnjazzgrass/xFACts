@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-29 04:33:59
+Generated: 2026-04-29 11:16:47
 
 ## Module Registry
 
@@ -221,6 +221,8 @@ Generated: 2026-04-29 04:33:59
 | Engine.RBAC | RBAC_ActionRegistry | Database | Table | dbo | Defined actions available for granting |
 | Engine.RBAC | RBAC_AuditLog | Database | Table | dbo | RBAC change audit trail |
 | Engine.RBAC | RBAC_DepartmentRegistry | Database | Table | dbo | Department definitions for access scoping |
+| Engine.RBAC | RBAC_NavRegistry | Database | Table | dbo | Master inventory of CC pages with navigation metadata: labels, descriptions, section grouping, sort order, doc link, and visibility flags. |
+| Engine.RBAC | RBAC_NavSection | Database | Table | dbo | Section groupings for the dynamic Control Center navigation, with display ordering and CSS accent class for visual styling. |
 | Engine.RBAC | RBAC_PermissionMapping | Database | Table | dbo | Role-to-page route access mappings |
 | Engine.RBAC | RBAC_Role | Database | Table | dbo | Defined access roles |
 | Engine.RBAC | RBAC_RoleMapping | Database | Table | dbo | User-to-role assignments |
@@ -441,7 +443,7 @@ Generated: 2026-04-29 04:33:59
 | ControlCenter | Connection | refresh_idle_timeout_seconds | 240 | INT | Seconds of inactivity before dashboard pauses and shows idle overlay |
 | ControlCenter | Connection | refresh_reconnect_grace_seconds | 60 | INT | Seconds to show reconnecting banner before displaying an error |
 | ControlCenter | RBAC | rbac_audit_verbosity | all | VARCHAR | What access checks to log: denials_only or all |
-| ControlCenter | RBAC | rbac_enforcement_mode | audit | VARCHAR | Access control mode: disabled, audit (log only), or enforce (block) |
+| ControlCenter | RBAC | rbac_enforcement_mode | enforce | VARCHAR | Access control mode: disabled, audit (log only), or enforce (block) |
 | ControlCenter | Refresh | refresh_backup_seconds | 5 | INT | Backup Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_batch_seconds | 5 | INT | Batch Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_bdl-import_seconds | 20 | INT | Polling interval in seconds for the BDL Import History panel |
