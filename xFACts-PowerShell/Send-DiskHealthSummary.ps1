@@ -16,13 +16,18 @@
     - Joins to Disk_ThresholdConfig for threshold comparison
     - Classifies drives as BELOW / APPROACHING / OK
     - Builds Adaptive Card JSON with color-coded status indicators
-    - Inserts directly into Teams.AlertQueue with card_json
+    - Inserts via shared Send-TeamsAlert function with card_json payload
     - Updates Disk_Status with health check timestamp
     - Three-tier severity: green (all healthy), yellow (approaching), red (below threshold)
     - Unified server listing with inline drive details for problem drives
 
     CHANGELOG
     ---------
+    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
+                Converted direct INSERT to Send-TeamsAlert with -CardJson parameter
+                trigger_value changed from yyyy-MM-dd to yyyy-MM-dd-HH for future
+                schedule flexibility (orchestrator schedule still controls cadence)
+                Card severity logic and color mapping preserved
     2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
                 Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery
                 Updated header to component-level versioning format
@@ -492,15 +497,12 @@ if (-not $Execute) {
 }
 
 # ----------------------------------------
-# Step 5: Insert into Teams.AlertQueue
+# Step 5: Send Teams alert via shared function
 # ----------------------------------------
 if ($Execute) {
-    Write-Log "Inserting into Teams.AlertQueue..."
-    
-    # Escape the JSON for SQL insertion
-    $cardJsonSafe = $cardJson -replace "'", "''"
-    
-    # Build a plain text summary for the message field (audit/logging)
+    Write-Log "Sending Teams alert..."
+
+    # Build a plain text summary for the message field (audit/logging fallback)
     $plainSummary = "Disk Health Summary: $totalServers servers, $totalDrives drives. "
     if ($belowCount -gt 0) {
         $plainSummary += "$belowCount drive(s) below threshold. "
@@ -511,54 +513,24 @@ if ($Execute) {
     if ($belowCount -eq 0 -and $approachingCount -eq 0) {
         $plainSummary += "All drives healthy."
     }
-    $plainSummarySafe = $plainSummary -replace "'", "''"
-    
-    # Determine color value (same mapping as sp_QueueAlert)
-    $colorValue = switch ($alertCategory) {
+
+    # Row color mirrors alert_category (summary severity), distinct from card content colors.
+    # $cardColor (set in Step 3) drives the card container; per-drive colors are inside the card.
+    $rowColor = switch ($alertCategory) {
         "CRITICAL" { "attention" }
         "WARNING"  { "warning" }
         "INFO"     { "good" }
         default    { "default" }
     }
-    
-    $insertQuery = @"
-INSERT INTO Teams.AlertQueue (
-    source_module,
-    alert_category,
-    title,
-    message,
-    color,
-    card_json,
-    trigger_type,
-    trigger_value,
-    status,
-    created_dttm
-)
-VALUES (
-    'ServerOps',
-    '$alertCategory',
-    'Disk Health Summary',
-    '$plainSummarySafe',
-    '$colorValue',
-    '$cardJsonSafe',
-    'DiskHealthSummary',
-    '$(Get-Date -Format "yyyy-MM-dd")',
-    'Pending',
-    GETDATE()
-)
-"@
-    
-    $result = Invoke-SqlNonQuery -Query $insertQuery
-    
-    if ($result) {
-        Write-Log "  Alert queued successfully" "SUCCESS"
-    }
-    else {
-        Write-Log "  Failed to queue alert" "ERROR"
-    }
+
+    Send-TeamsAlert -SourceModule 'ServerOps' -AlertCategory $alertCategory `
+        -Title 'Disk Health Summary' -Message $plainSummary -Color $rowColor `
+        -CardJson $cardJson `
+        -TriggerType 'DiskHealthSummary' `
+        -TriggerValue (Get-Date -Format "yyyy-MM-dd-HH") | Out-Null
 }
 else {
-    Write-Log "[Preview] Would insert into Teams.AlertQueue with card_json" "WARN"
+    Write-Log "[Preview] Would send Teams alert with card_json" "WARN"
 }
 
 # ----------------------------------------
