@@ -13,8 +13,12 @@
 #
 # CHANGELOG
 # ---------
-# 2026-03-18  Renamed from DmMonitoring.ps1. Route /dm-monitoring → /jboss-monitoring.
-#             CSS/JS references updated. Page title → JBoss Monitoring.
+# 2026-04-29  Phase 3 of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Nav now renders from RBAC_NavRegistry
+#             with per-user permission filtering, section-based grouping,
+#             and admin gear handled by the helper.
+# 2026-03-18  Renamed from DmMonitoring.ps1. Route /dm-monitoring -> /jboss-monitoring.
+#             CSS/JS references updated. Page title -> JBoss Monitoring.
 # 2026-03-08  Phase 3: Added info modal, section-level ? icon.
 #             Removed queue slideout (replaced by inline accordion in JS).
 # 2026-03-08  Phase 2: Replaced lower section placeholder with queue slideout panel
@@ -32,13 +36,13 @@ Add-PodeRoute -Method Get -Path '/jboss-monitoring' -Authentication 'ADLogin' -S
         return
     }
 
-    # --- Admin gear icon (visible only to admin role holders) ---
+    # --- User context (used by helper for nav rendering and isAdmin flag) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
-    $adminGear = if ($ctx.IsAdmin) {
-        '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-    } else { '' }
 
-    $html = @'
+    # --- Render dynamic nav bar ---
+    $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/jboss-monitoring'
+
+    $html = @"
 
 <!DOCTYPE html>
 <html>
@@ -48,25 +52,7 @@ Add-PodeRoute -Method Get -Path '/jboss-monitoring' -Authentication 'ADLogin' -S
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link active">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
+$navHtml
 
     <!-- Header Bar -->
     <div class="header-bar">
@@ -93,7 +79,7 @@ Add-PodeRoute -Method Get -Path '/jboss-monitoring' -Authentication 'ADLogin' -S
     <div id="connection-error" class="connection-error"></div>
 
     <!-- ================================================================
-         SERVER CARDS — Three Column Layout
+         SERVER CARDS - Three Column Layout
          ================================================================ -->
     <div class="section">
         <div class="section-header">
@@ -196,8 +182,7 @@ Add-PodeRoute -Method Get -Path '/jboss-monitoring' -Authentication 'ADLogin' -S
 </body>
 </html>
 
-'@
-    $html = $html.Replace('</nav>', "$adminGear</nav>")
+"@
     $html = $html.Replace('__IS_ADMIN__', $(if ($ctx.IsAdmin) { 'true' } else { 'false' }))
     Write-PodeHtmlResponse -Value $html
 }
