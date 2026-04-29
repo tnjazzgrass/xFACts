@@ -818,13 +818,11 @@ function Step-EvaluateAlerts {
                         } else { Write-Log "    Jira dedup: ticket exists for $triggerType/$triggerValue" "INFO" }
                     }
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Teams.RequestLog WHERE trigger_type = '$triggerType' AND trigger_value = '$triggerValue' AND status_code = 200"
-                        if (-not $teamsDedup) {
-                            $teamsTitleSafe = ("{{FIRE}} BDL Failed: $filenameDisplay") -replace "'", "''"
-                            $teamsMessageSafe = ("**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**Last BDL Status:** $fileStatus`n**Records Staged:** $stagedCount (Failed: $stageFailed)`n**Import Success:** $importSuccess (Failed: $importFailed)`n**Created:** $createdTime`n`n**Error:** $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`n**Detection:** $detectionTime") -replace "'", "''"
-                            Invoke-SqlNonQuery -Query "INSERT INTO Teams.AlertQueue (source_module, alert_category, title, message, color, trigger_type, trigger_value, status, created_dttm) VALUES ('BatchOps', 'CRITICAL', N'$teamsTitleSafe', N'$teamsMessageSafe', 'attention', '$triggerType', '$triggerValue', 'Pending', GETDATE())" | Out-Null
-                            Write-Log "    Teams alert queued for file $fileRegId" "SUCCESS"
-                        } else { Write-Log "    Teams dedup: alert exists for $triggerType/$triggerValue" "INFO" }
+                        $teamsTitle = "{{FIRE}} BDL Failed: $filenameDisplay"
+                        $teamsMessage = "**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**Last BDL Status:** $fileStatus`n**Records Staged:** $stagedCount (Failed: $stageFailed)`n**Import Success:** $importSuccess (Failed: $importFailed)`n**Created:** $createdTime`n`n**Error:** $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`n**Detection:** $detectionTime"
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'CRITICAL' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'attention' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
                     Invoke-SqlNonQuery -Query "UPDATE BatchOps.BDL_BatchTracking SET alert_count = alert_count + 1 WHERE file_registry_id = $fileRegId" | Out-Null
                     $alertsFired++
@@ -879,13 +877,11 @@ function Step-EvaluateAlerts {
                         } else { Write-Log "    Jira dedup: ticket exists for $triggerType/$triggerValue" "INFO" }
                     }
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Teams.RequestLog WHERE trigger_type = '$triggerType' AND trigger_value = '$triggerValue' AND status_code = 200"
-                        if (-not $teamsDedup) {
-                            $teamsTitleSafe = ("{{WARN}} BDL Processing Stalled: $filenameDisplay") -replace "'", "''"
-                            $teamsMessageSafe = ("**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**BDL Status:** $fileStatus`n**File Registry Status:** $fileSttsCode`n**Partitions:** $partCompleted of $partCount completed`n**Stalled:** $stallDuration with no partition activity`n**Last Activity:** $lastLogTime`n`nAction: Check BDL processing status in Debt Manager.`n`n**Detection:** $detectionTime") -replace "'", "''"
-                            Invoke-SqlNonQuery -Query "INSERT INTO Teams.AlertQueue (source_module, alert_category, title, message, color, trigger_type, trigger_value, status, created_dttm) VALUES ('BatchOps', 'WARNING', N'$teamsTitleSafe', N'$teamsMessageSafe', 'warning', '$triggerType', '$triggerValue', 'Pending', GETDATE())" | Out-Null
-                            Write-Log "    Teams alert queued for file $fileRegId" "SUCCESS"
-                        } else { Write-Log "    Teams dedup: alert exists for $triggerType/$triggerValue" "INFO" }
+                        $teamsTitle = "{{WARN}} BDL Processing Stalled: $filenameDisplay"
+                        $teamsMessage = "**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**BDL Status:** $fileStatus`n**File Registry Status:** $fileSttsCode`n**Partitions:** $partCompleted of $partCount completed`n**Stalled:** $stallDuration with no partition activity`n**Last Activity:** $lastLogTime`n`nAction: Check BDL processing status in Debt Manager.`n`n**Detection:** $detectionTime"
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
                     Invoke-SqlNonQuery -Query "UPDATE BatchOps.BDL_BatchTracking SET alert_count = alert_count + 1 WHERE file_registry_id = $fileRegId" | Out-Null
                     $alertsFired++
