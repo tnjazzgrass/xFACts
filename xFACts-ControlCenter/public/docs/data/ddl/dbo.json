@@ -3015,6 +3015,359 @@
                                              ]
                    },
                    {
+                       "name":  "RBAC_NavRegistry",
+                       "description":  "Master inventory of Control Center pages with navigation metadata. Each row represents a CC page with its display label, page title, description, section grouping, sort order, optional documentation page link, and visibility flags controlling whether it appears in the page-level nav bar and the Home page tile grid. Joined with RBAC_PermissionMapping to filter visible pages per user role.",
+                       "module":  "dbo",
+                       "category":  "RBAC",
+                       "dataFlow":  "Rows are manually inserted when new CC pages are added to the platform. The Get-NavBarHtml helper function (xFACts-Helpers.psm1) reads this table at startup, joined with RBAC_NavSection for section grouping and with RBAC_PermissionMapping for per-user filtering, to render navigation HTML across all CC route files. Home.ps1 reads the same data filtered by show_on_home=1 to render the tile grid. Cached alongside other RBAC data with 5-minute refresh.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "nav_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Auto-incrementing primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "page_route",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "CC route path (e.g., /server-health, /departmental/business-services). Joins to RBAC_PermissionMapping.page_route for permission filtering. Unique within the table."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "nav_label",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Short label displayed in the horizontal nav bar. Optimized for compact horizontal display (e.g., \"Apps/Int\" rather than \"Applications \u0026 Integration\")."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "display_title",
+                                           "dataType":  "varchar",
+                                           "length":  "150",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Display title used for the page H1 header and the Home page tile heading. Often matches nav_label but may differ when the nav-bar abbreviation is too short for prominent display."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "description",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Longer descriptive text used for the page subtitle and Home page tile description. NULL when no description is needed."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "section_key",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Foreign key to RBAC_NavSection.section_key. Determines which top-level grouping this page belongs to."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "sort_order",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Numeric ordering within the page section. Increments of 10 for easy insertion of new pages without renumbering. Lower values render first."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "doc_page_id",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Documentation page slug used to build the docs link. Helper function constructs URL as /docs/pages/{doc_page_id}.html. NULL means no documentation link is rendered for this page."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "show_in_nav",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Controls visibility in the horizontal page-level nav bar. 1 = appears in nav, 0 = hidden from nav (e.g., admin gear targets, tile-only access pages)."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "show_on_home",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Controls visibility as a tile on the Home page. 1 = appears as tile, 0 = hidden from Home (e.g., admin pages, deep-link-only utility pages)."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Soft delete flag. 0 = retired or future page, fully hidden from all rendering but preserved for historical reference."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this page was registered. Auto-populated via default."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Who registered this page. Auto-populated via SUSER_SNAME() default."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When this page was last modified. NULL until first update."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "modified_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Who last modified this page. NULL until first update."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_RBAC_NavRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "nav_id"
+                                       },
+                                       {
+                                           "name":  "IX_RBAC_NavRegistry_section_sort",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "section_key, sort_order",
+                                           "includedColumns":  "page_route, nav_label, display_title, doc_page_id, show_in_nav, show_on_home"
+                                       },
+                                       {
+                                           "name":  "UQ_RBAC_NavRegistry_page_route",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "page_route"
+                                       }
+                                   ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_RBAC_NavRegistry_NavSection",
+                                               "column":  "section_key",
+                                               "referencedTable":  "dbo.RBAC_NavSection",
+                                               "referencedColumn":  "section_key"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Three-Field Text Model",
+                                               "note":  "Three separate text columns serve different rendering contexts: nav_label (compact, fits in horizontal nav bar), display_title (prominent page header and tile heading), and description (longer subtitle and tile description). Most pages have nav_label = display_title, but separating them allows the nav bar to use abbreviations while the page header remains formal.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Decoupled Visibility Flags",
+                                               "note":  "show_in_nav and show_on_home are independent flags rather than a combined visibility mode. This allows pages like /client-portal to render as a Home tile but not in the horizontal nav (accessed only from Home), or /admin to be cataloged in the registry without rendering anywhere standard.",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Home Excluded by Convention",
+                                               "note":  "The root route / is intentionally not stored in RBAC_NavRegistry. Home is treated as the universal first link in the nav bar by the Get-NavBarHtml helper function rather than as a registered page. This avoids special-case sort_order handling and keeps the registry as a clean catalog of destination pages.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "doc_page_id Convention",
+                                               "note":  "The doc_page_id column stores the slug, not the full URL. Helper code constructs /docs/pages/{doc_page_id}.html. This matches the doc_page_id convention used in Component_Registry and centralizes the URL pattern in one place — if the docs URL pattern changes, only the helper updates, not the data.",
+                                               "sortOrder":  4
+                                           },
+                                           {
+                                               "topic":  "Permission Filtering at Render Time",
+                                               "note":  "RBAC_NavRegistry does not store permissions. The helper function joins this table with RBAC_PermissionMapping at render time to filter pages to those the current user can access. This separates \"what pages exist\" (NavRegistry) from \"who can access them\" (PermissionMapping), and avoids data duplication between the two RBAC concerns.",
+                                               "sortOrder":  5
+                                           }
+                                       ],
+                       "queries":  [
+                                       {
+                                           "name":  "All active pages by section",
+                                           "description":  "Lists all active nav registry rows grouped by section in render order.",
+                                           "sql":  "SELECT \r\n    ns.section_label,\r\n    nv.sort_order,\r\n    nv.page_route,\r\n    nv.nav_label,\r\n    nv.display_title,\r\n    nv.show_in_nav,\r\n    nv.show_on_home\r\nFROM dbo.RBAC_NavRegistry nv\r\nJOIN dbo.RBAC_NavSection ns ON ns.section_key = nv.section_key\r\nWHERE nv.is_active = 1 AND ns.is_active = 1\r\nORDER BY ns.section_sort_order, nv.sort_order;",
+                                           "sortOrder":  1
+                                       },
+                                       {
+                                           "name":  "NavRegistry vs PermissionMapping coverage check",
+                                           "description":  "Identifies pages registered in NavRegistry that have no corresponding RBAC_PermissionMapping row, and vice versa. Both should be in sync — orphans on either side indicate a registration gap.",
+                                           "sql":  "WITH nav_pages AS (\r\n    SELECT DISTINCT page_route FROM dbo.RBAC_NavRegistry WHERE is_active = 1\r\n),\r\nperm_pages AS (\r\n    SELECT DISTINCT page_route \r\n    FROM dbo.RBAC_PermissionMapping \r\n    WHERE is_active = 1 AND page_route NOT IN (\u0027*\u0027, \u0027/\u0027)\r\n)\r\nSELECT \r\n    COALESCE(n.page_route, p.page_route) AS page_route,\r\n    CASE \r\n        WHEN n.page_route IS NULL THEN \u0027In PermissionMapping only - missing NavRegistry row\u0027\r\n        WHEN p.page_route IS NULL THEN \u0027In NavRegistry only - missing PermissionMapping row\u0027\r\n    END AS gap_description\r\nFROM nav_pages n\r\nFULL OUTER JOIN perm_pages p ON p.page_route = n.page_route\r\nWHERE n.page_route IS NULL OR p.page_route IS NULL\r\nORDER BY page_route;",
+                                           "sortOrder":  2
+                                       },
+                                       {
+                                           "name":  "Pages visible to a specific user (preview)",
+                                           "description":  "Shows what pages a specific user would see in nav and home, accounting for both NavRegistry visibility flags and their RBAC permissions.",
+                                           "sql":  "DECLARE @username VARCHAR(100) = \u0027dcota\u0027;\r\n\r\nWITH user_routes AS (\r\n    SELECT DISTINCT pm.page_route\r\n    FROM dbo.RBAC_PermissionMapping pm\r\n    JOIN dbo.RBAC_RoleMapping rm ON rm.role_id = pm.role_id\r\n    -- Note: this is a simplified check; the real middleware also resolves\r\n    -- AD groups, this query is for preview/diagnostic purposes only.\r\n    WHERE pm.is_active = 1 AND rm.is_active = 1\r\n)\r\nSELECT \r\n    ns.section_label,\r\n    nv.nav_label,\r\n    nv.show_in_nav,\r\n    nv.show_on_home,\r\n    CASE WHEN ur.page_route IS NOT NULL THEN \u0027yes\u0027 ELSE \u0027no\u0027 END AS user_has_permission\r\nFROM dbo.RBAC_NavRegistry nv\r\nJOIN dbo.RBAC_NavSection ns ON ns.section_key = nv.section_key\r\nLEFT JOIN user_routes ur ON ur.page_route = nv.page_route\r\nWHERE nv.is_active = 1\r\nORDER BY ns.section_sort_order, nv.sort_order;",
+                                           "sortOrder":  3
+                                       }
+                                   ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "RBAC_NavSection",
+                                                     "note":  "Parent table. RBAC_NavRegistry.section_key references RBAC_NavSection.section_key via FK. Determines section grouping and accent styling.",
+                                                     "sortOrder":  1
+                                                 },
+                                                 {
+                                                     "relatedObject":  "RBAC_PermissionMapping",
+                                                     "note":  "Logical relationship (no physical FK). NavRegistry.page_route is joined to RBAC_PermissionMapping.page_route at render time to filter the visible page set per user role. Pages in NavRegistry without corresponding PermissionMapping rows would be rendered for nobody.",
+                                                     "sortOrder":  2
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "RBAC_NavSection",
+                       "description":  "Section groupings for the dynamic Control Center navigation. Each section represents a top-level grouping of CC pages (Platform, Departmental Pages, Tools, Administration) with display order and visual accent styling. Referenced by RBAC_NavRegistry to organize page rows into sections.",
+                       "module":  "dbo",
+                       "category":  "RBAC",
+                       "dataFlow":  "Rows are manually inserted when a new top-level navigation grouping is needed. The Get-NavBarHtml helper function (xFACts-Helpers.psm1) reads this table at startup, joined with RBAC_NavRegistry, to render section-grouped navigation links across all CC pages and Home page tile groupings. The accent_class column drives section-level visual styling via CSS classes defined in engine-events.css. Cached alongside other RBAC data with 5-minute refresh.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "section_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Auto-incrementing primary key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "section_key",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "URL-safe identifier used as foreign key target by RBAC_NavRegistry.section_key. Examples: platform, departmental, tools, admin."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "section_label",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Display text rendered as section header on the Home page tile grid. Also used as the conceptual label for nav-bar separator areas."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "section_sort_order",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Numeric ordering for section display. Increments of 10 for easy insertion of new sections without renumbering. Lower values render first."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "accent_class",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "CSS class name applied to section elements for visual styling (color theme). Class definitions live in engine-events.css. NULL means no section-level accent styling."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Soft delete flag. 0 = retired section, hidden from rendering but preserved for historical reference."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When this section was registered. Auto-populated via default."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Who registered this section. Auto-populated via SUSER_SNAME() default."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_RBAC_NavSection",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "section_id"
+                                       },
+                                       {
+                                           "name":  "UQ_RBAC_NavSection_section_key",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "section_key"
+                                       }
+                                   ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Section vs. Page Separation",
+                                               "note":  "Section-level metadata (label, color, ordering) is stored separately from page-level metadata (RBAC_NavRegistry) to avoid duplication. All pages within a section share the same accent styling and label, so storing it once at the section level keeps the data normalized. Adding a new section is a single INSERT here; pages reference it via the section_key foreign key.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Color via CSS Class Not Hex",
+                                               "note":  "The accent_class column stores a CSS class name rather than a literal color value. This decouples presentation (colors, hover effects, dark mode variants) from data, allowing visual changes without database updates. Class definitions live in engine-events.css.",
+                                               "sortOrder":  2
+                                           }
+                                       ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "RBAC_NavRegistry",
+                                                     "note":  "Child table. RBAC_NavRegistry.section_key references RBAC_NavSection.section_key via FK. Each nav registry row belongs to exactly one section.",
+                                                     "sortOrder":  1
+                                                 }
+                                             ]
+                   },
+                   {
                        "name":  "RBAC_PermissionMapping",
                        "description":  "Defines what each role can do on each Control Center page. Maps roles to pages with a permission tier that controls whether the user can view, operate, or administer the page.",
                        "module":  "dbo",
