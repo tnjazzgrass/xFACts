@@ -17,6 +17,8 @@
 #     Get-UserAccess          - Page-level access check (use in page routes)
 #     Test-ActionPermission   - Action-level permission check (use in API routes)
 #     Get-UserContext         - User identity/role context for UI rendering
+#     Get-NavBarHtml          - Renders the horizontal nav bar HTML for a user
+#     Get-HomePageSections    - Returns structured section/page data for Home tile rendering
 #     Get-AccessDeniedHtml    - Styled 403 page matching Control Center theme
 #     Get-ActionDeniedResponse - Standardized 403 JSON for API endpoints
 # ============================================================================
@@ -204,6 +206,10 @@ function Invoke-XFActsNonQuery {
 #   # UI rendering context
 #   $ctx = Get-UserContext -WebEvent $WebEvent
 #   if ($ctx.IsAdmin) { # show admin controls }
+#
+#   # Dynamic nav rendering (Phase 2)
+#   $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/server-health'
+#   $sections = Get-HomePageSections -UserContext $ctx
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -218,6 +224,8 @@ $script:RBACCache = @{
     ActionGrants     = $null
     ActionRegistry   = $null
     DepartmentPages  = $null
+    NavSections      = $null
+    NavRegistry      = $null
     EnforcementMode  = 'disabled'
     AuditVerbosity   = 'denials_only'
     LastRefresh      = [datetime]::MinValue
@@ -281,6 +289,23 @@ function Initialize-RBACCache {
                    page_route, required_tier
             FROM dbo.RBAC_ActionRegistry
             WHERE is_active = 1
+"@
+
+        # Load nav sections (for dynamic nav rendering)
+        $script:RBACCache.NavSections = Invoke-XFActsQuery -Query @"
+            SELECT section_id, section_key, section_label, section_sort_order, accent_class
+            FROM dbo.RBAC_NavSection
+            WHERE is_active = 1
+            ORDER BY section_sort_order
+"@
+
+        # Load nav registry (for dynamic nav rendering)
+        $script:RBACCache.NavRegistry = Invoke-XFActsQuery -Query @"
+            SELECT nav_id, page_route, nav_label, display_title, description,
+                   section_key, sort_order, doc_page_id, show_in_nav, show_on_home
+            FROM dbo.RBAC_NavRegistry
+            WHERE is_active = 1
+            ORDER BY section_key, sort_order
 "@
 
         # Load enforcement mode from GlobalConfig
@@ -723,7 +748,7 @@ function Get-UserContext {
         The Pode WebEvent object containing auth context
     .RETURNS
         Hashtable with: Username, DisplayName, Roles, RoleNames, DepartmentScopes,
-        IsDeptOnly, IsAdmin, HasPlatformAccess, AccessiblePages, UserDepartments
+        IsDeptOnly, IsAdmin, HasPlatformAccess, UserDepartments
     #>
     param(
         [Parameter(Mandatory)]$WebEvent
@@ -748,30 +773,6 @@ function Get-UserContext {
     $isDeptOnly = (-not $hasPlatformRole) -and ($deptScopes.Count -gt 0)
     $isAdmin = $roleNames -contains 'Admin'
     
-    # Build list of accessible pages (for nav rendering)
-    $accessiblePages = @()
-    if ($script:RBACCache.EnforcementMode -eq 'disabled') {
-        # Everything accessible when disabled
-        $accessiblePages = @('/', '/server-health', '/jobflow-monitoring', '/backup', 
-                            '/index-maintenance', '/bidata-monitoring', '/file-monitoring')
-        foreach ($dept in $script:RBACCache.DepartmentPages) {
-            $accessiblePages += $dept.page_route
-        }
-    }
-    else {
-        # Check each known page
-        $allPages = @('/', '/server-health', '/jobflow-monitoring', '/backup',
-                      '/index-maintenance', '/bidata-monitoring', '/file-monitoring')
-        foreach ($dept in $script:RBACCache.DepartmentPages) {
-            $allPages += $dept.page_route
-        }
-        
-        foreach ($page in $allPages) {
-            $tier = Get-UserPageTier -UserRoles $userRoles -PageRoute $page
-            if ($tier) { $accessiblePages += $page }
-        }
-    }
-    
     # Build department info for departmental nav items
     $userDepartments = @()
     foreach ($scope in $deptScopes) {
@@ -795,9 +796,190 @@ function Get-UserContext {
         IsDeptOnly        = $isDeptOnly
         IsAdmin           = $isAdmin
         HasPlatformAccess = $hasPlatformRole
-        AccessiblePages   = $accessiblePages
         EnforcementMode   = $script:RBACCache.EnforcementMode
     }
+}
+
+# ----------------------------------------------------------------------------
+# Dynamic Navigation Rendering
+# ----------------------------------------------------------------------------
+
+function Get-NavBarHtml {
+    <#
+    .SYNOPSIS
+        Renders the horizontal navigation bar HTML for a given user.
+        Filters pages by user permissions, groups by section with separators,
+        applies the 'active' class to the current page, and appends the admin
+        gear icon for users with the Admin role.
+    .PARAMETER UserContext
+        Hashtable from Get-UserContext containing user identity and roles.
+    .PARAMETER CurrentPageRoute
+        The route of the page currently being rendered (e.g., '/server-health').
+        Used to apply the 'active' CSS class to the matching nav link.
+    .RETURNS
+        Complete <nav> HTML block ready to embed in a page.
+    .EXAMPLE
+        $ctx = Get-UserContext -WebEvent $WebEvent
+        $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/server-health'
+        # Then embed $navHtml in your page HTML
+    #>
+    param(
+        [Parameter(Mandatory)][hashtable]$UserContext,
+        [Parameter(Mandatory)][string]$CurrentPageRoute
+    )
+    
+    Confirm-RBACCache
+    
+    if (-not $script:RBACCache.NavRegistry -or -not $script:RBACCache.NavSections) {
+        # Cache not loaded - return minimal nav as fallback
+        return '<nav class="nav-bar"><a href="/" class="nav-link">Home</a></nav>'
+    }
+    
+    $userRoles = $UserContext.Roles
+    $isAdmin = $UserContext.IsAdmin
+    
+    # Build the HTML in a StringBuilder for efficient concatenation
+    $sb = New-Object System.Text.StringBuilder 2048
+    [void]$sb.AppendLine('    <nav class="nav-bar">')
+    
+    # Home link is always first, regardless of section
+    $homeActiveClass = if ($CurrentPageRoute -eq '/') { ' active' } else { '' }
+    [void]$sb.AppendLine("        <a href=`"/`" class=`"nav-link$homeActiveClass`">Home</a>")
+    
+    # Iterate sections in order, filtering pages by user permissions
+    $sectionsRendered = 0
+    foreach ($section in $script:RBACCache.NavSections) {
+        # Skip the admin section -- it's not rendered in the nav, only via gear icon
+        if ($section.section_key -eq 'admin') { continue }
+        
+        # Get pages in this section that should appear in nav
+        $sectionPages = $script:RBACCache.NavRegistry | Where-Object {
+            $_.section_key -eq $section.section_key -and $_.show_in_nav -eq 1
+        } | Sort-Object sort_order
+        
+        if (-not $sectionPages) { continue }
+        
+        # Filter pages by user's permissions
+        $accessiblePages = @()
+        foreach ($page in $sectionPages) {
+            $tier = Get-UserPageTier -UserRoles $userRoles -PageRoute $page.page_route
+            if ($tier) {
+                $accessiblePages += $page
+            }
+        }
+        
+        if ($accessiblePages.Count -eq 0) { continue }
+        
+        # Add section separator before non-first sections
+        if ($sectionsRendered -gt 0) {
+            [void]$sb.AppendLine('        <span class="nav-separator">|</span>')
+        }
+        
+        # Render each accessible page
+        foreach ($page in $accessiblePages) {
+            $activeClass = if ($page.page_route -eq $CurrentPageRoute) { ' active' } else { '' }
+            $accentClass = if ($section.accent_class) { " $($section.accent_class)" } else { '' }
+            $cssClasses = "nav-link$accentClass$activeClass"
+            $label = [System.Web.HttpUtility]::HtmlEncode($page.nav_label)
+            [void]$sb.AppendLine("        <a href=`"$($page.page_route)`" class=`"$cssClasses`">$label</a>")
+        }
+        
+        $sectionsRendered++
+    }
+    
+    # Append admin gear for admin users (always last, never has 'active' class)
+    if ($isAdmin) {
+        [void]$sb.AppendLine('        <span class="nav-spacer"></span>')
+        [void]$sb.AppendLine('        <a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>')
+    }
+    
+    [void]$sb.AppendLine('    </nav>')
+    
+    return $sb.ToString()
+}
+
+function Get-HomePageSections {
+    <#
+    .SYNOPSIS
+        Returns structured section/page data for rendering the Home page tile grid.
+        Filters pages by user permissions and omits empty sections entirely.
+    .PARAMETER UserContext
+        Hashtable from Get-UserContext containing user identity and roles.
+    .RETURNS
+        Array of hashtables, one per non-empty section. Each section hashtable contains:
+            SectionKey   - machine identifier (e.g., 'platform')
+            SectionLabel - display text (e.g., 'Platform')
+            AccentClass  - CSS class for section-level styling
+            SortOrder    - section display order
+            Pages        - array of page hashtables, each containing:
+                Route, NavLabel, DisplayTitle, Description, DocPageId, SortOrder
+        Sections are returned sorted by section_sort_order.
+        Pages within each section are sorted by sort_order.
+    .EXAMPLE
+        $ctx = Get-UserContext -WebEvent $WebEvent
+        $sections = Get-HomePageSections -UserContext $ctx
+        foreach ($section in $sections) {
+            Write-Host "Section: $($section.SectionLabel)"
+            foreach ($page in $section.Pages) {
+                Write-Host "  - $($page.NavLabel)"
+            }
+        }
+    #>
+    param(
+        [Parameter(Mandatory)][hashtable]$UserContext
+    )
+    
+    Confirm-RBACCache
+    
+    $result = @()
+    
+    if (-not $script:RBACCache.NavRegistry -or -not $script:RBACCache.NavSections) {
+        return $result
+    }
+    
+    $userRoles = $UserContext.Roles
+    
+    foreach ($section in $script:RBACCache.NavSections) {
+        # Skip the admin section -- not rendered as Home tiles
+        if ($section.section_key -eq 'admin') { continue }
+        
+        # Get pages in this section that should appear on Home
+        $sectionPages = $script:RBACCache.NavRegistry | Where-Object {
+            $_.section_key -eq $section.section_key -and $_.show_on_home -eq 1
+        } | Sort-Object sort_order
+        
+        if (-not $sectionPages) { continue }
+        
+        # Filter pages by user's permissions
+        $accessiblePages = @()
+        foreach ($page in $sectionPages) {
+            $tier = Get-UserPageTier -UserRoles $userRoles -PageRoute $page.page_route
+            if ($tier) {
+                $accessiblePages += @{
+                    Route        = $page.page_route
+                    NavLabel     = $page.nav_label
+                    DisplayTitle = $page.display_title
+                    Description  = $page.description
+                    DocPageId    = $page.doc_page_id
+                    SortOrder    = $page.sort_order
+                    Tier         = $tier
+                }
+            }
+        }
+        
+        # Skip empty sections
+        if ($accessiblePages.Count -eq 0) { continue }
+        
+        $result += @{
+            SectionKey   = $section.section_key
+            SectionLabel = $section.section_label
+            AccentClass  = $section.accent_class
+            SortOrder    = $section.section_sort_order
+            Pages        = $accessiblePages
+        }
+    }
+    
+    return $result
 }
 
 # ----------------------------------------------------------------------------
@@ -2304,6 +2486,9 @@ Export-ModuleMember -Function @(
     'Test-ActionPermission',
     'Test-ActionEndpoint',
     'Get-UserContext',
+    # RBAC - Dynamic Nav
+    'Get-NavBarHtml',
+    'Get-HomePageSections',
     # RBAC - Internal (needed by routes that build CRS5 connections)
     'Resolve-UserRoles',
     'Get-UserPageTier',
