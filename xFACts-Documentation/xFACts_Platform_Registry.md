@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-04-28 10:39:11
+Generated: 2026-04-29 04:33:59
 
 ## Module Registry
 
@@ -472,7 +472,7 @@ Generated: 2026-04-28 10:39:11
 | DmOps | Archive | tag_removal_user | sqlmon | VARCHAR | DM username for archiving exceptions |
 | DmOps | Archive | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
 | DmOps | ShellPurge | alerting_enabled | 0 | BIT | Master switch for shell purge alerting |
-| DmOps | ShellPurge | batch_size | 25000 | INT | Number of shell consumers per batch during full-mode schedule windows |
+| DmOps | ShellPurge | batch_size | 100000 | INT | Number of shell consumers per batch during full-mode schedule windows |
 | DmOps | ShellPurge | batch_size_reduced | 500 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
 | DmOps | ShellPurge | chunk_size | 5000 | INT | Maximum rows per DELETE operation (deleted in chunks of this size) |
 | DmOps | ShellPurge | shell_purge_abort | 0 | BIT | Emergency shutoff. Overrides schedule and enabled flag |
