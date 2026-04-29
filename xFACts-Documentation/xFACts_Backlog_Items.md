@@ -1,5 +1,5 @@
 # xFACts Backlog Items
-## Updated: April 28, 2026
+## Updated: April 29, 2026
 
 Open build, enhancement, and bug fix items across the xFACts platform. Organized by module and component. Components with no open items are omitted.
 
@@ -126,9 +126,12 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
 | Enhance | Invoke-XFActsQuery → Invoke-XFActsNonQuery audit | Low | `Invoke-XFActsNonQuery` was added after many scripts were already written. Older scripts use `Invoke-XFActsQuery` for INSERT/UPDATE/DELETE where no result set is needed. This works but is inefficient — `Query` allocates a SqlDataAdapter, DataSet, and row iteration unnecessarily. **Rule:** Use `Query` only for SELECT or INSERT/UPDATE with `OUTPUT INSERTED`. Use `NonQuery` for all other DML/DDL. Fix opportunistically as scripts are opened for other changes. Grep pattern: `Invoke-XFActsQuery -Query` followed by INSERT/UPDATE/DELETE without an OUTPUT clause. Fixed so far: `DmOperations-API.ps1` abort endpoint (2026-04-13). |
-| Enhance | Nav bar redesign for growing page count | Medium | Current inline nav with bullet separators will overflow as pages are added. Options: dropdown/mega-menu, two-row layout, collapsible groups. All pages must remain visible. |
-| Enhance | Shared CC CSS consolidation | Low | Extract duplicated CSS patterns (nav-bar, h1, header-bar, modal/slideout, status badges, scrollbar) into cc-engine-events.css. See Development Guidelines Section 5.11 for inventory. Migrate incrementally. Consider rename if necessary. |
+| Enhance | Nav bar overflow handling | Low | Per-user filtering via dynamic nav reduces visible page count. If overflow becomes a real problem despite filtering, options include: dropdown/mega-menu, two-row layout, collapsible groups. |
+| Enhance | Shared CC CSS consolidation | High | Extract remaining duplicated CSS patterns (h1, header-bar, modal/slideout, status badges, scrollbar) into engine-events.css. See Development Guidelines Section 5.11 for inventory. Migrate incrementally. |
 | Enhance | Shared CC JS extraction | Low | Evaluate common JS patterns (modal open/close, slideout animation, refresh badge updates) for extraction into cc-engine-events.js. Consider rename if necessary. |
+| Build | Phase 3d: Convert remaining route files to Get-NavBarHtml | High | ~16 route files still have hardcoded nav blocks. Convert each to use Get-NavBarHtml. Strip duplicate nav-bar CSS from each page's CSS file as part of the same update. JBossMonitoring.ps1 is the canonical pattern. |
+| Enhance | Coverage gap-check refinement for wildcard-granted pages | Medium | /admin and /platform-monitoring show as false positives in NavRegistry vs PermissionMapping gap-check (rely on Admin wildcard `*` permission). Decide between query-side fix or schema-side fix (add requires_explicit_permission BIT to NavRegistry). |
+| Build | Doc-page RBAC integration | Medium | Apply RBAC + dynamic nav to /docs/pages/*. Currently unauthenticated. Requires: (1) auth on /docs static route in Start-ControlCenter.ps1, (2) doc_page_id → CC page route → permission lookup, (3) nav.js update for filtered registry. doc_page_id field in RBAC_NavRegistry is the join key. Dependent on Phase 3d completion. |
 
 ---
 
