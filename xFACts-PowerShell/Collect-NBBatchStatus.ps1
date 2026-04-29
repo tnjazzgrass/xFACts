@@ -19,6 +19,15 @@
 
     CHANGELOG
     ---------
+    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
+                Converted all 7 alert checks from direct INSERT to Send-TeamsAlert
+                Inline Teams.RequestLog dedup queries removed (handled by shared function)
+                Severity adjustments to align Teams card colors with intent:
+                  CHECK 3 (Stalled Merges): CRITICAL/attention/{{FIRE}} -> WARNING/warning/{{WARN}}
+                  CHECK 5b (Queue Wait No Auto-Merge): INFO/accent/{{INFO}} -> WARNING/warning/{{WARN}}
+                  CHECK 7 (Release-Merge Skip Stall): CRITICAL/attention/{{FIRE}} -> WARNING/warning/{{WARN}}
+                  Title for 5b updated to "Queue Wait (No Auto-Merge)" to parallel 5a
+                Jira branches and routing bitmask logic unchanged
     2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
                 Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsWrite
                 Renamed $xFACtsServer/$xFACtsDB to $ServerInstance/$Database
@@ -1054,17 +1063,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{FIRE}} New Business Batch Upload Failed: $batchId"
-                            $teamsColor = 'attention'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{FIRE}} New Business Batch Upload Failed: $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -1077,27 +1077,9 @@ Action: Delete the failed batch in Debt Manager and re-upload.
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'CRITICAL', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'CRITICAL' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'attention' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
@@ -1206,17 +1188,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{FIRE}} New Business Batch Release Failed: $batchId"
-                            $teamsColor = 'attention'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{FIRE}} New Business Batch Release Failed: $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -1227,27 +1200,9 @@ Action: Set batch back to Uploaded status and re-release manually.
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'CRITICAL', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'CRITICAL' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'attention' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
@@ -1362,17 +1317,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{FIRE}} New Business Batch Merge Stalled: $batchId"
-                            $teamsColor = 'attention'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{WARN}} New Business Batch Merge Stalled: $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Merge Status:** $mergeStatus
@@ -1384,27 +1330,9 @@ Action: Check merge queue and batch status in Debt Manager. May need to reset ba
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'CRITICAL', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
@@ -1513,17 +1441,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{WARN}} New Business Batch Upload Stall: $batchId"
-                            $teamsColor = 'warning'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{WARN}} New Business Batch Upload Stall: $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Created:** $createdTime
@@ -1533,27 +1452,9 @@ Action: Check upload process in Debt Manager. Upload may need to be cancelled an
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'WARNING', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
@@ -1668,17 +1569,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{WARN}} New Business Batch Queue Wait: $batchId"
-                            $teamsColor = 'warning'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{WARN}} New Business Batch Queue Wait: $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Consumers:** $consCount
@@ -1689,27 +1581,9 @@ No merge log activity since release. Merge queue may be backed up or batch may n
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'WARNING', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
@@ -1825,17 +1699,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routingNoMerge -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{INFO}} New Business Batch Held (No Auto-Merge): $batchId"
-                            $teamsColor = 'accent'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{WARN}} New Business Batch Queue Wait (No Auto-Merge): $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Consumers:** $consCount
@@ -1846,27 +1711,9 @@ This batch has auto-merge disabled and has been in RELEASED status without merge
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'INFO', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
@@ -1983,17 +1830,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{WARN}} New Business Batch Awaiting Release: $batchId"
-                            $teamsColor = 'warning'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{WARN}} New Business Batch Awaiting Release: $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -2006,27 +1844,9 @@ Action: Release this batch manually in Debt Manager. Client is not configured fo
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'WARNING', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
@@ -2151,17 +1971,8 @@ Detection Date: $detectionTime
 
                     # ── Teams alert (routing 1 or 3) ──
                     if ($routing -band 1) {
-                        $teamsDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS alert_exists
-                            FROM Teams.RequestLog
-                            WHERE trigger_type = '$triggerType'
-                              AND trigger_value = '$triggerValue'
-                              AND status_code = 200
-"@
-                        if (-not $teamsDedup) {
-                            $teamsTitle = "{{FIRE}} New Business Batch Release-Merge Skip Stall: $batchId"
-                            $teamsColor = 'attention'
-                            $teamsMessage = @"
+                        $teamsTitle = "{{WARN}} New Business Batch Release-Merge Skip Stall: $batchId"
+                        $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -2178,27 +1989,9 @@ If batch does not resume, set back to Uploaded and re-release.
 
 **Detection:** $detectionTime
 "@
-                            $teamsTitleSafe = $teamsTitle -replace "'", "''"
-                            $teamsMessageSafe = $teamsMessage -replace "'", "''"
-
-                            $teamsInsert = @"
-                                INSERT INTO Teams.AlertQueue (
-                                    source_module, alert_category, title, message, color,
-                                    trigger_type, trigger_value, status, created_dttm
-                                )
-                                VALUES (
-                                    'BatchOps', 'CRITICAL', N'$teamsTitleSafe',
-                                    N'$teamsMessageSafe', '$teamsColor',
-                                    '$triggerType', '$triggerValue',
-                                    'Pending', GETDATE()
-                                )
-"@
-                            Invoke-SqlNonQuery -Query $teamsInsert | Out-Null
-                            Write-Log "    Teams alert queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Teams dedup: alert already sent for $triggerType/$triggerValue" "INFO"
-                        }
+                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
+                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
+                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
                     # ── Increment alert_count ──
