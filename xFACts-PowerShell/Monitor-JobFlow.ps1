@@ -24,6 +24,18 @@
 
     CHANGELOG
     ---------
+    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
+                Converted both Teams alert sites from EXEC sp_QueueAlert to
+                  Send-TeamsAlert (Stall in Step 5, MissingFlow in Step 6)
+                Inline Teams.RequestLog dedup queries removed (handled by
+                  shared function)
+                Added title icons for visual scanning consistency:
+                  Stall:        {{FIRE}} JobFlow System Stall Detected
+                  MissingFlow:  {{WARN}} Missing Job Flow: <flowCode>
+                Severity, color, and trigger_value schemes unchanged
+                Jira queue calls (Stall, MissingFlow, NewFlow, Deactivated,
+                  Validation) untouched - Jira standardization is a separate
+                  audit
     2026-03-15  Stall detection IDLE path fix
                 Moved counterBefore read before IDLE exit checks in Step 5
                 RESET events now log correctly when system goes from stalled to idle
@@ -1714,39 +1726,18 @@ Table: JobFlow.Status
                         Write-Log "  Jira ticket already exists for today - suppressed" "INFO"
                     }
                     
-                    # Check and queue Teams alert
-                    $teamsExistsQuery = @"
-                        SELECT 1 FROM Teams.RequestLog
-                        WHERE trigger_type = 'JobFlow_Stall'
-                          AND trigger_value = '$currentDate'
-                          AND status_code = 200
-"@
-                    $teamsExists = Get-SqlData -Query $teamsExistsQuery
-                    
-                    if (-not $teamsExists) {
-                        $teamsMessage = @"
+                    # Queue Teams alert (dedup handled internally by Send-TeamsAlert)
+                    $teamsMessage = @"
 System stall detected at $currentDttm.
 No job progress for $durationStr.
 Last progress: $lastProgressStr.
 
 Check JBoss application server and JMS queue. Jira ticket created.
 "@
-                        
-                        $teamsQuery = @"
-                            EXEC Teams.sp_QueueAlert
-                                @SourceModule = 'JobFlow',
-                                @AlertCategory = 'CRITICAL',
-                                @Title = 'JobFlow System Stall Detected',
-                                @Message = '$($teamsMessage -replace "'", "''")',
-                                @TriggerType = 'JobFlow_Stall',
-                                @TriggerValue = '$currentDate'
-"@
-                        Invoke-SqlNonQuery -Query $teamsQuery | Out-Null
-                        Write-Log "  Teams alert queued" "SUCCESS"
-                    }
-                    else {
-                        Write-Log "  Teams alert already exists for today - suppressed" "INFO"
-                    }
+                    Send-TeamsAlert -SourceModule 'JobFlow' -AlertCategory 'CRITICAL' `
+                        -Title '{{FIRE}} JobFlow System Stall Detected' `
+                        -Message $teamsMessage -Color 'attention' `
+                        -TriggerType 'JobFlow_Stall' -TriggerValue $currentDate | Out-Null
                 }
                 else {
                     Write-Log "  Active stall exists (no RESET since last ALERT) - suppressing duplicates" "INFO"
@@ -1754,9 +1745,11 @@ Check JBoss application server and JMS queue. Jira ticket created.
             }
             
             # Log to StallDetectionLog if event occurred
-            # NOTE: This must happen AFTER the alert dedup check above,
-            # otherwise the ALERT row we just inserted would be found by
-            # the active stall query and suppress the alert from ever firing.
+            # NOTE: This must happen AFTER the Send-TeamsAlert call above.
+            # If it ran before, the ALERT row we are about to insert would
+            # be found by the "is there an active ALERT since last RESET?"
+            # check on the next monitor cycle and suppress the alert from
+            # firing again until reset.
             if ($eventType) {
                 $thresholdReached = if ($counterAfter -ge $stallThreshold) { 1 } else { 0 }
                 
@@ -2440,16 +2433,7 @@ function Step-DetectMissingFlows {
                       AND TicketKey != 'Email'
 "@
                 $jiraExists = Get-SqlData -Query $jiraExistsQuery
-                
-                # Check Teams deduplication
-                $teamsExistsQuery = @"
-                    SELECT 1 FROM Teams.RequestLog
-                    WHERE trigger_type = 'JobFlow_MissingFlow'
-                      AND trigger_value = '$triggerValue'
-                      AND status_code = 200
-"@
-                $teamsExists = Get-SqlData -Query $teamsExistsQuery
-                
+
                 if (-not $jiraExists) {
                     $ticketSummary = "Missing Job Flow: $jobSqncShrtNm - $currentDate"
                     
@@ -2506,30 +2490,18 @@ Table: JobFlow.FlowConfig
                     Write-Log "      Jira ticket already exists - suppressed" "INFO"
                 }
                 
-                if (-not $teamsExists) {
-                    $teamsMessage = @"
+                # Queue Teams alert (dedup handled internally by Send-TeamsAlert)
+                $teamsMessage = @"
 Missing flow: $jobSqncShrtNm
 Schedule: $scheduleType at $expectedTime
 Overdue: $minutesOverdue minutes
 
 Flow was expected to start by $($deadlineDttm.ToString('HH:mm')) but has not been detected. Check Debt Manager scheduler and application server.
 "@
-                    
-                    $teamsQuery = @"
-                        EXEC Teams.sp_QueueAlert
-                            @SourceModule = 'JobFlow',
-                            @AlertCategory = 'WARNING',
-                            @Title = 'Missing Job Flow: $jobSqncShrtNm',
-                            @Message = '$($teamsMessage -replace "'", "''")',
-                            @TriggerType = 'JobFlow_MissingFlow',
-                            @TriggerValue = '$triggerValue'
-"@
-                    Invoke-SqlNonQuery -Query $teamsQuery | Out-Null
-                    Write-Log "      Teams alert queued" "SUCCESS"
-                }
-                else {
-                    Write-Log "      Teams alert already exists - suppressed" "INFO"
-                }
+                Send-TeamsAlert -SourceModule 'JobFlow' -AlertCategory 'WARNING' `
+                    -Title "{{WARN}} Missing Job Flow: $jobSqncShrtNm" `
+                    -Message $teamsMessage -Color 'warning' `
+                    -TriggerType 'JobFlow_MissingFlow' -TriggerValue $triggerValue | Out-Null
             }
             else {
                 Write-Log "      PREVIEW: Would queue Jira ticket and Teams alert" "WARN"
