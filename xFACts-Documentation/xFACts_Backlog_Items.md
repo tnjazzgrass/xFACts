@@ -1,5 +1,5 @@
 # xFACts Backlog Items
-## Updated: March 15, 2026
+## Updated: April 28, 2026
 
 Open build, enhancement, and bug fix items across the xFACts platform. Organized by module and component. Components with no open items are omitted.
 
@@ -34,10 +34,10 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Build | Performance Analysis Page | High | New page for forensic time-range analysis. Correlates waits, LRQs, HADR metrics, blocking, scheduled jobs. Answers "what happened at 8:15 AM?" Time-range selector with overlaid metrics from DMV and XE data. |
+| Build | Performance Analysis Page | Medium | New page for forensic time-range analysis. Correlates waits, LRQs, HADR metrics, blocking, scheduled jobs. Answers "what happened at 8:15 AM?" Time-range selector with overlaid metrics from DMV and XE data. |
 | Build | Incident History Page | Future | Timeline view of correlated incidents from Activity_IncidentLog and XE tables. Plain-English explanations. Builds on sp_Activity_CorrelateIncidents. Phase 2 — needs planning session for correlation rules. |
 | Enhance | sp_DiagnoseServerHealth Evolution | High | Enhance to analyze time windows and output ranked probable causes. Correlate HADR_SYNC waits + secondary PLE drops + scheduled job windows. Automated diagnosis with plain-English conclusions. |
-| Enhance | Current Activity Rethink | Medium | Consolidate Lead Blocker and Longest Wait into Blocked Sessions card as subtitle lines (only meaningful during active blocking). Free up two card slots for live wait stats display. Goal: Eliminate SSMS Activity Monitor dependency for wait-type diagnosis. |
+| Enhance | Server Health revamp | Medium | Lead Blocker → Blocked Sessions consolidation, Top Wait Types (new) → Longest Wait consolidation + slideout, new tempdb pressure card + slideout, and admin-gated in-slideout KILL badges with the showConfirm() + ActionAuditLog audit flow. |
 | Enhance | Incident correlation expansion | Medium | Extend sp_Activity_CorrelateIncidents to detect multi-source patterns (e.g., PLE crash + blocking + AG sync delay within same time window). Currently single-source only. |
 | Enhance | Diagnostic Report Button | Low | Find appropriate home for sp_DiagnoseServerHealth button (removed from Server Health page). |
 | Enhance | Card value font refactor | Low | Split .metric-value class into separate classes for gauges vs. card display numbers to enable independent font sizing. |
@@ -82,7 +82,6 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Enhance | Shared Send-TeamsAlert | Migrate NB, PMT and BDL scripts to use shared Send-TeamsAlert in xFACts-OrchestratorFunctions. Currently they are direct inserting? |
 | Build | Send-OpenBatchSummary BDL/Notice sections | Medium | Implement remaining check functions (Get-OpenBDLImports, Get-ActiveNoticeProcessing). Requires Phase 0 investigation. |
 | Enhance | DM concurrency cap investigation | High | Investigate all DM processing thread caps via env_prfl_cnfg_ovrrd and config_item tables. Findings impact stall detection logic for both PMT and NB collectors. |
 | Enhance | PMT Phase 3b-2: Stall and time-based alerting | Medium | INPROCESS stall detection, stuck ACTIVE, stuck DELETING, ACTIVEWITHSUSPENSE. Requires DM concurrency cap investigation. |
@@ -99,7 +98,7 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Enhance | Alert architecture alignment | High | Migrate from sp_QueueAlert to shared Send-TeamsAlert. Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters. Populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
+| Enhance | Alert architecture alignment | High | Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters. Populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
 
 ---
 
@@ -110,22 +109,6 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
 | Build | BI file storage cleanup integration | Medium | Integrate BI Manager's Python cleanup script (remote file site, deletes files older than 16 months). Determine execution model (scheduled via orchestrator vs. on-demand button on BI page). Display results on Business Intelligence page. Pending script finalization and requirements gathering. |
-
----
-
-## JBoss
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | App Server Health Alerting | High | Composite alert for impending application freeze using ds_in_use_count sustained elevation + undertow throughput collapse. Reference implementation in session 2026-03-17 Collect-DmHealthMetrics.ps1 (now renamed to Collect-JBossMetrics.ps1) output. Prerequisites: deeper metric analysis across all three servers, per-server alerting toggle design (ServerRegistry column + CC badge), alerting badge UI pattern applicable to multiple modules. |
-
----
-
-## ServerOps
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Server Health revamp | Medium | Lead Blocker → Blocked Sessions consolidation, Top Wait Types (new) → Longest Wait consolidation + slideout, new tempdb pressure card + slideout, and admin-gated in-slideout KILL badges with the showConfirm() + ActionAuditLog audit flow. |
 
 ---
 
