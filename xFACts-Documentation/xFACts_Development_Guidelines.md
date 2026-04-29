@@ -1,7 +1,7 @@
 # xFACts Development Guidelines
 
-**Version:** 1.4.0  
-**Date:** April 13, 2026
+**Version:** 1.5.0  
+**Date:** April 29, 2026
 
 The single source of truth for how xFACts platform components are built. Every new module, page, script, and database object should align with these guidelines. Deviations are acceptable when justified — document them when they occur.
 
@@ -420,6 +420,7 @@ Each property type uses specific columns in a specific way. The JSON export maps
 - `title`: Related object name (e.g., `Backup_DatabaseConfig`)
 - `content`: How these objects interact operationally.
 - `sort_order`: Sequential starting at 1.
+- `description`: NULL
 - Focus on relationships that matter operationally, not every table that shares a column.
 - JSON mapping: `title` → `relatedObject`, `content` → `note`
 - **Where to find these:** Foreign keys are the starting point — if a table has FKs, there's usually an operational story behind each one. Also look for cross-module references in scripts (Teams queue, Jira queue, ProcessRegistry dependencies).
@@ -481,10 +482,10 @@ ORDER BY created_dttm DESC;');
 **Relationship Notes:**
 ```sql
 INSERT INTO dbo.Object_Metadata 
-    (schema_name, object_name, object_type, property_type, sort_order, title, content)
+    (schema_name, object_name, object_type, property_type, sort_order, title, description, content)
 VALUES 
 ('ServerOps', 'TableName', 'Table', 'relationship_note', 1, 
-    'RelatedTableName',
+    'RelatedTableName', NULL,
     'How these two objects interact operationally.');
 ```
 
@@ -713,9 +714,9 @@ When the same code pattern exists in multiple scripts, it should live in a share
 
 | Resource | Type | Purpose | Used By |
 |----------|------|---------|---------|
-| `xFACts-OrchestratorFunctions.ps1` | Dot-sourced file | Orchestrator callback (`Complete-OrchestratorTask`), engine event reporting | All orchestrator-managed scripts (~10 scripts) |
+| `xFACts-OrchestratorFunctions.ps1` | Dot-sourced file | Orchestrator callback (`Complete-OrchestratorTask`), engine event reporting, `Initialize-XFActsScript` standard initialization | All orchestrator-managed scripts (~10 scripts) |
 | `xFACts-IndexFunctions.ps1` | Dot-sourced file | Schedule evaluation, window calculation, index selection, priority scoring | Index maintenance scripts (Execute, Scan) + Admin API |
-| `xFACts-Helpers.psm1` | PowerShell module | Control Center shared functions: `Invoke-XFActsQuery`, `Invoke-XFActsProc`, RBAC functions, API caching, CRS5 connection helpers | Control Center (`Start-ControlCenter.ps1`) |
+| `xFACts-Helpers.psm1` | PowerShell module | Control Center shared functions: database access (`Invoke-XFActsQuery`, `Invoke-XFActsProc`, `Invoke-XFActsNonQuery`), RBAC permission checks (`Get-UserAccess`, `Test-ActionPermission`, `Test-ActionEndpoint`, `Get-UserContext`), dynamic navigation rendering (`Get-NavBarHtml`, `Get-HomePageSections`), API caching (`Get-CachedResult`), CRS5 connection helpers (`Invoke-CRS5ReadQuery`, `Invoke-CRS5WriteQuery`), AG-aware reads (`Invoke-AGReadQuery`), credential retrieval (`Get-ServiceCredentials`), and standardized response helpers (`Get-AccessDeniedHtml`, `Get-ActionDeniedResponse`) | Control Center (`Start-ControlCenter.ps1`) |
 
 **Known duplication to consolidate** (backlog items — migrate as scripts are modified):
 
@@ -892,9 +893,311 @@ The Control Center receives events via an internal POST route (localhost-only, n
 
 > **STUB:** API route conventions (`/api/{module}/{endpoint}`), ADLogin authentication requirements, connection string patterns (xFACts database vs. external databases via helpers), and response format standards exist across pages but haven't been formally cataloged. Will be documented during the API audit effort.
 
-### 4.4 Pode Framework
+### 4.4 Pode Framework, RBAC, and Dynamic Navigation
 
-> **STUB:** Route file organization, Start-ControlCenter.ps1 script loading order, WebSocket endpoint setup, RBAC access checks via `Get-UserAccess`, admin context injection, and xFACts-Helpers module patterns exist but haven't been formally cataloged. Will be documented during infrastructure review.
+The Control Center is built on the Pode PowerShell web framework. All routes, APIs, authentication, and shared state are configured through Pode primitives. RBAC permission checks and dynamic navigation are implemented as helper functions in `xFACts-Helpers.psm1`, available to every route at runtime.
+
+#### Pode Startup and Module Loading
+
+`Start-ControlCenter.ps1` is the entry point. It:
+
+1. Imports `xFACts-Helpers.psm1` as a Pode module — making all exported functions available across all Pode runspaces (routes, middleware, WebSocket handlers).
+2. Initializes Pode shared state (`ApiCache`, `ApiCacheConfig`) and named lockables for thread-safe access.
+3. Configures ADLogin authentication for protected routes.
+4. Discovers and dot-sources every `.ps1` file in `scripts/routes/` and `scripts/api/`. Each file calls `Add-PodeRoute` for its route registration.
+5. Starts the Pode server on port 8085 with WebSocket support.
+
+When adding a new route or API file, simply place it in the appropriate directory — the discovery loop picks it up automatically. CC restart is required for the new file to load.
+
+#### RBAC Permission Checks
+
+Every page route MUST perform a permission check before rendering content. Every API route that mutates data MUST perform an action permission check. The pattern:
+
+**Page route — page-level access check:**
+
+```powershell
+Add-PodeRoute -Method Get -Path '/server-health' -Authentication 'ADLogin' -ScriptBlock {
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/server-health'
+    if (-not $access.HasAccess) {
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/server-health') -StatusCode 403
+        return
+    }
+    
+    $ctx = Get-UserContext -WebEvent $WebEvent
+    # ...page rendering...
+}
+```
+
+**API route — action-level permission check:**
+
+```powershell
+Add-PodeRoute -Method Post -Path '/api/server-health/kill-session' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    # ...action logic...
+}
+```
+
+`Test-ActionEndpoint` looks up the endpoint in `RBAC_ActionRegistry`, runs the full permission check (USER DENY → ROLE DENY → USER ALLOW → ROLE ALLOW → tier fallback), and sends a 403 JSON response automatically if denied. Unregistered endpoints pass through.
+
+**Helper function reference:**
+
+| Function | Purpose | Returns |
+|---|---|---|
+| `Get-UserAccess` | Page-level access check with audit logging | Hashtable: `HasAccess`, `Tier`, `Roles`, `RoleNames`, `DepartmentScopes`, `Username`, `DisplayName`, `IsDeptOnly`, `EnforcementMode` |
+| `Get-UserContext` | Lightweight user identity for UI rendering (no audit log entries) | Hashtable: `Username`, `DisplayName`, `Roles`, `RoleNames`, `DepartmentScopes`, `UserDepartments`, `IsDeptOnly`, `IsAdmin`, `HasPlatformAccess`, `EnforcementMode` |
+| `Test-ActionPermission` | Action-level permission check (call manually with explicit page route + action name + required tier) | Boolean |
+| `Test-ActionEndpoint` | Action-level permission check via ActionRegistry lookup (call at top of API routes) | Boolean (sends 403 response on denial) |
+| `Get-AccessDeniedHtml` | Returns styled 403 page HTML | String |
+| `Get-ActionDeniedResponse` | Returns standardized 403 JSON | PSCustomObject |
+
+All RBAC functions read from `$script:RBACCache` in the helpers module, which refreshes from the database every 5 minutes (or immediately on CC restart). This avoids per-request database queries while keeping permissions current.
+
+#### Dynamic Navigation
+
+The horizontal nav bar at the top of every page and the Home page tile grid are both rendered dynamically based on the user's permissions. Source-of-truth data lives in two tables:
+
+- **`dbo.RBAC_NavSection`** — Top-level section groupings (Platform, Departmental Pages, Tools, Administration). Each section has a sort order and a CSS accent class.
+- **`dbo.RBAC_NavRegistry`** — Master inventory of CC pages. Each row joins to `RBAC_PermissionMapping` via `page_route` and contains nav metadata: nav label, display title, description, section grouping, sort order within section, optional doc page link, and visibility flags.
+
+Both tables are loaded into the RBAC cache on the same 5-minute refresh cycle as roles and permissions.
+
+**Helper functions for nav rendering:**
+
+| Function | Purpose | Returns |
+|---|---|---|
+| `Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/X'` | Renders the complete `<nav>` HTML block for a user | String (HTML) |
+| `Get-HomePageSections -UserContext $ctx` | Returns structured section + page data for Home tile rendering | Array of section hashtables |
+
+Both functions filter pages by user permission (silently — no audit log entries), apply section grouping with separators, attach the `accent_class` from `RBAC_NavSection` to each link/tile, and append the admin gear icon for admin users. Empty sections are omitted entirely from the output.
+
+**Visibility flags on `RBAC_NavRegistry`:**
+
+| Flag | Meaning |
+|---|---|
+| `is_active` | Soft-delete. 0 = retired or future page, fully hidden from all rendering |
+| `show_in_nav` | Appears in the horizontal nav bar |
+| `show_on_home` | Appears as a tile on the Home page |
+
+Common combinations:
+
+| Use case | is_active | show_in_nav | show_on_home |
+|---|---|---|---|
+| Standard CC page | 1 | 1 | 1 |
+| Tile-only utility (e.g., Client Portal) | 1 | 0 | 1 |
+| Direct-access only (e.g., `/bdl-import`) | 1 | 0 | 0 |
+| Admin/wildcard pages (`/admin`, `/platform-monitoring`) | 1 | 0 | 0 |
+| Future placeholder page | 0 | 1 | 1 |
+
+**Special case — Home as universal first link:** The root route `/` is intentionally NOT stored in `RBAC_NavRegistry`. Home is handled as the universal first link in the nav bar by `Get-NavBarHtml` — every nav bar starts with a Home link regardless of section. This keeps the registry as a clean catalog of destination pages and avoids special-case sort_order handling.
+
+**Special case — wildcard-permission pages:** Admin-only pages (`/admin`, `/platform-monitoring`) have entries in `RBAC_NavRegistry` for inventory completeness but no explicit rows in `RBAC_PermissionMapping`. They rely on the Admin role's wildcard `*` permission. The coverage gap-check query flags these as false positives — accepted known behavior.
+
+**Section accent classes** (defined in `engine-events.css`):
+
+| section_key | accent_class | Visual effect |
+|---|---|---|
+| platform | `nav-section-platform` | Teal accent on active state (default) |
+| departmental | `nav-section-departmental` | Yellow on hover and active |
+| tools | `nav-section-tools` | Soft blue on hover and active |
+| admin | `nav-section-admin` | `display: none` (defensive — never rendered as nav links) |
+
+The same `accent_class` value is applied to nav-link elements (`<a class="nav-link nav-section-X">`) and Home page tiles (`<div class="nav-card nav-section-X">`) so both surfaces share the same visual grouping.
+
+#### RBAC Configuration
+
+Two GlobalConfig settings drive RBAC behavior:
+
+| Setting | Purpose | Values |
+|---|---|---|
+| `ControlCenter.RBAC.rbac_enforcement_mode` | Controls whether permission failures actually deny access | `disabled`, `audit`, `enforce` |
+| `ControlCenter.RBAC.rbac_audit_verbosity` | Controls audit log volume | `denials_only`, `all` |
+
+In `audit` mode, denials are logged as `WOULD_DENY` events but access is granted — used for safe pre-flip analysis. In `enforce` mode, denials block access and log as `DENIED`. In `disabled` mode, all RBAC checks pass (effectively no RBAC).
+
+The `rbac_audit_verbosity` setting controls whether successful access events are logged. `denials_only` logs only denials and would-denials. `all` logs every check including ALLOWED events — useful during enforcement rollout, expensive long-term.
+
+#### Audit Logging
+
+`dbo.RBAC_AuditLog` captures every permission decision. Schema includes event type (`ACCESS_DENIED`, `ACCESS_ALLOWED`, `ACTION_DENIED`, `ACTION_ALLOWED`, `ACCESS_AUDIT`, etc.), username, AD groups, resolved roles, page route, action name, required tier, user tier, result (`ALLOWED`, `DENIED`, `WOULD_DENY`), detail message, client IP.
+
+Login events (`LOGIN_SUCCESS`, `LOGIN_FAILURE`) are also written to this table — they're independent of page/action permission checks.
+
+The `Write-RBACAuditLog` function in `xFACts-Helpers.psm1` handles all writes. It respects the verbosity setting silently — callers don't need to check verbosity before calling.
+
+**Important: nav rendering does NOT trigger audit log entries.** `Get-NavBarHtml` and `Get-HomePageSections` use `Get-UserPageTier` for filtering, which is silent. Audit logging happens only in `Get-UserAccess` and `Test-ActionPermission`.
+
+---
+
+### 4.5 Adding a New Control Center Page
+
+When adding a new page to the Control Center, follow this sequence to ensure proper integration with RBAC, dynamic nav, and the documentation system. Skip any step at your peril — the system depends on these registrations being complete.
+
+#### Decision points before starting
+
+- Which **section** does the page belong to? `platform`, `departmental`, `tools`, or `admin`?
+- Should it appear in the **horizontal nav bar**? (`show_in_nav`)
+- Should it appear as a **tile on the Home page**? (`show_on_home`)
+- Does it have (or will it have) a **documentation page**? (`doc_page_id`)
+- Which **roles** should have access, and at what **tier** (`view`, `operate`, `admin`)?
+
+#### Step-by-step
+
+**1. Insert into `dbo.RBAC_NavRegistry`.**
+
+```sql
+INSERT INTO dbo.RBAC_NavRegistry 
+    (page_route, nav_label, display_title, description, section_key, sort_order, 
+     doc_page_id, show_in_nav, show_on_home, is_active)
+VALUES
+    ('/your-route', 'Short Label', 'Display Title', 
+     'Descriptive text used as page subtitle and Home tile description.',
+     'platform', 120,        -- next sort_order in section, increments of 10
+     'yourdocpage',          -- or NULL if no doc page yet
+     1, 1, 1);
+```
+
+Choose `sort_order` carefully — it controls where the page appears within its section. Use increments of 10 from the previous highest value in the section. This leaves room to insert pages between existing ones without renumbering.
+
+**2. Insert into `dbo.RBAC_PermissionMapping`** for each role that should have access:
+
+```sql
+-- Standard pattern: most platform pages accessible to all standard users
+INSERT INTO dbo.RBAC_PermissionMapping (role_id, page_route, permission_tier) VALUES
+    (2, '/your-route', 'operate'),  -- PowerUser
+    (3, '/your-route', 'operate'),  -- StandardUser
+    (4, '/your-route', 'view');     -- ReadOnly
+
+-- Admin gets access via wildcard '*' permission, no explicit row needed.
+
+-- Wildcard-permission pages (admin-only): no PermissionMapping rows at all.
+-- They rely entirely on the Admin role's '*' wildcard.
+```
+
+**3. Create the route file** in `scripts/routes/`. Use `JBossMonitoring.ps1` as the canonical pattern. Required structure:
+
+```powershell
+# ============================================================================
+# xFACts Control Center - Your Page
+# Location: E:\xFACts-ControlCenter\scripts\routes\YourPage.ps1
+# Version: Tracked in dbo.System_Metadata (component: ControlCenter.YourComponent)
+# 
+# CHANGELOG
+# ---------
+# YYYY-MM-DD  Initial implementation
+# ============================================================================
+
+Add-PodeRoute -Method Get -Path '/your-route' -Authentication 'ADLogin' -ScriptBlock {
+    
+    # RBAC access check
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/your-route'
+    if (-not $access.HasAccess) {
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/your-route') -StatusCode 403
+        return
+    }
+    
+    # User context for nav rendering and conditional UI
+    $ctx = Get-UserContext -WebEvent $WebEvent
+    
+    # Dynamic nav bar
+    $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/your-route'
+    
+    $html = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Your Page - xFACts Control Center</title>
+    <link rel="stylesheet" href="/css/your-page.css">
+    <link rel="stylesheet" href="/css/engine-events.css">
+</head>
+<body>
+$navHtml
+
+    <div class="header-bar">
+        <div>
+            <h1><a href="/docs/pages/yourdocpage.html" target="_blank">Your Display Title</a></h1>
+            <p class="page-subtitle">Your description here</p>
+        </div>
+        <!-- ...header-right with refresh-info, engine cards, etc... -->
+    </div>
+    
+    <!-- ...page content... -->
+    
+    <script src="/js/your-page.js"></script>
+    <script src="/js/engine-events.js"></script>
+</body>
+</html>
+"@
+    Write-PodeHtmlResponse -Value $html
+}
+```
+
+**Critical rules:**
+- Do NOT hardcode the nav HTML — let `Get-NavBarHtml` handle it
+- Do NOT manually emit the admin gear — `Get-NavBarHtml` includes it when appropriate
+- Do NOT include `.nav-bar`, `.nav-link`, `.nav-separator`, `.nav-admin`, `.nav-spacer`, or `.nav-link.nav-section-*` rules in the page's CSS file — those live in `engine-events.css` as the single source of truth
+- The page's `<h1>` link to `/docs/pages/yourdocpage.html` should match the `doc_page_id` value from your NavRegistry row
+
+**4. Object_Registry entry.** Add a row in `dbo.Object_Registry` under the appropriate component:
+
+```sql
+INSERT INTO dbo.Object_Registry 
+    (module_name, component_name, object_name, object_category, object_type, object_path, description)
+VALUES 
+    ('YourModule', 'YourModule.YourComponent', 'YourPage.ps1', 'WebAsset', 'Route',
+     'E:\xFACts-ControlCenter\scripts\routes\YourPage.ps1', 
+     'Brief description of the page.');
+```
+
+Repeat for the API file (`object_type = 'API'`), CSS file (`object_type = 'CSS'`), and JS file (`object_type = 'JavaScript'`) under the same component.
+
+**5. Restart Control Center** to pick up:
+- The new route registration (Pode loads route files at startup)
+- The new RBACCache data (pulls fresh from NavRegistry and PermissionMapping)
+
+After restart, the page appears in the nav bar and Home tiles automatically for users who have permission.
+
+**6. End-of-session version bump.** Per Section 2.6.7, record what changed in the parent component's `dbo.System_Metadata`. Include the new route file, API file, CSS, JS, and NavRegistry/PermissionMapping rows in the description.
+
+#### Verification checklist
+
+After deploying:
+
+- [ ] Navigate to the route — page loads correctly
+- [ ] Nav bar includes the new page in the right section, with the right label
+- [ ] Home page shows the new tile in the right section (if `show_on_home = 1`)
+- [ ] Section accent color applies on hover and active state
+- [ ] Active page highlighting works when on the new page
+- [ ] Users without permission get a 403 Access Denied page
+- [ ] Browser DevTools console shows no errors
+- [ ] Coverage gap-check query returns clean (no orphans for this page)
+
+#### Coverage gap-check query
+
+Run this query periodically (and after adding new pages) to verify NavRegistry and PermissionMapping are in sync:
+
+```sql
+WITH nav_pages AS (
+    SELECT DISTINCT page_route FROM dbo.RBAC_NavRegistry WHERE is_active = 1
+),
+perm_pages AS (
+    SELECT DISTINCT page_route 
+    FROM dbo.RBAC_PermissionMapping 
+    WHERE is_active = 1 
+      AND page_route NOT IN ('*', '/')
+)
+SELECT 
+    COALESCE(n.page_route, p.page_route) AS page_route,
+    CASE 
+        WHEN n.page_route IS NULL THEN 'In PermissionMapping only - missing NavRegistry row'
+        WHEN p.page_route IS NULL THEN 'In NavRegistry only - missing PermissionMapping row'
+    END AS gap_description
+FROM nav_pages n
+FULL OUTER JOIN perm_pages p ON p.page_route = n.page_route
+WHERE n.page_route IS NULL OR p.page_route IS NULL
+ORDER BY page_route;
+```
+
+Expected baseline result: `/admin` and `/platform-monitoring` only — these are wildcard-permission pages and the false positive is acceptable. Any other rows indicate a gap to investigate.
 
 ---
 
@@ -904,10 +1207,10 @@ The Control Center receives events via an internal POST route (localhost-only, n
 
 Every page follows the same structural template. New pages should match this exactly:
 
-1. **Navigation bar** — Fixed at top with links to all pages. Active page gets `.active` class. All pages share identical nav markup.
+1. **Navigation bar** — Fixed at top, rendered by `Get-NavBarHtml` (see Section 4.4). Each page's route file calls the helper with the current page route; the helper returns a complete `<nav>` HTML block filtered by user permissions, with section-based grouping, separator pipes between sections, and the admin gear appended for admin users. Nav-bar CSS lives in `engine-events.css`. Page-specific CSS files MUST NOT contain `.nav-bar`, `.nav-link`, `.nav-separator`, `.nav-admin`, or `.nav-spacer` rules — these are shared.
 2. **Header bar** — `display: flex; justify-content: space-between; align-items: flex-start`. No `border-bottom` separator. Three-column layout where applicable (title left, optional center controls, refresh info right). For true centering of a center element, use `position: absolute; left: 50%; transform: translateX(-50%)`.
-3. **Page title** — `h1`, 24px, `#569cd6`, font-weight normal (not bold/600). Keep browser default margin-top — `margin: 0` pulls the title too high.
-4. **Subtitle** — `<p class="page-subtitle">`, 14px, `#888`, normal style (not italic), margin 0. Content should match the page's description card on the Home dashboard.
+3. **Page title** — `h1`, 24px, `#569cd6`, font-weight normal (not bold/600). Keep browser default margin-top — `margin: 0` pulls the title too high. The `<h1>` text should be wrapped in an `<a>` linking to the page's documentation (`/docs/pages/{doc_page_id}.html`) with `target="_blank"`.
+4. **Subtitle** — `<p class="page-subtitle">`, 14px, `#888`, normal style (not italic), margin 0. Content should match the page's description in `RBAC_NavRegistry` (which also appears as the Home tile description).
 5. **Header-right** — `display: flex; flex-direction: column; align-items: flex-end; gap: 12px`. Contains the refresh-info line and engine-row (if applicable) stacked vertically.
 6. **Body** — Padding `20px 40px`, padding-top `60px` (accounts for fixed nav bar height, overrides the shorthand).
 
@@ -1130,7 +1433,7 @@ When building a new page, check existing shared resources before writing new CSS
 
 | File | Purpose | Used By |
 |------|---------|---------|
-| `engine-events.css` | Engine indicator bar, WebSocket status, CC title link hover styles | All dashboard pages |
+| `engine-events.css` | Nav-bar base styles and section accent classes (single source of truth — see Section 4.4), engine indicator bar, WebSocket status, CC title link hover styles, shared modal system (`xf-modal-*`), shared slideout panel, refresh badges, page refresh button, dark scrollbars, idle overlay, connection status banners | All dashboard pages |
 | `docs-base.css` | Base typography, colors, and layout for documentation site | All docs pages |
 | `docs-narrative.css` | Narrative page styles (flow diagrams, callouts, info tables) | Narrative pages |
 | `docs-architecture.css` | Architecture page styles (section-nav, tech-tips, diagram placeholders) | Architecture pages |
@@ -1143,7 +1446,7 @@ When building a new page, check existing shared resources before writing new CSS
 
 | File | Purpose | Used By |
 |------|---------|---------|
-| `engine-events.js` | WebSocket connection, engine indicator state management | All dashboard pages with engine cards |
+| `engine-events.js` | WebSocket connection, engine indicator state management, shared modal functions (`showAlert`, `showConfirm`) | All dashboard pages with engine cards |
 | `nav.js` | Documentation site navigation (auto-highlights, responsive) | All docs pages |
 | `ddl-loader.js` | Reference page auto-rendering from JSON | All reference pages |
 | `ddl-erd.js` | ERD diagram rendering from JSON | Architecture pages with ERDs |
@@ -1151,22 +1454,22 @@ When building a new page, check existing shared resources before writing new CSS
 
 **Known CSS duplication to consolidate** (backlog items — migrate as pages are modified):
 
-| Pattern | Duplicated Across | Notes |
-|---------|-------------------|-------|
-| `.nav-bar` styles (layout, colors, hover states) | 12 per-page CSS files | Identical across all dashboard pages |
-| `h1` styling (color, font-size) | 12 per-page CSS files | Minor variations exist — normalize first |
-| `.header-bar` layout (flex, spacing, background) | 11 per-page CSS files | Nearly identical |
-| Modal/slideout base structure (overlay, container, close button) | 7 per-page CSS files | Same structural pattern, page-specific content styles |
-| Status badge classes (`.badge`, colors, sizing) | 6 per-page CSS files | Same colors and sizing repeated |
-| Dark scrollbar styling | Multiple per-page CSS files | Identical `::-webkit-scrollbar` blocks |
-| Section header flex patterns | Multiple per-page CSS files | Same flex layout with minor spacing differences |
+| Pattern | Status | Notes |
+|---------|--------|-------|
+| `.nav-bar`, `.nav-link`, `.nav-separator`, `.nav-admin`, `.nav-spacer` styles | Consolidated in `engine-events.css`. Page-specific files retain duplicate rules pending Phase 3d cleanup — strip during route file updates. | Identical rules across all dashboard pages; engine-events.css is canonical. |
+| `h1` styling (color, font-size) | Duplicated across per-page CSS files | Minor variations exist — normalize first |
+| `.header-bar` layout (flex, spacing, background) | Duplicated across per-page CSS files | Nearly identical |
+| Modal/slideout base structure (overlay, container, close button) | Partially consolidated — `xf-modal-*` and slideout shared in `engine-events.css`. Older modal patterns still duplicated in some pages. | Migrate page-specific modals to `xf-modal` system as pages are touched. |
+| Status badge classes (`.badge`, colors, sizing) | Duplicated across per-page CSS files | Same colors and sizing repeated |
+| Dark scrollbar styling | Consolidated in `engine-events.css`, but some page CSS files still have duplicate `::-webkit-scrollbar` blocks | Strip duplicates during page updates. |
+| Section header flex patterns | Duplicated across per-page CSS files | Same flex layout with minor spacing differences |
 
 **Standard going forward:**
 
-- **Page-specific CSS** should contain only layout and styling unique to that page — grid arrangements, page-specific card layouts, custom data displays.
+- **Page-specific CSS** should contain only layout and styling unique to that page — grid arrangements, page-specific card layouts, custom data displays. NEVER nav-bar styles.
 - **Page-specific JS** should contain only page-specific API calls, data rendering, and `ENGINE_PROCESSES` mapping. Behavioral patterns (modal open/close, slideout animation, refresh badge updates) that repeat across pages are consolidation candidates.
 - **When extracting a shared resource,** update the originating page to use it immediately. Don't create a shared file that nothing references yet.
-- **Naming convention for future shared CC files:** `cc-shared.css` / `cc-shared.js` for cross-page patterns. Consider component-specific shared files if the pattern is large enough (e.g., `cc-modals.css`).
+- **Naming convention for future shared CC files:** `cc-shared.css` / `cc-shared.js` for cross-page patterns. Consider component-specific shared files if the pattern is large enough (e.g., `cc-modals.css`). The current `engine-events.css` and `engine-events.js` have grown beyond their original engine-indicator scope — at some point they may warrant a rename to reflect their actual role as shared CC infrastructure.
 
 ---
 
@@ -1832,6 +2135,7 @@ Quick-reference for pages and components that deviate from the standard guidelin
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 1.5.0 | April 29, 2026 | Replaced Section 4.4 (was a STUB) with full Pode Framework + RBAC + Dynamic Navigation content. Added new Section 4.5 (Adding a New Control Center Page) covering the post-dynamic-nav workflow. Updated Section 3.6 to reflect dynamic nav helpers added to xFACts-Helpers.psm1. Updated Section 5.1 to remove the "all pages share identical nav markup" claim — nav is now rendered dynamically by Get-NavBarHtml. Updated Section 5.11 to reflect nav-bar style consolidation into engine-events.css. |
 | 1.4.0 | March 15, 2026 | Accuracy pass across all sections. Section 2.6.5: added Object_Registry INSERT template with all required columns (module_name was undocumented NOT NULL); added category/type reference table; updated session checklist. Section 2.9: replaced inline module list with reference to Module_Registry/Platform_Registry; lightened category examples; removed stale `data-objects` requirement for scripts (ddl-loader v3.0+ uses dynamic discovery); fixed Object_Metadata INSERT template column names in Section 3.5. Section 3.2: replaced manual initialization block with `Initialize-XFActsScript` shared infrastructure pattern. Section 5.11: removed hardcoded page counts from shared CSS/JS tables; added `docs-controlcenter.css` and `docs-controlcenter.js` to shared resource inventory. Section 6.1: replaced enumerated module naming list and page inventory table with references to dynamic sources (Platform_Registry.md, doc-registry.json, Component_Registry). Section 6.1.1: expanded `doc_json_schema` description to document dual purpose (HTML rendering + Confluence publisher reference page generation). Section 6.2: updated publisher description to include CC guide page processing; expanded conversion table with CC guide and callout entries; replaced stale "Add an entry to $PageRegistry" instruction with current dynamic discovery behavior. Section 6.3: added CC guide page conventions table; updated ddl-root description with `data-category` attribute. |
 | 1.3.0 | March 7, 2026 | Added Section 6.1.1 (Documentation Registry) covering Component_Registry doc_* columns, doc-registry.json structure, filename conventions, nav.js page discovery, named CC guide pages, and multiple CC guide page patterns. |
 | 1.2.0 | March 5, 2026 | Documentation system correction: Object_Metadata established as sole documentation source. Added 'Object_Metadata is the documentation system' principle to Section 1. Reordered Section 2.4 DDL Validation Checklist — Object_Metadata is now item #1. Replaced Section 2.8 (Extended Properties) with deprecation notice. Updated Section 2.9 intro, bulk migration note, audit concept, and scripts comparison table to remove all extended property references. Updated Sections 3.5 and 6.1 to remove extended property language. Added Section 2.9 Sort Order for New Enrichment Rows (MAX+1 pattern). Extended properties (MS_Description) are deprecated — nothing in the documentation pipeline reads them. |
