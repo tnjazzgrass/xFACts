@@ -12,6 +12,13 @@
 
     CHANGELOG
     ---------
+    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
+                Renamed local Send-TeamsAlert wrapper to Send-SFTPAlert (eliminates
+                  function name collision with shared orchestrator function)
+                Replaced EXEC Teams.sp_QueueAlert call with Send-TeamsAlert
+                trigger_value now includes EventType (e.g. 'Detected-2026-04-28')
+                  to preserve LateDetected behavior under shared dedup
+                Call sites updated: Send-TeamsAlert -> Send-SFTPAlert
     2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
                 Removed inline Write-Log, Get-MasterPassphrase, Get-SFTPCredentials
                 Replaced credential retrieval with Get-ServiceCredentials
@@ -62,7 +69,7 @@ DEPLOYMENT REMINDERS
 3. WinSCP must be installed on FA-SQLDBB at C:\Program Files (x86)\WinSCP\.
 4. The orchestrator service account (FAC\sqlmon) must have:
    - Read/Write access to xFACts database (FileOps schema)
-   - EXEC on Teams.sp_QueueAlert and Jira.sp_QueueTicket
+   - INSERT on Teams.AlertQueue (via shared Send-TeamsAlert) and Jira.sp_QueueTicket
 ================================================================================
 #>
 
@@ -305,7 +312,20 @@ VALUES ($ConfigId, '$($ConfigName.Replace("'", "''"))', '$($SftpPath.Replace("'"
     }
 }
 
-function Send-TeamsAlert {
+function Send-SFTPAlert {
+    <#
+    .SYNOPSIS
+        Wrapper around shared Send-TeamsAlert that builds SFTP-specific title and
+        message for each EventType, then queues via the shared function.
+
+    .DESCRIPTION
+        Preserves the script's preview-mode convention (every write path bails on
+        -not $Execute with a [PREVIEW] log line). Severity and content are derived
+        from EventType. trigger_value embeds EventType so that Detected, Escalated,
+        and LateDetected events for the same ConfigName on the same day each have
+        distinct dedup keys (required because the shared Send-TeamsAlert performs
+        mandatory dedup against Teams.RequestLog).
+    #>
     param(
         [string]$ConfigName,
         [string]$EventType,
@@ -318,41 +338,30 @@ function Send-TeamsAlert {
         Write-Log "[PREVIEW] Would queue Teams alert: $EventType for $ConfigName" "INFO"
         return
     }
-    
+
     $today = Get-Date -Format "MM/dd/yyyy"
-    
+
     $category = if ($EventType -eq 'Escalated') { 'WARNING' } else { 'INFO' }
-    
+    $color    = if ($EventType -eq 'Escalated') { 'warning' } else { 'good' }
+
     $title = switch ($EventType) {
-        'Detected' { "xFACts: File Detected - $ConfigName - $today" }
+        'Detected'     { "xFACts: File Detected - $ConfigName - $today" }
         'LateDetected' { "xFACts: File Detected (Late) - $ConfigName - $today" }
-        'Escalated' { "xFACts: File Not Detected - $ConfigName - $today" }
-        default { "xFACts: File Monitor - $ConfigName - $today" }
+        'Escalated'    { "xFACts: File Not Detected - $ConfigName - $today" }
+        default        { "xFACts: File Monitor - $ConfigName - $today" }
     }
-    
+
     $message = switch ($EventType) {
-        'Detected' { "File detected: $FileName`nPath: $SftpPath" }
+        'Detected'     { "File detected: $FileName`nPath: $SftpPath" }
         'LateDetected' { "File detected after escalation: $FileName`nPath: $SftpPath" }
-        'Escalated' { "Expected file not detected by escalation time.`nPath: $SftpPath" }
-        default { "Event: $EventType`nPath: $SftpPath" }
+        'Escalated'    { "Expected file not detected by escalation time.`nPath: $SftpPath" }
+        default        { "Event: $EventType`nPath: $SftpPath" }
     }
-    
-    $sqlQuery = @"
-        EXEC Teams.sp_QueueAlert
-        @SourceModule = 'FileOps',
-        @AlertCategory = '$category',
-        @Title = '$($title.Replace("'", "''"))',
-        @Message = '$($message.Replace("'", "''"))',
-        @TriggerType = '$($ConfigName.Replace("'", "''"))',
-        @TriggerValue = '$(Get-Date -Format "yyyy-MM-dd")';
-"@
-    
-    try {
-        Invoke-SqlNonQuery -Query $sqlQuery | Out-Null
-        Write-Log "Teams alert queued: $title" "SUCCESS"
-    } catch {
-        Write-Log "Failed to queue Teams alert: $($_.Exception.Message)" "ERROR"
-    }
+
+    Send-TeamsAlert -SourceModule 'FileOps' -AlertCategory $category `
+        -Title $title -Message $message -Color $color `
+        -TriggerType $ConfigName `
+        -TriggerValue "$EventType-$(Get-Date -Format 'yyyy-MM-dd')" | Out-Null
 }
 
 function Send-JiraTicket {
@@ -648,7 +657,7 @@ WHERE module_name = 'FileOps'
                             -FileName $scanResult.FileName -TeamsQueued $teamsQueued -JiraQueued $false
                         
                         if ($teamsQueued) {
-                            Send-TeamsAlert `
+                            Send-SFTPAlert `
                                 -ConfigName $config.config_name -EventType 'LateDetected' `
                                 -FileName $scanResult.FileName -SftpPath $config.sftp_path `
                                 -IsLateDetection $true
@@ -669,7 +678,7 @@ WHERE module_name = 'FileOps'
                             -FileName $scanResult.FileName -TeamsQueued $teamsQueued -JiraQueued $false
                         
                         if ($teamsQueued) {
-                            Send-TeamsAlert `
+                            Send-SFTPAlert `
                                 -ConfigName $config.config_name -EventType 'Detected' `
                                 -FileName $scanResult.FileName -SftpPath $config.sftp_path `
                                 -IsLateDetection $false
@@ -691,7 +700,7 @@ WHERE module_name = 'FileOps'
                         -TeamsQueued $teamsQueued -JiraQueued $jiraQueued
                     
                     if ($teamsQueued) {
-                        Send-TeamsAlert `
+                        Send-SFTPAlert `
                             -ConfigName $config.config_name -EventType 'Escalated' `
                             -SftpPath $config.sftp_path
                     }
