@@ -6,6 +6,11 @@
    Shared styles for real-time engine indicators: card/bar base styles,
    popup display, WebSocket disconnect indicator, refresh mode badges,
    and page-level refresh button.
+
+   Phase 2/3 of dynamic nav (2026-04): added shared nav-bar styles and
+   section accent classes consumed by Get-NavBarHtml. Page-specific CSS
+   files may still contain duplicate nav-bar rules pending consolidation
+   cleanup as part of Phase 3d route updates.
    ============================================================================ */
 
 /* ── Engine Card Base Styles ── */
@@ -517,3 +522,91 @@ h1 a:hover { color: #9cdcfe; }
 .xf-modal-btn-primary:hover { background: #1177bb; border-color: #1177bb; }
 .xf-modal-btn-danger { padding: 8px 20px; background: #6d3030; border: 1px solid #8b3a3a; border-radius: 4px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
 .xf-modal-btn-danger:hover { background: #8b3a3a; border-color: #a04444; }
+
+/* ============================================================================
+   Dynamic Navigation Bar (Phase 2/3 of dynamic nav)
+   Consolidated nav-bar styles consumed by Get-NavBarHtml in xFACts-Helpers.psm1.
+   Page-specific CSS files may still contain duplicate rules pending cleanup
+   as part of Phase 3d route-by-route consolidation.
+   ============================================================================ */
+
+/* ── Nav Bar Base Styles ── */
+
+.nav-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #252526;
+    border-bottom: 1px solid #404040;
+    padding: 0 20px;
+    display: flex;
+    gap: 0;
+    z-index: 1000;
+    height: 40px;
+    align-items: center;
+}
+
+.nav-link {
+    color: #888;
+    text-decoration: none;
+    padding: 10px 16px;
+    font-size: 13px;
+    transition: all 0.2s;
+    border-bottom: 2px solid transparent;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.nav-link:hover { color: #d4d4d4; background: #2d2d2d; }
+.nav-link.active { color: #4ec9b0; border-bottom-color: #4ec9b0; }
+
+.nav-spacer { flex: 1; }
+
+.nav-admin {
+    font-size: 20px;
+    opacity: 0.45;
+    color: #569cd6 !important;
+    padding: 10px 12px;
+    transition: opacity 0.2s;
+    line-height: 1;
+}
+.nav-admin:hover { opacity: 1; }
+
+.nav-separator {
+    color: #404040;
+    padding: 0 4px;
+    font-size: 13px;
+}
+
+/* ── Section Accent Classes ── */
+/* Applied to nav-link elements based on section_key in RBAC_NavSection.   */
+/* Each section gets a distinct color theme for visual grouping.           */
+/* Default link color stays neutral gray; section accent appears on hover  */
+/* and active state to signal grouping without overwhelming the nav.       */
+
+/* Platform section — teal accent (matches existing default monitoring color) */
+.nav-link.nav-section-platform.active {
+    color: #4ec9b0;
+    border-bottom-color: #4ec9b0;
+}
+
+/* Departmental section — yellow/gold accent */
+.nav-link.nav-section-departmental:hover { color: #dcdcaa; }
+.nav-link.nav-section-departmental.active {
+    color: #dcdcaa;
+    border-bottom-color: #dcdcaa;
+}
+
+/* Tools section — soft blue accent */
+.nav-link.nav-section-tools:hover { color: #9cdcfe; }
+.nav-link.nav-section-tools.active {
+    color: #9cdcfe;
+    border-bottom-color: #9cdcfe;
+}
+
+/* Admin section — never rendered as nav links (gear-only access).         */
+/* Defensive rule: if a future change accidentally emits an admin link,    */
+/* it stays hidden rather than appearing alongside other links.            */
+.nav-link.nav-section-admin { display: none; }
