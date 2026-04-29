@@ -22,6 +22,16 @@
 
     CHANGELOG
     ---------
+    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
+                Send-BuildNotification body rewritten to call shared Send-TeamsAlert
+                  (replaces direct EXEC Teams.sp_QueueAlert)
+                Severity remapped to shared function's CRITICAL/WARNING/INFO set:
+                  COMPLETED   INFO/good            (unchanged intent)
+                  FAILED      ERROR -> CRITICAL/attention
+                  NOT_STARTED ERROR -> WARNING/warning  (historically false-positive
+                                                         during in-flight builds)
+                Wrapper signature, trigger_value scheme, and caller-side $Execute
+                  gating preserved
     2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
                 Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsNonQuery
                 Renamed $xFACtsServer/$xFACtsDB to $ServerInstance/$Database
@@ -340,7 +350,19 @@ function Get-AverageStepDurations {
 function Send-BuildNotification {
     <#
     .SYNOPSIS
-        Queues a Teams notification for build events
+        Queues a Teams notification for build events via shared Send-TeamsAlert.
+
+    .DESCRIPTION
+        Builds status-specific title/message/severity, then delegates to the
+        shared Send-TeamsAlert function. Caller is responsible for $Execute
+        gating (this function unconditionally queues when called, matching
+        the script's existing convention).
+
+        Severity/color mapping:
+          COMPLETED   -> INFO     / good       (success summary)
+          FAILED      -> CRITICAL / attention  (build failure)
+          NOT_STARTED -> WARNING  / warning    (rare; historically false-positive
+                                                 during in-flight builds)
     #>
     param(
         [string]$Status,           # COMPLETED, FAILED, or NOT_STARTED
@@ -351,46 +373,37 @@ function Send-BuildNotification {
         [DateTime]$BuildDate,
         [string]$TriggerValue      # For deduplication: STATUS-instance_id or NOT_STARTED-date
     )
-    
+
     switch ($Status) {
         "COMPLETED" {
-            $title = "BIDATA Daily Build Complete"
+            $title    = "BIDATA Daily Build Complete"
             $category = "INFO"
-            $message = "Completed: " + $EventTime.ToString("h:mm tt") + "`n" +
-                       "Total Duration: $Duration`n`n" +
-                       $StepDetails
+            $color    = "good"
+            $message  = "Completed: " + $EventTime.ToString("h:mm tt") + "`n" +
+                        "Total Duration: $Duration`n`n" +
+                        $StepDetails
         }
         "FAILED" {
-            $title = "BIDATA Daily Build FAILED"
-            $category = "ERROR"
-            $message = "Failed at: " + $EventTime.ToString("h:mm tt") + "`n" +
-                       "Failed Step: $FailedStepName`n" +
-                       "Duration before failure: $Duration"
+            $title    = "BIDATA Daily Build FAILED"
+            $category = "CRITICAL"
+            $color    = "attention"
+            $message  = "Failed at: " + $EventTime.ToString("h:mm tt") + "`n" +
+                        "Failed Step: $FailedStepName`n" +
+                        "Duration before failure: $Duration"
         }
         "NOT_STARTED" {
-            $title = "BIDATA Daily Build Has Not Started"
-            $category = "ERROR"
-            $message = "The BIDATA Daily Build has not started.`n" +
-                       "Expected start time has passed.`n" +
-                       "Please investigate immediately - this affects reporting availability."
+            $title    = "BIDATA Daily Build Has Not Started"
+            $category = "WARNING"
+            $color    = "warning"
+            $message  = "The BIDATA Daily Build has not started.`n" +
+                        "Expected start time has passed.`n" +
+                        "Please investigate immediately - this affects reporting availability."
         }
     }
-    
-    # Escape single quotes for SQL
-    $titleSafe = $title -replace "'", "''"
-    $messageSafe = $message -replace "'", "''"
-    
-    $query = @"
-        EXEC Teams.sp_QueueAlert
-            @SourceModule = 'BIDATA',
-            @AlertCategory = '$category',
-            @Title = '$titleSafe',
-            @Message = '$messageSafe',
-            @TriggerType = 'BuildStatus',
-            @TriggerValue = '$TriggerValue'
-"@
-    
-    return Invoke-SqlNonQuery -Query $query
+
+    return Send-TeamsAlert -SourceModule 'BIDATA' -AlertCategory $category `
+        -Title $title -Message $message -Color $color `
+        -TriggerType 'BuildStatus' -TriggerValue $TriggerValue
 }
 
 # ============================================================================
