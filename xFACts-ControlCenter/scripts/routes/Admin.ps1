@@ -1,54 +1,58 @@
 # ============================================================================
 # xFACts Control Center - Administration Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\Admin.ps1
+#
+# Admin-only page with the platform process timeline and management tools:
+#   - Process Timeline (canvas visualization with module legend, filter pills,
+#     and time-window selector)
+#   - Platform Management cards: Engine Controls, System Metadata, Global
+#     Configuration, Process Scheduler, Platform Monitoring, Documentation,
+#     Alert Failures
+#
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.Admin)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Helper now applies the 'active' class
+#             to the admin gear when CurrentPageRoute is '/admin', restoring
+#             the visual indicator that was previously baked into the nav
+#             markup. Page H1 link, title, and browser tab title preserved
+#             as-is via $headerHtml/$browserTitle from RBAC_NavRegistry.
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock {
 
+    # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/admin'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/admin') -StatusCode 403
         return
     }
 
-    $html = @'
+    # --- User context (used by helper for nav rendering) ---
+    $ctx = Get-UserContext -WebEvent $WebEvent
 
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/admin'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/admin'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/admin'
+
+    $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Administration - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/admin.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-        <span class="nav-spacer"></span>
-        <a href="/admin" class="nav-link nav-admin active" title="Administration">&#9881;</a>
-    </nav>
+$navHtml
 
     <!-- Header -->
     <div class="page-header">
         <div>
-            <h1><a href="docs/pages/cc/controlcenter-cc-admin.html" target="_blank">Administration</a></h1>
-            <p class="header-subtitle">Process timeline and platform management</p>
+            $headerHtml
         </div>
         <div class="refresh-info">
             <span class="live-indicator"></span>
@@ -380,7 +384,6 @@ Add-PodeRoute -Method Get -Path '/admin' -Authentication 'ADLogin' -ScriptBlock 
     <script src="/js/engine-events.js"></script>
 </body>
 </html>
-
-'@
+"@
     Write-PodeHtmlResponse -Value $html
 }
