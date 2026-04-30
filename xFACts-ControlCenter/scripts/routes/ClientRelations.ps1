@@ -1,7 +1,7 @@
 # ============================================================================
 # xFACts Control Center - Client Relations Dashboard
 # Location: E:\xFACts-ControlCenter\scripts\routes\ClientRelations.ps1
-# 
+#
 # Departmental page for Client Relations team.
 # Components:
 #   - Summary Cards: Total consumers, total accounts, rejection reason breakdown (Live)
@@ -12,67 +12,50 @@
 # APIs: ClientRelations-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: DeptOps.ClientRelations)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1, subtitle, and browser tab title
+#             now render from RBAC_NavRegistry via Get-PageHeaderHtml and
+#             Get-PageBrowserTitle. Dropped the $access.IsDeptOnly branching
+#             since Get-NavBarHtml already filters nav items by user
+#             permissions (a dept-only user naturally sees only Home + their
+#             dept page). Custom cache indicator preserved (heavy queries
+#             use page-level caching rather than the standard live indicator).
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/departmental/client-relations' -Authentication 'ADLogin' -ScriptBlock {
-    
+
     # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/client-relations'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/client-relations') -StatusCode 403
         return
     }
-    
-    # --- Admin gear icon (visible only to admin role holders) ---
+
+    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
-    $adminGear = if ($ctx.IsAdmin) {
-        '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-    } else { '' }
-    
-    # Build nav bar - dept-only users get a simplified nav
-    $navHtml = if ($access.IsDeptOnly) {
-        @'
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/departmental/client-relations" class="nav-link active">Client Relations</a>
-    </nav>
-'@
-    } else {
-        @'
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link active">Client Relations</a>
-    </nav>
-'@
-    }
-    
-    $navHtml = $navHtml.Replace('</nav>', "$adminGear</nav>")
-    
+
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/departmental/client-relations'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/departmental/client-relations'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/departmental/client-relations'
+
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Client Relations - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/client-relations.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    $navHtml
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1>Client Relations</h1>
-            <p class="page-subtitle">Departmental Operations</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <div class="refresh-info">
@@ -85,9 +68,9 @@ Add-PodeRoute -Method Get -Path '/departmental/client-relations' -Authentication
             </div>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- ================================================================ -->
     <!-- SUMMARY CARDS                                                    -->
     <!-- ================================================================ -->
@@ -101,7 +84,7 @@ Add-PodeRoute -Method Get -Path '/departmental/client-relations' -Authentication
             <div id="summary-cards" class="summary-cards hidden"></div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- QUEUE TABLE (Consumer/Account Tree)                              -->
     <!-- ================================================================ -->
@@ -119,7 +102,7 @@ Add-PodeRoute -Method Get -Path '/departmental/client-relations' -Authentication
             <div id="queue-table" class="queue-scroll-container hidden"></div>
         </div>
     </div>
-    
+
     <script src="/js/client-relations.js"></script>
     <script src="/js/engine-events.js"></script>
 </body>
