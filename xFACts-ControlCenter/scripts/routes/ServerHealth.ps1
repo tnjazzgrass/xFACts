@@ -1,65 +1,55 @@
 # ============================================================================
 # xFACts Control Center - Server Health Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\ServerHealth.ps1
-# 
+#
 # Renders the Server Health dashboard page.
 # CSS: /css/server-health.css
 # JS:  /js/server-health.js
 # APIs: ServerHealth-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: ServerOps.ServerHealth)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle.
 # ============================================================================
 
-   Add-PodeRoute -Method Get -Path '/server-health' -Authentication 'ADLogin' -ScriptBlock {
+Add-PodeRoute -Method Get -Path '/server-health' -Authentication 'ADLogin' -ScriptBlock {
 
-       # --- RBAC Access Check ---
-       $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/server-health'
-       if (-not $access.HasAccess) {
-           Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/server-health') -StatusCode 403
-           return
-       }
+    # --- RBAC Access Check ---
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/server-health'
+    if (-not $access.HasAccess) {
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/server-health') -StatusCode 403
+        return
+    }
 
-       # --- Admin gear icon (visible only to admin role holders) ---
-       $ctx = Get-UserContext -WebEvent $WebEvent
-       $adminGear = if ($ctx.IsAdmin) {
-           '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-       } else { '' }
+    # --- User context (used by helper for nav rendering) ---
+    $ctx = Get-UserContext -WebEvent $WebEvent
 
-       $html = @'
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/server-health'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/server-health'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/server-health'
+
+    $html = @"
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Server Health - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/server-health.css">
     <link rel="stylesheet" href="/css/engine-events.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link active">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-		<a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
-    
+$navHtml
+
     <div class="header-bar">
         <div class="header-left">
-            <h1><a href="/docs/pages/serverhealth.html" target="_blank">Server Health</a></h1>
-            <p class="page-subtitle">Real-time SQL Server performance and health monitoring</p>
+            $headerHtml
         </div>
         <div class="header-center">
             <div id="server-tabs" class="server-tabs">
@@ -96,9 +86,9 @@
             </div>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <div class="main-layout">
         <div class="metrics-column">
             <!-- Memory Section -->
@@ -111,7 +101,7 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
             <!-- Connections Section -->
             <div class="section">
                 <div class="section-header">
@@ -122,7 +112,7 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
             <!-- Activity Section -->
             <div class="section">
                 <div class="section-header">
@@ -133,7 +123,7 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
             <!-- Extended Events Activity Section -->
             <div class="section">
                 <div class="section-header section-header-with-control">
@@ -151,7 +141,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="info-column">
             <!-- Server Info Panel -->
             <div class="section info-panel">
@@ -163,7 +153,7 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
             <!-- Disk Space Panel -->
             <div class="section info-panel">
                 <div class="section-header">
@@ -174,7 +164,7 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
             <!-- AG Health Panel -->
             <div class="section info-panel">
                 <div class="section-header">
@@ -187,7 +177,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Zombie Kill Confirmation Modal -->
     <div id="zombie-modal" class="modal hidden" onclick="if(event.target === this) closeZombieModal()">
         <div class="modal-content">
@@ -209,7 +199,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Trend Modal -->
     <div id="trend-modal" class="modal hidden" onclick="if(event.target === this) closeTrendModal()">
         <div class="modal-content wide">
@@ -240,7 +230,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- XE Time Window Selector Modal -->
     <div id="xe-time-modal" class="modal hidden" onclick="if(event.target === this) closeTimeWindowModal()">
         <div class="modal-content">
@@ -262,7 +252,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Open Transactions Slide Panel -->
     <div id="trans-overlay" class="slide-panel-overlay" onclick="closeTransPanel()"></div>
     <div id="trans-panel" class="slide-panel wide">
@@ -277,7 +267,7 @@
             <button class="btn btn-secondary" onclick="copyKillScript()">&#128203; Copy KILL Script</button>
         </div>
     </div>
-    
+
     <!-- Blocking Details Slide Panel -->
     <div id="blocking-overlay" class="slide-panel-overlay" onclick="closeBlockingPanel()"></div>
     <div id="blocking-panel" class="slide-panel wide">
@@ -292,7 +282,7 @@
             <button class="btn btn-secondary" onclick="copyBlockerKillScript()">&#128203; Copy KILL Script (Blockers)</button>
         </div>
     </div>
-    
+
     <!-- Active Requests Slide Panel -->
     <div id="requests-overlay" class="slide-panel-overlay" onclick="closeRequestsPanel()"></div>
     <div id="requests-panel" class="slide-panel wide">
@@ -307,7 +297,7 @@
             <button class="btn btn-secondary" onclick="refreshActiveRequests()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- XE Long Running Queries Slideout -->
     <div id="xe-lrq-overlay" class="slide-panel-overlay" onclick="closeXELRQPanel()"></div>
     <div id="xe-lrq-panel" class="slide-panel wide">
@@ -322,7 +312,7 @@
             <button class="btn btn-secondary" onclick="refreshXELRQPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- XE Blocking Events Slideout -->
     <div id="xe-blocking-overlay" class="slide-panel-overlay" onclick="closeXEBlockingPanel()"></div>
     <div id="xe-blocking-panel" class="slide-panel wide">
@@ -337,7 +327,7 @@
             <button class="btn btn-secondary" onclick="refreshXEBlockingPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- XE Deadlock Events Slideout -->
     <div id="xe-deadlock-overlay" class="slide-panel-overlay" onclick="closeXEDeadlockPanel()"></div>
     <div id="xe-deadlock-panel" class="slide-panel wide">
@@ -352,7 +342,7 @@
             <button class="btn btn-secondary" onclick="refreshXEDeadlockPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- XE Linked Server Inbound Slideout -->
     <div id="xe-ls-inbound-overlay" class="slide-panel-overlay" onclick="closeXELSInboundPanel()"></div>
     <div id="xe-ls-inbound-panel" class="slide-panel wide">
@@ -367,7 +357,7 @@
             <button class="btn btn-secondary" onclick="refreshXELSInboundPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- XE Linked Server Outbound Slideout -->
     <div id="xe-ls-outbound-overlay" class="slide-panel-overlay" onclick="closeXELSOutboundPanel()"></div>
     <div id="xe-ls-outbound-panel" class="slide-panel wide">
@@ -382,7 +372,7 @@
             <button class="btn btn-secondary" onclick="refreshXELSOutboundPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- XE AG Health Events Slideout -->
     <div id="xe-ag-events-overlay" class="slide-panel-overlay" onclick="closeXEAGEventsPanel()"></div>
     <div id="xe-ag-events-panel" class="slide-panel wide">
@@ -397,7 +387,7 @@
             <button class="btn btn-secondary" onclick="refreshXEAGEventsPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- AG Replica Detail Slideout -->
     <div id="ag-detail-overlay" class="slide-panel-overlay" onclick="closeAGDetailPanel()"></div>
     <div id="ag-detail-panel" class="slide-panel wide">
@@ -412,7 +402,7 @@
             <button class="btn btn-secondary" onclick="refreshAGDetailPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <!-- XE System Health Events Slideout -->
     <div id="xe-system-health-overlay" class="slide-panel-overlay" onclick="closeXESystemHealthPanel()"></div>
     <div id="xe-system-health-panel" class="slide-panel wide">
@@ -427,12 +417,12 @@
             <button class="btn btn-secondary" onclick="refreshXESystemHealthPanel()">&#8635; Refresh</button>
         </div>
     </div>
-    
+
     <script src="/js/server-health.js"></script>
     <script src="/js/engine-events.js"></script>
 </body>
 </html>
-'@
-    $html = $html.Replace('</nav>', "$adminGear</nav>")
+
+"@
     Write-PodeHtmlResponse -Value $html
 }
