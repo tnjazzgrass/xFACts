@@ -2,73 +2,34 @@
    xFACts Control Center - DM Operations Styles
    Location: E:\xFACts-ControlCenter\public\css\dm-operations.css
    Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css), .engine-row
+               stub (shared), .page-refresh-btn (shared), .section-header-right
+               (shared), .refresh-badge-event (shared 10px adopted for
+               consistency), .connection-banner block (shared rules apply via
+               class names set by engine-events.js), and .idle-overlay/
+               .idle-message (shared).
+               Slide-panel rules retained as page-specific because this page's
+               JS uses the .active activation class (engine-events.css uses
+               .open). Future cleanup: align JS to .open and strip these.
    ============================================================================ */
 
 /* Base Layout */
 * { box-sizing: border-box; }
-body { 
-    font-family: 'Segoe UI', Arial, sans-serif; 
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
     margin: 0;
     padding: 20px 40px;
     padding-top: 60px;
-    background: #1e1e1e; 
-    color: #d4d4d4; 
+    background: #1e1e1e;
+    color: #d4d4d4;
 }
 h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .page-subtitle { color: #888; font-size: 14px; margin: 0; }
 a { color: #9cdcfe; }
-
-/* Navigation Bar */
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 0 20px;
-    display: flex;
-    gap: 0;
-    z-index: 1000;
-    height: 40px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    padding: 10px 16px;
-    font-size: 13px;
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    white-space: nowrap;
-}
-
-.nav-link:hover {
-    color: #d4d4d4;
-    background: #2d2d2d;
-}
-
-.nav-link.active {
-    color: #4ec9b0;
-    border-bottom-color: #4ec9b0;
-}
-
-.nav-separator {
-    color: #404040;
-    padding: 0 8px;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-}
-
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
 
 /* ----------------------------------------------------------------------------
    Header Bar
@@ -120,68 +81,8 @@ a { color: #9cdcfe; }
 
 .last-updated { color: #569cd6; }
 
-.page-refresh-btn {
-    background: none;
-    border: 1px solid #404040;
-    color: #888;
-    cursor: pointer;
-    font-size: 16px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: all 0.2s;
-}
-
-.page-refresh-btn:hover {
-    color: #d4d4d4;
-    border-color: #569cd6;
-}
-
-/* Engine cards (shared with engine-events.css) */
-.engine-row {
-    display: flex;
-    gap: 8px;
-}
-
-/* ----------------------------------------------------------------------------
-   Connection Error Banner
-   ---------------------------------------------------------------------------- */
+/* Connection Error legacy (replaced by shared connection-banner classes) */
 .connection-error { display: none; }
-
-.connection-banner {
-    padding: 8px 16px;
-    border-radius: 4px;
-    font-size: 13px;
-    margin-bottom: 16px;
-    text-align: center;
-}
-
-.connection-banner.reconnecting {
-    background: #3d3520;
-    color: #dcdcaa;
-    border: 1px solid #6d5a30;
-    display: block;
-}
-
-.connection-banner.disconnected {
-    background: #3d2020;
-    color: #f48771;
-    border: 1px solid #6d3030;
-    display: block;
-}
-
-.connection-banner.reloading {
-    background: #1e3a2a;
-    color: #4ec9b0;
-    border: 1px solid #2d5a3d;
-    display: block;
-}
-
-.connection-banner.expired {
-    background: #3d2020;
-    color: #f48771;
-    border: 1px solid #6d3030;
-    display: block;
-}
 
 /* ----------------------------------------------------------------------------
    Section Layout (matching DBCC framed pattern)
@@ -220,18 +121,6 @@ a { color: #9cdcfe; }
     margin: 0;
     text-transform: uppercase;
     letter-spacing: 1px;
-}
-
-.section-header-right {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.refresh-badge-event {
-    font-size: 12px;
-    color: #dcdcaa;
-    cursor: default;
 }
 
 /* Two Column Layout */
@@ -907,7 +796,10 @@ a { color: #9cdcfe; }
 .schedule-mode-btn:hover { border-color: #569cd6; color: #d4d4d4; }
 
 /* ----------------------------------------------------------------------------
-   Slide Panel (shared pattern — schedule modal, batch detail)
+   Slide Panel (page-specific — uses .active activation class)
+   NOTE: engine-events.css defines .slide-panel with .open activation. This
+   page's JS uses .active. Keeping these rules as page-specific. Future
+   cleanup item: align JS to .open and strip these.
    ---------------------------------------------------------------------------- */
 .slide-panel-overlay {
     display: none;
@@ -1098,26 +990,4 @@ a { color: #9cdcfe; }
     white-space: nowrap;
     color: #f48771;
     font-size: 10px;
-}
-
-/* ----------------------------------------------------------------------------
-   Idle overlay (shared with engine-events)
-   ---------------------------------------------------------------------------- */
-.idle-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.idle-message {
-    color: #888;
-    font-size: 16px;
-    padding: 20px 40px;
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
 }
