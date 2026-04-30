@@ -1,56 +1,65 @@
 # ============================================================================
 # xFACts Control Center - Platform Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1
+#
+# Admin-only page measuring the resource impact of xFACts on the SQL Server
+# environment. Top section: Platform Performance + Hero Gauge + Control
+# Center API. Bottom section: Process Breakdown + CPU Trend + Top API
+# Endpoints. Slideouts for blocking events, LRQ crossovers, API users,
+# and API errors.
+#
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.Platform)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle. Fixed the access
+#             check to use '/platform-monitoring' (was '/admin') for proper
+#             permission validation against this route's registry entry.
+#             Hardcoded admin gear removed from nav (Get-NavBarHtml renders
+#             it). Added a "Back to <originating page>" link below the
+#             header that resolves the referrer via /api/nav-registry/label
+#             (engine-events-API.ps1), falling back to Home if available
+#             or hiding entirely if the user has no Home access.
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/platform-monitoring' -Authentication 'ADLogin' -ScriptBlock {
 
-    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/admin'
+    # --- RBAC Access Check ---
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/platform-monitoring'
     if (-not $access.HasAccess) {
-        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/admin') -StatusCode 403
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/platform-monitoring') -StatusCode 403
         return
     }
 
-    $html = @'
+    # --- User context (used by helper for nav rendering) ---
+    $ctx = Get-UserContext -WebEvent $WebEvent
 
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/platform-monitoring'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/platform-monitoring'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/platform-monitoring'
+
+    $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Platform Monitoring - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/platform-monitoring.css">
     <link rel="stylesheet" href="/css/engine-events.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-        <span class="nav-spacer"></span>
-        <a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>
-    </nav>
+$navHtml
 
     <div class="page-wrap">
         <!-- Header -->
         <div class="header-bar">
             <div class="header-left">
-                <h1><a href="docs/pages/cc/controlcenter-cc-platform.html" target="_blank">Platform Monitoring</a></h1>
-                <div class="pm-subtitle">Measuring the resource impact of xFACts on the server environment</div>
+                $headerHtml
+                <a href="#" id="back-link" class="back-link" style="display:none;"></a>
             </div>
             <div class="header-right">
                 <div class="refresh-info">Updated: <span id="last-update">-</span>
@@ -186,10 +195,67 @@ Add-PodeRoute -Method Get -Path '/platform-monitoring' -Authentication 'ADLogin'
         </div>
     </div>
 
+    <script>
+        // Resolve the back-link target on page load.
+        // 1. Check document.referrer; if it's a CC route the user has access to,
+        //    label the link with that page's display title and use history.back().
+        // 2. Otherwise check Home access; if granted, link to '/' as fallback.
+        // 3. Otherwise hide the link entirely.
+        (async function initBackLink() {
+            var link = document.getElementById('back-link');
+            if (!link) return;
+
+            async function lookup(route) {
+                try {
+                    var resp = await fetch('/api/nav-registry/label?route=' + encodeURIComponent(route));
+                    if (!resp.ok) return null;
+                    var data = await resp.json();
+                    return data && data.label ? data.label : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            // Step 1: try referrer
+            var referrerPath = null;
+            if (document.referrer) {
+                try {
+                    var refUrl = new URL(document.referrer);
+                    if (refUrl.origin === window.location.origin && refUrl.pathname && refUrl.pathname !== '/platform-monitoring') {
+                        referrerPath = refUrl.pathname;
+                    }
+                } catch (e) { /* ignore malformed referrer */ }
+            }
+
+            if (referrerPath) {
+                var referrerLabel = await lookup(referrerPath);
+                if (referrerLabel) {
+                    link.textContent = '\u2190 Back to ' + referrerLabel;
+                    link.href = '#';
+                    link.onclick = function(e) { e.preventDefault(); window.history.back(); };
+                    link.style.display = '';
+                    return;
+                }
+            }
+
+            // Step 2: fall back to Home if user has access
+            var homeLabel = await lookup('/');
+            if (homeLabel) {
+                link.textContent = '\u2190 Back to ' + homeLabel;
+                link.href = '/';
+                link.onclick = null;
+                link.style.display = '';
+                return;
+            }
+
+            // Step 3: no referrer match, no Home access — hide
+            link.style.display = 'none';
+        })();
+    </script>
     <script src="/js/platform-monitoring.js"></script>
     <script src="/js/engine-events.js"></script>
 </body>
 </html>
-'@
+"@
     Write-PodeHtmlResponse -Value $html
 }
