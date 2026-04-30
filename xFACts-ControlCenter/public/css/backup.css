@@ -2,64 +2,29 @@
    xFACts Control Center - Backup Monitoring Styles
    Location: E:\xFACts-ControlCenter\public\css\backup.css
    Version: Tracked in dbo.System_Metadata (component: ServerOps.Backup)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin (now in engine-events.css), .section-header-right
+               (shared), and orphan .back-link rule (no .back-link element
+               appears in the page markup). Engine-card duplicates were
+               already cleaned in a prior pass.
    ============================================================================ */
 
 /* Base Layout */
 * { box-sizing: border-box; }
-body { 
-    font-family: 'Segoe UI', Arial, sans-serif; 
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
     margin: 0;
     padding: 20px 40px;
     padding-top: 60px;
-    background: #1e1e1e; 
-    color: #d4d4d4; 
+    background: #1e1e1e;
+    color: #d4d4d4;
 }
 h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .page-subtitle { color: #888; font-size: 14px; margin: 0; }
 a { color: #9cdcfe; }
-.back-link { margin-bottom: 15px; display: inline-block; font-size: 14px; }
-
-/* Navigation Bar */
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 0 20px;
-    display: flex;
-    gap: 0;
-    z-index: 1000;
-    height: 40px;
-    align-items: center;
-}
-
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    padding: 10px 16px;
-    font-size: 13px;
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    height: 100%;
-    display: flex;
-    align-items: center;
-}
-
-.nav-link:hover {
-    color: #d4d4d4;
-    background: #2d2d2d;
-}
-
-.nav-link.active {
-    color: #4ec9b0;
-    border-bottom-color: #4ec9b0;
-}
-
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
 
 /* Header */
 .header-bar {
@@ -154,9 +119,6 @@ a { color: #9cdcfe; }
 }
 /* Refresh mode badge styles (⚡ Event, ● Live, 📌 Static) are in shared engine-events.css */
 
-/* Section header with multiple right-side elements */
-.section-header-right { display: flex; align-items: center; gap: 8px; }
-
 /* Loading & Messages */
 .loading {
     color: #888;
@@ -202,7 +164,7 @@ a { color: #9cdcfe; }
     justify-content: space-between;
     margin-bottom: 8px;
 }
-.pipeline-card .pipeline-name { 
+.pipeline-card .pipeline-name {
     font-size: 11px;
     color: #888;
     font-weight: 600;
@@ -254,26 +216,26 @@ a { color: #9cdcfe; }
 }
 
 /* Pipeline card frame coloring — neutral when healthy */
-.pipeline-card.status-warning { 
-    border-color: #dcdcaa; 
+.pipeline-card.status-warning {
+    border-color: #dcdcaa;
     background: rgba(220, 220, 170, 0.1);
 }
 .pipeline-card.status-warning .pipeline-time { color: #dcdcaa; }
 
-.pipeline-card.status-critical { 
-    border-color: #f48771; 
+.pipeline-card.status-critical {
+    border-color: #f48771;
     background: rgba(244, 135, 113, 0.1);
 }
 .pipeline-card.status-critical .pipeline-time { color: #f48771; }
 
-.pipeline-card.status-running { 
-    border-color: #569cd6; 
+.pipeline-card.status-running {
+    border-color: #569cd6;
     background: rgba(86, 156, 214, 0.1);
 }
 .pipeline-card.status-running .pipeline-time { color: #569cd6; }
 
-.pipeline-card.status-unknown { 
-    border-color: #666; 
+.pipeline-card.status-unknown {
+    border-color: #666;
 }
 .pipeline-card.status-unknown .pipeline-time { color: #666; }
 
