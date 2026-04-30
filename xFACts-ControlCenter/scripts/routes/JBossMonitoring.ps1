@@ -13,6 +13,9 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-29  Phase 3d of dynamic nav: page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle.
 # 2026-04-29  Phase 3 of dynamic nav: replaced hardcoded nav block with
 #             Get-NavBarHtml helper. Nav now renders from RBAC_NavRegistry
 #             with per-user permission filtering, section-based grouping,
@@ -39,15 +42,17 @@ Add-PodeRoute -Method Get -Path '/jboss-monitoring' -Authentication 'ADLogin' -S
     # --- User context (used by helper for nav rendering and isAdmin flag) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
 
-    # --- Render dynamic nav bar ---
-    $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/jboss-monitoring'
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/jboss-monitoring'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/jboss-monitoring'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/jboss-monitoring'
 
     $html = @"
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>JBoss Monitoring - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/jboss-monitoring.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
@@ -57,8 +62,7 @@ $navHtml
     <!-- Header Bar -->
     <div class="header-bar">
         <div>
-            <h1><a href="/docs/pages/jboss.html" target="_blank">JBoss Monitoring</a></h1>
-            <p class="page-subtitle">JBoss application server health, responsiveness, and management metrics</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <div class="refresh-info">
