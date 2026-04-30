@@ -2,58 +2,32 @@
    xFACts Control Center - Applications & Integration Styles
    Location: E:\xFACts-ControlCenter\public\css\applications-integration.css
    Version: Tracked in dbo.System_Metadata (component: DeptOps.ApplicationsIntegration)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css) and global
+               ::-webkit-scrollbar rules (shared). Kept .connection-error
+               display-none (page-specific intent — page has no real-time
+               connection logic, this hides the standard banner) and the
+               bdlcat-* slide-up panel rules (page-specific BDL Catalog UI).
+               Inline comments referencing toggle styles in
+               engine-events.css / admin.css remain intentional.
    ============================================================================ */
 
 /* Base Layout */
 * { box-sizing: border-box; }
-body { 
-    font-family: 'Segoe UI', Arial, sans-serif; 
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
     margin: 0;
     padding: 20px 40px;
     padding-top: 60px;
-    background: #1e1e1e; 
-    color: #d4d4d4; 
+    background: #1e1e1e;
+    color: #d4d4d4;
 }
 h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .page-subtitle { color: #888; font-size: 14px; margin: 0; }
 a { color: #9cdcfe; }
-
-/* Navigation Bar */
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 0 20px;
-    display: flex;
-    gap: 0;
-    z-index: 1000;
-    height: 40px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    padding: 10px 16px;
-    font-size: 13px;
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    white-space: nowrap;
-}
-
-.nav-link:hover { color: #d4d4d4; background: #2d2d2d; }
-.nav-link.active { color: #4ec9b0; border-bottom-color: #4ec9b0; }
-.nav-separator { color: #404040; padding: 0 8px; font-size: 13px; display: flex; align-items: center; }
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
 
 /* Header Bar */
 .header-bar {
@@ -63,7 +37,7 @@ a { color: #9cdcfe; }
     margin-bottom: 24px;
 }
 
-/* Connection Error */
+/* Connection Error - hidden on this page; no real-time connection logic */
 .connection-error { display: none; }
 
 /* Section Layout */
@@ -705,11 +679,6 @@ a { color: #9cdcfe; }
     font-style: italic;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
-
 /* ============================================================
    DM JOB TRIGGERS — Modal Styles
    ============================================================ */
@@ -827,17 +796,17 @@ a { color: #9cdcfe; }
     color: #dcdcaa;
     line-height: 1.6;
 }
- 
+
 .dmjob-cooldown-icon {
     font-size: 14px;
 }
- 
+
 .dmjob-cooldown-clear {
     margin-top: 10px;
     font-size: 11px;
     color: #666;
 }
- 
+
 /* DM API response inline display */
 .dmjob-dm-response {
     font-size: 10px;
@@ -845,4 +814,3 @@ a { color: #9cdcfe; }
     font-weight: 400;
     margin-left: 6px;
 }
- 
