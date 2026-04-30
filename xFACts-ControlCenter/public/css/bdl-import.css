@@ -5,6 +5,16 @@
 
    5-Step Wizard: Environment → Upload File → Select Entities →
                   Map & Validate → Execute
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/
+               nav-spacer/nav-admin/nav-separator (now in engine-events.css).
+               All wizard, mapping, history, template, and promote-to-prod
+               styles unchanged.
+   2026-04-16  Added Import History panel and Y/M/D accordion.
+   2026-04-08  5-step wizard, multi-select, per-entity loop.
+   2026-04-06  Styled modals replace native alert/confirm.
    ============================================================================ */
 
 /* ============================================================================
@@ -16,18 +26,6 @@ body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px 40px
 h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .page-subtitle { color: #888; font-size: 14px; margin: 0; }
 a { color: #9cdcfe; }
-
-/* ============================================================================
-   NAVIGATION BAR
-   ============================================================================ */
-.nav-bar { position: fixed; top: 0; left: 0; right: 0; background: #252526; border-bottom: 1px solid #404040; padding: 0 20px; display: flex; gap: 0; z-index: 1000; height: 40px; align-items: center; flex-wrap: wrap; }
-.nav-link { color: #888; text-decoration: none; padding: 10px 16px; font-size: 13px; transition: all 0.2s; border-bottom: 2px solid transparent; height: 100%; display: flex; align-items: center; white-space: nowrap; }
-.nav-link:hover { color: #d4d4d4; background: #2d2d2d; }
-.nav-link.active { color: #4ec9b0; border-bottom-color: #4ec9b0; }
-.nav-separator { color: #404040; padding: 0 8px; font-size: 13px; display: flex; align-items: center; }
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
 
 /* ============================================================================
    HEADER BAR
@@ -295,11 +293,11 @@ a { color: #9cdcfe; }
 /* Assignment Area (replaces #fixed-value-fields container) */
 .assignment-area { position: relative; }
 .assignment-area.mapping-disabled { opacity: 0.35; pointer-events: none; }
- 
+
 /* Assignment Card List */
 .assignment-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 .assignment-card { background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; overflow: hidden; }
- 
+
 /* Assignment Card Header */
 .assignment-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: #333; border-bottom: 1px solid #404040; }
 .assignment-title { font-size: 12px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
@@ -310,7 +308,7 @@ a { color: #9cdcfe; }
 .assignment-badge-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; }
 .assignment-remove { background: none; border: none; color: #666; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 3px; transition: all 0.15s; }
 .assignment-remove:hover { color: #f48771; background: #2d2d2d; }
- 
+
 /* Assignment Mode Toggle */
 .assignment-mode-toggle { display: flex; gap: 0; margin: 10px 14px 0; }
 .assignment-toggle-btn { padding: 5px 14px; font-size: 11px; border: 1px solid #404040; background: #252526; color: #888; cursor: pointer; transition: all 0.15s; }
@@ -319,20 +317,20 @@ a { color: #9cdcfe; }
 .assignment-toggle-active-blanket { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; border-color: rgba(78, 201, 176, 0.4); }
 .assignment-toggle-active-cond { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border-color: rgba(220, 220, 170, 0.4); }
 .assignment-toggle-active-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; border-color: rgba(86, 156, 214, 0.4); }
- 
+
 /* Assignment Card Body */
 .assignment-body { padding: 12px 14px; }
- 
+
 /* Add Another Button */
 .add-assignment-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 8px 16px; background: none; border: 1px dashed #404040; border-radius: 5px; color: #569cd6; font-size: 13px; cursor: pointer; transition: all 0.15s; font-family: 'Segoe UI', Arial, sans-serif; margin-bottom: 4px; }
 .add-assignment-btn:hover { background: #1e1e1e; border-color: #569cd6; }
- 
+
 /* Trigger Column Section (Conditional mode) */
 .trigger-section { margin-bottom: 10px; }
 .trigger-label { font-size: 12px; font-weight: 600; color: #dcdcaa; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .trigger-dropdown { max-width: 320px; }
 .trigger-note { font-size: 11px; color: #9cdcfe; margin-top: 6px; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; }
- 
+
 /* Trigger Value Grid (Conditional mode) */
 .trigger-grid { border: 1px solid #404040; border-radius: 4px; overflow: visible; margin-top: 8px; }
 .trigger-grid-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 60px; padding: 6px 10px; background: #333; border-bottom: 1px solid #404040; font-size: 11px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -349,7 +347,7 @@ a { color: #9cdcfe; }
 .trigger-row-skip { font-size: 11px; color: #666; font-style: italic; text-align: right; }
 .trigger-grid-show-all { padding: 6px 10px; background: #252526; text-align: center; font-size: 11px; color: #569cd6; cursor: pointer; border-top: 1px solid #333; transition: all 0.15s; }
 .trigger-grid-show-all:hover { background: #2d2d2d; color: #9cdcfe; }
- 
+
 /* Shared Fields Section (Conditional mode non-varying fields) */
 .shared-fields-section { border-top: 1px solid #333; margin-top: 10px; padding-top: 10px; }
 .shared-fields-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
@@ -439,7 +437,7 @@ a { color: #9cdcfe; }
 .field-mode-btn:nth-child(2) { border-left: none; }
 .field-mode-btn:hover { color: #d4d4d4; background: #333; }
 .field-mode-active-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; border-color: rgba(86, 156, 214, 0.4); cursor: default; }
- 
+
 /* Field Assignments Section (below mapping panels for FILE_MAPPED) */
 .field-assignments-section { margin-top: 10px; background: #1e1e1e; border: 1px solid rgba(220, 220, 170, 0.25); border-radius: 6px; overflow: hidden; }
 .field-assignments-section > .panel-header { color: #dcdcaa; }
@@ -798,7 +796,6 @@ a { color: #9cdcfe; }
 .history-chip:hover { background: #3c3c3c; color: #d4d4d4; }
 .history-chip-active { background: #569cd6; border-color: #569cd6; color: #1e1e1e; }
 
-/* Environment-specific chip colors when active */
 .history-chip[data-env="TEST"].history-chip-active { background: #dcdcaa; border-color: #dcdcaa; }
 .history-chip[data-env="STAGE"].history-chip-active { background: #ce9178; border-color: #ce9178; }
 .history-chip[data-env="PROD"].history-chip-active { background: #f48771; border-color: #f48771; }
@@ -827,7 +824,6 @@ a { color: #9cdcfe; }
 /* ── Body: active rows + history tree ────────────────────────────────── */
 .history-body { padding: 0; }
 
-/* ── Active Rows Section (pinned top) ────────────────────────────────── */
 .history-active-section {
     border-bottom: 1px solid #333;
 }
@@ -921,12 +917,10 @@ a { color: #9cdcfe; }
     flex-shrink: 0;
 }
 
-/* xFACts lifecycle (in-flight) */
 .history-status-BUILDING   { background: rgba(102, 102, 102, 0.2); color: #888; border: 1px solid rgba(102, 102, 102, 0.3); }
 .history-status-REGISTERED { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
 .history-status-SUBMITTED  { background: rgba(86, 156, 214, 0.2); color: #569cd6; border: 1px solid rgba(86, 156, 214, 0.3); }
 
-/* Terminal states (aligned to DM File_Registry vocabulary) */
 .history-status-COMPLETED              { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; border: 1px solid rgba(78, 201, 176, 0.3); }
 .history-status-PROCESSED              { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; border: 1px solid rgba(78, 201, 176, 0.3); }
 .history-status-PARTIALLY_PROCESSED    { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
@@ -941,15 +935,12 @@ a { color: #9cdcfe; }
     padding: 6px 8px;
 }
 
-.history-year {
-    margin-bottom: 4px;
-}
+.history-year { margin-bottom: 4px; }
 
 /* ---------------------------------------------------------------------------
    History tree — shared column grid
    Year, month, and day rows all align to the same right-edge stat columns:
      [ content area (1fr) ] [ total 44px ] [ success 48px ] [ fail 48px ]
-   Import rows (inside an expanded day) use a separate grid tuned for them.
    --------------------------------------------------------------------------- */
 
 .history-year-header {
@@ -982,7 +973,6 @@ a { color: #9cdcfe; }
     letter-spacing: 0.5px;
 }
 
-/* Spacer cell between label and stats so grid columns line up */
 .history-year-spacer { grid-column: 3; }
 
 .history-year-stat {
@@ -1001,7 +991,6 @@ a { color: #9cdcfe; }
 }
 .history-year-content.expanded { display: block; }
 
-/* Month table — column widths aligned to the shared stat grid */
 .history-month-table {
     width: 100%;
     border-collapse: collapse;
@@ -1056,7 +1045,6 @@ a { color: #9cdcfe; }
     padding: 4px;
 }
 
-/* Day list within expanded month — same right-edge column widths as year/month */
 .history-day-row {
     border-bottom: 1px solid #2a2a2a;
 }
@@ -1104,9 +1092,7 @@ a { color: #9cdcfe; }
 }
 .history-day-imports.expanded { display: block; }
 
-/* Import rows inside an expanded day — their own grid template.
-   Columns: [env 42] [entity 88] [filename 1fr] [status 94] [total 44] [succ 44] [fail 36] [user 60]
-   Time column dropped (available in row tooltip). User column stays empty in Mine view. */
+/* Import rows inside an expanded day — their own grid template. */
 .history-import-row {
     display: grid;
     grid-template-columns: 42px 88px minmax(0, 1fr) 94px 44px 44px 36px 60px;
@@ -1184,8 +1170,6 @@ a { color: #9cdcfe; }
     font-variant-numeric: tabular-nums;
 }
 
-/* Column headers shown once at the top of each expanded day's imports list.
-   Grid template matches .history-import-row exactly so columns align. */
 .history-import-header {
     display: grid;
     grid-template-columns: 42px 88px minmax(0, 1fr) 94px 44px 44px 36px 60px;
@@ -1206,9 +1190,6 @@ a { color: #9cdcfe; }
     text-align: right;
 }
 
-/* Disabled environment visuals — applied when an environment appears in the
-   DISABLED_ENVIRONMENTS list in bdl-import.js (used for temporary blocks
-   during DM upgrades, maintenance, etc.). */
 .env-card-disabled {
     opacity: 0.4;
     cursor: not-allowed;
@@ -1232,7 +1213,6 @@ a { color: #9cdcfe; }
     pointer-events: none;
 }
 
-/* Retry badge on failed import rows in history */
 .history-retry-badge {
     display: inline-block;
     margin-left: 6px;
