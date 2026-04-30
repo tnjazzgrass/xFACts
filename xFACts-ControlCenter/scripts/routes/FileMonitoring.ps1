@@ -1,7 +1,7 @@
 # ============================================================================
 # xFACts Control Center - File Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\FileMonitoring.ps1
-# 
+#
 # Renders the File Monitoring dashboard page for SFTP file arrival tracking.
 # Two-column layout: Daily Queue (left), Status/Config/History (right).
 # Slide-up management console with flip card for Monitors/Servers.
@@ -11,58 +11,48 @@
 # APIs: FileMonitoring-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: FileOps)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle.
 # ============================================================================
 
-   Add-PodeRoute -Method Get -Path '/file-monitoring' -Authentication 'ADLogin' -ScriptBlock {
+Add-PodeRoute -Method Get -Path '/file-monitoring' -Authentication 'ADLogin' -ScriptBlock {
 
-       # --- RBAC Access Check ---
-       $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/file-monitoring'
-       if (-not $access.HasAccess) {
-           Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/file-monitoring') -StatusCode 403
-           return
-       }
+    # --- RBAC Access Check ---
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/file-monitoring'
+    if (-not $access.HasAccess) {
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/file-monitoring') -StatusCode 403
+        return
+    }
 
-       # --- Admin gear icon (visible only to admin role holders) ---
-       $ctx = Get-UserContext -WebEvent $WebEvent
-       $adminGear = if ($ctx.IsAdmin) {
-           '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-       } else { '' }
+    # --- User context (used by helper for nav rendering) ---
+    $ctx = Get-UserContext -WebEvent $WebEvent
 
-       $html = @'
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/file-monitoring'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/file-monitoring'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/file-monitoring'
+
+    $html = @"
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>File Monitoring - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/file-monitoring.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link active">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
-    
+$navHtml
+
     <!-- Header Bar -->
     <div class="header-bar">
         <div>
-            <h1><a href="/docs/pages/fileops.html" target="_blank">File Monitoring</a></h1>
-            <p class="page-subtitle">SFTP file arrival tracking and escalation management</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <div class="refresh-info">
@@ -79,15 +69,15 @@
             </div>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- Two Column Layout -->
     <div class="grid-layout">
-        
+
         <!-- Left Column: Status + Daily Queue -->
         <div class="grid-column">
-            
+
             <!-- Status Section -->
             <div class="section section-compact">
                 <div class="section-header">
@@ -109,7 +99,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="section">
                 <div class="section-header">
                     <h2 class="section-title">Daily Queue</h2>
@@ -120,7 +110,7 @@
                         <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                     </div>
                 </div>
-                
+
                 <!-- Scrollable queue container -->
                 <div class="queue-content">
                 <table class="monitor-table" id="queue-table">
@@ -133,12 +123,12 @@
                 </table>
                 </div>
             </div>
-            
+
         </div>
-        
+
         <!-- Right Column: Configuration, History -->
         <div class="grid-column">
-            
+
             <!-- Configuration Cards -->
             <div class="config-card-row">
                 <div class="section section-compact config-card" onclick="openConsole('monitors')">
@@ -162,7 +152,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <!-- Detection History -->
             <div class="section section-history">
                 <div class="section-header">
@@ -173,17 +163,17 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
         </div>
-        
+
     </div>
-    
+
     <!-- ================================================================
          SLIDE-UP MANAGEMENT CONSOLE
          ================================================================ -->
     <div id="console-overlay" class="console-overlay" onclick="closeConsole()"></div>
     <div id="console-panel" class="console-panel">
-        
+
         <!-- Console Title Bar -->
         <div class="console-title-bar">
             <div class="console-title-left">
@@ -195,30 +185,30 @@
                 <button class="console-close" onclick="closeConsole()">&times;</button>
             </div>
         </div>
-        
+
         <!-- Console Body - Flip Card -->
         <div class="console-body">
             <div class="console-flip-card" id="console-flip-card">
-                
+
                 <!-- Front: Monitors -->
                 <div class="console-flip-front" id="console-monitors">
                     <div id="monitor-list" class="console-list">
                         <div class="loading">Loading...</div>
                     </div>
                 </div>
-                
+
                 <!-- Back: Servers -->
                 <div class="console-flip-back" id="console-servers">
                     <div id="server-list" class="console-list">
                         <div class="loading">Loading...</div>
                     </div>
                 </div>
-                
+
             </div>
         </div>
-        
+
     </div>
-    
+
     <!-- Day Detail Slideout -->
     <div id="day-overlay" class="slideout-overlay" onclick="closeDayPanel()"></div>
     <div id="day-slideout" class="slideout">
@@ -278,7 +268,7 @@
     <script src="/js/engine-events.js"></script>
 </body>
 </html>
-'@
-    $html = $html.Replace('</nav>', "$adminGear</nav>")
+
+"@
     Write-PodeHtmlResponse -Value $html
 }
