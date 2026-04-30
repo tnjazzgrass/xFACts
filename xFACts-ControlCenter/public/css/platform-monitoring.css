@@ -2,6 +2,17 @@
    xFACts Control Center - Platform Monitoring CSS
    Location: E:\xFACts-ControlCenter\public\css\platform-monitoring.css
    Version: Tracked in dbo.System_Metadata (component: ControlCenter.Platform)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/
+               nav-spacer/nav-admin/nav-separator (now in engine-events.css).
+               Kept the page-scoped .pm-table-scroll::-webkit-scrollbar
+               (different from the shared global scrollbar — narrower track,
+               page-only context) and the page-specific .section-header /
+               .section-title (used inline in the bottom 3-column layout
+               with platform-title/api-title accent modifiers, distinct
+               from any shared section-header).
    ============================================================================ */
 
 * { box-sizing: border-box; }
@@ -18,21 +29,6 @@ body {
     flex-direction: column;
 }
 h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-
-/* ---- Nav Bar (matches server-health) ---- */
-.nav-bar {
-    position: fixed; top: 0; left: 0; right: 0;
-    background: #252526; border-bottom: 1px solid #404040;
-    padding: 0 20px; display: flex; gap: 0; z-index: 1000;
-    height: 40px; align-items: center;
-}
-.nav-link { color: #888; text-decoration: none; padding: 10px 16px; font-size: 13px; transition: all 0.2s; border-bottom: 2px solid transparent; height: 100%; display: flex; align-items: center; }
-.nav-link:hover { color: #d4d4d4; background: #2d2d2d; }
-.nav-link.active { color: #4ec9b0; border-bottom-color: #4ec9b0; }
-.nav-separator { color: #555; padding: 0 8px; }
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
 
 /* ---- Page Wrapper ---- */
 .page-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
@@ -472,7 +468,7 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .pm-so-timeout-body { display: none; padding-top: 8px; }
 .pm-so-timeout-body.visible { display: block; }
 
-/* Scrollbars */
+/* Page-scoped scrollbar — narrower track, only on .pm-table-scroll */
 .pm-table-scroll::-webkit-scrollbar { width: 6px; }
 .pm-table-scroll::-webkit-scrollbar-track { background: #1e1e1e; }
 .pm-table-scroll::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
