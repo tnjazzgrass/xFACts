@@ -124,7 +124,7 @@ Add-PodeRoute -Method Get -Path '/' -Authentication 'ADLogin' -ScriptBlock {
         .nav-card h3 { color: #4ec9b0; margin: 0 0 10px 0; }
         .nav-card p { margin: 0; color: #888; font-size: 14px; }
         
-        /* Section-specific tile accents — match RBAC_NavSection.accent_class values */
+        /* Section-specific tile accents - match RBAC_NavSection.accent_class values */
         .nav-card.nav-section-departmental:hover { border-color: #dcdcaa; }
         .nav-card.nav-section-departmental h3 { color: #dcdcaa; }
         .nav-card.nav-section-tools:hover { border-color: #9cdcfe; }
