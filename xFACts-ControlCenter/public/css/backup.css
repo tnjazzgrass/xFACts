@@ -5,11 +5,22 @@
 
    Page-specific styles for the Backup Monitoring dashboard. Universal
    chrome (body, h1, header-bar, refresh-info, sections, engine cards,
-   connection banner, animations) is provided by engine-events.css per
-   the CC Page Chrome Contract (Development Guidelines Section 5.12).
+   connection banner, animations, modal system) is provided by
+   engine-events.css per the CC Page Chrome Contract (Development
+   Guidelines Section 5.12).
 
    CHANGELOG
    ---------
+   2026-04-30  Phase 4 (Chrome Standardization, modal migration): the
+               legacy custom modal chrome rules (.modal, .modal-content,
+               .modal-header, .modal-body) are removed -- the page now
+               uses the shared .xf-modal-* system from engine-events.css
+               (with the .wide variant). Modal body sub-components were
+               renamed from .modal-* prefix to .detail-* prefix since
+               they no longer belong to a "modal" container -- they are
+               detail-display patterns that happen to render inside an
+               xf-modal-body. Renamed: .modal-summary -> .detail-summary,
+               .modal-table -> .detail-table, .modal-empty -> .detail-empty.
    2026-04-30  Phase 4 (Chrome Standardization): stripped duplicated chrome
                rules now provided by engine-events.css -- box-sizing reset,
                body, h1, page-subtitle, a, header-bar, header-right,
@@ -420,50 +431,15 @@
 
 
 /* ============================================================================
-   DETAIL MODAL
-   Backup-specific modal for pipeline and queue detail views. NOTE: This
-   is the legacy custom modal pattern, NOT the shared xf-modal-* system in
-   engine-events.css. Future migration to xf-modal is a separate cleanup.
+   DETAIL MODAL CONTENT
+   Sub-components rendered inside the shared xf-modal-body when displaying
+   pipeline or queue file-level detail. The outer modal container itself
+   uses the shared .xf-modal-overlay / .xf-modal.wide / .xf-modal-header /
+   .xf-modal-body classes from engine-events.css.
    ============================================================================ */
 
-.modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-.modal.hidden { display: none; }
-
-.modal-content {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    min-width: 500px;
-    max-width: 800px;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #404040;
-}
-.modal-header h3 { margin: 0; color: #4ec9b0; font-size: 16px; }
-
-.modal-body { padding: 20px; overflow-y: auto; color: #d4d4d4; }
-
-/* -- Modal summary bar -- */
-.modal-summary {
+/* -- Detail summary bar (renders at top of modal body) -- */
+.detail-summary {
     display: flex;
     gap: 20px;
     align-items: center;
@@ -474,19 +450,19 @@
     font-size: 12px;
     color: #888;
 }
-.modal-summary .summary-item { white-space: nowrap; }
-.modal-summary .summary-value { color: #d4d4d4; font-weight: 500; }
-.modal-summary .summary-status-success { color: #4ec9b0; font-weight: 600; }
-.modal-summary .summary-status-partial { color: #dcdcaa; font-weight: 600; }
-.modal-summary .summary-status-failed  { color: #f48771; font-weight: 600; }
+.detail-summary .summary-item { white-space: nowrap; }
+.detail-summary .summary-value { color: #d4d4d4; font-weight: 500; }
+.detail-summary .summary-status-success { color: #4ec9b0; font-weight: 600; }
+.detail-summary .summary-status-partial { color: #dcdcaa; font-weight: 600; }
+.detail-summary .summary-status-failed  { color: #f48771; font-weight: 600; }
 
-/* -- Modal data table -- */
-.modal-table {
+/* -- Detail data table (renders below summary bar) -- */
+.detail-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 12px;
 }
-.modal-table th {
+.detail-table th {
     text-align: left;
     padding: 8px 10px;
     border-bottom: 1px solid #404040;
@@ -494,25 +470,26 @@
     font-weight: 500;
     white-space: nowrap;
 }
-.modal-table td {
+.detail-table td {
     padding: 6px 10px;
     border-bottom: 1px solid #333;
     color: #d4d4d4;
     white-space: nowrap;
 }
-.modal-table tr:hover td { background: #2d2d2d; }
-.modal-table .align-right { text-align: right; }
-.modal-table .error-detail {
+.detail-table tr:hover td { background: #2d2d2d; }
+.detail-table .align-right { text-align: right; }
+.detail-table .error-detail {
     font-size: 11px;
     color: #f48771;
     font-style: italic;
     padding: 2px 10px 6px;
     border-bottom: 1px solid #333;
 }
-.modal-table .status-success { color: #4ec9b0; }
-.modal-table .status-failed  { color: #f48771; }
+.detail-table .status-success { color: #4ec9b0; }
+.detail-table .status-failed  { color: #f48771; }
 
-.modal-empty {
+/* -- Detail empty state (used when no rows to display) -- */
+.detail-empty {
     color: #888;
     font-size: 13px;
     padding: 20px;
