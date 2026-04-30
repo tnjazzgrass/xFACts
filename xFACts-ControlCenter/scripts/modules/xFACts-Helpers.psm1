@@ -2,7 +2,7 @@
 # xFACts Control Center - Helper Functions Module
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.Shared)
 # Location: E:\xFACts-ControlCenter\scripts\modules\xFACts-Helpers.psm1
-# 
+#
 # PowerShell module providing database connectivity and RBAC functions.
 # Loaded via Import-PodeModule in Start-ControlCenter.ps1, which makes
 # all exported functions available across all Pode runspaces (routes,
@@ -19,8 +19,18 @@
 #     Get-UserContext         - User identity/role context for UI rendering
 #     Get-NavBarHtml          - Renders the horizontal nav bar HTML for a user
 #     Get-HomePageSections    - Returns structured section/page data for Home tile rendering
+#     Get-NavRegistryEntry    - Returns the cached RBAC_NavRegistry row for a route
+#     Get-PageHeaderHtml      - Renders the H1+subtitle block from RBAC_NavRegistry
+#     Get-PageBrowserTitle    - Returns the browser tab title from RBAC_NavRegistry
 #     Get-AccessDeniedHtml    - Styled 403 page matching Control Center theme
 #     Get-ActionDeniedResponse - Standardized 403 JSON for API endpoints
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: added Get-NavRegistryEntry,
+#             Get-PageHeaderHtml, and Get-PageBrowserTitle. Page H1 link,
+#             title, subtitle, and browser tab title now render from
+#             RBAC_NavRegistry instead of being hardcoded in each route file.
 # ============================================================================
 
 $script:ConnectionString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
@@ -41,29 +51,29 @@ function Invoke-XFActsQuery {
     param(
         [Parameter(Mandatory)]
         [string]$Query,
-        
+
         [hashtable]$Parameters = @{}
     )
-    
+
     $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
     $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
     try {
         $conn.Open()
-        
+
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = $Query
         $cmd.CommandTimeout = 30
-        
+
         # Add parameters if provided
         foreach ($key in $Parameters.Keys) {
             $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
             if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
-        
+
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
         $dataset = New-Object System.Data.DataSet
         $adapter.Fill($dataset) | Out-Null
-        
+
         $results = [System.Collections.ArrayList]::new()
         if ($dataset.Tables.Count -gt 0) {
             foreach ($row in $dataset.Tables[0].Rows) {
@@ -97,13 +107,13 @@ function Invoke-XFActsProc {
     param(
         [Parameter(Mandatory)]
         [string]$ProcName,
-        
+
         [hashtable]$Parameters = @{}
     )
-    
+
     $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
     $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-    
+
     # Capture PRINT/RAISERROR messages
     $messages = [System.Collections.ArrayList]::new()
     $handler = [System.Data.SqlClient.SqlInfoMessageEventHandler]{
@@ -112,22 +122,22 @@ function Invoke-XFActsProc {
     }
     $conn.add_InfoMessage($handler)
     $conn.FireInfoMessageEventOnUserErrors = $true
-    
+
     try {
         $conn.Open()
-        
+
         $cmd = $conn.CreateCommand()
         $cmd.CommandType = [System.Data.CommandType]::StoredProcedure
         $cmd.CommandText = $ProcName
         $cmd.CommandTimeout = 120  # 2 minutes for diagnostic procs
-        
+
         foreach ($key in $Parameters.Keys) {
             $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
             if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
-        
+
         $cmd.ExecuteNonQuery() | Out-Null
-        
+
         return $messages
     }
     finally {
@@ -155,26 +165,26 @@ function Invoke-XFActsNonQuery {
     param(
         [Parameter(Mandatory)]
         [string]$Query,
-        
+
         [hashtable]$Parameters = @{},
 
         [int]$TimeoutSeconds = 30
     )
-    
+
     $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
     $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
     try {
         $conn.Open()
-        
+
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = $Query
         $cmd.CommandTimeout = $TimeoutSeconds
-        
+
         foreach ($key in $Parameters.Keys) {
             $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
             if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
-        
+
         $rowsAffected = $cmd.ExecuteNonQuery()
         return $rowsAffected
     }
@@ -210,6 +220,10 @@ function Invoke-XFActsNonQuery {
 #   # Dynamic nav rendering (Phase 2)
 #   $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/server-health'
 #   $sections = Get-HomePageSections -UserContext $ctx
+#
+#   # Dynamic page header rendering (Phase 3d)
+#   $headerHtml   = Get-PageHeaderHtml   -PageRoute '/server-health'
+#   $browserTitle = Get-PageBrowserTitle -PageRoute '/server-health'
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -238,7 +252,7 @@ function Initialize-RBACCache {
         Loads RBAC configuration from the database into memory cache.
         Called on first request and refreshed every CacheDurationSec seconds.
     #>
-    
+
     try {
         # Load roles
         $script:RBACCache.Roles = Invoke-XFActsQuery -Query @"
@@ -355,7 +369,7 @@ function Get-TierLevel {
         Higher number = more access.
     #>
     param([string]$Tier)
-    
+
     switch ($Tier) {
         'admin'   { return 3 }
         'operate' { return 2 }
@@ -373,7 +387,7 @@ function Test-TierSufficient {
         [string]$UserTier,
         [string]$RequiredTier
     )
-    
+
     return (Get-TierLevel -Tier $UserTier) -ge (Get-TierLevel -Tier $RequiredTier)
 }
 
@@ -393,13 +407,13 @@ function Resolve-UserRoles {
     param(
         [array]$UserGroups
     )
-    
+
     Confirm-RBACCache
-    
+
     if (-not $UserGroups -or -not $script:RBACCache.RoleMappings) {
         return @()
     }
-    
+
     $resolvedRoles = @()
     foreach ($mapping in $script:RBACCache.RoleMappings) {
         if ($UserGroups -contains $mapping.ad_group_name) {
@@ -412,7 +426,7 @@ function Resolve-UserRoles {
             }
         }
     }
-    
+
     return $resolvedRoles
 }
 
@@ -431,26 +445,26 @@ function Get-UserPageTier {
         [array]$UserRoles,
         [string]$PageRoute
     )
-    
+
     Confirm-RBACCache
-    
+
     if (-not $UserRoles -or -not $script:RBACCache.PagePermissions) {
         return $null
     }
-    
+
     $highestTier = $null
     $highestLevel = 0
-    
+
     # Get all role IDs for this user
     $userRoleIds = $UserRoles | ForEach-Object { $_.role_id }
-    
+
     foreach ($perm in $script:RBACCache.PagePermissions) {
         # Must be a role the user has
         if ($userRoleIds -notcontains $perm.role_id) { continue }
-        
+
         # Must match the page route (exact match or wildcard)
         if ($perm.page_route -ne '*' -and $perm.page_route -ne $PageRoute) { continue }
-        
+
         # For departmental roles, verify department scope matches the page
         # UNLESS there is an explicit permission row for this role on this exact page
         $role = $UserRoles | Where-Object { $_.role_id -eq $perm.role_id } | Select-Object -First 1
@@ -459,14 +473,14 @@ function Get-UserPageTier {
             $deptPage = $script:RBACCache.DepartmentPages | Where-Object { $_.department_key -eq $role.department_scope }
             if ($deptPage -and $PageRoute -ne $deptPage.page_route) { continue }
         }
-        
+
         $level = Get-TierLevel -Tier $perm.permission_tier
         if ($level -gt $highestLevel) {
             $highestLevel = $level
             $highestTier = $perm.permission_tier
         }
     }
-    
+
     return $highestTier
 }
 
@@ -492,22 +506,22 @@ function Test-ActionPermission {
         [Parameter(Mandatory)][string]$ActionName,
         [string]$RequiredTier = 'operate'
     )
-    
+
     Confirm-RBACCache
-    
+
     $mode = $script:RBACCache.EnforcementMode
     if ($mode -eq 'disabled') { return $true }
-    
+
     $userGroups = $WebEvent.Auth.User.Groups
     $username = $WebEvent.Auth.User.Username
     # Strip domain prefix if present (FAC\username -> username)
     if ($username -and $username.Contains('\')) {
         $username = $username.Split('\')[1]
     }
-    
+
     $userRoles = Resolve-UserRoles -UserGroups $userGroups
     $userRoleIds = $userRoles | ForEach-Object { $_.role_id }
-    
+
     # Step 1: Check for user-level DENY
     $userDeny = $script:RBACCache.ActionGrants | Where-Object {
         $_.grant_type -eq 'DENY' -and
@@ -525,7 +539,7 @@ function Test-ActionPermission {
             -ClientIp $WebEvent.Request.RemoteEndPoint.Address.ToString()
         return ($mode -ne 'enforce')
     }
-    
+
     # Step 2: Check for role-level DENY
     $roleDeny = $script:RBACCache.ActionGrants | Where-Object {
         $_.grant_type -eq 'DENY' -and
@@ -543,7 +557,7 @@ function Test-ActionPermission {
             -ClientIp $WebEvent.Request.RemoteEndPoint.Address.ToString()
         return ($mode -ne 'enforce')
     }
-    
+
     # Step 3: Check for user-level ALLOW
     $userAllow = $script:RBACCache.ActionGrants | Where-Object {
         $_.grant_type -eq 'ALLOW' -and
@@ -553,7 +567,7 @@ function Test-ActionPermission {
         $_.action_name -eq $ActionName
     }
     if ($userAllow) { return $true }
-    
+
     # Step 4: Check for role-level ALLOW
     $roleAllow = $script:RBACCache.ActionGrants | Where-Object {
         $_.grant_type -eq 'ALLOW' -and
@@ -563,11 +577,11 @@ function Test-ActionPermission {
         $_.action_name -eq $ActionName
     }
     if ($roleAllow) { return $true }
-    
+
     # Step 5: Fall back to tier-based check
     $userTier = Get-UserPageTier -UserRoles $userRoles -PageRoute $PageRoute
     $permitted = Test-TierSufficient -UserTier $userTier -RequiredTier $RequiredTier
-    
+
     if (-not $permitted) {
         Write-RBACAuditLog -EventType 'ACTION_DENIED' -Username $username -UserGroups $userGroups `
             -UserRoles $userRoles -PageRoute $PageRoute -ActionName $ActionName `
@@ -577,7 +591,7 @@ function Test-ActionPermission {
             -ClientIp $WebEvent.Request.RemoteEndPoint.Address.ToString()
         return ($mode -ne 'enforce')
     }
-    
+
     # Log successful action permission (respects verbosity setting)
     Write-RBACAuditLog -EventType 'ACTION_ALLOWED' -Username $username -UserGroups $userGroups `
         -UserRoles $userRoles -PageRoute $PageRoute -ActionName $ActionName `
@@ -585,7 +599,7 @@ function Test-ActionPermission {
         -Result 'ALLOWED' `
         -Detail "Action permitted with tier '$userTier'" `
         -ClientIp $WebEvent.Request.RemoteEndPoint.Address.ToString()
-    
+
     return $true
 }
 
@@ -595,10 +609,10 @@ function Test-ActionEndpoint {
         Checks whether the current API action is permitted for the authenticated user.
         Reads the endpoint path and HTTP method from $WebEvent, looks it up in the
         ActionRegistry cache, and runs the full RBAC permission check if registered.
-        
+
         Call at the top of any POST/PUT/DELETE route scriptblock:
             if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-        
+
         Unregistered endpoints are allowed through (returns $true).
         If denied in enforce mode, sends 403 JSON response before returning $false.
     .PARAMETER WebEvent
@@ -610,26 +624,26 @@ function Test-ActionEndpoint {
     param(
         [Parameter(Mandatory)]$WebEvent
     )
-    
+
     Confirm-RBACCache
-    
+
     $endpoint = $WebEvent.Path
     $method = $WebEvent.Method.ToUpper()
-    
+
     # Look up this endpoint in the ActionRegistry cache
     $action = $script:RBACCache.ActionRegistry | Where-Object {
         $_.api_endpoint -eq $endpoint -and $_.http_method -eq $method
     }
-    
+
     # Not registered = not protected, allow through
     if (-not $action) { return $true }
-    
+
     # Found a registered action -- run the full permission check
     $permitted = Test-ActionPermission -WebEvent $WebEvent `
         -PageRoute $action.page_route `
         -ActionName $action.action_name `
         -RequiredTier $action.required_tier
-    
+
     if (-not $permitted) {
         Write-PodeJsonResponse -Value @{
             error  = 'Action not permitted'
@@ -637,7 +651,7 @@ function Test-ActionEndpoint {
         } -StatusCode 403
         return $false
     }
-    
+
     return $true
 }
 
@@ -664,27 +678,27 @@ function Get-UserAccess {
         [Parameter(Mandatory)]$WebEvent,
         [Parameter(Mandatory)][string]$PageRoute
     )
-    
+
     Confirm-RBACCache
-    
+
     $mode = $script:RBACCache.EnforcementMode
     $userGroups = $WebEvent.Auth.User.Groups
     $username = $WebEvent.Auth.User.Username
     $displayName = if ($WebEvent.Auth.User.Name) { $WebEvent.Auth.User.Name } else { $username }
-    
+
     # Strip domain prefix if present
     $cleanUsername = $username
     if ($cleanUsername -and $cleanUsername.Contains('\')) {
         $cleanUsername = $cleanUsername.Split('\')[1]
     }
-    
+
     $userRoles = Resolve-UserRoles -UserGroups $userGroups
-    
+
     # Determine if user is department-only (has dept roles but no platform roles)
     $hasPlatformRole = ($userRoles | Where-Object { -not $_.department_scope }) -as [bool]
     $deptScopes = @($userRoles | Where-Object { $_.department_scope } | ForEach-Object { $_.department_scope } | Select-Object -Unique)
     $isDeptOnly = (-not $hasPlatformRole) -and ($deptScopes.Count -gt 0)
-    
+
     $result = @{
         HasAccess        = $false
         Tier             = $null
@@ -696,21 +710,21 @@ function Get-UserAccess {
         IsDeptOnly       = $isDeptOnly
         EnforcementMode  = $mode
     }
-    
+
     # If disabled, grant full access
     if ($mode -eq 'disabled') {
         $result.HasAccess = $true
         $result.Tier = 'admin'  # Effectively unrestricted
         return $result
     }
-    
+
     # Resolve tier for this page
     $tier = Get-UserPageTier -UserRoles $userRoles -PageRoute $PageRoute
     $result.Tier = $tier
-    
+
     if ($tier) {
         $result.HasAccess = $true
-        
+
         # Log successful page access (respects verbosity setting)
         Write-RBACAuditLog -EventType 'ACCESS_ALLOWED' -Username $cleanUsername -UserGroups $userGroups `
             -UserRoles $userRoles -PageRoute $PageRoute -RequiredTier 'view' -UserTier $tier `
@@ -727,14 +741,14 @@ function Get-UserAccess {
             -Result $logResult `
             -Detail "No page permission found for any of user's roles" `
             -ClientIp $WebEvent.Request.RemoteEndPoint.Address.ToString()
-        
+
         # In audit mode, still allow access
         if ($mode -eq 'audit') {
             $result.HasAccess = $true
             $result.Tier = 'admin'  # Audit mode = unrestricted
         }
     }
-    
+
     return $result
 }
 
@@ -753,26 +767,26 @@ function Get-UserContext {
     param(
         [Parameter(Mandatory)]$WebEvent
     )
-    
+
     Confirm-RBACCache
-    
+
     $userGroups = $WebEvent.Auth.User.Groups
     $username = $WebEvent.Auth.User.Username
     $displayName = if ($WebEvent.Auth.User.Name) { $WebEvent.Auth.User.Name } else { $username }
-    
+
     # Strip domain prefix
     $cleanUsername = $username
     if ($cleanUsername -and $cleanUsername.Contains('\')) {
         $cleanUsername = $cleanUsername.Split('\')[1]
     }
-    
+
     $userRoles = Resolve-UserRoles -UserGroups $userGroups
     $roleNames = @($userRoles | ForEach-Object { $_.role_name } | Select-Object -Unique)
     $hasPlatformRole = ($userRoles | Where-Object { -not $_.department_scope }) -as [bool]
     $deptScopes = @($userRoles | Where-Object { $_.department_scope } | ForEach-Object { $_.department_scope } | Select-Object -Unique)
     $isDeptOnly = (-not $hasPlatformRole) -and ($deptScopes.Count -gt 0)
     $isAdmin = $roleNames -contains 'Admin'
-    
+
     # Build department info for departmental nav items
     $userDepartments = @()
     foreach ($scope in $deptScopes) {
@@ -785,7 +799,7 @@ function Get-UserContext {
             }
         }
     }
-    
+
     return @{
         Username          = $cleanUsername
         DisplayName       = $displayName
@@ -827,38 +841,38 @@ function Get-NavBarHtml {
         [Parameter(Mandatory)][hashtable]$UserContext,
         [Parameter(Mandatory)][string]$CurrentPageRoute
     )
-    
+
     Confirm-RBACCache
-    
+
     if (-not $script:RBACCache.NavRegistry -or -not $script:RBACCache.NavSections) {
         # Cache not loaded - return minimal nav as fallback
         return '<nav class="nav-bar"><a href="/" class="nav-link">Home</a></nav>'
     }
-    
+
     $userRoles = $UserContext.Roles
     $isAdmin = $UserContext.IsAdmin
-    
+
     # Build the HTML in a StringBuilder for efficient concatenation
     $sb = New-Object System.Text.StringBuilder 2048
     [void]$sb.AppendLine('    <nav class="nav-bar">')
-    
+
     # Home link is always first, regardless of section
     $homeActiveClass = if ($CurrentPageRoute -eq '/') { ' active' } else { '' }
     [void]$sb.AppendLine("        <a href=`"/`" class=`"nav-link$homeActiveClass`">Home</a>")
-    
+
     # Iterate sections in order, filtering pages by user permissions
     $sectionsRendered = 0
     foreach ($section in $script:RBACCache.NavSections) {
         # Skip the admin section -- it's not rendered in the nav, only via gear icon
         if ($section.section_key -eq 'admin') { continue }
-        
+
         # Get pages in this section that should appear in nav
         $sectionPages = $script:RBACCache.NavRegistry | Where-Object {
             $_.section_key -eq $section.section_key -and $_.show_in_nav -eq 1
         } | Sort-Object sort_order
-        
+
         if (-not $sectionPages) { continue }
-        
+
         # Filter pages by user's permissions
         $accessiblePages = @()
         foreach ($page in $sectionPages) {
@@ -867,14 +881,14 @@ function Get-NavBarHtml {
                 $accessiblePages += $page
             }
         }
-        
+
         if ($accessiblePages.Count -eq 0) { continue }
-        
+
         # Add section separator before non-first sections
         if ($sectionsRendered -gt 0) {
             [void]$sb.AppendLine('        <span class="nav-separator">|</span>')
         }
-        
+
         # Render each accessible page
         foreach ($page in $accessiblePages) {
             $activeClass = if ($page.page_route -eq $CurrentPageRoute) { ' active' } else { '' }
@@ -883,18 +897,19 @@ function Get-NavBarHtml {
             $label = [System.Web.HttpUtility]::HtmlEncode($page.nav_label)
             [void]$sb.AppendLine("        <a href=`"$($page.page_route)`" class=`"$cssClasses`">$label</a>")
         }
-        
+
         $sectionsRendered++
     }
-    
-    # Append admin gear for admin users (always last, never has 'active' class)
+
+    # Append admin gear for admin users (always last; gets 'active' class when on /admin)
     if ($isAdmin) {
+        $adminActiveClass = if ($CurrentPageRoute -eq '/admin') { ' active' } else { '' }
         [void]$sb.AppendLine('        <span class="nav-spacer"></span>')
-        [void]$sb.AppendLine('        <a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>')
+        [void]$sb.AppendLine("        <a href=`"/admin`" class=`"nav-link nav-admin$adminActiveClass`" title=`"Administration`">&#9881;</a>")
     }
-    
+
     [void]$sb.AppendLine('    </nav>')
-    
+
     return $sb.ToString()
 }
 
@@ -928,28 +943,28 @@ function Get-HomePageSections {
     param(
         [Parameter(Mandatory)][hashtable]$UserContext
     )
-    
+
     Confirm-RBACCache
-    
+
     $result = @()
-    
+
     if (-not $script:RBACCache.NavRegistry -or -not $script:RBACCache.NavSections) {
         return $result
     }
-    
+
     $userRoles = $UserContext.Roles
-    
+
     foreach ($section in $script:RBACCache.NavSections) {
         # Skip the admin section -- not rendered as Home tiles
         if ($section.section_key -eq 'admin') { continue }
-        
+
         # Get pages in this section that should appear on Home
         $sectionPages = $script:RBACCache.NavRegistry | Where-Object {
             $_.section_key -eq $section.section_key -and $_.show_on_home -eq 1
         } | Sort-Object sort_order
-        
+
         if (-not $sectionPages) { continue }
-        
+
         # Filter pages by user's permissions
         $accessiblePages = @()
         foreach ($page in $sectionPages) {
@@ -966,10 +981,10 @@ function Get-HomePageSections {
                 }
             }
         }
-        
+
         # Skip empty sections
         if ($accessiblePages.Count -eq 0) { continue }
-        
+
         $result += @{
             SectionKey   = $section.section_key
             SectionLabel = $section.section_label
@@ -978,8 +993,124 @@ function Get-HomePageSections {
             Pages        = $accessiblePages
         }
     }
-    
+
     return $result
+}
+
+function Get-NavRegistryEntry {
+    <#
+    .SYNOPSIS
+        Returns the cached RBAC_NavRegistry row for a given page route.
+    .DESCRIPTION
+        Lookup helper used by route files to retrieve display_title, description,
+        and doc_page_id from the registry instead of hardcoding them in HTML.
+        If the route is not found in the registry, returns a placeholder hashtable
+        with "(Unregistered Page)" content so route rendering does not break.
+    .PARAMETER PageRoute
+        The page route to look up (e.g., '/server-health').
+    .RETURNS
+        Hashtable with the registry row's fields, or a placeholder hashtable
+        when the route is not found in the registry.
+    .EXAMPLE
+        $entry = Get-NavRegistryEntry -PageRoute '/server-health'
+        Write-Host $entry.display_title
+    #>
+    param(
+        [Parameter(Mandatory)][string]$PageRoute
+    )
+
+    Confirm-RBACCache
+
+    if ($script:RBACCache.NavRegistry) {
+        $row = $script:RBACCache.NavRegistry | Where-Object { $_.page_route -eq $PageRoute } | Select-Object -First 1
+        if ($row) { return $row }
+    }
+
+    # Placeholder when the route is missing from the registry. Visible in the UI
+    # so a registration gap is obvious, but does not throw or break rendering.
+    return @{
+        nav_id        = 0
+        page_route    = $PageRoute
+        nav_label     = '(Unregistered Page)'
+        display_title = '(Unregistered Page)'
+        description   = "No RBAC_NavRegistry row found for route '$PageRoute'."
+        section_key   = $null
+        sort_order    = 0
+        doc_page_id   = $null
+        show_in_nav   = 0
+        show_on_home  = 0
+    }
+}
+
+function Get-PageHeaderHtml {
+    <#
+    .SYNOPSIS
+        Renders the standard page header block (H1 + subtitle) for a route,
+        sourced from RBAC_NavRegistry.
+    .DESCRIPTION
+        Returns the inner HTML for the left side of every page's header bar:
+        an H1 (linked to the doc page when doc_page_id is set, plain text when
+        not) and a paragraph subtitle. Caller wraps this in their layout
+        container (typically the left half of .header-bar).
+
+        Sourcing from RBAC_NavRegistry means display_title, description, and
+        doc_page_id are managed in one place; route files no longer hardcode
+        these strings.
+    .PARAMETER PageRoute
+        The page route (e.g., '/server-health'). Used to look up the
+        registry row via Get-NavRegistryEntry.
+    .RETURNS
+        HTML string containing <h1>...</h1><p class="page-subtitle">...</p>
+    .EXAMPLE
+        $headerHtml = Get-PageHeaderHtml -PageRoute '/server-health'
+        # Embed $headerHtml inside the header-bar's left container
+    #>
+    param(
+        [Parameter(Mandatory)][string]$PageRoute
+    )
+
+    $entry = Get-NavRegistryEntry -PageRoute $PageRoute
+
+    $title = [System.Web.HttpUtility]::HtmlEncode([string]$entry.display_title)
+    $description = [System.Web.HttpUtility]::HtmlEncode([string]$entry.description)
+
+    if ($entry.doc_page_id -and -not [string]::IsNullOrWhiteSpace([string]$entry.doc_page_id)) {
+        $docSlug = [System.Web.HttpUtility]::HtmlEncode([string]$entry.doc_page_id)
+        $h1Inner = "<a href=`"/docs/pages/$docSlug.html`" target=`"_blank`">$title</a>"
+    }
+    else {
+        $h1Inner = $title
+    }
+
+    return "<h1>$h1Inner</h1>`n<p class=`"page-subtitle`">$description</p>"
+}
+
+function Get-PageBrowserTitle {
+    <#
+    .SYNOPSIS
+        Returns the browser tab <title> string for a page, sourced from
+        RBAC_NavRegistry.
+    .DESCRIPTION
+        Composes "<display_title> - <Suffix>" from the registry. Used in the
+        <title> element of each route file's HTML so the browser tab matches
+        the page H1 and updates from a single registry row.
+    .PARAMETER PageRoute
+        The page route (e.g., '/server-health').
+    .PARAMETER Suffix
+        Trailing text after the dash. Defaults to 'xFACts Control Center'.
+    .RETURNS
+        Plain string ready to embed inside a <title> tag.
+    .EXAMPLE
+        $browserTitle = Get-PageBrowserTitle -PageRoute '/server-health'
+        # Then: <title>$browserTitle</title>
+    #>
+    param(
+        [Parameter(Mandatory)][string]$PageRoute,
+        [string]$Suffix = 'xFACts Control Center'
+    )
+
+    $entry = Get-NavRegistryEntry -PageRoute $PageRoute
+    return "$([string]$entry.display_title) - $Suffix"
 }
 
 # ----------------------------------------------------------------------------
@@ -1006,16 +1137,16 @@ function Write-RBACAuditLog {
         [string]$Detail,
         [string]$ClientIp
     )
-    
+
     # Skip ALLOWED events unless verbosity is 'all'
     if ($Result -eq 'ALLOWED' -and $script:RBACCache.AuditVerbosity -ne 'all') {
         return
     }
-    
+
     try {
         $groupsStr = if ($UserGroups) { ($UserGroups -join ', ') } else { $null }
         $rolesStr = if ($UserRoles) { ($UserRoles | ForEach-Object { $_.role_name } | Select-Object -Unique) -join ', ' } else { $null }
-        
+
         # Truncate if needed
         if ($groupsStr -and $groupsStr.Length -gt 2000) {
             $groupsStr = $groupsStr.Substring(0, 1997) + '...'
@@ -1023,16 +1154,16 @@ function Write-RBACAuditLog {
         if ($rolesStr -and $rolesStr.Length -gt 500) {
             $rolesStr = $rolesStr.Substring(0, 497) + '...'
         }
-        
+
         $query = @"
-INSERT INTO dbo.RBAC_AuditLog 
+INSERT INTO dbo.RBAC_AuditLog
     (event_type, username, ad_groups, resolved_roles, page_route, action_name,
      required_tier, user_tier, result, detail, client_ip)
-VALUES 
+VALUES
     (@eventType, @username, @adGroups, @resolvedRoles, @pageRoute, @actionName,
      @requiredTier, @userTier, @result, @detail, @clientIp)
 "@
-        
+
         $params = @{
             eventType     = $EventType
             username      = $(if ($Username) { $Username } else { [DBNull]::Value })
@@ -1046,7 +1177,7 @@ VALUES
             detail        = $(if ($Detail) { $Detail } else { [DBNull]::Value })
             clientIp      = $(if ($ClientIp) { $ClientIp } else { [DBNull]::Value })
         }
-        
+
         Invoke-XFActsQuery -Query $query -Parameters $params
     }
     catch {
@@ -1071,16 +1202,16 @@ function Get-AccessDeniedHtml {
         [string]$DisplayName = 'Unknown User',
         [string]$PageRoute = ''
     )
-    
+
     return @"
 <!DOCTYPE html>
 <html>
 <head>
     <title>Access Denied - xFACts Control Center</title>
     <style>
-        body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
-            margin: 0; padding: 40px; 
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0; padding: 40px;
             background: #1e1e1e; color: #d4d4d4;
             display: flex; justify-content: center; align-items: center; min-height: 90vh;
         }
@@ -1122,7 +1253,7 @@ function Get-ActionDeniedResponse {
     param(
         [string]$ActionName = 'this action'
     )
-    
+
     return [PSCustomObject]@{
         Error   = "Access Denied"
         Message = "You do not have permission to perform $ActionName."
@@ -1167,11 +1298,11 @@ function Initialize-ApiCacheConfig {
         Called on startup and periodically by a Pode timer.
     .DESCRIPTION
         Reads all cache_ttl_* settings from GlobalConfig for the ControlCenter
-        module (across all ApiCache.* categories) and stores them in the 
-        ApiCacheConfig shared state. This avoids querying GlobalConfig on 
+        module (across all ApiCache.* categories) and stores them in the
+        ApiCacheConfig shared state. This avoids querying GlobalConfig on
         every API request.
     #>
-    
+
     try {
         $settings = Invoke-XFActsQuery -Query @"
             SELECT setting_name, setting_value
@@ -1180,12 +1311,12 @@ function Initialize-ApiCacheConfig {
               AND category LIKE 'ApiCache%'
               AND is_active = 1
 "@
-        
+
         $configMap = @{}
         foreach ($row in $settings) {
             $configMap[$row.setting_name] = $row.setting_value
         }
-        
+
         Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
             Set-PodeState -Name 'ApiCacheConfig' -Value $configMap
         }
@@ -1203,9 +1334,9 @@ function Get-CachedResult {
     .DESCRIPTION
         Thread-safe caching using Pode shared state. TTL is resolved in this order:
         1. Endpoint-specific GlobalConfig setting (cache_ttl_<CacheKey>_seconds)
-        2. Default GlobalConfig setting (cache_ttl_default_seconds)  
+        2. Default GlobalConfig setting (cache_ttl_default_seconds)
         3. Hardcoded fallback (600 seconds)
-        
+
         The query scriptblock executes OUTSIDE the lock to avoid blocking
         other threads during long-running queries.
     .PARAMETER CacheKey
@@ -1226,16 +1357,16 @@ function Get-CachedResult {
     param(
         [Parameter(Mandatory)]
         [string]$CacheKey,
-        
+
         [Parameter(Mandatory)]
         [scriptblock]$ScriptBlock,
-        
+
         [switch]$ForceRefresh
     )
-    
+
     # --- Resolve TTL from cached config ---
     $ttlSeconds = 600  # Hardcoded emergency fallback
-    
+
     Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
         $config = Get-PodeState -Name 'ApiCacheConfig'
         if ($null -ne $config) {
@@ -1249,7 +1380,7 @@ function Get-CachedResult {
             }
         }
     }
-    
+
     # --- Check cache (unless force refresh) ---
     if (-not $ForceRefresh) {
         $cached = $null
@@ -1263,15 +1394,15 @@ function Get-CachedResult {
                 }
             }
         }
-        
+
         if ($null -ne $cached) {
             return $cached
         }
     }
-    
+
     # --- Cache miss or force refresh: execute query OUTSIDE the lock ---
     $result = & $ScriptBlock
-    
+
     # --- Store result in cache ---
     Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
         $cache = Get-PodeState -Name 'ApiCache'
@@ -1280,7 +1411,7 @@ function Get-CachedResult {
             Timestamp = Get-Date
         }
     }
-    
+
     return $result
 }
 
@@ -1309,7 +1440,7 @@ function Get-CRS5Connection {
     param(
         [string]$TargetInstance
     )
-    
+
     # Get AG configuration from GlobalConfig
     $agConfig = Invoke-XFActsQuery -Query @"
         SELECT setting_name, setting_value
@@ -1318,11 +1449,11 @@ function Get-CRS5Connection {
           AND setting_name IN ('AGName', 'SourceReplica', 'AGListenerName')
           AND is_active = 1
 "@
-    
+
     $agName = 'DMPRODAG'
     $sourceReplica = 'SECONDARY'
     $agListenerName = 'AVG-PROD-LSNR'
-    
+
     foreach ($row in $agConfig) {
         switch ($row.setting_name) {
             'AGName'         { $agName = $row.setting_value }
@@ -1330,7 +1461,7 @@ function Get-CRS5Connection {
             'AGListenerName' { $agListenerName = $row.setting_value }
         }
     }
-    
+
     # If TargetInstance is specified and does not match the AG listener,
     # route directly to the standalone instance (non-AG path)
     if (-not [string]::IsNullOrEmpty($TargetInstance) -and $TargetInstance -ne $agListenerName) {
@@ -1339,41 +1470,41 @@ function Get-CRS5Connection {
             Write = "Server=$TargetInstance;Database=crs5_oltp;Integrated Security=True;Application Name=xFACts Control Center;"
         }
     }
-    
+
     # AG-aware path: query for current replica roles via the listener
     $replicaQuery = @"
-        SELECT 
+        SELECT
             ar.replica_server_name,
             ars.role_desc
         FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar 
+        INNER JOIN sys.availability_replicas ar
             ON ars.replica_id = ar.replica_id
         INNER JOIN sys.availability_groups ag
             ON ar.group_id = ag.group_id
         WHERE ag.name = '$agName'
 "@
-    
+
     $replicaResults = Invoke-XFActsQuery -Query $replicaQuery
-    
+
     $roles = @{ PRIMARY = $null; SECONDARY = $null }
     foreach ($row in $replicaResults) {
         if ($row.role_desc -eq 'PRIMARY')   { $roles.PRIMARY = $row.replica_server_name }
         elseif ($row.role_desc -eq 'SECONDARY') { $roles.SECONDARY = $row.replica_server_name }
     }
-    
+
     # Determine read server based on config
     $readServer = if ($sourceReplica -eq 'SECONDARY' -and $roles.SECONDARY) {
         $roles.SECONDARY
     } else {
         $roles.PRIMARY
     }
-    
+
     $writeServer = $roles.PRIMARY
-    
+
     # Fallback to listener if detection fails
     if (-not $readServer)  { $readServer = $agListenerName }
     if (-not $writeServer) { $writeServer = $agListenerName }
-    
+
     return @{
         Read  = "Server=$readServer;Database=crs5_oltp;Integrated Security=True;Application Name=xFACts Control Center;ApplicationIntent=ReadOnly;"
         Write = "Server=$writeServer;Database=crs5_oltp;Integrated Security=True;Application Name=xFACts Control Center;"
@@ -1401,7 +1532,7 @@ function Invoke-CRS5ReadQuery {
         [int]$TimeoutSeconds = 60,
         [string]$TargetInstance
     )
-    
+
     $connStrings = Get-CRS5Connection -TargetInstance $TargetInstance
     $conn = New-Object System.Data.SqlClient.SqlConnection($connStrings.Read)
     try {
@@ -1409,16 +1540,16 @@ function Invoke-CRS5ReadQuery {
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = $Query
         $cmd.CommandTimeout = $TimeoutSeconds
-        
+
         foreach ($key in $Parameters.Keys) {
             $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
             if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
-        
+
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
         $dataset = New-Object System.Data.DataSet
         $adapter.Fill($dataset) | Out-Null
-        
+
         $results = [System.Collections.ArrayList]::new()
         if ($dataset.Tables.Count -gt 0) {
             foreach ($row in $dataset.Tables[0].Rows) {
@@ -1455,7 +1586,7 @@ function Invoke-CRS5WriteQuery {
         [hashtable]$Parameters = @{},
         [string]$TargetInstance
     )
-    
+
     $connStrings = Get-CRS5Connection -TargetInstance $TargetInstance
     $conn = New-Object System.Data.SqlClient.SqlConnection($connStrings.Write)
     try {
@@ -1463,12 +1594,12 @@ function Invoke-CRS5WriteQuery {
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = $Query
         $cmd.CommandTimeout = 30
-        
+
         foreach ($key in $Parameters.Keys) {
             $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
             if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
-        
+
         return $cmd.ExecuteNonQuery()
     }
     finally {
@@ -1601,7 +1732,7 @@ function Get-ServiceCredentials {
         Implements the two-tier decryption model: master passphrase (from GlobalConfig)
         decrypts the service-level passphrase, which decrypts all credential values.
         Mirrors the pattern used by collector scripts (Process-JiraTicketQueue.ps1, etc.).
-        
+
         No caching — master passphrase is retrieved fresh each call. Designed for
         infrequent, user-initiated actions (not polling cycles).
     .PARAMETER ServiceName
@@ -1684,7 +1815,7 @@ function Get-ServiceCredentials {
 # ============================================================================
 # AG Read Query — Generalized secondary replica read for any AG database
 # ============================================================================
- 
+
 function Invoke-AGReadQuery {
     <#
     .SYNOPSIS
@@ -1710,7 +1841,7 @@ function Invoke-AGReadQuery {
         [hashtable]$Parameters = @{},
         [int]$TimeoutSeconds = 60
     )
-    
+
     # Detect AG replica roles using existing GlobalConfig settings
     $agConfig = Invoke-XFActsQuery -Query @"
         SELECT setting_name, setting_value
@@ -1719,17 +1850,17 @@ function Invoke-AGReadQuery {
           AND setting_name IN ('AGName', 'SourceReplica')
           AND is_active = 1
 "@
-    
+
     $agName = 'DMPRODAG'
     $sourceReplica = 'SECONDARY'
-    
+
     foreach ($row in $agConfig) {
         switch ($row.setting_name) {
             'AGName'        { $agName = $row.setting_value }
             'SourceReplica' { $sourceReplica = $row.setting_value }
         }
     }
-    
+
     # Query AG for current replica roles
     $replicaResults = Invoke-XFActsQuery -Query @"
         SELECT ar.replica_server_name, ars.role_desc
@@ -1738,7 +1869,7 @@ function Invoke-AGReadQuery {
         INNER JOIN sys.availability_groups ag ON ar.group_id = ag.group_id
         WHERE ag.name = '$agName'
 "@
-    
+
     $readServer = $null
     foreach ($row in $replicaResults) {
         if ($sourceReplica -eq 'SECONDARY' -and $row.role_desc -eq 'SECONDARY') {
@@ -1748,10 +1879,10 @@ function Invoke-AGReadQuery {
             $readServer = $row.replica_server_name
         }
     }
-    
+
     # Fallback to listener
     if (-not $readServer) { $readServer = 'AVG-PROD-LSNR' }
-    
+
     $connString = "Server=$readServer;Database=$Database;Integrated Security=True;Application Name=xFACts Control Center;ApplicationIntent=ReadOnly;"
     $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
     try {
@@ -1759,16 +1890,16 @@ function Invoke-AGReadQuery {
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = $Query
         $cmd.CommandTimeout = $TimeoutSeconds
-        
+
         foreach ($key in $Parameters.Keys) {
             $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
             if ($Parameters[$key] -is [string]) { $p.SqlDbType = [System.Data.SqlDbType]::VarChar }
         }
-        
+
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
         $dataset = New-Object System.Data.DataSet
         $adapter.Fill($dataset) | Out-Null
-        
+
         $results = [System.Collections.ArrayList]::new()
         if ($dataset.Tables.Count -gt 0) {
             foreach ($row in $dataset.Tables[0].Rows) {
@@ -1790,7 +1921,7 @@ function Invoke-AGReadQuery {
 # Data Conversion Helpers — Safe value extraction for JSON serialization
 # Converts DBNull and empty values to $null for clean API responses.
 # ============================================================================
- 
+
 function ConvertTo-SafeValue {
     <#
     .SYNOPSIS
@@ -1801,7 +1932,7 @@ function ConvertTo-SafeValue {
     if ($Value -is [DBNull]) { return $null }
     return $Value
 }
- 
+
 function ConvertTo-SafeDate {
     <#
     .SYNOPSIS
@@ -1815,7 +1946,7 @@ function ConvertTo-SafeDate {
     if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
     try { return ([DateTime]$Value).ToString($Format) } catch { return $null }
 }
- 
+
 function ConvertTo-SafeDateTime {
     <#
     .SYNOPSIS
@@ -1825,7 +1956,7 @@ function ConvertTo-SafeDateTime {
     if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
     try { return ([DateTime]$Value).ToString("yyyy-MM-dd HH:mm:ss") } catch { return $null }
 }
- 
+
 function ConvertTo-SafeDecimal {
     <#
     .SYNOPSIS
@@ -1962,9 +2093,9 @@ function Build-BDLXml {
     $skippedCount = if ($skipResult -and $skipResult.Count -gt 0) { $skipResult[0].cnt } else { 0 }
 
     # Identify mapped columns (exclude system columns and unmapped columns)
-    $mappedColumns = @($stagingRows[0].Keys | Where-Object { 
+    $mappedColumns = @($stagingRows[0].Keys | Where-Object {
         $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -ne '_nullify_fields' -and
-        $_ -ne '_trigger_value' -and $_ -ne '_assignment_index' -and $_ -notlike '*_unmapped' 
+        $_ -ne '_trigger_value' -and $_ -ne '_assignment_index' -and $_ -notlike '*_unmapped'
     })
 
     # ── Build filename ──────────────────────────────────────────────
@@ -2075,7 +2206,7 @@ function Build-BDLXml {
         Environment  = $environment
         Error        = $null
     }
-} 
+}
 
 # ============================================================================
 # HELPER: Build-ARLogXml
@@ -2472,7 +2603,7 @@ function Get-ToolsServers {
 
     return @($servers)
 }
- 
+
 # ============================================================================
 # Export-ModuleMember
 # ============================================================================
@@ -2489,6 +2620,9 @@ Export-ModuleMember -Function @(
     # RBAC - Dynamic Nav
     'Get-NavBarHtml',
     'Get-HomePageSections',
+    'Get-NavRegistryEntry',
+    'Get-PageHeaderHtml',
+    'Get-PageBrowserTitle',
     # RBAC - Internal (needed by routes that build CRS5 connections)
     'Resolve-UserRoles',
     'Get-UserPageTier',
