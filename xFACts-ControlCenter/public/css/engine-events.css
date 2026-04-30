@@ -11,6 +11,15 @@
    section accent classes consumed by Get-NavBarHtml. Page-specific CSS
    files may still contain duplicate nav-bar rules pending consolidation
    cleanup as part of Phase 3d route updates.
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d: appended shared .back-link rules used by tool
+               pages (BDLImport, PlatformMonitoring) that don't sit in the
+               main nav. The link sits below the page header and resolves
+               to the originating page or Home via /api/nav-registry/label.
+               Future tools rolled out to dept-only users will inherit
+               these styles automatically.
    ============================================================================ */
 
 /* ── Engine Card Base Styles ── */
@@ -610,3 +619,30 @@ h1 a:hover { color: #9cdcfe; }
 /* Defensive rule: if a future change accidentally emits an admin link,    */
 /* it stays hidden rather than appearing alongside other links.            */
 .nav-link.nav-section-admin { display: none; }
+
+/* ============================================================================
+   Back Link (Phase 3d, 2026-04-29)
+   ----------------------------------------------------------------------------
+   Used by tool pages that don't sit in the main nav (BDLImport,
+   PlatformMonitoring, future dept-only tools). The link sits below the page
+   header and resolves its target via /api/nav-registry/label:
+     - If document.referrer maps to a CC route the user can access, the link
+       text becomes "← Back to <display_title>" and clicking calls
+       history.back().
+     - Otherwise the link falls back to "← Back to <Home label>" pointing at
+       "/", but only if the user has access to Home.
+     - If both lookups fail, the link is hidden via JS.
+   Subtle by design: muted gray so it doesn't compete with page content.
+   ============================================================================ */
+
+.back-link {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: #888;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+.back-link:hover {
+    color: #9cdcfe;
+}
