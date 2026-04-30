@@ -22,11 +22,23 @@
    7. Chrome: Back Link        -- For tool pages outside the main nav
    8. Content: Sections        -- Section containers and refresh badges
    9. Content: Slideout Panels -- Reusable slide-from-right panels
-  10. Content: Modal System    -- showAlert/showConfirm modal styling
+  10. Content: Modal System    -- xf-modal-* classes used by showAlert,
+                                   showConfirm, and async-content modals
   11. Feedback Overlays        -- Idle overlay
 
    CHANGELOG
    ---------
+   2026-04-30  Phase 4 (Chrome Standardization, modal expansion):
+               Added .xf-modal.wide variant (800px) for modals containing
+               wide tabular content. Added .xf-modal-overlay.hidden state
+               for modals declared statically in HTML and toggled via JS
+               (the existing showAlert/showConfirm helpers add and remove
+               overlays dynamically; both patterns are now supported).
+               Promoted .modal-close to a shared top-level rule used by
+               both slide panels and xf-modals; the previous
+               .slide-panel-header .modal-close descendant selector is
+               removed since the bare .modal-close rule now styles both
+               contexts.
    2026-04-30  Phase 4 (Chrome Standardization): file reorganized into
                logical sections following DOM order from chrome to content.
                Added universal chrome rules (body reset and viewport
@@ -711,6 +723,10 @@ h1 a:hover { color: #9cdcfe; }
    (summary stats, tables, sections, accordions, empty states). Used by
    Backup (retention detail), Index Maintenance (process detail), and
    others.
+
+   The .modal-close button used in slide-panel headers is defined as a
+   shared rule in Section 10 (Modal System) since it's also used inside
+   xf-modal headers.
    ============================================================================ */
 
 /* -- Overlay -- */
@@ -772,16 +788,6 @@ h1 a:hover { color: #9cdcfe; }
     font-size: 16px;
     font-weight: 600;
 }
-.slide-panel-header .modal-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-}
-.slide-panel-header .modal-close:hover { color: #d4d4d4; }
 
 /* -- Panel body -- */
 .slide-panel-body {
@@ -908,10 +914,37 @@ h1 a:hover { color: #9cdcfe; }
    ----------------------------------------------------------------------------
    The xf-modal-* class set replaces native alert() and confirm() across
    all Control Center pages. Used by showAlert() and showConfirm() in
-   engine-events.js. Reference implementation: BDL Import page.
+   engine-events.js, which dynamically create and remove the overlay
+   element. Pages can also declare an xf-modal-overlay statically in HTML
+   and toggle visibility via the .hidden class for async-content modals
+   (modal opens, populates body via API call, closes on user action).
+
+   The .modal-close button class is shared between this section and
+   slide-panel headers (Section 9).
+
    uses @keyframes xfModalFadeIn from Section 1
    ============================================================================ */
 
+/* -- Shared close button -- */
+/* Used inside both .slide-panel-header and .xf-modal-header. Bare class    */
+/* (not scoped to a parent) so it works wherever it's placed.               */
+.modal-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color 0.15s;
+}
+.modal-close:hover { color: #d4d4d4; }
+
+/* -- Overlay -- */
+/* Default: fills viewport, centers child .xf-modal. Helpers like           */
+/* showAlert/showConfirm dynamically insert and remove the overlay; pages   */
+/* with statically-declared modals add the .hidden class as initial state   */
+/* and toggle it via JS.                                                    */
 .xf-modal-overlay {
     position: fixed;
     top: 0;
@@ -925,7 +958,12 @@ h1 a:hover { color: #9cdcfe; }
     justify-content: center;
     animation: xfModalFadeIn 0.2s ease;
 }
+.xf-modal-overlay.hidden { display: none; }
 
+/* -- Modal box -- */
+/* Default 460px width suits showAlert/showConfirm and other simple modals. */
+/* Use .wide modifier (800px) when the modal contains tabular content or   */
+/* other wide layouts.                                                      */
 .xf-modal {
     background: #252526;
     border: 1px solid #404040;
@@ -934,7 +972,9 @@ h1 a:hover { color: #9cdcfe; }
     max-width: 90vw;
     box-shadow: 0 8px 30px rgba(0,0,0,0.5);
 }
+.xf-modal.wide { width: 800px; }
 
+/* -- Modal header -- */
 .xf-modal-header {
     display: flex;
     align-items: center;
@@ -948,8 +988,20 @@ h1 a:hover { color: #9cdcfe; }
     color: #d4d4d4;
 }
 
+/* In headers that contain a close button, push the button to the right.   */
+/* The header-bar h3 (or equivalent title element) takes flex:1.           */
+.xf-modal-header h3,
+.xf-modal-header .xf-modal-title {
+    flex: 1;
+    margin: 0;
+    color: #4ec9b0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
 .xf-modal-icon { font-size: 20px; }
 
+/* -- Modal body -- */
 .xf-modal-body { padding: 20px; }
 .xf-modal-body p {
     color: #bbb;
@@ -960,6 +1012,7 @@ h1 a:hover { color: #9cdcfe; }
 .xf-modal-body p:last-child { margin-bottom: 0; }
 .xf-modal-body strong { color: #4ec9b0; }
 
+/* -- Modal action buttons (footer) -- */
 .xf-modal-actions {
     display: flex;
     justify-content: flex-end;
