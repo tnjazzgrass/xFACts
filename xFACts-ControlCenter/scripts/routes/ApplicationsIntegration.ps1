@@ -1,7 +1,7 @@
 # ============================================================================
 # xFACts Control Center - Applications & Integration Departmental Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration.ps1
-# 
+#
 # Departmental dashboard for the Applications & Integration team.
 # Components:
 #   - BDL Import: Card linking to the BDL Import workflow page
@@ -17,26 +17,35 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle. Subtitle reverted
+#             from "Departmental Operations & Tools" to standard
+#             "Departmental Operations" in line with all departmental pages.
+#             Admin-conditional sections ($pageIsAdmin) preserved.
 # 2026-04-13  Added Refresh Drools card with environment selection modal
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authentication 'ADLogin' -ScriptBlock {
-    
+
     # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/applications-integration') -StatusCode 403
         return
     }
-    
-    # --- Admin gear icon (visible only to admin role holders) ---
+
+    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
     $pageIsAdmin = $access.Tier -eq 'admin'
-    $adminGear = if ($ctx.IsAdmin) {
-        '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-    } else { '' }
 
-    # --- Admin-only sections ---
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/departmental/applications-integration'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/departmental/applications-integration'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/departmental/applications-integration'
+
+    # --- Admin-only sections (page body, not nav) ---
     $adminSection = ''
     $adminPanelHtml = ''
     if ($pageIsAdmin) {
@@ -111,52 +120,26 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
     </div>
 '@
     }
-    
-    # IT users always get the full nav
-    $navHtml = @'
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/applications-integration" class="nav-link active">Apps/Int</a>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
-'@
-    
-    $navHtml = $navHtml.Replace('</nav>', "$adminGear</nav>")
-    
+
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Applications & Integration - xFACts Control Center</title>
-    <link rel="stylesheet" href="/css/engine-events.css">
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/applications-integration.css">
+    <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    $navHtml
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1>Applications &amp; Integration</h1>
-            <p class="page-subtitle">Departmental Operations &amp; Tools</p>
+            $headerHtml
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- ================================================================ -->
     <!-- DM TOOLS                                                         -->
     <!-- ================================================================ -->
@@ -195,11 +178,11 @@ Add-PodeRoute -Method Get -Path '/departmental/applications-integration' -Authen
             </div>
         </div>
     </div>
-    
+
     $adminSection
-    
+
     $adminPanelHtml
-    
+
     <script src="/js/engine-events.js"></script>
     <script src="/js/applications-integration.js"></script>
 </body>
