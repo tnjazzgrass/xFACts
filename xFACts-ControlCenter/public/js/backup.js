@@ -11,6 +11,16 @@
 
    CHANGELOG
    ---------
+   2026-04-30  Phase 4 (Chrome Standardization, modal migration): the
+               pipeline/queue detail modal now uses the shared xf-modal-*
+               classes from engine-events.css. openDetailModal /
+               closeDetailModal target the new detail-modal-overlay
+               element ID and toggle the .hidden class for visibility
+               (replacing the old detail-modal element ID). Render
+               function class names updated from .modal-summary /
+               .modal-table / .modal-empty to .detail-summary /
+               .detail-table / .detail-empty matching the renamed CSS
+               sub-components in backup.css.
    2026-04-30  Phase 4 (Chrome Standardization): aligned with shared chrome
                contract. Removed local showError() / clearError() functions
                that targeted the legacy 'connection-error' element ID --
@@ -651,14 +661,19 @@ function toggleAccordion(id) {
 // ============================================================================
 // PIPELINE & QUEUE DETAIL MODALS
 // ============================================================================
+// Uses the shared xf-modal-* system from engine-events.css. The modal HTML
+// is statically declared in Backup.ps1; openDetailModal/closeDetailModal
+// toggle the .hidden class on the overlay element to show/hide it.
+// Render functions populate the body with .detail-* sub-components defined
+// in backup.css (.detail-summary, .detail-table, .detail-empty).
 
 function openDetailModal(title) {
     document.getElementById('detail-modal-title').textContent = title;
-    document.getElementById('detail-modal').classList.remove('hidden');
+    document.getElementById('detail-modal-overlay').classList.remove('hidden');
 }
 
 function closeDetailModal() {
-    document.getElementById('detail-modal').classList.add('hidden');
+    document.getElementById('detail-modal-overlay').classList.add('hidden');
 }
 
 function openPipelineDetail(processName) {
@@ -674,18 +689,18 @@ function openPipelineDetail(processName) {
     body.innerHTML = '<div class="loading">Loading...</div>';
 
     if (processName === 'COLLECTION') {
-        body.innerHTML = '<div class="modal-empty">File-level detail not yet available for Collection.<br>Summary data is shown on the card.</div>';
+        body.innerHTML = '<div class="detail-empty">File-level detail not yet available for Collection.<br>Summary data is shown on the card.</div>';
         return;
     }
 
     engineFetch('/api/backup/pipeline-detail?process=' + processName)
         .then(function(data) {
-            if (!data) { body.innerHTML = '<div class="modal-empty">Failed to load data</div>'; return; }
-            if (data.error) { body.innerHTML = '<div class="modal-empty">Error: ' + escapeHtml(data.error) + '</div>'; return; }
+            if (!data) { body.innerHTML = '<div class="detail-empty">Failed to load data</div>'; return; }
+            if (data.error) { body.innerHTML = '<div class="detail-empty">Error: ' + escapeHtml(data.error) + '</div>'; return; }
             renderPipelineModal(body, data);
         })
         .catch(function(err) {
-            body.innerHTML = '<div class="modal-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
+            body.innerHTML = '<div class="detail-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
         });
 }
 
@@ -699,7 +714,7 @@ function renderPipelineModal(container, data) {
             : s.last_status === 'PARTIAL' ? 'summary-status-partial'
             : 'summary-status-failed';
 
-        html += '<div class="modal-summary">';
+        html += '<div class="detail-summary">';
         html += '<span class="summary-item"><span class="' + statusClass + '">' + (s.last_status || '-') + '</span></span>';
         html += '<span class="summary-item">Run: <span class="summary-value">' + (s.started_dttm ? formatDateTime(s.started_dttm) : '-') + '</span></span>';
         html += '<span class="summary-item">Files: <span class="summary-value">' + s.last_files_processed + '</span></span>';
@@ -716,9 +731,9 @@ function renderPipelineModal(container, data) {
 
     // File table
     if (!data.files || data.files.length === 0) {
-        html += '<div class="modal-empty">No file detail recorded for this run</div>';
+        html += '<div class="detail-empty">No file detail recorded for this run</div>';
     } else {
-        html += '<table class="modal-table">';
+        html += '<table class="detail-table">';
         html += '<thead><tr><th>Status</th><th>Server</th><th>Database</th><th>File</th><th class="align-right">Size</th><th class="align-right">Duration</th></tr></thead>';
         html += '<tbody>';
         data.files.forEach(function(f) {
@@ -749,12 +764,12 @@ function openQueueDetail(type) {
 
     engineFetch('/api/backup/queue-detail?type=' + type)
         .then(function(data) {
-            if (!data) { body.innerHTML = '<div class="modal-empty">Failed to load data</div>'; return; }
-            if (data.error) { body.innerHTML = '<div class="modal-empty">Error: ' + escapeHtml(data.error) + '</div>'; return; }
+            if (!data) { body.innerHTML = '<div class="detail-empty">Failed to load data</div>'; return; }
+            if (data.error) { body.innerHTML = '<div class="detail-empty">Error: ' + escapeHtml(data.error) + '</div>'; return; }
             renderQueueModal(body, data);
         })
         .catch(function(err) {
-            body.innerHTML = '<div class="modal-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
+            body.innerHTML = '<div class="detail-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
         });
 }
 
@@ -762,19 +777,19 @@ function renderQueueModal(container, data) {
     var html = '';
 
     if (!data.files || data.files.length === 0) {
-        html += '<div class="modal-empty">Queue is empty</div>';
+        html += '<div class="detail-empty">Queue is empty</div>';
         container.innerHTML = html;
         return;
     }
 
     // Summary
-    html += '<div class="modal-summary">';
+    html += '<div class="detail-summary">';
     html += '<span class="summary-item">Pending: <span class="summary-value">' + data.total_count + ' files</span></span>';
     html += '<span class="summary-item">Total: <span class="summary-value">' + formatBytesShort(data.total_bytes) + '</span></span>';
     html += '</div>';
 
     // File table
-    html += '<table class="modal-table">';
+    html += '<table class="detail-table">';
     html += '<thead><tr><th>Type</th><th>Server</th><th>Database</th><th>File</th><th>Backup Date</th><th class="align-right">Size</th></tr></thead>';
     html += '<tbody>';
     data.files.forEach(function(f) {
