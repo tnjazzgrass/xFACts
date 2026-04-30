@@ -3,8 +3,20 @@
    Location: E:\xFACts-ControlCenter\public\css\backup.css
    Version: Tracked in dbo.System_Metadata (component: ServerOps.Backup)
 
+   Page-specific styles for the Backup Monitoring dashboard. Universal
+   chrome (body, h1, header-bar, refresh-info, sections, engine cards,
+   connection banner, animations) is provided by engine-events.css per
+   the CC Page Chrome Contract (Development Guidelines Section 5.12).
+
    CHANGELOG
    ---------
+   2026-04-30  Phase 4 (Chrome Standardization): stripped duplicated chrome
+               rules now provided by engine-events.css -- box-sizing reset,
+               body, h1, page-subtitle, a, header-bar, header-right,
+               refresh-info, last-updated, live-indicator, @keyframes pulse,
+               connection-error block (legacy class retired), and base
+               .section / .section-header / .section-title rules. Page now
+               relies on body.section-platform from shared CSS for H1 color.
    2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
                nav-admin (now in engine-events.css), .section-header-right
                (shared), and orphan .back-link rule (no .back-link element
@@ -12,70 +24,14 @@
                already cleaned in a prior pass.
    ============================================================================ */
 
-/* Base Layout */
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { color: #888; font-size: 14px; margin: 0; }
-a { color: #9cdcfe; }
 
-/* Header */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 20px;
-    gap: 10px;
-}
+/* ============================================================================
+   TWO COLUMN LAYOUT
+   Top-level layout for the Backup page content area. Pipeline and Active
+   Operations sit on the left; Queue, Retention, and Storage on the right.
+   Stacks vertically on narrower viewports.
+   ============================================================================ */
 
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-
-.refresh-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #888;
-    font-size: 13px;
-}
-.last-updated { color: #4ec9b0; }
-
-.live-indicator {
-    width: 8px;
-    height: 8px;
-    background: #4ec9b0;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-/* Connection Error */
-.connection-error {
-    background: #5a1d1d;
-    border: 1px solid #ff6b6b;
-    color: #ff9999;
-    padding: 10px 15px;
-    border-radius: 4px;
-    margin-bottom: 15px;
-    display: none;
-}
-.connection-error.visible { display: block; }
-
-/* Two Column Layout */
 .two-column-layout {
     display: flex;
     gap: 20px;
@@ -93,33 +49,11 @@ a { color: #9cdcfe; }
     .two-column-layout { flex-direction: column; }
 }
 
-/* Sections */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-    margin-bottom: 15px;
-}
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
-.section-title {
-    color: #4ec9b0;
-    font-size: 14px;
-    font-weight: 600;
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-/* Refresh mode badge styles (⚡ Event, ● Live, 📌 Static) are in shared engine-events.css */
 
-/* Loading & Messages */
+/* ============================================================================
+   LOADING & EMPTY STATES
+   ============================================================================ */
+
 .loading {
     color: #888;
     font-style: italic;
@@ -140,11 +74,13 @@ a { color: #9cdcfe; }
     padding: 8px 0;
 }
 
-/* Engine Indicator Cards: base styles are provided by engine-events.css */
 
 /* ============================================================================
-   Pipeline Status - Cards with Badge Pills
+   PIPELINE STATUS
+   Cards with badge pills. Each pipeline (Local, Network, AWS) gets its
+   own card with status badge and frame coloring based on health.
    ============================================================================ */
+
 .pipeline-grid {
     display: flex;
     gap: 12px;
@@ -184,7 +120,7 @@ a { color: #9cdcfe; }
     line-height: 1.4;
 }
 
-/* Pipeline Status Badge Pills */
+/* -- Pipeline status badge pills -- */
 .pipeline-status-badge {
     font-size: 9px;
     font-weight: 600;
@@ -194,28 +130,13 @@ a { color: #9cdcfe; }
     letter-spacing: 0.3px;
     white-space: nowrap;
 }
-.pipeline-status-badge.success {
-    background: rgba(78, 201, 176, 0.2);
-    color: #4ec9b0;
-}
-.pipeline-status-badge.running {
-    background: rgba(86, 156, 214, 0.2);
-    color: #569cd6;
-}
-.pipeline-status-badge.warning {
-    background: rgba(220, 220, 170, 0.2);
-    color: #dcdcaa;
-}
-.pipeline-status-badge.failed {
-    background: rgba(244, 135, 113, 0.2);
-    color: #f48771;
-}
-.pipeline-status-badge.unknown {
-    background: rgba(85, 85, 85, 0.2);
-    color: #555;
-}
+.pipeline-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
+.pipeline-status-badge.running { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
+.pipeline-status-badge.warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
+.pipeline-status-badge.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
+.pipeline-status-badge.unknown { background: rgba(85, 85, 85, 0.2);     color: #555; }
 
-/* Pipeline card frame coloring — neutral when healthy */
+/* -- Pipeline card frame coloring (neutral when healthy) -- */
 .pipeline-card.status-warning {
     border-color: #dcdcaa;
     background: rgba(220, 220, 170, 0.1);
@@ -234,14 +155,23 @@ a { color: #9cdcfe; }
 }
 .pipeline-card.status-running .pipeline-time { color: #569cd6; }
 
-.pipeline-card.status-unknown {
-    border-color: #666;
-}
+.pipeline-card.status-unknown { border-color: #666; }
 .pipeline-card.status-unknown .pipeline-time { color: #666; }
 
+/* -- Pipeline card clickable variant -- */
+.pipeline-card.clickable {
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+.pipeline-card.clickable:hover { border-color: #569cd6; }
+
+
 /* ============================================================================
-   Queue & Retention - Side by Side Sections
+   QUEUE & RETENTION
+   Side-by-side sections in the right column. Each contains a card pair
+   showing counts and click-through targets to detail slideouts.
    ============================================================================ */
+
 .side-by-side-row {
     display: flex;
     gap: 15px;
@@ -256,6 +186,7 @@ a { color: #9cdcfe; }
     display: flex;
     gap: 10px;
 }
+
 .status-card {
     background: #2d2d2d;
     border: 1px solid #404040;
@@ -270,9 +201,7 @@ a { color: #9cdcfe; }
     font-size: 24px;
     opacity: 0.6;
 }
-.status-card .card-content {
-    flex: 1;
-}
+.status-card .card-content { flex: 1; }
 .status-card .card-label {
     font-size: 11px;
     color: #888;
@@ -308,17 +237,19 @@ a { color: #9cdcfe; }
     border-top: 1px solid #404040;
 }
 
+
 /* ============================================================================
-   Active Operations - Combined Section with Sub-groups
+   ACTIVE OPERATIONS
+   Combined section with sub-groups (current backup, network copy, AWS
+   upload, retention purge). Each sub-group renders as a small table.
    ============================================================================ */
+
 .active-operations-content {
     max-height: 500px;
     overflow-y: auto;
 }
 
-.operation-group {
-    margin-bottom: 15px;
-}
+.operation-group { margin-bottom: 15px; }
 .operation-group:last-child { margin-bottom: 0; }
 
 .operation-group-header {
@@ -357,7 +288,7 @@ a { color: #9cdcfe; }
     color: #ce9178;
 }
 
-/* Progress Bar */
+/* -- Progress bar for active operations -- */
 .progress-bar-container {
     position: relative;
     background: #333;
@@ -387,12 +318,14 @@ a { color: #9cdcfe; }
     text-shadow: 0 0 2px #000;
 }
 
+
 /* ============================================================================
-   Storage Status - Row Layout with 80-Segment Gauges
+   STORAGE STATUS
+   Row layout with 80-segment gauge bars per drive. Drives are grouped by
+   location (local, network) and color-coded by health threshold.
    ============================================================================ */
-.storage-group {
-    margin-bottom: 15px;
-}
+
+.storage-group { margin-bottom: 15px; }
 .storage-group:last-child { margin-bottom: 0; }
 
 .storage-group-header {
@@ -438,7 +371,7 @@ a { color: #9cdcfe; }
     padding: 4px 0;
 }
 
-/* 80-Segment Gauge Bar - Taller */
+/* -- 80-segment gauge bar (taller variant) -- */
 .segment-bar {
     display: flex;
     gap: 2px;
@@ -450,11 +383,16 @@ a { color: #9cdcfe; }
     border-radius: 2px;
     transition: background 0.3s ease;
 }
-.segment.active-healthy { background: #4ec9b0; }
-.segment.active-warning { background: #dcdcaa; }
+.segment.active-healthy  { background: #4ec9b0; }
+.segment.active-warning  { background: #dcdcaa; }
 .segment.active-critical { background: #f48771; }
 
-/* ── Backup Type Badges ── */
+
+/* ============================================================================
+   BACKUP TYPE BADGES
+   Small inline badges for FULL / DIFF / LOG backup types.
+   ============================================================================ */
+
 .backup-type-badge {
     display: inline-block;
     font-size: 10px;
@@ -480,7 +418,14 @@ a { color: #9cdcfe; }
     border: 1px solid rgba(220, 220, 170, 0.25);
 }
 
-/* ── Detail Modal ── */
+
+/* ============================================================================
+   DETAIL MODAL
+   Backup-specific modal for pipeline and queue detail views. NOTE: This
+   is the legacy custom modal pattern, NOT the shared xf-modal-* system in
+   engine-events.css. Future migration to xf-modal is a separate cleanup.
+   ============================================================================ */
+
 .modal {
     position: fixed;
     top: 0;
@@ -517,7 +462,7 @@ a { color: #9cdcfe; }
 
 .modal-body { padding: 20px; overflow-y: auto; color: #d4d4d4; }
 
-/* ── Modal Summary Bar ── */
+/* -- Modal summary bar -- */
 .modal-summary {
     display: flex;
     gap: 20px;
@@ -533,9 +478,9 @@ a { color: #9cdcfe; }
 .modal-summary .summary-value { color: #d4d4d4; font-weight: 500; }
 .modal-summary .summary-status-success { color: #4ec9b0; font-weight: 600; }
 .modal-summary .summary-status-partial { color: #dcdcaa; font-weight: 600; }
-.modal-summary .summary-status-failed { color: #f48771; font-weight: 600; }
+.modal-summary .summary-status-failed  { color: #f48771; font-weight: 600; }
 
-/* ── Modal Table ── */
+/* -- Modal data table -- */
 .modal-table {
     width: 100%;
     border-collapse: collapse;
@@ -565,19 +510,11 @@ a { color: #9cdcfe; }
     border-bottom: 1px solid #333;
 }
 .modal-table .status-success { color: #4ec9b0; }
-.modal-table .status-failed { color: #f48771; }
+.modal-table .status-failed  { color: #f48771; }
+
 .modal-empty {
     color: #888;
     font-size: 13px;
     padding: 20px;
     text-align: center;
-}
-
-/* ── Pipeline Card Clickable ── */
-.pipeline-card.clickable {
-    cursor: pointer;
-    transition: border-color 0.15s ease;
-}
-.pipeline-card.clickable:hover {
-    border-color: #569cd6;
 }
