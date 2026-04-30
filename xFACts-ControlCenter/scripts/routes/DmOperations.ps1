@@ -1,7 +1,7 @@
 # ============================================================================
 # xFACts Control Center - DM Operations Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1
-# 
+#
 # Renders the DM Operations monitoring dashboard page for the unified consumer
 # archive and shell consumer purge processes.
 # CSS: /css/dm-operations.css
@@ -9,57 +9,47 @@
 # APIs: DmOperations-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle.
 # ============================================================================
 
-   Add-PodeRoute -Method Get -Path '/dm-operations' -Authentication 'ADLogin' -ScriptBlock {
+Add-PodeRoute -Method Get -Path '/dm-operations' -Authentication 'ADLogin' -ScriptBlock {
 
-       # --- RBAC Access Check ---
-       $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/dm-operations'
-       if (-not $access.HasAccess) {
-           Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/dm-operations') -StatusCode 403
-           return
-       }
+    # --- RBAC Access Check ---
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/dm-operations'
+    if (-not $access.HasAccess) {
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/dm-operations') -StatusCode 403
+        return
+    }
 
-       # --- Admin gear icon (visible only to admin role holders) ---
-       $ctx = Get-UserContext -WebEvent $WebEvent
-       $adminGear = if ($ctx.IsAdmin) {
-           '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-       } else { '' }
+    # --- User context (used by helper for nav rendering and isAdmin flag) ---
+    $ctx = Get-UserContext -WebEvent $WebEvent
 
-       $html = @'
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/dm-operations'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/dm-operations'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/dm-operations'
+
+    $html = @"
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>DM Operations - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/dm-operations.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link active">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1><a href="/docs/pages/dmops.html" target="_blank">DM Operations</a></h1>
-            <p class="page-subtitle">Consumer archiving, shell consumer purge, execution history, schedule management</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <div class="refresh-info">
@@ -81,9 +71,9 @@
             </div>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- ================================================================ -->
     <!-- Lifetime Totals -->
     <!-- ================================================================ -->
@@ -96,15 +86,15 @@
             <div class="loading">Loading...</div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- Two Column Layout: Archive (left) + Shell Purge (right) -->
     <!-- ================================================================ -->
     <div class="two-column-layout">
-        
+
         <!-- Left Column: Archive -->
         <div class="column">
-            
+
             <!-- Archive Today -->
             <div class="section">
                 <div class="section-header">
@@ -120,7 +110,7 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
             <!-- Archive Execution History -->
             <div class="section section-fill">
                 <div class="section-header">
@@ -131,12 +121,12 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
         </div>
-        
+
         <!-- Right Column: Shell Purge -->
         <div class="column">
-            
+
             <!-- Shell Purge Today -->
             <div class="section">
                 <div class="section-header">
@@ -152,7 +142,7 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
             <!-- Shell Purge Execution History -->
             <div class="section section-fill">
                 <div class="section-header">
@@ -163,15 +153,15 @@
                     <div class="loading">Loading...</div>
                 </div>
             </div>
-            
+
         </div>
-        
+
     </div>
-    
+
     <script>window.isAdmin = __IS_ADMIN__;</script>
     <script src="/js/dm-operations.js"></script>
     <script src="/js/engine-events.js"></script>
-    
+
     <!-- Schedule Modal (shared for both Archive and Shell Purge) -->
     <div id="schedule-overlay" class="slide-panel-overlay" onclick="closeSchedulePanel()"></div>
     <div id="schedule-panel" class="slide-panel wide auto-height">
@@ -197,8 +187,8 @@
     </div>
 </body>
 </html>
-'@
-    $html = $html.Replace('</nav>', "$adminGear</nav>")
+
+"@
     $html = $html.Replace('__IS_ADMIN__', $(if ($ctx.IsAdmin) { 'true' } else { 'false' }))
     Write-PodeHtmlResponse -Value $html
 }
