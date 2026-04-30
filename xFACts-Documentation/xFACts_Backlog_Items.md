@@ -88,9 +88,16 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 | Enhance | PMT EOD manual batch alert | Medium | Daily alert for manual payment batches still in ACTIVE status at end of business day. Requires accounting team input on cutoff time. |
 | Enhance | PMT error extraction for IMPORTFAILED | Medium | Confirm whether cnsmr_pymnt_btch_log contains actionable error messages for import failures. Currently using placeholder text in Jira tickets. |
 | Enhance | PMT ACTIVEWITHSUSPENSE batch resolution | Medium | 12 stuck batches from 2023-2026 requiring business resolution. Review with Matt. |
-| Enhance | Alert lookback period evaluation | Medium | Evaluate applying lookback period to alert evaluation so old batches are excluded from checks. Confirm with Matt whether any lifecycle could exceed the lookback window. |
 | Enhance | PMT insert-path IMPORTFAILED terminal detection | Low | One-cycle delay before terminal detection. No operational impact — zero IMPORTFAILED batches exist historically. |
 | Enhance | Investigate 270 historical incomplete NB batches | Low | Batches marked INVESTIGATE during initial deployment. Review and resolve with appropriate completed_status. 2025 batches are highest priority. |
+
+---
+
+## DmOps
+
+| Type | Item | Priority | Notes |
+|------|------|----------|-------|
+| Enhance | Slide-panel rules | High | In page rules retained as page-specific because this page's JS uses the .active activation class (engine-events.css uses .open). cleanup: align JS to .open and strip these.
 
 ---
 
@@ -129,7 +136,6 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 | Enhance | Nav bar overflow handling | Low | Per-user filtering via dynamic nav reduces visible page count. If overflow becomes a real problem despite filtering, options include: dropdown/mega-menu, two-row layout, collapsible groups. |
 | Enhance | Shared CC CSS consolidation | High | Extract remaining duplicated CSS patterns (h1, header-bar, modal/slideout, status badges, scrollbar) into engine-events.css. See Development Guidelines Section 5.11 for inventory. Migrate incrementally. |
 | Enhance | Shared CC JS extraction | Low | Evaluate common JS patterns (modal open/close, slideout animation, refresh badge updates) for extraction into cc-engine-events.js. Consider rename if necessary. |
-| Build | Phase 3d: Convert remaining route files to Get-NavBarHtml | High | ~16 route files still have hardcoded nav blocks. Convert each to use Get-NavBarHtml. Strip duplicate nav-bar CSS from each page's CSS file as part of the same update. JBossMonitoring.ps1 is the canonical pattern. |
 | Enhance | Coverage gap-check refinement for wildcard-granted pages | Medium | /admin and /platform-monitoring show as false positives in NavRegistry vs PermissionMapping gap-check (rely on Admin wildcard `*` permission). Decide between query-side fix or schema-side fix (add requires_explicit_permission BIT to NavRegistry). |
 | Build | Doc-page RBAC integration | Medium | Apply RBAC + dynamic nav to /docs/pages/*. Currently unauthenticated. Requires: (1) auth on /docs static route in Start-ControlCenter.ps1, (2) doc_page_id → CC page route → permission lookup, (3) nav.js update for filtered registry. doc_page_id field in RBAC_NavRegistry is the join key. Dependent on Phase 3d completion. |
 
@@ -153,4 +159,4 @@ Modules not yet started. No schema, no tables, no CC pages.
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Build | B2B schema and foundation tables | High | Create schema, Process_Config, Alert_History, Execution_Log. Failure detection, missing process detection, volume anomaly detection. Integration team input needed. Refer to the B2B Planning document for details.|
+| Build | B2B module build | High | Currently in investigation phase with some preliminary objects built. Refer to the B2B Planning document for details.|
