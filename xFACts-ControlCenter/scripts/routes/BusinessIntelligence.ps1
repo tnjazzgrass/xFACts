@@ -1,7 +1,7 @@
 # ============================================================================
 # xFACts Control Center - Business Intelligence Departmental Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\BusinessIntelligence.ps1
-# 
+#
 # Departmental dashboard for the Business Intelligence team.
 # Components:
 #   - Tools & Processes tile row:
@@ -16,65 +16,53 @@
 # APIs: BusinessIntelligence-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessIntelligence)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1, subtitle, and browser tab title
+#             now render from RBAC_NavRegistry via Get-PageHeaderHtml and
+#             Get-PageBrowserTitle. Dropped the $access.IsDeptOnly branching
+#             since Get-NavBarHtml already filters nav items by user
+#             permissions (a dept-only user naturally sees only Home + their
+#             dept page). CSS link order normalized (page CSS first, then
+#             engine-events.css) to match the rest of the platform.
+#             Header retains its no-live-indicator form pending future live
+#             polling on this page (BACKLOG: add live indicator if/when
+#             real-time data sources are wired up).
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentication 'ADLogin' -ScriptBlock {
-    
+
     # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/business-intelligence'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/business-intelligence') -StatusCode 403
         return
     }
-    
-    # --- Admin gear icon (visible only to admin role holders) ---
+
+    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
-    $adminGear = if ($ctx.IsAdmin) {
-        '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-    } else { '' }
-    
-    # Build nav bar - dept-only users get a simplified nav
-    $navHtml = if ($access.IsDeptOnly) {
-        @'
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/departmental/business-intelligence" class="nav-link active">Business Intelligence</a>
-    </nav>
-'@
-    } else {
-        @'
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link active">Business Intelligence</a>
-    </nav>
-'@
-    }
-    
-    $navHtml = $navHtml.Replace('</nav>', "$adminGear</nav>")
-    
+
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/departmental/business-intelligence'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/departmental/business-intelligence'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/departmental/business-intelligence'
+
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Business Intelligence - xFACts Control Center</title>
-    <link rel="stylesheet" href="/css/engine-events.css">
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/business-intelligence.css">
+    <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    $navHtml
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1>Business Intelligence</h1>
-            <p class="page-subtitle">Departmental Operations</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <div class="refresh-info">
@@ -83,15 +71,15 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
             </div>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- ================================================================ -->
     <!-- TOOLS & PROCESSES                                                -->
     <!-- ================================================================ -->
     <div class="section" id="tools-section">
         <div class="section-header">
-            <h2>Tools & Processes</h2>
+            <h2>Tools &amp; Processes</h2>
         </div>
         <div class="section-body">
             <div class="tool-cards">
@@ -119,7 +107,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
             </div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- EXECUTION DETAIL SLIDEOUT                                        -->
     <!-- ================================================================ -->
@@ -133,7 +121,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
             <div id="nr-detail-content"></div>
         </div>
     </div>
-    
+
     <script src="/js/business-intelligence.js"></script>
 </body>
 </html>
