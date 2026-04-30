@@ -1,7 +1,7 @@
 # ============================================================================
 # xFACts Control Center - Business Services Manager Dashboard
 # Location: E:\xFACts-ControlCenter\scripts\routes\BusinessServices.ps1
-# 
+#
 # Manager-only dashboard for Business Services review request operations.
 # Components:
 #   - Live Activity: Real-time group summary cards from CRS5 (Live)
@@ -13,65 +13,49 @@
 # APIs: BusinessServices-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessServices)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle. Dropped the
+#             $access.IsDeptOnly branching since Get-NavBarHtml already
+#             filters nav items by user permissions (a dept-only user
+#             naturally sees only Home + their dept page).
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authentication 'ADLogin' -ScriptBlock {
-    
+
     # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/business-services'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/business-services') -StatusCode 403
         return
     }
-    
-    # --- Admin gear icon (visible only to admin role holders) ---
+
+    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
-    $adminGear = if ($ctx.IsAdmin) {
-        '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-    } else { '' }
-    
-    # Build nav bar - dept-only users get a simplified nav
-    $navHtml = if ($access.IsDeptOnly) {
-        @'
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/departmental/business-services" class="nav-link active">Business Services</a>
-    </nav>
-'@
-    } else {
-        @'
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link active">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-    </nav>
-'@
-    }
-    
-    $navHtml = $navHtml.Replace('</nav>', "$adminGear</nav>")
-    
+
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/departmental/business-services'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/departmental/business-services'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/departmental/business-services'
+
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Business Services - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/business-services.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    $navHtml
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1>Business Services</h1>
-            <p class="page-subtitle">Departmental Operations</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <div class="refresh-info">
@@ -93,9 +77,9 @@ Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authenticatio
             </div>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- ================================================================ -->
     <!-- LIVE ACTIVITY + DISTRIBUTION ROW                                 -->
     <!-- ================================================================ -->
@@ -111,7 +95,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authenticatio
                 <div id="live-activity-cards" class="activity-cards hidden"></div>
             </div>
         </div>
-        
+
         <!-- Distribution Flip Card -->
         <div class="section section-narrow" id="distribution-section">
             <div class="section-header">
@@ -124,7 +108,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authenticatio
             </div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- HISTORY SECTION                                                  -->
     <!-- ================================================================ -->
@@ -142,7 +126,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authenticatio
             <div id="history-tree" class="hidden"></div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- SLIDEOUT PANEL (day details, user requests)                      -->
     <!-- ================================================================ -->
@@ -154,7 +138,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authenticatio
         <div id="slideout-body" class="slideout-body"></div>
     </div>
     <div id="slideout-backdrop" class="slideout-backdrop" onclick="closeSlideout()"></div>
-    
+
     <!-- ================================================================ -->
     <!-- REQUEST DETAIL MODAL (comment view)                              -->
     <!-- ================================================================ -->
@@ -169,7 +153,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authenticatio
             </div>
         </div>
     </div>
-    
+
     <script src="/js/business-services.js"></script>
     <script src="/js/engine-events.js"></script>
 </body>
