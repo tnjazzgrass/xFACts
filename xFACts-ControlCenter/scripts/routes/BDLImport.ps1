@@ -1,7 +1,7 @@
 # ============================================================================
 # xFACts Control Center - BDL Import Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1
-# 
+#
 # Guided BDL Import workflow (5 steps):
 #   1. Environment  2. Upload File  3. Select Entities (multi-select)
 #   4. Map & Validate (per-entity loop)  5. Execute (tabbed summary)
@@ -10,6 +10,18 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle. Dropped the
+#             $access.IsDeptOnly branching since Get-NavBarHtml already
+#             filters nav items by user permissions. Added a "Back to
+#             <originating page>" link below the header that resolves the
+#             referrer route to a display label via /api/nav-registry/label
+#             (engine-events-API.ps1), falling back to Home if available
+#             or hiding entirely if the user has no Home access. The two
+#             token replacements ($ctx.IsAdmin and $access.Tier) are
+#             preserved.
 # 2026-04-16  Added Import History panel to right column (below templates)
 #             Adjusted column widths: main 65→55, guide 35→45
 #             History panel renders active rows + Y/M/D accordion, polls
@@ -24,78 +36,49 @@
 
 Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptBlock {
 
+    # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/bdl-import') -StatusCode 403
         return
     }
 
+    # --- User context (used by helper for nav rendering and token injection) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
 
-    $adminGear = if ($ctx.IsAdmin) {
-        '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-    } else { '' }
-
-    $navHtml = if ($access.IsDeptOnly) {
-        @"
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/bdl-import" class="nav-link active">BDL Import</a>
-    </nav>
-"@
-    } else {
-        @"
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
-"@
-    }
-
-    $navHtml = $navHtml.Replace('</nav>', "$adminGear</nav>")
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/bdl-import'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/bdl-import'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/bdl-import'
 
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>BDL Import - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/bdl-import.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    $navHtml
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1><a href="/docs/pages/guides/bdl-import-guide.html" target="_blank">BDL Import</a></h1>
-            <p class="page-subtitle">Guided bulk data load import into Debt Manager</p>
+            $headerHtml
+            <a href="#" id="back-link" class="back-link" style="display:none;"></a>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- ================================================================ -->
     <!-- TWO-COLUMN LAYOUT                                                -->
     <!-- ================================================================ -->
     <div class="bdl-layout">
-        
+
         <!-- LEFT COLUMN: Stepper + Action Panels -->
         <div class="bdl-main">
-            
+
             <!-- STEPPER BAR (5 steps) -->
             <div class="stepper">
                 <div class="env-badge hidden" id="env-badge"></div>
@@ -124,7 +107,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                     <div class="step-label">Execute</div>
                 </div>
             </div>
-            
+
             <!-- STEP 1: Environment Selection -->
             <div class="step-panel active" id="panel-1">
                 <div class="step-content">
@@ -133,13 +116,13 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                     </div>
                 </div>
             </div>
-            
+
             <!-- STEP 2: File Upload -->
             <div class="step-panel" id="panel-2">
                 <div class="step-content">
-                    <div class="upload-zone" id="upload-zone" 
-                         ondragover="BDL.dragOver(event)" 
-                         ondragleave="BDL.dragLeave(event)" 
+                    <div class="upload-zone" id="upload-zone"
+                         ondragover="BDL.dragOver(event)"
+                         ondragleave="BDL.dragLeave(event)"
                          ondrop="BDL.fileDrop(event)">
                         <div class="upload-prompt" id="upload-prompt">
                             <div class="upload-icon">&#128196;</div>
@@ -160,7 +143,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                     </div>
                 </div>
             </div>
-            
+
             <!-- STEP 3: Entity Type Selection (Multi-Select) -->
             <div class="step-panel" id="panel-3">
                 <div class="step-content">
@@ -173,7 +156,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                     </div>
                 </div>
             </div>
-            
+
             <!-- STEP 4: Map & Validate (per-entity loop) -->
             <div class="step-panel" id="panel-4">
                 <div class="step-content">
@@ -182,7 +165,7 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                     </div>
                 </div>
             </div>
-            
+
             <!-- STEP 5: Execute (tabbed per-entity summary) -->
             <div class="step-panel" id="panel-5">
                 <div class="step-content">
@@ -191,14 +174,14 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                     </div>
                 </div>
             </div>
-            
+
             <!-- STEP NAVIGATION -->
             <div class="step-nav">
                 <button class="nav-btn btn-back" id="btn-back" onclick="BDL.prevStep()" disabled>&#8592; Back</button>
                 <button class="nav-btn btn-next" id="btn-next" onclick="BDL.nextStep()" disabled>Next &#8594;</button>
             </div>
         </div>
-        
+
         <!-- RIGHT COLUMN: Step Guide + Templates + Import History -->
         <div class="bdl-guide" id="bdl-guide">
             <div class="guide-tip-panel" id="guide-content">
@@ -272,9 +255,9 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
                 </div>
             </div>
         </div>
-        
+
     </div>
-    
+
     <!-- Template Preview Slideout -->
     <div class="slide-panel-overlay" id="template-slideout-overlay" onclick="BDL.closeTemplatePreview()"></div>
     <div class="slide-panel" id="template-slideout">
@@ -310,9 +293,66 @@ Add-PodeRoute -Method Get -Path '/bdl-import' -Authentication 'ADLogin' -ScriptB
             </div>
         </div>
     </div>
-    
+
     <script>window.isAdmin = __IS_ADMIN__;</script>
     <script>window.userTier = '__USER_TIER__';</script>
+    <script>
+        // Resolve the back-link target on page load.
+        // 1. Check document.referrer; if it's a CC route the user has access to,
+        //    label the link with that page's display title and use history.back().
+        // 2. Otherwise check Home access; if granted, link to '/' as fallback.
+        // 3. Otherwise hide the link entirely.
+        (async function initBackLink() {
+            var link = document.getElementById('back-link');
+            if (!link) return;
+
+            async function lookup(route) {
+                try {
+                    var resp = await fetch('/api/nav-registry/label?route=' + encodeURIComponent(route));
+                    if (!resp.ok) return null;
+                    var data = await resp.json();
+                    return data && data.label ? data.label : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            // Step 1: try referrer
+            var referrerPath = null;
+            if (document.referrer) {
+                try {
+                    var refUrl = new URL(document.referrer);
+                    if (refUrl.origin === window.location.origin && refUrl.pathname && refUrl.pathname !== '/bdl-import') {
+                        referrerPath = refUrl.pathname;
+                    }
+                } catch (e) { /* ignore malformed referrer */ }
+            }
+
+            if (referrerPath) {
+                var referrerLabel = await lookup(referrerPath);
+                if (referrerLabel) {
+                    link.textContent = '\u2190 Back to ' + referrerLabel;
+                    link.href = '#';
+                    link.onclick = function(e) { e.preventDefault(); window.history.back(); };
+                    link.style.display = '';
+                    return;
+                }
+            }
+
+            // Step 2: fall back to Home if user has access
+            var homeLabel = await lookup('/');
+            if (homeLabel) {
+                link.textContent = '\u2190 Back to ' + homeLabel;
+                link.href = '/';
+                link.onclick = null;
+                link.style.display = '';
+                return;
+            }
+
+            // Step 3: no referrer match, no Home access — hide
+            link.style.display = 'none';
+        })();
+    </script>
     <script src="/js/xlsx.full.min.js"></script>
     <script src="/js/engine-events.js"></script>
     <script src="/js/bdl-import.js"></script>
