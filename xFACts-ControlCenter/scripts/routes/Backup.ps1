@@ -11,6 +11,15 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-30  Phase 4 (Chrome Standardization, modal migration): the
+#             pipeline/queue detail modal HTML was migrated from the
+#             legacy custom .modal/.modal-content/.modal-header/.modal-body
+#             pattern to the shared .xf-modal-overlay/.xf-modal.wide/
+#             .xf-modal-header/.xf-modal-body classes. The outer element
+#             ID was renamed from detail-modal to detail-modal-overlay to
+#             reflect that it is the overlay element; the .hidden class
+#             on the overlay is the initial state, toggled by JS via
+#             openDetailModal/closeDetailModal.
 # 2026-04-30  Phase 4 (Chrome Standardization): added body section class
 #             (section-platform) so H1 color is driven by shared CSS via
 #             RBAC_NavRegistry section_key. Renamed connection banner
@@ -166,13 +175,13 @@ $navHtml
     </div>
 
     <!-- Reusable Detail Modal (pipeline + queue) -->
-    <div id="detail-modal" class="modal hidden" onclick="if(event.target === this) closeDetailModal()">
-        <div class="modal-content" id="detail-modal-content">
-            <div class="modal-header">
+    <div id="detail-modal-overlay" class="xf-modal-overlay hidden" onclick="if(event.target === this) closeDetailModal()">
+        <div class="xf-modal wide">
+            <div class="xf-modal-header">
                 <h3 id="detail-modal-title">Detail</h3>
                 <button class="modal-close" onclick="closeDetailModal()">&times;</button>
             </div>
-            <div class="modal-body" id="detail-modal-body">
+            <div class="xf-modal-body" id="detail-modal-body">
                 <div class="loading">Loading...</div>
             </div>
         </div>
