@@ -1,86 +1,68 @@
 # ============================================================================
 # xFACts Control Center - Client Portal Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\ClientPortal.ps1
-# 
+#
 # Consumer/account lookup tool for internal FA staff. Provides search,
 # consumer detail (5 tabs), and account detail (3 tabs) against crs5_oltp.
 # Accessible via gateway cards on departmental pages — no main nav entry.
 #
-# CSS: /css/client-portal.css
+# CSS: /css/client-portal.css, /css/engine-events.css
 # JS:  /js/client-portal.js
 # APIs: ClientPortal-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: Tools.Operations)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1, subtitle, and browser tab title
+#             now render from RBAC_NavRegistry via Get-PageHeaderHtml and
+#             Get-PageBrowserTitle. Dropped the $access.IsDeptOnly branching
+#             since Get-NavBarHtml already filters nav items by user
+#             permissions. Added engine-events.css link to the head — the
+#             dynamic nav now relies on the shared CSS for nav-bar/nav-link
+#             styling, which this page previously did not load.
 # ============================================================================
 
 Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -ScriptBlock {
 
+    # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/client-portal'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/client-portal') -StatusCode 403
         return
     }
 
+    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
 
-    $adminGear = if ($ctx.IsAdmin) {
-        '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-    } else { '' }
-
-    $navHtml = if ($access.IsDeptOnly) {
-        @"
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/client-portal" class="nav-link active">Client Portal</a>
-    </nav>
-"@
-    } else {
-        @"
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
-"@
-    }
-
-    $navHtml = $navHtml.Replace('</nav>', "$adminGear</nav>")
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/client-portal'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/client-portal'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/client-portal'
 
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Client Portal - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/client-portal.css">
+    <link rel="stylesheet" href="/css/engine-events.css">
 </head>
 <body>
-    $navHtml
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1>Client Portal</h1>
-            <p class="page-subtitle">Consumer &amp; Account Lookup</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <span id="lookup-status" class="lookup-status">Loading lookups...</span>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- ================================================================ -->
     <!-- SEARCH PAGE                                                      -->
     <!-- ================================================================ -->
@@ -124,7 +106,7 @@ Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -Scri
             </div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- RESULTS PAGE                                                     -->
     <!-- ================================================================ -->
@@ -143,7 +125,7 @@ Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -Scri
             </div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- CONSUMER DETAIL PAGE                                             -->
     <!-- ================================================================ -->
@@ -151,12 +133,12 @@ Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -Scri
         <div class="portal-breadcrumb">
             <button class="back-btn" onclick="Portal.showResults()">&#8592; Back to Results</button>
         </div>
-        
+
         <!-- Consumer Header Card -->
         <div class="detail-card" id="consumer-header">
             <div class="detail-card-loading">Loading consumer...</div>
         </div>
-        
+
         <!-- Consumer Tabs -->
         <div class="section">
             <div class="tab-bar">
@@ -195,7 +177,7 @@ Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -Scri
             </div>
         </div>
     </div>
-    
+
     <!-- ================================================================ -->
     <!-- ACCOUNT DETAIL PAGE                                              -->
     <!-- ================================================================ -->
@@ -203,16 +185,16 @@ Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -Scri
         <div class="portal-breadcrumb">
             <button class="back-btn" onclick="Portal.backToConsumer()">&#8592; Back to Consumer</button>
         </div>
-        
+
         <!-- Account Header Card -->
         <div class="detail-card" id="account-header">
             <div class="detail-card-loading">Loading account...</div>
         </div>
-        
+
         <!-- Financial Summary Boxes -->
         <div class="financial-summary" id="account-financials">
         </div>
-        
+
         <!-- Account Tabs -->
         <div class="section">
             <div class="tab-bar">
@@ -243,11 +225,10 @@ Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -Scri
             </div>
         </div>
     </div>
-    
+
     <script src="/js/client-portal.js"></script>
 </body>
 </html>
 "@
-
     Write-PodeHtmlResponse -Value $html
 }
