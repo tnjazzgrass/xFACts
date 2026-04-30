@@ -2,69 +2,31 @@
    xFACts Control Center - DBCC Operations Styles
    Location: E:\xFACts-ControlCenter\public\css\dbcc-operations.css
    Version: Tracked in dbo.System_Metadata (component: ServerOps.DBCC)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css), engine-card/
+               engine-row/engine-bar/engine-label/engine-countdown block
+               (shared), .section-header-right (shared), and per-container
+               scrollbar overrides (shared global ::-webkit-scrollbar rule
+               applies). Kept @keyframes pulse (.live-indicator) and
+               @keyframes spin (.spinning-gear).
    ============================================================================ */
 
 /* Base Layout */
 * { box-sizing: border-box; }
-body { 
-    font-family: 'Segoe UI', Arial, sans-serif; 
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
     margin: 0;
     padding: 20px 40px;
     padding-top: 60px;
-    background: #1e1e1e; 
-    color: #d4d4d4; 
+    background: #1e1e1e;
+    color: #d4d4d4;
 }
 h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .page-subtitle { color: #888; font-size: 14px; margin: 0; }
 a { color: #9cdcfe; }
-
-/* Navigation Bar */
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 0 20px;
-    display: flex;
-    gap: 0;
-    z-index: 1000;
-    height: 40px;
-    align-items: center;
-}
-
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    padding: 10px 16px;
-    font-size: 13px;
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    height: 100%;
-    display: flex;
-    align-items: center;
-}
-
-.nav-link:hover {
-    color: #d4d4d4;
-    background: #2d2d2d;
-}
-
-.nav-link.active {
-    color: #4ec9b0;
-    border-bottom-color: #4ec9b0;
-}
-
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
-
-.nav-separator {
-    color: #404040;
-    padding: 0 4px;
-    font-size: 13px;
-}
 
 /* Header */
 .header-bar {
@@ -114,83 +76,6 @@ a { color: #9cdcfe; }
     display: none;
 }
 .connection-error.visible { display: block; }
-
-/* Engine Indicator Cards */
-.engine-row {
-    display: flex;
-    gap: 5px;
-}
-
-.engine-card {
-    width: 68px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    padding: 4px 6px;
-    border: 1px solid #383838;
-    border-radius: 3px;
-    background: #252526;
-}
-
-.engine-label {
-    font-size: 9px;
-    color: #888;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-align: center;
-}
-
-.engine-bar {
-    width: 100%;
-    height: 10px;
-    border-radius: 2px;
-    transition: background-color 0.3s, box-shadow 0.3s;
-}
-
-.engine-bar.idle {
-    background: #22c55e;
-    box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
-}
-
-.engine-bar.running {
-    background: #569cd6;
-    box-shadow: 0 0 6px rgba(86, 156, 214, 0.4);
-}
-
-.engine-bar.overdue {
-    background: #dcdcaa;
-    box-shadow: 0 0 6px rgba(220, 220, 170, 0.4);
-}
-
-.engine-bar.critical {
-    background: #f48771;
-    box-shadow: 0 0 6px rgba(244, 135, 113, 0.4);
-}
-
-.engine-bar.disabled {
-    background: #444;
-    box-shadow: none;
-}
-
-.engine-countdown {
-    font-size: 8px;
-    color: #d4d4d4;
-    font-variant-numeric: tabular-nums;
-    height: 10px;
-    line-height: 10px;
-}
-
-.engine-card.card-warning {
-    border-color: #dcdcaa;
-    background: rgba(220, 220, 170, 0.08);
-}
-
-.engine-card.card-critical {
-    border-color: #f48771;
-    background: rgba(244, 135, 113, 0.08);
-}
 
 /* ============================================================================
    Viewport-Constrained Layout — no page scroll, internal section scrolling
@@ -263,7 +148,6 @@ a { color: #9cdcfe; }
     text-transform: uppercase;
     letter-spacing: 1px;
 }
-.section-header-right { display: flex; align-items: center; gap: 8px; }
 
 /* Pending Queue Button */
 .refresh-btn {
@@ -1088,34 +972,4 @@ a { color: #9cdcfe; }
 }
 .schedule-detail-cell.disabled {
     color: #555;
-}
-
-/* ============================================================================
-   Scrollbar Styling
-   ============================================================================ */
-.live-progress-content::-webkit-scrollbar,
-.history-tree::-webkit-scrollbar,
-.error-detail-content::-webkit-scrollbar,
-.slide-panel-body::-webkit-scrollbar {
-    width: 8px;
-}
-.live-progress-content::-webkit-scrollbar-track,
-.history-tree::-webkit-scrollbar-track,
-.error-detail-content::-webkit-scrollbar-track,
-.slide-panel-body::-webkit-scrollbar-track {
-    background: #1e1e1e;
-    border-radius: 4px;
-}
-.live-progress-content::-webkit-scrollbar-thumb,
-.history-tree::-webkit-scrollbar-thumb,
-.error-detail-content::-webkit-scrollbar-thumb,
-.slide-panel-body::-webkit-scrollbar-thumb {
-    background: #404040;
-    border-radius: 4px;
-}
-.live-progress-content::-webkit-scrollbar-thumb:hover,
-.history-tree::-webkit-scrollbar-thumb:hover,
-.error-detail-content::-webkit-scrollbar-thumb:hover,
-.slide-panel-body::-webkit-scrollbar-thumb:hover {
-    background: #555;
 }
