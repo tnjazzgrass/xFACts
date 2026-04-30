@@ -725,7 +725,7 @@ function loadReconnectGraceConfig() {
  *   expired      — amber "Session expired" banner with sign-in link
  */
 function updateConnectionBanner() {
-    var el = document.getElementById('connection-error');
+    var el = document.getElementById('connection-banner');
     if (!el) return;
 
     if (engineSessionExpired) {
@@ -747,7 +747,7 @@ function updateConnectionBanner() {
             el.style.display = 'block';
             break;
         default:
-            el.className = 'connection-error';
+            el.className = 'connection-banner';
             el.textContent = '';
             el.style.display = 'none';
     }
@@ -757,7 +757,7 @@ function updateConnectionBanner() {
  * Shows a brief "Reconnected" message before auto-reloading.
  */
 function showReloadingBanner() {
-    var el = document.getElementById('connection-error');
+    var el = document.getElementById('connection-banner');
     if (!el) return;
     el.className = 'connection-banner reloading';
     el.textContent = 'Server reconnected \u2014 reloading\u2026';
