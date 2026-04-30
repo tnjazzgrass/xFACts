@@ -2,6 +2,23 @@
    xFACts Control Center - Backup Monitoring JavaScript
    Location: E:\xFACts-ControlCenter\public\js\backup.js
    Version: Tracked in dbo.System_Metadata (component: ServerOps.Backup)
+
+   Page-specific JS for the Backup Monitoring dashboard. Chrome-level
+   behavior (connection banner, page refresh, engine cards, modals) is
+   provided by engine-events.js per the CC Page Chrome Contract
+   (Development Guidelines Section 5.12). This file contains data loading,
+   rendering, and Backup-specific interaction logic only.
+
+   CHANGELOG
+   ---------
+   2026-04-30  Phase 4 (Chrome Standardization): aligned with shared chrome
+               contract. Removed local showError() / clearError() functions
+               that targeted the legacy 'connection-error' element ID --
+               connection state display is now handled exclusively by
+               updateConnectionBanner() in engine-events.js. API failure
+               logging shifted to console.error. Removed local pageRefresh()
+               (the shared version in engine-events.js handles button spin
+               animation and delegates to onPageRefresh() defined here).
    ============================================================================ */
 
 // ============================================================================
@@ -14,7 +31,7 @@ var pageLoadDate = new Date().toDateString();
 // Cache for retention data (loaded with storage)
 var pendingRetention = { local: { file_count: 0, total_bytes: 0 }, network: { file_count: 0, total_bytes: 0 } };
 
-// Engine events — process map for shared WebSocket module (engine-events.js)
+// Engine events -- process map for shared WebSocket module (engine-events.js)
 var ENGINE_PROCESSES = {
     'Collect-BackupStatus':      { slug: 'collection'},
     'Process-BackupNetworkCopy': { slug: 'networkcopy'},
@@ -26,8 +43,10 @@ var ENGINE_PROCESSES = {
 var PAGE_REFRESH_INTERVAL = 5;    // Default; overridden by GlobalConfig on load
 
 // Page hooks for engine-events.js shared module
-function onPageResumed() { pageRefresh(); }
+function onPageResumed()    { refreshAll(); }
+function onPageRefresh()    { refreshAll(); }
 function onSessionExpired() { stopLivePolling(); }
+
 var livePollingTimer = null;
 var refreshTimer = null;
 
@@ -55,7 +74,7 @@ async function loadAllData() {
 }
 
 function startAutoRefresh() {
-    // Lightweight timer — only checks for overnight date change (page reload)
+    // Lightweight timer -- only checks for overnight date change (page reload)
     // All data refresh is event-driven via onEngineProcessCompleted
     refreshTimer = setInterval(function() {
         var today = new Date().toDateString();
@@ -88,11 +107,10 @@ async function loadRefreshInterval() {
     try {
         var data = await engineFetch('/api/config/refresh-interval?page=backup');
         if (data) {
-            // engineFetch handles auth and returns parsed JSON
             PAGE_REFRESH_INTERVAL = data.interval || 5;
         }
     } catch (e) {
-        // API unavailable — use default. Not worth logging; page works fine.
+        // API unavailable -- use default. Not worth logging; page works fine.
     }
 }
 
@@ -130,7 +148,7 @@ function refreshLiveSections() {
 
 /**
  * Loads data for all live polling sections on this page.
- * Active Operations is the only live section — it shows running backups,
+ * Active Operations is the only live section -- it shows running backups,
  * network copies, and AWS uploads which change independently of collectors.
  */
 async function loadLiveData() {
@@ -140,21 +158,13 @@ async function loadLiveData() {
 // ============================================================================
 // MANUAL REFRESH
 // ============================================================================
+// pageRefresh() is provided by engine-events.js -- it handles the button
+// spin animation and calls onPageRefresh() defined above. refreshAll() is
+// the data-loading worker called by both manual refresh and engine events.
 
 function refreshAll() {
     loadAllData();
     loadActiveOperations();
-}
-
-function pageRefresh() {
-    var btn = document.querySelector('.page-refresh-btn');
-    if (btn) {
-        btn.classList.add('spinning');
-        btn.addEventListener('animationend', function() {
-            btn.classList.remove('spinning');
-        }, { once: true });
-    }
-    refreshAll();
 }
 
 // ============================================================================
@@ -165,35 +175,32 @@ function loadActiveOperations() {
     return engineFetch('/api/backup/active-operations')
         .then(function(data) {
             if (!data) return;
-            if (data.error) { showError('Active operations: ' + data.error); return; }
-            clearError();
+            if (data.error) { console.error('Active operations:', data.error); return; }
             renderActiveOperations(data);
             updateTimestamp();
         })
-        .catch(function(err) { showError('Failed to load active operations: ' + err.message); });
+        .catch(function(err) { console.error('Failed to load active operations:', err.message); });
 }
 
 function loadPipelineStatus() {
     return engineFetch('/api/backup/pipeline-status')
         .then(function(data) {
             if (!data) return;
-            if (data.error) { showError('Pipeline status: ' + data.error); return; }
-            clearError();
+            if (data.error) { console.error('Pipeline status:', data.error); return; }
             if (data.retention_scheduled_time) {
                 retentionScheduledTime = data.retention_scheduled_time;
             }
             renderPipelineStatus(data.processes);
             renderRetentionStatus();
         })
-        .catch(function(err) { showError('Failed to load pipeline status: ' + err.message); });
+        .catch(function(err) { console.error('Failed to load pipeline status:', err.message); });
 }
 
 function loadStorageStatus() {
     return engineFetch('/api/backup/storage-status')
         .then(function(data) {
             if (!data) return;
-            if (data.error) { showError('Storage status: ' + data.error); return; }
-            clearError();
+            if (data.error) { console.error('Storage status:', data.error); return; }
             // Cache retention data for the retention section
             if (data.pending_retention) {
                 pendingRetention = data.pending_retention;
@@ -202,19 +209,18 @@ function loadStorageStatus() {
             // Re-render retention with updated data
             renderRetentionStatus();
         })
-        .catch(function(err) { showError('Failed to load storage status: ' + err.message); });
+        .catch(function(err) { console.error('Failed to load storage status:', err.message); });
 }
 
 function loadQueueStatus() {
     return engineFetch('/api/backup/queue-status')
         .then(function(data) {
             if (!data) return;
-            if (data.error) { showError('Queue status: ' + data.error); return; }
-            clearError();
+            if (data.error) { console.error('Queue status:', data.error); return; }
             window.queueData = data;
             renderQueueStatus();
         })
-        .catch(function(err) { showError('Failed to load queue status: ' + err.message); });
+        .catch(function(err) { console.error('Failed to load queue status:', err.message); });
 }
 
 // ============================================================================
@@ -224,15 +230,15 @@ function loadQueueStatus() {
 function renderPipelineStatus(processes) {
     var container = document.getElementById('pipeline-status');
     var html = '<div class="pipeline-grid">';
-    
+
     processes.forEach(function(proc) {
         var statusClass = getProcessStatusClass(proc);
         var isRunning = proc.started_dttm && !proc.completed_dttm;
         var lastRun = isRunning ? 'Running...' : (proc.completed_dttm ? formatDateTime(proc.completed_dttm) : 'Never');
-        
+
         // Badge pill label and class
         var badge = getProcessBadge(proc, statusClass);
-        
+
         html += '<div class="pipeline-card ' + statusClass + ' clickable" onclick="openPipelineDetail(\'' + proc.process_name + '\')">';
         html += '<div class="pipeline-card-header">';
         html += '<span class="pipeline-name">' + formatProcessName(proc.process_name) + '</span>';
@@ -240,7 +246,7 @@ function renderPipelineStatus(processes) {
         html += '</div>';
         html += '<div class="pipeline-card-body">';
         html += '<div class="pipeline-time">' + lastRun + '</div>';
-        
+
         if (proc.last_files_processed !== null && proc.last_files_processed > 0) {
             html += '<div class="pipeline-detail">' + proc.last_files_processed + ' files';
             if (proc.last_bytes_processed) {
@@ -248,10 +254,10 @@ function renderPipelineStatus(processes) {
             }
             html += '</div>';
         }
-        
+
         html += '</div></div>';
     });
-    
+
     html += '</div>';
     container.innerHTML = html;
 }
@@ -259,9 +265,9 @@ function renderPipelineStatus(processes) {
 function renderQueueStatus() {
     var container = document.getElementById('queue-status');
     var queueData = window.queueData || { network_copy: { file_count: 0, total_bytes: 0 }, aws_upload: { file_count: 0, total_bytes: 0 } };
-    
+
     var html = '<div class="card-pair">';
-    
+
     // Network Queue
     var netClickable = queueData.network_copy.file_count > 0;
     html += '<div class="status-card' + (netClickable ? ' clickable' : '') + '"' + (netClickable ? ' onclick="openQueueDetail(\'network\')"' : '') + '>';
@@ -270,9 +276,9 @@ function renderQueueStatus() {
     html += '<div class="card-value">' + queueData.network_copy.file_count + '</div>';
     html += '<div class="card-detail">' + (queueData.network_copy.total_bytes > 0 ? formatBytesShort(queueData.network_copy.total_bytes) : 'Empty') + '</div>';
     html += '</div>';
-    html += '<div class="card-icon">📁</div>';
+    html += '<div class="card-icon">&#128193;</div>';
     html += '</div>';
-    
+
     // AWS Queue
     var awsClickable = queueData.aws_upload.file_count > 0;
     html += '<div class="status-card' + (awsClickable ? ' clickable' : '') + '"' + (awsClickable ? ' onclick="openQueueDetail(\'aws\')"' : '') + '>';
@@ -281,21 +287,21 @@ function renderQueueStatus() {
     html += '<div class="card-value">' + queueData.aws_upload.file_count + '</div>';
     html += '<div class="card-detail">' + (queueData.aws_upload.total_bytes > 0 ? formatBytesShort(queueData.aws_upload.total_bytes) : 'Empty') + '</div>';
     html += '</div>';
-    html += '<div class="card-icon">☁️</div>';
+    html += '<div class="card-icon">&#9729;</div>';
     html += '</div>';
-    
+
     html += '</div>';
     container.innerHTML = html;
 }
 
 function renderRetentionStatus() {
     var container = document.getElementById('retention-status');
-    var retentionTime = retentionScheduledTime 
+    var retentionTime = retentionScheduledTime
         ? formatScheduledTime(retentionScheduledTime)
         : 'Unknown';
-    
+
     var html = '<div class="card-pair">';
-    
+
     // Local Retention
     var localClickable = pendingRetention.local.file_count > 0;
     html += '<div class="status-card' + (localClickable ? ' clickable' : '') + '"' + (localClickable ? ' onclick="openRetentionDetail(\'local\')"' : '') + '>';
@@ -304,9 +310,9 @@ function renderRetentionStatus() {
     html += '<div class="card-value">' + pendingRetention.local.file_count + '</div>';
     html += '<div class="card-detail">' + formatBytesShort(pendingRetention.local.total_bytes) + '</div>';
     html += '</div>';
-    html += '<div class="card-icon">🗑️</div>';
+    html += '<div class="card-icon">&#128465;</div>';
     html += '</div>';
-    
+
     // Network Retention
     var networkClickable = pendingRetention.network.file_count > 0;
     html += '<div class="status-card' + (networkClickable ? ' clickable' : '') + '"' + (networkClickable ? ' onclick="openRetentionDetail(\'network\')"' : '') + '>';
@@ -315,28 +321,28 @@ function renderRetentionStatus() {
     html += '<div class="card-value">' + pendingRetention.network.file_count + '</div>';
     html += '<div class="card-detail">' + formatBytesShort(pendingRetention.network.total_bytes) + '</div>';
     html += '</div>';
-    html += '<div class="card-icon">🗑️</div>';
+    html += '<div class="card-icon">&#128465;</div>';
     html += '</div>';
-    
+
     html += '</div>';
     html += '<div class="retention-schedule-note">Runs ' + retentionTime + '</div>';
-    
+
     container.innerHTML = html;
 }
 
 function renderActiveOperations(data) {
     var container = document.getElementById('active-operations');
     var html = '';
-    
+
     // Backups In Progress section
     html += '<div class="operation-group">';
-    html += '<div class="operation-group-header"><span class="op-icon">💾</span> Backups In Progress</div>';
-    
+    html += '<div class="operation-group-header"><span class="op-icon">&#128190;</span> Backups In Progress</div>';
+
     if (data.backups_in_progress && data.backups_in_progress.length > 0) {
         html += '<table class="operation-table">';
         html += '<thead><tr><th>Server</th><th>Database</th><th>Type</th><th>Progress</th><th>Elapsed</th><th>ETA</th></tr></thead>';
         html += '<tbody>';
-        
+
         data.backups_in_progress.forEach(function(backup) {
             var commandType = backup.command.replace('BACKUP ', '').replace('RESTORE ', 'R:');
             html += '<tr>';
@@ -348,22 +354,22 @@ function renderActiveOperations(data) {
             html += '<td>' + formatMinutes(backup.eta_minutes) + '</td>';
             html += '</tr>';
         });
-        
+
         html += '</tbody></table>';
     } else {
         html += '<div class="no-activity">No active backups</div>';
     }
     html += '</div>';
-    
+
     // Network Copies In Progress section
     html += '<div class="operation-group">';
-    html += '<div class="operation-group-header"><span class="op-icon">📁</span> Network Copies In Progress</div>';
-    
+    html += '<div class="operation-group-header"><span class="op-icon">&#128193;</span> Network Copies In Progress</div>';
+
     if (data.network_copies_in_progress && data.network_copies_in_progress.length > 0) {
         html += '<table class="operation-table">';
         html += '<thead><tr><th>Server</th><th>Database</th><th>File</th><th>Size</th><th>Progress</th><th>Elapsed</th><th>ETA</th></tr></thead>';
         html += '<tbody>';
-        
+
         data.network_copies_in_progress.forEach(function(file) {
             html += '<tr>';
             html += '<td>' + escapeHtml(file.server_name) + '</td>';
@@ -375,22 +381,22 @@ function renderActiveOperations(data) {
             html += '<td>' + formatMinutes(file.eta_minutes) + '~</td>';
             html += '</tr>';
         });
-        
+
         html += '</tbody></table>';
     } else {
         html += '<div class="no-activity">No active network copies</div>';
     }
     html += '</div>';
-    
+
     // AWS Uploads In Progress section
     html += '<div class="operation-group">';
-    html += '<div class="operation-group-header"><span class="op-icon">☁️</span> AWS Uploads In Progress</div>';
-    
+    html += '<div class="operation-group-header"><span class="op-icon">&#9729;</span> AWS Uploads In Progress</div>';
+
     if (data.aws_uploads_in_progress && data.aws_uploads_in_progress.length > 0) {
         html += '<table class="operation-table">';
         html += '<thead><tr><th>Server</th><th>Database</th><th>File</th><th>Size</th><th>Progress</th><th>Elapsed</th><th>ETA</th></tr></thead>';
         html += '<tbody>';
-        
+
         data.aws_uploads_in_progress.forEach(function(file) {
             html += '<tr>';
             html += '<td>' + escapeHtml(file.server_name) + '</td>';
@@ -402,29 +408,29 @@ function renderActiveOperations(data) {
             html += '<td>' + formatMinutes(file.eta_minutes) + '~</td>';
             html += '</tr>';
         });
-        
+
         html += '</tbody></table>';
     } else {
         html += '<div class="no-activity">No active AWS uploads</div>';
     }
     html += '</div>';
-    
+
     container.innerHTML = html;
 }
 
 function renderStorageStatus(data) {
     var container = document.getElementById('storage-status');
     var html = '';
-    
+
     // Local drives section
     html += '<div class="storage-group">';
     html += '<div class="storage-group-header">Local Backup Drives</div>';
-    
+
     if (data.local_drives && data.local_drives.length > 0) {
         data.local_drives.forEach(function(drive) {
             var usedPercent = 100 - drive.percent_free;
             var statusClass = getStorageStatusClass(drive.percent_free);
-            
+
             html += '<div class="storage-drive ' + statusClass + '">';
             html += '<div class="drive-header">';
             html += '<span class="drive-label">' + escapeHtml(drive.server_name) + ' ' + drive.drive_letter + ':</span>';
@@ -437,11 +443,11 @@ function renderStorageStatus(data) {
         html += '<div class="no-data">No backup drive data</div>';
     }
     html += '</div>';
-    
+
     // Network storage section
     html += '<div class="storage-group">';
     html += '<div class="storage-group-header">Network Storage</div>';
-    
+
     if (data.network_storage) {
         if (data.network_storage.error) {
             html += '<div class="storage-drive">';
@@ -453,7 +459,7 @@ function renderStorageStatus(data) {
         } else {
             var netUsedPercent = 100 - data.network_storage.percent_free;
             var netStatusClass = getStorageStatusClass(data.network_storage.percent_free);
-            
+
             html += '<div class="storage-drive ' + netStatusClass + '">';
             html += '<div class="drive-header">';
             html += '<span class="drive-label">' + escapeHtml(data.network_storage.path) + '</span>';
@@ -466,7 +472,7 @@ function renderStorageStatus(data) {
         html += '<div class="no-data">Not configured</div>';
     }
     html += '</div>';
-    
+
     container.innerHTML = html;
 }
 
@@ -477,11 +483,11 @@ function createSegmentGauge(percent, statusClass, numSegments) {
     numSegments = numSegments || 80;
     var filledCount = Math.round((percent / 100) * numSegments);
     var activeClass = 'active';
-    
+
     if (statusClass === 'storage-critical') activeClass = 'active-critical';
     else if (statusClass === 'storage-warning') activeClass = 'active-warning';
     else activeClass = 'active-healthy';
-    
+
     var html = '<div class="segment-bar">';
     for (var i = 0; i < numSegments; i++) {
         html += '<div class="segment' + (i < filledCount ? ' ' + activeClass : '') + '"></div>';
@@ -495,10 +501,10 @@ function createSegmentGauge(percent, statusClass, numSegments) {
 function getProcessStatusClass(proc) {
     if (proc.last_status === 'FAILED') return 'status-critical';
     if (proc.started_dttm && !proc.completed_dttm) return 'status-running';
-    
+
     var minutes = proc.minutes_since_completion;
     if (minutes === null) return 'status-unknown';
-    
+
     if (proc.process_name === 'RETENTION') {
         if (minutes > 48 * 60) return 'status-critical';
         if (minutes > 25 * 60) return 'status-warning';
@@ -527,10 +533,10 @@ function openRetentionDetail(type) {
     var panelId = type + '-retention';
     document.getElementById(panelId + '-overlay').classList.add('open');
     document.getElementById(panelId + '-panel').classList.add('open');
-    
+
     var body = document.getElementById(panelId + '-body');
     body.innerHTML = '<div class="loading">Loading retention candidates...</div>';
-    
+
     engineFetch('/api/backup/retention-candidates?type=' + type)
         .then(function(data) {
             if (!data) { body.innerHTML = '<div class="slideout-empty">Failed to load data</div>'; return; }
@@ -553,21 +559,21 @@ function renderRetentionSlideout(container, data, type) {
         container.innerHTML = '<div class="slideout-empty">No retention candidates</div>';
         return;
     }
-    
+
     var typeLabel = type === 'local' ? 'Local' : 'Network';
     var html = '';
-    
+
     // Summary stats
     html += '<div class="slideout-summary">';
     html += '<div class="slideout-stat"><div class="slideout-stat-value">' + data.total_count + '</div><div class="slideout-stat-label">Files</div></div>';
     html += '<div class="slideout-stat"><div class="slideout-stat-value">' + formatBytesShort(data.total_bytes) + '</div><div class="slideout-stat-label">Total Size</div></div>';
-    
+
     // Count unique databases
     var dbSet = {};
     data.files.forEach(function(f) { dbSet[f.server_name + '|' + f.database_name] = true; });
     html += '<div class="slideout-stat"><div class="slideout-stat-value">' + Object.keys(dbSet).length + '</div><div class="slideout-stat-label">Databases</div></div>';
     html += '</div>';
-    
+
     // Group by server, then by database
     var servers = {};
     data.files.forEach(function(f) {
@@ -576,43 +582,43 @@ function renderRetentionSlideout(container, data, type) {
         }
         servers[f.server_name].files.push(f);
         servers[f.server_name].bytes += f.file_size_bytes;
-        
+
         if (!servers[f.server_name].databases[f.database_name]) {
             servers[f.server_name].databases[f.database_name] = { files: [], bytes: 0, cutoff_dttm: f.cutoff_dttm, chain_count: f.chain_count };
         }
         servers[f.server_name].databases[f.database_name].files.push(f);
         servers[f.server_name].databases[f.database_name].bytes += f.file_size_bytes;
     });
-    
+
     // Render server accordions
     var serverNames = Object.keys(servers).sort();
     serverNames.forEach(function(serverName) {
         var server = servers[serverName];
         var serverId = 'ret-srv-' + type + '-' + serverName.replace(/[^a-zA-Z0-9]/g, '_');
-        
+
         html += '<div class="slideout-accordion-header" onclick="toggleAccordion(\'' + serverId + '\')" id="' + serverId + '-header">';
         html += '<span class="accordion-label">' + escapeHtml(serverName) + '</span>';
         html += '<span class="accordion-stats">' + server.files.length + ' files &middot; ' + formatBytesShort(server.bytes) + '</span>';
         html += '<span class="accordion-chevron">&#9654;</span>';
         html += '</div>';
         html += '<div class="slideout-accordion-body" id="' + serverId + '-body">';
-        
+
         // Database sub-accordions
         var dbNames = Object.keys(server.databases).sort();
         dbNames.forEach(function(dbName) {
             var db = server.databases[dbName];
             var dbId = serverId + '-' + dbName.replace(/[^a-zA-Z0-9]/g, '_');
-            
+
             html += '<div class="slideout-accordion-header" onclick="toggleAccordion(\'' + dbId + '\')" id="' + dbId + '-header">';
             html += '<span class="accordion-label">' + escapeHtml(dbName) + '</span>';
             html += '<span class="accordion-stats">' + db.files.length + ' files &middot; ' + formatBytesShort(db.bytes) + '</span>';
             html += '<span class="accordion-chevron">&#9654;</span>';
             html += '</div>';
             html += '<div class="slideout-accordion-body" id="' + dbId + '-body">';
-            
+
             // Cutoff info
             html += '<div class="slideout-accordion-cutoff">Keeping ' + db.chain_count + ' newest FULL chain(s) &mdash; cutoff: ' + formatDateTime(db.cutoff_dttm) + '</div>';
-            
+
             // File table
             html += '<table class="slideout-table">';
             html += '<thead><tr><th>Type</th><th>File</th><th>Backup Date</th><th class="align-right">Size</th></tr></thead>';
@@ -628,10 +634,10 @@ function renderRetentionSlideout(container, data, type) {
             html += '</tbody></table>';
             html += '</div>';
         });
-        
+
         html += '</div>';
     });
-    
+
     container.innerHTML = html;
 }
 
@@ -657,21 +663,21 @@ function closeDetailModal() {
 
 function openPipelineDetail(processName) {
     var titles = {
-        'COLLECTION': 'Collection — Last Run',
-        'NETWORK_COPY': 'Network Copy — Last Run',
-        'AWS_UPLOAD': 'AWS Upload — Last Run',
-        'RETENTION': 'Retention — Last Run'
+        'COLLECTION':   'Collection -- Last Run',
+        'NETWORK_COPY': 'Network Copy -- Last Run',
+        'AWS_UPLOAD':   'AWS Upload -- Last Run',
+        'RETENTION':    'Retention -- Last Run'
     };
-    
+
     openDetailModal(titles[processName] || processName);
     var body = document.getElementById('detail-modal-body');
     body.innerHTML = '<div class="loading">Loading...</div>';
-    
+
     if (processName === 'COLLECTION') {
         body.innerHTML = '<div class="modal-empty">File-level detail not yet available for Collection.<br>Summary data is shown on the card.</div>';
         return;
     }
-    
+
     engineFetch('/api/backup/pipeline-detail?process=' + processName)
         .then(function(data) {
             if (!data) { body.innerHTML = '<div class="modal-empty">Failed to load data</div>'; return; }
@@ -685,14 +691,14 @@ function openPipelineDetail(processName) {
 
 function renderPipelineModal(container, data) {
     var html = '';
-    
+
     // Summary bar
     if (data.summary) {
         var s = data.summary;
-        var statusClass = s.last_status === 'SUCCESS' ? 'summary-status-success' 
-            : s.last_status === 'PARTIAL' ? 'summary-status-partial' 
+        var statusClass = s.last_status === 'SUCCESS' ? 'summary-status-success'
+            : s.last_status === 'PARTIAL' ? 'summary-status-partial'
             : 'summary-status-failed';
-        
+
         html += '<div class="modal-summary">';
         html += '<span class="summary-item"><span class="' + statusClass + '">' + (s.last_status || '-') + '</span></span>';
         html += '<span class="summary-item">Run: <span class="summary-value">' + (s.started_dttm ? formatDateTime(s.started_dttm) : '-') + '</span></span>';
@@ -702,12 +708,12 @@ function renderPipelineModal(container, data) {
         }
         html += '<span class="summary-item">Duration: <span class="summary-value">' + formatDurationMs(s.last_duration_ms) + '</span></span>';
         html += '</div>';
-        
+
         if (s.last_error_message) {
             html += '<div style="font-size: 11px; color: #f48771; font-style: italic; margin-bottom: 12px; padding: 0 4px;">' + escapeHtml(s.last_error_message) + '</div>';
         }
     }
-    
+
     // File table
     if (!data.files || data.files.length === 0) {
         html += '<div class="modal-empty">No file detail recorded for this run</div>';
@@ -731,7 +737,7 @@ function renderPipelineModal(container, data) {
         });
         html += '</tbody></table>';
     }
-    
+
     container.innerHTML = html;
 }
 
@@ -740,7 +746,7 @@ function openQueueDetail(type) {
     openDetailModal(titles[type] || type);
     var body = document.getElementById('detail-modal-body');
     body.innerHTML = '<div class="loading">Loading...</div>';
-    
+
     engineFetch('/api/backup/queue-detail?type=' + type)
         .then(function(data) {
             if (!data) { body.innerHTML = '<div class="modal-empty">Failed to load data</div>'; return; }
@@ -754,19 +760,19 @@ function openQueueDetail(type) {
 
 function renderQueueModal(container, data) {
     var html = '';
-    
+
     if (!data.files || data.files.length === 0) {
         html += '<div class="modal-empty">Queue is empty</div>';
         container.innerHTML = html;
         return;
     }
-    
+
     // Summary
     html += '<div class="modal-summary">';
     html += '<span class="summary-item">Pending: <span class="summary-value">' + data.total_count + ' files</span></span>';
     html += '<span class="summary-item">Total: <span class="summary-value">' + formatBytesShort(data.total_bytes) + '</span></span>';
     html += '</div>';
-    
+
     // File table
     html += '<table class="modal-table">';
     html += '<thead><tr><th>Type</th><th>Server</th><th>Database</th><th>File</th><th>Backup Date</th><th class="align-right">Size</th></tr></thead>';
@@ -782,9 +788,13 @@ function renderQueueModal(container, data) {
         html += '</tr>';
     });
     html += '</tbody></table>';
-    
+
     container.innerHTML = html;
 }
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
 function formatDurationMs(ms) {
     if (!ms || ms <= 0) return '-';
@@ -795,9 +805,6 @@ function formatDurationMs(ms) {
     return min.toFixed(1) + 'm';
 }
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
 function getStorageStatusClass(percentFree) {
     if (percentFree < 10) return 'storage-critical';
     if (percentFree < 20) return 'storage-warning';
@@ -806,10 +813,10 @@ function getStorageStatusClass(percentFree) {
 
 function formatProcessName(name) {
     var names = {
-        'COLLECTION': 'Collection',
+        'COLLECTION':   'Collection',
         'NETWORK_COPY': 'Network Copy',
-        'AWS_UPLOAD': 'AWS Upload',
-        'RETENTION': 'Retention'
+        'AWS_UPLOAD':   'AWS Upload',
+        'RETENTION':    'Retention'
     };
     return names[name] || name;
 }
@@ -831,7 +838,7 @@ function formatScheduledTime(timeStr) {
     var now = new Date();
     var runTime = new Date(now);
     runTime.setHours(hour, parseInt(parts[1] || 0, 10), 0, 0);
-    
+
     var prefix = (now > runTime) ? 'tomorrow ' : 'today ';
     return prefix + formatHour(hour);
 }
@@ -855,16 +862,16 @@ function formatBytes(bytes) {
 function formatBytesShort(bytes) {
     if (bytes === 0 || bytes === null) return '0';
     if (bytes >= 1099511627776) return (bytes / 1099511627776).toFixed(1) + 'T';
-    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + 'G';
-    if (bytes >= 1048576) return (bytes / 1048576).toFixed(0) + 'M';
-    if (bytes >= 1024) return (bytes / 1024).toFixed(0) + 'K';
+    if (bytes >= 1073741824)    return (bytes / 1073741824).toFixed(1) + 'G';
+    if (bytes >= 1048576)       return (bytes / 1048576).toFixed(0) + 'M';
+    if (bytes >= 1024)          return (bytes / 1024).toFixed(0) + 'K';
     return bytes + 'B';
 }
 
 function formatMB(mb) {
     if (mb === 0 || mb === null) return '0 MB';
     if (mb >= 1048576) return (mb / 1048576).toFixed(1) + ' TB';
-    if (mb >= 1024) return (mb / 1024).toFixed(0) + ' GB';
+    if (mb >= 1024)    return (mb / 1024).toFixed(0) + ' GB';
     return mb + ' MB';
 }
 
@@ -907,15 +914,4 @@ function escapeHtml(text) {
 function updateTimestamp() {
     var now = new Date();
     document.getElementById('last-update').textContent = now.toLocaleTimeString();
-}
-
-function showError(message) {
-    var errorDiv = document.getElementById('connection-error');
-    errorDiv.textContent = message;
-    errorDiv.classList.add('visible');
-}
-
-function clearError() {
-    var errorDiv = document.getElementById('connection-error');
-    errorDiv.classList.remove('visible');
 }
