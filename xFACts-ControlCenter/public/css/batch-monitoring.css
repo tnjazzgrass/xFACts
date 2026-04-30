@@ -2,6 +2,14 @@
    xFACts Control Center - Batch Monitoring Styles
    Location: E:\xFACts-ControlCenter\public\css\batch-monitoring.css
    Version: Tracked in dbo.System_Metadata (component: BatchOps)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css) and engine-
+               card/engine-row/engine-bar/engine-label/engine-countdown block
+               (shared). Kept @keyframes pulse and @keyframes spin (used by
+               .live-indicator and .refresh-btn.spinning respectively).
    ============================================================================ */
 
 /* ============================================
@@ -19,57 +27,6 @@ body {
     padding-top: 60px;
     background: #1e1e1e;
     color: #d4d4d4;
-}
-
-/* ============================================
-   NAVIGATION BAR
-   ============================================ */
-
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 0 20px;
-    display: flex;
-    gap: 0;
-    z-index: 1000;
-    height: 40px;
-    align-items: center;
-}
-
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    padding: 10px 16px;
-    font-size: 13px;
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    height: 100%;
-    display: flex;
-    align-items: center;
-}
-
-.nav-link:hover {
-    color: #d4d4d4;
-    background: #2d2d2d;
-}
-
-.nav-link.active {
-    color: #4ec9b0;
-    border-bottom-color: #4ec9b0;
-}
-
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
-
-.nav-separator {
-    color: #404040;
-    padding: 0 4px;
-    font-size: 13px;
 }
 
 /* ============================================
@@ -128,54 +85,6 @@ h1 {
 .last-updated {
     color: #4ec9b0;
 }
-
-/* Engine Health Indicators */
-.engine-row { display: flex; gap: 5px; }
-
-.engine-card {
-    width: 68px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    padding: 4px 6px;
-    border: 1px solid #383838;
-    border-radius: 3px;
-    background: #252526;
-}
-
-.engine-label {
-    font-size: 9px;
-    color: #888;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-align: center;
-}
-
-.engine-bar {
-    width: 100%;
-    height: 10px;
-    border-radius: 2px;
-    transition: background-color 0.3s, box-shadow 0.3s;
-}
-
-.engine-bar.idle { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
-.engine-bar.running { background: #569cd6; box-shadow: 0 0 6px rgba(86, 156, 214, 0.4); }
-.engine-bar.overdue { background: #dcdcaa; box-shadow: 0 0 6px rgba(220, 220, 170, 0.4); }
-.engine-bar.critical { background: #f48771; box-shadow: 0 0 6px rgba(244, 135, 113, 0.4); }
-.engine-bar.disabled { background: #444; box-shadow: none; }
-
-.engine-countdown {
-    font-size: 8px;
-    color: #d4d4d4;
-    font-variant-numeric: tabular-nums;
-    height: 10px;
-    line-height: 10px;
-}
-
-.engine-card.card-warning { border-color: #dcdcaa; background: rgba(220, 220, 170, 0.08); }
-.engine-card.card-critical { border-color: #f48771; background: rgba(244, 135, 113, 0.08); }
 
 /* ============================================
    CONNECTION ERROR
