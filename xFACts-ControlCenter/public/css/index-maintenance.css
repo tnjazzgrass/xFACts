@@ -2,6 +2,12 @@
    xFACts Control Center - Index Maintenance Styles
    Location: E:\xFACts-ControlCenter\public\css\index-maintenance.css
    Version: Tracked in dbo.System_Metadata (component: ServerOps.Index)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css). Mobile
+               responsive nav-bar overrides retained as page-specific.
    ============================================================================ */
 
 /* ----------------------------------------------------------------------------
@@ -19,51 +25,6 @@ body {
     background: #1e1e1e;
     color: #d4d4d4;
 }
-
-/* ----------------------------------------------------------------------------
-   Navigation Bar
-   ---------------------------------------------------------------------------- */
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 0 20px;
-    display: flex;
-    gap: 0;
-    z-index: 1000;
-    height: 40px;
-    align-items: center;
-}
-
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    padding: 10px 16px;
-    font-size: 13px;
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    height: 100%;
-    display: flex;
-    align-items: center;
-}
-
-.nav-link:hover {
-    color: #d4d4d4;
-    background: #2d2d2d;
-}
-
-.nav-link.active {
-    color: #4ec9b0;
-    border-bottom-color: #4ec9b0;
-}
-
-.nav-separator { color: #555; padding: 0 4px; }
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
 
 /* ----------------------------------------------------------------------------
    Header
@@ -886,29 +847,29 @@ h1 {
     .process-cards {
         grid-template-columns: 1fr 1fr;
     }
-    
+
     .queue-summary-grid {
         grid-template-columns: 1fr 1fr 1fr;
     }
-    
+
     .queue-totals-line {
         flex-direction: column;
         gap: 4px;
     }
-    
+
     .nav-bar {
         overflow-x: auto;
     }
-    
+
     .nav-link {
         white-space: nowrap;
     }
-    
+
     .schedule-cell {
         width: 20px;
         height: 18px;
     }
-    
+
     .schedule-hour-label {
         width: 20px;
         font-size: 8px;
