@@ -1,7 +1,7 @@
 # RBAC Enforcement & Dynamic Nav Working Document
 
-**Created:** April 29, 2026  
-**Status:** Active — Phase 3d in progress  
+**Created:** April 29, 2026
+**Status:** Active — Phase 3d complete; minor follow-ups + doc-page RBAC integration outstanding
 **Owner:** Dirk
 
 ---
@@ -110,7 +110,7 @@ Master inventory of CC pages with navigation metadata.
 | `description` | VARCHAR(500) NULL | Page subtitle / home tile description |
 | `section_key` | VARCHAR(50) FK | References RBAC_NavSection |
 | `sort_order` | INT | Increments of 10 within section |
-| `doc_page_id` | VARCHAR(50) NULL | Doc slug; URL built as `/docs/pages/{doc_page_id}.html` |
+| `doc_page_id` | VARCHAR(50) NULL | Doc slug; URL built as `/docs/pages/{doc_page_id}.html`. Slug **may include slashes** for subfolder paths (e.g., `cc/controlcenter-cc-platform`, `guides/bdl-import-guide`). |
 | `show_in_nav` | BIT default 1 | Appears in horizontal nav bar |
 | `show_on_home` | BIT default 1 | Appears as Home page tile |
 | `is_active` | BIT default 1 | Soft delete |
@@ -184,61 +184,107 @@ Master inventory of CC pages with navigation metadata.
 - JBoss page nav looks identical to before, with addition of Client Portal in the Tools section
 - Active page highlighting works correctly
 
-**Known acceptable inconsistency:** Other route files still have hardcoded nav blocks. Their navs do NOT yet include Client Portal or apps-integration as visible nav items. This will be resolved in Phase 3d.
+### Phase 3d — Remaining Route File Conversions (Complete 2026-04-29)
+
+**Goal:** Convert all remaining route files to the dynamic nav pattern, retire duplicate nav CSS, and lift page header / browser title rendering into the registry.
+
+**Helper module extensions delivered alongside the route work:**
+
+1. **`Get-PageHeaderHtml`** — renders `<h1>` (linked to doc page when `doc_page_id` set, plain text otherwise) plus `<p class="page-subtitle">` from `RBAC_NavRegistry.display_title` and `description`. Single source of truth for page headers; route files no longer hardcode them.
+2. **`Get-PageBrowserTitle`** — returns `"<display_title> - xFACts Control Center"` for the `<title>` element. Default suffix overridable via `-Suffix`.
+3. **Admin gear active-state patch** — `Get-NavBarHtml` now applies the `active` class to the admin gear when `CurrentPageRoute = '/admin'`. Restores the visual indicator that was previously baked into the hand-written admin nav.
+
+Both new functions exported and CHANGELOG updated.
+
+**Routes converted in this phase (18 total, in delivery order):**
+
+| Order | Route File | Page | Group |
+|---|---|---|---|
+| 1 | `ServerHealth.ps1` | /server-health | (standalone) |
+| 2 | `JBossMonitoring.ps1` | /jboss-monitoring | (standalone — extended 3c) |
+| 3 | `JobFlowMonitoring.ps1` | /jobflow-monitoring | 1 |
+| 4 | `BatchMonitoring.ps1` | /batch-monitoring | 1 |
+| 5 | `Backup.ps1` | /backup | 1 |
+| 6 | `IndexMaintenance.ps1` | /index-maintenance | 1 |
+| 7 | `DBCCOperations.ps1` | /dbcc-operations | 1 |
+| 8 | `BIDATAMonitoring.ps1` | /bidata-monitoring | 2 |
+| 9 | `FileMonitoring.ps1` | /file-monitoring | 2 |
+| 10 | `ReplicationMonitoring.ps1` | /replication-monitoring | 2 |
+| 11 | `DmOperations.ps1` | /dm-operations | 2 |
+| 12 | `ApplicationsIntegration.ps1` | /departmental/applications-integration | 3 |
+| 13 | `BusinessServices.ps1` | /departmental/business-services | 3 |
+| 14 | `BusinessIntelligence.ps1` | /departmental/business-intelligence | 3 |
+| 15 | `ClientRelations.ps1` | /departmental/client-relations | 3 |
+| 16 | `Admin.ps1` | /admin | 4 |
+| 17 | `ClientPortal.ps1` | /client-portal | 4 |
+| 18 | `BDLImport.ps1` | /bdl-import | 4 |
+| 19 | `PlatformMonitoring.ps1` | /platform-monitoring | 4 |
+
+**Per-route conversion pattern (applied uniformly):**
+
+1. Replace hardcoded `<nav>` block with `$navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/X'`
+2. Replace hardcoded H1+subtitle with `$headerHtml = Get-PageHeaderHtml -PageRoute '/X'`
+3. Replace hardcoded `<title>` content with `$browserTitle = Get-PageBrowserTitle -PageRoute '/X'`
+4. Remove the `$adminGear` variable + `$html.Replace('</nav>', "$adminGear</nav>")` plumbing
+5. Strip duplicate nav-bar / nav-link / nav-spacer / nav-admin / nav-separator rules from the page-specific `.css` file
+6. Opportunistic strip of other shared duplicates (scrollbar, refresh badges, page-refresh-btn, section-header-right, idle overlay, connection banner) where present
+
+**Token replacements preserved:**
+- `IndexMaintenance.ps1` and `DBCCOperations.ps1` — `__IS_ADMIN__` for admin-conditional UI features
+- `DmOperations.ps1` — `__IS_ADMIN__` for admin-conditional Schedule and Abort buttons
+- `BDLImport.ps1` — `__IS_ADMIN__` and `__USER_TIER__` for admin/tier-conditional rendering
+
+**Group 3 simplification — `IsDeptOnly` branching dropped:**
+
+`BusinessServices`, `BusinessIntelligence`, `ClientRelations`, and `ClientPortal` all previously had `if ($access.IsDeptOnly) { ... } else { ... }` branches that emitted a stripped-down nav for dept-only users. `Get-NavBarHtml` already filters nav items by user permissions, so a dept-only user naturally sees only Home + their department page. Three branches collapsed into a single helper call per file.
+
+**Group 4 — Admin route quirks:**
+
+- `Admin.ps1` retained its page-specific `.page-header` layout (different from the standard `.header-bar`). The page-specific `.nav-admin.active` rule was retained in `admin.css` to give the gear its teal active underline (the helper applies the class; `engine-events.css` doesn't currently style it).
+- `PlatformMonitoring.ps1` — fixed a pre-existing bug where the `Get-UserAccess` check was passing `'/admin'` as the page route on a `/platform-monitoring` request. Now correctly uses `/platform-monitoring`.
+
+**Group 4 — New shared infrastructure:**
+
+1. **`engine-events-API.ps1`** (new file) — home for shared CC API endpoints that don't belong to a single page. Component `ControlCenter.Shared`. First endpoint:
+   - `GET /api/nav-registry/label?route=<path>` — returns `{ "label": "<display_title>" }` for a CC route the requesting user has access to. Returns 404 in all other cases (route doesn't exist, user lacks access, etc.). Doubles as a "is this a place I can go?" check.
+
+2. **Back-link feature** — added to `BDLImport.ps1` and `PlatformMonitoring.ps1`. Inline JS resolves `document.referrer` against the new endpoint:
+   - If referrer maps to a CC route the user can access → "← Back to <referrer page label>" with `history.back()` behavior
+   - Otherwise → fall back to "← Back to <Home label>" pointing at `/`, but only if user has Home access
+   - Otherwise → link hidden entirely
+   - Future tools rolled out to dept-only users will inherit this pattern (CSS lives in `engine-events.css` under `.back-link`).
+
+3. **`engine-events-API` naming convention** established — see Architectural Decisions below.
+
+**CSS cleanup highlights:**
+
+- 18 page-specific CSS files trimmed of duplicate rules. Most aggressive cleanups: `dm-operations.css` (engine row stub, page-refresh-btn, refresh badges, connection banner block, idle overlay all removed) and `jboss-monitoring.css` (~102 lines removed, 821 → 719).
+- Backup, BIDATA, FileMonitoring, JobFlow had full engine card blocks stripped.
+- DmOps slide-panel rules **retained as page-specific** — page JS uses `.active` class to activate panels while shared CSS uses `.open`. Stripping would break the slideouts. Logged as a backlog item: align JS to `.open` then strip page-level rules.
+- IndexMaintenance: mobile responsive nav-bar overrides retained as page-specific. ID-scoped slide-panel width overrides retained.
+
+**Verified across all routes:**
+- Nav identical across pages — full nav for IT users, dept-page-only for dept-only users
+- Admin gear active state on `/admin`
+- All token-driven UI features (BDL Import wizard, DmOps Schedule/Abort, Index Maintenance Launch badges) still functional
+- Browser tab titles match page H1s
+- Active page highlighting consistent
 
 ---
 
 ## What's Pending
 
-### Phase 3d — Remaining Route File Conversions (Next Session)
-
-**~16 route files** to update with the same pattern as JBossMonitoring.ps1. For each route:
-
-1. Replace hardcoded `<nav>` block with `$navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/X'`
-2. Embed `$navHtml` in the HTML output
-3. Remove the manual admin-gear append logic (`$adminGear` variable + `.Replace('</nav>', "$adminGear</nav>")`)
-4. **Optional concurrent cleanup**: strip duplicate `.nav-bar`, `.nav-link`, `.nav-separator`, `.nav-admin`, `.nav-spacer` rules from the page's `.css` file (now lives in `engine-events.css`)
-
-**Routes to convert (in suggested order):**
-
-| Order | Route File | Page |
-|---|---|---|
-| 1 | `Admin.ps1` | /admin |
-| 2 | `ServerHealth.ps1` | /server-health |
-| 3 | `JobFlowMonitoring.ps1` | /jobflow-monitoring |
-| 4 | `BatchMonitoring.ps1` | /batch-monitoring |
-| 5 | `Backup.ps1` | /backup |
-| 6 | `IndexMaintenance.ps1` | /index-maintenance |
-| 7 | `DBCCOperations.ps1` | /dbcc-operations |
-| 8 | `BIDATAMonitoring.ps1` | /bidata-monitoring |
-| 9 | `FileMonitoring.ps1` | /file-monitoring |
-| 10 | `ReplicationMonitoring.ps1` | /replication-monitoring |
-| 11 | `DmOperations.ps1` | /dm-operations |
-| 12 | `ApplicationsIntegration.ps1` | /departmental/applications-integration |
-| 13 | `BusinessServices.ps1` | /departmental/business-services |
-| 14 | `BusinessIntelligence.ps1` | /departmental/business-intelligence |
-| 15 | `ClientRelations.ps1` | /departmental/client-relations |
-| 16 | `ClientPortal.ps1` | /client-portal |
-| 17 | `BDLImport.ps1` | /bdl-import |
-| 18 | `PlatformMonitoring.ps1` | /platform-monitoring |
-
-**Suggested batching:** Could be done in groups of 4-6 per session for easy verification. All-at-once is also viable since the change pattern is mechanical.
-
-**Reference files to model after:** `JBossMonitoring.ps1` (Phase 3c proof-of-concept) is the canonical pattern.
-
-### Backlog Items From This Work
+### Backlog
 
 | Priority | Item | Notes |
 |---|---|---|
+| Medium | DmOps slide-panel `.active`→`.open` JS alignment | DmOps `dm-operations.js` activates slide panels with `.active` while shared `engine-events.css` uses `.open`. Currently working because page-level CSS retains the `.active`-keyed slide-panel rules. To complete the cleanup: change JS to use `.open` and strip the page-level slide-panel rules. Out-of-scope for Phase 3d. |
+| Medium | DBCC disk space alert suppression | When CHECKDB FULL is running, ServerHealth disk alerts can fire incorrectly because the operation temporarily inflates disk usage. Cross-component awareness needed: ServerHealth alerting should suppress (or annotate) disk alerts on a server while DBCC is active there. |
 | Medium | Coverage gap-check refinement | `/admin` and `/platform-monitoring` show as false positives in NavRegistry vs PermissionMapping gap check because they rely on Admin role's wildcard `*` permission. Decide between query-side fix (special-case in CTE) or schema-side fix (add `requires_explicit_permission` BIT flag to NavRegistry). |
-| Medium | Drop verbosity to `'denials_only'` | Currently `rbac_audit_verbosity = 'all'` which logs every access check. Drop once confident in enforcement. Single GlobalConfig UPDATE. |
-| Medium | Doc-page RBAC integration | Apply the same RBAC + dynamic nav approach to `/docs/pages/*`. Requires: (1) auth on currently-unauthenticated `/docs` static route in Start-ControlCenter.ps1, (2) doc page → CC page route → permission lookup, (3) nav.js update to receive filtered registry. The `doc_page_id` field in NavRegistry is the join key. Significant — own session. |
-| Low | Strip duplicate nav-bar CSS from page-specific files | Phase 3d should do this opportunistically per-route. After Phase 3d, do a final sweep to confirm all `.nav-bar` / `.nav-link` rules in page-specific CSS are removed. |
-| Low | `/admin` documentation page | Currently `doc_page_id = NULL`. Possible future: dedicated admin doc page. There's a `controlcenter-cc-admin.html` CC guide but no full narrative/ref. |
-| Low | engine-events.css/js rename | The file has become the de facto shared CC file but the name is misleading. Possibly split into truly shared (engine-events) vs CC-shared content. Already in backlog under ControlCenter.Shared. |
-| Low | `/departmental/applications-integration` page split | DM vs B2B sections. Currently PowerUser specializes in DM, StandardUser in IBM/B2B. UI hides DM-specific sections from StandardUser via role checks. Defer until B2B build matures. |
-| Low | Re-evaluate `mapping_id 13` style scoped mappings | If Phase 3d or future work introduces UI features that genuinely use `DepartmentScopes`, may need to reintroduce role-scoped mappings (with intent this time). Document the use case before adding. |
-| Low | Populate descriptions for all NavRegistry rows | In progress — Dirk handling manually. Confirm completion next session. |
+| Medium | Doc-page RBAC integration | Apply the same RBAC + dynamic nav approach to `/docs/pages/*`. Requires: (1) auth on currently-unauthenticated `/docs` static route in Start-ControlCenter.ps1, (2) doc page → CC page route → permission lookup, (3) nav.js update to receive filtered registry. The `doc_page_id` field in NavRegistry is the join key (slashes in slug already supported, see arch decisions). Significant — own session. |
+| Low | Engine-events naming convention documentation | Add a note to `xFACts_Development_Guidelines.md` codifying that `engine-events.css`, `engine-events.js`, and `engine-events-API.ps1` are the canonical files for cross-page CC infrastructure (CSS/JS/API respectively). Future shared endpoints belong in `engine-events-API.ps1`. |
+| Low | BusinessIntelligence header live indicator | BI page header has no live indicator. Add one if/when real-time data sources are wired up to this page. |
+| Low | Re-evaluate `mapping_id 13` style scoped mappings | If future work introduces UI features that genuinely use `DepartmentScopes`, may need to reintroduce role-scoped mappings (with intent this time). Document the use case before adding. |
 
 ---
 
@@ -286,6 +332,34 @@ Inventory completeness. Treating NavRegistry as the master CC page catalog means
 
 If a future feature wants to enumerate "all CC pages including admin," the data is there.
 
+### `doc_page_id` slug accepts subfolder paths
+
+The helper's URL construction (`/docs/pages/{doc_page_id}.html`) HtmlEncodes the slug but does not strip slashes. Confirmed working in Phase 3d with paths like `cc/controlcenter-cc-platform`, `cc/controlcenter-cc-admin`, and `guides/bdl-import-guide`. This means CC pages can link to their CC-specific reference docs (under `/docs/pages/cc/`) or to guide pages (under `/docs/pages/guides/`) without code changes — just set the `doc_page_id` to the relative path.
+
+Useful side effect: when doc-page RBAC integration happens in a future session, the join key naturally supports the existing folder structure.
+
+### `engine-events-API.ps1` naming convention
+
+`engine-events.css` and `engine-events.js` are the established shared-infrastructure files for the Control Center. With Phase 3d's introduction of `engine-events-API.ps1`, this becomes the canonical naming convention for cross-page CC infrastructure across all three layers:
+
+- `engine-events.css` — shared styles (nav, modals, scrollbars, refresh badges, slide panels, back-link, ...)
+- `engine-events.js` — shared client-side helpers (engine card updates, modals, idle handling, ...)
+- `engine-events-API.ps1` — shared server-side endpoints (nav registry label lookup, future shared endpoints)
+
+The alternative ("rename everything to `shared.*`") was considered and rejected — too invasive given the existing footprint, and the `engine-events` prefix is already deeply embedded in component classification, file references, and developer mental models. Future shared endpoints (idle/session helpers, label resolvers, anything reusable by 2+ pages) belong in `engine-events-API.ps1` rather than getting their own file.
+
+This convention should be codified in `xFACts_Development_Guidelines.md` (backlog item).
+
+### Why a `/api/nav-registry/label` endpoint rather than embedding labels in JS?
+
+The back-link feature on tool pages (BDLImport, PlatformMonitoring) needs to resolve `document.referrer` to a display label, but only if the user has access to that route. Three options were considered:
+
+1. **Embed all labels in a JS bundle on every page** — simple but leaks the full nav inventory to every browser, ignoring RBAC.
+2. **Add a `referrer` parameter to every page render** — server picks the label and passes it to JS. Means every page needs to know about the back-link feature. Tight coupling.
+3. **Endpoint approach (chosen)** — JS reads `document.referrer`, calls `/api/nav-registry/label?route=<path>`, gets back either a label or 404. Server enforces RBAC; client gets only what the user is allowed to know.
+
+Option 3 also doubles as a "is this route accessible to me?" probe, which the back-link uses for its Home fallback. Single endpoint, two use cases, RBAC enforced server-side.
+
 ---
 
 ## Active Configuration Snapshot
@@ -319,21 +393,17 @@ These are the GlobalConfig settings driving RBAC behavior, current as of 2026-04
 | `dbo.RBAC_NavRegistry` | CREATE TABLE + INSERT × 20 | 1 |
 | `dbo.Object_Metadata` | INSERT × ~30 (baselines + enrichment) | 1 |
 | `dbo.Object_Registry` | INSERT × 2 | 1 |
-| `xFACts-Helpers.psm1` | Full file replacement | 2 |
-| `engine-events.css` | Nav classes appended | 3a |
+| `xFACts-Helpers.psm1` | Full file replacement (Phase 2 — nav helpers; Phase 3d — page header / browser title helpers + admin gear active patch) | 2, 3d |
+| `engine-events.css` | Phase 3a: nav classes appended. Phase 3d: `.back-link` block appended. | 3a, 3d |
 | `Home.ps1` | Full file replacement | 3b |
-| `JBossMonitoring.ps1` | Full file replacement | 3c |
-
-**System_Metadata bumps needed** (do at end of each session):
-
-| Module | Component | Reason |
-|---|---|---|
-| `dbo` | `Engine.RBAC` | NavSection/NavRegistry tables added (Phase 1) |
-| `ControlCenter` | `ControlCenter.Shared` | Helper additions + RBAC_AuditLog cleanup + enforcement flip + nav CSS additions (Phase 0/2/3a) |
-| `ControlCenter` | `ControlCenter.Home` | Dynamic tile rendering (Phase 3b) |
-| `JBoss` | `JBoss` | Dynamic nav adoption (Phase 3c) |
-
-After Phase 3d, additional bumps will be needed for each route updated.
+| `JBossMonitoring.ps1` | Full file replacement (Phase 3c proof-of-concept; Phase 3d browser title + header from registry) | 3c, 3d |
+| `ServerHealth.ps1` | Browser title from registry | 3d |
+| `JobFlowMonitoring.ps1`, `BatchMonitoring.ps1`, `Backup.ps1`, `IndexMaintenance.ps1`, `DBCCOperations.ps1` | Full file replacement (Group 1) | 3d |
+| `BIDATAMonitoring.ps1`, `FileMonitoring.ps1`, `ReplicationMonitoring.ps1`, `DmOperations.ps1` | Full file replacement (Group 2) | 3d |
+| `ApplicationsIntegration.ps1`, `BusinessServices.ps1`, `BusinessIntelligence.ps1`, `ClientRelations.ps1` | Full file replacement (Group 3) | 3d |
+| `Admin.ps1`, `ClientPortal.ps1`, `BDLImport.ps1`, `PlatformMonitoring.ps1` | Full file replacement (Group 4) | 3d |
+| `engine-events-API.ps1` | NEW FILE — shared API endpoints (`/api/nav-registry/label`) | 3d |
+| 18 × page-specific `.css` files | Duplicate nav block stripped + opportunistic shared-rule cleanup | 3d |
 
 ---
 
@@ -341,11 +411,7 @@ After Phase 3d, additional bumps will be needed for each route updated.
 
 1. **`/admin` and `/platform-monitoring` show in coverage gap-check** — known false positive. They rely on Admin role's `*` wildcard, not explicit page rows. Acceptable for now; refinement is a backlog item.
 
-2. **Other route files still have hardcoded navs** — they're functional but visually inconsistent with the dynamic nav (no Client Portal in their nav bars, etc.). Resolved by Phase 3d.
-
-3. **CSS rule duplication during transition** — both `engine-events.css` and page-specific CSS files have nav rules. They're identical, so no visual conflict. Cleanup is part of Phase 3d.
-
-4. **Verbosity is `all`** — every page access generates an audit log row. Volume should be modest given current usage, but monitor and drop to `denials_only` once enforcement is proven solid.
+2. **DmOps slide-panel JS/CSS class mismatch** — DmOps page JS uses `.active` to activate slide panels, while shared `engine-events.css` uses `.open`. Currently working because page-level `dm-operations.css` retains the `.active`-keyed slide-panel rules. Logged in backlog as "DmOps slide-panel `.active`→`.open` JS alignment."
 
 ---
 
@@ -353,21 +419,22 @@ After Phase 3d, additional bumps will be needed for each route updated.
 
 When resuming this work in a new session:
 
-1. Read this document first
+1. Read this document first.
+
 2. Run the coverage gap-check query to confirm state hasn't drifted:
    ```sql
    WITH nav_pages AS (
        SELECT DISTINCT page_route FROM dbo.RBAC_NavRegistry WHERE is_active = 1
    ),
    perm_pages AS (
-       SELECT DISTINCT page_route 
-       FROM dbo.RBAC_PermissionMapping 
-       WHERE is_active = 1 
+       SELECT DISTINCT page_route
+       FROM dbo.RBAC_PermissionMapping
+       WHERE is_active = 1
          AND page_route NOT IN ('*', '/')
    )
-   SELECT 
+   SELECT
        COALESCE(n.page_route, p.page_route) AS page_route,
-       CASE 
+       CASE
            WHEN n.page_route IS NULL THEN 'In PermissionMapping only - missing NavRegistry row'
            WHEN p.page_route IS NULL THEN 'In NavRegistry only - missing PermissionMapping row'
        END AS gap_description
@@ -378,14 +445,9 @@ When resuming this work in a new session:
    ```
    Expected: `/admin` and `/platform-monitoring` only (acceptable false positives).
 
-3. Check current state of NavRegistry descriptions — they may now be populated.
+3. Verify Phase 3d outcome — quick visual pass across all 18 routes confirming nav, header, browser title, and active state work as expected.
 
-4. Pick up Phase 3d. Reference `JBossMonitoring.ps1` as the canonical conversion pattern. Consider doing in batches of 4-6 routes per deployment.
-
-5. As Phase 3d completes each route, also strip duplicate `.nav-bar`, `.nav-link`, `.nav-separator`, `.nav-admin`, `.nav-spacer` rules from the page-specific CSS file.
-
-6. After Phase 3d completion, decide on:
-   - Coverage gap-check refinement (query side or schema side)
-   - Drop verbosity to `denials_only`
-
-7. Doc-page RBAC integration is a separate future session — don't tackle until Phase 3d is complete.
+4. Pick up next session items (in roughly this priority order):
+   - **DmOps slide-panel `.active`→`.open` JS alignment** — small/medium cleanup. Once done, strip the page-level slide-panel rules from `dm-operations.css`.
+ 
+5. Doc-page RBAC integration is a separate, larger session — don't tackle until smaller follow-ups are clear.
