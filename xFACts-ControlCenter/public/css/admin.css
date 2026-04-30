@@ -2,6 +2,20 @@
    xFACts Control Center - Administration Page Styles
    Location: E:\xFACts-ControlCenter\public\css\admin.css
    Version: Tracked in dbo.System_Metadata (component: ControlCenter.Admin)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css) and global
+               ::-webkit-scrollbar rules (shared). Kept the page-specific
+               .nav-admin.active rule — the helper now applies the 'active'
+               class to the gear when on /admin and this rule keeps the
+               same teal underline behavior the original markup had. Kept
+               .connection-error (different from shared — uses 6px radius
+               and tinted background), @keyframes pulse-live (only used by
+               the page's .live-indicator), and the entire timeline /
+               slideup / metadata / GlobalConfig / docs pipeline / alert
+               failures / detail-panel infrastructure (all page-specific).
    ============================================================================ */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -10,15 +24,7 @@ body { display: flex; flex-direction: column; padding: 75px 40px 0 40px; }
 h1 { color: #569cd6; margin: 0 0 2px 0; font-size: 24px; }
 a { color: #9cdcfe; }
 
-/* NAV */
-.nav-bar { position: fixed; top:0; left:0; right:0; background: #252526; border-bottom: 1px solid #404040; padding: 0 20px; display: flex; z-index: 1000; height: 40px; align-items: center; }
-.nav-link { color: #888; text-decoration: none; padding: 10px 16px; font-size: 13px; transition: all 0.2s; border-bottom: 2px solid transparent; height: 100%; display: flex; align-items: center; }
-.nav-link:hover { color: #d4d4d4; background: #2d2d2d; }
-.nav-link.active { color: #4ec9b0; border-bottom-color: #4ec9b0; }
-.nav-separator { color: #555; padding: 0 4px; }
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
+/* Page-specific: gear shows active state when on /admin (helper applies the class) */
 .nav-admin.active { opacity: 1; color: #4ec9b0 !important; border-bottom-color: #4ec9b0; }
 
 /* HEADER */
@@ -255,7 +261,7 @@ a { color: #9cdcfe; }
 .engine-slideout-body { padding: 16px 24px 40px; display: flex; justify-content: center; }
 .engine-panel-inner { display: flex; flex-direction: column; align-items: center; }
 
-/* ENGINE — Breaker switch (unchanged from v1) */
+/* ENGINE — Breaker switch */
 .drain-label { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #888; margin-bottom: 16px; }
 .breaker-housing { position: relative; cursor: pointer; user-select: none; }
 .breaker-plate { width: 100px; height: 155px; border-radius: 10px; background: linear-gradient(165deg, #3a3a40 0%, #28282e 40%, #222228 100%); border: 1px solid #3f3f45; position: relative; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3), 0 6px 18px rgba(0,0,0,0.4); }
@@ -764,7 +770,6 @@ a { color: #9cdcfe; }
 
 .sched-detail { padding-top: 10px; }
 
-/* Info card — description + script path */
 .sched-info-card {
     background: #1e1e1e; border: 1px solid #333; border-radius: 5px;
     padding: 10px 14px; margin-bottom: 8px;
@@ -774,7 +779,6 @@ a { color: #9cdcfe; }
 .sched-script-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
 .sched-script-path { font-family: 'Cascadia Code','Consolas',monospace; font-size: 11px; color: #ce9178; }
 
-/* Settings card — editable configuration */
 .sched-settings-card {
     background: #1e1e1e; border: 1px solid #333; border-radius: 5px;
     padding: 10px 14px;
@@ -844,7 +848,6 @@ a { color: #9cdcfe; }
 .doc-panel { z-index: 1501; width: 560px; max-height: 90vh; }
 .doc-pipeline-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
 
-/* Step cards */
 .doc-step-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .doc-card {
     background: #2d2d2d; border: 1px solid #404040;
@@ -858,14 +861,12 @@ a { color: #9cdcfe; }
 .doc-card-title { font-size: 13px; font-weight: 500; color: #d4d4d4; }
 .doc-card-desc { font-size: 11px; color: #888; margin-top: 2px; }
 
-/* Card status indicator */
 .doc-card-status { font-size: 16px; min-width: 20px; text-align: center; flex-shrink: 0; }
 .doc-card-status.pending { color: #dcdcaa; }
 .doc-card-status.success { color: #4ade80; }
 .doc-card-status.warning { color: #dcdcaa; }
 .doc-card-status.failed { color: #ef4444; }
 
-/* Toggle switch */
 .doc-toggle { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
 .doc-toggle input { display: none; }
 .doc-toggle-track {
@@ -879,7 +880,6 @@ a { color: #9cdcfe; }
 }
 .doc-toggle input:checked ~ .doc-toggle-knob { transform: translateX(16px); background: #fff; }
 
-/* Sub-option pills (inline in card) */
 .doc-card-options {
     display: flex; gap: 8px; flex-wrap: wrap;
     margin-top: 8px; padding-top: 8px; border-top: 1px solid #383838;
@@ -893,7 +893,6 @@ a { color: #9cdcfe; }
 .doc-pill:not(.active) { background: #252526; border-color: #404040; color: #666; }
 .doc-pill:hover { border-color: #569cd6; }
 
-/* Run button + status */
 .doc-run-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .doc-run-btn {
     background: rgba(86,156,214,0.15); border: 1px solid rgba(86,156,214,0.35);
@@ -908,7 +907,6 @@ a { color: #9cdcfe; }
 .doc-run-status.warning { color: #dcdcaa; }
 .doc-run-status.error { color: #ef4444; }
 
-/* Collapsible results area */
 .doc-results { display: flex; flex-direction: column; gap: 4px; }
 .doc-results-divider {
     border-top: 1px solid #333; padding-top: 12px; margin-top: 4px; margin-bottom: 8px;
@@ -941,14 +939,11 @@ a { color: #9cdcfe; }
 
 /* MISC */
 .loading{color:#888;font-size:13px;padding:20px}
-::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#404040;border-radius:3px}
 
 /* ============================================================
    ALERT FAILURES CARD BADGE + SLIDEOUT
-   Added: 2026-03-05
    ============================================================ */
 
-/* Card badge (red pip with count) */
 .af-badge {
     position: absolute; top: 6px; right: 8px;
     background: #ef4444;
@@ -968,19 +963,16 @@ a { color: #9cdcfe; }
 }
 .af-badge.clean .af-badge-count { display: none; }
 
-/* Slideout panel */
 .af-panel { z-index: 1501; width: 580px; height: 55vh; }
 .af-panel .af-header-right { display: flex; align-items: center; gap: 12px; }
 .af-body { flex: 1; overflow-y: auto; padding: 12px 20px 20px; }
 
-/* Empty state */
 .af-empty {
     text-align: center; color: #4ade80;
     padding: 40px 20px; font-size: 13px;
 }
 .af-empty-icon { font-size: 28px; margin-bottom: 8px; }
 
-/* Individual failure card */
 .af-card {
     background: #252526; border: 1px solid #404040; border-radius: 6px;
     padding: 12px 14px; margin-bottom: 8px;
@@ -1043,10 +1035,9 @@ a { color: #9cdcfe; }
 }
 
 /* ================================================================
-   SYSTEM METADATA — New Styles (Rearchitecture)
+   SYSTEM METADATA — additional rules
    ================================================================ */
 
-/* Component description line (below header, always visible) */
 .meta-child-desc {
     font-size: 11px;
     color: #888;
@@ -1060,7 +1051,6 @@ a { color: #9cdcfe; }
     white-space: normal;
 }
 
-/* Object count badge on child header */
 .meta-child-objcount {
     font-size: 10px;
     color: #666;
@@ -1068,12 +1058,10 @@ a { color: #9cdcfe; }
     flex-shrink: 0;
 }
 
-/* Bump row spacer (pushes Cancel/Insert to the right) */
 .meta-bump-spacer {
     flex: 1;
 }
 
-/* Read-only next version segments */
 .ver-bump.ver-next {
     background: #2a2a3a;
     color: #569cd6;
@@ -1082,7 +1070,6 @@ a { color: #9cdcfe; }
     font-weight: 600;
 }
 
-/* Description row (full width, below version segments) */
 .meta-desc-row {
     padding: 4px 0 0;
 }
@@ -1107,7 +1094,6 @@ a { color: #9cdcfe; }
     color: #555;
 }
 
-/* Root info area (no version bumper, just stats) */
 .meta-root-info {
     padding: 8px 12px;
     font-size: 12px;
@@ -1206,7 +1192,6 @@ a { color: #9cdcfe; }
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
-/* Badge colors matching docs-reference.css type badges */
 .detail-row-type.cat-table      { background: rgba(86,156,214,0.15); color: #569cd6; }
 .detail-row-type.cat-proc       { background: rgba(76,175,80,0.15); color: #4caf50; }
 .detail-row-type.cat-trigger    { background: rgba(255,167,38,0.15); color: #ffa726; }
@@ -1235,7 +1220,6 @@ a { color: #9cdcfe; }
     font-family: 'Consolas', 'Cascadia Code', monospace;
 }
 
-/* History + Catalog actions row (side by side) */
 .meta-actions-row {
     display: flex;
     gap: 16px;
@@ -1243,4 +1227,3 @@ a { color: #9cdcfe; }
     padding-top: 4px;
     border-top: 1px solid #333;
 }
-
