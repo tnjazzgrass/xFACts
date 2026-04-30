@@ -1,66 +1,56 @@
 # ============================================================================
 # xFACts Control Center - Replication Monitoring Page
 # Location: E:\xFACts-ControlCenter\scripts\routes\ReplicationMonitoring.ps1
-# 
+#
 # Renders the Replication Monitoring dashboard page.
 # CSS: /css/replication-monitoring.css
 # JS:  /js/replication-monitoring.js
 # APIs: ReplicationMonitoring-API.ps1
 #
 # Version: Tracked in dbo.System_Metadata (component: ServerOps.Replication)
+#
+# CHANGELOG
+# ---------
+# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
+#             browser tab title now render from RBAC_NavRegistry via
+#             Get-PageHeaderHtml and Get-PageBrowserTitle.
 # ============================================================================
 
-   Add-PodeRoute -Method Get -Path '/replication-monitoring' -Authentication 'ADLogin' -ScriptBlock {
+Add-PodeRoute -Method Get -Path '/replication-monitoring' -Authentication 'ADLogin' -ScriptBlock {
 
-       # --- RBAC Access Check ---
-       $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/replication-monitoring'
-       if (-not $access.HasAccess) {
-           Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/replication-monitoring') -StatusCode 403
-           return
-       }
+    # --- RBAC Access Check ---
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/replication-monitoring'
+    if (-not $access.HasAccess) {
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/replication-monitoring') -StatusCode 403
+        return
+    }
 
-       # --- Admin gear icon (visible only to admin role holders) ---
-       $ctx = Get-UserContext -WebEvent $WebEvent
-       $adminGear = if ($ctx.IsAdmin) {
-           '<span class="nav-spacer"></span><a href="/admin" class="nav-link nav-admin" title="Administration">&#9881;</a>'
-       } else { '' }
+    # --- User context (used by helper for nav rendering) ---
+    $ctx = Get-UserContext -WebEvent $WebEvent
 
-       $html = @'
+    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
+    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/replication-monitoring'
+    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/replication-monitoring'
+    $browserTitle = Get-PageBrowserTitle -PageRoute '/replication-monitoring'
+
+    $html = @"
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Replication Monitoring - xFACts Control Center</title>
+    <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/replication-monitoring.css">
     <link rel="stylesheet" href="/css/engine-events.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="nav-bar">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/server-health" class="nav-link">Server Health</a>
-        <a href="/jobflow-monitoring" class="nav-link">Job/Flow Monitoring</a>
-        <a href="/batch-monitoring" class="nav-link">Batch Monitoring</a>
-        <a href="/backup" class="nav-link">Backup Monitoring</a>
-        <a href="/index-maintenance" class="nav-link">Index Maintenance</a>
-        <a href="/dbcc-operations" class="nav-link">DBCC Operations</a>
-        <a href="/bidata-monitoring" class="nav-link">BIDATA Monitoring</a>
-        <a href="/file-monitoring" class="nav-link">File Monitoring</a>
-        <a href="/replication-monitoring" class="nav-link active">Replication Monitoring</a>
-        <a href="/jboss-monitoring" class="nav-link">JBoss Monitoring</a>
-        <a href="/dm-operations" class="nav-link">DM Operations</a>
-        <span class="nav-separator">|</span>
-        <a href="/departmental/business-services" class="nav-link">Business Services</a>
-        <a href="/departmental/business-intelligence" class="nav-link">Business Intelligence</a>
-        <a href="/departmental/client-relations" class="nav-link">Client Relations</a>
-    </nav>
-    
+$navHtml
+
     <div class="header-bar">
         <div>
-            <h1><a href="/docs/pages/replication.html" target="_blank">Replication Monitoring</a></h1>
-            <p class="page-subtitle">Agent health, queue depth, end-to-end latency, delivery rate, event log</p>
+            $headerHtml
         </div>
         <div class="header-right">
             <div class="refresh-info">
@@ -77,9 +67,9 @@
             </div>
         </div>
     </div>
-    
+
     <div id="connection-error" class="connection-error"></div>
-    
+
     <!-- Agent Status Cards -->
     <div class="section">
         <div class="section-header">
@@ -90,7 +80,7 @@
             <div class="loading">Loading...</div>
         </div>
     </div>
-    
+
     <!-- Delivery Rate (full width, first chart) -->
     <div class="section">
         <div class="section-header">
@@ -110,10 +100,10 @@
             <canvas id="throughput-chart"></canvas>
         </div>
     </div>
-    
+
     <!-- Two Column: Charts (left) + Event Log (right) -->
     <div class="lower-grid">
-        
+
         <!-- Left: Stacked Charts -->
         <div class="lower-left">
             <!-- Queue Depth Chart -->
@@ -135,7 +125,7 @@
                     <canvas id="queue-chart"></canvas>
                 </div>
             </div>
-            
+
             <!-- Latency Chart -->
             <div class="section">
                 <div class="section-header">
@@ -156,7 +146,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Right: Event Log -->
         <div class="lower-right">
             <div class="section section-event-log">
@@ -174,15 +164,14 @@
                 </div>
             </div>
         </div>
-        
+
     </div>
-    
+
     <script src="/js/replication-monitoring.js"></script>
     <script src="/js/engine-events.js"></script>
 </body>
 </html>
-'@
 
-   $html = $html.Replace('</nav>', "$adminGear</nav>")
-   Write-PodeHtmlResponse -Value $html
-   }
+"@
+    Write-PodeHtmlResponse -Value $html
+}
