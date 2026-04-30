@@ -2,63 +2,29 @@
    xFACts Control Center - Client Relations Styles
    Location: E:\xFACts-ControlCenter\public\css\client-relations.css
    Version: Tracked in dbo.System_Metadata (component: DeptOps.ClientRelations)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css). Kept the
+               dept-specific H1 yellow color (#dcdcaa), the custom cache
+               indicator and refresh button (page does heavy queries with
+               page-level caching rather than the standard live indicator),
+               and @keyframes spin (used by .btn-refresh.spinning).
    ============================================================================ */
 
 /* Base Layout */
 * { box-sizing: border-box; }
-body { 
-    font-family: 'Segoe UI', Arial, sans-serif; 
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
     margin: 0;
     padding: 20px 40px 30px 40px;
     padding-top: 60px;
-    background: #1e1e1e; 
-    color: #d4d4d4; 
+    background: #1e1e1e;
+    color: #d4d4d4;
 }
 h1 { color: #dcdcaa; margin-bottom: 2px; font-size: 24px; }
 .page-subtitle { font-size: 14px; color: #888; margin: 0; }
-
-/* Navigation Bar */
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 0 20px;
-    display: flex;
-    gap: 0;
-    z-index: 1000;
-    height: 40px;
-    align-items: center;
-}
-
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    padding: 10px 16px;
-    font-size: 13px;
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    height: 100%;
-    display: flex;
-    align-items: center;
-}
-
-.nav-link:hover { color: #d4d4d4; background: #2d2d2d; }
-.nav-link.active { color: #4ec9b0; border-bottom-color: #4ec9b0; }
-
-.nav-spacer { flex: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; color: #569cd6 !important; padding: 10px 12px; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
-
-.nav-separator {
-    color: #404040;
-    padding: 0 8px;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-}
 
 /* Header */
 .header-bar {
@@ -86,14 +52,14 @@ h1 { color: #dcdcaa; margin-bottom: 2px; font-size: 24px; }
 }
 
 /* Refresh Button */
-.btn { 
-    border: none; 
-    cursor: pointer; 
-    border-radius: 4px; 
+.btn {
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
 }
-.btn-sm { 
-    padding: 2px 8px; 
-    font-size: 14px; 
+.btn-sm {
+    padding: 2px 8px;
+    font-size: 14px;
 }
 .btn-refresh {
     background: #333;
@@ -106,9 +72,9 @@ h1 { color: #dcdcaa; margin-bottom: 2px; font-size: 24px; }
     transition: all 0.2s;
     margin-left: 8px;
 }
-.btn-refresh:hover { 
-    color: #4ec9b0; 
-    border-color: #4ec9b0; 
+.btn-refresh:hover {
+    color: #4ec9b0;
+    border-color: #4ec9b0;
 }
 .btn-refresh.spinning { animation: spin 1s linear; }
 
@@ -131,19 +97,19 @@ h1 { color: #dcdcaa; margin-bottom: 2px; font-size: 24px; }
 .connection-error.visible { display: block; }
 
 /* Loading & Visibility */
-.loading { 
-    color: #888; 
-    padding: 20px; 
-    text-align: center; 
-    font-size: 13px; 
+.loading {
+    color: #888;
+    padding: 20px;
+    text-align: center;
+    font-size: 13px;
 }
 .hidden { display: none !important; }
-.no-data { 
-    color: #888; 
-    padding: 20px; 
-    text-align: center; 
-    font-size: 13px; 
-    font-style: italic; 
+.no-data {
+    color: #888;
+    padding: 20px;
+    text-align: center;
+    font-size: 13px;
+    font-style: italic;
 }
 
 /* ============================================================================
