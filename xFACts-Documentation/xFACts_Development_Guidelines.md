@@ -132,7 +132,7 @@ WHERE is_active = 1
 ORDER BY module_name, component_name;
 ```
 
-#### 2.6.2 File Header Standards
+#### 2.6.2a File Header Standards
 
 Version numbers do not appear in file headers. The version lives in `dbo.System_Metadata` at the component level — embedding it in files creates a second source of truth that inevitably drifts. Instead, file headers include a component pointer so anyone reading the file knows where to look up the version and what versioning group the file belongs to.
 
@@ -156,6 +156,42 @@ Version numbers do not appear in file headers. The version lives in `dbo.System_
 - No version numbers, no changelogs
 
 **Version line transition:** Existing files still carry the old `Version: X.Y.Z` format. These are updated incrementally as files are touched during normal development — there is no bulk migration. When modifying an existing file, update its header to the new format as part of the change.
+
+#### 2.62b File Encoding Standard
+
+All `.ps1`, `.psm1`, `.psd1`, `.js`, `.css`, `.html`, `.md`, and `.sql` files must be saved as **UTF-8 without BOM** with **CRLF line endings** (the Windows convention, since the platform runs on Windows).
+
+Within these files, use only ASCII characters (bytes 0x00 through 0x7F) in code, comments, and string literals. Specifically:
+
+- Use plain hyphens, not em-dashes or en-dashes
+- Use straight quotes, not curly/typographic quotes
+- Use three dots `...`, not the single-character ellipsis
+- Use ASCII arrows like `->` and `=>`, not Unicode arrow characters
+- Use `*` or `-` for list bullets in comments, not Unicode bullet characters
+
+**Exception:** HTML entities (`&#NNNN;` or `&name;`) in HTML/heredoc strings are encouraged for non-ASCII display characters since they're pure ASCII in the source. The browser renders them as the intended Unicode character at display time.
+
+**Why this matters:** Non-ASCII characters in source files frequently get corrupted in transit between editors and operating systems with different code-page defaults. A single Windows-1252 byte (such as `0x97` for an em-dash) embedded in an otherwise UTF-8 file is invalid UTF-8 and causes GitHub to classify the file as binary (`application/octet-stream`), which prevents standard tooling from reading it. A real instance of this occurred on April 30, 2026 with `Home.ps1`. Restricting source content to pure ASCII eliminates this entire class of issue.
+
+**How to verify a file is clean:**
+
+```powershell
+# PowerShell — flag any file containing non-ASCII bytes
+Get-ChildItem -Recurse -Include *.ps1,*.psm1,*.js,*.css,*.html,*.md,*.sql |
+    Where-Object {
+        $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+        $bytes | Where-Object { $_ -gt 0x7F } | Select-Object -First 1
+    } |
+    Select-Object FullName
+```
+
+```bash
+# Bash — same check
+grep -rlP '[\x80-\xFF]' --include='*.ps1' --include='*.js' --include='*.css' \
+    --include='*.html' --include='*.md' --include='*.sql' .
+```
+
+If a scan finds an offending file, open it in a text editor that surfaces encoding (VS Code shows it in the bottom-right status bar), locate the non-ASCII character, replace it with its ASCII equivalent or HTML entity, and save as UTF-8 without BOM.
 
 #### 2.6.3 Versioning Model
 
@@ -1042,7 +1078,7 @@ When adding a new page to the Control Center, follow this sequence to ensure pro
 
 #### Step-by-step
 
-**1. Insert into `dbo.RBAC_NavRegistry`.**
+**1a. Insert into `dbo.RBAC_NavRegistry`.**
 
 ```sql
 INSERT INTO dbo.RBAC_NavRegistry 
@@ -1057,6 +1093,17 @@ VALUES
 ```
 
 Choose `sort_order` carefully — it controls where the page appears within its section. Use increments of 10 from the previous highest value in the section. This leaves room to insert pages between existing ones without renumbering.
+
+**1b. Determine the page's chrome.**
+
+By default, the page inherits standard chrome from `engine-events.css` (see Section 5.12). The route file is responsible for:
+
+- Setting `<body class="section-{section_key}">` to drive the H1 color from the section. The `section_key` value comes from the row you just inserted into `RBAC_NavRegistry` (Step 1a).
+- Including the standard header-bar, refresh info row (always present), and engine card row (if applicable) HTML structure as documented in Section 5.12.
+- Not redefining chrome rules in the page-specific CSS file. Page CSS contains content-specific rules only.
+- Applying the `has-center` modifier on `.header-bar` if the page needs a center column (currently only Server Health).
+
+Reference any existing standard page (e.g., Backup) as the template for the route file's HTML structure.
 
 **2. Insert into `dbo.RBAC_PermissionMapping`** for each role that should have access:
 
@@ -1470,6 +1517,100 @@ When building a new page, check existing shared resources before writing new CSS
 - **Page-specific JS** should contain only page-specific API calls, data rendering, and `ENGINE_PROCESSES` mapping. Behavioral patterns (modal open/close, slideout animation, refresh badge updates) that repeat across pages are consolidation candidates.
 - **When extracting a shared resource,** update the originating page to use it immediately. Don't create a shared file that nothing references yet.
 - **Naming convention for future shared CC files:** `cc-shared.css` / `cc-shared.js` for cross-page patterns. Consider component-specific shared files if the pattern is large enough (e.g., `cc-modals.css`). The current `engine-events.css` and `engine-events.js` have grown beyond their original engine-indicator scope — at some point they may warrant a rename to reflect their actual role as shared CC infrastructure.
+
+---
+
+### 5.12 CC Page Chrome Contract
+
+Every Control Center page renders the same chrome from the top of the browser window down to where the page's content area begins. The chrome is shared infrastructure; pages do not redefine it.
+
+The intent: a user navigating between any two CC pages should see no visual difference in the top region except for the data-driven elements (page title text, section accent color, and which engine cards are present, if any).
+
+#### 5.12.1 The Five Chrome Elements
+
+Every page renders these elements in this order:
+
+1. **Nav bar** — Fixed to top of viewport, 40px tall. Rendered by `Get-NavBarHtml`. Contains Home + section links + admin gear (for admins). Standardized in `engine-events.css`.
+
+2. **Page title row** — Below the nav bar:
+   - **Left side:** Page H1 (24px) and subtitle (14px gray). Both sourced from `RBAC_NavRegistry` via `Get-PageHeaderHtml`. H1 color is determined by the page's `section_key` (see Section 5.12.3).
+   - **Right side:** Refresh info row, present on every page without exception. Contains the live indicator dot, "Live | Updated: \<timestamp\>", and a refresh button. The timestamp reflects the last actual refresh of any kind: initial page load is the first refresh, and any subsequent polling, websocket update, or manual refresh updates it. Pages with no auto-refresh logic still display the row with the page-load timestamp; the live dot still pulses to indicate the UI is responsive.
+
+3. **Engine cards row** (where applicable) — Below the refresh info row, on the right side. Pages declare which engine cards apply via their HTML; pages without orchestrator-driven processes have no engine cards.
+
+4. **Connection banner** — Always present in the DOM, hidden until needed. Sits between the chrome and the content area. Uses `.connection-banner.{reconnecting|disconnected|session-expired|reloading}`. The legacy `.connection-error` class is retired and not used.
+
+5. **Content area** — Page-specific content begins here.
+
+#### 5.12.2 Viewport Constraint Rule
+
+The page never causes browser-level scroll. The total height from nav bar to bottom of page never exceeds the viewport. Content sections that overflow scroll **within themselves**, not via the browser's scroll bar.
+
+The shared `body` rule enforces this: `height: 100vh; overflow: hidden; display: flex; flex-direction: column`. The chrome takes its natural height; the content area fills the remaining space and manages its own internal scrolling.
+
+Any page-level CSS that interferes with this constraint (e.g., setting body to `overflow: visible` or `min-height` instead of `height: 100vh`) is incorrect and must be removed.
+
+#### 5.12.3 Section Color Mechanism
+
+The page H1 color is determined entirely by which section the page belongs to. This is registry-driven; there are no exceptions or overrides.
+
+Section color palette (matches the existing nav accent classes):
+
+| Section | Color | Value |
+|---|---|---|
+| `platform` | Blue | `#569cd6` |
+| `departmental` | Yellow | `#dcdcaa` |
+| `tools` | Soft blue | `#9cdcfe` |
+| `admin` | Blue | `#569cd6` |
+
+Mechanism: each route file looks up `section_key` from `RBAC_NavRegistry` and applies it as `<body class="section-{section_key}">`. Shared CSS rules in `engine-events.css` key off the body class:
+
+```css
+body.section-platform     h1 { color: #569cd6; }
+body.section-departmental h1 { color: #dcdcaa; }
+body.section-tools        h1 { color: #9cdcfe; }
+body.section-admin        h1 { color: #569cd6; }
+```
+
+To change a page's color, change its section in the registry. To change a section's color globally, edit the CSS rule in `engine-events.css`. Pages do not redefine `h1` color in their own CSS files.
+
+This complements the existing nav-link and Home-tile section coloring (which uses `accent_class` from `RBAC_NavSection` applied as `nav-section-X` classes on individual elements). All three surfaces — nav bar accent, Home tile accent, and page H1 — share the same color value per section.
+
+#### 5.12.4 Allowed Per-Page Variations
+
+These are the only deviations from the standard chrome that are permitted. Each requires a documented reason:
+
+| Variation | Where | Reason |
+|---|---|---|
+| Center-column server selector | Server Health only | Page needs a server picker affecting all displayed metrics; placement in the title row keeps it visible without consuming vertical space. Opt in via `<div class="header-bar has-center">`. |
+| No engine cards | Pages without orchestrator-driven processes | Engine cards reflect orchestrator-managed processes only; pages without them have nothing to show. |
+
+H1 color is not an allowed variation — it is always determined by the page's `section_key` in the registry. The refresh info row is not optional — every page has it. Any other deviation requires an update to this section first.
+
+#### 5.12.5 What Pages May Customize
+
+Pages own everything below the chrome:
+
+- Section layouts, column counts, custom widgets
+- Content-specific styling (e.g., the portal light theme inside Client Portal's content area, the timeline canvas inside Admin)
+- Page-specific modals, panels, slideouts (per Section 5.10)
+
+But the chrome itself — body padding, header-bar layout, h1 sizing, page-subtitle styling, refresh-info layout, live-indicator, last-updated, connection banner, sections used inside engine card rows — is shared and not redefined per page.
+
+#### 5.12.6 Implementation Reference
+
+All shared chrome rules live in `engine-events.css` under section banners that map to the elements above:
+
+- `* { box-sizing }` reset and `body` rule (viewport-constrained)
+- `h1` and `body.section-*` H1 color rules
+- `.page-subtitle`
+- `.header-bar`, `.header-right`, `.header-bar.has-center`, `.header-center`
+- `.refresh-info`, `.live-indicator`, `.last-updated`
+- `.connection-banner` and state modifiers (already shared)
+- `.section`, `.section-fill`, `.section-header`, `.section-title`
+- `@keyframes pulse`, `@keyframes spin`, `.spinning-gear`, `.spinning`
+
+The `engine-events.css` file is the single source of truth for chrome behavior. This Guidelines section is the source of truth for chrome intent.
 
 ---
 
@@ -2135,6 +2276,7 @@ Quick-reference for pages and components that deviate from the standard guidelin
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 1.6.0 | April 30, 2026 | Added Section 5.12 (CC Page Chrome Contract) codifying the universal page chrome shared across all CC pages: nav bar, page title row, refresh info row, engine card row, connection banner, viewport constraint rule, and registry-driven section color mechanism via body class. Added Section 2.6.2b (File Encoding Standard) requiring UTF-8 without BOM and ASCII-only source content for `.ps1`, `.psm1`, `.psd1`, `.js`, `.css`, `.html`, `.md`, and `.sql` files. Updated Section 4.5 (Adding a New Control Center Page) with new Step 1b. covering chrome inheritance and body section class assignment. |
 | 1.5.0 | April 29, 2026 | Replaced Section 4.4 (was a STUB) with full Pode Framework + RBAC + Dynamic Navigation content. Added new Section 4.5 (Adding a New Control Center Page) covering the post-dynamic-nav workflow. Updated Section 3.6 to reflect dynamic nav helpers added to xFACts-Helpers.psm1. Updated Section 5.1 to remove the "all pages share identical nav markup" claim — nav is now rendered dynamically by Get-NavBarHtml. Updated Section 5.11 to reflect nav-bar style consolidation into engine-events.css. |
 | 1.4.0 | March 15, 2026 | Accuracy pass across all sections. Section 2.6.5: added Object_Registry INSERT template with all required columns (module_name was undocumented NOT NULL); added category/type reference table; updated session checklist. Section 2.9: replaced inline module list with reference to Module_Registry/Platform_Registry; lightened category examples; removed stale `data-objects` requirement for scripts (ddl-loader v3.0+ uses dynamic discovery); fixed Object_Metadata INSERT template column names in Section 3.5. Section 3.2: replaced manual initialization block with `Initialize-XFActsScript` shared infrastructure pattern. Section 5.11: removed hardcoded page counts from shared CSS/JS tables; added `docs-controlcenter.css` and `docs-controlcenter.js` to shared resource inventory. Section 6.1: replaced enumerated module naming list and page inventory table with references to dynamic sources (Platform_Registry.md, doc-registry.json, Component_Registry). Section 6.1.1: expanded `doc_json_schema` description to document dual purpose (HTML rendering + Confluence publisher reference page generation). Section 6.2: updated publisher description to include CC guide page processing; expanded conversion table with CC guide and callout entries; replaced stale "Add an entry to $PageRegistry" instruction with current dynamic discovery behavior. Section 6.3: added CC guide page conventions table; updated ddl-root description with `data-category` attribute. |
 | 1.3.0 | March 7, 2026 | Added Section 6.1.1 (Documentation Registry) covering Component_Registry doc_* columns, doc-registry.json structure, filename conventions, nav.js page discovery, named CC guide pages, and multiple CC guide page patterns. |
