@@ -2,6 +2,16 @@
    business-intelligence.css — Business Intelligence Departmental Page
    Location: E:\xFACts-ControlCenter\public\css\business-intelligence.css
    Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessIntelligence)
+
+   CHANGELOG
+   ---------
+   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
+               nav-admin/nav-separator (now in engine-events.css) and
+               .page-refresh-btn (shared). Kept dept-specific H1 yellow color
+               (#dcdcaa) which distinguishes departmental pages from platform
+               pages. Notice Recon badge styles, status pills, and the
+               #nr-detail-panel ID-scoped width override (1000px) remain
+               page-specific.
    ============================================================================ */
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
@@ -13,36 +23,6 @@ body {
     background: #1e1e1e;
     color: #d4d4d4;
 }
-
-/* ── Navigation ───────────────────────────────────────────────────────────── */
-.nav-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #252526;
-    border-bottom: 1px solid #404040;
-    padding: 10px 20px;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
-}
-.nav-link {
-    color: #888;
-    text-decoration: none;
-    font-size: 13px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: color 0.15s;
-}
-.nav-link:hover { color: #d4d4d4; }
-.nav-link.active { color: #dcdcaa; font-weight: 600; }
-.nav-separator { color: #555; margin: 0 4px; font-size: 13px; }
-.nav-spacer { flex-grow: 1; }
-.nav-admin { font-size: 20px; opacity: 0.45; transition: opacity 0.2s; line-height: 1; }
-.nav-admin:hover { opacity: 1; }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
 .header-bar {
@@ -75,17 +55,6 @@ h1 {
     font-size: 13px;
 }
 .last-updated { color: #4ec9b0; }
-.page-refresh-btn {
-    background: none;
-    border: 1px solid #555;
-    color: #888;
-    font-size: 16px;
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: all 0.15s;
-}
-.page-refresh-btn:hover { border-color: #888; color: #d4d4d4; }
 
 /* ── Connection Error ─────────────────────────────────────────────────────── */
 .connection-error {
