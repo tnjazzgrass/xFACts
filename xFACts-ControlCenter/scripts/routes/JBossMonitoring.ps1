@@ -13,6 +13,23 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-30  Phase 4 (Chrome Standardization, modal migration): three local
+#             modal/dialog systems migrated to the shared xf-modal-* system.
+#               - info-modal HTML now uses xf-modal-overlay/.xf-modal.wide/
+#                 .xf-modal-header/.xf-modal-body. Dimensions and chrome
+#                 come from shared CSS; help content (info-list, info-item,
+#                 info-thresholds) renders inside the body.
+#               - dm-modal HTML combined into a single overlay+modal
+#                 structure using xf-modal-overlay/.xf-modal/.xf-modal-header/
+#                 .xf-modal-body. The picker buttons (.dm-server-btn) and
+#                 status text (.dm-status) render inside the body.
+#               - confirm-overlay HTML deleted -- the shared showConfirm()
+#                 helper builds its own overlay dynamically.
+# 2026-04-30  Phase 4 (Chrome Standardization): added body section class
+#             (section-platform) so H1 color is driven by shared CSS via
+#             RBAC_NavRegistry section_key. Renamed connection banner
+#             placeholder from id/class connection-error to connection-banner
+#             matching the engine-events.js rename.
 # 2026-04-29  Phase 3d of dynamic nav: page H1 link, title, subtitle, and
 #             browser tab title now render from RBAC_NavRegistry via
 #             Get-PageHeaderHtml and Get-PageBrowserTitle.
@@ -56,7 +73,7 @@ Add-PodeRoute -Method Get -Path '/jboss-monitoring' -Authentication 'ADLogin' -S
     <link rel="stylesheet" href="/css/jboss-monitoring.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
-<body>
+<body class="section-platform">
 $navHtml
 
     <!-- Header Bar -->
@@ -80,7 +97,7 @@ $navHtml
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+    <div id="connection-banner" class="connection-banner"></div>
 
     <!-- ================================================================
          SERVER CARDS - Three Column Layout
@@ -125,55 +142,50 @@ $navHtml
     </div>
 
     <!-- ================================================================
-         INFO MODAL
+         INFO MODAL (Help Content)
+         Uses shared xf-modal-* with .wide variant for the longer help
+         content. Body content is populated by JS from the INFO dictionary.
          ================================================================ -->
-    <div class="info-modal-overlay" id="info-modal-overlay" onclick="closeInfoModal(event)">
-        <div class="info-modal">
-            <div class="info-modal-header">
+    <div id="info-modal-overlay" class="xf-modal-overlay hidden" onclick="if(event.target === this) closeInfoModal()">
+        <div class="xf-modal wide">
+            <div class="xf-modal-header">
                 <h3 id="info-modal-title">-</h3>
-                <button class="info-modal-close" onclick="closeInfoModal()">&times;</button>
+                <button class="modal-close" onclick="closeInfoModal()">&times;</button>
             </div>
-            <div class="info-modal-body" id="info-modal-body"></div>
+            <div class="xf-modal-body" id="info-modal-body"></div>
         </div>
     </div>
 
     <!-- ================================================================
-         SERVER SWITCH MODAL
+         SERVER SWITCH MODAL (DM Picker)
+         Uses shared xf-modal-* (default 460px width). The picker buttons
+         and status text are JBoss-specific content rendered inside the
+         xf-modal-body. The .dm-locked class is added to the overlay
+         during the 90-second switch operation to hide the close X.
          ================================================================ -->
-    <div class="dm-modal-overlay" id="dm-modal-overlay" onclick="closeSwitchModal()"></div>
-    <div class="dm-modal" id="dm-modal">
-        <div class="dm-modal-header">
-            <h3 class="dm-modal-title">DM Application Server</h3>
-            <button class="dm-modal-close" onclick="closeSwitchModal()">&times;</button>
-        </div>
-        <div class="dm-modal-subtitle">SharePoint navigation link target</div>
-        <div class="dm-server-grid" id="dm-server-grid">
-            <button class="dm-server-btn" data-server="DM-PROD-APP" onclick="selectServer('DM-PROD-APP')">
-                <div class="dm-server-name">APP</div>
-                <div class="dm-server-host">dm-prod-app</div>
-            </button>
-            <button class="dm-server-btn" data-server="DM-PROD-APP2" onclick="selectServer('DM-PROD-APP2')">
-                <div class="dm-server-name">APP2</div>
-                <div class="dm-server-host">dm-prod-app2</div>
-            </button>
-            <button class="dm-server-btn" data-server="DM-PROD-APP3" onclick="selectServer('DM-PROD-APP3')">
-                <div class="dm-server-name">APP3</div>
-                <div class="dm-server-host">dm-prod-app3</div>
-            </button>
-        </div>
-        <div class="dm-status" id="dm-status"></div>
-    </div>
-
-    <!-- ================================================================
-         CONFIRM DIALOG
-         ================================================================ -->
-    <div class="confirm-overlay" id="confirm-overlay">
-        <div class="confirm-dialog">
-            <h3 id="confirm-title">Confirm</h3>
-            <p id="confirm-message">Are you sure?</p>
-            <div class="confirm-buttons">
-                <button class="confirm-btn cancel" onclick="cancelConfirm()">Cancel</button>
-                <button class="confirm-btn action" id="confirm-btn" onclick="executeConfirm()">Confirm</button>
+    <div id="dm-modal-overlay" class="xf-modal-overlay hidden" onclick="if(event.target === this) closeSwitchModal()">
+        <div class="xf-modal">
+            <div class="xf-modal-header">
+                <h3 class="dm-modal-title">DM Application Server</h3>
+                <button class="modal-close" onclick="closeSwitchModal()">&times;</button>
+            </div>
+            <div class="xf-modal-body">
+                <div class="dm-modal-subtitle">SharePoint navigation link target</div>
+                <div class="dm-server-grid" id="dm-server-grid">
+                    <button class="dm-server-btn" data-server="DM-PROD-APP" onclick="selectServer('DM-PROD-APP')">
+                        <div class="dm-server-name">APP</div>
+                        <div class="dm-server-host">dm-prod-app</div>
+                    </button>
+                    <button class="dm-server-btn" data-server="DM-PROD-APP2" onclick="selectServer('DM-PROD-APP2')">
+                        <div class="dm-server-name">APP2</div>
+                        <div class="dm-server-host">dm-prod-app2</div>
+                    </button>
+                    <button class="dm-server-btn" data-server="DM-PROD-APP3" onclick="selectServer('DM-PROD-APP3')">
+                        <div class="dm-server-name">APP3</div>
+                        <div class="dm-server-host">dm-prod-app3</div>
+                    </button>
+                </div>
+                <div class="dm-status" id="dm-status"></div>
             </div>
         </div>
     </div>
