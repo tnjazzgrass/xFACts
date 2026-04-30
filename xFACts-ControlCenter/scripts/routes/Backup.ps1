@@ -11,6 +11,11 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-30  Phase 4 (Chrome Standardization): added body section class
+#             (section-platform) so H1 color is driven by shared CSS via
+#             RBAC_NavRegistry section_key. Renamed connection banner
+#             placeholder from id/class connection-error to connection-banner
+#             matching the engine-events.js rename. No content changes.
 # 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
 #             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
 #             browser tab title now render from RBAC_NavRegistry via
@@ -43,7 +48,7 @@ Add-PodeRoute -Method Get -Path '/backup' -Authentication 'ADLogin' -ScriptBlock
     <link rel="stylesheet" href="/css/backup.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
-<body>
+<body class="section-platform">
 $navHtml
 
     <div class="header-bar">
@@ -81,7 +86,7 @@ $navHtml
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+    <div id="connection-banner" class="connection-banner"></div>
 
     <!-- Two Column Layout -->
     <div class="two-column-layout">
