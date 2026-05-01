@@ -28,6 +28,17 @@
 
    CHANGELOG
    ---------
+   2026-04-30  Phase 4 (Chrome Standardization, slide-panel width revision):
+               Slide-panel widths revised after a platform-wide audit
+               showed the previous defaults under-served typical CC
+               slideout content (which is usually tabular, not single-
+               column). New tier values:
+                 .slide-panel              480px -> 550px (right -500 -> -570)
+                 .slide-panel.wide         700px -> 800px (right -720 -> -820)
+                 .slide-panel.xwide  (NEW) 950px            (right -970)
+               The .xwide variant accommodates wide multi-column tables
+               (BatchMon batch detail, FileMon day detail) without
+               requiring page-local overrides.
    2026-04-30  Phase 4 (Chrome Standardization, modal expansion):
                Added .xf-modal.wide variant (800px) for modals containing
                wide tabular content. Added .xf-modal-overlay.hidden state
@@ -721,8 +732,13 @@ h1 a:hover { color: #9cdcfe; }
    Reusable slide-from-right panel system with overlay, header, scrollable
    body, and a small library of standard sub-components for common layouts
    (summary stats, tables, sections, accordions, empty states). Used by
-   Backup (retention detail), Index Maintenance (process detail), and
-   others.
+   Backup (retention detail), BIDATA (build detail), Index Maintenance
+   (process detail), and others.
+
+   Width tiers (post-2026-04-30 audit):
+     default  550px  — single-column detail views (build summaries, etc.)
+     .wide    800px  — tabular detail with multiple columns
+     .xwide   950px  — wide multi-column tables (batch detail, day detail)
 
    The .modal-close button used in slide-panel headers is defined as a
    shared rule in Section 10 (Modal System) since it's also used inside
@@ -746,8 +762,8 @@ h1 a:hover { color: #9cdcfe; }
 .slide-panel {
     position: fixed;
     top: 0;
-    right: -500px;
-    width: 480px;
+    right: -570px;
+    width: 550px;
     height: 100%;
     background: #252526;
     border-left: 1px solid #404040;
@@ -756,8 +772,9 @@ h1 a:hover { color: #9cdcfe; }
     flex-direction: column;
     transition: right 0.3s ease;
 }
-.slide-panel.wide { width: 700px; right: -720px; }
-.slide-panel.open { right: 0; }
+.slide-panel.wide  { width: 800px; right: -820px; }
+.slide-panel.xwide { width: 950px; right: -970px; }
+.slide-panel.open  { right: 0; }
 
 /* -- Auto-Height Variant -- */
 /* Vertically-centered panel that sizes to content instead of full-height. */
