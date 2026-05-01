@@ -24,7 +24,46 @@
 //   3. Load this script after page JS: <script src="/js/engine-events.js"></script>
 //
 //   4. Call connectEngineEvents() from your DOMContentLoaded handler.
+//
+// Page hooks (all optional — define in your page's JS to opt in):
+//   onPageRefresh()              — manual refresh button click handler
+//   onPageResumed()              — tab regained visibility, refresh data
+//   onSessionExpired()           — stop page-specific polling timers
+//   onEngineProcessCompleted()   — orchestrator process finished, refresh
+//   onEngineEventRaw()           — every event before filtering (Admin only)
+//
+// Shared utilities exposed to pages:
+//   escapeHtml(str)              — DOM-safe HTML escaping
+//   formatTimeOfDay(val)         — render any timestamp value as locale time
+//   MONTH_NAMES                  — array, 1-indexed (use month_num directly)
+//   DAY_NAMES                    — 3-letter day-of-week array, 0=Sunday
+//   safeInt(val)                 — null-safe parseInt, returns 0 on bad input
+//   safeFloat(val)               — null-safe parseFloat, returns 0 on bad input
+//   formatTimeSince(seconds)     — "Xs/Xm/Xh Xm/Xd Xh" elapsed formatter
+//   formatAge(minutes)           — "Xm/Xh Xm/Xd Xh" age formatter
+//   showAlert(msg, opts)         — Promise-returning native-alert replacement
+//   showConfirm(msg, opts)       — Promise-returning native-confirm replacement
+//   engineFetch(url, options)    — visibility/session-aware fetch wrapper
+//   pageRefresh()                — manual refresh handler (calls onPageRefresh)
 // ============================================================================
+
+// ============================================================================
+// SHARED CONSTANTS
+// ============================================================================
+
+// Month names array, 1-indexed so month numbers from SQL/JS Date map directly:
+//   MONTH_NAMES[1]  -> 'January'
+//   MONTH_NAMES[12] -> 'December'
+// The empty string at index 0 is intentional padding so callers don't need
+// to subtract 1 from month numbers (which is error-prone and easy to forget).
+var MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Day-of-week names, 3-letter form. 0-indexed to match JavaScript's
+// Date.getDay() return value:
+//   DAY_NAMES[0] -> 'Sun'
+//   DAY_NAMES[6] -> 'Sat'
+var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ============================================================================
 // STATE
@@ -643,14 +682,144 @@ function closeEnginePopup() {
     enginePopupVisible = false;
 }
 
-function escapeHtml(str) {
+// ============================================================================
+// SHARED UTILITIES (cross-page)
+// ============================================================================
+
+/**
+ * DOM-safe HTML escaping. Returns the escaped form of any value, safe to
+ * insert into innerHTML without enabling XSS.
+ *
+ * Public utility — pages should NOT define their own escapeHtml(); use this
+ * one. Handles null/undefined by returning empty string.
+ *
+ * @param {*} val - any value (string preferred, others coerced via String())
+ * @returns {string} HTML-safe string
+ */
+function escapeHtml(val) {
+    if (val == null) return '';
     var div = document.createElement('div');
-    div.appendChild(document.createTextNode(str));
+    div.textContent = String(val);
     return div.innerHTML;
 }
 
+/**
+ * Renders a timestamp value as a locale time string. Accepts:
+ *   - ISO 8601 strings: "2026-04-30T18:50:09Z"
+ *   - .NET /Date(ms)/ format: "/Date(1714501809000)/"
+ *   - Date objects
+ *   - null/undefined (returns '-')
+ *   - Unparseable values (returns '-')
+ *
+ * Output format: "1:23 PM" (locale-dependent)
+ *
+ * Public utility — pages should use this instead of defining their own
+ * formatTime() variants. The function tolerates the assortment of timestamp
+ * shapes that come back from different APIs across the platform.
+ *
+ * @param {*} val - timestamp in any supported form
+ * @returns {string} formatted time of day, or '-' if unparseable
+ */
+function formatTimeOfDay(val) {
+    if (!val) return '-';
+
+    var d;
+    if (val instanceof Date) {
+        d = val;
+    } else {
+        var s = String(val);
+        // .NET /Date(ms)/ format
+        var match = s.match(/\/Date\((\d+)\)\//);
+        if (match) {
+            d = new Date(parseInt(match[1], 10));
+        } else {
+            d = new Date(s);
+        }
+    }
+
+    if (!d || isNaN(d.getTime())) return '-';
+
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+/**
+ * Null-safe parseInt. Returns 0 for null/undefined/empty/NaN/'DBNull'.
+ * Useful for displaying SQL Server numeric columns that may come back as
+ * any of those values when the underlying data is missing.
+ *
+ * @param {*} val - any value
+ * @returns {number} integer, or 0 on bad input
+ */
+function safeInt(val) {
+    if (val == null || val === '' || val === 'DBNull') return 0;
+    var n = parseInt(val, 10);
+    return isNaN(n) ? 0 : n;
+}
+
+/**
+ * Null-safe parseFloat. Returns 0 for null/undefined/empty/NaN/'DBNull'.
+ * Companion to safeInt; same rationale.
+ *
+ * @param {*} val - any value
+ * @returns {number} float, or 0 on bad input
+ */
+function safeFloat(val) {
+    if (val == null || val === '' || val === 'DBNull') return 0;
+    var n = parseFloat(val);
+    return isNaN(n) ? 0 : n;
+}
+
+/**
+ * Formats a duration in seconds as a human-readable elapsed string.
+ *   <60s     -> "Xs"
+ *   <60m     -> "Xm"
+ *   <24h     -> "Xh Xm"
+ *   >=1d     -> "Xd Xh"
+ *
+ * Public utility — used wherever "time since" is displayed, e.g.,
+ * "last run X ago" indicators on collector status cards.
+ *
+ * @param {number} seconds - elapsed seconds
+ * @returns {string} formatted string
+ */
+function formatTimeSince(seconds) {
+    var s = safeInt(seconds);
+    if (s < 60) return s + 's';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60);
+    m = m % 60;
+    if (h < 24) return h + 'h ' + m + 'm';
+    var d = Math.floor(h / 24);
+    h = h % 24;
+    return d + 'd ' + h + 'h';
+}
+
+/**
+ * Formats a duration in minutes as a human-readable age string.
+ *   <60m     -> "Xm"
+ *   <24h     -> "Xh Xm"
+ *   >=1d     -> "Xd Xh"
+ *
+ * Companion to formatTimeSince but takes minutes instead of seconds.
+ * Used wherever batch/record age is displayed.
+ *
+ * @param {number} minutes - elapsed minutes
+ * @returns {string} formatted string
+ */
+function formatAge(minutes) {
+    var m = safeInt(minutes);
+    if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60);
+    m = m % 60;
+    if (h < 24) return h + 'h ' + m + 'm';
+    var d = Math.floor(h / 24);
+    h = h % 24;
+    return d + 'd ' + h + 'h';
+}
+
 // ============================================================================
-// FORMATTING
+// FORMATTING (engine-specific)
 // ============================================================================
 
 function fmtEngineCountdown(s) {
@@ -971,9 +1140,14 @@ function hideIdleOverlay() {
 // ============================================================================
 // SHARED PAGE REFRESH
 // ============================================================================
-// Handles refresh button spin animation. Pages define onPageRefresh() for
-// their data loading logic. Pages that still define their own pageRefresh()
-// are left alone until migrated.
+// Handles refresh button spin animation and delegates to the page's data
+// loading logic via the onPageRefresh() hook. Pages should define
+// onPageRefresh() instead of their own pageRefresh() function.
+//
+// The typeof guard exists for backward compatibility with pages that still
+// define their own local pageRefresh() — once all pages are migrated to
+// onPageRefresh(), the guard should be removed and this becomes the
+// unconditional implementation.
 
 if (typeof pageRefresh !== 'function') {
     window.pageRefresh = function() {
@@ -1024,11 +1198,11 @@ function showAlert(message, options) {
         overlay.innerHTML = '<div class="xf-modal">'
             + '<div class="xf-modal-header">'
             + '<span class="xf-modal-icon" style="color:' + iconColor + '">' + icon + '</span>'
-            + '<span>' + _escapeModalText(title) + '</span>'
+            + '<span>' + escapeHtml(title) + '</span>'
             + '</div>'
-            + '<div class="xf-modal-body"><p>' + _escapeModalText(message) + '</p></div>'
+            + '<div class="xf-modal-body"><p>' + escapeHtml(message) + '</p></div>'
             + '<div class="xf-modal-actions">'
-            + '<button class="xf-modal-btn-primary" id="' + id + '-ok">' + _escapeModalText(buttonLabel) + '</button>'
+            + '<button class="xf-modal-btn-primary" id="' + id + '-ok">' + escapeHtml(buttonLabel) + '</button>'
             + '</div></div>';
         document.body.appendChild(overlay);
         document.getElementById(id + '-ok').onclick = function () { overlay.remove(); resolve(); };
@@ -1051,27 +1225,19 @@ function showConfirm(message, options) {
         var overlay = document.createElement('div');
         overlay.id = id;
         overlay.className = 'xf-modal-overlay';
-        var bodyContent = messageHtml ? message : '<p>' + _escapeModalText(message) + '</p>';
+        var bodyContent = messageHtml ? message : '<p>' + escapeHtml(message) + '</p>';
         overlay.innerHTML = '<div class="xf-modal">'
             + '<div class="xf-modal-header">'
             + '<span class="xf-modal-icon" style="color:' + iconColor + '">' + icon + '</span>'
-            + '<span>' + _escapeModalText(title) + '</span>'
+            + '<span>' + escapeHtml(title) + '</span>'
             + '</div>'
             + '<div class="xf-modal-body">' + bodyContent + '</div>'
             + '<div class="xf-modal-actions">'
-            + '<button class="xf-modal-btn-cancel" id="' + id + '-cancel">' + _escapeModalText(cancelLabel) + '</button>'
-            + '<button class="' + confirmClass + '" id="' + id + '-ok">' + _escapeModalText(confirmLabel) + '</button>'
+            + '<button class="xf-modal-btn-cancel" id="' + id + '-cancel">' + escapeHtml(cancelLabel) + '</button>'
+            + '<button class="' + confirmClass + '" id="' + id + '-ok">' + escapeHtml(confirmLabel) + '</button>'
             + '</div></div>';
         document.body.appendChild(overlay);
         document.getElementById(id + '-cancel').onclick = function () { overlay.remove(); resolve(false); };
         document.getElementById(id + '-ok').onclick = function () { overlay.remove(); resolve(true); };
     });
-}
-
-// Private helper — avoids dependency on page-specific escapeHtml functions
-function _escapeModalText(str) {
-    if (!str) return '';
-    var d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
 }
