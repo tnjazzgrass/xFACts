@@ -3,132 +3,86 @@
    Location: E:\xFACts-ControlCenter\public\css\bidata-monitoring.css
    Version: Tracked in dbo.System_Metadata (component: BIDATA)
 
+   Page-specific styles for the BIDATA Daily Build monitoring dashboard.
+   Universal chrome (body, h1, header-bar, refresh-info, sections, engine
+   cards, connection banner, animations, slide-panel system, modal system)
+   is provided by engine-events.css per the CC Page Chrome Contract
+   (Development Guidelines Section 5.12).
+
    CHANGELOG
    ---------
+   2026-04-30  Phase 4 (Standardization): full alignment to shared
+               infrastructure. Stripped:
+                 - Box-sizing reset, body, h1, page-subtitle (now shared)
+                 - .header-bar, .header-right, .refresh-info,
+                   .live-indicator, .last-updated (now shared)
+                 - .connection-error block (replaced by shared
+                   .connection-banner)
+                 - @keyframes pulse, @keyframes spin, .spinning-gear
+                   (now shared)
+                 - Base .section, .section-header, .section-title rules
+                   (now shared)
+                 - Entire page-local slideout block: .slideout-overlay,
+                   .slideout, .slideout-content, .slideout-header,
+                   .slideout-close, .slideout-body (replaced by shared
+                   .slide-panel-* from engine-events.css)
+                 - Entire page-local date range modal block:
+                   .modal-overlay, .modal-content, .modal-header,
+                   .modal-close, .modal-body, .modal-footer, .modal-btn,
+                   .modal-btn-cancel, .modal-btn-apply (replaced by shared
+                   .xf-modal-* from engine-events.css)
+                 - Orphan .refresh-badge rule (no element references it;
+                   page uses .refresh-badge-event/-action which are shared)
+               Restructured Build Execution and Build History height
+               management: removed fixed height: 550px on .execution-content
+               and max-height: calc(100vh - 380px) on .section-history.
+               Both sections now use shared .section-fill from
+               engine-events.css to consume remaining vertical space
+               within the viewport-constrained body and scroll internally.
    2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
                nav-admin (now in engine-events.css), engine-card/engine-row/
                engine-bar/engine-label/engine-countdown block (shared), and
                ::-webkit-scrollbar rules (shared). Consolidated duplicate
                @keyframes spin (was defined twice) and duplicate .spinning-gear
-               (was defined twice with different durations — kept 1s, the
+               (was defined twice with different durations -- kept 1s, the
                cascade winner). Kept @keyframes pulse (.live-indicator).
    ============================================================================ */
 
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
 
-h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { font-size: 14px; color: #888; margin: 0; }
+/* ============================================================================
+   GRID LAYOUT
+   Top-level layout for the BIDATA page content area. Two equal columns.
+   ============================================================================ */
 
-/* Header */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.refresh-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #888;
-    font-size: 13px;
-}
-
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-
-.live-indicator {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    background-color: #4ec9b0;
-    border-radius: 50%;
-    margin-right: 6px;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-.last-updated { color: #4ec9b0; }
-
-.connection-error {
-    display: none;
-    background-color: rgba(244, 71, 71, 0.2);
-    border: 1px solid #f44747;
-    color: #f44747;
-    padding: 12px 20px;
-    margin-bottom: 15px;
-    border-radius: 4px;
-}
-
-/* Grid Layout - Two independent columns */
 .grid-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 15px;
+    flex: 1;
+    min-height: 0;
 }
 
 .grid-column {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    min-height: 0;
 }
 
-/* Sections */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-}
-
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
-
-.section-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: #4ec9b0;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin: 0;
-}
-
-.refresh-badge {
-    font-size: 10px;
-    color: #666;
-    background: #333;
-    padding: 2px 6px;
-    border-radius: 3px;
-}
-
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.spinning-gear { display: inline-block; animation: spin 1s linear infinite; }
 
 /* ============================================================================
-   Live Activity - Pipeline Card Style (matches Backup page)
+   LOADING & EMPTY STATES
    ============================================================================ */
+
+.loading { color: #888; text-align: center; padding: 30px; }
+.no-data { color: #666; text-align: center; padding: 30px; font-style: italic; }
+
+
+/* ============================================================================
+   LIVE ACTIVITY - Pipeline Card Style
+   Top-left section. Shows today's build status as a row of status cards.
+   ============================================================================ */
+
 .activity-grid {
     display: flex;
     gap: 12px;
@@ -186,9 +140,9 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     letter-spacing: 0.3px;
 }
 .build-status-badge.completed { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.build-status-badge.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.build-status-badge.running { background: rgba(86, 156, 214, 0.2); color: #569cd6; display: inline-flex; align-items: center; gap: 5px; }
-.build-status-badge.waiting { background: rgba(102, 102, 102, 0.2); color: #888; }
+.build-status-badge.failed    { background: rgba(244, 135, 113, 0.2); color: #f48771; }
+.build-status-badge.running   { background: rgba(86, 156, 214, 0.2); color: #569cd6; display: inline-flex; align-items: center; gap: 5px; }
+.build-status-badge.waiting   { background: rgba(102, 102, 102, 0.2); color: #888; }
 
 /* Status-colored borders - all cards in a set match */
 .activity-card.status-completed { border-color: #4ec9b0; }
@@ -207,14 +161,18 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .activity-card.status-waiting .activity-icon { color: #666; }
 .activity-card.status-waiting .activity-value { color: #666; }
 
+
 /* ============================================================================
-   Build Execution - Fixed Height
+   BUILD EXECUTION
+   Bottom-left section. Shows step-by-step execution detail for today's
+   build. Uses shared .section-fill to consume remaining vertical space
+   in the left column and scroll internally.
    ============================================================================ */
-.section-execution { display: flex; flex-direction: column; }
 
 .execution-content {
-    height: 550px;
+    flex: 1;
     overflow-y: auto;
+    min-height: 0;
 }
 
 .no-active-build {
@@ -250,7 +208,7 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     border-bottom: 1px solid #404040;
 }
 
-.step-row.step-failed { background-color: rgba(244, 71, 71, 0.05); }
+.step-row.step-failed  { background-color: rgba(244, 71, 71, 0.05); }
 .step-row.step-running { background-color: rgba(220, 220, 170, 0.05); }
 
 .step-status-badge {
@@ -266,7 +224,7 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     flex-shrink: 0;
 }
 .step-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.step-status-badge.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
+.step-status-badge.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
 .step-status-badge.running { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
 
 .step-name { flex: 1; color: #d4d4d4; font-size: 12px; min-width: 0; }
@@ -296,13 +254,17 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 }
 
 .step-comparison { font-size: 10px; padding: 1px 5px; border-radius: 3px; display: inline-block; }
-.step-comparison.slower { color: #f44747; background-color: rgba(244, 71, 71, 0.2); }
-.step-comparison.faster { color: #4ec9b0; background-color: rgba(78, 201, 176, 0.2); }
-.step-comparison.neutral { color: #888; background-color: rgba(136, 136, 136, 0.2); }
+.step-comparison.slower  { color: #f44747; background-color: rgba(244, 71, 71, 0.2); }
+.step-comparison.faster  { color: #4ec9b0; background-color: rgba(78, 201, 176, 0.2); }
+.step-comparison.neutral { color: #888;    background-color: rgba(136, 136, 136, 0.2); }
+
 
 /* ============================================================================
-   Duration Trend - Full Width Chart with Enhanced Bars
+   DURATION TREND
+   Top-right section. Bar chart showing build durations over time, with
+   selectable date ranges and a custom-range modal trigger.
    ============================================================================ */
+
 .trend-controls { display: flex; gap: 5px; align-items: center; }
 
 .trend-btn {
@@ -316,7 +278,7 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     transition: all 0.2s;
 }
 
-.trend-btn:hover { background-color: #404040; color: #d4d4d4; }
+.trend-btn:hover  { background-color: #404040; color: #d4d4d4; }
 .trend-btn.active { background-color: #4ec9b0; border-color: #4ec9b0; color: #1e1e1e; }
 
 .trend-chart-area {
@@ -427,50 +389,14 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .stat-label { font-size: 11px; color: #888; text-transform: uppercase; }
 .stat-value { font-size: 14px; color: #4ec9b0; font-weight: 500; }
 
-/* Date Range Modal */
-.modal-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(0, 0, 0, 0.6);
-    z-index: 2000;
-    align-items: center;
-    justify-content: center;
-}
 
-.modal-overlay.open { display: flex; }
-
-.modal-content {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    padding: 20px;
-    min-width: 320px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-}
-
-.modal-header h3 { margin: 0; color: #569cd6; font-size: 16px; }
-
-.modal-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-}
-
-.modal-close:hover { color: #f44747; }
-
-.modal-body { display: flex; flex-direction: column; gap: 15px; }
+/* ============================================================================
+   DATE RANGE MODAL CONTENT
+   Sub-components rendered inside the shared xf-modal-body when the user
+   clicks the Custom button in the Duration Trend controls. The outer
+   modal container itself uses .xf-modal-overlay/.xf-modal/.xf-modal-header/
+   .xf-modal-body/.xf-modal-actions from engine-events.css.
+   ============================================================================ */
 
 .date-field { display: flex; flex-direction: column; gap: 5px; }
 .date-field label { font-size: 11px; color: #888; text-transform: uppercase; }
@@ -486,39 +412,19 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 
 .date-field input:focus { outline: none; border-color: #4ec9b0; }
 
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.modal-btn {
-    padding: 8px 16px;
-    border-radius: 4px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.modal-btn-cancel { background: #333; border: 1px solid #404040; color: #888; }
-.modal-btn-cancel:hover { background: #404040; color: #d4d4d4; }
-.modal-btn-apply { background: #4ec9b0; border: 1px solid #4ec9b0; color: #1e1e1e; }
-.modal-btn-apply:hover { background: #3da890; border-color: #3da890; }
 
 /* ============================================================================
-   Build History - Table Style with Month Summary Table
+   BUILD HISTORY
+   Bottom-right section. Hierarchical year/month/day expansion of past
+   builds with summary tables. Uses shared .section-fill to consume
+   remaining vertical space in the right column and scroll internally.
    ============================================================================ */
-.section-history {
-    max-height: calc(100vh - 380px);
-    display: flex;
-    flex-direction: column;
-}
-.section-history .history-content { flex: 1; overflow-y: auto; }
+
+.history-content { flex: 1; overflow-y: auto; min-height: 0; }
 
 .history-count { font-size: 11px; color: #888; }
-.history-tree { font-size: 13px; }
-.history-year { margin-bottom: 8px; }
+.history-tree  { font-size: 13px; }
+.history-year  { margin-bottom: 8px; }
 
 .year-header {
     display: flex;
@@ -536,9 +442,9 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .expand-icon { color: #888; font-size: 10px; width: 12px; }
 .year-label { font-weight: 700; color: #569cd6; font-size: 18px; letter-spacing: 1px; }
 .year-header .year-stats { margin-left: auto; display: flex; gap: 6px; font-size: 11px; }
-.year-header .year-stat { min-width: 120px; text-align: right; color: #888; }
+.year-header .year-stat  { min-width: 120px; text-align: right; color: #888; }
 .year-header .year-stat.success { color: #4ec9b0; }
-.year-header .year-stat.failed { color: #f48771; }
+.year-header .year-stat.failed  { color: #f48771; }
 
 .year-content { margin-left: 10px; margin-top: 8px; }
 
@@ -569,30 +475,13 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     transition: background-color 0.2s;
 }
 
-.month-summary-table tr.month-row:hover td {
-    background: #2d2d2d;
-}
+.month-summary-table tr.month-row:hover td { background: #2d2d2d; }
 
-.month-summary-table .expand-cell {
-    width: 24px;
-    text-align: center;
-}
-
-.month-summary-table .month-cell {
-    font-weight: 500;
-}
-
-.month-summary-table .success-cell {
-    color: #4ec9b0;
-}
-
-.month-summary-table .fail-cell {
-    color: #f44747;
-}
-
-.month-summary-table .avg-cell {
-    color: #888;
-}
+.month-summary-table .expand-cell { width: 24px; text-align: center; }
+.month-summary-table .month-cell   { font-weight: 500; }
+.month-summary-table .success-cell { color: #4ec9b0; }
+.month-summary-table .fail-cell    { color: #f44747; }
+.month-summary-table .avg-cell     { color: #888; }
 
 /* Month details row (expanded content) */
 .month-details td {
@@ -600,9 +489,7 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     background: transparent;
 }
 
-.month-details .history-table {
-    margin-top: 8px;
-}
+.month-details .history-table { margin-top: 8px; }
 
 .history-table {
     width: 100%;
@@ -632,13 +519,8 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     cursor: pointer;
 }
 
-.history-table tr.row-odd td {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-.history-table tr.row-odd:hover td {
-    background: #2d2d2d;
-}
+.history-table tr.row-odd td { background: rgba(255, 255, 255, 0.02); }
+.history-table tr.row-odd:hover td { background: #2d2d2d; }
 
 /* Status badge in history table */
 .history-status-badge {
@@ -651,64 +533,20 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     letter-spacing: 0.3px;
 }
 .history-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.history-status-badge.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
+.history-status-badge.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
 
 .duration-cell { font-weight: 500; }
 .duration-cell.success { color: #4ec9b0; }
-.duration-cell.failed { color: #f44747; }
+.duration-cell.failed  { color: #f44747; }
+
 
 /* ============================================================================
-   Slideout Panel
+   SLIDEOUT BODY CONTENT
+   Sub-components rendered inside the shared slide-panel-body when
+   displaying build details. The outer panel itself uses
+   .slide-panel-overlay/.slide-panel/.slide-panel-header/.slide-panel-body
+   from engine-events.css (default 550px width).
    ============================================================================ */
-.slideout-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-}
-
-.slideout-overlay.open { display: block; }
-
-.slideout {
-    position: fixed;
-    top: 0;
-    right: -500px;
-    width: 500px;
-    height: 100vh;
-    background-color: #252526;
-    border-left: 1px solid #404040;
-    z-index: 1000;
-    transition: right 0.3s ease;
-    overflow-y: auto;
-}
-
-.slideout.open { right: 0; }
-.slideout-content { height: 100%; display: flex; flex-direction: column; }
-
-.slideout-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
-    background-color: #1e1e1e;
-    border-bottom: 1px solid #404040;
-}
-
-.slideout-header h2 { font-size: 16px; color: #569cd6; margin: 0; }
-
-.slideout-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 0 8px;
-    line-height: 1;
-}
-
-.slideout-close:hover { color: #f44747; }
-.slideout-body { flex: 1; padding: 20px; overflow-y: auto; }
 
 .detail-section { margin-bottom: 20px; }
 
@@ -728,8 +566,8 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
 .detail-item .label { font-size: 10px; color: #888; text-transform: uppercase; }
 .detail-item .value { font-size: 13px; color: #d4d4d4; }
 .detail-item .value.status-completed { color: #4ec9b0; }
-.detail-item .value.status-failed { color: #f44747; }
-.detail-item .value.error { color: #f44747; }
+.detail-item .value.status-failed    { color: #f44747; }
+.detail-item .value.error            { color: #f44747; }
 
 /* Slideout step table - no row highlighting, colored status icons */
 .step-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -759,9 +597,10 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     margin-bottom: 15px;
 }
 
-/* Utilities */
-.loading { color: #888; text-align: center; padding: 30px; }
-.no-data { color: #666; text-align: center; padding: 30px; font-style: italic; }
+
+/* ============================================================================
+   RESPONSIVE
+   ============================================================================ */
 
 @media (max-width: 1200px) {
     .grid-layout { grid-template-columns: 1fr; }
