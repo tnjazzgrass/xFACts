@@ -3,8 +3,43 @@
    Location: E:\xFACts-ControlCenter\public\css\batch-monitoring.css
    Version: Tracked in dbo.System_Metadata (component: BatchOps)
 
+   Page-specific styles for the Batch Monitoring dashboard. Universal
+   chrome (body, h1, header-bar, refresh-info, sections, engine cards,
+   connection banner, animations, slide-panel system, modal system) is
+   provided by engine-events.css per the CC Page Chrome Contract
+   (Development Guidelines Section 5.12).
+
    CHANGELOG
    ---------
+   2026-04-30  Phase 4 (Standardization): full alignment to shared
+               infrastructure. Stripped:
+                 - Box-sizing reset, body, h1, page-subtitle (now shared)
+                 - .header-bar, .header-right, .refresh-info,
+                   .live-indicator, .last-updated (now shared)
+                 - .connection-error block (replaced by shared
+                   .connection-banner)
+                 - @keyframes pulse, @keyframes spin (now shared)
+                 - Base .section, .section-header, .section-title rules
+                   (now shared)
+                 - Entire page-local slideout block: .slideout, .slideout.open,
+                   .slideout-overlay, .slideout-content, .slideout-header,
+                   .slideout-close, .slideout-body, plus the slideout body
+                   sub-components renamed to detail-* (replaced by shared
+                   .slide-panel-* from engine-events.css; sub-components
+                   for the batch detail rendering remain page-specific)
+                 - Orphan .refresh-btn block: a section-level refresh
+                   button that no longer exists in the route HTML (per
+                   the universal page-refresh-btn standard, all pages
+                   have one shared refresh control instead of per-section
+                   refresh buttons). The dedicated keyframes spin rule
+                   that fed it is also removed -- the shared
+                   .spinning utility class covers any future need.
+               Restructured Active Batches and Batch History height
+               management: removed max-height: calc(100vh - 300px) on
+               .history-content. Both sections now use shared
+               .section-fill from engine-events.css to consume remaining
+               vertical space within the viewport-constrained body and
+               scroll internally.
    2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
                nav-admin/nav-separator (now in engine-events.css) and engine-
                card/engine-row/engine-bar/engine-label/engine-countdown block
@@ -12,177 +47,39 @@
                .live-indicator and .refresh-btn.spinning respectively).
    ============================================================================ */
 
-/* ============================================
-   BASE STYLES
-   ============================================ */
 
-* {
-    box-sizing: border-box;
-}
-
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    margin: 0;
-    padding: 20px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-
-/* ============================================
-   HEADER BAR
-   ============================================ */
-
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-h1 {
-    color: #569cd6;
-    margin-bottom: 2px;
-    font-size: 24px;
-}
-
-.page-subtitle {
-    color: #888;
-    font-size: 14px;
-    margin: 0;
-}
-
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-
-.refresh-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #888;
-    font-size: 13px;
-}
-
-.live-indicator {
-    width: 8px;
-    height: 8px;
-    background: #4ec9b0;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.last-updated {
-    color: #4ec9b0;
-}
-
-/* ============================================
-   CONNECTION ERROR
-   ============================================ */
-
-.connection-error {
-    background: rgba(244, 71, 71, 0.2);
-    border: 1px solid #f44747;
-    color: #f44747;
-    padding: 12px 20px;
-    margin-bottom: 15px;
-    border-radius: 4px;
-    display: none;
-}
-
-.connection-error.visible {
-    display: block;
-}
-
-/* ============================================
+/* ============================================================================
    GRID LAYOUT
-   ============================================ */
+   Top-level layout for the BatchMon page content area. Two equal columns.
+   ============================================================================ */
 
 .grid-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 15px;
+    flex: 1;
+    min-height: 0;
 }
 
 .grid-column {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    min-height: 0;
 }
 
-/* ============================================
-   SECTIONS
-   ============================================ */
 
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-}
+/* ============================================================================
+   SECTION VARIANTS
+   Page-specific section styling on top of the shared .section base.
+   ============================================================================ */
 
-.section-compact {
-    padding: 12px 15px;
-}
+.section-compact { padding: 12px 15px; }
 
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
 
-.section-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: #4ec9b0;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin: 0;
-}
-
-.section-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.refresh-btn {
-    background: transparent;
-    border: 1px solid #555;
-    color: #888;
-    padding: 3px 8px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 14px;
-    transition: all 0.2s;
-}
-
-.refresh-btn:hover {
-    background: #333;
-    color: #d4d4d4;
-    border-color: #666;
-}
-
-.refresh-badge {
-    font-size: 10px;
-    color: #666;
-    background: #333;
-    padding: 2px 6px;
-    border-radius: 3px;
-}
+/* ============================================================================
+   LOADING & EMPTY STATES
+   ============================================================================ */
 
 .loading {
     color: #888;
@@ -198,9 +95,12 @@ h1 {
     font-size: 13px;
 }
 
-/* ============================================
+
+/* ============================================================================
    DAILY SUMMARY CARDS
-   ============================================ */
+   Top-left section. Three cards (NB, PMT, BDL) showing today's batch
+   counts with success/failed/active breakdown.
+   ============================================================================ */
 
 .summary-cards {
     display: grid;
@@ -243,8 +143,8 @@ h1 {
 }
 
 .summary-card .card-detail .success { color: #4ec9b0; }
-.summary-card .card-detail .failed { color: #f48771; }
-.summary-card .card-detail .active { color: #dcdcaa; }
+.summary-card .card-detail .failed  { color: #f48771; }
+.summary-card .card-detail .active  { color: #dcdcaa; }
 .summary-card .card-detail .card-footnote {
     width: 100%;
     text-align: center;
@@ -253,21 +153,15 @@ h1 {
     margin-top: 2px;
 }
 
-.summary-card.nb-card {
-    border-color: rgba(86, 156, 214, 0.4);
-}
+.summary-card.nb-card  { border-color: rgba(86, 156, 214, 0.4); }
+.summary-card.pmt-card { border-color: rgba(197, 134, 192, 0.4); }
+.summary-card.bdl-card { border-color: rgba(206, 145, 120, 0.4); }
 
-.summary-card.pmt-card {
-    border-color: rgba(197, 134, 192, 0.4);
-}
 
-.summary-card.bdl-card {
-    border-color: rgba(206, 145, 120, 0.4);
-}
-
-/* ============================================
+/* ============================================================================
    BATCH TYPE INDICATORS
-   ============================================ */
+   Inline tags identifying batch type (NB/PMT/BDL) in tables and lists.
+   ============================================================================ */
 
 .batch-type-tag {
     display: inline-block;
@@ -304,9 +198,11 @@ h1 {
     margin-left: 4px;
 }
 
-/* ============================================
+
+/* ============================================================================
    PROCESS STATUS CARDS
-   ============================================ */
+   Top-right section. Compact 4-column grid showing collector health.
+   ============================================================================ */
 
 .status-grid {
     display: grid;
@@ -351,42 +247,35 @@ h1 {
     text-align: center;
 }
 .process-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.process-status-badge.active { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
+.process-status-badge.active  { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
 .process-status-badge.warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.process-status-badge.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
+.process-status-badge.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
 
-.process-card .process-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.process-card .process-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: #d4d4d4;
-}
-
-.process-card .process-meta {
-    font-size: 11px;
-    color: #888;
-}
+.process-card .process-info { flex: 1; min-width: 0; }
+.process-card .process-name { font-size: 12px; font-weight: 600; color: #d4d4d4; }
+.process-card .process-meta { font-size: 11px; color: #888; }
 
 .process-card .process-timing {
     text-align: right;
     font-size: 11px;
     color: #888;
 }
-
 .process-card .process-timing .timing-value {
     color: #d4d4d4;
     font-weight: 500;
 }
 
-/* ============================================
+
+/* ============================================================================
    ACTIVE BATCHES
-   ============================================ */
+   Bottom-left section. Live table showing currently in-flight batches
+   across NB, PMT, and BDL types. Uses shared .section-fill to consume
+   remaining vertical space and scroll internally.
+   ============================================================================ */
 
 .activity-content {
+    flex: 1;
+    overflow-y: auto;
     min-height: 60px;
 }
 
@@ -403,6 +292,9 @@ h1 {
     color: #888;
     font-weight: 500;
     font-size: 11px;
+    position: sticky;
+    top: 0;
+    background: #252526;
 }
 
 .active-batch-table td {
@@ -411,17 +303,10 @@ h1 {
     color: #d4d4d4;
 }
 
-.active-batch-table tr:hover td {
-    background: rgba(255, 255, 255, 0.03);
-}
+.active-batch-table tr:hover td { background: rgba(255, 255, 255, 0.03); }
 
-.active-batch-table .batch-name-cell {
-    font-weight: 500;
-}
-
-.active-batch-table .status-cell {
-    white-space: nowrap;
-}
+.active-batch-table .batch-name-cell { font-weight: 500; }
+.active-batch-table .status-cell     { white-space: nowrap; }
 
 .active-batch-table .status-badge {
     display: inline-block;
@@ -432,23 +317,14 @@ h1 {
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
-
 .active-batch-table .status-badge.processing { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.active-batch-table .status-badge.active { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
-.active-batch-table .status-badge.waiting { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.active-batch-table .status-badge.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.active-batch-table .status-badge.info { background: rgba(102, 102, 102, 0.2); color: #888; }
+.active-batch-table .status-badge.active     { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
+.active-batch-table .status-badge.waiting    { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
+.active-batch-table .status-badge.failed     { background: rgba(244, 135, 113, 0.2); color: #f48771; }
+.active-batch-table .status-badge.info       { background: rgba(102, 102, 102, 0.2); color: #888; }
 
-.active-batch-table .age-cell {
-    white-space: nowrap;
-    text-align: right;
-}
-
-.active-batch-table .count-cell {
-    white-space: nowrap;
-    text-align: right;
-    color: #d4d4d4;
-}
+.active-batch-table .age-cell   { white-space: nowrap; text-align: right; }
+.active-batch-table .count-cell { white-space: nowrap; text-align: right; color: #d4d4d4; }
 
 /* Activity/progress column - consistent font */
 .active-batch-table .activity-cell {
@@ -470,38 +346,17 @@ h1 {
     background: rgba(78, 201, 176, 0.2);
     color: #4ec9b0;
 }
-
 .active-batch-table .activity-cell .activity-label.waiting {
     background: rgba(220, 220, 170, 0.2);
     color: #dcdcaa;
 }
-
 .active-batch-table .activity-cell .activity-label.failed {
     background: rgba(244, 135, 113, 0.2);
     color: #f48771;
 }
-
 .active-batch-table .activity-cell .activity-label.info {
     background: rgba(102, 102, 102, 0.2);
     color: #888;
-}
-
-/* Stall indicator */
-.stall-indicator {
-    display: inline-block;
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: 600;
-}
-
-.stall-indicator.active {
-    color: #4ec9b0;
-}
-
-.stall-indicator.stalled {
-    background: rgba(244, 135, 113, 0.15);
-    color: #f48771;
 }
 
 /* Progress bar - full width with text inside (matches JobFlow pattern) */
@@ -532,39 +387,16 @@ h1 {
     white-space: nowrap;
 }
 
-/* ============================================
+
+/* ============================================================================
    FILTER BUTTONS
-   ============================================ */
+   Used by Active Batches and Batch History sections, plus the slideout
+   tab/filter bars.
+   ============================================================================ */
 
-.filter-group {
-    display: flex;
-    gap: 2px;
-}
+.filter-group { display: flex; gap: 2px; }
 
-.filter-btn {
-    padding: 3px 10px;
-    background: #333;
-    border: 1px solid #555;
-    border-radius: 3px;
-    color: #888;
-    font-size: 11px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.filter-btn:hover {
-    background: #3c3c3c;
-    color: #d4d4d4;
-}
-
-.filter-btn.active {
-    background: #4ec9b0;
-    border-color: #4ec9b0;
-    color: #1e1e1e;
-    font-weight: 600;
-}
-
-/* Active Batches filter buttons (same visual, independent state) */
+.filter-btn,
 .active-filter-btn {
     padding: 3px 10px;
     background: #333;
@@ -576,11 +408,13 @@ h1 {
     transition: all 0.2s;
 }
 
+.filter-btn:hover,
 .active-filter-btn:hover {
     background: #3c3c3c;
     color: #d4d4d4;
 }
 
+.filter-btn.active,
 .active-filter-btn.active {
     background: #4ec9b0;
     border-color: #4ec9b0;
@@ -588,18 +422,21 @@ h1 {
     font-weight: 600;
 }
 
-/* ============================================
+
+/* ============================================================================
    BATCH HISTORY (TREE)
-   ============================================ */
+   Bottom-right section. Year/month rollup with drill-down to day-level
+   detail. Uses shared .section-fill to consume remaining vertical space
+   and scroll internally.
+   ============================================================================ */
 
 .history-content {
-    max-height: calc(100vh - 300px);
+    flex: 1;
     overflow-y: auto;
+    min-height: 0;
 }
 
-.year-group {
-    margin-bottom: 8px;
-}
+.year-group { margin-bottom: 8px; }
 
 .year-header {
     display: flex;
@@ -614,9 +451,7 @@ h1 {
     user-select: none;
 }
 
-.year-header:hover {
-    background-color: #353535;
-}
+.year-header:hover { background-color: #353535; }
 
 .year-header .expand-icon {
     color: #888;
@@ -624,10 +459,7 @@ h1 {
     width: 14px;
     transition: transform 0.2s;
 }
-
-.year-header .expand-icon.expanded {
-    transform: rotate(90deg);
-}
+.year-header .expand-icon.expanded { transform: rotate(90deg); }
 
 .year-header .year-label {
     font-weight: 700;
@@ -654,20 +486,16 @@ h1 {
     text-align: right;
     color: #888;
 }
-
 .year-header .year-stat.success { color: #4ec9b0; }
-.year-header .year-stat.failed { color: #f48771; }
-.year-header .year-stat.active { color: #569cd6; }
+.year-header .year-stat.failed  { color: #f48771; }
+.year-header .year-stat.active  { color: #569cd6; }
 
 .year-content {
     margin-left: 10px;
     margin-top: 6px;
     display: none;
 }
-
-.year-content.expanded {
-    display: block;
-}
+.year-content.expanded { display: block; }
 
 /* Month Summary Table */
 .month-summary-table {
@@ -695,10 +523,7 @@ h1 {
     cursor: pointer;
     transition: background-color 0.2s;
 }
-
-.month-summary-table tr.month-row:hover td {
-    background: #2d2d2d;
-}
+.month-summary-table tr.month-row:hover td { background: #2d2d2d; }
 
 .month-summary-table .expand-cell {
     width: 24px;
@@ -706,24 +531,17 @@ h1 {
     color: #888;
     font-size: 10px;
 }
-
-.month-summary-table .month-cell {
-    font-weight: 500;
-}
-
+.month-summary-table .month-cell   { font-weight: 500; }
 .month-summary-table .success-cell { color: #4ec9b0; }
-.month-summary-table .fail-cell { color: #f48771; }
-.month-summary-table .active-cell { color: #569cd6; }
+.month-summary-table .fail-cell    { color: #f48771; }
+.month-summary-table .active-cell  { color: #569cd6; }
 
 /* Month details row */
 .month-details td {
     padding: 0 0 12px 20px;
     background: transparent;
 }
-
-.month-details-content {
-    margin-top: 8px;
-}
+.month-details-content { margin-top: 8px; }
 
 /* Day-level table within month expansion */
 .day-table {
@@ -751,14 +569,11 @@ h1 {
     cursor: pointer;
     transition: background 0.2s;
 }
-
-.day-table tr.clickable:hover td {
-    background: #2d2d2d;
-}
+.day-table tr.clickable:hover td { background: #2d2d2d; }
 
 .day-table .success-cell { color: #4ec9b0; }
-.day-table .fail-cell { color: #f48771; }
-.day-table .active-cell { color: #569cd6; }
+.day-table .fail-cell    { color: #f48771; }
+.day-table .active-cell  { color: #569cd6; }
 
 /* Duration columns */
 .duration-cell {
@@ -766,133 +581,209 @@ h1 {
     color: #888;
     white-space: nowrap;
 }
+.duration-cell.long      { color: #dcdcaa; }
+.duration-cell.very-long { color: #f48771; }
 
-.duration-cell.long {
-    color: #dcdcaa;
-}
 
-.duration-cell.very-long {
-    color: #f48771;
-}
+/* ============================================================================
+   SLIDEOUT BODY CONTENT
+   Sub-components rendered inside the shared slide-panel-body when
+   displaying batch details. The outer panel itself uses
+   .slide-panel-overlay/.slide-panel.xwide/.slide-panel-header/
+   .slide-panel-body from engine-events.css (950px width).
+   ============================================================================ */
 
-/* ============================================
-   SLIDEOUT PANEL
-   ============================================ */
-
-.slideout {
-    position: fixed;
-    top: 0;
-    right: -950px;
-    width: 950px;
-    height: 100%;
-    background: #252526;
-    border-left: 1px solid #404040;
-    z-index: 1001;
-    transition: right 0.3s ease;
+/* -- Slideout tab bar: batch type selector -- */
+.slideout-tab-bar {
     display: flex;
-    flex-direction: column;
-}
-
-.slideout.open {
-    right: 0;
-}
-
-.slideout-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    display: none;
-}
-
-.slideout-overlay.open {
-    display: block;
-}
-
-.slideout-content {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
-
-.slideout-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
+    gap: 4px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
     border-bottom: 1px solid #404040;
-    background: #2d2d2d;
 }
 
-.slideout-header h2 {
-    margin: 0;
-    font-size: 16px;
-    color: #569cd6;
-    font-weight: 500;
-}
-
-.slideout-close {
-    background: transparent;
-    border: none;
+.slideout-tab {
+    padding: 6px 18px;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
     color: #888;
-    font-size: 24px;
+    font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
+    transition: all 0.2s;
 }
 
-.slideout-close:hover {
+.slideout-tab:hover {
+    background: #3c3c3c;
+    color: #d4d4d4;
+    border-color: #777;
+}
+
+.slideout-tab.active {
+    background: #569cd6;
+    border-color: #569cd6;
+    color: #1e1e1e;
+    font-weight: 600;
+}
+
+.slideout-tab .tab-count {
+    font-size: 10px;
+    margin-left: 4px;
+    opacity: 0.7;
+}
+.slideout-tab.active .tab-count { opacity: 0.85; }
+
+/* -- Slideout filter bar: status + PMT sub-type -- */
+.slideout-filter-bar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #404040;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.slideout-filter-bar .filter-separator {
+    width: 1px;
+    height: 18px;
+    background: #555;
+    margin: 0 6px;
+}
+
+.slideout-filter-btn,
+.slideout-status-btn {
+    padding: 4px 12px;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 3px;
+    color: #888;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.slideout-filter-btn:hover,
+.slideout-status-btn:hover {
+    background: #3c3c3c;
     color: #d4d4d4;
 }
 
-.slideout-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 15px 20px;
+.slideout-filter-btn.active {
+    background: #c586c0;
+    border-color: #c586c0;
+    color: #1e1e1e;
+    font-weight: 600;
 }
 
-/* Slideout batch detail */
-.slideout-batch-header {
+/* Status filter uses green accent to distinguish from type filter */
+.slideout-status-btn.active {
+    background: #4ec9b0;
+    border-color: #4ec9b0;
+    color: #1e1e1e;
+    font-weight: 600;
+}
+
+/* -- Batch count summary header -- */
+.slideout-batch-count {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 8px;
+}
+.slideout-batch-count .count-success { color: #4ec9b0; }
+.slideout-batch-count .count-failed  { color: #f48771; }
+.slideout-batch-count .count-active  { color: #569cd6; }
+
+/* -- Compact batch rows with expand-on-click detail -- */
+.batch-row {
+    border: 1px solid #404040;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+.batch-row:hover { border-color: #555; }
+
+.batch-row-header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 15px;
-}
-
-.slideout-batch-name {
-    font-size: 18px;
-    font-weight: 600;
-    color: #d4d4d4;
-}
-
-.slideout-detail-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 15px;
-}
-
-.detail-item {
-    padding: 8px 10px;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
     background: #2d2d2d;
-    border-radius: 4px;
+    user-select: none;
+}
+.batch-row-header:hover { background: #333; }
+
+.batch-row .expand-icon {
+    font-size: 9px;
+    color: #666;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+.batch-row.expanded .expand-icon { transform: rotate(90deg); }
+
+.batch-row-id {
+    font-weight: 600;
+    color: #569cd6;
+    font-size: 12px;
+    white-space: nowrap;
 }
 
-.detail-item .detail-label {
-    font-size: 10px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 2px;
-}
-
-.detail-item .detail-value {
-    font-size: 14px;
+.batch-row-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
     color: #d4d4d4;
-    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* Phase timeline in slideout */
+.batch-row-time {
+    font-size: 11px;
+    color: #888;
+    white-space: nowrap;
+}
+
+.batch-row-status {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    margin-left: auto;
+}
+.batch-row-status.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
+.batch-row-status.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
+.batch-row-status.active  { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
+.batch-row-status.warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
+.batch-row-status.neutral { background: rgba(102, 102, 102, 0.2); color: #888; }
+
+.batch-row-detail {
+    display: none;
+    padding: 10px 12px;
+    border-top: 1px solid #404040;
+    background: #1e1e1e;
+}
+.batch-row.expanded .batch-row-detail { display: block; }
+
+/* -- Inline metrics within expanded detail -- */
+.detail-metrics {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.detail-metric { font-size: 11px; }
+.detail-metric .metric-label { color: #888; margin-right: 4px; }
+.detail-metric .metric-value { color: #d4d4d4; font-weight: 500; }
+
+/* -- Phase timeline (per-batch lifecycle phase durations) -- */
 .phase-timeline {
     margin: 15px 0;
     border: 1px solid #404040;
@@ -937,10 +828,9 @@ h1 {
     border-radius: 4px;
     min-width: 2px;
 }
-
-.phase-bar-fill.upload { background: #569cd6; }
+.phase-bar-fill.upload  { background: #569cd6; }
 .phase-bar-fill.release { background: #4ec9b0; }
-.phase-bar-fill.merge { background: #dcdcaa; }
+.phase-bar-fill.merge   { background: #dcdcaa; }
 .phase-bar-fill.process { background: #c586c0; }
 
 .phase-duration {
@@ -949,254 +839,3 @@ h1 {
     font-size: 11px;
     color: #d4d4d4;
 }
-
-/* ============================================
-   REFRESH BUTTON SPIN ANIMATION
-   ============================================ */
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.refresh-btn.spinning {
-    animation: spin 0.8s ease-in-out;
-    pointer-events: none;
-}
-
-/* ============================================
-   SLIDEOUT FILTER BAR
-   ============================================ */
-
-/* Slideout tab bar — batch type selector */
-.slideout-tab-bar {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #404040;
-}
-
-.slideout-tab {
-    padding: 6px 18px;
-    background: #2a2a2a;
-    border: 1px solid #555;
-    border-radius: 4px;
-    color: #888;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.slideout-tab:hover {
-    background: #3c3c3c;
-    color: #d4d4d4;
-    border-color: #777;
-}
-
-.slideout-tab.active {
-    background: #569cd6;
-    border-color: #569cd6;
-    color: #1e1e1e;
-    font-weight: 600;
-}
-
-.slideout-tab .tab-count {
-    font-size: 10px;
-    margin-left: 4px;
-    opacity: 0.7;
-}
-
-.slideout-tab.active .tab-count {
-    opacity: 0.85;
-}
-
-.slideout-filter-bar {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.slideout-filter-bar .filter-separator {
-    width: 1px;
-    height: 18px;
-    background: #555;
-    margin: 0 6px;
-}
-
-.slideout-filter-btn {
-    padding: 4px 12px;
-    background: #333;
-    border: 1px solid #555;
-    border-radius: 3px;
-    color: #888;
-    font-size: 11px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.slideout-filter-btn:hover {
-    background: #3c3c3c;
-    color: #d4d4d4;
-}
-
-.slideout-filter-btn.active {
-    background: #c586c0;
-    border-color: #c586c0;
-    color: #1e1e1e;
-    font-weight: 600;
-}
-
-/* Status filter uses green accent to distinguish from type filter */
-.slideout-status-btn {
-    padding: 4px 12px;
-    background: #333;
-    border: 1px solid #555;
-    border-radius: 3px;
-    color: #888;
-    font-size: 11px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.slideout-status-btn:hover {
-    background: #3c3c3c;
-    color: #d4d4d4;
-}
-
-.slideout-status-btn.active {
-    background: #4ec9b0;
-    border-color: #4ec9b0;
-    color: #1e1e1e;
-    font-weight: 600;
-}
-
-/* ============================================
-   SLIDEOUT COMPACT BATCH ROWS
-   ============================================ */
-
-.batch-row {
-    border: 1px solid #404040;
-    border-radius: 4px;
-    margin-bottom: 4px;
-    overflow: hidden;
-    transition: border-color 0.2s;
-}
-
-.batch-row:hover {
-    border-color: #555;
-}
-
-.batch-row-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    cursor: pointer;
-    background: #2d2d2d;
-    user-select: none;
-}
-
-.batch-row-header:hover {
-    background: #333;
-}
-
-.batch-row .expand-icon {
-    font-size: 9px;
-    color: #666;
-    transition: transform 0.2s;
-    flex-shrink: 0;
-}
-
-.batch-row.expanded .expand-icon {
-    transform: rotate(90deg);
-}
-
-.batch-row-id {
-    font-weight: 600;
-    color: #569cd6;
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-.batch-row-name {
-    flex: 1;
-    min-width: 0;
-    font-size: 12px;
-    color: #d4d4d4;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.batch-row-time {
-    font-size: 11px;
-    color: #888;
-    white-space: nowrap;
-}
-
-.batch-row-status {
-    font-size: 9px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 3px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    white-space: nowrap;
-    margin-left: auto;
-}
-
-.batch-row-status.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.batch-row-status.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.batch-row-status.active { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
-.batch-row-status.warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.batch-row-status.neutral { background: rgba(102, 102, 102, 0.2); color: #888; }
-
-.batch-row-detail {
-    display: none;
-    padding: 10px 12px;
-    border-top: 1px solid #404040;
-    background: #1e1e1e;
-}
-
-.batch-row.expanded .batch-row-detail {
-    display: block;
-}
-
-/* Inline metrics row within expanded detail */
-.detail-metrics {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-bottom: 10px;
-}
-
-.detail-metric {
-    font-size: 11px;
-}
-
-.detail-metric .metric-label {
-    color: #888;
-    margin-right: 4px;
-}
-
-.detail-metric .metric-value {
-    color: #d4d4d4;
-    font-weight: 500;
-}
-
-/* Batch count summary in slideout header area */
-.slideout-batch-count {
-    font-size: 11px;
-    color: #888;
-    margin-bottom: 8px;
-}
-
-.slideout-batch-count .count-success { color: #4ec9b0; }
-.slideout-batch-count .count-failed { color: #f48771; }
-.slideout-batch-count .count-active { color: #569cd6; }
