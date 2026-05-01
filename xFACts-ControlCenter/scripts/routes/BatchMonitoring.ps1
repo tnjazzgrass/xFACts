@@ -14,6 +14,23 @@
 #
 # CHANGELOG
 # ---------
+# 2026-04-30  Phase 4 (Standardization): full alignment to shared infrastructure.
+#               - Added body class="section-platform" so H1 color is driven
+#                 by shared CSS via RBAC_NavRegistry section_key.
+#               - Renamed connection banner placeholder from id/class
+#                 connection-error to connection-banner matching the
+#                 engine-events.js rename.
+#               - Batch detail slideout migrated from page-local
+#                 .slideout/.slideout-overlay/.slideout-content/.slideout-header/
+#                 .slideout-body/.slideout-close markup to shared
+#                 .slide-panel-overlay/.slide-panel.xwide/.slide-panel-header/
+#                 .slide-panel-body/.modal-close from engine-events.css
+#                 (Section 9). The 950px .xwide tier matches the page's
+#                 prior page-local width.
+#               - Slideout overlay ID renamed from #slideout-overlay to
+#                 #batch-slideout-overlay for unambiguous naming.
+#               - Header element h2 -> h3 to match shared
+#                 .slide-panel-header h3 styling rule.
 # 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
 #             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
 #             browser tab title now render from RBAC_NavRegistry via
@@ -46,7 +63,7 @@ Add-PodeRoute -Method Get -Path '/batch-monitoring' -Authentication 'ADLogin' -S
     <link rel="stylesheet" href="/css/batch-monitoring.css">
     <link rel="stylesheet" href="/css/engine-events.css">
 </head>
-<body>
+<body class="section-platform">
 $navHtml
 
     <div class="header-bar">
@@ -84,7 +101,7 @@ $navHtml
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+    <div id="connection-banner" class="connection-banner"></div>
 
     <!-- Two Column Layout -->
     <div class="grid-layout">
@@ -104,7 +121,7 @@ $navHtml
             </div>
 
             <!-- Active Batches (Unified View) -->
-            <div class="section">
+            <div class="section section-fill">
                 <div class="section-header">
                     <h2 class="section-title">Active Batches</h2>
                     <div class="section-header-right">
@@ -138,7 +155,7 @@ $navHtml
             </div>
 
             <!-- Batch History (Tree Drill-Down) -->
-            <div class="section section-history">
+            <div class="section section-fill section-history">
                 <div class="section-header">
                     <h2 class="section-title">Batch History</h2>
                     <div class="section-header-right">
@@ -159,19 +176,22 @@ $navHtml
 
     </div>
 
-    <!-- Batch Detail Slideout -->
-    <div id="batch-slideout" class="slideout">
-        <div class="slideout-content">
-            <div class="slideout-header">
-                <h2 id="slideout-title">Batch Details</h2>
-                <button class="slideout-close" onclick="closeSlideout()">&times;</button>
-            </div>
-            <div id="slideout-body" class="slideout-body">
-                <div class="loading">Loading...</div>
-            </div>
+    <!-- ================================================================
+         BATCH DETAIL SLIDEOUT
+         Shared .slide-panel-* infrastructure from engine-events.css.
+         The .xwide variant (950px) accommodates the wide multi-column
+         batch detail rows with metrics and phase timelines.
+         ================================================================ -->
+    <div id="batch-slideout-overlay" class="slide-panel-overlay" onclick="closeSlideout()"></div>
+    <div id="batch-slideout" class="slide-panel xwide">
+        <div class="slide-panel-header">
+            <h3 id="slideout-title">Batch Details</h3>
+            <button class="modal-close" onclick="closeSlideout()">&times;</button>
+        </div>
+        <div class="slide-panel-body" id="slideout-body">
+            <div class="loading">Loading...</div>
         </div>
     </div>
-    <div id="slideout-overlay" class="slideout-overlay" onclick="closeSlideout()"></div>
 
     <script src="/js/batch-monitoring.js"></script>
     <script src="/js/engine-events.js"></script>
