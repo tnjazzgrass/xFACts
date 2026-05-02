@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-01 12:09:08
+Generated: 2026-05-02 09:15:08
 
 ## Module Registry
 
@@ -233,6 +233,7 @@ Generated: 2026-05-01 12:09:08
 | Engine.SharedInfrastructure | sp_LogProtectionViolation | Database | Procedure | dbo | Logs blocked DDL operations to Protection_ViolationLog |
 | Engine.SharedInfrastructure | ActionAuditLog | Database | Table | dbo | Audit trail for Control Center administrative actions |
 | Engine.SharedInfrastructure | API_RequestLog | Database | Table | dbo | HTTP request logging for Control Center API endpoints |
+| Engine.SharedInfrastructure | Asset_Registry | Database | Table | dbo | Catalog of every component (CSS class, JS function, HTML ID, API route, etc.) extracted from Control Center source files. One row per definition or usage instance, distinguishing local from shared scope and mapping consumption to definition. Populated by the Asset_Registry parser pipeline. Enables drift detection, consumption tracking, and naming-convention enforcement across the Control Center codebase. |
 | Engine.SharedInfrastructure | ClientHierarchy | Database | Table |  | Complete flattened DM creditor hierarchy for cross-module client resolution. |
 | Engine.SharedInfrastructure | Component_Registry | Database | Table | dbo | Logical component grouping catalog |
 | Engine.SharedInfrastructure | Credentials | Database | Table | dbo | Encrypted credential storage for service accounts |
@@ -474,12 +475,12 @@ Generated: 2026-05-01 12:09:08
 | DmOps | Archive | tag_removal_rslt_cd | CC | VARCHAR | Result code short value used for archiving exceptions |
 | DmOps | Archive | tag_removal_user | sqlmon | VARCHAR | DM username for archiving exceptions |
 | DmOps | Archive | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
-| DmOps | ShellPurge | alerting_enabled | 0 | BIT | Master switch for shell purge alerting |
+| DmOps | ShellPurge | alerting_enabled | 1 | BIT | Master switch for shell purge alerting |
 | DmOps | ShellPurge | batch_size | 100000 | INT | Number of shell consumers per batch during full-mode schedule windows |
 | DmOps | ShellPurge | batch_size_reduced | 500 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
 | DmOps | ShellPurge | chunk_size | 5000 | INT | Maximum rows per DELETE operation (deleted in chunks of this size) |
 | DmOps | ShellPurge | shell_purge_abort | 0 | BIT | Emergency shutoff. Overrides schedule and enabled flag |
-| DmOps | ShellPurge | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for shell purge processing |
+| DmOps | ShellPurge | target_instance | AVG-PROD-LSNR | VARCHAR | SQL Server instance hosting crs5_oltp for shell purge processing |
 | FileOps | Detection | cda_base_path | \\kingkong\dpbackup\Client_Data_Archive | VARCHAR | UNC path to Client Data Archive (fallback location) |
 | JBoss | Admin | dm_sharepoint_active_server | DM-PROD-APP2 | VARCHAR | Currently active DM app server in the SharePoint navigation link. |
 | JBoss | Admin | management_api_url | http://dm-prod-app:9990/management | VARCHAR | JBoss Management API base URL on the domain controller |
