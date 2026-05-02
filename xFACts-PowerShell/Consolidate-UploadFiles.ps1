@@ -71,7 +71,7 @@ $DocsRoot    = "E:\xFACts-Documentation"
 
 # Source mappings: each entry defines what to collect
 $FileSources = @(
-    @{ Source = $ScriptsRoot;                            Filter = "*.ps1";  Description = "Orchestrator scripts" }
+    @{ Source = $ScriptsRoot;                            Filter = @("*.ps1", "*.js", "*.psm1");  Description = "Orchestrator scripts" }
     @{ Source = "$CCRoot\scripts";                        Filter = "Start-ControlCenter.ps1"; Description = "Control Center entry point" }
     @{ Source = "$CCRoot\scripts\routes";                Filter = "*.ps1";  Description = "Control Center routes + APIs" }
     @{ Source = "$CCRoot\scripts\modules";               Filter = "*.psm1"; Description = "Control Center modules" }
