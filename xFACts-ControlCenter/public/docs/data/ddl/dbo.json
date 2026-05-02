@@ -318,6 +318,496 @@
                                    ]
                    },
                    {
+                       "name":  "Asset_Registry",
+                       "description":  "Catalog of every component (CSS class, JS function, HTML ID, API route, etc.) extracted from Control Center source files. One row per definition or usage instance. Distinguishes local from shared scope and maps consumption to definition. Serves as both descriptive catalog (what exists, where) and prescriptive reference (naming conventions, established patterns). Populated by parser scripts that walk all CC source files, parse them via language-appropriate AST tools (PostCSS for CSS, Acorn for JS, built-in PowerShell parser for .ps1/.psm1), and produce one row per extracted component instance. Refresh strategy is truncate-and-reload per file_type, reflecting current state only with no historical retention.",
+                       "module":  "Engine",
+                       "category":  "Shared Infrastructure",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "asset_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Surrogate primary key. IDENTITY column."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "file_name",
+                                           "dataType":  "varchar",
+                                           "length":  "256",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Name of the source file the row was extracted from. For HTML extraction this is the .ps1 or .psm1 file containing the markup; the file_type column distinguishes HTML extraction from PS function extraction within the same physical file."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "object_registry_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Foreign key reference to dbo.Object_Registry for the file this row was extracted from. Allows joining to the registered CC file for component and module context."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "file_type",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Source-language classification of the row. See status_value entries for valid values."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "line_start",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Starting line number in the source file where this component instance begins. 1-based."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "line_end",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Ending line number in the source file. Same as line_start for single-line items."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "column_start",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Starting column number on line_start where this component instance begins. 1-based. NULL when column information is not available from the parser."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "component_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Type of component this row represents. See status_value entries for valid values."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "component_subtype",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Optional finer-grained typing for component_type values that benefit from sub-classification."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "component_name",
+                                           "dataType":  "varchar",
+                                           "length":  "256",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Name of the component (e.g., xf-modal for a CSS class, escapeHtml for a JS function, /api/bidata/todays-build for an API route). For COMMENT_BANNER rows, contains the banner title."
+                                       },
+                                       {
+                                           "ordinal":  11,
+                                           "name":  "state_modifier",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "For CSS_CLASS rows: comma-separated list of compound state modifier classes attached to the primary class. Example: a CSS rule .slide-panel.wide.open produces one DEFINITION row with component_name=slide-panel and state_modifier=wide, open."
+                                       },
+                                       {
+                                           "ordinal":  12,
+                                           "name":  "reference_type",
+                                           "dataType":  "varchar",
+                                           "length":  "15",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether this row represents a definition or a usage. See status_value entries for valid values."
+                                       },
+                                       {
+                                           "ordinal":  13,
+                                           "name":  "scope",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Whether this component lives in shared infrastructure or is page-local. See status_value entries for valid values."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "source_file",
+                                           "dataType":  "varchar",
+                                           "length":  "256",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "The file where this component is defined. Same as file_name for DEFINITION rows. For USAGE rows: points at the file where the component being used is defined. See status_value entries for special values."
+                                       },
+                                       {
+                                           "ordinal":  15,
+                                           "name":  "source_section",
+                                           "dataType":  "varchar",
+                                           "length":  "150",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Title of the COMMENT_BANNER section that contains this component, if any. Populated by the parser based on the most recent banner seen above the component during extraction."
+                                       },
+                                       {
+                                           "ordinal":  16,
+                                           "name":  "signature",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Full source signature of the component. For CSS rows: the complete selector text including all selectors in a multi-selector list. For JS function rows: the function declaration including parameters. For HTML rows: the full attribute text. VARCHAR(MAX)."
+                                       },
+                                       {
+                                           "ordinal":  17,
+                                           "name":  "parent_function",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Parent context for nested components. For CSS rules nested inside @media or @supports: the at-rule label. For JS functions nested inside other functions: the parent function name. NULL when the component is at top level."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "parent_object",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Optional manual cross-reference to another related object."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "raw_text",
+                                           "dataType":  "varchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Raw source snippet for the component. VARCHAR(MAX)."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "purpose_description",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Human-readable description of the component purpose. Captures intent context that source code alone cannot convey."
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "design_notes",
+                                           "dataType":  "varchar",
+                                           "length":  "1000",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Free-form design notes about the component. Captures non-obvious decisions, gotchas, naming-pattern guidance, cross-references to related components."
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "related_asset_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Self-referencing pointer to another Asset_Registry row."
+                                       },
+                                       {
+                                           "ordinal":  23,
+                                           "name":  "occurrence_index",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Per-file ordinal counter that disambiguates multiple instances of the same (file_name, component_type, component_name, reference_type) tuple. The Nth occurrence in source order gets occurrence_index N. Forms part of the natural key for cross-references."
+                                       },
+                                       {
+                                           "ordinal":  24,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Active flag. Default 1. Used to manually exclude rows from reports without deleting them."
+                                       },
+                                       {
+                                           "ordinal":  25,
+                                           "name":  "first_parsed_dttm",
+                                           "dataType":  "datetime2",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(sysutcdatetime())",
+                                           "description":  "Timestamp of when this row was first inserted into the table. Default SYSDATETIME() at insert."
+                                       },
+                                       {
+                                           "ordinal":  26,
+                                           "name":  "last_parsed_dttm",
+                                           "dataType":  "datetime2",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(sysutcdatetime())",
+                                           "description":  "Timestamp of when this row was last confirmed by the parser. Default SYSDATETIME() at insert."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Asset_Registry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "asset_id"
+                                       },
+                                       {
+                                           "name":  "IX_Asset_Registry_FileNameType",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "file_name, component_type, reference_type",
+                                           "includedColumns":  "component_name, line_start, scope"
+                                       },
+                                       {
+                                           "name":  "IX_Asset_Registry_NameTypeScope",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "component_name, component_type, scope",
+                                           "includedColumns":  "file_name, reference_type, line_start"
+                                       },
+                                       {
+                                           "name":  "IX_Asset_Registry_ObjectRegistryId",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "object_registry_id"
+                                       },
+                                       {
+                                           "name":  "IX_Asset_Registry_ParseIdentity",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "file_name, component_type, component_name, reference_type, line_start"
+                                       },
+                                       {
+                                           "name":  "IX_Asset_Registry_ScopeType",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "scope, component_type, reference_type"
+                                       },
+                                       {
+                                           "name":  "IX_Asset_Registry_Subtype",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "component_subtype, component_type"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_Asset_Registry_component_type",
+                                                    "definition":  "([component_type]=\u0027COMMENT_BANNER\u0027 OR [component_type]=\u0027HTML_ID\u0027 OR [component_type]=\u0027API_ROUTE\u0027 OR [component_type]=\u0027PS_ASSIGNMENT\u0027 OR [component_type]=\u0027PS_COMMAND\u0027 OR [component_type]=\u0027PS_PARAM\u0027 OR [component_type]=\u0027PS_FUNCTION\u0027 OR [component_type]=\u0027JS_HOOK\u0027 OR [component_type]=\u0027JS_CONSTANT\u0027 OR [component_type]=\u0027JS_FUNCTION\u0027 OR [component_type]=\u0027CSS_KEYFRAME\u0027 OR [component_type]=\u0027CSS_VARIABLE\u0027 OR [component_type]=\u0027CSS_CLASS\u0027 OR [component_type]=\u0027CSS_RULE\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Asset_Registry_file_type",
+                                                    "definition":  "([file_type]=\u0027HTML\u0027 OR [file_type]=\u0027PS\u0027 OR [file_type]=\u0027CSS\u0027 OR [file_type]=\u0027JS\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Asset_Registry_reference_type",
+                                                    "definition":  "([reference_type]=\u0027USAGE\u0027 OR [reference_type]=\u0027DEFINITION\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Asset_Registry_scope",
+                                                    "definition":  "([scope]=\u0027LOCAL\u0027 OR [scope]=\u0027SHARED\u0027)"
+                                                }
+                                            ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_Asset_Registry_ObjectRegistry",
+                                               "column":  "object_registry_id",
+                                               "referencedTable":  "dbo.Object_Registry",
+                                               "referencedColumn":  "registry_id"
+                                           },
+                                           {
+                                               "name":  "FK_Asset_Registry_RelatedAsset",
+                                               "column":  "related_asset_id",
+                                               "referencedTable":  "dbo.Asset_Registry",
+                                               "referencedColumn":  "asset_id"
+                                           }
+                                       ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Truncate-and-Reload Refresh Model",
+                                               "note":  "The table is fully truncated and reloaded by the parser pipeline on each refresh cycle, rather than maintained via incremental MERGE upsert. The catalog represents current state only — there is no historical retention of removed components. This decision favors operational simplicity and query clarity (every row is, by definition, currently present in the source) over the complexity of incremental update logic. Manual annotations (purpose_description, design_notes, related_asset_id) are not preserved across truncate cycles via the asset_id; instead, manual annotations are layered on via a separate annotations mechanism keyed on the natural key.",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "topic":  "Natural Key Composition",
+                                               "note":  "The natural key is (file_name, component_type, component_name, reference_type, occurrence_index). Surrogate asset_id values are not stable across parser runs because of the truncate-and-reload model; cross-references from other tables or annotation systems must use the natural key. The occurrence_index column exists specifically to disambiguate multiple instances of the same component within a single file (e.g., the 1st, 2nd, 3rd USAGE of xf-modal in BIDATAMonitoring.ps1).",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "topic":  "Single-Table Multi-Instance Model",
+                                               "note":  "A shared component used on multiple pages produces multiple USAGE rows in this table — one per consumer location — rather than being normalized into a definition table plus a separate dependency table. This deliberate choice allows a single query to return the complete picture for any page or any component without joins. A definition is queryable via reference_type=DEFINITION; consumption is queryable via reference_type=USAGE; promotion of a local utility to shared is a clean batch UPDATE on scope and source_file rather than an insert/delete dance.",
+                                               "sortOrder":  3
+                                           },
+                                           {
+                                               "topic":  "Scope Determination via Cross-Reference",
+                                               "note":  "CSS DEFINITION rows have scope determined by which file declares them: SHARED if the file is in a curated shared-files list (currently engine-events.css), LOCAL otherwise. HTML USAGE rows have scope determined by cross-reference: SHARED if the class has any SHARED CSS DEFINITION row in the catalog, LOCAL if only LOCAL DEFINITION rows exist, LOCAL with source_file=\u003cundefined\u003e if no DEFINITION exists in any cataloged file. This means HTML extraction depends on CSS extraction having already run; the parser pipeline orchestrator enforces this ordering.",
+                                               "sortOrder":  4
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "CSS_CLASS",
+                                                "meaning":  "A CSS class. DEFINITION rows from CSS files (a CSS rule defines the class), USAGE rows from CSS files (a CSS rule consumes the class via descendant selector) or HTML files (an HTML class= attribute applies the class).",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "file_type",
+                                                "value":  "CSS",
+                                                "meaning":  "Row was extracted from a .css file. component_name typically refers to a CSS class, variable, keyframe, or rule.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "reference_type",
+                                                "value":  "DEFINITION",
+                                                "meaning":  "The row represents the place where the component is defined: the CSS rule that creates a class, the JS function declaration, the @keyframes rule, the Add-PodeRoute call, the id=\"...\" attribute. The source_file column points at the file containing the definition.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "scope",
+                                                "value":  "SHARED",
+                                                "meaning":  "The component lives in shared platform infrastructure. For DEFINITION rows: the component is defined in a curated shared file (currently engine-events.css, engine-events.js, engine-events-API.ps1, xFACts-Helpers.psm1). For USAGE rows: the component being consumed has a SHARED DEFINITION somewhere in the catalog.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "source_file",
+                                                "value":  "\u003cundefined\u003e",
+                                                "meaning":  "Special source_file value indicating the component is referenced in HTML markup but has no DEFINITION in any cataloged source file. Most commonly applies to state modifier classes applied as space-separated HTML classes (active, disabled, hidden), classes used only via JS class manipulation, or dead references from prior code that has not been cleaned up.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "scope",
+                                                "value":  "LOCAL",
+                                                "meaning":  "The component is page-specific. For DEFINITION rows: the component is defined in a page-specific file. For USAGE rows: the component being consumed is only defined locally, or has no DEFINITION at all in the catalog (in which case source_file is \u003cundefined\u003e).",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "reference_type",
+                                                "value":  "USAGE",
+                                                "meaning":  "The row represents a place where the component is used: a CSS rule referencing a class via descendant selector, an HTML class= attribute consuming a class, a JS animation property referencing a keyframe, a fetch() call hitting an API route. The source_file column points at the file where the consumed component is defined (which may be a different file from file_name).",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "file_type",
+                                                "value":  "JS",
+                                                "meaning":  "Row was extracted from a .js file by parsing the JavaScript AST. component_name typically refers to a JS function, constant, or hook.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "CSS_VARIABLE",
+                                                "meaning":  "A CSS custom property (e.g., --portal-bg). DEFINITION rows for the property declaration, USAGE rows for var() references.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "CSS_KEYFRAME",
+                                                "meaning":  "A @keyframes rule (e.g., pulse, spin). DEFINITION rows for the rule declaration, USAGE rows for animation property references.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "file_type",
+                                                "value":  "PS",
+                                                "meaning":  "Row was extracted from PowerShell function or route definitions in a .ps1 or .psm1 file. component_name typically refers to a PS function, parameter, command, assignment, or API route.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "file_type",
+                                                "value":  "HTML",
+                                                "meaning":  "Row was extracted from HTML markup embedded in a .ps1 or .psm1 file (in here-strings or string tokens). component_name typically refers to a CSS class consumed by the markup or an HTML id attribute. file_name points at the .ps1/.psm1 file containing the markup.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "CSS_RULE",
+                                                "meaning":  "A non-class CSS rule (e.g., body, *, ::-webkit-scrollbar). DEFINITION only.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "COMMENT_BANNER",
+                                                "meaning":  "A section header comment in a source file (a block comment containing 5 or more = characters as a separator rule). DEFINITION only. The banner title becomes the component_name and serves as source_section context for subsequent rows in the same file.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "HTML_ID",
+                                                "meaning":  "An id attribute occurrence in HTML markup. DEFINITION only (an id=\"...\" attribute defines an ID for the page). HTML_IDs are inherently page-local.",
+                                                "sortOrder":  6
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "JS_FUNCTION",
+                                                "meaning":  "A JavaScript function declaration or expression assigned to a name. DEFINITION rows for the declaration, USAGE rows for call sites.",
+                                                "sortOrder":  7
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "JS_CONSTANT",
+                                                "meaning":  "A JavaScript top-level const, let, or var declaration. DEFINITION rows for the declaration, USAGE rows for references.",
+                                                "sortOrder":  8
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "JS_HOOK",
+                                                "meaning":  "A JavaScript function the page defines for the shared module to invoke (e.g., onPageRefresh, onSessionExpired, onEngineProcessCompleted). DEFINITION rows for the page-side declaration, USAGE rows for the shared-module-side invocation.",
+                                                "sortOrder":  9
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "PS_FUNCTION",
+                                                "meaning":  "A PowerShell function definition. DEFINITION rows for the function declaration, USAGE rows for call sites.",
+                                                "sortOrder":  10
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "PS_PARAM",
+                                                "meaning":  "A PowerShell parameter declaration on a function or script-level param block.",
+                                                "sortOrder":  11
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "PS_COMMAND",
+                                                "meaning":  "A PowerShell command invocation worth cataloging (e.g., calls to platform helpers like Invoke-XFActsQuery, Send-TeamsAlert).",
+                                                "sortOrder":  12
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "PS_ASSIGNMENT",
+                                                "meaning":  "A PowerShell module-scope or script-scope variable assignment.",
+                                                "sortOrder":  13
+                                            },
+                                            {
+                                                "column":  "component_type",
+                                                "value":  "API_ROUTE",
+                                                "meaning":  "A Pode route definition (an Add-PodeRoute call in a CC API .ps1 file). DEFINITION rows for the route handler, USAGE rows for client-side fetch() calls or ajax requests targeting the route.",
+                                                "sortOrder":  14
+                                            }
+                                        ]
+                   },
+                   {
                        "name":  "ClientHierarchy",
                        "description":  "Complete flattened DM creditor hierarchy providing single-lookup resolution from any creditor to its direct parent group and ultimate top-level parent. Rebuilt daily by Sync-ClientHierarchy.ps1 using a recursive CTE against crs5_oltp creditor and creditor group tables. Standalone creditors (crdtr_grp_id = 1) self-reference — their parent and top parent fields point to themselves. Includes all creditors regardless of transaction history or active status.",
                        "module":  "dbo",
