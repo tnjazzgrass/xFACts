@@ -59,11 +59,14 @@
 var MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
                    'July', 'August', 'September', 'October', 'November', 'December'];
 
-// Day-of-week names, 3-letter form. 0-indexed to match JavaScript's
-// Date.getDay() return value:
-//   DAY_NAMES[0] -> 'Sun'
-//   DAY_NAMES[6] -> 'Sat'
-var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Day-of-week names, 3-letter form. 1-indexed to match SQL DATEPART(dw, ...)
+// and the day_of_week column on schedule tables:
+//   DAY_NAMES[1] -> 'Sun'
+//   DAY_NAMES[7] -> 'Sat'
+var DAY_NAMES = { 1: 'Sun', 2: 'Mon', 3: 'Tue', 4: 'Wed', 5: 'Thu', 6: 'Fri', 7: 'Sat' };
+
+// Default day-of-week display order, Sun-Sat. Pages can override locally if needed.
+var DAY_ORDER = [1, 2, 3, 4, 5, 6, 7];
 
 // ============================================================================
 // STATE
