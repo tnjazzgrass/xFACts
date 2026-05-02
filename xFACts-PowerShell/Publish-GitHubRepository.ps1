@@ -111,7 +111,7 @@ $FileSources = @(
     @{
         ServerPath = $ScriptsRoot
         RepoPath   = "xFACts-PowerShell"
-        Filter     = @("*.ps1", "*.psm1")
+        Filter     = @("*.ps1", "*.js", "*.psm1")
         Recurse    = $false
         Description = "Orchestrator scripts"
     }
