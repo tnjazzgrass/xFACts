@@ -43,12 +43,6 @@ var dragSelectedCells = [];
 var dragPaintValue = 1;
 var currentScheduleProcess = null;
 
-// Day constants
-var DAY_NAMES = { 1: 'Sun', 2: 'Mon', 3: 'Tue', 4: 'Wed', 5: 'Thu', 6: 'Fri', 7: 'Sat' };
-var DAY_ORDER = [2, 3, 4, 5, 6, 7, 1]; // Mon-Sun display order
-var MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
-                   'July', 'August', 'September', 'October', 'November', 'December'];
-
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
