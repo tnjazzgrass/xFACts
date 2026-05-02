@@ -1041,8 +1041,6 @@ async function loadDatabaseHealth() {
 // ----------------------------------------------------------------------------
 // Schedule Modal
 // ----------------------------------------------------------------------------
-const DAY_NAMES = { 1: 'Sun', 2: 'Mon', 3: 'Tue', 4: 'Wed', 5: 'Thu', 6: 'Fri', 7: 'Sat' };
-const DAY_ORDER = [1, 2, 3, 4, 5, 6, 7];
 
 async function openSchedule(databaseId, serverName, databaseName) {
     currentScheduleDatabaseId = databaseId;
