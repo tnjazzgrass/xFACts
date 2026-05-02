@@ -159,6 +159,15 @@ Three known content-type gaps in the current Phase 1A/1B coverage:
 
 **Gap 3: Inline `<script>` blocks in route HTML.** Same shape as Gap 2 but for JS functions defined inline in route HTML. Convention discourages inline `<script>` (JS lives in dedicated `.js` files), so prevalence is likely very low. Phase 5 closes this gap.
 
+### Open question parked for Phase 1D
+
+Where the production populator scripts (`Populate-AssetRegistry-CSS.ps1`, `Populate-AssetRegistry-HTML.ps1`, `Populate-AssetRegistry-JS.ps1`, `Refresh-AssetRegistry.ps1`) get classified in Object_Registry. Two reasonable options:
+
+- **Tools.Utilities** — parallel to `sp_SyncColumnOrdinals` (Object_Metadata maintenance utility). Parser helpers `parse-css.js` and `parse-js.js` are already registered here, so the populators going here would keep the whole parser pipeline grouped together.
+- **Documentation.Pipeline** — parallel to `Generate-DDLReference.ps1` (produces JSON that downstream documentation pages consume). Asset_Registry data may eventually drive generated documentation views (Phase 7), making this the natural home if that's the long-term intent.
+
+Decide at the start of Phase 1D when there's full context on the production scripts. The decision doesn't affect the parsers' actual functionality — only their registration metadata.
+
 ### Standardization value of HTML-in-JS visibility
 
 Once Gap 1 closes (Phase 1C), the catalog will be able to answer questions that drive standardization decisions:
@@ -534,4 +543,4 @@ Updated at session end with: decisions made, environment changes, current row co
 |---|---|
 | 2026-04-30 | Initial framework draft (as `CC_Component_Registry_Plan.md`). Schema proposed, motivation captured. |
 | 2026-05-01 | Environment setup complete. Parsers validated. Renamed to `Asset_Registry_Working_Doc.md`. Phase 0 next. |
-| 2026-05-02 | Phase 0 (DDL) + Phase 1A (CSS) + Phase 1B (HTML) all completed. ~7,400 rows of catalog data. Drift detection and consumption matrix working. state_modifier and occurrence_index columns added. Production rewrite scoped. Old `CC_Component_Registry_Plan.md` superseded and queued for deletion. Parser-friendly recommendations added to `CC_FileFormat_Spec.md`. **Refresh strategy decision: TRUNCATE + reload per file_type, not MERGE upsert.** Given chrome standardization will deactivate more than it adds per run, soft-delete trail would pollute the table with dead rows. Current state only; manual annotations (when added later) live in a separate annotations table keyed on natural key. Object_Registry row + Object_Metadata baselines + column descriptions + design notes + status_value enumerations inserted. Added "extraction targets are content types not file extensions" framing — formalized Gaps 1/2/3 (HTML-in-JS, inline `<style>`, inline `<script>`) as future phases 1C / 4 / 5. |
+| 2026-05-02 | Phase 0 (DDL) + Phase 1A (CSS) + Phase 1B (HTML) all completed. ~7,400 rows of catalog data. Drift detection and consumption matrix working. state_modifier and occurrence_index columns added. Production rewrite scoped. Old `CC_Component_Registry_Plan.md` superseded and queued for deletion. Parser-friendly recommendations added to `CC_FileFormat_Spec.md`. **Refresh strategy decision: TRUNCATE + reload per file_type, not MERGE upsert.** Given chrome standardization will deactivate more than it adds per run, soft-delete trail would pollute the table with dead rows. Current state only; manual annotations (when added later) live in a separate annotations table keyed on natural key. Object_Registry row + Object_Metadata baselines + column descriptions + design notes + status_value enumerations inserted (Asset_Registry under Engine.SharedInfrastructure). Parser helpers `parse-css.js` and `parse-js.js` registered under Tools.Utilities (parallel to sp_SyncColumnOrdinals precedent — table lives in Engine.SharedInfrastructure, maintenance scripts in Tools.Utilities). Added "extraction targets are content types not file extensions" framing — formalized Gaps 1/2/3 (HTML-in-JS, inline `<style>`, inline `<script>`) as future phases 1C / 4 / 5. Production populator script classification (Tools.Utilities vs Documentation.Pipeline) parked as Phase 1D decision. |
