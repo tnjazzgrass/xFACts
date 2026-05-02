@@ -5172,6 +5172,18 @@
               ],
     "scripts":  [
                     {
+                        "name":  "parse-css.js",
+                        "description":  "Node.js helper script invoked as a subprocess from PowerShell to parse CSS source files into structured JSON. Wraps PostCSS 8.5.12 and postcss-selector-parser 7.1.1 for AST extraction with full line-number metadata and decomposed selector trees. Output drives the CSS extraction populator in the Asset_Registry parser pipeline.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
+                        "name":  "parse-js.js",
+                        "description":  "Node.js helper script invoked as a subprocess from PowerShell to parse JavaScript source files into structured JSON. Wraps Acorn 8.16.0 and acorn-walk 8.3.5 for AST extraction with full source position metadata. Output drives the JS extraction populator in the Asset_Registry parser pipeline.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
                         "name":  "Sync-ClientHierarchy.ps1",
                         "description":  "Rebuilds dbo.ClientHierarchy from crs5_oltp creditor and creditor group tables using a recursive CTE to resolve the full group hierarchy in a single pass. Uses MERGE to insert new creditors, update changed metadata, and delete creditors removed from the source. The CTE walks all groups regardless of soft-delete status, capturing the hierarchy as it exists in DM. Active flags at creditor, parent group, and top parent levels enable discrepancy detection.",
                         "module":  "dbo",
