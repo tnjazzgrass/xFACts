@@ -1110,6 +1110,29 @@ catch {
 
 if ($batchResult.Rows.Count -eq 0) {
     Write-Log "No eligible shell consumers found — work complete" "INFO"
+    if ($Script:AlertingEnabled) {
+        $remaining = Get-RemainingCounts
+        $sessionDuration = New-TimeSpan -Start $scriptStart -End (Get-Date)
+        $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
+        $alertDate = (Get-Date).ToString("MM/dd/yyyy")
+        $alertMsg = @"
+**Target:** $($Script:TargetServer)
+**Exit reason:** Queue exhausted
+
+**Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
+**Shells remaining:** $('{0:N0}' -f $remaining.Remaining)
+**Designated exceptions (skipped):** $('{0:N0}' -f $remaining.Exceptions)
+
+**Batches run:** $($Script:TotalBatchesRun)
+**Batches failed:** $($Script:TotalBatchesFailed)
+**Run duration:** $durationFriendly
+"@
+        Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'INFO' `
+            -Title "Shell Purge Complete - Queue Exhausted - $alertDate {{CHECK}}" `
+            -Message $alertMsg -Color 'good' `
+            -TriggerType 'shell_purge_complete_exhausted' `
+            -TriggerValue "$alertDate-$($Script:TotalBatchesRun)" | Out-Null
+    }
     $continueProcessing = $false
     break
 }
@@ -1121,7 +1144,7 @@ $exclusionChecks = @(
     @{ Name = 'agnt_crdtbl_actvty';            SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_id = sc.cnsmr_id)" }
     @{ Name = 'agnt_crdtbl_actvty_via_smmry';  SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdtbl_actvty aca WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT sps.schdld_pymnt_smmry_id FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id))" }
     @{ Name = 'agnt_crdt';                     SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.agnt_crdt ac INNER JOIN crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj ON ac.cnsmr_pymnt_jrnl_id = cpj.cnsmr_pymnt_jrnl_id WHERE cpj.cnsmr_id = sc.cnsmr_id)" }
-#    @{ Name = 'bnkrptcy';                      SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.bnkrptcy b WHERE b.cnsmr_id = sc.cnsmr_id)" }
+    @{ Name = 'bnkrptcy';                      SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.bnkrptcy b WHERE b.cnsmr_id = sc.cnsmr_id)" }
     @{ Name = 'schdld_pymnt_smmry';            SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.schdld_pymnt_smmry sps WHERE sps.cnsmr_id = sc.cnsmr_id)" }
     @{ Name = 'sspns_unresolved_cross_consumer'; SQL = "SELECT sc.cnsmr_id, sc.cnsmr_idntfr_agncy_id FROM #shell_exclusion_check sc WHERE EXISTS (SELECT 1 FROM crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci INNER JOIN crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci ON stci.sspns_trnsctn_cnsmr_idntfr_id = sci.sspns_trnsctn_cnsmr_idntfr_id INNER JOIN crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj ON cpj.sspns_cnsmr_imprt_trnsctn_id = sci.sspns_cnsmr_imprt_trnsctn_id WHERE stci.cnsmr_id = sc.cnsmr_id AND cpj.cnsmr_id != stci.cnsmr_id AND sci.sspns_trnsctn_stts_cd NOT IN (3, 5, 7, 10))" }
 )
@@ -1676,10 +1699,10 @@ Write-Log "  Batch #$($Script:TotalBatchesRun): $($Script:BatchConsumerIds.Count
 
 # ── Queue Teams alert on failure ──
 if ($batchStatus -eq 'Failed' -and $Script:AlertingEnabled) {
-    Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'CRITICAL' `
-        -Title '{{FIRE}} Shell purge batch failed' `
-        -Message "**Batch:** #$($Script:TotalBatchesRun) (batch_id: $($Script:CurrentBatchId))`n**Target:** $($Script:TargetServer)`n**Tables Failed:** $($Script:TablesFailed)`n**Consumers:** $($Script:BatchConsumerIds.Count)`n`nCheck ShellPurge_BatchDetail for batch_id $($Script:CurrentBatchId)." `
-        -TriggerType 'SHELL_PURGE_BATCH_FAILED' `
+    Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'WARNING' `
+        -Title '{{WARN}} Shell purge batch failed — will retry next cycle' `
+        -Message "**Batch:** #$($Script:TotalBatchesRun) (batch_id: $($Script:CurrentBatchId))`n**Target:** $($Script:TargetServer)`n**Tables Failed:** $($Script:TablesFailed)`n**Consumers in batch:** $($Script:BatchConsumerIds.Count)`n`nThese consumers remain in shell state and will be re-selected on the next run. No action needed unless failures persist.`n`nCheck ShellPurge_BatchDetail for batch_id $($Script:CurrentBatchId) for delete-step details." `
+        -TriggerType 'Shell Purge Batch Failed' `
         -TriggerValue "$($Script:CurrentBatchId)" | Out-Null
 }
 elseif ($batchStatus -eq 'Failed') {
@@ -1700,12 +1723,57 @@ elseif ($batchStatus -eq 'Failed') {
 }
 elseif (Test-ShellPurgeAbort) {
     Write-Log "  Shell purge abort flag detected — stopping after batch completion" "WARN"
+    if ($Script:AlertingEnabled) {
+        $remaining = Get-RemainingCounts
+        $sessionDuration = New-TimeSpan -Start $scriptStart -End (Get-Date)
+        $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
+        $alertDate = (Get-Date).ToString("MM/dd/yyyy")
+        $alertMsg = @"
+**Target:** $($Script:TargetServer)
+**Exit reason:** shell_purge_abort flag set in GlobalConfig
+
+**Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
+**Shells remaining:** $('{0:N0}' -f $remaining.Remaining)
+**Designated exceptions (skipped):** $('{0:N0}' -f $remaining.Exceptions)
+
+**Batches run:** $($Script:TotalBatchesRun)
+**Batches failed:** $($Script:TotalBatchesFailed)
+**Run duration:** $durationFriendly
+"@
+        Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'WARNING' `
+            -Title "Shell Purge Stopped - Abort Flag Set - $alertDate {{WARN}}" `
+            -Message $alertMsg -Color 'warning' `
+            -TriggerType 'shell_purge_aborted' `
+            -TriggerValue "$alertDate-$($Script:TotalBatchesRun)" | Out-Null
+    }
     $continueProcessing = $false
 }
-else {
     $nextScheduleValue = Get-ShellPurgeScheduleMode
     if ($nextScheduleValue -eq 0) {
         Write-Log "  Schedule: now in BLOCKED window — stopping" "INFO"
+        if ($Script:AlertingEnabled) {
+            $remaining = Get-RemainingCounts
+            $sessionDuration = New-TimeSpan -Start $scriptStart -End (Get-Date)
+            $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
+            $alertDate = (Get-Date).ToString("MM/dd/yyyy")
+            $alertMsg = @"
+**Target:** $($Script:TargetServer)
+**Exit reason:** Schedule transitioned to BLOCKED
+
+**Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
+**Shells remaining:** $('{0:N0}' -f $remaining.Remaining)
+**Designated exceptions (skipped):** $('{0:N0}' -f $remaining.Exceptions)
+
+**Batches run:** $($Script:TotalBatchesRun)
+**Batches failed:** $($Script:TotalBatchesFailed)
+**Run duration:** $durationFriendly
+"@
+            Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'INFO' `
+                -Title "Shell Purge Complete - Scheduled Cutoff - $alertDate {{CHECK}}" `
+                -Message $alertMsg -Color 'good' `
+                -TriggerType 'shell_purge_complete_schedule' `
+                -TriggerValue "$alertDate-$($Script:TotalBatchesRun)" | Out-Null
+        }
         $continueProcessing = $false
     }
     else {
