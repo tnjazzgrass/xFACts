@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-02 09:32:40
+Generated: 2026-05-02 09:48:51
 
 ## Module Registry
 
@@ -403,6 +403,8 @@ Generated: 2026-05-02 09:32:40
 | Tools.Operations | BDLImport.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1 | BDL Import CC page route |
 | Tools.Operations | ClientPortal.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\ClientPortal.ps1 | Client Portal CC page route — consumer and account lookup |
 | Tools.Utilities | sp_SyncColumnOrdinals | Database | Procedure | Tools | Aligns Object_Metadata column description sort_order values with actual sys.columns column_id ordinals for a specified table. Deactivates Object_Metadata rows for dropped columns. |
+| Tools.Utilities | parse-css.js | PowerShell | Script | E:\xFACts-PowerShell\parse-css.js | Node.js helper script that parses CSS source into structured AST output. Reads CSS from stdin, uses PostCSS 8.5.12 with postcss-selector-parser 7.1.1 to produce JSON containing rules, at-rules, comments, and decomposed selector trees with line numbers. Invoked as a subprocess by Populate-AssetRegistry-CSS.ps1 during catalog refresh. |
+| Tools.Utilities | parse-js.js | PowerShell | Script | E:\xFACts-PowerShell\parse-js.js | Node.js helper script that parses JavaScript source into structured AST output. Reads JS from stdin, uses Acorn 8.16.0 with acorn-walk 8.3.5 to produce ESTree-format JSON with full source position information. Invoked as a subprocess by Populate-AssetRegistry-JS.ps1 during catalog refresh. |
 
 ## Global Configuration
 
