@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-03 10:02:40
+Generated: 2026-05-03 18:03:10
 
 ## Module Registry
 
@@ -98,6 +98,7 @@ Generated: 2026-05-03 10:02:40
 | ControlCenter.Shared | xFACts-Helpers.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\scripts\modules\xFACts-Helpers.psm1 | Shared helper functions module for all CC pages |
 | ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1 | Control Center Pode server entry point |
 | ControlCenter.Shared | engine-events-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\engine-events-API.ps1 | Shared API Endpoints |
+| ControlCenter.Shared | cc-shared.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\cc-shared.css | Shared styles and classes |
 | ControlCenter.Shared | engine-events.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\engine-events.css | Shared styles and classes |
 | ControlCenter.Shared | engine-events.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\engine-events.js | Shared JavaScript functions |
 | DeptOps.ApplicationsIntegration | ApplicationsIntegration-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration-API.ps1 | Applications & Integration CC API endpoints — BDL catalog management |
