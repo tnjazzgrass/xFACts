@@ -1,0 +1,710 @@
+/* ============================================================================
+   xFACts Control Center - Backup Monitoring Styles (backup.css)
+   Location: E:\xFACts-ControlCenter\public\css\backup.css
+   Version: Tracked in dbo.System_Metadata (component: ServerOps.Backup)
+
+   Page-specific styles for the Backup Monitoring dashboard. Universal
+   chrome (nav bar, header bar, refresh info, sections, engine cards,
+   connection banner, slide panels, modals, animations, design tokens) is
+   provided by cc-shared.css per the CC Page Chrome Contract. This file
+   contains only the backup page's local content classes — pipeline status
+   cards, queue and retention summary cards, active operations tables,
+   storage drive gauges, backup type badges, and detail-modal sub-components.
+
+   All page-local classes are prefixed bkp- to make scope visible at a
+   glance: bkp-* in HTML or in another CSS file is unambiguously a backup
+   page concern. Shared classes (e.g., .section, .xf-modal-body) consumed
+   by this page's HTML are defined in cc-shared.css and referenced here
+   only when this page needs to override or extend them.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: TWO COLUMN LAYOUT
+   CONTENT: LOADING AND EMPTY STATES
+   CONTENT: PIPELINE STATUS
+   CONTENT: QUEUE AND RETENTION
+   CONTENT: ACTIVE OPERATIONS
+   CONTENT: STORAGE STATUS
+   CONTENT: BACKUP TYPE BADGES
+   CONTENT: DETAIL MODAL CONTENT
+   ============================================================================ */
+
+
+/* ============================================================================
+   LAYOUT: TWO COLUMN LAYOUT
+   ----------------------------------------------------------------------------
+   Top-level layout for the Backup page content area. Pipeline and Active
+   Operations sit on the left; Queue, Retention, and Storage on the right.
+   On viewports narrower than 1200px the columns stack vertically via the
+   @media rule at the bottom of the section.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* The two-column flex container that holds left and right page columns. */
+.bkp-two-column-layout {
+    display: flex;
+    gap: var(--size-spacing-2xl);
+}
+
+/* The left page column (pipeline status, active operations). */
+.bkp-left-column {
+    flex: 1;
+    min-width: 0;
+}
+
+/* The right page column (queue, retention, storage). */
+.bkp-right-column {
+    flex: 1;
+    min-width: 0;
+}
+
+@media (max-width: 1200px) {
+    /* Stacks the two-column layout vertically on narrower viewports. */
+    .bkp-two-column-layout {
+        flex-direction: column;
+    }
+}
+
+
+/* ============================================================================
+   CONTENT: LOADING AND EMPTY STATES
+   ----------------------------------------------------------------------------
+   Small inline placeholders shown while content is loading or when a
+   section has no rows to display. These are page-local because the wording
+   and styling vary slightly by context; cc-shared has slide-empty for
+   panel-internal empty states which is a different visual treatment.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* Italic muted-color placeholder shown while content is loading. */
+.bkp-loading {
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding: 15px;
+    text-align: center;
+}
+
+/* Italic dim-color placeholder shown when an activity-style row group has no entries. */
+.bkp-no-activity {
+    color: var(--color-text-subtle);
+    padding: var(--size-spacing-lg);
+    text-align: center;
+    font-size: var(--font-size-content);
+    font-style: italic;
+}
+
+/* Italic dim-color placeholder for inline empty cells. */
+.bkp-no-data {
+    color: var(--color-text-subtle);
+    font-style: italic;
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-md) 0;
+}
+
+
+/* ============================================================================
+   CONTENT: PIPELINE STATUS
+   ----------------------------------------------------------------------------
+   Pipeline cards (Local, Network, AWS) showing each pipeline's current
+   health, with status badge pills and frame coloring. Each card may render
+   in one of five states (success, running, warning, failed, unknown);
+   cards may also opt into clickable behavior to open a detail slideout.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* Flex container holding the row of pipeline cards. */
+.bkp-pipeline-grid {
+    display: flex;
+    gap: var(--size-spacing-lg);
+    flex-wrap: wrap;
+}
+
+/* Individual pipeline status card. */
+.bkp-pipeline-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg) 15px;
+    min-width: 140px;
+    flex: 1;
+}
+
+.bkp-pipeline-card.status-warning { /* warning-state frame coloring */
+    border-color: var(--color-accent-departmental);
+    background: rgba(220, 220, 170, 0.1);
+}
+
+.bkp-pipeline-card.status-critical { /* critical-state frame coloring */
+    border-color: var(--color-status-critical);
+    background: rgba(244, 135, 113, 0.1);
+}
+
+.bkp-pipeline-card.status-running { /* running-state frame coloring */
+    border-color: var(--color-accent-platform);
+    background: rgba(86, 156, 214, 0.1);
+}
+
+.bkp-pipeline-card.status-unknown { /* unknown-state frame coloring */
+    border-color: var(--color-text-subtle);
+}
+
+.bkp-pipeline-card.clickable { /* clickable card variant — opens detail slideout */
+    cursor: pointer;
+    transition: border-color var(--duration-instant) ease;
+}
+
+.bkp-pipeline-card.clickable:hover { /* hover state for clickable cards */
+    border-color: var(--color-accent-platform);
+}
+
+/* Header row of the pipeline card (name on left, status badge on right). */
+.bkp-pipeline-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Pipeline name label (uppercase, muted). */
+.bkp-pipeline-name {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Body container of the pipeline card (time and detail). */
+.bkp-pipeline-card-body {
+    font-size: var(--font-size-body);
+}
+
+/* Last-run time display (large, prominent). */
+.bkp-pipeline-time {
+    font-size: var(--font-size-heading-lg);
+    font-weight: 500;
+    margin-bottom: var(--size-spacing-xs);
+}
+
+.bkp-pipeline-time.status-warning { /* time text color when card is in warning state */
+    color: var(--color-accent-departmental);
+}
+
+.bkp-pipeline-time.status-critical { /* time text color when card is in critical state */
+    color: var(--color-status-critical);
+}
+
+.bkp-pipeline-time.status-running { /* time text color when card is in running state */
+    color: var(--color-accent-platform);
+}
+
+.bkp-pipeline-time.status-unknown { /* time text color when card is in unknown state */
+    color: var(--color-text-subtle);
+}
+
+/* Pipeline detail line (small caption below the time). */
+.bkp-pipeline-detail {
+    color: var(--color-text-subtle);
+    line-height: 1.4;
+}
+
+/* Status badge pill (small uppercase indicator next to pipeline name). */
+.bkp-pipeline-status-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.bkp-pipeline-status-badge.success { /* success state — teal pill */
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
+
+.bkp-pipeline-status-badge.running { /* running state — blue pill */
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+}
+
+.bkp-pipeline-status-badge.warning { /* warning state — yellow pill */
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
+
+.bkp-pipeline-status-badge.failed { /* failed state — orange pill */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+.bkp-pipeline-status-badge.unknown { /* unknown state — gray pill */
+    background: rgba(85, 85, 85, 0.2);
+    color: var(--color-border-strong);
+}
+
+
+/* ============================================================================
+   CONTENT: QUEUE AND RETENTION
+   ----------------------------------------------------------------------------
+   Side-by-side sections in the right column showing queue and retention
+   counts. Each section contains a card pair with click-through targets
+   to open detail slideouts. Status cards render an icon, label, value,
+   and detail caption.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* The flex row holding two sections side by side. */
+.bkp-side-by-side-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+/* Half-width section variant used inside .bkp-side-by-side-row. */
+.bkp-half-section {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+/* Pair of status cards laid out horizontally inside a section. */
+.bkp-card-pair {
+    display: flex;
+    gap: 10px;
+}
+
+/* Individual status card showing icon, label, value, and detail. */
+.bkp-status-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg) 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+}
+
+.bkp-status-card.clickable { /* clickable card variant — opens detail slideout */
+    cursor: pointer;
+    transition: border-color var(--duration-instant) ease, background var(--duration-instant) ease;
+}
+
+.bkp-status-card.clickable:hover { /* hover state for clickable status cards */
+    border-color: var(--color-accent-platform);
+    background: var(--color-border-divider);
+}
+
+/* Icon glyph at the left of a status card. */
+.bkp-card-icon {
+    font-size: 24px;
+    opacity: 0.6;
+}
+
+/* Content container inside a status card (label + value + detail). */
+.bkp-card-content {
+    flex: 1;
+}
+
+/* Card label text (uppercase, muted). */
+.bkp-card-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Card value text (large, accent-colored). */
+.bkp-card-value {
+    font-size: 24px;
+    font-weight: 400;
+    color: var(--color-accent-shared);
+    line-height: 1.2;
+}
+
+/* Card detail caption below the value (small, dim). */
+.bkp-card-detail {
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
+}
+
+/* Bottom note shown beneath the retention card pair (e.g., schedule reminder). */
+.bkp-retention-schedule-note {
+    text-align: center;
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+}
+
+
+/* ============================================================================
+   CONTENT: ACTIVE OPERATIONS
+   ----------------------------------------------------------------------------
+   Combined section showing currently-running backup operations grouped by
+   type (current backup, network copy, AWS upload, retention purge). Each
+   group renders as a small table with a header label and progress bars.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* Scrollable container for the active operations section content. */
+.bkp-active-operations-content {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Wrapper for a single operation type's group. */
+.bkp-operation-group {
+    margin-bottom: 15px;
+}
+
+.bkp-operation-group.last { /* last group — no bottom margin */
+    margin-bottom: 0;
+}
+
+/* Header row labeling an operation group with icon and title. */
+.bkp-operation-group-header {
+    font-size: var(--font-size-content);
+    font-weight: 600;
+    color: var(--color-text-link);
+    margin-bottom: var(--size-spacing-md);
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+}
+
+/* Icon glyph in an operation group header. */
+.bkp-op-icon {
+    font-size: var(--font-size-heading-sm);
+}
+
+/* Data table inside an operation group. */
+.bkp-operation-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Table header cell. */
+.bkp-operation-table-th {
+    text-align: left;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-muted);
+    font-weight: 500;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* Table data cell. */
+.bkp-operation-table-td {
+    padding: 5px var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Hover row state for the operation table. */
+.bkp-operation-table-row:hover { /* hover state for any data row in the operation table */
+    background: var(--color-bg-card-deep);
+}
+
+/* Filename cell — monospace font for visual alignment of paths. */
+.bkp-operation-file-name {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-pre);
+}
+
+/* Progress bar container (host for the colored fill bar). */
+.bkp-progress-bar-container {
+    position: relative;
+    background: var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    height: var(--font-size-heading-lg);
+    min-width: 80px;
+    overflow: hidden;
+}
+
+/* The colored fill bar inside the progress container. */
+.bkp-progress-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--gradient-progress-default);
+    border-radius: var(--size-radius-sm);
+    transition: width var(--duration-default) ease;
+}
+
+/* Percentage text rendered on top of the progress bar. */
+.bkp-progress-text {
+    position: relative;
+    z-index: 1;
+    display: block;
+    text-align: center;
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    line-height: var(--font-size-heading-lg);
+    color: var(--color-text-primary);
+    text-shadow: 0 0 2px #000;
+}
+
+
+/* ============================================================================
+   CONTENT: STORAGE STATUS
+   ----------------------------------------------------------------------------
+   Storage section showing each drive's space usage as an 80-segment gauge
+   bar. Drives are grouped by location (local, network) and color-coded
+   by health threshold. Each gauge segment can be in one of three active
+   states (healthy, warning, critical) or inactive.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* Wrapper for a single storage location's drive group. */
+.bkp-storage-group {
+    margin-bottom: 15px;
+}
+
+.bkp-storage-group.last { /* last storage group — no bottom margin */
+    margin-bottom: 0;
+}
+
+/* Header label for a storage group (e.g., "LOCAL", "NETWORK"). */
+.bkp-storage-group-header {
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* A single storage drive's row container. */
+.bkp-storage-drive {
+    background: var(--color-bg-card-hover);
+    border-radius: var(--size-radius-default);
+    padding: 10px var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-md);
+}
+
+.bkp-storage-drive.last { /* last drive in a group — no bottom margin */
+    margin-bottom: 0;
+}
+
+/* Header row of a storage drive (label left, stats right). */
+.bkp-drive-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Drive label (drive letter + name). */
+.bkp-drive-label {
+    font-size: var(--font-size-content);
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+.bkp-drive-label.warning { /* drive is past warning threshold */
+    color: var(--color-accent-departmental);
+}
+
+.bkp-drive-label.critical { /* drive is past critical threshold */
+    color: var(--color-status-critical);
+}
+
+/* Drive stats text (used / total). */
+.bkp-drive-stats {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* Italic error message shown when a drive is unreachable. */
+.bkp-storage-error {
+    color: var(--color-status-critical);
+    font-size: var(--font-size-body);
+    font-style: italic;
+    padding: var(--size-spacing-xs) 0;
+}
+
+/* Container for the 80-segment gauge bar. */
+.bkp-segment-bar {
+    display: flex;
+    gap: 2px;
+}
+
+/* Individual gauge segment (one of 80 per drive). */
+.bkp-segment {
+    flex: 1;
+    height: 18px;
+    background: var(--color-border-default);
+    border-radius: var(--size-radius-xs);
+    transition: background var(--duration-default) ease;
+}
+
+.bkp-segment.active-healthy { /* segment is filled and drive is below warning threshold */
+    background: var(--color-accent-shared);
+}
+
+.bkp-segment.active-warning { /* segment is filled and drive is past warning threshold */
+    background: var(--color-accent-departmental);
+}
+
+.bkp-segment.active-critical { /* segment is filled and drive is past critical threshold */
+    background: var(--color-status-critical);
+}
+
+
+/* ============================================================================
+   CONTENT: BACKUP TYPE BADGES
+   ----------------------------------------------------------------------------
+   Small inline badges used inside detail tables to label the backup type
+   on each row (FULL, DIFF, LOG). Each backup type has a distinguishing
+   color: full=teal, diff=blue, log=muted yellow. Color of log type is
+   intentionally a muted shade (#b5b07a) rather than the platform's
+   standard yellow accent so it reads as informational rather than as a
+   warning indicator.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* Backup-type badge base (the inline pill styling shared across all types). */
+.bkp-backup-type-badge {
+    display: inline-block;
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.bkp-backup-type-badge.type-full { /* FULL backup type — teal */
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+    border: var(--size-border-thin) solid rgba(78, 201, 176, 0.3);
+}
+
+.bkp-backup-type-badge.type-diff { /* DIFFERENTIAL backup type — blue */
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
+}
+
+.bkp-backup-type-badge.type-log { /* TRANSACTION LOG backup type — muted yellow (informational, not warning) */
+    background: rgba(220, 220, 170, 0.12);
+    color: #b5b07a;
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.25);
+}
+
+
+/* ============================================================================
+   CONTENT: DETAIL MODAL CONTENT
+   ----------------------------------------------------------------------------
+   Sub-components rendered inside the shared xf-modal-body when displaying
+   pipeline or queue file-level detail. The outer modal container itself
+   uses the shared .xf-modal-overlay / .xf-modal.wide / .xf-modal-header /
+   .xf-modal-body classes from cc-shared.css. These sub-components are
+   page-local until a second page proves cross-page reuse.
+   Prefixes: bkp
+   ============================================================================ */
+
+/* Detail summary bar — renders at top of modal body with key stats. */
+.bkp-detail-summary {
+    display: flex;
+    gap: var(--size-spacing-2xl);
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--color-bg-card-hover);
+    border-radius: var(--size-radius-default);
+    margin-bottom: var(--size-spacing-xl);
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
+
+/* A single inline summary item (key/value pair). */
+.bkp-detail-summary-item {
+    white-space: nowrap;
+}
+
+/* The value half of a summary item (primary-color text). */
+.bkp-detail-summary-value {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+.bkp-detail-summary-value.summary-status-success { /* summary value when overall status is success */
+    color: var(--color-accent-shared);
+    font-weight: 600;
+}
+
+.bkp-detail-summary-value.summary-status-partial { /* summary value when overall status is partial success */
+    color: var(--color-accent-departmental);
+    font-weight: 600;
+}
+
+.bkp-detail-summary-value.summary-status-failed { /* summary value when overall status is failed */
+    color: var(--color-status-critical);
+    font-weight: 600;
+}
+
+/* Detail data table — renders below the summary bar. */
+.bkp-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Table header cell. */
+.bkp-detail-table-th {
+    text-align: left;
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+/* Table data cell. */
+.bkp-detail-table-td {
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
+    white-space: nowrap;
+}
+
+.bkp-detail-table-td.align-right { /* right-aligned numeric or timestamp cells */
+    text-align: right;
+}
+
+.bkp-detail-table-td.status-success { /* cell text color for success-status rows */
+    color: var(--color-accent-shared);
+}
+
+.bkp-detail-table-td.status-failed { /* cell text color for failed-status rows */
+    color: var(--color-status-critical);
+}
+
+/* Hover row state for the detail table. */
+.bkp-detail-table-row:hover { /* hover state for any data row in the detail table */
+    background: var(--color-bg-card-hover);
+}
+
+/* Italic error caption shown beneath a failed-status row in the detail table. */
+.bkp-detail-error-caption {
+    font-size: var(--font-size-body);
+    color: var(--color-status-critical);
+    font-style: italic;
+    padding: 2px 10px var(--size-spacing-sm);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Empty-state placeholder shown when the detail table has no rows. */
+.bkp-detail-empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+    padding: var(--size-spacing-2xl);
+    text-align: center;
+}
