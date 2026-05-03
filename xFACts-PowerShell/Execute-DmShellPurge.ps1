@@ -1111,7 +1111,17 @@ catch {
 if ($batchResult.Rows.Count -eq 0) {
     Write-Log "No eligible shell consumers found — work complete" "INFO"
     if ($Script:AlertingEnabled) {
-        $remaining = Get-RemainingCounts
+        $remainingResult = Invoke-TargetQuery -Query @"
+SELECT COUNT(*) AS Remaining
+FROM crs5_oltp.dbo.cnsmr c
+LEFT JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = c.cnsmr_id
+WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
+"@
+        $remainingCount = if ($remainingResult.Rows.Count -gt 0) { [int]$remainingResult.Rows[0].Remaining } else { 0 }
+
+        $exceptionsResult = Get-SqlData -Query "SELECT COUNT(DISTINCT cnsmr_id) AS Exceptions FROM DmOps.ShellPurge_ConsumerExceptionLog"
+        $exceptionsCount = if ($exceptionsResult) { [int]$exceptionsResult[0].Exceptions } else { 0 }
+
         $sessionDuration = New-TimeSpan -Start $scriptStart -End (Get-Date)
         $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
         $alertDate = (Get-Date).ToString("MM/dd/yyyy")
@@ -1120,8 +1130,8 @@ if ($batchResult.Rows.Count -eq 0) {
 **Exit reason:** Queue exhausted
 
 **Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
-**Shells remaining:** $('{0:N0}' -f $remaining.Remaining)
-**Designated exceptions (skipped):** $('{0:N0}' -f $remaining.Exceptions)
+**Shells remaining:** $('{0:N0}' -f $remainingCount)
+**Designated exceptions (skipped):** $('{0:N0}' -f $exceptionsCount)
 
 **Batches run:** $($Script:TotalBatchesRun)
 **Batches failed:** $($Script:TotalBatchesFailed)
@@ -1724,7 +1734,17 @@ elseif ($batchStatus -eq 'Failed') {
 elseif (Test-ShellPurgeAbort) {
     Write-Log "  Shell purge abort flag detected — stopping after batch completion" "WARN"
     if ($Script:AlertingEnabled) {
-        $remaining = Get-RemainingCounts
+        $remainingResult = Invoke-TargetQuery -Query @"
+SELECT COUNT(*) AS Remaining
+FROM crs5_oltp.dbo.cnsmr c
+LEFT JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = c.cnsmr_id
+WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
+"@
+        $remainingCount = if ($remainingResult.Rows.Count -gt 0) { [int]$remainingResult.Rows[0].Remaining } else { 0 }
+
+        $exceptionsResult = Get-SqlData -Query "SELECT COUNT(DISTINCT cnsmr_id) AS Exceptions FROM DmOps.ShellPurge_ConsumerExceptionLog"
+        $exceptionsCount = if ($exceptionsResult) { [int]$exceptionsResult[0].Exceptions } else { 0 }
+
         $sessionDuration = New-TimeSpan -Start $scriptStart -End (Get-Date)
         $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
         $alertDate = (Get-Date).ToString("MM/dd/yyyy")
@@ -1733,8 +1753,8 @@ elseif (Test-ShellPurgeAbort) {
 **Exit reason:** shell_purge_abort flag set in GlobalConfig
 
 **Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
-**Shells remaining:** $('{0:N0}' -f $remaining.Remaining)
-**Designated exceptions (skipped):** $('{0:N0}' -f $remaining.Exceptions)
+**Shells remaining:** $('{0:N0}' -f $remainingCount)
+**Designated exceptions (skipped):** $('{0:N0}' -f $exceptionsCount)
 
 **Batches run:** $($Script:TotalBatchesRun)
 **Batches failed:** $($Script:TotalBatchesFailed)
@@ -1748,12 +1768,23 @@ elseif (Test-ShellPurgeAbort) {
     }
     $continueProcessing = $false
 }
+else {
     $nextScheduleValue = Get-ShellPurgeScheduleMode
     if ($nextScheduleValue -eq 0) {
         Write-Log "  Schedule: now in BLOCKED window — stopping" "INFO"
         if ($Script:AlertingEnabled) {
-            $remaining = Get-RemainingCounts
-            $sessionDuration = New-TimeSpan -Start $scriptStart -End (Get-Date)
+        $remainingResult = Invoke-TargetQuery -Query @"
+SELECT COUNT(*) AS Remaining
+FROM crs5_oltp.dbo.cnsmr c
+LEFT JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = c.cnsmr_id
+WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
+"@
+        $remainingCount = if ($remainingResult.Rows.Count -gt 0) { [int]$remainingResult.Rows[0].Remaining } else { 0 }
+
+        $exceptionsResult = Get-SqlData -Query "SELECT COUNT(DISTINCT cnsmr_id) AS Exceptions FROM DmOps.ShellPurge_ConsumerExceptionLog"
+        $exceptionsCount = if ($exceptionsResult) { [int]$exceptionsResult[0].Exceptions } else { 0 }
+
+        $sessionDuration = New-TimeSpan -Start $scriptStart -End (Get-Date)
             $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
             $alertDate = (Get-Date).ToString("MM/dd/yyyy")
             $alertMsg = @"
@@ -1761,8 +1792,8 @@ elseif (Test-ShellPurgeAbort) {
 **Exit reason:** Schedule transitioned to BLOCKED
 
 **Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
-**Shells remaining:** $('{0:N0}' -f $remaining.Remaining)
-**Designated exceptions (skipped):** $('{0:N0}' -f $remaining.Exceptions)
+**Shells remaining:** $('{0:N0}' -f $remainingCount)
+**Designated exceptions (skipped):** $('{0:N0}' -f $exceptionsCount)
 
 **Batches run:** $($Script:TotalBatchesRun)
 **Batches failed:** $($Script:TotalBatchesFailed)
