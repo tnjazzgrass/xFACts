@@ -1,0 +1,1387 @@
+/* ============================================================================
+   xFACts Control Center - Shared Styles (cc-shared.css)
+   Location: E:\xFACts-ControlCenter\public\css\cc-shared.css
+   Version: Tracked in dbo.System_Metadata (component: ControlCenter.Shared)
+
+   Source of truth for the Control Center's universal page chrome and all
+   cross-page UI primitives. Every CC page consumes from this file: page
+   background, navigation bar, header bar, refresh info row, engine cards,
+   connection banner, back link, section containers, slide panels, modals,
+   and feedback overlays. Page-specific CSS files contain page-specific
+   content rules only and consume the building blocks defined here via
+   shared classes (e.g., .section, .slide-panel, .xf-modal) and the custom
+   property tokens in :root (e.g., var(--color-bg-card), var(--size-radius-default)).
+
+   This file replaces the legacy engine-events.css as the canonical shared
+   resource. During the page-by-page migration both files coexist; once
+   the last page has migrated to consume cc-shared.css, engine-events.css
+   is deleted.
+
+   FILE ORGANIZATION
+   -----------------
+   FOUNDATION: TOKENS, RESETS, KEYFRAMES, ANIMATION UTILITIES
+   CHROME: NAV BAR
+   CHROME: PAGE TITLE
+   CHROME: REFRESH INFO
+   CHROME: ENGINE CARDS
+   CHROME: CONNECTION BANNER
+   CHROME: BACK LINK
+   CONTENT: SECTIONS
+   CONTENT: SLIDE PANELS
+   CONTENT: MODAL SYSTEM
+   FEEDBACK_OVERLAYS: IDLE OVERLAY
+   ============================================================================ */
+
+
+/* ============================================================================
+   FOUNDATION: TOKENS, RESETS, KEYFRAMES, ANIMATION UTILITIES
+   ----------------------------------------------------------------------------
+   The shared building blocks every page consumes: custom property tokens
+   declared once in :root and referenced everywhere via var(...), CSS reset
+   rules that establish the dark-theme baseline, browser scrollbar styling,
+   all @keyframes definitions used anywhere in this file, and the small set
+   of animation utility classes pages can apply directly. Element-only,
+   universal, and pseudo-element selectors are spec-permitted in this
+   section only because that's how CSS resets work.
+   Prefixes: (none)
+   ============================================================================ */
+
+:root {
+
+    /* -- Color tokens: page and surface backgrounds -- */
+    --color-bg-page:            #1e1e1e;
+    --color-bg-card:            #252526;
+    --color-bg-card-hover:      #2d2d2d;
+    --color-bg-card-deep:       #2a2a2a;
+    --color-bg-overlay-modal:   rgba(0, 0, 0, 0.6);
+    --color-bg-overlay-panel:   rgba(0, 0, 0, 0.5);
+    --color-bg-overlay-idle:    rgba(0, 0, 0, 0.4);
+    --color-bg-pre:             #1e1e1e;
+
+    /* -- Color tokens: borders -- */
+    --color-border-default:     #404040;
+    --color-border-strong:      #555;
+    --color-border-subtle:      #383838;
+    --color-border-divider:     #333;
+
+    /* -- Color tokens: text -- */
+    --color-text-primary:       #d4d4d4;
+    --color-text-secondary:     #bbb;
+    --color-text-muted:         #888;
+    --color-text-subtle:        #666;
+    --color-text-link:          #9cdcfe;
+    --color-text-pre:           #ce9178;
+    --color-text-on-primary:    #fff;
+
+    /* -- Color tokens: section accents (the visual identity per nav section) -- */
+    --color-accent-platform:        #569cd6;
+    --color-accent-departmental:    #dcdcaa;
+    --color-accent-tools:           #9cdcfe;
+    --color-accent-shared:          #4ec9b0;
+
+    /* -- Color tokens: engine status states -- */
+    --color-status-idle:        #22c55e;
+    --color-status-running:     #569cd6;
+    --color-status-overdue:     #dcdcaa;
+    --color-status-critical:    #f48771;
+    --color-status-disabled:    #444;
+
+    /* -- Color tokens: status glows (alpha-blended companions to status colors) -- */
+    --color-glow-status-idle:       rgba(34, 197, 94, 0.4);
+    --color-glow-status-running:    rgba(86, 156, 214, 0.4);
+    --color-glow-status-overdue:    rgba(220, 220, 170, 0.4);
+    --color-glow-status-critical:   rgba(244, 135, 113, 0.4);
+
+    /* -- Color tokens: card-state tints (alpha-blended for warning/critical surface treatment) -- */
+    --color-tint-warning:       rgba(220, 220, 170, 0.08);
+    --color-tint-critical:      rgba(244, 135, 113, 0.08);
+
+    /* -- Color tokens: connection-banner state surfaces -- */
+    --color-banner-reconnecting-bg:     rgba(86, 156, 214, 0.15);
+    --color-banner-reconnecting-border: rgba(86, 156, 214, 0.3);
+    --color-banner-disconnected-bg:     rgba(244, 135, 113, 0.15);
+    --color-banner-disconnected-border: rgba(244, 135, 113, 0.3);
+    --color-banner-session-bg:          rgba(220, 220, 170, 0.15);
+    --color-banner-session-border:      rgba(220, 220, 170, 0.3);
+    --color-banner-reloading-bg:        rgba(78, 201, 176, 0.15);
+    --color-banner-reloading-border:    rgba(78, 201, 176, 0.3);
+
+    /* -- Color tokens: button colors -- */
+    --color-button-primary-bg:          #0e639c;
+    --color-button-primary-bg-hover:    #1177bb;
+    --color-button-danger-bg:           #6d3030;
+    --color-button-danger-border:       #8b3a3a;
+    --color-button-danger-bg-hover:     #8b3a3a;
+    --color-button-danger-border-hover: #a04444;
+
+    /* -- Size tokens: spacing scale -- */
+    --size-spacing-xs:          4px;
+    --size-spacing-sm:          6px;
+    --size-spacing-md:          8px;
+    --size-spacing-lg:          12px;
+    --size-spacing-xl:          16px;
+    --size-spacing-2xl:         20px;
+
+    /* -- Size tokens: layout dimensions -- */
+    --size-nav-height:          40px;
+    --size-page-padding-x:      40px;
+    --size-page-padding-y:      20px;
+    --size-page-padding-top:    60px;
+
+    /* -- Size tokens: border radius -- */
+    --size-radius-xs:           2px;
+    --size-radius-sm:           3px;
+    --size-radius-default:      4px;
+    --size-radius-lg:           6px;
+    --size-radius-xl:           8px;
+
+    /* -- Size tokens: borders -- */
+    --size-border-thin:         1px;
+
+    /* -- Size tokens: slide panel widths and offsets -- */
+    --size-panel-width-default: 550px;
+    --size-panel-offset-default: -570px;
+    --size-panel-width-wide:    800px;
+    --size-panel-offset-wide:   -820px;
+    --size-panel-width-xwide:   950px;
+    --size-panel-offset-xwide:  -970px;
+
+    /* -- Size tokens: modal widths -- */
+    --size-modal-width-default: 460px;
+    --size-modal-width-wide:    800px;
+
+    /* -- Size tokens: scrollbar -- */
+    --size-scrollbar-width:     8px;
+
+    /* -- Font tokens -- */
+    --font-family-default:      'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --font-family-monospace:    'Cascadia Code', 'Consolas', monospace;
+    --font-size-xs:             8px;
+    --font-size-sm:             9px;
+    --font-size-default:        10px;
+    --font-size-body:           11px;
+    --font-size-content:        12px;
+    --font-size-content-lg:     13px;
+    --font-size-heading-sm:     14px;
+    --font-size-heading-md:     15px;
+    --font-size-heading-lg:     16px;
+    --font-size-h1:             24px;
+
+    /* -- Duration tokens: animation and transition timings -- */
+    --duration-instant:         0.15s;
+    --duration-fast:            0.2s;
+    --duration-default:         0.3s;
+    --duration-slow:            0.8s;
+    --duration-spinner:         1s;
+    --duration-pulse:           2s;
+
+    /* -- Shadow tokens -- */
+    --shadow-modal:             0 8px 30px rgba(0, 0, 0, 0.5);
+    --shadow-popup:             0 4px 20px rgba(0, 0, 0, 0.5);
+
+    /* -- Gradient tokens (canonical multi-color fills used across pages) -- */
+    --gradient-progress-default: linear-gradient(90deg, #2d6b5e, #266053);
+
+    /* -- Z-index tokens (layering order, lowest to highest) -- */
+    --z-nav:                    1000;
+    --z-panel-overlay:          1000;
+    --z-panel:                  1001;
+    --z-modal-overlay:          1300;
+    --z-idle-overlay:           10000;
+}
+
+/* -- Box-sizing reset -- */
+* { box-sizing: border-box; }
+
+/* -- Body: viewport-constrained flex column -- */
+/* The page never causes browser-level scroll. Chrome takes natural height; */
+/* content area fills remaining space and manages its own internal scroll.  */
+body {
+    font-family: var(--font-family-default);
+    margin: 0;
+    padding: var(--size-page-padding-y) var(--size-page-padding-x);
+    padding-top: var(--size-page-padding-top);
+    background: var(--color-bg-page);
+    color: var(--color-text-primary);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* -- Global link color -- */
+a { color: var(--color-text-link); }
+
+/* -- Dark scrollbars (WebKit) -- */
+::-webkit-scrollbar          { width: var(--size-scrollbar-width); height: var(--size-scrollbar-width); }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: var(--color-status-disabled); border-radius: var(--size-radius-default); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
+
+/* -- Dark scrollbars (Firefox) -- */
+* { scrollbar-width: thin; scrollbar-color: var(--color-status-disabled) transparent; }
+
+/* -- Keyframes (consumed by rules throughout this file) -- */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.5; }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+@keyframes page-refresh-spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes xfModalFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Animation utility class: continuous spin (used inline by gear icons). */
+.cc-spinning-gear {
+    display: inline-block;
+    animation: spin var(--duration-spinner) linear infinite;
+}
+
+/* Animation utility class: one-shot spin (used on click feedback). */
+.cc-spinning {
+    animation: spin var(--duration-slow) ease-in-out;
+}
+
+
+/* ============================================================================
+   CHROME: NAV BAR
+   ----------------------------------------------------------------------------
+   Fixed nav bar at the top of every page, rendered by Get-NavBarHtml in
+   xFACts-Helpers.psm1. Contains Home + section links + admin gear (admins
+   only). Section accent classes are applied based on RBAC_NavSection data
+   and visually pair with the page H1 color.
+   Prefixes: nav
+   ============================================================================ */
+
+/* The fixed nav bar container at the top of every page. */
+.nav-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: var(--color-bg-card);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    padding: 0 var(--size-page-padding-y);
+    display: flex;
+    gap: 0;
+    z-index: var(--z-nav);
+    height: var(--size-nav-height);
+    align-items: center;
+}
+
+/* Individual nav link in the nav bar. */
+.nav-link {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    padding: 10px var(--size-spacing-xl);
+    font-size: var(--font-size-content-lg);
+    transition: all var(--duration-fast);
+    border-bottom: 2px solid transparent;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.nav-link:hover { /* hover state for any nav link */
+    color: var(--color-text-primary);
+    background: var(--color-bg-card-hover);
+}
+
+.nav-link.active { /* active state for the current page's nav link (default accent) */
+    color: var(--color-accent-shared);
+    border-bottom-color: var(--color-accent-shared);
+}
+
+/* Nav bar flexible spacer that pushes admin gear to the right. */
+.nav-spacer { flex: 1; }
+
+/* Admin gear icon link, rendered for admins only at the right of the nav bar. */
+.nav-admin {
+    font-size: 20px;
+    opacity: 0.45;
+    color: var(--color-accent-platform) !important;
+    padding: 10px var(--size-spacing-lg);
+    transition: opacity var(--duration-fast);
+    line-height: 1;
+}
+
+.nav-admin:hover { /* hover state for the admin gear */
+    opacity: 1;
+}
+
+/* Visual divider between nav links and the admin gear. */
+.nav-separator {
+    color: var(--color-border-default);
+    padding: 0 var(--size-spacing-xs);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Platform-section accent: blue on hover and active state. */
+.nav-link.nav-section-platform:hover { /* hover state for platform-section nav links */
+    color: var(--color-accent-platform);
+}
+
+.nav-section-platform.active { /* active state for platform-section nav links */
+    color: var(--color-accent-platform);
+    border-bottom-color: var(--color-accent-platform);
+}
+
+/* Departmental-section accent: yellow on hover and active state. */
+.nav-link.nav-section-departmental:hover { /* hover state for departmental-section nav links */
+    color: var(--color-accent-departmental);
+}
+
+.nav-section-departmental.active { /* active state for departmental-section nav links */
+    color: var(--color-accent-departmental);
+    border-bottom-color: var(--color-accent-departmental);
+}
+
+/* Tools-section accent: soft blue on hover and active state. */
+.nav-link.nav-section-tools:hover { /* hover state for tools-section nav links */
+    color: var(--color-accent-tools);
+}
+
+.nav-section-tools.active { /* active state for tools-section nav links */
+    color: var(--color-accent-tools);
+    border-bottom-color: var(--color-accent-tools);
+}
+
+/* Admin-section guard: never rendered as a nav link (gear-only access). */
+/* Defensive rule that hides the link if a future code change accidentally emits one. */
+.nav-section-admin { /* admin-section nav link guard (always hidden) */
+    display: none;
+}
+
+
+/* ============================================================================
+   CHROME: PAGE TITLE
+   ----------------------------------------------------------------------------
+   The page title row sits below the nav bar. H1 + subtitle on the left,
+   refresh info row + optional engine cards on the right. The H1 color is
+   driven by the body's section class so changing a page's section in
+   RBAC_NavRegistry automatically updates the page color.
+
+   Element selectors (h1) appear here intentionally: pages do not redefine
+   h1 color in their own CSS, and the body.section-* selectors live in
+   FOUNDATION's reset family. We localize h1 styling to the page-title
+   chrome by giving it a class wrapper.
+   Prefixes: page, header
+   ============================================================================ */
+
+/* The H1 element wrapped in a page-title container. */
+.page-h1 {
+    color: var(--color-accent-platform);
+    margin: 0 0 2px 0;
+    font-size: var(--font-size-h1);
+}
+
+.page-h1.section-platform { /* H1 color when page belongs to the platform section */
+    color: var(--color-accent-platform);
+}
+
+.page-h1.section-departmental { /* H1 color when page belongs to the departmental section */
+    color: var(--color-accent-departmental);
+}
+
+.page-h1.section-tools { /* H1 color when page belongs to the tools section */
+    color: var(--color-accent-tools);
+}
+
+.page-h1.section-admin { /* H1 color when page is an admin-only page */
+    color: var(--color-accent-platform);
+}
+
+/* Help-link styling for H1 anchors (opens docs in new tab). */
+.page-h1-link {
+    color: inherit;
+    text-decoration: none;
+    transition: color var(--duration-fast) ease;
+}
+
+.page-h1-link:hover { /* hover state for the H1 help link */
+    color: var(--color-text-link);
+}
+
+/* Page subtitle line below the H1. */
+.page-subtitle {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-heading-sm);
+    margin: 0;
+}
+
+/* The flex container that holds H1+subtitle on the left and refresh info on the right. */
+.header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: var(--size-spacing-md);
+    flex-shrink: 0;
+}
+
+.header-bar.has-center { /* enables the absolute-positioned center column variant */
+    position: relative;
+}
+
+/* The right-column container in the header bar. */
+.header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--size-spacing-lg);
+}
+
+/* The center column for pages opting into a center-positioned control (e.g., Server Health server selector). */
+.header-center {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: var(--size-spacing-xs);
+}
+
+
+/* ============================================================================
+   CHROME: REFRESH INFO
+   ----------------------------------------------------------------------------
+   Sits in the right side of the header bar on every page. Contains the
+   live indicator dot, "Live | Updated: <timestamp>", the page refresh
+   button, and the four mutually-exclusive refresh-mode badges that label
+   each section's refresh behavior. Pages with no auto-refresh logic still
+   display this row with the page-load timestamp; the live dot still
+   pulses to indicate the UI is responsive.
+   Prefixes: refresh, live, last, page
+   ============================================================================ */
+
+/* The refresh info row layout container. */
+.refresh-info {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+}
+
+/* The pulsing dot indicating UI responsiveness. */
+.live-indicator {
+    display: inline-block;
+    width: var(--size-spacing-md);
+    height: var(--size-spacing-md);
+    background: var(--color-accent-shared);
+    border-radius: 50%;
+    margin-right: var(--size-spacing-sm);
+    animation: pulse var(--duration-pulse) infinite;
+}
+
+/* The "Updated: <timestamp>" text in the refresh info row. */
+.last-updated {
+    color: var(--color-accent-shared);
+}
+
+/* The manual refresh button (circular arrow) on every page. */
+.page-refresh-btn {
+    background: transparent;
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-xs) 10px;
+    border-radius: var(--size-radius-default);
+    cursor: pointer;
+    font-size: var(--font-size-heading-lg);
+    line-height: 1;
+    margin-left: 10px;
+    transition: all var(--duration-fast);
+    vertical-align: middle;
+}
+
+.page-refresh-btn:hover { /* hover state for the manual refresh button */
+    background: var(--color-border-divider);
+    color: var(--color-text-primary);
+    border-color: var(--color-text-subtle);
+}
+
+.page-refresh-btn.spinning { /* state when refresh is actively running (briefly post-click) */
+    animation: page-refresh-spin var(--duration-slow) ease-in-out;
+    border-color: var(--color-accent-shared);
+    color: var(--color-accent-shared);
+    pointer-events: none;
+}
+
+/* Section-header refresh badge: event-driven (yellow accent, no animation). */
+.refresh-badge-event {
+    font-size: var(--font-size-default);
+    padding: 1px var(--size-spacing-xs);
+    border-radius: var(--size-radius-sm);
+    vertical-align: middle;
+    cursor: default;
+    color: var(--color-accent-departmental);
+    background: transparent;
+}
+
+/* Section-header refresh badge: live polling (teal accent with pulsing dot). */
+.refresh-badge-live {
+    font-size: var(--font-size-default);
+    padding: 1px var(--size-spacing-xs);
+    border-radius: var(--size-radius-sm);
+    vertical-align: middle;
+    cursor: default;
+    color: var(--color-accent-shared);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-radius-sm);
+    background: transparent;
+}
+
+/* The pulsing dot inside .refresh-badge-live. */
+.refresh-badge-dot {
+    width: var(--size-spacing-md);
+    height: var(--size-spacing-md);
+    background: var(--color-accent-shared);
+    border-radius: 50%;
+    animation: pulse var(--duration-pulse) infinite;
+}
+
+.refresh-badge-dot.idle { /* dimmed, non-animating state when polling is paused */
+    animation: none;
+    opacity: 0.4;
+}
+
+/* Section-header refresh badge: static (gray, no refresh behavior). */
+.refresh-badge-static {
+    font-size: var(--font-size-default);
+    padding: 1px var(--size-spacing-xs);
+    border-radius: var(--size-radius-sm);
+    vertical-align: middle;
+    cursor: default;
+    color: var(--color-text-subtle);
+    background: transparent;
+}
+
+/* Section-header refresh badge: action-driven (blue, refreshes on user action). */
+.refresh-badge-action {
+    font-size: var(--font-size-default);
+    padding: 1px var(--size-spacing-xs);
+    border-radius: var(--size-radius-sm);
+    vertical-align: middle;
+    cursor: default;
+    color: var(--color-accent-platform);
+    background: transparent;
+}
+
+
+/* ============================================================================
+   CHROME: ENGINE CARDS
+   ----------------------------------------------------------------------------
+   Real-time engine indicator cards driven by engine-events.js. Each card
+   reflects one orchestrator-managed process via WebSocket events. Cards
+   sit below the refresh info row in the header bar's right column. Pages
+   without orchestrator-driven processes have no engine cards.
+   Prefixes: engine
+   ============================================================================ */
+
+/* The horizontal row container that holds engine cards side by side. */
+.engine-row {
+    display: flex;
+    gap: 5px;
+}
+
+.engine-row.ws-disconnected { /* visual state when the WebSocket connection is dropped */
+    border: 1px dashed var(--color-text-subtle);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-radius-sm);
+}
+
+/* A single engine indicator card. */
+.engine-card {
+    width: 68px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--size-spacing-xs) var(--size-spacing-sm);
+    border: var(--size-border-thin) solid var(--color-border-subtle);
+    border-radius: var(--size-radius-sm);
+    background: var(--color-bg-card);
+}
+
+.engine-card.card-warning { /* warning frame coloring (overdue) */
+    border-color: var(--color-accent-departmental);
+    background: var(--color-tint-warning);
+}
+
+.engine-card.card-critical { /* critical frame coloring */
+    border-color: var(--color-status-critical);
+    background: var(--color-tint-critical);
+}
+
+/* Engine card label (the engine's short name above the status bar). */
+.engine-label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+}
+
+/* Engine status bar (the colored bar that reflects engine state). */
+.engine-bar {
+    width: 100%;
+    height: 10px;
+    border-radius: var(--size-radius-xs);
+    transition: background-color var(--duration-default), box-shadow var(--duration-default);
+}
+
+.engine-bar.idle { /* engine is idle (last run successful, awaiting next trigger) */
+    background: var(--color-status-idle);
+    box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-idle);
+}
+
+.engine-bar.running { /* engine is actively running */
+    background: var(--color-status-running);
+    box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-running);
+}
+
+.engine-bar.overdue { /* engine has missed its expected next-run time */
+    background: var(--color-status-overdue);
+    box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-overdue);
+}
+
+.engine-bar.critical { /* engine's last run failed or is severely overdue */
+    background: var(--color-status-critical);
+    box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-critical);
+}
+
+.engine-bar.disabled { /* engine is administratively disabled */
+    background: var(--color-status-disabled);
+    box-shadow: none;
+}
+
+/* Engine countdown text (small text below the bar showing time-to-next-run). */
+.engine-countdown {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    height: 10px;
+    line-height: 10px;
+}
+
+.engine-countdown.cd-overdue { /* countdown text styling when engine is overdue */
+    color: var(--color-status-critical);
+}
+
+/* Click-popup that appears when an engine card is clicked, showing last run details. */
+.engine-popup {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-accent-platform);
+    border-radius: var(--size-radius-lg);
+    min-width: 280px;
+    max-width: 400px;
+    box-shadow: var(--shadow-popup);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content-lg);
+    color: var(--color-text-primary);
+}
+
+/* Header row inside the engine popup (title + close button). */
+.engine-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* The popup title text. */
+.engine-popup-title {
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Close button (X) inside the engine popup. */
+.engine-popup-close {
+    cursor: pointer;
+    color: var(--color-text-muted);
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+}
+
+.engine-popup-close:hover { /* hover state for the popup close button */
+    color: var(--color-text-primary);
+}
+
+/* A single key/value row inside the engine popup. */
+.engine-popup-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 14px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+.engine-popup-row.last { /* last row in the popup (no bottom border) */
+    border-bottom: none;
+}
+
+/* Label (left side) of an engine popup row. */
+.engine-popup-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
+}
+
+/* Value (right side) of an engine popup row. */
+.engine-popup-value {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    text-align: right;
+}
+
+/* Container for the optional output preview block at the bottom of the popup. */
+.engine-popup-output {
+    padding: var(--size-spacing-md) 14px;
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* Pre-formatted output block (used for stdout/stderr previews). */
+.engine-popup-pre {
+    background: var(--color-bg-pre);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    padding: var(--size-spacing-md) 10px;
+    margin: var(--size-spacing-xs) 0 0 0;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-pre);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+/* Footer row of the engine popup (small caption text). */
+.engine-popup-footer {
+    padding: var(--size-spacing-sm) 14px;
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-body);
+    text-align: right;
+}
+
+
+/* ============================================================================
+   CHROME: CONNECTION BANNER
+   ----------------------------------------------------------------------------
+   State-aware connection status display, driven by updateConnectionBanner()
+   in engine-events.js. The placeholder element <div class="connection-banner">
+   sits between the header bar and the content area; it stays hidden until a
+   connection event sets a state class. JS toggles between four states:
+   reconnecting, disconnected, session-expired, and reloading.
+   Prefixes: connection, banner
+   ============================================================================ */
+
+/* The connection banner container (hidden until a state class is applied). */
+.connection-banner {
+    display: none;
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    font-size: var(--font-size-content);
+    text-align: center;
+    border-radius: var(--size-radius-lg);
+    margin-bottom: var(--size-spacing-md);
+    flex-shrink: 0;
+}
+
+.connection-banner.reconnecting { /* attempting to reconnect (blue) */
+    display: block;
+    background: var(--color-banner-reconnecting-bg);
+    border: var(--size-border-thin) solid var(--color-banner-reconnecting-border);
+    color: var(--color-accent-platform);
+}
+
+.connection-banner.disconnected { /* connection lost (red-orange) */
+    display: block;
+    background: var(--color-banner-disconnected-bg);
+    border: var(--size-border-thin) solid var(--color-banner-disconnected-border);
+    color: var(--color-status-critical);
+}
+
+.connection-banner.session-expired { /* user session has expired (yellow) */
+    display: block;
+    background: var(--color-banner-session-bg);
+    border: var(--size-border-thin) solid var(--color-banner-session-border);
+    color: var(--color-accent-departmental);
+}
+
+.connection-banner.reloading { /* page is about to reload (teal) */
+    display: block;
+    background: var(--color-banner-reloading-bg);
+    border: var(--size-border-thin) solid var(--color-banner-reloading-border);
+    color: var(--color-accent-shared);
+}
+
+/* Inline link inside the connection banner (e.g., "Sign In" on session-expired). */
+.banner-link {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+.banner-link:hover { /* hover state for the inline banner link */
+    color: var(--color-text-on-primary);
+}
+
+
+/* ============================================================================
+   CHROME: BACK LINK
+   ----------------------------------------------------------------------------
+   Used by tool pages that don't sit in the main nav (BDLImport,
+   PlatformMonitoring, future dept-only tools). The link sits below the
+   page header and resolves its target via /api/nav-registry/label. Subtle
+   by design: muted gray so it doesn't compete with page content.
+   Prefixes: back
+   ============================================================================ */
+
+/* The back-link element shown on tool pages outside the main nav. */
+.back-link {
+    display: inline-block;
+    margin-top: var(--size-spacing-sm);
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    text-decoration: none;
+    transition: color var(--duration-instant) ease;
+}
+
+.back-link:hover { /* hover state for the back link */
+    color: var(--color-text-link);
+}
+
+
+/* ============================================================================
+   CONTENT: SECTIONS
+   ----------------------------------------------------------------------------
+   Standard panel structure used inside the content area below the chrome.
+   Every page composes its content from .section containers. Each section
+   has a header with a title on the left and optional controls + refresh
+   badge on the right.
+   Prefixes: section
+   ============================================================================ */
+
+/* The section container — every page composes its content from these. */
+.section {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: 15px;
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.section.fill { /* section consumes remaining vertical space and scrolls internally */
+    flex: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* The section header (title left, controls + badges right). */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    padding-bottom: var(--size-spacing-md);
+    flex-shrink: 0;
+}
+
+/* The section title text (uppercase, teal, letter-spaced). */
+.section-title {
+    font-size: var(--font-size-heading-sm);
+    font-weight: 600;
+    color: var(--color-accent-shared);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 0;
+}
+
+/* Right-side container for section controls + refresh badge. */
+.section-header-right {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+}
+
+
+/* ============================================================================
+   CONTENT: SLIDE PANELS
+   ----------------------------------------------------------------------------
+   Reusable slide-from-right panel system with overlay, header, scrollable
+   body, and a small library of standard sub-components for common layouts
+   (summary stats, tables, sections, accordions, empty states). Used by
+   Backup, BIDATA, Index Maintenance, and other detail-view pages.
+
+   Width tiers:
+     default  550px  -- single-column detail views
+     .wide    800px  -- tabular detail with multiple columns
+     .xwide   950px  -- wide multi-column tables
+   Prefixes: slide
+   ============================================================================ */
+
+/* The full-viewport overlay behind an open slide panel. */
+.slide-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--color-bg-overlay-panel);
+    z-index: var(--z-panel-overlay);
+}
+
+.slide-overlay.open { /* state when the overlay is visible (panel is open) */
+    display: block;
+}
+
+/* The slide panel itself (hidden offscreen until .open). */
+.slide-panel {
+    position: fixed;
+    top: 0;
+    right: var(--size-panel-offset-default);
+    width: var(--size-panel-width-default);
+    height: 100%;
+    background: var(--color-bg-card);
+    border-left: var(--size-border-thin) solid var(--color-border-default);
+    z-index: var(--z-panel);
+    display: flex;
+    flex-direction: column;
+    transition: right var(--duration-default) ease;
+}
+
+.slide-panel.wide { /* wider panel for tabular detail content */
+    width: var(--size-panel-width-wide);
+    right: var(--size-panel-offset-wide);
+}
+
+.slide-panel.xwide { /* widest panel for wide multi-column tables */
+    width: var(--size-panel-width-xwide);
+    right: var(--size-panel-offset-xwide);
+}
+
+.slide-panel.open { /* state when the panel is visible (slid into view) */
+    right: 0;
+}
+
+.slide-panel.slide-auto-height { /* vertically-centered panel that sizes to content (compact dialogs) */
+    height: auto;
+    max-height: 90vh;
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: var(--size-radius-xl);
+    border: var(--size-border-thin) solid var(--color-border-default);
+}
+
+.slide-auto-height.open { /* offset the auto-height panel slightly from the right edge */
+    right: var(--size-page-padding-y);
+}
+
+/* The slide panel header (title left, close button right). */
+.slide-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--size-spacing-xl) var(--size-page-padding-y);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    background: var(--color-bg-card-hover);
+}
+
+/* The title text inside the slide panel header. */
+.slide-panel-title {
+    margin: 0;
+    color: var(--color-accent-shared);
+    font-size: var(--font-size-heading-lg);
+    font-weight: 600;
+}
+
+/* The scrollable body container for slide panel content. */
+.slide-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--size-spacing-xl) var(--size-page-padding-y);
+}
+
+/* Slide panel sub-component: summary stat grid (small key/value cards in a grid). */
+.slide-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* Single summary stat card. */
+.slide-stat {
+    background: var(--color-bg-card-hover);
+    border-radius: var(--size-radius-lg);
+    padding: 10px;
+    text-align: center;
+}
+
+/* Value (large number/text) inside a slide-stat card. */
+.slide-stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-accent-shared);
+}
+
+/* Label (small caption) below the value in a slide-stat card. */
+.slide-stat-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-top: var(--size-spacing-xs);
+}
+
+/* Slide panel sub-component: data table (sticky header, dark rows). */
+.slide-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Slide-table header cell (sticky to top of scrollable body). */
+.slide-table-th {
+    text-align: left;
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
+    font-weight: 500;
+    position: sticky;
+    top: 0;
+    background: var(--color-bg-card);
+    white-space: nowrap;
+}
+
+/* Slide-table data cell. */
+.slide-table-td {
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
+    white-space: nowrap;
+}
+
+.slide-table-td.align-right { /* right-aligned numeric/timestamp cells */
+    text-align: right;
+}
+
+/* Hover row state for the slide table. */
+.slide-table-row:hover { /* hover state for any data row in the slide table */
+    background: var(--color-bg-card-hover);
+}
+
+/* Slide panel sub-component: in-panel section divider (for grouping content within a panel). */
+.slide-section {
+    margin-bottom: var(--size-spacing-2xl);
+}
+
+/* Title text for an in-panel section. */
+.slide-section-title {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    margin-bottom: 10px;
+    padding-bottom: var(--size-spacing-sm);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* Slide panel sub-component: accordion header (clickable to expand/collapse). */
+.slide-accordion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px var(--size-spacing-lg);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-subtle);
+    border-radius: var(--size-radius-default);
+    cursor: pointer;
+    margin-bottom: 2px;
+    transition: background var(--duration-instant) ease;
+}
+
+.slide-accordion-header:hover { /* hover state for the accordion header */
+    background: var(--color-border-divider);
+}
+
+/* Label text inside an accordion header. */
+.slide-accordion-label {
+    font-size: var(--font-size-content-lg);
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* Stats text shown to the right of the label in an accordion header. */
+.slide-accordion-stats {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    margin-left: auto;
+    margin-right: var(--size-spacing-lg);
+}
+
+/* Chevron indicator in an accordion header (rotates when expanded). */
+.slide-accordion-chevron {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    transition: transform var(--duration-fast) ease;
+}
+
+.slide-accordion-chevron.expanded { /* rotated 90deg when the accordion is open */
+    transform: rotate(90deg);
+}
+
+/* The collapsible body content of an accordion. */
+.slide-accordion-body {
+    display: none;
+    padding: var(--size-spacing-md) 0 var(--size-spacing-md) var(--size-spacing-xl);
+}
+
+.slide-accordion-body.expanded { /* visible state when the accordion is open */
+    display: block;
+}
+
+/* Caption shown when accordion body content is truncated. */
+.slide-accordion-cutoff {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-xs) var(--size-spacing-lg) var(--size-spacing-md);
+    font-style: italic;
+}
+
+/* Empty-state placeholder shown when a slide panel has no content to display. */
+.slide-empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+    padding: var(--size-spacing-2xl);
+    text-align: center;
+}
+
+
+/* ============================================================================
+   CONTENT: MODAL SYSTEM
+   ----------------------------------------------------------------------------
+   The xf-modal-* class set replaces native alert() and confirm() across
+   all Control Center pages. Used by showAlert() and showConfirm() in
+   engine-events.js, which dynamically create and remove the overlay
+   element. Pages can also declare an xf-modal-overlay statically in HTML
+   and toggle visibility via the .hidden class for async-content modals.
+
+   The .xf-modal-close button is shared with slide panel headers (a single
+   close-button class works in both contexts).
+
+   uses @keyframes xfModalFadeIn from FOUNDATION
+   Prefixes: xf
+   ============================================================================ */
+
+/* The full-viewport overlay behind an open modal. */
+.xf-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--color-bg-overlay-modal);
+    z-index: var(--z-modal-overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: xfModalFadeIn var(--duration-fast) ease;
+}
+
+.xf-modal-overlay.hidden { /* hidden initial state for statically-declared modals */
+    display: none;
+}
+
+/* The modal container itself (centered in the overlay). */
+.xf-modal {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-xl);
+    width: var(--size-modal-width-default);
+    max-width: 90vw;
+    box-shadow: var(--shadow-modal);
+}
+
+.xf-modal.wide { /* wider modal for tabular content or detail views */
+    width: var(--size-modal-width-wide);
+}
+
+/* The modal header (icon + title + close button). */
+.xf-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: var(--size-spacing-xl) var(--size-page-padding-y);
+    background: var(--color-border-divider);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-xl) var(--size-radius-xl) 0 0;
+    font-size: var(--font-size-heading-md);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+/* Title text inside the modal header (flex-1 pushes the close button to the right). */
+.xf-modal-title {
+    flex: 1;
+    margin: 0;
+    color: var(--color-accent-shared);
+    font-size: var(--font-size-heading-lg);
+    font-weight: 600;
+}
+
+/* Optional icon glyph at the left of the modal header. */
+.xf-modal-icon {
+    font-size: 20px;
+}
+
+/* The modal body (main content area). */
+.xf-modal-body {
+    padding: var(--size-page-padding-y);
+}
+
+/* Paragraph styling inside the modal body. */
+.xf-modal-paragraph {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-content-lg);
+    line-height: 1.6;
+    margin: 0 0 10px 0;
+}
+
+.xf-modal-paragraph.last { /* last paragraph in the body (no bottom margin) */
+    margin-bottom: 0;
+}
+
+/* Strong/emphasized text inside the modal body. */
+.xf-modal-strong {
+    color: var(--color-accent-shared);
+}
+
+/* The modal action button row at the bottom (footer). */
+.xf-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: var(--size-spacing-xl) var(--size-page-padding-y);
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* Cancel/secondary button inside the modal actions row. */
+.xf-modal-btn-cancel {
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.xf-modal-btn-cancel:hover { /* hover state for the cancel button */
+    background: var(--color-border-divider);
+    border-color: var(--color-text-muted);
+}
+
+/* Primary action button inside the modal actions row. */
+.xf-modal-btn-primary {
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    background: var(--color-button-primary-bg);
+    border: var(--size-border-thin) solid var(--color-button-primary-bg);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-on-primary);
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.xf-modal-btn-primary:hover { /* hover state for the primary button */
+    background: var(--color-button-primary-bg-hover);
+    border-color: var(--color-button-primary-bg-hover);
+}
+
+/* Danger/destructive action button inside the modal actions row. */
+.xf-modal-btn-danger {
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    background: var(--color-button-danger-bg);
+    border: var(--size-border-thin) solid var(--color-button-danger-border);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-on-primary);
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.xf-modal-btn-danger:hover { /* hover state for the danger button */
+    background: var(--color-button-danger-bg-hover);
+    border-color: var(--color-button-danger-border-hover);
+}
+
+/* Shared close button (X) used in both modal headers and slide panel headers. */
+.xf-modal-close {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color var(--duration-instant);
+}
+
+.xf-modal-close:hover { /* hover state for the close button */
+    color: var(--color-text-primary);
+}
+
+
+/* ============================================================================
+   FEEDBACK_OVERLAYS: IDLE OVERLAY
+   ----------------------------------------------------------------------------
+   Full-viewport overlay shown when user inactivity exceeds the configured
+   timeout. Polling pauses underneath; a single move/keypress dismisses
+   the overlay and resumes activity.
+   Prefixes: idle
+   ============================================================================ */
+
+/* The full-viewport idle overlay container. */
+.idle-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--color-bg-overlay-idle);
+    z-index: var(--z-idle-overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+/* The centered idle message box on top of the overlay. */
+.idle-message {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-xl);
+    padding: var(--size-page-padding-y) 32px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-heading-sm);
+    font-family: var(--font-family-default);
+    letter-spacing: 0.5px;
+}
