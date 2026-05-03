@@ -38,19 +38,23 @@
         declaration (a property whose name starts with --).
 
       * CSS_VARIABLE USAGE rows for every var(--name) reference inside any
-        property value. Scope resolved against the SHARED variable set.
+        property value. Scope resolved against the SHARED variable set
+        belonging to the consumer's zone (CC vs docs).
 
       * CSS_KEYFRAME DEFINITION rows for every @keyframes at-rule.
 
       * CSS_KEYFRAME USAGE rows for keyframe references inside the
         animation and animation-name properties. Scope resolved against
-        the SHARED keyframe set.
+        the SHARED keyframe set belonging to the consumer's zone.
 
       * CSS_RULE DEFINITION rows for selectors with NO classes anywhere
         (e.g., 'body', 'h1', '*', '::-webkit-scrollbar'). Forbidden by
         the spec; cataloged anyway with appropriate drift codes.
 
-      * HTML_ID DEFINITION rows for every #id selector encountered in CSS.
+      * HTML_ID DEFINITION/USAGE rows for every #id selector encountered in
+        CSS, including IDs that appear in compounds alongside classes
+        (#foo.bar emits both a CSS_VARIANT row for the class side and an
+        HTML_ID row for the id side; both carry FORBIDDEN_ID_SELECTOR).
 
       * COMMENT_BANNER DEFINITION rows for block comments containing five
         or more consecutive '=' characters and following the section
@@ -86,6 +90,88 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-03  Spec amendment Gap 6: @media is no longer forbidden. Permitted
+            in any section. Wrapped rules are still spec-evaluated normally
+            (must follow class naming, prefix matching, no descendants,
+            etc.) and are cataloged with the @media expression in the
+            parent_function column. FORBIDDEN_AT_MEDIA drift code retired.
+2026-05-03  Fixed FILE_ORG_MISMATCH false-positive bug: BannerTitles
+            collection was using ComponentName (just the section NAME)
+            while the FILE ORG list parser captured full "TYPE: NAME"
+            entries. Updated to assemble "$Signature: $ComponentName"
+            so both sides compare apples to apples.
+2026-05-03  FILE ORGANIZATION list parser accepts both numbered and un-
+            numbered entries. Original parser required "<n>. <title>"
+            format; updated to also accept bare "<title>" lines so the
+            FILE ORG list can match the spec's un-numbered banner format
+            without forcing redundant numeric prefixes. Trailing "-- <desc>"
+            comments on list entries are stripped before comparison.
+2026-05-03  Added FEEDBACK_OVERLAYS as a sixth section type (spec amendment
+            Gap 5 surfaced during cc-shared.css build). Section type order
+            is now FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES →
+            FEEDBACK_OVERLAYS. The new type covers transient, behavior-
+            driven viewport-overlay elements (idle overlay, future toast
+            notifications, loading spinners, confirmation flashes) that
+            don't fit cleanly into the other five types. Updated:
+            $SectionTypeOrder array, UNKNOWN_SECTION_TYPE description,
+            SECTION_TYPE_ORDER_VIOLATION description.
+2026-05-03  FOUNDATION-section exemptions for reset rules (spec amendments
+            Gap 1-3 from the cc-shared.css preparation work):
+              (1) FORBIDDEN_ELEMENT_SELECTOR, FORBIDDEN_UNIVERSAL_SELECTOR,
+                  and FORBIDDEN_ATTRIBUTE_SELECTOR are suppressed when the
+                  active section is FOUNDATION. CSS reset rules
+                  (* { box-sizing }, body { ... }, a { ... }, scrollbar
+                  styles) are legitimate FOUNDATION content; the spec
+                  forbids them only outside FOUNDATION.
+              (2) New drift code FORBIDDEN_PSEUDO_ELEMENT_LOCATION fires
+                  when a pseudo-element selector (::before, ::-webkit-*)
+                  appears outside FOUNDATION and is not attached to a
+                  class. Pseudo-elements may live in FOUNDATION as
+                  unrestricted reset content; outside FOUNDATION they
+                  must be class-scoped (.foo::before, not bare ::before).
+              (3) FOUNDATION sections may declare 'Prefixes: (none)' in
+                  their banner to opt out of prefix matching. Reset rules
+                  in FOUNDATION have no class names; the (none) sentinel
+                  is the explicit "no class prefixes apply here" declaration.
+                  The MISSING_PREFIXES_DECLARATION check still fires if
+                  the Prefixes line is entirely missing — (none) is a
+                  declaration, just one that disables PREFIX_MISMATCH.
+2026-05-03  OQ-CSS-1 resolution: forbid :not() and stacked pseudo-classes.
+            Two new drift codes added — FORBIDDEN_NOT_PSEUDO and
+            FORBIDDEN_STACKED_PSEUDO — and detection logic added to
+            Add-CompoundDriftCodes so both primary and descendant compounds
+            are checked. The 13 cases the previous run produced with
+            malformed variant_qualifier_2 values (not:hover, hover:not,
+            etc.) now carry the appropriate drift codes pending source
+            refactor in the conversion phase. See CC_FileFormat_
+            Standardization.md Part 3 / Part 10 for spec details and the
+            refactor recipe.
+2026-05-03  Sanity-sweep fix pass over the first run of the new spec parser.
+            Five issues addressed in a single pass:
+              (1) Forbidden-selector drift codes intermittently failed to
+                  attach to CSS_RULE rows because Where-Object pipes against
+                  single-element compound lists collapsed to non-array values
+                  (PowerShell single-element pipe trap, same family as the
+                  drift-code accumulation bug). Wrapped the pipes with @(...)
+                  to force array context.
+              (2) COMPOUND_DEPTH_3PLUS and other per-compound drift checks
+                  were skipped on descendant compounds. Extracted the per-
+                  compound drift logic into Add-CompoundDriftCodes and call
+                  it from both primary and descendant emission paths.
+              (3) ID + class compounds (#foo.bar.baz) dropped the HTML_ID
+                  row because emission was structured as if/else exclusive.
+                  Restructured so class-side and id-side emit independently
+                  in both primary and descendant positions.
+              (4) Zone conflation: the shared-class/variable/keyframe maps
+                  pooled CC chrome (engine-events.css) and docs chrome
+                  (docs-*.css) into one global lookup, producing USAGE rows
+                  that wrongly resolved CC consumers to docs source files.
+                  Split into per-zone maps; consumer zone derived from
+                  filepath; resolution looks up the consumer's own zone only.
+              (5) raw_text on CSS_CLASS, CSS_VARIANT, and CSS_RULE rows
+                  duplicated the selector instead of capturing the full
+                  rule body. Now built from the AST's declaration nodes
+                  and threaded through to every row emitted from the rule.
 2026-05-03  Major restructure for CSS file format spec compliance per
             CC_FileFormat_Standardization.md Part 3:
               (1) Schema migration: drops state_modifier, component_subtype,
@@ -108,9 +194,6 @@ CHANGELOG
                   properties to flag DRIFT_HEX_LITERAL.
               (6) Bulk-insert DataTable schema updated to match the new
                   Asset_Registry shape.
-              Per session-end protocol, this is the first run under the new
-              spec; results are expected to surface adjustments to spec or
-              parser before iteration locks in.
 2026-05-02  Architectural correction: SharedFiles expanded to include all
             seven docs/css files. Previous version treated docs/css files
             as page-specific. Net effect: CSS_CLASS DEFINITION rows for
@@ -154,9 +237,14 @@ $CssScanRoots = @(
     "$CcRoot\public\docs\css"
 )
 
-# Files whose top-level definitions are visible to multiple consumer files.
-$SharedFiles = @(
-    'engine-events.css',
+# Shared files split by zone. Each zone's consumers resolve USAGE references
+# only against their own zone's shared map. CC pages cannot consume docs CSS
+# (and vice versa); the previous single-pool design produced wrong USAGE
+# attribution when class names happened to collide across zones.
+$CcSharedFiles = @(
+    'engine-events.css'
+)
+$DocsSharedFiles = @(
     'docs-base.css',
     'docs-architecture.css',
     'docs-controlcenter.css',
@@ -165,6 +253,7 @@ $SharedFiles = @(
     'docs-narrative.css',
     'docs-reference.css'
 )
+$SharedFiles = $CcSharedFiles + $DocsSharedFiles
 
 $env:NODE_PATH = $NodeLibsPath
 
@@ -173,7 +262,7 @@ $env:NODE_PATH = $NodeLibsPath
 # ============================================================================
 
 # The five enumerated section types, in required order.
-$SectionTypeOrder = @('FOUNDATION', 'CHROME', 'LAYOUT', 'CONTENT', 'OVERRIDES')
+$SectionTypeOrder = @('FOUNDATION', 'CHROME', 'LAYOUT', 'CONTENT', 'OVERRIDES', 'FEEDBACK_OVERLAYS')
 
 # Drift code → human description mapping. Used to populate drift_text in
 # parallel with drift_codes. Keep in sync with Appendix A of the spec doc.
@@ -185,8 +274,8 @@ $DriftDescriptions = [ordered]@{
     # Section banners
     'MISSING_SECTION_BANNER'            = "A class definition (or other catalogable construct) appears outside any banner — no section banner precedes it in the file."
     'MALFORMED_SECTION_BANNER'          = "A section banner exists but does not follow the strict 5-line format with 78-character rules."
-    'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES)."
-    'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order (FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES)."
+    'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS)."
+    'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order (FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES → FEEDBACK_OVERLAYS)."
     'MISSING_PREFIXES_DECLARATION'      = "A section banner is missing the mandatory Prefixes: line in its description block."
     'DUPLICATE_FOUNDATION'              = "More than one CSS file in the codebase contains a FOUNDATION section."
     'DUPLICATE_CHROME'                  = "More than one CSS file in the codebase contains a CHROME section."
@@ -205,10 +294,12 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_SIBLING_COMBINATOR'      = "A rule's selector contains a sibling combinator (+ or ~). Restructure as a separate class definition."
     'COMPOUND_DEPTH_3PLUS'              = "A compound selector contains three or more class tokens. Refactor as a single class plus at most one modifier class."
     'PSEUDO_INTERLEAVED'                = "A pseudo-class appears between two class tokens. Pseudo-classes must come last in any compound."
+    'FORBIDDEN_NOT_PSEUDO'              = "A selector contains :not(...). Express the negation as an explicit state class instead."
+    'FORBIDDEN_STACKED_PSEUDO'          = "A compound selector contains two or more pseudo-classes. Reduce to a single pseudo and express the additional condition as a class modifier."
+    'FORBIDDEN_PSEUDO_ELEMENT_LOCATION' = "A pseudo-element selector (e.g., ::before, ::-webkit-scrollbar) appears outside FOUNDATION and is not attached to a class. Pseudo-elements outside FOUNDATION must be class-scoped (e.g., .foo::before)."
     # Forbidden at-rules
     'FORBIDDEN_AT_IMPORT'               = "The file contains an @import rule."
     'FORBIDDEN_AT_FONT_FACE'            = "The file contains an @font-face rule."
-    'FORBIDDEN_AT_MEDIA'                = "The file contains an @media rule."
     'FORBIDDEN_AT_SUPPORTS'             = "The file contains an @supports rule."
     'FORBIDDEN_KEYFRAMES_LOCATION'      = "An @keyframes definition appears in a section other than FOUNDATION (or in a file with no FOUNDATION)."
     'FORBIDDEN_CUSTOM_PROPERTY_LOCATION'= "A custom property definition appears in a section other than FOUNDATION."
@@ -288,6 +379,20 @@ function Add-Drift {
 }
 
 # ============================================================================
+# ZONE HELPERS
+# ============================================================================
+
+# Determine which zone a CSS file belongs to based on its filepath. Files
+# under public\docs\css\ are docs-zone; everything else is cc-zone. Used both
+# during Pass 1 (to decide which shared map to populate) and during Pass 2
+# (to scope USAGE resolution).
+function Get-CssZone {
+    param([string]$FullPath)
+    if ($FullPath -match '\\public\\docs\\css\\') { return 'docs' }
+    return 'cc'
+}
+
+# ============================================================================
 # PARSER INVOCATION
 # ============================================================================
 
@@ -334,6 +439,32 @@ function Format-SingleLine {
     if ($null -eq $Text) { return $null }
     $crlf = "`r`n"; $lf = "`n"; $cr = "`r"
     return ($Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
+}
+
+# Build the full single-line representation of a CSS rule (selector + declarations).
+# Used to populate raw_text on CSS_CLASS, CSS_VARIANT, CSS_RULE, and HTML_ID rows
+# so downstream queries can compare rule bodies without re-opening the source file.
+function Format-RuleBody {
+    param(
+        [Parameter(Mandatory)] $RuleNode,
+        [Parameter(Mandatory)] [string]$SelectorText
+    )
+
+    $decls = @()
+    if ($RuleNode.nodes) {
+        foreach ($child in $RuleNode.nodes) {
+            if ($child.type -eq 'decl') {
+                $important = if ($child.important) { ' !important' } else { '' }
+                $decls += "$($child.prop): $($child.value)$important;"
+            }
+        }
+    }
+
+    $selectorClean = Format-SingleLine -Text $SelectorText
+    if ($decls.Count -gt 0) {
+        return "$selectorClean { $($decls -join ' ') }"
+    }
+    return "$selectorClean { }"
 }
 
 # Banner detection: a comment containing a 78-character rule of '=' marks
@@ -412,12 +543,22 @@ function Get-BannerInfo {
         $isMalformed = $true
     }
 
-    # Prefixes: line — last content line that starts with "Prefixes:"
+    # Prefixes: line — last content line that starts with "Prefixes:". The
+    # special sentinel "(none)" declares that this section has no class
+    # definitions and prefix matching is intentionally disabled. Used
+    # primarily by FOUNDATION sections that contain reset rules and
+    # @keyframes definitions but no class definitions to validate.
     $prefixes = $null
     foreach ($cl in $contentLines) {
         if ($cl -match '^Prefixes\s*:\s*(.+)$') {
-            $prefixList = $matches[1].Trim() -split ',\s*'
-            $prefixes = @($prefixList | Where-Object { $_ })
+            $prefixListRaw = $matches[1].Trim()
+            if ($prefixListRaw -eq '(none)') {
+                # Empty-array (not $null) signals "declared but no prefixes"
+                $prefixes = @()
+            } else {
+                $prefixList = $prefixListRaw -split ',\s*'
+                $prefixes = @($prefixList | Where-Object { $_ })
+            }
         }
     }
 
@@ -552,14 +693,20 @@ function Get-CompoundList {
 }
 
 # ============================================================================
-# PASS 1 - COLLECT SHARED-SCOPE DEFINITIONS
+# PASS 1 - COLLECT SHARED-SCOPE DEFINITIONS (zone-aware)
 # ============================================================================
 
-Write-Log "Pass 1: collecting SHARED-scope CSS definitions..."
+Write-Log "Pass 1: collecting SHARED-scope CSS definitions (zone-aware)..."
 
-$sharedClassMap     = @{}
-$sharedVariableMap  = @{}
-$sharedKeyframeMap  = @{}
+# Per-zone shared maps. CC consumers resolve only against $ccSharedClassMap;
+# docs consumers resolve only against $docsSharedClassMap. Same split for
+# variables and keyframes.
+$ccSharedClassMap     = @{}
+$ccSharedVariableMap  = @{}
+$ccSharedKeyframeMap  = @{}
+$docsSharedClassMap     = @{}
+$docsSharedVariableMap  = @{}
+$docsSharedKeyframeMap  = @{}
 $astCache = @{}
 
 $CssFiles = New-Object System.Collections.Generic.List[string]
@@ -576,6 +723,7 @@ Write-Log "Discovered $($CssFiles.Count) .css files to scan"
 
 foreach ($file in $CssFiles) {
     $name = [System.IO.Path]::GetFileName($file)
+    $zone = Get-CssZone -FullPath $file
 
     Write-Host "  Parsing $name ..." -NoNewline
     $parsed = Invoke-CssParse -FilePath $file
@@ -587,6 +735,17 @@ foreach ($file in $CssFiles) {
     $astCache[$file] = $parsed
 
     if ($SharedFiles -notcontains $name) { continue }
+
+    # Pick the zone-appropriate target maps to populate.
+    if ($zone -eq 'docs') {
+        $classMap = $docsSharedClassMap
+        $varMap   = $docsSharedVariableMap
+        $kfMap    = $docsSharedKeyframeMap
+    } else {
+        $classMap = $ccSharedClassMap
+        $varMap   = $ccSharedVariableMap
+        $kfMap    = $ccSharedKeyframeMap
+    }
 
     $stack = New-Object System.Collections.Generic.Stack[object]
     $stack.Push($parsed.ast)
@@ -601,8 +760,8 @@ foreach ($file in $CssFiles) {
                 foreach ($cmp in $compounds) {
                     if ($cmp.Classes.Count -gt 0) {
                         $primaryClass = $cmp.Classes[0]
-                        if (-not $sharedClassMap.ContainsKey($primaryClass)) {
-                            $sharedClassMap[$primaryClass] = $name
+                        if (-not $classMap.ContainsKey($primaryClass)) {
+                            $classMap[$primaryClass] = $name
                         }
                         break
                     }
@@ -612,15 +771,15 @@ foreach ($file in $CssFiles) {
 
         if ($node.type -eq 'decl' -and $node.prop -and $node.prop.StartsWith('--')) {
             $varName = $node.prop.Substring(2)
-            if (-not $sharedVariableMap.ContainsKey($varName)) {
-                $sharedVariableMap[$varName] = $name
+            if (-not $varMap.ContainsKey($varName)) {
+                $varMap[$varName] = $name
             }
         }
 
         if ($node.type -eq 'atrule' -and $node.name -eq 'keyframes' -and $node.params) {
             $kfName = $node.params.Trim()
-            if (-not $sharedKeyframeMap.ContainsKey($kfName)) {
-                $sharedKeyframeMap[$kfName] = $name
+            if (-not $kfMap.ContainsKey($kfName)) {
+                $kfMap[$kfName] = $name
             }
         }
 
@@ -630,9 +789,12 @@ foreach ($file in $CssFiles) {
     }
 }
 
-Write-Log ("  Shared classes:    {0}" -f $sharedClassMap.Count)
-Write-Log ("  Shared variables:  {0}" -f $sharedVariableMap.Count)
-Write-Log ("  Shared keyframes:  {0}" -f $sharedKeyframeMap.Count)
+Write-Log ("  CC zone   - shared classes:    {0}" -f $ccSharedClassMap.Count)
+Write-Log ("  CC zone   - shared variables:  {0}" -f $ccSharedVariableMap.Count)
+Write-Log ("  CC zone   - shared keyframes:  {0}" -f $ccSharedKeyframeMap.Count)
+Write-Log ("  Docs zone - shared classes:    {0}" -f $docsSharedClassMap.Count)
+Write-Log ("  Docs zone - shared variables:  {0}" -f $docsSharedVariableMap.Count)
+Write-Log ("  Docs zone - shared keyframes:  {0}" -f $docsSharedKeyframeMap.Count)
 
 # ============================================================================
 # LOAD Object_Registry
@@ -672,10 +834,26 @@ Write-Log "Pass 2: generating Asset_Registry rows..."
 # Per-file context state.
 $script:CurrentFile         = $null
 $script:CurrentFileIsShared = $false
+$script:CurrentFileZone     = 'cc'   # 'cc' or 'docs' — drives USAGE map selection
 $script:CurrentBannerInfo   = $null   # full banner descriptor
 $script:CurrentBannerOuter  = $null   # banner title (for source_section)
 $script:CurrentSectionTypes = $null   # array of section types seen so far in file
 $script:CurrentFilePrefixes = $null   # active section's declared prefixes
+
+# ----- Zone-aware shared-map accessors -------------------------------------
+
+function Get-ZoneSharedClassMap {
+    if ($script:CurrentFileZone -eq 'docs') { return $script:docsSharedClassMap }
+    return $script:ccSharedClassMap
+}
+function Get-ZoneSharedVariableMap {
+    if ($script:CurrentFileZone -eq 'docs') { return $script:docsSharedVariableMap }
+    return $script:ccSharedVariableMap
+}
+function Get-ZoneSharedKeyframeMap {
+    if ($script:CurrentFileZone -eq 'docs') { return $script:docsSharedKeyframeMap }
+    return $script:ccSharedKeyframeMap
+}
 
 # ----- Row builders --------------------------------------------------------
 
@@ -706,8 +884,9 @@ function New-RowSkeleton {
 
 function Resolve-ClassScope {
     param([string]$ClassName)
-    if ($script:sharedClassMap.ContainsKey($ClassName)) {
-        return @{ Scope = 'SHARED'; SourceFile = $script:sharedClassMap[$ClassName] }
+    $map = Get-ZoneSharedClassMap
+    if ($map.ContainsKey($ClassName)) {
+        return @{ Scope = 'SHARED'; SourceFile = $map[$ClassName] }
     }
     return @{ Scope = 'LOCAL'; SourceFile = $script:CurrentFile }
 }
@@ -807,17 +986,19 @@ function Add-CssClassOrVariantRow {
 function Add-HtmlIdRow {
     param(
         [string]$IdName,
+        [string]$ReferenceType,
         [int]$LineStart, [int]$LineEnd, [int]$ColumnStart,
         [string]$Signature, [string]$ParentAtrule, [string]$RawText
     )
     if ([string]::IsNullOrWhiteSpace($IdName)) { return $null }
 
-    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|HTML_ID|$IdName|DEFINITION|"
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|HTML_ID|$IdName|$ReferenceType|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
     $row = New-RowSkeleton
     $row.ComponentType  = 'HTML_ID'
     $row.ComponentName  = $IdName
+    $row.ReferenceType  = $ReferenceType
     $row.Scope          = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
     $row.LineStart      = $LineStart
     $row.LineEnd        = $LineEnd
@@ -842,8 +1023,9 @@ function Add-CssVariableRow {
         $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
         $sourceFile = $script:CurrentFile
     } else {
-        if ($script:sharedVariableMap.ContainsKey($VarName)) {
-            $scope = 'SHARED'; $sourceFile = $script:sharedVariableMap[$VarName]
+        $map = Get-ZoneSharedVariableMap
+        if ($map.ContainsKey($VarName)) {
+            $scope = 'SHARED'; $sourceFile = $map[$VarName]
         } else {
             $scope = 'LOCAL'; $sourceFile = $script:CurrentFile
         }
@@ -881,8 +1063,9 @@ function Add-CssKeyframeRow {
         $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
         $sourceFile = $script:CurrentFile
     } else {
-        if ($script:sharedKeyframeMap.ContainsKey($KeyframeName)) {
-            $scope = 'SHARED'; $sourceFile = $script:sharedKeyframeMap[$KeyframeName]
+        $map = Get-ZoneSharedKeyframeMap
+        if ($map.ContainsKey($KeyframeName)) {
+            $scope = 'SHARED'; $sourceFile = $map[$KeyframeName]
         } else {
             $scope = 'LOCAL'; $sourceFile = $script:CurrentFile
         }
@@ -931,6 +1114,106 @@ function Add-CommentBannerRow {
     return $row
 }
 
+# ----- Per-compound drift attribution --------------------------------------
+
+# Apply every per-compound drift check to a row produced from a compound.
+# Single source of truth for the "what's wrong with this compound" rules,
+# so primary and descendant emission paths produce identical drift coverage.
+#
+#   $Row              - the catalog row to annotate
+#   $Compound         - the compound object from Get-CompoundList
+#   $ExtraClassCount  - number of class tokens beyond the leftmost (so
+#                       depth-3+ check is "$ExtraClassCount -ge 2")
+#   $IsPartOfGroup    - true if the rule's selector list contained a comma
+#   $InDescendant     - true if this compound is in a descendant position
+#                       (anything after the primary)
+function Add-CompoundDriftCodes {
+    param(
+        [Parameter(Mandatory)] $Row,
+        [Parameter(Mandatory)] $Compound,
+        [Parameter(Mandatory)] [int]$ExtraClassCount,
+        [bool]$IsPartOfGroup = $false,
+        [bool]$InDescendant = $false
+    )
+
+    if ($ExtraClassCount -ge 2) {
+        Add-Drift -Row $Row -Code 'COMPOUND_DEPTH_3PLUS'
+    }
+    if ($Compound.PseudoInterleaved) {
+        Add-Drift -Row $Row -Code 'PSEUDO_INTERLEAVED'
+    }
+    # OQ-CSS-1: stacked pseudo-classes (e.g., :hover:not(:disabled)) and
+    # :not() pseudo-classes are both forbidden by the spec. Detection is
+    # per-compound: $Compound.Pseudos holds the list of bare pseudo-class
+    # names (colons trimmed), so a count of 2+ flags stacking, and a
+    # 'not' entry flags the negation construct.
+    if ($Compound.Pseudos.Count -ge 2) {
+        Add-Drift -Row $Row -Code 'FORBIDDEN_STACKED_PSEUDO'
+    }
+    if ($Compound.Pseudos -contains 'not') {
+        Add-Drift -Row $Row -Code 'FORBIDDEN_NOT_PSEUDO'
+    }
+    if ($Compound.Ids.Count -gt 0) {
+        Add-Drift -Row $Row -Code 'FORBIDDEN_ID_SELECTOR'
+    }
+    # Element / universal / attribute selectors are forbidden EXCEPT inside
+    # FOUNDATION, where reset rules legitimately rely on them (* box-sizing,
+    # body { ... }, [type="radio"] in form normalization). Suppress these
+    # codes when the active section is FOUNDATION.
+    $inFoundation = ($script:CurrentBannerInfo -and $script:CurrentBannerInfo.SectionType -eq 'FOUNDATION')
+    if ($Compound.AttrCount -gt 0 -and -not $inFoundation) {
+        Add-Drift -Row $Row -Code 'FORBIDDEN_ATTRIBUTE_SELECTOR'
+    }
+    if ($Compound.HasTag -and -not $inFoundation) {
+        Add-Drift -Row $Row -Code 'FORBIDDEN_ELEMENT_SELECTOR'
+    }
+    if ($IsPartOfGroup) {
+        Add-Drift -Row $Row -Code 'FORBIDDEN_GROUP_SELECTOR'
+    }
+    if ($InDescendant) {
+        Add-Drift -Row $Row -Code 'FORBIDDEN_DESCENDANT'
+    }
+}
+
+# Compute (variant_type, variant_qualifier_1, variant_qualifier_2) from a
+# compound's class and pseudo collections. Used for both primary and
+# descendant emission. Returns a hashtable with three keys.
+function Get-VariantShape {
+    param(
+        [Parameter(Mandatory)] $Compound
+    )
+    $extraClasses = if ($Compound.Classes.Count -gt 1) { $Compound.Classes[1..($Compound.Classes.Count-1)] } else { @() }
+    $extraPseudos = $Compound.Pseudos
+
+    $variantType = $null
+    $q1 = $null
+    $q2 = $null
+
+    if ($extraClasses.Count -eq 0 -and $extraPseudos.Count -eq 0) {
+        $variantType = $null
+    }
+    elseif ($extraClasses.Count -ge 1 -and $extraPseudos.Count -eq 0) {
+        $variantType = 'class'
+        $q1 = ($extraClasses -join '.')
+    }
+    elseif ($extraClasses.Count -eq 0 -and $extraPseudos.Count -ge 1) {
+        $variantType = 'pseudo'
+        $q2 = ($extraPseudos -join ':')
+    }
+    else {
+        $variantType = 'compound_pseudo'
+        $q1 = ($extraClasses -join '.')
+        $q2 = ($extraPseudos -join ':')
+    }
+
+    return @{
+        VariantType        = $variantType
+        VariantQualifier1  = $q1
+        VariantQualifier2  = $q2
+        ExtraClassCount    = $extraClasses.Count
+    }
+}
+
 # ----- Per-selector row generation -----------------------------------------
 
 # Decompose a selector into compounds (classes / ids / pseudos), then emit
@@ -944,6 +1227,7 @@ function Add-RowsForSelector {
         [Parameter(Mandatory)] [int]    $LineEnd,
         [Parameter(Mandatory)] [int]    $ColumnStart,
         [string] $ParentAtrule = $null,
+        [string] $RuleBodyText = $null,    # full rule body for raw_text population
         [bool]   $HasPrecedingComment = $false,
         [bool]   $HasTrailingInlineComment = $false,
         [bool]   $IsPartOfGroup = $false
@@ -951,6 +1235,10 @@ function Add-RowsForSelector {
 
     $compounds = Get-CompoundList -SelectorChildren $SelectorNode.nodes
 
+    # If RuleBodyText wasn't provided (older callers), fall back to the selector.
+    if ([string]::IsNullOrEmpty($RuleBodyText)) { $RuleBodyText = $RuleSelectorText }
+
+    # Locate the primary compound — first one that has a class or an id.
     $primaryIdx = -1
     for ($i = 0; $i -lt $compounds.Count; $i++) {
         if ($compounds[$i].Classes.Count -gt 0 -or $compounds[$i].Ids.Count -gt 0) {
@@ -958,24 +1246,37 @@ function Add-RowsForSelector {
         }
     }
 
-    # Selector with no class and no id → element-only / universal / attribute-only.
+    $hasMultipleCompounds = ($compounds.Count -gt 1)
+
+    # Selector with no class and no id → element-only / universal / attribute-only / pseudo-element-only.
     if ($primaryIdx -lt 0) {
         $row = Add-CssRuleRow -LineStart $LineStart -LineEnd $LineEnd `
             -ColumnStart $ColumnStart -Signature $RuleSelectorText `
-            -ParentAtrule $ParentAtrule -RawText $RuleSelectorText
+            -ParentAtrule $ParentAtrule -RawText $RuleBodyText
         if ($row) {
-            # Determine which forbidden category applies
-            $hasUniversal = ($compounds | Where-Object { $_.HasUniversal }).Count -gt 0
-            $hasAttr      = ($compounds | Where-Object { $_.AttrCount -gt 0 }).Count -gt 0
-            $hasTag       = ($compounds | Where-Object { $_.HasTag }).Count -gt 0
+            # Determine which forbidden category applies. @(...) wrappers force
+            # array context so single-compound rules don't trip the PowerShell
+            # single-element pipe trap.
+            $hasUniversal     = @($compounds | Where-Object { $_.HasUniversal }).Count -gt 0
+            $hasAttr          = @($compounds | Where-Object { $_.AttrCount -gt 0 }).Count -gt 0
+            $hasTag           = @($compounds | Where-Object { $_.HasTag }).Count -gt 0
+            $hasPseudoElement = @($compounds | Where-Object { $_.PseudoElements.Count -gt 0 }).Count -gt 0
 
-            if ($hasUniversal) { Add-Drift -Row $row -Code 'FORBIDDEN_UNIVERSAL_SELECTOR' }
-            if ($hasAttr)      { Add-Drift -Row $row -Code 'FORBIDDEN_ATTRIBUTE_SELECTOR' }
-            if ($hasTag -and -not $hasUniversal -and -not $hasAttr) {
+            # Element / universal / attribute selectors are exempt inside FOUNDATION.
+            # Pseudo-elements outside FOUNDATION attached to no class are flagged
+            # with FORBIDDEN_PSEUDO_ELEMENT_LOCATION.
+            $inFoundation = ($script:CurrentBannerInfo -and $script:CurrentBannerInfo.SectionType -eq 'FOUNDATION')
+
+            if ($hasUniversal -and -not $inFoundation) { Add-Drift -Row $row -Code 'FORBIDDEN_UNIVERSAL_SELECTOR' }
+            if ($hasAttr      -and -not $inFoundation) { Add-Drift -Row $row -Code 'FORBIDDEN_ATTRIBUTE_SELECTOR' }
+            if ($hasTag       -and -not $inFoundation -and -not $hasUniversal -and -not $hasAttr) {
                 Add-Drift -Row $row -Code 'FORBIDDEN_ELEMENT_SELECTOR'
             }
+            if ($hasPseudoElement -and -not $inFoundation) {
+                Add-Drift -Row $row -Code 'FORBIDDEN_PSEUDO_ELEMENT_LOCATION'
+            }
             if ($IsPartOfGroup) { Add-Drift -Row $row -Code 'FORBIDDEN_GROUP_SELECTOR' }
-            if ($compounds.Count -gt 1) { Add-Drift -Row $row -Code 'FORBIDDEN_DESCENDANT' }
+            if ($hasMultipleCompounds) { Add-Drift -Row $row -Code 'FORBIDDEN_DESCENDANT' }
             # MISSING_SECTION_BANNER if no banner has been seen yet in this file
             if (-not $script:CurrentBannerOuter) {
                 Add-Drift -Row $row -Code 'MISSING_SECTION_BANNER'
@@ -986,81 +1287,39 @@ function Add-RowsForSelector {
 
     $primary = $compounds[$primaryIdx]
 
-    # Decide what the primary row is and what variant qualifiers (if any) to populate
-    $primaryRow = $null
+    # ----- PRIMARY emission: class side (if any classes present) -----------
 
     if ($primary.Classes.Count -gt 0) {
         $primaryName = $primary.Classes[0]
-
-        # Determine variant shape based on primary compound's contents
-        $variantType        = $null
-        $variantQualifier1  = $null
-        $variantQualifier2  = $null
-
-        $extraClasses = if ($primary.Classes.Count -gt 1) { $primary.Classes[1..($primary.Classes.Count-1)] } else { @() }
-        $extraPseudos = $primary.Pseudos
-
-        if ($extraClasses.Count -eq 0 -and $extraPseudos.Count -eq 0) {
-            # Pure base class
-            $variantType = $null
-        }
-        elseif ($extraClasses.Count -ge 1 -and $extraPseudos.Count -eq 0) {
-            $variantType = 'class'
-            $variantQualifier1 = ($extraClasses -join '.')
-        }
-        elseif ($extraClasses.Count -eq 0 -and $extraPseudos.Count -ge 1) {
-            $variantType = 'pseudo'
-            $variantQualifier2 = ($extraPseudos -join ':')
-        }
-        else {
-            $variantType = 'compound_pseudo'
-            $variantQualifier1 = ($extraClasses -join '.')
-            $variantQualifier2 = ($extraPseudos -join ':')
-        }
+        $shape = Get-VariantShape -Compound $primary
 
         $primaryRow = Add-CssClassOrVariantRow `
             -ComponentName $primaryName `
-            -VariantType $variantType `
-            -VariantQualifier1 $variantQualifier1 `
-            -VariantQualifier2 $variantQualifier2 `
+            -VariantType $shape.VariantType `
+            -VariantQualifier1 $shape.VariantQualifier1 `
+            -VariantQualifier2 $shape.VariantQualifier2 `
             -ReferenceType 'DEFINITION' `
             -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
-            -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleSelectorText
+            -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
 
         if ($primaryRow) {
-            # Drift checks on primary row
-            if ($extraClasses.Count -ge 2) {
-                Add-Drift -Row $primaryRow -Code 'COMPOUND_DEPTH_3PLUS'
-            }
-            if ($primary.PseudoInterleaved) {
-                Add-Drift -Row $primaryRow -Code 'PSEUDO_INTERLEAVED'
-            }
-            if ($primary.Ids.Count -gt 0) {
-                Add-Drift -Row $primaryRow -Code 'FORBIDDEN_ID_SELECTOR'
-            }
-            if ($primary.AttrCount -gt 0) {
-                Add-Drift -Row $primaryRow -Code 'FORBIDDEN_ATTRIBUTE_SELECTOR'
-            }
-            if ($primary.HasTag) {
-                Add-Drift -Row $primaryRow -Code 'FORBIDDEN_ELEMENT_SELECTOR'
-            }
-            if ($IsPartOfGroup) {
-                Add-Drift -Row $primaryRow -Code 'FORBIDDEN_GROUP_SELECTOR'
-            }
-            if ($compounds.Count -gt 1) {
-                # Descendant / child / sibling - we don't have combinator type
-                # surfaced from selector tree at this depth in PostCSS's default
-                # output. Treat as descendant for now; future iteration can
-                # refine to FORBIDDEN_CHILD_COMBINATOR / FORBIDDEN_SIBLING_COMBINATOR
-                # by inspecting the combinator's value in the selector tree.
+            Add-CompoundDriftCodes -Row $primaryRow -Compound $primary `
+                -ExtraClassCount $shape.ExtraClassCount `
+                -IsPartOfGroup $IsPartOfGroup -InDescendant $false
+
+            # The primary compound DOES NOT itself contribute FORBIDDEN_DESCENDANT —
+            # the descendant relationship is between the primary and what follows.
+            # When the compound list has more than one element, the primary still
+            # participates in a descendant-combinator selector, so flag it.
+            if ($hasMultipleCompounds) {
                 Add-Drift -Row $primaryRow -Code 'FORBIDDEN_DESCENDANT'
             }
 
             # Comment-presence drift
-            if ($variantType -and -not $HasTrailingInlineComment) {
+            if ($shape.VariantType -and -not $HasTrailingInlineComment) {
                 Add-Drift -Row $primaryRow -Code 'MISSING_VARIANT_COMMENT'
             }
-            elseif (-not $variantType -and -not $HasPrecedingComment) {
+            elseif (-not $shape.VariantType -and -not $HasPrecedingComment) {
                 Add-Drift -Row $primaryRow -Code 'MISSING_PURPOSE_COMMENT'
             }
 
@@ -1084,61 +1343,63 @@ function Add-RowsForSelector {
             }
         }
     }
-    else {
-        # Primary compound has only ids — emit HTML_ID with FORBIDDEN_ID_SELECTOR
-        $primaryId = $primary.Ids[0]
-        $primaryRow = Add-HtmlIdRow -IdName $primaryId `
-            -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
-            -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleSelectorText
-        if ($primaryRow) {
-            Add-Drift -Row $primaryRow -Code 'FORBIDDEN_ID_SELECTOR'
-            if ($IsPartOfGroup) { Add-Drift -Row $primaryRow -Code 'FORBIDDEN_GROUP_SELECTOR' }
-            if (-not $script:CurrentBannerOuter) {
-                Add-Drift -Row $primaryRow -Code 'MISSING_SECTION_BANNER'
+
+    # ----- PRIMARY emission: id side (if any ids present) ------------------
+    # Independent of class emission — when both are present we want both rows.
+
+    if ($primary.Ids.Count -gt 0) {
+        foreach ($idName in $primary.Ids) {
+            $idRow = Add-HtmlIdRow -IdName $idName -ReferenceType 'DEFINITION' `
+                -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
+                -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
+            if ($idRow) {
+                Add-Drift -Row $idRow -Code 'FORBIDDEN_ID_SELECTOR'
+                if ($IsPartOfGroup) { Add-Drift -Row $idRow -Code 'FORBIDDEN_GROUP_SELECTOR' }
+                if ($hasMultipleCompounds) { Add-Drift -Row $idRow -Code 'FORBIDDEN_DESCENDANT' }
+                if (-not $script:CurrentBannerOuter) {
+                    Add-Drift -Row $idRow -Code 'MISSING_SECTION_BANNER'
+                }
             }
         }
     }
 
-    # Descendant USAGE rows for compounds after the primary
+    # ----- DESCENDANT USAGE rows for compounds after the primary -----------
+
     for ($i = $primaryIdx + 1; $i -lt $compounds.Count; $i++) {
         $cmp = $compounds[$i]
+
+        # Class-side descendant USAGE
         if ($cmp.Classes.Count -gt 0) {
             $usageName = $cmp.Classes[0]
-            # Variant qualifier extraction same as primary
-            $extraClasses = if ($cmp.Classes.Count -gt 1) { $cmp.Classes[1..($cmp.Classes.Count-1)] } else { @() }
-            $extraPseudos = $cmp.Pseudos
-
-            $variantType = $null
-            $variantQualifier1 = $null
-            $variantQualifier2 = $null
-            if ($extraClasses.Count -eq 0 -and $extraPseudos.Count -eq 0) {
-                $variantType = $null
-            }
-            elseif ($extraClasses.Count -ge 1 -and $extraPseudos.Count -eq 0) {
-                $variantType = 'class'; $variantQualifier1 = ($extraClasses -join '.')
-            }
-            elseif ($extraClasses.Count -eq 0 -and $extraPseudos.Count -ge 1) {
-                $variantType = 'pseudo'; $variantQualifier2 = ($extraPseudos -join ':')
-            }
-            else {
-                $variantType = 'compound_pseudo'
-                $variantQualifier1 = ($extraClasses -join '.')
-                $variantQualifier2 = ($extraPseudos -join ':')
-            }
+            $shape = Get-VariantShape -Compound $cmp
 
             $usageRow = Add-CssClassOrVariantRow `
                 -ComponentName $usageName `
-                -VariantType $variantType `
-                -VariantQualifier1 $variantQualifier1 `
-                -VariantQualifier2 $variantQualifier2 `
+                -VariantType $shape.VariantType `
+                -VariantQualifier1 $shape.VariantQualifier1 `
+                -VariantQualifier2 $shape.VariantQualifier2 `
                 -ReferenceType 'USAGE' `
                 -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
-                -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleSelectorText
+                -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
 
             if ($usageRow) {
-                # Every descendant USAGE row inherits the descendant drift
-                Add-Drift -Row $usageRow -Code 'FORBIDDEN_DESCENDANT'
-                if ($IsPartOfGroup) { Add-Drift -Row $usageRow -Code 'FORBIDDEN_GROUP_SELECTOR' }
+                Add-CompoundDriftCodes -Row $usageRow -Compound $cmp `
+                    -ExtraClassCount $shape.ExtraClassCount `
+                    -IsPartOfGroup $IsPartOfGroup -InDescendant $true
+            }
+        }
+
+        # Id-side descendant USAGE — independent of class emission, same as primary
+        if ($cmp.Ids.Count -gt 0) {
+            foreach ($idName in $cmp.Ids) {
+                $idRow = Add-HtmlIdRow -IdName $idName -ReferenceType 'USAGE' `
+                    -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
+                    -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
+                if ($idRow) {
+                    Add-Drift -Row $idRow -Code 'FORBIDDEN_ID_SELECTOR'
+                    Add-Drift -Row $idRow -Code 'FORBIDDEN_DESCENDANT'
+                    if ($IsPartOfGroup) { Add-Drift -Row $idRow -Code 'FORBIDDEN_GROUP_SELECTOR' }
+                }
             }
         }
     }
@@ -1181,7 +1442,11 @@ function Add-RowsFromAst {
                 if ($bannerInfo.SectionType -and $script:SectionTypeOrder -notcontains $bannerInfo.SectionType) {
                     Add-Drift -Row $bannerRow -Code 'UNKNOWN_SECTION_TYPE'
                 }
-                if ($null -eq $bannerInfo.Prefixes -or $bannerInfo.Prefixes.Count -eq 0) {
+                # MISSING_PREFIXES_DECLARATION fires only when the Prefixes
+                # line is entirely absent. An explicit "Prefixes: (none)"
+                # sets $bannerInfo.Prefixes to an empty array (not $null)
+                # and is treated as a valid declaration.
+                if ($null -eq $bannerInfo.Prefixes) {
                     Add-Drift -Row $bannerRow -Code 'MISSING_PREFIXES_DECLARATION'
                 }
                 # Section ordering: section types must be in canonical order
@@ -1254,7 +1519,12 @@ function Add-RowsFromAst {
 
         # Comma-grouped selectors → flag every constituent
         $isGroup = $false
-        if ($Node.selectors -and $Node.selectors.Count -gt 1) { $isGroup = $true }
+        if ($Node.selectors -and @($Node.selectors).Count -gt 1) { $isGroup = $true }
+
+        # Build the full rule body once per rule, then thread it through every
+        # row emitted from this rule so raw_text captures the declarations
+        # (not just the selector).
+        $ruleBodyText = Format-RuleBody -RuleNode $Node -SelectorText $Node.selector
 
         if ($Node.selectorTree -and $Node.selectorTree.nodes) {
             foreach ($sel in $Node.selectorTree.nodes) {
@@ -1262,6 +1532,7 @@ function Add-RowsFromAst {
                 Add-RowsForSelector -SelectorNode $sel -RuleSelectorText $Node.selector `
                     -LineStart $line -LineEnd $endLine -ColumnStart $col `
                     -ParentAtrule $ParentAtrule `
+                    -RuleBodyText $ruleBodyText `
                     -HasPrecedingComment $hasPrecedingComment `
                     -HasTrailingInlineComment $hasTrailingInlineComment `
                     -IsPartOfGroup $isGroup
@@ -1310,11 +1581,12 @@ function Add-RowsFromAst {
                 -RawText "$($Node.prop): $($Node.value)")
         }
 
-        # CSS_KEYFRAME USAGE
+        # CSS_KEYFRAME USAGE — resolve against the consumer's zone
         if ($Node.prop -in @('animation','animation-name')) {
+            $kfMap = Get-ZoneSharedKeyframeMap
             foreach ($tok in ($Node.value -split '\s+|,')) {
                 $t = $tok.Trim()
-                if ($t -and $script:sharedKeyframeMap.ContainsKey($t)) {
+                if ($t -and $kfMap.ContainsKey($t)) {
                     [void](Add-CssKeyframeRow -KeyframeName $t -ReferenceType 'USAGE' `
                         -LineStart $line -LineEnd $endLine -ColumnStart $col `
                         -Signature "$($Node.prop): $($Node.value)" -ParentAtrule $ParentAtrule `
@@ -1371,16 +1643,19 @@ function Add-RowsFromAst {
         if ($Node.params) { $atruleLabel = "$atruleLabel $($Node.params)" }
         $atruleLabel = $atruleLabel.Trim()
 
-        # Forbidden at-rules: @import, @font-face, @media, @supports.
-        # Emit a CSS_RULE row representing the at-rule (no specific row type
-        # for at-rules in our schema) and tag it with the right drift code.
+        # Forbidden at-rules: @import, @font-face, @supports. (@media is
+        # permitted per spec amendment Gap 6 — responsive design is a
+        # legitimate need; @media-wrapped rules are cataloged via the
+        # parent_function column. @keyframes is permitted in FOUNDATION
+        # only and handled separately above.) Emit a CSS_RULE row
+        # representing the at-rule and tag it with the right drift code.
         $line    = if ($Node.source -and $Node.source.start) { [int]$Node.source.start.line } else { 1 }
         $endLine = if ($Node.source -and $Node.source.end)   { [int]$Node.source.end.line   } else { $line }
         $col     = if ($Node.source -and $Node.source.start -and ($Node.source.start.PSObject.Properties.Name -contains 'column')) {
                        [int]$Node.source.start.column
                    } else { 1 }
 
-        if ($Node.name -in @('import','font-face','media','supports')) {
+        if ($Node.name -in @('import','font-face','supports')) {
             $atRow = Add-CssRuleRow -LineStart $line -LineEnd $endLine `
                 -ColumnStart $col -Signature $atruleLabel -ParentAtrule $ParentAtrule `
                 -RawText $atruleLabel
@@ -1388,7 +1663,6 @@ function Add-RowsFromAst {
                 switch ($Node.name) {
                     'import'    { Add-Drift -Row $atRow -Code 'FORBIDDEN_AT_IMPORT' }
                     'font-face' { Add-Drift -Row $atRow -Code 'FORBIDDEN_AT_FONT_FACE' }
-                    'media'     { Add-Drift -Row $atRow -Code 'FORBIDDEN_AT_MEDIA' }
                     'supports'  { Add-Drift -Row $atRow -Code 'FORBIDDEN_AT_SUPPORTS' }
                 }
             }
@@ -1468,9 +1742,16 @@ function Add-FileHeaderForFile {
                         # Stop on first blank line OR closing rule of '='s
                         if ([string]::IsNullOrWhiteSpace($line)) { break }
                         if ($line -match '={5,}') { break }
-                        # Match "1. <title>" etc.
-                        if ($line -match '^\s*\d+\.\s+(.+?)\s*$') {
-                            $fileOrgList += $matches[1].Trim()
+                        # Match either "1. <title>" (legacy numbered form) or
+                        # "<title>" (current un-numbered form). Optional trailing
+                        # "  -- <description>" is stripped.
+                        if ($line -match '^\s*(?:\d+\.\s+)?(.+?)\s*$') {
+                            $entry = $matches[1].Trim()
+                            # Strip trailing "  -- <description>" if present
+                            $entry = ($entry -replace '\s+--\s+.*$', '').Trim()
+                            if ($entry) {
+                                $fileOrgList += $entry
+                            }
                         }
                     }
                 }
@@ -1507,6 +1788,7 @@ function Add-FileHeaderForFile {
 foreach ($file in $CssFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     $isShared = $SharedFiles -contains $name
+    $zone = Get-CssZone -FullPath $file
 
     if (-not $astCache.ContainsKey($file)) {
         Write-Log "  Skipping (no parsed AST): $name" "WARN"
@@ -1515,6 +1797,7 @@ foreach ($file in $CssFiles) {
 
     $script:CurrentFile         = $name
     $script:CurrentFileIsShared = $isShared
+    $script:CurrentFileZone     = $zone
     $script:CurrentBannerInfo   = $null
     $script:CurrentBannerOuter  = $null
     $script:CurrentSectionTypes = @()
@@ -1530,7 +1813,7 @@ foreach ($file in $CssFiles) {
 
     $startCount = $rows.Count
     $scopeLabel = if ($isShared) { 'SHARED' } else { 'LOCAL' }
-    Write-Host ("  Walking {0} ({1})..." -f $name, $scopeLabel) -ForegroundColor Cyan
+    Write-Host ("  Walking {0} ({1}, zone={2})..." -f $name, $scopeLabel, $zone) -ForegroundColor Cyan
 
     # Emit FILE_HEADER row first
     [void](Add-FileHeaderForFile -AST $astCache[$file].ast -FileName $name)
@@ -1538,10 +1821,14 @@ foreach ($file in $CssFiles) {
     # Walk the rest of the AST
     Add-RowsFromAst -Node $astCache[$file].ast
 
-    # Capture banner titles seen in this file (for FILE_ORG_MISMATCH check)
+    # Capture banner titles seen in this file (for FILE_ORG_MISMATCH check).
+    # The FILE ORG list parser captures full "<TYPE>: <NAME>" entries, so the
+    # banner-side collection must match the same format. The Signature field
+    # holds <TYPE> and ComponentName holds <NAME>; concatenate them with ': '.
     foreach ($r in $rows) {
         if ($r.FileName -eq $name -and $r.ComponentType -eq 'COMMENT_BANNER') {
-            [void]$script:fileMeta[$name].BannerTitles.Add($r.ComponentName)
+            $title = if ($r.Signature) { "$($r.Signature): $($r.ComponentName)" } else { $r.ComponentName }
+            [void]$script:fileMeta[$name].BannerTitles.Add($title)
         }
     }
 
@@ -1611,28 +1898,42 @@ foreach ($fname in $fileMeta.Keys) {
 # A hex literal in a non-FOUNDATION file's class declaration triggers drift
 # only if a custom property exists for "this color" anywhere shared. We don't
 # have a value->property map directly; the practical heuristic is:
-# any hex literal in a class declaration when the SHARED variable map has at
-# least one custom property defined is a candidate. For now we tag every hex
-# literal in a class declaration if the shared variable map is non-empty,
-# since the spec says custom properties are mandatory for any value used twice.
-# This may produce false positives on values that aren't colors (e.g.,
-# hex-encoded scrollbar widths if any) but will catch the meaningful pattern.
-if ($sharedVariableMap.Count -gt 0) {
-    foreach ($fname in $fileMeta.Keys) {
-        $meta = $fileMeta[$fname]
-        if ($null -eq $meta.HexLiterals -or $meta.HexLiterals.Count -eq 0) { continue }
+# any hex literal in a class declaration when the consumer's zone has at
+# least one shared custom property defined is a candidate. For now we tag
+# every hex literal in a class declaration if the zone's variable map is
+# non-empty, since the spec says custom properties are mandatory for any
+# value used twice. This may produce false positives on non-color hex values
+# but will catch the meaningful pattern.
+foreach ($fname in $fileMeta.Keys) {
+    $meta = $fileMeta[$fname]
+    if ($null -eq $meta.HexLiterals -or $meta.HexLiterals.Count -eq 0) { continue }
 
-        # Skip the file containing FOUNDATION — its hex literals ARE the
-        # custom property definitions (or related content)
-        if ($meta.FoundationLine) { continue }
+    # Skip the file containing FOUNDATION — its hex literals ARE the
+    # custom property definitions (or related content).
+    if ($meta.FoundationLine) { continue }
 
-        foreach ($hex in $meta.HexLiterals) {
-            # Find rows on this file at this line and tag them
-            foreach ($r in $rows) {
-                if ($r.FileName -eq $fname -and $r.LineStart -eq $hex.Line -and
-                    $r.ComponentType -in @('CSS_CLASS', 'CSS_VARIANT')) {
-                    Add-Drift -Row $r -Code 'DRIFT_HEX_LITERAL'
-                }
+    # Determine the consumer's zone from a sample row for this file (any row
+    # that originated in $fname carries the same zone).
+    $zoneVarMap = $null
+    $sampleRow = $rows | Where-Object { $_.FileName -eq $fname } | Select-Object -First 1
+    if ($sampleRow) {
+        # Walk back to the file's CssFiles entry to recompute zone (zone wasn't
+        # stored on the row, but we can recompute it from the path lookup).
+        $sampleFullPath = $CssFiles | Where-Object { [System.IO.Path]::GetFileName($_) -eq $fname } | Select-Object -First 1
+        if ($sampleFullPath) {
+            $sampleZone = Get-CssZone -FullPath $sampleFullPath
+            if ($sampleZone -eq 'docs') { $zoneVarMap = $docsSharedVariableMap }
+            else { $zoneVarMap = $ccSharedVariableMap }
+        }
+    }
+    if ($null -eq $zoneVarMap -or $zoneVarMap.Count -eq 0) { continue }
+
+    foreach ($hex in $meta.HexLiterals) {
+        # Find rows on this file at this line and tag them
+        foreach ($r in $rows) {
+            if ($r.FileName -eq $fname -and $r.LineStart -eq $hex.Line -and
+                $r.ComponentType -in @('CSS_CLASS', 'CSS_VARIANT')) {
+                Add-Drift -Row $r -Code 'DRIFT_HEX_LITERAL'
             }
         }
     }
