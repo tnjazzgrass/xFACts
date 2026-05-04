@@ -1,0 +1,739 @@
+/* ============================================================================
+   xFACts Control Center - Replication Monitoring Styles (replication-monitoring.css)
+   Location: E:\xFACts-ControlCenter\public\css\replication-monitoring.css
+   Version: Tracked in dbo.System_Metadata (component: ServerOps.Replication)
+
+   Page-specific styles for the SQL Server Replication Monitoring page.
+   Universal page chrome (nav bar, header bar, refresh info row, sections,
+   slide panels, connection banner, live indicator) is provided by
+   cc-shared.css. This file contains only the page's page-local content
+   classes — agent status cards, chart containers, the event log table and
+   its controls, the info-icon trigger, and the inner typography for the
+   shared slide-panel's content body.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE GRID
+   CONTENT: AGENT STATUS CARDS
+   CONTENT: CHARTS
+   CONTENT: EVENT LOG
+   CONTENT: EVENT LOG CONTROLS
+   CONTENT: INFO PANEL
+   CONTENT: UTILITIES
+   CONTENT: RESPONSIVE
+   ============================================================================ */
+
+
+/* ============================================================================
+   LAYOUT: PAGE GRID
+   ----------------------------------------------------------------------------
+   Page-wide structural layout. The replication monitoring page is composed
+   of two horizontal bands: a top charts row (two side-by-side charts) and
+   a lower grid (charts on the left, event log on the right). These four
+   classes describe the page skeleton; they hold no rendered content of
+   their own.
+   Prefixes: rpm
+   ============================================================================ */
+
+/* The top charts band — two side-by-side chart sections. */
+.rpm-charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-spacing-xl);
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* The lower band wrapper — fills remaining vertical space and arranges left charts vs right event log. */
+.rpm-lower-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-spacing-xl);
+    flex: 1;
+    min-height: 0;
+    margin-bottom: 0;
+}
+
+/* The left column of the lower band — vertical stack of small chart sections. */
+.rpm-lower-left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-xl);
+    min-height: 0;
+}
+
+/* The right column of the lower band — holds the event log section. */
+.rpm-lower-right {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
+
+/* ============================================================================
+   CONTENT: AGENT STATUS CARDS
+   ----------------------------------------------------------------------------
+   Compact status cards summarizing each replication agent (LogReader, Push,
+   Pull). Each card shows the agent's identity, current run state, queue
+   depth metric, and a colored agent-type tag. State classes on the card
+   element drive the border and background tint.
+   Prefixes: rpm
+   ============================================================================ */
+
+/* Responsive grid container for the agent status cards. */
+.rpm-agent-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--size-spacing-lg);
+}
+
+/* A single agent's status card — base layout and frame. */
+.rpm-agent-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    transition: border-color var(--duration-fast);
+}
+
+.rpm-agent-card.status-healthy { /* healthy state — teal border with subtle teal tint */
+    border-color: var(--color-accent-shared);
+    background: rgba(78, 201, 176, 0.05);
+}
+
+.rpm-agent-card.status-idle { /* idle state — same visual as healthy */
+    border-color: var(--color-accent-shared);
+    background: rgba(78, 201, 176, 0.05);
+}
+
+.rpm-agent-card.status-warning { /* warning state — yellow border with subtle yellow tint */
+    border-color: var(--color-accent-departmental);
+    background: rgba(220, 220, 170, 0.05);
+}
+
+.rpm-agent-card.status-critical { /* critical state — orange border with subtle orange tint */
+    border-color: var(--color-status-critical);
+    background: rgba(244, 135, 113, 0.05);
+}
+
+.rpm-agent-card.status-stopped { /* stopped state — same visual as critical */
+    border-color: var(--color-status-critical);
+    background: rgba(244, 135, 113, 0.05);
+}
+
+.rpm-agent-card.status-unknown { /* unknown state — muted gray border, no tint */
+    border-color: var(--color-text-subtle);
+}
+
+/* Header row of an agent card — title on the left, status badge on the right. */
+.rpm-agent-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Primary agent identifier (publication name / agent name). */
+.rpm-agent-card-title {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: #e0e0e0;
+    line-height: 1.3;
+}
+
+/* Secondary identifier under the title (subscription / database). */
+.rpm-agent-card-subtitle {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
+    margin-top: 1px;
+}
+
+/* Pill-shaped status badge in the card header. */
+.rpm-agent-status-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+/* Status badge colored fill — running (teal). */
+.rpm-badge-running {
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+}
+
+/* Status badge colored fill — idle (teal). */
+.rpm-badge-idle {
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+}
+
+/* Status badge colored fill — started (teal). */
+.rpm-badge-started {
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+}
+
+/* Status badge colored fill — retrying (yellow). */
+.rpm-badge-retrying {
+    background: rgba(220, 220, 170, 0.15);
+    color: var(--color-accent-departmental);
+}
+
+/* Status badge colored fill — failed (orange). */
+.rpm-badge-failed {
+    background: rgba(244, 135, 113, 0.15);
+    color: var(--color-status-critical);
+}
+
+/* Status badge colored fill — stopped (orange). */
+.rpm-badge-stopped {
+    background: rgba(244, 135, 113, 0.15);
+    color: var(--color-status-critical);
+}
+
+/* Status badge colored fill — unknown (gray). */
+.rpm-badge-unknown {
+    background: rgba(136, 136, 136, 0.15);
+    color: var(--color-text-muted);
+}
+
+/* Horizontal row of metric tiles inside an agent card. */
+.rpm-agent-card-metrics {
+    display: flex;
+    gap: var(--size-spacing-sm);
+}
+
+/* A single metric tile (label above value). */
+.rpm-agent-metric {
+    background: var(--color-bg-card);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    flex: 1;
+    text-align: center;
+}
+
+/* Small uppercase label above a metric value. */
+.rpm-agent-metric-label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 1px;
+}
+
+/* The metric value itself (numeric, prominent). */
+.rpm-agent-metric-value {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.rpm-agent-metric-value.queue-healthy { /* queue-depth healthy — teal value */
+    color: var(--color-accent-shared);
+}
+
+.rpm-agent-metric-value.queue-warning { /* queue-depth warning — yellow value */
+    color: var(--color-accent-departmental);
+}
+
+.rpm-agent-metric-value.queue-critical { /* queue-depth critical — orange value */
+    color: var(--color-status-critical);
+}
+
+/* Optional unit suffix shown beside a metric value. */
+.rpm-agent-metric-unit {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
+    font-weight: normal;
+}
+
+/* Small inline tag identifying the agent type (logreader / push / pull). */
+.rpm-agent-type-tag {
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    margin-left: var(--size-spacing-sm);
+}
+
+.rpm-agent-type-tag.tag-logreader { /* LogReader agent — blue */
+    color: var(--color-accent-platform);
+    background: rgba(86, 156, 214, 0.15);
+}
+
+.rpm-agent-type-tag.tag-push { /* Push (distribution) agent — orange-tan */
+    color: #ce9178;
+    background: rgba(206, 145, 120, 0.15);
+}
+
+.rpm-agent-type-tag.tag-pull { /* Pull (merge) agent — purple */
+    color: #c586c0;
+    background: rgba(197, 134, 192, 0.15);
+}
+
+
+/* ============================================================================
+   CONTENT: CHARTS
+   ----------------------------------------------------------------------------
+   Chart-rendering containers used to host Chart.js canvases across the
+   page. The grid containers that arrange these on the page live in the
+   LAYOUT section above; this section provides only the per-chart wrapper
+   sizing (default, wide, half, and the lower-left-tall variant used by
+   the small charts in the lower-left column).
+   Prefixes: rpm
+   ============================================================================ */
+
+/* Chart section wrapper — sits inside a section to host one chart. */
+.rpm-chart-section {
+    margin-bottom: 0;
+}
+
+/* Default chart canvas container — full width of its host. */
+.rpm-chart-container {
+    height: 250px;
+    position: relative;
+}
+
+/* Wide chart variant — shorter height for full-width banners. */
+.rpm-chart-wide {
+    height: 160px;
+}
+
+/* Half-height chart variant — used for stacked compact charts. */
+.rpm-chart-half {
+    height: 180px;
+}
+
+/* Tall half-chart variant — used in the lower-left column where vertical space allows. */
+.rpm-chart-half-tall {
+    height: 251px;
+}
+
+
+/* ============================================================================
+   CONTENT: EVENT LOG
+   ----------------------------------------------------------------------------
+   The replication event-log table on the right side of the lower grid.
+   Each event row renders as a horizontal flex layout: time, type badge,
+   publication, agent-type label, state-transition pill, correlation tag,
+   and free-text message. Type-badge colors are driven by suffix classes
+   (.rpm-event-type-STATE_CHANGE, .rpm-event-type-AGENT_START, etc.) — the
+   uppercase suffix matches the event-type code emitted by the backend
+   verbatim, so JS can compose the class name without a casing transform.
+   Prefixes: rpm
+   ============================================================================ */
+
+/* Event log section wrapper — flex shell that fills its parent column. */
+.rpm-section-event-log {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Scrolling container for the list of event rows. */
+.rpm-event-log-container {
+    flex: 1;
+    max-height: none;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* A single event row — horizontal flex of fields. */
+.rpm-event-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-xs);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    font-size: var(--font-size-content);
+    transition: background var(--duration-instant);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.rpm-event-row:hover { /* hover background lift on a row */
+    background: var(--color-bg-card-deep);
+}
+
+.rpm-event-row:last-child { /* suppress bottom border on the last visible row */
+    border-bottom: none;
+}
+
+/* Time field — fixed-width monospace timestamp at the row's left edge. */
+.rpm-event-time {
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    width: 65px;
+    flex-shrink: 0;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+}
+
+/* Type badge — fixed-width pill color-coded by event type. */
+.rpm-event-type-badge {
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    padding: 2px var(--size-spacing-md);
+    margin-right: var(--size-spacing-2xl);
+    border-radius: var(--size-radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    width: 90px;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+/* Type badge color — STATE_CHANGE (blue). */
+.rpm-event-type-STATE_CHANGE {
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+}
+
+/* Type badge color — AGENT_START (teal). */
+.rpm-event-type-AGENT_START {
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+}
+
+/* Type badge color — AGENT_STOP (orange). */
+.rpm-event-type-AGENT_STOP {
+    background: rgba(244, 135, 113, 0.15);
+    color: var(--color-status-critical);
+}
+
+/* Type badge color — ERROR (slightly stronger orange tint). */
+.rpm-event-type-ERROR {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Type badge color — RETRY (yellow). */
+.rpm-event-type-RETRY {
+    background: rgba(220, 220, 170, 0.15);
+    color: var(--color-accent-departmental);
+}
+
+/* Type badge color — INFO (muted gray). */
+.rpm-event-type-INFO {
+    background: rgba(136, 136, 136, 0.15);
+    color: var(--color-text-muted);
+}
+
+/* Publication name field — fixed-width truncating label. */
+.rpm-event-publication {
+    color: var(--color-text-link);
+    width: 200px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: var(--font-size-content);
+}
+
+/* Agent-type label inline next to the publication. */
+.rpm-event-agent-type {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-body);
+}
+
+/* State-transition pill column — composes from-arrow-to inline. */
+.rpm-event-transition {
+    color: var(--color-text-primary);
+    width: 140px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: var(--font-size-content);
+}
+
+/* The "from" portion of a state transition (orange — leaving state). */
+.rpm-state-from {
+    color: var(--color-status-critical);
+}
+
+/* The arrow separator between from and to states. */
+.rpm-state-arrow {
+    color: var(--color-text-subtle);
+    padding: 0 var(--size-spacing-xs);
+}
+
+/* The "to" portion of a state transition (teal — entering state). */
+.rpm-state-to {
+    color: var(--color-accent-shared);
+}
+
+/* Correlation-id tag pill (groups related events). */
+.rpm-event-correlation {
+    font-size: var(--font-size-default);
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Free-text message column at the right edge of the row. */
+.rpm-event-message {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+}
+
+/* The message text itself — truncates with ellipsis. */
+.rpm-event-message-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Page-local scrollbar override — narrower (6px) than the platform default for the cramped event log column. */
+.rpm-event-log-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+/* Page-local scrollbar track. */
+.rpm-event-log-container::-webkit-scrollbar-track {
+    background: var(--color-bg-page);
+}
+
+/* Page-local scrollbar thumb. */
+.rpm-event-log-container::-webkit-scrollbar-thumb {
+    background: var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+}
+
+.rpm-event-log-container::-webkit-scrollbar-thumb:hover { /* hover state for the scrollbar thumb */
+    background: var(--color-border-strong);
+}
+
+
+/* ============================================================================
+   CONTENT: EVENT LOG CONTROLS
+   ----------------------------------------------------------------------------
+   Filter and time-range controls sitting alongside the event log: chart
+   time-range buttons, the event-log date picker, the correlation-mode
+   toggle, and the per-agent filter button row. These are conceptually
+   distinct from the event rows themselves — they're the controls that
+   shape what the event log displays.
+   Prefixes: rpm
+   ============================================================================ */
+
+/* Time-range button row above the small charts in the lower-left column. */
+.rpm-time-buttons {
+    display: flex;
+    gap: var(--size-spacing-xs);
+}
+
+/* Single time-range button (1h, 6h, 24h, etc.). */
+.rpm-time-btn {
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
+    padding: var(--size-radius-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.rpm-time-btn:hover { /* hover state — slightly lighter background and brighter text */
+    background: #3a3a3a;
+    color: var(--color-text-primary);
+}
+
+.rpm-time-btn.active { /* active state — primary blue background, white text */
+    background: var(--color-button-primary-bg);
+    border-color: var(--color-button-primary-bg-hover);
+    color: var(--color-text-on-primary);
+}
+
+/* Date picker input in the event-log toolbar. */
+.rpm-event-date-picker {
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    padding: var(--size-radius-sm) var(--size-spacing-md);
+    font-size: var(--font-size-body);
+    font-family: var(--font-family-default);
+}
+
+/* Webkit calendar picker icon — invert so it shows on the dark background. */
+.rpm-event-date-picker::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+}
+
+.rpm-event-date-picker:disabled { /* disabled state — dim the input */
+    opacity: 0.4;
+}
+
+/* Correlation-mode toggle button. */
+.rpm-btn-correlation {
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    padding: var(--size-radius-sm) var(--size-spacing-md);
+    font-size: var(--font-size-default);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.rpm-btn-correlation:hover { /* hover state — slightly lighter background and brighter text */
+    background: #3c3c3c;
+    color: var(--color-text-primary);
+}
+
+.rpm-btn-correlation.active { /* active state — blue tinted background and blue text */
+    background: rgba(86, 156, 214, 0.2);
+    border-color: var(--color-accent-platform);
+    color: var(--color-accent-platform);
+    font-weight: 600;
+}
+
+/* Per-agent filter button row above the event log. */
+.rpm-event-agent-filter {
+    display: flex;
+    gap: var(--size-spacing-xs);
+    margin-bottom: var(--size-spacing-md);
+    flex-wrap: wrap;
+}
+
+/* Single agent filter toggle button. */
+.rpm-event-agent-btn {
+    padding: var(--size-radius-sm) var(--size-spacing-md);
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.rpm-event-agent-btn:hover { /* hover state — slightly lighter background and brighter text */
+    background: #3c3c3c;
+    color: var(--color-text-primary);
+}
+
+.rpm-event-agent-btn.active { /* active state — teal background, dark text */
+    background: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+    color: var(--color-bg-page);
+    font-weight: 600;
+}
+
+
+/* ============================================================================
+   CONTENT: INFO PANEL
+   ----------------------------------------------------------------------------
+   The ⓘ trigger that opens the help slide-panel and the inner typography
+   for the panel body's content. The panel chrome (overlay backdrop, panel
+   container, slide animation, header bar with close button) is provided
+   by cc-shared.css's .slide-overlay / .slide-panel — this section only
+   contains page-local content classes that style the help text inside.
+   Prefixes: rpm
+   ============================================================================ */
+
+/* Small ⓘ icon shown next to a section title to open the help panel. */
+.rpm-info-icon {
+    display: inline-block;
+    font-size: var(--font-size-heading-lg);
+    color: var(--color-accent-platform);
+    cursor: pointer;
+    margin-left: var(--size-spacing-sm);
+    opacity: 0.6;
+    transition: opacity var(--duration-fast);
+    vertical-align: middle;
+}
+
+.rpm-info-icon:hover { /* hover state — fully opaque (subtle visibility cue) */
+    opacity: 1;
+}
+
+/* A paragraph inside the help panel body. */
+.rpm-info-panel-body-p {
+    margin: 0 0 var(--size-spacing-lg) 0;
+}
+
+/* Bold-emphasis text inside the help panel body. */
+.rpm-info-panel-body-strong {
+    color: #e0e0e0;
+}
+
+/* Italic-emphasis text inside the help panel body — recolored teal, no italics. */
+.rpm-info-panel-body-em {
+    color: var(--color-accent-shared);
+    font-style: normal;
+}
+
+
+/* ============================================================================
+   CONTENT: UTILITIES
+   ----------------------------------------------------------------------------
+   Tiny page-local helper classes that don't fit elsewhere. Used by the
+   event log, the agent cards grid, and other places that need to render
+   "loading…" or "no data" placeholder text.
+   Prefixes: rpm
+   ============================================================================ */
+
+/* Centered placeholder text shown while data loads. */
+.rpm-loading {
+    text-align: center;
+    color: var(--color-text-subtle);
+    padding: var(--size-page-padding-y);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Centered placeholder text shown when a result set is empty. */
+.rpm-no-data {
+    text-align: center;
+    color: var(--color-text-subtle);
+    padding: 30px;
+    font-size: var(--font-size-content-lg);
+}
+
+
+/* ============================================================================
+   CONTENT: RESPONSIVE
+   ----------------------------------------------------------------------------
+   Narrow-viewport overrides for the page-grid containers. Below 1200px
+   the two-column charts row and lower grid collapse to a single column.
+   Below 900px the agent cards grid also collapses to a single column.
+   Prefixes: rpm
+   ============================================================================ */
+
+@media (max-width: 1200px) {
+    /* Below 1200px — collapse the top charts row to a single column. */
+    .rpm-charts-row {
+        grid-template-columns: 1fr;
+    }
+    /* Below 1200px — collapse the lower band to a single column. */
+    .rpm-lower-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 900px) {
+    /* Below 900px — collapse the agent cards grid to a single column. */
+    .rpm-agent-cards-grid {
+        grid-template-columns: 1fr;
+    }
+}
