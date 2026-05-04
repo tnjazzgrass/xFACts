@@ -1,0 +1,456 @@
+/* ============================================================================
+   xFACts Control Center - Client Relations Styles (client-relations.css)
+   Location: E:\xFACts-ControlCenter\public\css\client-relations.css
+   Version: Tracked in dbo.System_Metadata (component: DeptOps.ClientRelations)
+
+   Page-specific styles for the Client Relations departmental page.
+   Universal chrome (nav bar, header bar, refresh info, sections, engine
+   cards, connection banner, slide panels, modals, animations, design
+   tokens) is provided by cc-shared.css per the CC Page Chrome Contract.
+   This file contains only the Client Relations page's local content
+   classes — the cache indicator, page utility helpers, summary cards,
+   the search and filter row, the queue table with expandable consumer
+   rows and account-detail sub-tables, and the reason-coded badges shown
+   on each row.
+
+   All page-local classes are prefixed clr- to make scope visible at a
+   glance: clr-* in HTML or in another CSS file is unambiguously a Client
+   Relations page concern. Shared classes (e.g., .section, .section-header,
+   .section-title, .section-header-right, .page-refresh-btn) consumed by
+   this page's HTML are defined in cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   CONTENT: UTILITIES
+   CONTENT: SECTION SUB-COMPONENTS
+   CONTENT: SUMMARY CARDS
+   CONTENT: SEARCH AND FILTER
+   CONTENT: QUEUE TABLE
+   CONTENT: REASON BADGES
+   CONTENT: ACCOUNT DETAIL SUB-TABLE
+   ============================================================================ */
+
+
+/* ============================================================================
+   CONTENT: UTILITIES
+   ----------------------------------------------------------------------------
+   Small page-local helpers. The cache indicator sits inline in the header
+   and reflects whether the page is showing live or cached query results
+   (Client Relations runs heavy queries that benefit from page-level
+   caching). The other helpers are generic visibility, alignment, and
+   placeholder treatments used throughout the page.
+   Prefixes: clr
+   ============================================================================ */
+
+/* Inline indicator showing whether the page is rendering live or cached data. */
+.clr-cache-indicator {
+    font-size: var(--font-size-default);
+    color: var(--color-accent-platform);
+    margin-right: var(--size-spacing-xs);
+}
+
+/* Centered muted-color placeholder shown while content is loading. */
+.clr-loading {
+    color: var(--color-text-muted);
+    padding: var(--size-page-padding-y);
+    text-align: center;
+    font-size: var(--font-size-content-lg);
+}
+
+/* Generic visibility toggle applied from JS to hide an element. */
+.clr-hidden {
+    display: none !important;
+}
+
+/* Italic muted-color placeholder shown when a section has no rows to display. */
+.clr-no-data {
+    color: var(--color-text-muted);
+    padding: var(--size-page-padding-y);
+    text-align: center;
+    font-size: var(--font-size-content-lg);
+    font-style: italic;
+}
+
+/* Right-align utility used on numeric/timestamp cells. */
+.clr-text-right {
+    text-align: right;
+}
+
+
+/* ============================================================================
+   CONTENT: SECTION SUB-COMPONENTS
+   ----------------------------------------------------------------------------
+   Inner wrappers placed inside the shared .section container. The shared
+   .section provides the outer card frame and its own padding; these
+   wrappers add a second layer of padding for content blocks, with a
+   table variant that removes padding so tables can run edge-to-edge.
+   Prefixes: clr
+   ============================================================================ */
+
+/* Inner content wrapper inside .section, with extra padding around children. */
+.clr-section-body {
+    padding: var(--size-spacing-lg);
+}
+
+/* Edge-to-edge variant of .clr-section-body for table content. */
+.clr-section-body-table {
+    padding: 0;
+}
+
+
+/* ============================================================================
+   CONTENT: SUMMARY CARDS
+   ----------------------------------------------------------------------------
+   Responsive grid of small status cards rendered above the queue table.
+   Each card shows a top-line value and a label below. Cards may render
+   in a normal state, a warning state (amber border and tinted surface),
+   or a critical state (red border and tinted surface).
+   Prefixes: clr
+   ============================================================================ */
+
+/* The responsive grid container that holds the row of summary cards. */
+.clr-summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+/* Individual summary card. */
+.clr-summary-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    padding: 14px var(--size-spacing-lg);
+    text-align: center;
+    transition: border-color var(--duration-fast);
+}
+
+.clr-summary-card:hover { /* hover state — accent the border in the shared teal */
+    border-color: var(--color-accent-shared);
+}
+
+.clr-summary-card.card-warning { /* warning state — amber border with tinted surface */
+    border-color: #cca700;
+    background: rgba(204, 167, 0, 0.05);
+}
+
+.clr-summary-card.card-critical { /* critical state — red border with tinted surface */
+    border-color: #f14c4c;
+    background: rgba(241, 76, 76, 0.05);
+}
+
+/* The large top-line value text inside a summary card. */
+.clr-summary-card-value {
+    font-size: var(--font-size-h1);
+    font-weight: 700;
+    color: var(--color-text-primary);
+    line-height: 1.2;
+}
+
+/* The label below the value (uppercase, muted). */
+.clr-summary-card-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: var(--size-spacing-xs);
+}
+
+
+/* ============================================================================
+   CONTENT: SEARCH AND FILTER
+   ----------------------------------------------------------------------------
+   Search input and reason-filter chip row rendered in the queue section's
+   header right-side controls area. The search input filters rows in the
+   queue table by free-text match; the filter chips toggle visibility of
+   rows by reason code. The @media block at the bottom of this section
+   shrinks the input and hides the filters on narrow viewports.
+   Prefixes: clr
+   ============================================================================ */
+
+/* The free-text search input in the queue section header. */
+.clr-search-input {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    padding: var(--size-spacing-xs) 10px;
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-content);
+    width: 180px;
+    outline: none;
+}
+
+.clr-search-input:focus { /* focus state — highlight the border in the platform blue */
+    border-color: var(--color-accent-platform);
+}
+
+/* Placeholder text styling for the search input (dimmed gray). */
+.clr-search-input::placeholder {
+    color: var(--color-text-subtle);
+}
+
+/* The horizontal row container that holds the reason-filter chips. */
+.clr-reason-filters {
+    display: flex;
+    gap: var(--size-spacing-xs);
+    flex-wrap: wrap;
+}
+
+/* Individual reason-filter chip (toggleable). */
+.clr-filter-badge {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
+    padding: 3px 10px;
+    border-radius: var(--size-spacing-lg);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+    white-space: nowrap;
+}
+
+.clr-filter-badge:hover { /* hover state — highlight border and brighten text */
+    border-color: var(--color-accent-platform);
+    color: var(--color-text-primary);
+}
+
+.clr-filter-badge.active { /* active state — filled blue background marking the chip as on */
+    background: #264f78;
+    border-color: var(--color-accent-platform);
+    color: var(--color-text-primary);
+}
+
+@media (max-width: 900px) {
+    /* Narrow-viewport adjustments: shrink the search input. */
+    .clr-search-input {
+        width: 140px;
+    }
+    /* Narrow-viewport adjustments: hide the filter chips entirely. */
+    .clr-reason-filters {
+        display: none;
+    }
+}
+
+
+/* ============================================================================
+   CONTENT: QUEUE TABLE
+   ----------------------------------------------------------------------------
+   The main queue table showing one row per consumer, expandable to reveal
+   the per-account detail sub-table (see CONTENT: ACCOUNT DETAIL SUB-TABLE).
+   The table sits inside a scrollable container with a sticky header so
+   long lists scroll cleanly without losing column labels. Each consumer
+   row has an expand icon, a name, reason badges, and an account count.
+
+   TODO (future): when the parent consumer row is hovered, the original
+   styling turned the expand icon teal as a visual cue that the icon is
+   part of the row's clickable area. The descendant rule that produced
+   that effect was dropped to comply with the no-descendant-selectors
+   rule. If a similar parent-hover-changes-child pattern surfaces on
+   other pages, consider promoting a shared JS-driven class toggle to
+   restore the cue cleanly.
+   Prefixes: clr
+   ============================================================================ */
+
+/* Scrollable container wrapping the queue table (with sticky header inside). */
+.clr-queue-scroll-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* The queue table itself (full-width, edge-to-edge inside its scroll container). */
+.clr-queue-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content-lg);
+}
+
+/* Queue table header cell (sticky to the top of the scroll container). */
+.clr-queue-table-th {
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: var(--font-size-body);
+    letter-spacing: 0.5px;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    text-align: left;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+/* Narrow column carrying the per-row expand icon. */
+.clr-col-expand {
+    width: 32px;
+    text-align: center;
+}
+
+/* Narrow column carrying the per-row account count badge. */
+.clr-col-count {
+    width: 70px;
+    text-align: center;
+}
+
+/* Consumer parent row (clickable to expand the per-account sub-table). */
+.clr-consumer-row {
+    cursor: pointer;
+    transition: background var(--duration-instant);
+}
+
+.clr-consumer-row:hover { /* hover state — highlight the row */
+    background: #2a2d2e;
+}
+
+.clr-consumer-row.expanded { /* expanded state — filled blue background */
+    background: #264f78;
+}
+
+.clr-consumer-row.expanded:hover { /* hover state on the expanded row — slightly lighter blue */
+    background: #2d5a8a;
+}
+
+/* Cell styling shared by every cell in a consumer row. */
+.clr-consumer-row-td {
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Small left-side icon indicating whether the row is expanded or collapsed. */
+.clr-expand-icon {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
+    display: inline-block;
+    width: var(--size-spacing-xl);
+    text-align: center;
+}
+
+/* Small pill on each row showing the count of accounts grouped under that consumer. */
+.clr-account-count-badge {
+    background: var(--color-border-divider);
+    color: var(--color-text-primary);
+    padding: 2px var(--size-spacing-md);
+    border-radius: 10px;
+    font-size: var(--font-size-body);
+    font-weight: 600;
+}
+
+
+/* ============================================================================
+   CONTENT: REASON BADGES
+   ----------------------------------------------------------------------------
+   Color-coded badges shown on each row to indicate why an item is in the
+   queue. Two scopes: queue-level reasons appear on consumer rows
+   (.reason-letter, .reason-other); account-level rejection reasons
+   appear on account-detail sub-table rows (.reason-zero-dollar,
+   .reason-no-data, .reason-discrepancy). Each reason class supplies
+   its own background and text color; the base badge class supplies
+   shared sizing and shape.
+   Prefixes: clr
+   ============================================================================ */
+
+/* Base reason badge — shared sizing and shape across all reason variants. */
+.clr-reason-badge {
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Queue-level reason: letter outstanding (blue). */
+.clr-reason-letter {
+    background: #264f78;
+    color: #6cb6ff;
+}
+
+/* Queue-level reason: other (amber). */
+.clr-reason-other {
+    background: #4d3800;
+    color: #cca700;
+}
+
+/* Account-level rejection reason: zero-dollar account (amber). */
+.clr-reason-zero-dollar {
+    background: #4d3800;
+    color: #cca700;
+}
+
+/* Account-level rejection reason: no data available (orange). */
+.clr-reason-no-data {
+    background: #5a1d1d;
+    color: var(--color-status-critical);
+}
+
+/* Account-level rejection reason: data discrepancy detected (deep orange). */
+.clr-reason-discrepancy {
+    background: #4d2800;
+    color: #e8925c;
+}
+
+
+/* ============================================================================
+   CONTENT: ACCOUNT DETAIL SUB-TABLE
+   ----------------------------------------------------------------------------
+   When a consumer row is expanded, an inner sub-table renders below it
+   listing the per-account detail rows for that consumer. The sub-table
+   has its own header styling (slightly smaller and more muted than the
+   parent queue table) and is wrapped in a left-bordered container that
+   visually nests it under the parent row.
+   Prefixes: clr
+   ============================================================================ */
+
+/* The container row that hosts the expanded account sub-table. */
+.clr-account-row {
+    background: var(--color-bg-page);
+}
+
+/* Cell styling on the account-row host (collapses the cell padding to let the inner container fill). */
+.clr-account-row-td {
+    padding: 0 var(--size-spacing-lg) 0 0;
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
+    background: var(--color-bg-page);
+}
+
+/* Inner container that wraps the account sub-table, indenting it under the parent row. */
+.clr-account-detail-container {
+    padding: var(--size-spacing-md) var(--size-spacing-md) var(--size-spacing-md) 28px;
+    border-left: 2px solid var(--color-border-default);
+    margin: var(--size-spacing-xs) 0;
+    overflow-x: auto;
+}
+
+/* The account-detail sub-table itself. */
+.clr-account-sub-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Account sub-table header cell. */
+.clr-account-sub-table-th {
+    background: var(--color-bg-card-deep);
+    color: var(--color-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: var(--font-size-default);
+    letter-spacing: 0.3px;
+    padding: 5px var(--size-spacing-md);
+    text-align: left;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    white-space: nowrap;
+    position: static;
+}
+
+/* Account sub-table data cell. */
+.clr-account-sub-table-td {
+    padding: 5px var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
+    color: #c0c0c0;
+    white-space: nowrap;
+}
+
+/* Hover row state for the account sub-table. */
+.clr-account-sub-table-row:hover { /* hover state — highlight the row */
+    background: #2a2d2e;
+}
