@@ -655,6 +655,393 @@ When the JS/HTML migration session opens `ReplicationMonitoring.ps1`, `Replicati
 
 ---
 
+## business-services.css
+
+**Refactored:** 2026-05-04 (Phase 1, file 4 of ~28)
+**Result:** 177 rows / 95% drift → 314 rows / 0% drift
+**Prefix:** `bsv-`
+**Component:** `DeptOps.BusinessServices`
+**Downstream files:** `xFACts-ControlCenter/scripts/routes/BusinessServices.ps1`, `xFACts-ControlCenter/scripts/routes/BusinessServices-API.ps1`, `xFACts-ControlCenter/public/js/business-services.js`
+
+The Business Services page is the densest of the Phase 1 files — three top-level sections (Live Activity, Distribution, History) plus a multi-level slideout (day detail → user requests) that opens a request-detail modal on top of itself. The page exercises three patterns that hadn't surfaced in BI, CR, or RPM combined: a flip-card animation system whose state class needed flattening to leaf elements, a modal stacked above an open slideout (which drove the cc-shared `.xf-modal.medium` tier addition), and a rich `card-warning`/`card-critical` state model on the activity cards that uses the existing `.card-warning`/`.card-critical` shared modifier convention with page-local color literals.
+
+The refactor scope was strictly CSS this pass — chrome consumption, prefix application, dead-code removal, hex-to-token swaps, and the descendant-selector flattenings required for spec compliance. HTML and JS coordination work (which is significant for this page) is captured under "Downstream impact summary" for the future JS/HTML migration session.
+
+### 1. Class renames
+
+Every surviving page-local class in `business-services.css` was prefixed with `bsv-`. Classes that were dropped because cc-shared.css now provides them are listed in category 3, not here.
+
+The full rename list (original → new):
+
+| Original | Renamed to |
+|---|---|
+| `.top-row` | `.bsv-top-row` |
+| `.section-body` | `.bsv-section-body` |
+| `.activity-cards` | `.bsv-activity-cards` |
+| `.activity-card` | `.bsv-activity-card` |
+| `.activity-card.card-warning` | `.bsv-activity-card.card-warning` |
+| `.activity-card.card-critical` | `.bsv-activity-card.card-critical` |
+| `.activity-card-title` | `.bsv-activity-card-title` |
+| `.activity-card-metrics` | `.bsv-activity-card-metrics` |
+| `.activity-card-metrics-5` | `.bsv-activity-card-metrics-5` |
+| `.metric` | `.bsv-metric` |
+| `.metric-value` | `.bsv-metric-value` |
+| `.metric-label` | `.bsv-metric-label` |
+| `.metric-new` | `.bsv-metric-new` |
+| `.metric-assigned` | `.bsv-metric-assigned` |
+| `.metric-unassigned` | `.bsv-metric-unassigned` |
+| `.metric-completed` | `.bsv-metric-completed` |
+| `.distribution-cards` | `.bsv-distribution-cards` |
+| `.flip-card` | `.bsv-flip-card` |
+| `.flip-card-front` | `.bsv-flip-card-front` |
+| `.flip-card-back` | `.bsv-flip-card-back` |
+| `.flip-card-title` | `.bsv-flip-card-title` |
+| `.flip-card-subtitle` | `.bsv-flip-card-subtitle` |
+| `.flip-card-big-number` | `.bsv-flip-card-big-number` |
+| `.flip-card-of` | `.bsv-flip-card-of` |
+| `.flip-card-progress` | `.bsv-flip-card-progress` |
+| `.flip-card-progress-fill` | `.bsv-flip-card-progress-fill` |
+| `.flip-card-progress-text` | `.bsv-flip-card-progress-text` |
+| `.flip-card-footer-row` | `.bsv-flip-card-footer-row` |
+| `.flip-new` | `.bsv-flip-new` |
+| `.flip-completed` | `.bsv-flip-completed` |
+| `.flip-card-hint` | `.bsv-flip-card-hint` |
+| `.dist-user` | `.bsv-dist-user` |
+| `.dist-user-name` | `.bsv-dist-user-name` |
+| `.dist-user-stats` | `.bsv-dist-user-stats` |
+| `.dist-stat` | `.bsv-dist-stat` |
+| `.dist-completed` | `.bsv-dist-completed` |
+| `.dist-user-bar` | `.bsv-dist-user-bar` |
+| `.dist-user-bar-fill` | `.bsv-dist-user-bar-fill` |
+| `.group-badges` | `.bsv-group-badges` |
+| `.group-badge` | `.bsv-group-badge` |
+| `.group-badge.active` | `.bsv-group-badge.active` |
+| `.badge-count` | `.bsv-badge-count` |
+| `.history-year` | `.bsv-history-year` |
+| `.year-header` | `.bsv-year-header` |
+| `.year-label` | `.bsv-year-label` |
+| `.year-stats` | `.bsv-year-stats` |
+| `.year-stat` | `.bsv-year-stat` |
+| `.year-stat.completed` | `.bsv-year-stat.completed` |
+| `.year-content` | `.bsv-year-content` |
+| `.expand-icon` | `.bsv-expand-icon` |
+| `.expand-cell` | `.bsv-expand-cell` |
+| `.history-table` | `.bsv-history-table` |
+| `.month-row` | `.bsv-month-row` |
+| `.month-cell` | `.bsv-month-cell` |
+| `.completed-cell` | `.bsv-completed-cell` |
+| `.assigned-cell` | `.bsv-assigned-cell` |
+| `.unassigned-cell` | `.bsv-unassigned-cell` |
+| `.month-details-content` | `.bsv-month-details-content` |
+| `.day-row` | `.bsv-day-row` |
+| `.row-odd` | `.bsv-row-odd` |
+| `.slideout-section-title` | `.bsv-slideout-section-title` |
+| `.slideout-group-cards` | `.bsv-slideout-group-cards` |
+| `.slideout-group-card` | `.bsv-slideout-group-card` |
+| `.slideout-group-name` | `.bsv-slideout-group-name` |
+| `.slideout-group-metrics` | `.bsv-slideout-group-metrics` |
+| `.sg-metric` | `.bsv-sg-metric` |
+| `.sg-completed` | `.bsv-sg-completed` |
+| `.sg-assigned` | `.bsv-sg-assigned` |
+| `.sg-unassigned` | `.bsv-sg-unassigned` |
+| `.sg-received` | `.bsv-sg-received` |
+| `.slideout-table` | `.bsv-slideout-table` |
+| `.user-detail-row` | `.bsv-user-detail-row` |
+| `.slideout-count` | `.bsv-slideout-count` |
+| `.requests-table .mono` | `.bsv-mono` (descendant flattened to leaf class) |
+| `.status-completed` | `.bsv-status-completed` |
+| `.status-open` | `.bsv-status-open` |
+| `.detail-grid` | `.bsv-detail-grid` |
+| `.detail-field` | `.bsv-detail-field` |
+| `.detail-label` | `.bsv-detail-label` |
+| `.detail-value` | `.bsv-detail-value` |
+| `.detail-comment-section` | `.bsv-detail-comment-section` |
+| `.detail-comment-label` | `.bsv-detail-comment-label` |
+| `.detail-comment-text` | `.bsv-detail-comment-text` |
+| `.detail-comment-empty` | `.bsv-detail-comment-empty` |
+| `.btn` | `.bsv-btn` |
+| `.btn-sm` | `.bsv-btn-sm` |
+| `.btn-xs` | `.bsv-btn-xs` |
+| `.btn-comment` | `.bsv-btn-comment` |
+| `.btn-back` | `.bsv-btn-back` |
+| `.loading` | `.bsv-loading` |
+| `.no-activity` | `.bsv-no-activity` |
+| `.hidden` | `.bsv-hidden` |
+
+State modifier names (`.flipped`, `.user-high`, `.user-full`, `.card-warning`, `.card-critical`, `.active`, `.completed`) were not changed — they remain as-is on the prefixed base classes (or, post-flattening, on the prefixed leaf classes — see category 2).
+
+### 2. Class structure changes
+
+The original file had three places where state-on-parent-with-descendant-child selectors were used. All three were forbidden by the spec (`FORBIDDEN_DESCENDANT`) and were refactored to leaf-state form. Each requires HTML markup updates and JS toggle-target updates.
+
+**Flip card flipped state** — the source had:
+
+| Original | Refactored |
+|---|---|
+| `.flip-card.flipped .flip-card-front { transform: rotateY(180deg); }` | `.bsv-flip-card-front.flipped { transform: rotateY(180deg); }` |
+| `.flip-card.flipped .flip-card-back { transform: rotateY(0deg); }` | `.bsv-flip-card-back.flipped { transform: rotateY(0deg); }` |
+
+The current JS toggles `.flipped` on the parent `.flip-card` div via `onclick="this.classList.toggle('flipped')"`. After refactor the JS must toggle `.flipped` on **both** the front and back child elements instead. The `.bsv-flip-card` parent no longer needs the `flipped` state class.
+
+**Distribution user high/full state** — the source had:
+
+| Original | Refactored |
+|---|---|
+| `.dist-user.user-high .dist-user-bar-fill { background: #cca700; }` | `.bsv-dist-user-bar-fill.user-high { background: #cca700; }` |
+| `.dist-user.user-full .dist-user-bar-fill { background: #f14c4c; }` | `.bsv-dist-user-bar-fill.user-full { background: #f14c4c; }` |
+| `.dist-user.user-high .dist-user-name { color: #cca700; }` | `.bsv-dist-user-name.user-high { color: #cca700; }` |
+| `.dist-user.user-full .dist-user-name { color: #f14c4c; }` | `.bsv-dist-user-name.user-full { color: #f14c4c; }` |
+
+The current JS computes `userClass` (one of `'user-high'`, `'user-full'`, or `''`) and applies it to the parent `.dist-user` row. After refactor the JS must apply that class to **both** the `.bsv-dist-user-name` and `.bsv-dist-user-bar-fill` leaf elements. The `.bsv-dist-user` row itself no longer needs the state class.
+
+**Request table mono cell** — the source had:
+
+| Original | Refactored |
+|---|---|
+| `.requests-table .mono { font-family: ...; font-size: 11px; }` | `.bsv-mono { font-family: ...; font-size: var(--font-size-body); }` |
+
+The descendant rule was flattened to a single leaf class. The `.requests-table` wrapper class itself had no rules in the original (it was a pure scoping wrapper for the descendant), so it's gone — the table now consumes shared `.slide-panel-body` for layout context. JS `<td class="mono">` cells need `class="bsv-mono"`. The `<table class="slideout-table requests-table">` becomes `<table class="bsv-slideout-table">` (no `requests-table` class needed).
+
+### 3. Class deletions
+
+The following original classes were removed entirely. Each was either superseded by a `cc-shared.css` equivalent or constituted dead code.
+
+**Universal page chrome** (now provided by `cc-shared.css`):
+- `* { box-sizing: border-box }` (universal selector reset)
+- `body` (element rule, including its `padding: 20px 40px 30px 40px` — the page now uses the shared `padding: 20px 40px`, a 10px reduction at the bottom; same as RPM)
+- `h1` (element rule — the page's `color: #dcdcaa` is now driven by the body section class via shared `.page-h1.section-departmental`)
+- `.page-subtitle`
+- `.header-bar`
+- `.header-right`
+- `.refresh-info`
+- `.last-updated`
+- `.live-indicator` (along with the local `@keyframes pulse` definition — the shared `pulse` keyframe in cc-shared FOUNDATION is the canonical version)
+
+**Connection error placeholder** (replaced by shared `.connection-banner`):
+- `.connection-error`
+- `.connection-error.visible`
+
+**Section primitives** (now provided by `cc-shared.css`):
+- `.section`
+- `.section-header`
+- `.section-header h2` (descendant rule — the `<h2>` should now use `class="section-title"`)
+- `.section-controls` (replaced by shared `.section-header-right`)
+
+**Slideout chrome** (replaced by shared `.slide-overlay`/`.slide-panel` family):
+- `.slideout`
+- `.slideout-backdrop`
+- `.slideout-backdrop.visible`
+- `.slideout.open`
+- `.slideout-header`
+- `.slideout-header h3` (descendant rule)
+- `.slideout-close`
+- `.slideout-close:hover`
+- `.slideout-body`
+
+**Modal chrome** (replaced by shared `.xf-modal-overlay`/`.xf-modal.medium` family):
+- `.modal-overlay`
+- `.modal-dialog`
+- `.modal-wide`
+- `.modal-header`
+- `.modal-header h3` (descendant rule)
+- `.modal-close`
+- `.modal-close:hover`
+- `.modal-body`
+
+**Refresh button** (replaced by shared `.page-refresh-btn`):
+- `.btn-refresh`
+- `.btn-refresh.spinning`
+- Local `@keyframes spin` definition (the shared `spin` keyframe in cc-shared FOUNDATION is the canonical version)
+
+**Dead code** (rules with no behavioral effect, dropped during refactor):
+- `.activity-card-metrics-5 .metric:nth-child(4), .activity-card-metrics-5 .metric:nth-child(5)` — empty rule body containing only a code comment, no actual properties. Descendant + group + pseudo-class compound that never had any effect.
+- `.history-tree { /* Container for year groups */ }` — empty rule, just a comment. The container element retains its class in HTML but the page now relies on the shared `.section`'s flex behavior for layout.
+- `.flip-footer-stat { }` — empty rule with no properties.
+
+**Duplicate consolidation:**
+- The source declared `.flip-card { perspective: 800px; cursor: pointer; height: 200px; }` and then later re-declared `.flip-card { position: relative; }` as a separate rule. The refactor consolidates both into a single `.bsv-flip-card` declaration carrying all four properties.
+
+**JS-targeting wrapper class with no styling:**
+- `.requests-table` — no CSS rule of its own, only used to scope the `.requests-table .mono` descendant. After the descendant flatten, the wrapper has no purpose.
+
+### 4. Class additions
+
+No new classes added beyond the prefix renames and the descendant flattenings already covered in category 2. The state-on-leaf flattenings produce six new variant rules that didn't exist on those exact leaf classes in the source:
+
+| New variant rule | Replaces |
+|---|---|
+| `.bsv-flip-card-front.flipped` | `.flip-card.flipped .flip-card-front` (descendant) |
+| `.bsv-flip-card-back.flipped` | `.flip-card.flipped .flip-card-back` (descendant) |
+| `.bsv-dist-user-bar-fill.user-high` | `.dist-user.user-high .dist-user-bar-fill` (descendant) |
+| `.bsv-dist-user-bar-fill.user-full` | `.dist-user.user-full .dist-user-bar-fill` (descendant) |
+| `.bsv-dist-user-name.user-high` | `.dist-user.user-high .dist-user-name` (descendant) |
+| `.bsv-dist-user-name.user-full` | `.dist-user.user-full .dist-user-name` (descendant) |
+
+These are not strictly "new" classes — they replace the old descendant rules — but they do require HTML/JS to apply the state class to the leaf element rather than the parent.
+
+### 5. Visual or behavioral changes
+
+**No intentional visible changes** beyond the cc-shared chrome contract being applied. Specific points to flag for visual sanity-check during HTML/JS migration:
+
+- **Hex literals replaced with `cc-shared.css` token references** where exact-value matches existed: `#1e1e1e` → `--color-bg-page`, `#252526` → `--color-bg-card`, `#2d2d2d` → `--color-bg-card-hover`, `#2a2a2a` → `--color-bg-card-deep`, `#404040` → `--color-border-default`, `#333` → `--color-border-divider`, `#555` → `--color-border-strong`, `#666` → `--color-text-subtle`, `#888` → `--color-text-muted`, `#d4d4d4` → `--color-text-primary`, `#4ec9b0` → `--color-accent-shared`, `#569cd6` → `--color-accent-platform`, `#dcdcaa` (h1 only, now driven by section class). All values are byte-identical to the originals; no rendered difference.
+- **Progress bar gradient unified.** Both the flip-card progress fill and the per-user dist-user-bar-fill used `linear-gradient(90deg, #2d6b5e, #266053)` literally — both now consume `var(--gradient-progress-default)`. Byte-identical.
+- **Page-specific status colors retained as literals.** `#cca700` (warning amber) and `#f14c4c` (critical red) appear on multiple selectors throughout the page (activity card warning/critical states, dist-user high/full states, slideout group metrics, status pills, history table cells) but don't have cc-shared equivalents. Kept as literals (BI/CR precedent).
+- **Page-specific RGBA tints retained as literals.** The activity card warning/critical card-state tints (`rgba(204, 167, 0, 0.05)` and `rgba(241, 76, 76, 0.05)`) don't match any existing cc-shared `--color-tint-*` token (those are at 0.08 alpha and use the engine-card color palette, not these shades). Kept as literals; promotion to shared tokens deferred until cross-page reuse is confirmed by the catalog.
+- **Page-specific hover row tint `#2a2d2e` retained as a literal.** Used three times (month row hover, day row hover, user-detail row hover) — meets the "2+ uses" promotion threshold but doesn't match an existing cc-shared color token. **Flagged as a future shared-token candidate** when the next file's refactor either confirms or expands this pattern.
+- **Body padding-bottom drift fixed.** The original file's `body` rule had `padding: 20px 40px 30px 40px` (a 30px bottom). The shared body rule uses `padding: 20px 40px` (a 20px bottom). The page now uses the shared 20px bottom. Visual difference: 10px less whitespace at the bottom of the page. Same drift fix that was applied to RPM.
+- **CHANGELOG block removed from header.** No visible effect; the spec forbids CHANGELOG blocks (history is in git).
+- **Slideout panel width: 500px → 600px.** The original page-local `.slideout` was 500px wide. The shared `.slide-panel` defaults to 600px. The page now uses the shared default. This is a conscious standardization choice consistent with RPM's 440px → 550px change — slightly wider slideouts across pages improve consistency.
+- **Modal width: 550px → 600px.** The original page-local `.modal-dialog` (and the no-op `.modal-wide`) was 550px. The page now consumes the new shared `.xf-modal.medium` tier at 600px — 50px wider. Negligible visible change for the 2-column detail grid that lives inside.
+
+### 6. cc-shared.css impact
+
+One token added and one variant rule added to `cc-shared.css` to support the BS Request Detail modal:
+
+| Addition | Value | Purpose |
+|---|---|---|
+| `--size-modal-width-medium` | `600px` | Medium-width modal token, slotted between `--size-modal-width-default` (460px) and `--size-modal-width-wide` (800px) |
+| `.xf-modal.medium` variant rule | `width: var(--size-modal-width-medium);` | Variant rule slotted between `.xf-modal` (default base) and `.xf-modal.wide` in the CONTENT: MODAL SYSTEM section |
+
+The 600px tier was added because the BS Request Detail modal needs more horizontal room than the 460px default (the 2-column detail grid is cramped at 460) but less than the 800px `.wide` tier (which is sized for tabular content). The medium tier is genuinely cross-page potential — any page with a multi-field detail modal that doesn't show wide tabular data is a candidate consumer. Token names and variant placement follow the established ascending-size convention used in the slide-panel width tokens and the existing modal width tokens.
+
+cc-shared.css re-validated at zero drift after the additions.
+
+The shared file's modal tier set now mirrors the slide-panel tier shape:
+
+| Tier | `.slide-panel` | `.xf-modal` |
+|---|---|---|
+| default | 600px | 460px |
+| `.medium` | — | 600px (new) |
+| `.wide` | 800px | 800px |
+| `.xwide` | 1000px | — |
+
+Slide-panel and modal tiers now share the same naming convention (`default`/`medium`/`wide`/`xwide` where applicable). Existing pages that use modals at the default 460px or wide 800px tier are unaffected; the new `medium` tier is purely additive.
+
+### Downstream impact summary
+
+When the JS/HTML migration session opens `BusinessServices.ps1`, `BusinessServices-API.ps1`, and `business-services.js`:
+
+1. **Class reference updates (everywhere).** Every reference to one of the page-local classes in the rename table must be updated to its `bsv-` prefixed form. Mechanical find-and-replace per row in the rename table. Affects HTML emission strings in the .ps1 files, JS template literal strings, JS `classList` calls, JS `getElementById`/`querySelector` calls (where they target class-based selectors), and any HTML attribute references.
+
+2. **Flip card state-toggle change.** The current JS does:
+
+   ```javascript
+   html += '<div class="flip-card" onclick="this.classList.toggle(\'flipped\')">';
+   ```
+
+   This must change so that the click handler toggles `.flipped` on **both** child elements (the front and back faces) rather than the parent. Two reasonable patterns:
+
+   ```javascript
+   // Pattern A — handler toggles children directly:
+   html += '<div class="bsv-flip-card" onclick="this.querySelector(\'.bsv-flip-card-front\').classList.toggle(\'flipped\'); this.querySelector(\'.bsv-flip-card-back\').classList.toggle(\'flipped\');">';
+
+   // Pattern B — handler delegates to a named function:
+   html += '<div class="bsv-flip-card" onclick="toggleFlipCard(this)">';
+   // ... and add a small helper:
+   function toggleFlipCard(cardEl) {
+       cardEl.querySelector('.bsv-flip-card-front').classList.toggle('flipped');
+       cardEl.querySelector('.bsv-flip-card-back').classList.toggle('flipped');
+   }
+   ```
+
+   The `.bsv-flip-card` parent itself no longer needs the `flipped` state class.
+
+3. **Dist user state toggling logic change.** The current JS computes the user fill class and applies it to the parent row:
+
+   ```javascript
+   var userClass = userPct >= 90 ? 'user-full' : (userPct >= 70 ? 'user-high' : '');
+   html += '<div class="dist-user ' + userClass + '">';
+   html += '<div class="dist-user-name">' + escapeHtml(u.display_name) + '</div>';
+   // ...
+   html += '<div class="dist-user-bar"><div class="dist-user-bar-fill" style="width:' + Math.min(userPct, 100) + '%"></div></div>';
+   ```
+
+   After refactor, the state class moves to the leaf elements:
+
+   ```javascript
+   var userClass = userPct >= 90 ? 'user-full' : (userPct >= 70 ? 'user-high' : '');
+   html += '<div class="bsv-dist-user">';
+   html += '<div class="bsv-dist-user-name ' + userClass + '">' + escapeHtml(u.display_name) + '</div>';
+   // ...
+   html += '<div class="bsv-dist-user-bar"><div class="bsv-dist-user-bar-fill ' + userClass + '" style="width:' + Math.min(userPct, 100) + '%"></div></div>';
+   ```
+
+   The `.bsv-dist-user` row no longer carries the state class.
+
+4. **Slideout HTML migration to shared chrome.** The page's slideout markup currently looks something like:
+
+   ```html
+   <div id="slideout-backdrop" class="slideout-backdrop"></div>
+   <div id="slideout" class="slideout">
+       <div class="slideout-header">
+           <h3 id="slideout-title">...</h3>
+           <button class="slideout-close" onclick="closeSlideout()">&times;</button>
+       </div>
+       <div class="slideout-body" id="slideout-body">...</div>
+   </div>
+   ```
+
+   This must migrate to the shared `.slide-overlay`/`.slide-panel` family:
+
+   ```html
+   <div id="slideout-backdrop" class="slide-overlay"></div>
+   <div id="slideout" class="slide-panel">
+       <div class="slide-panel-header">
+           <h3 id="slideout-title" class="slide-panel-title">...</h3>
+           <button class="xf-modal-close" onclick="closeSlideout()">&times;</button>
+       </div>
+       <div class="slide-panel-body" id="slideout-body">...</div>
+   </div>
+   ```
+
+   The JS `openSlideout`/`closeSlideout` functions need to toggle `.open` on **both** the `.slide-overlay` and the `.slide-panel` (current code toggles `.visible` on `.slideout-backdrop` and `.open` on `.slideout` — change `.visible` to `.open`).
+
+5. **Modal HTML migration to shared chrome.** The page's request detail modal markup currently looks something like:
+
+   ```html
+   <div id="detail-modal" class="modal-overlay hidden">
+       <div class="modal-dialog modal-wide">
+           <div class="modal-header">
+               <h3 id="detail-modal-title">Request Details</h3>
+               <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+           </div>
+           <div class="modal-body" id="detail-modal-body">...</div>
+       </div>
+   </div>
+   ```
+
+   This must migrate to the shared `.xf-modal-overlay`/`.xf-modal` family using the new `.xf-modal.medium` tier:
+
+   ```html
+   <div id="detail-modal" class="xf-modal-overlay hidden">
+       <div class="xf-modal medium">
+           <div class="xf-modal-header">
+               <h3 id="detail-modal-title" class="xf-modal-title">Request Details</h3>
+               <button class="xf-modal-close" onclick="closeDetailModal()">&times;</button>
+           </div>
+           <div class="xf-modal-body" id="detail-modal-body">...</div>
+       </div>
+   </div>
+   ```
+
+   `openRequestDetail` and `closeDetailModal` functions need no change — the JS `classList.add('hidden')`/`classList.remove('hidden')` pattern works identically on the shared overlay (the `.xf-modal-overlay.hidden` selector is the standard static-toggle pattern). The dynamic `showAlert`/`showConfirm` shared helpers remain available if a future change wants to retire the static-overlay pattern entirely.
+
+6. **Connection error → connection banner replacement.** The `<div id="connection-error" class="connection-error">` HTML placeholder must become `<div id="connection-banner" class="connection-banner">`. The JS `showConnectionError(msg)` and `clearConnectionError()` functions can either be deleted entirely (in favor of letting shared `engine-events.js` handle connection state via `updateConnectionBanner()`) or rewritten to set/clear one of the four shared state classes (`reconnecting`, `disconnected`, `session-expired`, `reloading`). The existing pattern of toggling a `.visible` state class no longer applies — the shared connection banner shows/hides itself based on which state class is present.
+
+7. **Section title H2 class.** Every `<h2>` rendered inside a `<div class="section-header">` needs `class="section-title"` added. The page has three top-level sections (Live Activity, Distribution, History) plus several sub-section titles inside the slideout — the `<h2>` rule applies to the section headers; slideout sub-section titles are already class-based (`.bsv-slideout-section-title`) and don't need an `<h2>` change.
+
+8. **Refresh button class change.** Any HTML element with `class="btn btn-sm btn-refresh"` (or similar) becomes `class="page-refresh-btn"`. The JS `pageRefresh` function already uses `document.querySelector('.page-refresh-btn')` (it's already aligned to the shared selector — visible in the source JS) so the only update needed is the rendered HTML element's class name.
+
+9. **Section-controls → section-header-right.** Any `<div class="section-controls">` inside a `<div class="section-header">` becomes `<div class="section-header-right">` (shared class).
+
+10. **Slideout sub-section titles use `.bsv-slideout-section-title` (page-local).** Note that despite the slideout chrome migrating to shared, the inner sub-section title class (used for "Group Summary", "Completions by User") stays page-local with the `bsv-` prefix. A future shared-promotion pass may consolidate this with cc-shared's `.slide-section-title` (the shared file already defines this for the same purpose) — a safe migration but one that requires a JS rename, deferred to the JS/HTML pass.
+
+11. **`.bsv-section-body` cleanup candidate.** The page-local `.bsv-section-body` wrapper currently renders inside each `.section`, providing 12px of additional padding on top of the shared section's 15px (27px combined). During the JS/HTML migration pass, evaluate whether this inner wrapper can be dropped entirely — most pages rely on the shared `.section`'s padding alone and don't need a second wrapper. If kept, consider whether the padding value should be reduced or removed. Either change is markup-side only.
+
+12. **No JS event-binding changes.** All event bindings (clicks on flip cards, year/month/day expand, group filter selection, comment-icon clicks, back button, slideout/modal close) remain conceptually the same — only the class names being matched have changed and the state-toggle target elements have moved as described above. No event listener restructuring required.
+
+---
+
 ## (Future entries land here as files are refactored)
 
 Each new refactored file follows the same six-category structure plus the Downstream impact summary. Keep entries in the order files are refactored (chronological), not alphabetical, so the change history reads naturally.
