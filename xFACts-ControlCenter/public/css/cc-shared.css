@@ -139,12 +139,12 @@
     --size-border-thin:         1px;
 
     /* -- Size tokens: slide panel widths and offsets -- */
-    --size-panel-width-default: 550px;
-    --size-panel-offset-default: -570px;
+    --size-panel-width-default: 600px;
+    --size-panel-offset-default: -620px;
     --size-panel-width-wide:    800px;
     --size-panel-offset-wide:   -820px;
-    --size-panel-width-xwide:   950px;
-    --size-panel-offset-xwide:  -970px;
+    --size-panel-width-xwide:   1000px;
+    --size-panel-offset-xwide:  -1020px;
 
     /* -- Size tokens: modal widths -- */
     --size-modal-width-default: 460px;
@@ -929,13 +929,12 @@ a { color: var(--color-text-link); }
    ----------------------------------------------------------------------------
    Reusable slide-from-right panel system with overlay, header, scrollable
    body, and a small library of standard sub-components for common layouts
-   (summary stats, tables, sections, accordions, empty states). Used by
-   Backup, BIDATA, Index Maintenance, and other detail-view pages.
+   (summary stats, tables, sections, accordions, empty states). 
 
    Width tiers:
-     default  550px  -- single-column detail views
+     default  600px  -- single-column detail views
      .wide    800px  -- tabular detail with multiple columns
-     .xwide   950px  -- wide multi-column tables
+     .xwide   1000px -- wide multi-column tables
    Prefixes: slide
    ============================================================================ */
 
