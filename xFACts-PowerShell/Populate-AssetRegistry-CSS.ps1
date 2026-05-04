@@ -13,6 +13,8 @@
 
       * FILE_HEADER DEFINITION rows — one per scanned file. Carries
         header-level drift codes and anchors the file in the catalog.
+        purpose_description holds the file's purpose paragraph extracted
+        from the header's identity line.
 
       * CSS_CLASS DEFINITION rows for every base class (no compound class
         modifiers, no pseudo-classes — selector is just .className).
@@ -58,7 +60,8 @@
 
       * COMMENT_BANNER DEFINITION rows for block comments containing five
         or more consecutive '=' characters and following the section
-        banner format.
+        banner format. purpose_description holds the banner's description
+        block (the prose between the title and the Prefixes: line).
 
     The parser annotates rows with drift codes per CC_FileFormat_
     Standardization.md Appendix A. Every row that participates in a spec
@@ -90,6 +93,29 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-04  OQ-INIT-1 / G-INIT-3 resolution. Three changes in this pass:
+              (1) PURPOSE_DESCRIPTION WIRING. New-RowSkeleton now includes a
+                  PurposeDescription field. Add-FileHeaderRow writes the
+                  extracted purpose paragraph to PurposeDescription instead
+                  of Signature (the previous routing was a smuggling
+                  workaround from before the column existed). Add-Comment
+                  BannerRow now writes BannerInfo.Description to
+                  PurposeDescription; previously this extracted text was
+                  computed and discarded. Bulk-insert DataTable's
+                  purpose_description column now receives the row value
+                  rather than a hardcoded NULL.
+              (2) DROPPED-COLUMN CLEANUP. The bulk-insert DataTable no
+                  longer references design_notes or related_asset_id —
+                  the corresponding columns were dropped from
+                  dbo.Asset_Registry in this same release. Three
+                  associated [void]$dt.Columns.Add() calls and three NULL
+                  writes were removed from the row build loop.
+              (3) FILE_HEADER signature now NULL. Previously
+                  Add-FileHeaderRow set $row.Signature to the purpose
+                  description as a workaround for the unwired
+                  purpose_description column. With proper routing in
+                  place, FILE_HEADER rows have no natural signature and
+                  signature is left at its skeleton default of NULL.
 2026-05-03  Spec amendment Gap 6: @media is no longer forbidden. Permitted
             in any section. Wrapped rules are still spec-evaluated normally
             (must follow class naming, prefix matching, no descendants,
@@ -876,6 +902,7 @@ function New-RowSkeleton {
         Signature           = $null
         ParentFunction      = $null
         RawText             = $null
+        PurposeDescription  = $null
         DriftCodes          = $null
         DriftText           = $null
         OccurrenceIndex     = 1
@@ -900,14 +927,14 @@ function Add-FileHeaderRow {
         [string]$PurposeDescription
     )
     $row = New-RowSkeleton
-    $row.ComponentType = 'FILE_HEADER'
-    $row.ComponentName = $FileName
-    $row.LineStart     = $LineStart
-    $row.LineEnd       = $LineEnd
-    $row.Scope         = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
-    $row.RawText       = $RawText
-    $row.Signature     = $PurposeDescription
-    $row.SourceSection = $null
+    $row.ComponentType      = 'FILE_HEADER'
+    $row.ComponentName      = $FileName
+    $row.LineStart          = $LineStart
+    $row.LineEnd            = $LineEnd
+    $row.Scope              = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $row.RawText            = $RawText
+    $row.PurposeDescription = $PurposeDescription
+    $row.SourceSection      = $null
     $script:rows.Add($row)
     return $row
 }
@@ -1101,18 +1128,20 @@ function Add-CommentBannerRow {
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
     $row = New-RowSkeleton
-    $row.ComponentType   = 'COMMENT_BANNER'
-    $row.ComponentName   = if ($BannerInfo.SectionName) { $BannerInfo.SectionName } else { $BannerInfo.RawTitle }
-    $row.LineStart       = $LineStart
-    $row.LineEnd         = $LineEnd
-    $row.ColumnStart     = $ColumnStart
-    $row.Scope           = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
-    $row.Signature       = $BannerInfo.SectionType   # store TYPE in signature for query convenience
-    $row.RawText         = $RawText
-    $row.SourceSection   = $null   # banner rows don't carry a parent banner
+    $row.ComponentType      = 'COMMENT_BANNER'
+    $row.ComponentName      = if ($BannerInfo.SectionName) { $BannerInfo.SectionName } else { $BannerInfo.RawTitle }
+    $row.LineStart          = $LineStart
+    $row.LineEnd            = $LineEnd
+    $row.ColumnStart        = $ColumnStart
+    $row.Scope              = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $row.Signature          = $BannerInfo.SectionType   # store TYPE in signature for query convenience
+    $row.RawText            = $RawText
+    $row.PurposeDescription = $BannerInfo.Description
+    $row.SourceSection      = $null   # banner rows don't carry a parent banner
     $script:rows.Add($row)
     return $row
 }
+
 
 # ----- Per-compound drift attribution --------------------------------------
 
@@ -1984,7 +2013,12 @@ if ($rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($rows.Count) rows..."
 
-# Build DataTable matching the new dbo.Asset_Registry schema
+# Build DataTable matching the new dbo.Asset_Registry schema.
+# Note: design_notes, related_asset_id, and is_active columns were dropped
+# from the table on 2026-05-04 (G-INIT-3). The DataTable no longer enumerates
+# them. purpose_description is now populated from PurposeDescription on each
+# row (FILE_HEADER rows carry the file's purpose paragraph; COMMENT_BANNER
+# rows carry the section's description block).
 $dt = New-Object System.Data.DataTable
 [void]$dt.Columns.Add('file_name',           [string])
 [void]$dt.Columns.Add('object_registry_id',  [int])
@@ -2005,8 +2039,6 @@ $dt = New-Object System.Data.DataTable
 [void]$dt.Columns.Add('parent_function',     [string])
 [void]$dt.Columns.Add('raw_text',            [string])
 [void]$dt.Columns.Add('purpose_description', [string])
-[void]$dt.Columns.Add('design_notes',        [string])
-[void]$dt.Columns.Add('related_asset_id',    [int])
 [void]$dt.Columns.Add('occurrence_index',    [int])
 [void]$dt.Columns.Add('drift_codes',         [string])
 [void]$dt.Columns.Add('drift_text',          [string])
@@ -2050,9 +2082,7 @@ foreach ($r in $rows) {
     $row['signature']           = Get-NullableValue $r.Signature
     $row['parent_function']     = Get-NullableValue $r.ParentFunction 200
     $row['raw_text']            = Get-NullableValue $r.RawText
-    $row['purpose_description'] = [System.DBNull]::Value
-    $row['design_notes']        = [System.DBNull]::Value
-    $row['related_asset_id']    = [System.DBNull]::Value
+    $row['purpose_description'] = Get-NullableValue $r.PurposeDescription
     $row['occurrence_index']    = if ($null -eq $r.OccurrenceIndex) { 1 } else { [int]$r.OccurrenceIndex }
     $row['drift_codes']         = Get-NullableValue $r.DriftCodes 500
     $row['drift_text']          = Get-NullableValue $r.DriftText
@@ -2112,6 +2142,23 @@ ORDER BY COUNT(*) DESC;
 "@
 
 if ($driftSummary) { $driftSummary | Format-Table -AutoSize }
+
+Write-Log "Verification: purpose_description coverage on FILE_HEADER and COMMENT_BANNER rows"
+
+$pdCoverage = Get-SqlData -Query @"
+SELECT
+    component_type,
+    COUNT(*) AS total_rows,
+    SUM(CASE WHEN purpose_description IS NOT NULL THEN 1 ELSE 0 END) AS rows_with_purpose,
+    SUM(CASE WHEN purpose_description IS NULL THEN 1 ELSE 0 END) AS rows_without_purpose
+FROM dbo.Asset_Registry
+WHERE file_type = 'CSS'
+  AND component_type IN ('FILE_HEADER', 'COMMENT_BANNER')
+GROUP BY component_type
+ORDER BY component_type;
+"@
+
+if ($pdCoverage) { $pdCoverage | Format-Table -AutoSize }
 
 # ----- Object_Registry miss report -----------------------------------------
 
