@@ -148,6 +148,7 @@
 
     /* -- Size tokens: modal widths -- */
     --size-modal-width-default: 460px;
+	--size-modal-width-medium:  600px;
     --size-modal-width-wide:    800px;
 
     /* -- Size tokens: scrollbar -- */
@@ -1217,6 +1218,10 @@ a { color: var(--color-text-link); }
     width: var(--size-modal-width-default);
     max-width: 90vw;
     box-shadow: var(--shadow-modal);
+}
+
+.xf-modal.medium { /* medium-width modal for typical detail views */
+    width: var(--size-modal-width-medium);
 }
 
 .xf-modal.wide { /* wider modal for tabular content or detail views */
