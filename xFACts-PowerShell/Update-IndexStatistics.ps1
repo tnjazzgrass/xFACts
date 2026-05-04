@@ -388,7 +388,7 @@ WHERE ir.database_id = $dbId
   AND ir.is_excluded = 0
 "@
     
-    $registryData = Get-SqlData -Query $registryQuery -Timeout 120
+    $registryData = Get-SqlData -Query $registryQuery -Timeout 300
     
     if (-not $registryData) {
         Write-Log "  No registry entries" "DEBUG"
