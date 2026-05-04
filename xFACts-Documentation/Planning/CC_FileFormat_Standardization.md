@@ -1,7 +1,7 @@
 # Control Center File Format Standardization
 
 **Created:** May 2, 2026
-**Status:** Active - CSS spec drafted, parser bug-fix pass complete, OQ-CSS-1 resolved, FOUNDATION-section exemptions added (Gaps 1-3), cc-shared.css build queued as next checkpoint
+**Status:** Active - CSS spec finalized; Part 11 Phase 1 in progress (5 of ~28 files complete: cc-shared.css, backup.css, business-intelligence.css, client-relations.css, replication-monitoring.css all at 0 drift)
 **Owner:** Dirk
 **Target File:** `xFACts-Documentation/Planning/CC_FileFormat_Standardization.md`
 
@@ -29,6 +29,8 @@ When this work is complete, this document and its peers in `Planning/` migrate t
 
 The `CC_Chrome_Standardization_Plan.md` is a related but distinct effort focused on visual/structural alignment of the page chrome. It stays in active execution as its own document. This format spec work and the chrome work share no dependency in either direction.
 
+A companion working doc, `CC_CSS_Refactor_Migration_Notes.md`, captures the per-file diff between original and refactored CSS during Part 11 work — class renames, structural changes, deletions, additions, visual/behavioral changes, cc-shared.css impact — for use by future JS/HTML migration sessions.
+
 ---
 
 ## Session Start Protocol
@@ -48,66 +50,36 @@ The `CC_Chrome_Standardization_Plan.md` is a related but distinct effort focused
 
 ### Current State
 
-*Last updated: 2026-05-03 (end of session — FOUNDATION exemptions complete, cc-shared.css build queued).*
+*Last updated: 2026-05-03 (end of session — Part 11 Phase 1 in progress, replication-monitoring.css completed this session).*
 
-**Active section:** Part 3 - CSS Files. Status `[DRAFT]`. Spec amendments for FOUNDATION-section exemptions complete; parser updated and verified. The validation round-trip is now reframed as a two-file build-and-verify exercise: a new `cc-shared.css` file (the central shared resource, replacing the de-facto-shared but un-renamed `engine-events.css`) plus one CC page file (`backup.css`) refactored to consume from it. On both files passing clean, Part 3 promotes to `[FINALIZED]`.
+**Active section:** Part 11 - CSS Refactor Initiative, Phase 1 (small pages). Status `[ACTIVE]`. CSS spec (Part 3) is `[FINALIZED]`. The work pattern is per-file: pull current file from GitHub, refactor to spec, validate at zero drift, commit, append migration notes entry.
 
-**This session's work — FOUNDATION-exemption checkpoint:**
+**Phase 1 progress so far (small pages, ~80-180 rows each):**
 
-While preparing the cc-shared.css design, four spec gaps surfaced that needed addressing before any rewrite could happen. Three were genuine spec amendments; one was authoring discipline.
+| File | Prefix | Before | After | Status |
+|------|--------|--------|-------|--------|
+| `cc-shared.css` | (FOUNDATION/CHROME) | n/a | 622 rows / 0 drift | DONE (Checkpoint B) |
+| `backup.css` | `bkp` | 124 rows / 95% drift | 245 rows / 0 drift | DONE (Checkpoint C) |
+| `business-intelligence.css` | `biz` | 43 rows / 100% drift | 67 rows / 0 drift | DONE (Phase 1, file 1) |
+| `client-relations.css` | `clr` | 80 rows / 74% drift | 141 rows / 0 drift | DONE (Phase 1, file 2) |
+| `replication-monitoring.css` | `rpm` | 131 rows / 97% drift | 252 rows / 0 drift | DONE (this session) |
+| `business-services.css` | `bsv` | 177 rows / 95% drift | — | next up |
 
-1. **Gap 1 (resolved): Element / universal / attribute selectors permitted in FOUNDATION.** The spec previously forbade `*`, `body`, `[type="radio"]`, etc. as drift codes, but FOUNDATION's stated purpose includes "CSS reset rules" which fundamentally rely on these selectors. Suppression added: when active section type is FOUNDATION, `FORBIDDEN_ELEMENT_SELECTOR`, `FORBIDDEN_UNIVERSAL_SELECTOR`, and `FORBIDDEN_ATTRIBUTE_SELECTOR` do not fire. Reset rules in FOUNDATION are spec-compliant.
+**This session's work:**
 
-2. **Gap 2 (resolved): Pseudo-element location rule.** Pseudo-elements (`::before`, `::after`, `::-webkit-scrollbar`) had no explicit treatment in the spec. New drift code `FORBIDDEN_PSEUDO_ELEMENT_LOCATION` fires when a pseudo-element appears outside FOUNDATION and is not attached to a class. Inside FOUNDATION pseudo-elements are unrestricted (consistent with reset-rule freedom); outside FOUNDATION they must be class-scoped (`.foo::before` ok; bare `::before` not ok).
+1. **replication-monitoring.css refactored.** Higher-density Phase 1 file: a top charts row plus a lower grid that splits into a column of small charts on the left and an event log on the right. Layout containers, agent cards, charts, the event log itself, the event log control widgets, the help info-panel content, and tiny "loading"/"no data" utilities are distinct concerns, so the file got 1 LAYOUT section and 6 CONTENT sections plus a CONTENT: RESPONSIVE section for the `@media` blocks. Two patterns hadn't surfaced in BI or CR: a slide-out help panel (consumed via shared `.slide-overlay` / `.slide-panel` instead of a page-local re-implementation; help panel width changes 440px → 550px in the process), and a family of `event-type-*` classes with uppercase backend-event-code suffixes preserved verbatim (`.rpm-event-type-STATE_CHANGE`, etc.) so JS can compose the class name without a casing transform. Descendant rules in `.event-transition`, `.info-panel-body`, and `.lower-left` flattened to leaf classes (`rpm-state-from`, `rpm-info-panel-body-p`, `rpm-chart-half-tall`, etc.). One drift caught initially — three `MISSING_PURPOSE_COMMENT` on the `@media`-wrapped responsive rules where I'd used trailing inline comments instead of preceding ones. Spec is explicit (Section 3.13) that `@media`-wrapped rules are subject to all spec rules including purpose comments; fix was just to move the comments to preceding lines. Final result: 252 rows / 0 drift. Migration notes entry authored. cc-shared.css unchanged (no token additions needed).
 
-3. **Gap 3 (resolved): `Prefixes: (none)` sentinel.** FOUNDATION sections with reset rules and no class definitions need a way to declare "the Prefixes line is present but no prefix matching applies." The literal value `(none)` is now recognized in the banner extractor as a valid declaration that opts out of `PREFIX_MISMATCH` checks. `MISSING_PREFIXES_DECLARATION` still fires when the line is entirely absent — `(none)` is a present-but-empty declaration, structurally valid.
+2. **No spec amendments this session.** The OQ-CSS-3 friction (treating `@media`-wrapped rules conceptually as variants rather than as fresh class definitions) is theoretical, not actual — the spec rule is clear, the parser is correct, and adding three preceding comments instead of three trailing ones is not a problem worth a spec change. OQ-CSS-3 stays queued in Part 10 as a future improvement; not a current pain point.
 
-4. **Gap 4 (authoring discipline, no spec text): cross-section prefix overlap.** A prefix family (e.g., `refresh-*`) should live in exactly one section, not be split. Resolved by the cc-shared.css design choice to put `refresh-badge-*` under CHROME: REFRESH INFO rather than splitting between REFRESH INFO and CONTENT: SECTIONS as the legacy `engine-events.css` did. No parser change needed; the discipline is enforced by the spec section-banner system itself.
+**Queued next — continue Phase 1:**
 
-**Verified parser behavior** with the post-amendment parser run:
-- Total rows: 5,949 (unchanged from prior run)
-- Drift coverage: 87.4% (was 87.3%)
-- New code `FORBIDDEN_PSEUDO_ELEMENT_LOCATION` correctly attaches to the four bare scrollbar pseudo-element rules in `engine-events.css` (lines 109-112). All four are caught — `::-webkit-scrollbar`, `::-webkit-scrollbar-track`, `::-webkit-scrollbar-thumb`, `::-webkit-scrollbar-thumb:hover`.
-- Pre-existing drift code counts unchanged because no FOUNDATION-typed banner exists in the codebase yet — the suppression has nothing to suppress until cc-shared.css is built.
+1. **business-services.css** (`bsv` prefix). Current state: 177 rows / 95% drift. Probably single-session. Last small-pages file before Phase 2 begins.
 
-**Major direction decision: new shared file alongside `engine-events.css`.**
+**Then — Phase 2 (medium pages, 11 files in the 150-300 row range).** Spec amendments may surface at this scale; expectation is 1-3 more small Gaps before Phase 3.
 
-Across multiple prior sessions, "engine-events.css" has been the de-facto shared resource pool, but its name doesn't reflect that role. Its component registration (`ControlCenter.Shared`) confirms the intent, but the filename causes recurring confusion when reading the codebase. Resolution: build a new file `cc-shared.css` that is spec-compliant from day one, lives alongside `engine-events.css`, and is migrated to one page at a time. `engine-events.css` stays in place during the migration (zero production breakage) and is deleted when the last page has migrated.
+**Then — Phase 3 (large pages, 3 files in the 400-750 row range).** Will need 2+ sessions per file.
 
-This is a one-time decision with permanent effect on the codebase. The name `cc-shared.css` is unambiguous — every CC page consumes from it. Other candidates considered (`cc-foundation.css`, `cc-chrome.css`, `xfacts-core.css`) all had drawbacks — too narrow, too generic, or too platform-bound.
-
-**Custom property naming convention** (designed from scratch, locked in for permanent use):
-
-```
---<category>-<role>-<modifier>
-```
-
-- `category` is one of a fixed enum: `color`, `size`, `font`, `duration`, `shadow`, `z`
-- `role` is descriptive of purpose, not literal value (e.g., `bg-card`, not `dark-gray`)
-- `modifier` is optional, describing state, size step, or variant
-- All lowercase, hyphen-separated
-
-Examples: `--color-bg-card`, `--color-text-muted`, `--color-status-overdue`, `--size-padding-md`, `--size-nav-height`, `--duration-default`, `--z-modal`. The fixed category enum keeps the variable space organized and makes drift-tracking queries possible (e.g., "show me hex literals where a `--color-*` exists").
-
-**Queued next — Checkpoint B (cc-shared.css build):**
-
-1. Query Asset_Registry for repeated values across CC files: every hex literal that appears 2+ times, every pixel size that appears 2+ times, every duration that appears 2+ times. This produces the comprehensive list of values to centralize in cc-shared's `:root` block.
-2. Build `cc-shared.css` from scratch following the new spec — file header, FOUNDATION section with `:root`, resets, and keyframes, plus CHROME and CONTENT sections matching the structure of today's `engine-events.css` but spec-compliant throughout.
-3. Run parser; expected outcome: zero drift codes on any cc-shared.css row.
-
-**Queued after — Checkpoint C (backup.css refactor):**
-
-1. Pull `backup.css` from GitHub, query its current drift inventory.
-2. Rewrite `backup.css` to spec, consuming custom properties and shared classes from cc-shared.css.
-3. Run parser; expected outcome: zero drift codes on any backup.css row.
-
-**Then — Checkpoint D (validation complete, doc update):**
-
-Both files clean → Part 3 promotes from `[DRAFT]` to `[FINALIZED]`. Part 4 (JS spec) becomes the next active section.
-
-**Backup.css chosen as test page** (over client-relations, bidata-monitoring): Backup is mostly a window into nightly backup status, with limited day-to-day user traffic. Lower risk than a heavily-trafficked page like bidata-monitoring; more representative than the very-small client-relations page which doesn't exercise the full spec well.
-
-**Important framing for the consolidation initiative:** Part 9.1 documents an asymmetry. The CSS catalog can today **detect** chrome consolidation candidates (Q1, Q5). It cannot yet **verify** that a consolidation actually worked, because verification requires USAGE rows showing a page consuming a shared definition through its HTML — and HTML parsing is Part 5/7, not yet built. Practical implication: actual consolidation work should wait until the HTML parser exists. Until then, detection queries are useful for planning but consolidation steps lack a deterministic catalog signature for the after-state.
+**Important framing for the consolidation initiative:** Part 9.1 documents an asymmetry. The CSS catalog can today **detect** chrome consolidation candidates (Q1, Q5). It cannot yet **verify** that a consolidation actually worked, because verification requires USAGE rows showing a page consuming a shared definition through its HTML — and HTML parsing is Part 5/7, not yet built. Practical implication: actual chrome consolidation work waits until the HTML parser exists. The Part 11 refactor produces spec-clean CSS files that are *ready* for that future migration, but the CSS+HTML+JS coordinated cutover happens later.
 
 **Blocked on:** Nothing.
 
@@ -156,7 +128,9 @@ A running log of progress across sessions. Each session adds a dated entry descr
 | 2026-05-03 (3) | FOUNDATION-section exemption checkpoint and cc-shared.css design. Surfaced four spec gaps during cc-shared.css design preparation, three resolved as spec amendments and one as authoring discipline. **Gap 1:** element / universal / attribute selectors now permitted inside FOUNDATION; the three corresponding drift codes are suppressed when the active section is FOUNDATION-typed. **Gap 2:** new drift code `FORBIDDEN_PSEUDO_ELEMENT_LOCATION` flags pseudo-elements outside FOUNDATION that aren't attached to a class. **Gap 3:** `Prefixes: (none)` sentinel recognized in banner extractor as a valid declaration that opts out of `PREFIX_MISMATCH`; `MISSING_PREFIXES_DECLARATION` only fires when the line is entirely absent. **Gap 4:** cross-section prefix overlap resolved as authoring discipline (no parser change). Parser updated and verified: total 5,949 rows / 87.4% drift; `FORBIDDEN_PSEUDO_ELEMENT_LOCATION` correctly attaches to all four bare scrollbar pseudo-element rules in `engine-events.css` (lines 109-112). FOUNDATION suppression has nothing to suppress today since no FOUNDATION-typed banner exists in the codebase yet. **Major direction decision:** new file `cc-shared.css` will be built spec-compliant from day one and will live alongside `engine-events.css` until pages migrate one-by-one. Solves the longstanding naming-confusion problem where the de-facto shared resource was called `engine-events.css` despite serving as `ControlCenter.Shared`. **Custom property naming convention locked in:** three-part `--<category>-<role>-<modifier>` pattern with fixed category enum (`color`, `size`, `font`, `duration`, `shadow`, `z`). **Backup.css selected as the test page** for the page-level rewrite, chosen for low traffic and reasonable representativeness. **Queued next:** Checkpoint B (cc-shared.css build) → Checkpoint C (backup.css refactor) → Checkpoint D (validation complete, Part 3 promotes to `[FINALIZED]`). |
 | 2026-05-03 (4) | **Checkpoint B — cc-shared.css build, validated.** Full file built from value-extraction queries against the existing catalog: 96 custom property tokens (48 color, 24 size, 11 font, 6 duration, 5 z, 2 shadow, plus a gradient added later in Checkpoint C), 11 spec-compliant section banners, 4 keyframes in FOUNDATION, 1,384 lines total. Object_Registry registration script delivered as a single `dbo.Object_Registry` insert under `ControlCenter.Shared` (WebAssets are not duplicated into Object_Metadata per platform convention). **Three drift iterations to reach zero:** first run flagged FILE_ORG_MISMATCH (numbered list vs un-numbered banners), three COMPOUND_DEPTH_3PLUS issues on `.nav-link.nav-section-*.active` patterns, one MALFORMED_SECTION_BANNER on FEEDBACK OVERLAYS (space in TYPE name), and one MISSING_VARIANT_COMMENT. Resolutions surfaced **Gap 5 spec amendment** (FEEDBACK_OVERLAYS as sixth section type — section type order is now FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES → FEEDBACK_OVERLAYS), and required parser updates: FILE ORG list parser accepts both numbered and un-numbered entries with optional `-- description` strip; **BannerTitles bug fix** — the FILE_ORG_MISMATCH check was comparing list-side `<TYPE>: <NAME>` strings against banner-side `<NAME>` strings (using `ComponentName` alone instead of the full title). Updated to assemble `"$Signature: $ComponentName"` so both sides compare apples-to-apples. Final iteration also surfaced a depth-3 `.slide-panel.auto-height.open` selector resolved by renaming to `.slide-auto-height` so the leftmost class matches the section's `slide` prefix — illustrates the "build for the future, don't shoehorn today" principle. **Final result: 622 rows, zero drift.** First file in the codebase fully spec-compliant. Custom property model held: every value consumed via `var(...)`, no hex literals leaked. Spec scales — 622 rows from one file (vs typical 150-300 for page files) all parsed cleanly. |
 | 2026-05-03 (5) | **Checkpoint C — backup.css refactor, validated.** Page-level test of the spec. Original backup.css (350 lines, 124 rows / 95% drift) refactored into spec-compliant version (709 lines, 245 rows / 0% drift). Refactor scope: removed CHANGELOG block from header (git is the source of truth), replaced 4-line section banners with 5-line banners carrying TYPE: NAME format and `Prefixes:` declarations, replaced ~35 hex literals with `var(--color-*)` references, replaced ~20 px sizes with `var(--size-*)` references where shared tokens exist, flattened all descendant selectors to single classes with state modifiers, applied `bk-` prefix to every page-local class, kept the `@media` rule (now permitted), and added per-class purpose comments and per-variant trailing comments throughout. **Gap 6 spec amendment** during this work: `@media` is no longer forbidden; permitted in any section; wrapped rules are still spec-evaluated normally and cataloged with the `@media` expression in the `parent_function` column; `FORBIDDEN_AT_MEDIA` drift code retired. **Gap 7 surfaced and queued (Part 10 OQ-CSS-3):** `@media`-wrapped rules currently classify as `CSS_CLASS` rows but are conceptually variants of the same-selector base class — should add a new `media` `variant_type` value and carry the `@media` expression in `qualifier_2`. Deferred but tracked, not lost. **Two new shared tokens added to cc-shared.css:** `--gradient-progress-default` (for cross-page progress bars) — `#b5b07a` (the muted yellow on the log-type backup badge) intentionally kept as a one-off hex literal until a second page proves cross-page reuse, illustrating the "values used once stay literal; tokens are for repetition" principle. **State-on-element pattern recognized** as a recurring design principle that has now surfaced in OQ-CSS-1 (`:not(:disabled)` cases), the depth-3 nav-link compounds, and the storage-drive descendant rules — formalized in Part 3 as a dedicated subsection. **Class prefixing strategy:** spec-version files carry `bk-` prefixes on page-local classes, but live HTML/JS still references unprefixed names — the prefixed CSS file is staged as a side-by-side reference for the future coordinated CSS+HTML+JS migration session. **Final result: 245 rows, zero drift on backup.css** alongside cc-shared.css's 622/0 — spec proven end-to-end on a page consuming from the shared file. |
-| 2026-05-03 (6) | **Checkpoint D — Part 3 promoted to `[FINALIZED]`.** Doc rewrite under Option B (clean reference-doc structure, design history moved out of the main body). Part 3 restructured: 3.1 file header, 3.2 section banners, 3.3 section types (now six including FEEDBACK_OVERLAYS), 3.4 prefixes, 3.5 class definitions, 3.6 variants and modifiers (with **3.6.1 State-on-element pattern** as the new dedicated subsection capturing the recurring principle from OQ-CSS-1, nav-link refactor, storage-drive refactor), 3.7 sub-section markers vs new banner pattern (the discipline rule: prefer creating a new banner over expanding an existing one when adding distinct concepts), 3.8 forbidden patterns, 3.9 custom property tokens (the `--<category>-<role>-<modifier>` convention), 3.10 design decisions (where the design history — Q1-Q30, Gaps 1-7, OQs — gets attribution, separate from the spec body itself). **Gap 7 added to Part 10 as OQ-CSS-3** with concrete shape (variant_type enum addition, qualifier_2 carries the @media expression). **New Part 11 — CSS Refactor Initiative** added: file queue, sequencing strategy (easier pages first, big pages last), `*-spec.css` pattern for parsed-but-unregistered side-by-side files, expected token-promotion workflow, engine-events.css retirement timeline. **Prefix registry decision:** 3-character prefixes fixed platform-wide for consistency, future-proofing, and readability. Backup.css renamed `bk-` → `bkp-` (93 occurrences updated) before the file was committed live, demonstrating the cost-of-change is low when caught pre-commit. Full prefix mapping for all 18 CC pages added to the spec doc as Section 11.8 (Prefix Registry) — single source of truth. Future enhancement noted for adding a `prefix` column to `dbo.Module_Registry` so prefix uniqueness is enforced at the database layer. **Spec status:** validated against two files (one shared, one page) at zero drift; subject to small amendments as more pages migrate but considered solid. **Queued next:** Part 11 Phase 1 — start the page-by-page refactor sequence beginning with the smaller files (replication-monitoring, client-relations, business-intelligence, business-services). |
+| 2026-05-03 (6) | **Checkpoint D — Part 3 promoted to `[FINALIZED]`.** Doc rewrite under Option B (clean reference-doc structure, design history moved out of the main body). Part 3 restructured: 3.1 file header, 3.2 section banners, 3.3 section types (now six including FEEDBACK_OVERLAYS), 3.4 prefixes, 3.5 class definitions, 3.6 variants and modifiers (with **3.6.1 State-on-element pattern** as the new dedicated subsection capturing the recurring principle from OQ-CSS-1, nav-link refactor, storage-drive refactor), 3.7 sub-section markers vs new banner pattern (the discipline rule: prefer creating a new banner over expanding an existing one when adding distinct concepts), 3.8 forbidden patterns, 3.9 custom property tokens (the `--<category>-<role>-<modifier>` convention), 3.10 design decisions (where the design history — Q1-Q30, Gaps 1-7, OQs — gets attribution, separate from the spec body itself). **Gap 7 added to Part 10 as OQ-CSS-3** with concrete shape (variant_type enum addition, qualifier_2 carries the @media expression). **New Part 11 — CSS Refactor Initiative** added: file queue, sequencing strategy (easier pages first, big pages last), `*-spec.css` pattern for parsed-but-unregistered side-by-side files, expected token-promotion workflow, engine-events.css retirement timeline. **Prefix registry decision:** 3-character prefixes fixed platform-wide for consistency, future-proofing, and readability. Backup.css renamed `bk-` → `bkp-` (93 occurrences updated) before the file was committed live, demonstrating the cost-of-change is low when caught pre-commit. Full prefix mapping for all 18 CC pages added to the spec doc as Section 11.8 (Prefix Registry) — single source of truth. Future enhancement noted for adding a `prefix` column to `dbo.Module_Registry` so prefix uniqueness is enforced at the database layer. **Spec status:** validated against two files (one shared, one page) at zero drift; subject to small amendments as more pages migrate but considered solid. **Queued next:** Part 11 Phase 1 — page-by-page refactor sequence beginning with the smaller files (replication-monitoring, client-relations, business-intelligence, business-services). |
+| 2026-05-03 (7) | **Part 11 Phase 1, files 1 and 2 — business-intelligence.css and client-relations.css.** Both refactored end-to-end and validated at zero drift in a single session. **business-intelligence.css** (43 → 67 rows, `biz-` prefix): mostly mechanical, mostly chrome-strip. The page's Notice Recon detail panel needed a slightly wider slide-panel tier than `.xwide` provided (1000px vs 950px), so cc-shared.css's `--size-panel-width-xwide` and `--size-panel-offset-xwide` were bumped — non-breaking because nothing else was consuming `.xwide` at the time. cc-shared.css re-validated at 622/0 after the bump. **client-relations.css** (80 → 141 rows, `clr-` prefix): substantial table-markup refactor, with every `<th>` and `<td>` in queue and account-detail tables converting from descendant rules to leaf classes. Page-local `.btn-refresh` button dropped in favor of shared `.page-refresh-btn`. Connection-error placeholder dropped in favor of shared `.connection-banner`. One drift caught initially: `.clr-search-input::placeholder` flagged `MISSING_PURPOSE_COMMENT` because the parser cataloged it as a base CSS_CLASS (which it correctly is — pseudo-elements aren't variants in the spec model), and the original CR draft had a trailing variant-style comment. Fix: move comment to preceding line. **One spec gap (Gap 8):** pseudo-element rules attached to a class are cataloged as base CSS_CLASS rows, not variants — they need a preceding purpose comment, not a trailing inline comment. Documented in Section 3.6 with worked example; design decisions table extended with Gap 8 row. No parser change needed; the parser was already correct, only spec text was silent on the case. Appendix A's `MISSING_PURPOSE_COMMENT` description extended to note pseudo-element handling. **New companion doc created:** `CC_CSS_Refactor_Migration_Notes.md` captures the per-file diff (class renames, structural changes, deletions, additions, visual/behavioral changes, cc-shared.css impact, downstream impact summary) for use by future JS/HTML migration sessions. Backup.css entry written first as the template; BI and CR entries written this session. Section 11.4 of this doc references the new companion. **Section 11.7 status table** updated: BI and CR added as DONE rows (4 of ~28 files complete; 24 remaining). **Section 11.8 Prefix Registry:** `business-intelligence.css` and `client-relations.css` flipped from pending to DONE. **Queued next:** continue Phase 1 with `replication-monitoring.css` (`rpm` prefix, 133 rows / 97% drift) and then `business-services.css` (`bsv` prefix, 177 rows / 95% drift). |
+| 2026-05-03 (8) | **Part 11 Phase 1, file 3 — replication-monitoring.css.** Refactored end-to-end and validated at zero drift in a single session. (131 → 252 rows, `rpm-` prefix.) Higher-density layout than BI or CR: a top charts row plus a lower grid that splits into a column of small charts on the left and an event log on the right. Layout containers, agent status cards, charts, the event log itself, the event log control widgets, the help info-panel content, and tiny "loading"/"no data" utilities are distinct concerns, so the file got 1 LAYOUT section and 6 CONTENT sections plus a CONTENT: RESPONSIVE section for the `@media` blocks. **Two patterns surfaced for the first time.** (a) The page's slide-out help panel is structurally identical to cc-shared's `.slide-overlay`/`.slide-panel`, so it's now consumed from cc-shared instead of duplicated locally — only the inner content typography classes (`rpm-info-panel-body-p`, `-strong`, `-em`) remain page-local. Help panel width changes 440px → 550px in the process (the shared default tier). (b) The page has 7 `event-type-*` classes whose suffix is a backend event-type code in upper-snake-case (`STATE_CHANGE`, `AGENT_START`, etc.) — preserved verbatim with prefix added (`.rpm-event-type-STATE_CHANGE`, etc.) so JS can compose the class name without a casing transform. **Descendant rules flattened** in three places: `.event-transition .state-from/-arrow/-to` → `rpm-state-from/-arrow/-to`, `.info-panel-body p/strong/em` → `rpm-info-panel-body-p/-strong/-em`, `.lower-left .chart-half` → new `rpm-chart-half-tall` leaf class. **One drift caught initially:** three `MISSING_PURPOSE_COMMENT` on the `@media`-wrapped responsive rules where I'd used trailing inline comments instead of preceding ones. Spec is explicit (Section 3.13) that `@media`-wrapped rules are subject to all spec rules including purpose comments; fix was just to move the comments to preceding lines. **No spec amendments needed.** OQ-CSS-3 (treating `@media`-wrapped rules conceptually as variants) stays queued in Part 10 as a future improvement, not a current pain point. **No cc-shared.css changes** — every value the page needed already had a token. **Migration notes entry authored.** **Section 11.7 status table** updated: rpm added as DONE row (5 of ~28 files complete; 23 remaining). **Section 11.8 Prefix Registry:** `replication-monitoring.css` flipped from pending to DONE. **Queued next:** continue Phase 1 with `business-services.css` (`bsv` prefix, 177 rows / 95% drift) — the last small-pages file before Phase 2 begins. |
 
 ---
 
@@ -239,8 +213,8 @@ CSS component types (from Part 3):
 | component_type | Meaning |
 |---|---|
 | `FILE_HEADER` | The file's header block. One row per scanned file. Carries header-level drift codes and serves as the "this file was scanned" anchor regardless of what else the file contains. |
-| `CSS_CLASS` | A class definition (`.foo { ... }`). |
-| `CSS_VARIANT` | A class variant definition — a row whose selector compounds the parent class with additional class or pseudo-class qualifiers. The `component_name` is the parent's class name; qualifiers live in `variant_qualifier_1` / `variant_qualifier_2`. |
+| `CSS_CLASS` | A class definition (`.foo { ... }`). Pseudo-element rules attached to a class (e.g., `.foo::placeholder`) are also cataloged as `CSS_CLASS` rows, not as variants. |
+| `CSS_VARIANT` | A class variant definition — a row whose selector compounds the parent class with additional class or pseudo-class qualifiers. The `component_name` is the parent's class name; qualifiers live in `variant_qualifier_1` / `variant_qualifier_2`. Pseudo-*classes* only — pseudo-*elements* are CSS_CLASS rows (see above). |
 | `CSS_KEYFRAME` | An `@keyframes` definition or a reference. |
 | `CSS_VARIABLE` | A custom property definition (`--name: value`) or a `var(--name)` reference. |
 | `CSS_RULE` | A rule with no class, no id, and no keyframe — e.g., `body { ... }`, `* { ... }`, `[type="radio"] { ... }`. These are forbidden by the spec but cataloged for visibility into drift. |
@@ -316,7 +290,7 @@ Four columns were removed during the schema migration that accompanies this spec
 
 ## Part 3 - CSS Files  `[FINALIZED]`
 
-The CSS spec is finalized as of 2026-05-03 (validated against `cc-shared.css` at 622 rows / 0 drift and `backup.css` at 245 rows / 0 drift). The parser implements every rule in this part. Future small amendments are expected as more page files migrate; the spec is robust enough that any such amendments will be surgical patches rather than structural rewrites.
+The CSS spec is finalized as of 2026-05-03 (validated against `cc-shared.css` at 622 rows / 0 drift, `backup.css` at 245 rows / 0 drift, `business-intelligence.css` at 67 rows / 0 drift, `client-relations.css` at 141 rows / 0 drift, and `replication-monitoring.css` at 252 rows / 0 drift). The parser implements every rule in this part. Future small amendments are expected as more page files migrate; the spec is robust enough that any such amendments will be surgical patches rather than structural rewrites.
 
 For the design history behind these rules — what was considered, what was decided, what was rejected, and which gaps surfaced during initial validation — see Section 3.16 (Design Decisions). The body of Part 3 is the spec itself; the body says what *is*, not what was discussed.
 
@@ -428,7 +402,7 @@ Special values:
 Authoring discipline:
 
 - Prefixes do not need to be globally unique. Two sections in different files may declare overlapping prefixes if their concerns are genuinely separate. Authors are responsible for avoiding ambiguous overlaps that would obscure scope; the parser does not enforce uniqueness.
-- Page-local class definitions should use a page-identifying prefix (e.g., `bk-` for backup, `jbm-` for JBoss Monitoring). This makes scope visible at a glance in HTML and CSS, and enables prefix-based catalog queries. The migration to prefixed page-local classes is a coordinated CSS+HTML+JS effort tracked under Part 11 (CSS Refactor Initiative).
+- Page-local class definitions should use a page-identifying prefix (e.g., `bkp-` for backup, `jbm-` for JBoss Monitoring). This makes scope visible at a glance in HTML and CSS, and enables prefix-based catalog queries. The migration to prefixed page-local classes is a coordinated CSS+HTML+JS effort tracked under Part 11 (CSS Refactor Initiative).
 
 ---
 
@@ -442,7 +416,7 @@ A class definition is a CSS rule whose selector is a single class (the base form
 
 ```css
 /* The pipeline status card — backup-page-specific. */
-.bk-pipeline-card {
+.bkp-pipeline-card {
     background: var(--color-bg-card-hover);
     border: var(--size-border-thin) solid var(--color-border-default);
     border-radius: var(--size-radius-lg);
@@ -452,6 +426,15 @@ A class definition is a CSS rule whose selector is a single class (the base form
 
 The base class produces a `CSS_CLASS DEFINITION` row in the catalog. The class's purpose comment is captured in the row's `purpose_description` column.
 
+**Pseudo-element rules attached to a class** (e.g., `.foo::placeholder`, `.foo::before`, `.foo::after`) are cataloged as `CSS_CLASS DEFINITION` rows by the parser, **not** as variants of `.foo`. The variant model (Section 3.7) covers pseudo-*classes* (`:hover`, `:focus`, `:active`) but not pseudo-*elements*. Practical consequence: a pseudo-element rule needs a **preceding** purpose comment (like any base class), not the trailing inline comment used for variants. Example:
+
+```css
+/* Placeholder text styling for the search input (dimmed gray). */
+.clr-search-input::placeholder {
+    color: var(--color-text-subtle);
+}
+```
+
 ---
 
 ### 3.7 Variants and modifiers
@@ -460,9 +443,9 @@ A variant is a rule whose selector adds qualifiers to a base class. Three varian
 
 | variant_type | Shape | Example | qualifier_1 | qualifier_2 |
 |--------------|-------|---------|-------------|-------------|
-| `class` | `.base-class.modifier` | `.bk-pipeline-card.status-warning` | `status-warning` | (NULL) |
-| `pseudo` | `.base-class:pseudo` | `.bk-status-card:hover` | `:hover` | (NULL) |
-| `compound_pseudo` | `.base-class.modifier:pseudo` | `.bk-status-card.clickable:hover` | `clickable` | `:hover` |
+| `class` | `.base-class.modifier` | `.bkp-pipeline-card.status-warning` | `status-warning` | (NULL) |
+| `pseudo` | `.base-class:pseudo` | `.bkp-status-card:hover` | `:hover` | (NULL) |
+| `compound_pseudo` | `.base-class.modifier:pseudo` | `.bkp-status-card.clickable:hover` | `clickable` | `:hover` |
 
 Authoring rules for variants:
 
@@ -481,13 +464,13 @@ When an element's appearance depends on a state (warning, critical, active, disa
 This pattern is mandatory because the spec forbids descendant combinators (Section 3.13) — but the principle is broader than just compliance. It produces clearer HTML, more inspectable state, and better catalog queryability:
 
 - A glance at HTML markup tells you exactly which elements are in which state. No need to mentally trace ancestor classes.
-- The state is queryable through the catalog by exact class name (`.bk-drive-label.warning`) rather than by inferred descendant relationships.
+- The state is queryable through the catalog by exact class name (`.bkp-drive-label.warning`) rather than by inferred descendant relationships.
 - JavaScript that toggles state operates on the element directly, no parent-class coordination needed.
 
 Anti-pattern (forbidden):
 
 ```css
-.bk-storage-drive.storage-warning .bk-drive-label {
+.bkp-storage-drive.storage-warning .bkp-drive-label {
     color: var(--color-accent-departmental);
 }
 ```
@@ -495,12 +478,12 @@ Anti-pattern (forbidden):
 Correct pattern:
 
 ```css
-.bk-drive-label.warning { /* drive is past warning threshold */
+.bkp-drive-label.warning { /* drive is past warning threshold */
     color: var(--color-accent-departmental);
 }
 ```
 
-The HTML must place the `.warning` class on the `.bk-drive-label` element directly. JS that detects warning conditions toggles the class on the label element, not on a parent.
+The HTML must place the `.warning` class on the `.bkp-drive-label` element directly. JS that detects warning conditions toggles the class on the label element, not on a parent.
 
 This pattern has surfaced repeatedly during validation: the original `.nav-link.nav-section-platform.active` depth-3 compound, the `:not(:disabled)` guard cases (OQ-CSS-1), and the storage-drive descendant rules (Checkpoint C). All three resolved to the same form: state class on the styled element. The spec treats this as the canonical authoring pattern for stateful UI.
 
@@ -804,7 +787,7 @@ The decisions that shaped this spec, with rationale. Treat as historical referen
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-05-03 | Variants are own catalog rows, not annotations on the base class. | A variant is a distinct rule with its own properties, drift conditions, and consumption pattern. Treating it as a separate row makes "list every variant of `.bk-pipeline-card`" a single SELECT and supports cleaner per-variant drift annotation. |
+| 2026-05-03 | Variants are own catalog rows, not annotations on the base class. | A variant is a distinct rule with its own properties, drift conditions, and consumption pattern. Treating it as a separate row makes "list every variant of `.bkp-pipeline-card`" a single SELECT and supports cleaner per-variant drift annotation. |
 | 2026-05-03 | Generic qualifier columns (`qualifier_1`, `qualifier_2`) rather than typed columns per variant shape. | Three variant shapes (class, pseudo, compound_pseudo) fit cleanly into two qualifier slots. Adding a new shape would mean schema migration; keeping the columns generic absorbs reasonable growth without that cost. |
 | 2026-05-03 | Drift detection is row-level via `drift_codes` and `drift_text` columns. | Putting drift codes on the row itself (rather than a separate annotations table) makes "show me every row in violation" a single filter. Multiple drift codes on a row are newline-delimited. |
 | 2026-05-03 | Sections are author-ordered within a type. | Type-order rules (FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES → FEEDBACK_OVERLAYS) are enforced; ordering between same-type sections is the author's call. |
@@ -820,6 +803,7 @@ The decisions that shaped this spec, with rationale. Treat as historical referen
 | **Gap 4** — Cross-section prefix overlap. | Authoring discipline only, no parser change. Two sections may declare overlapping prefixes if the concerns are genuinely separate. |
 | **Gap 5** — `FEEDBACK_OVERLAYS` as sixth section type. | Added as the sixth recognized type. Section type order is now FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES → FEEDBACK_OVERLAYS. Covers idle overlays, toast notifications, loading spinners, confirmation flashes — transient, behavior-driven viewport elements that don't fit cleanly into the other five types. |
 | **Gap 6** — `@media` permitted in any section. | Originally forbidden, but responsive design is a legitimate need. `@media` is now permitted; wrapped rules are spec-evaluated normally; the `@media` expression is captured in the catalog's `parent_function` column. `FORBIDDEN_AT_MEDIA` drift code retired. See OQ-CSS-3 in Part 10 for the deferred follow-on (modeling `@media`-wrapped rules as variants rather than as fresh class definitions). |
+| **Gap 8** — Pseudo-element rules attached to a class are cataloged as base CSS_CLASS rows, not variants. | Documented in Section 3.6 with a worked example. The variant model in Section 3.7 covers pseudo-*classes* (`:hover`, `:focus`) but not pseudo-*elements* (`::placeholder`, `::before`, `::after`). Pseudo-element rules therefore need a *preceding* purpose comment, not the *trailing* inline comment used for variants. Surfaced during client-relations.css refactor when `.clr-search-input::placeholder` initially carried a trailing comment and the parser correctly emitted `MISSING_PURPOSE_COMMENT`. No parser change needed; the parser was already behaving correctly. Documentation-only fix. |
 
 #### Direction decisions (Checkpoint B onward)
 
@@ -1286,7 +1270,7 @@ The cleaner model: classify `@media`-wrapped rules as `CSS_VARIANT` rows. Add a 
 
 ## Part 11 - CSS Refactor Initiative  `[ACTIVE 2026-05-03]`
 
-The CSS spec is finalized (Part 3) and validated end-to-end against two files (cc-shared.css 622/0, backup.css 245/0). Before pivoting to Part 4 (JS spec), all remaining CSS files in the codebase get refactored to spec. This section captures the plan.
+The CSS spec is finalized (Part 3) and validated end-to-end against four files (cc-shared.css 622/0, backup.css 245/0, business-intelligence.css 67/0, client-relations.css 141/0). Before pivoting to Part 4 (JS spec), all remaining CSS files in the codebase get refactored to spec. This section captures the plan.
 
 ### 11.1 Rationale
 
@@ -1375,6 +1359,8 @@ Each file follows the same pattern:
 9. **Iterate as needed** — if drift surfaces, fix and re-run
 10. **Commit to GitHub** once clean
 
+A companion working doc, `CC_CSS_Refactor_Migration_Notes.md` (in `Planning/`), captures a per-file entry covering: (1) class renames, (2) class structure changes, (3) class deletions, (4) class additions, (5) visual or behavioral changes, and (6) cc-shared.css impact, plus a Downstream impact summary listing every JS/HTML file that will need updates and what the changes are. The migration notes doc is the input to the future coordinated CSS+HTML+JS migration sessions; an entry should be added at the end of every refactor session, alongside the file commit.
+
 ### 11.5 Token gap handling
 
 cc-shared.css will grow modestly during this work. New tokens get added when:
@@ -1409,7 +1395,10 @@ A simple status table tracks per-file progress:
 |------|--------|-------------------|-------|--------------------|
 | `cc-shared.css` | ✓ DONE | 622 | 0 | 2026-05-03 (Checkpoint B) |
 | `backup.css` | ✓ DONE | 245 | 0 | 2026-05-03 (Checkpoint C) |
-| (remaining 26 files) | pending | | | |
+| `business-intelligence.css` | ✓ DONE | 67 | 0 | 2026-05-03 (Phase 1, file 1) |
+| `client-relations.css` | ✓ DONE | 141 | 0 | 2026-05-03 (Phase 1, file 2) |
+| `replication-monitoring.css` | ✓ DONE | 252 | 0 | 2026-05-03 (Phase 1, file 3) |
+| (remaining 23 files) | pending | | | |
 
 The table is updated at the end of every refactor session. Done = the spec-version file is committed to GitHub and validated at zero drift in the catalog.
 
@@ -1428,10 +1417,10 @@ The table below is the canonical mapping. **Every new CC page CSS file gets a ro
 | `batch-monitoring.css` | `bat` | pending |
 | `bdl-import.css` | `bdl` | pending |
 | `bidata-monitoring.css` | `bid` | pending |
-| `business-intelligence.css` | `biz` | pending |
+| `business-intelligence.css` | `biz` | DONE |
 | `business-services.css` | `bsv` | pending |
 | `client-portal.css` | `clp` | pending |
-| `client-relations.css` | `clr` | pending |
+| `client-relations.css` | `clr` | DONE |
 | `dbcc-operations.css` | `dbc` | pending |
 | `dm-operations.css` | `dmo` | pending |
 | `file-monitoring.css` | `flm` | pending |
@@ -1439,7 +1428,7 @@ The table below is the canonical mapping. **Every new CC page CSS file gets a ro
 | `jboss-monitoring.css` | `jbm` | pending |
 | `jobflow-monitoring.css` | `jfm` | pending |
 | `platform-monitoring.css` | `plt` | pending |
-| `replication-monitoring.css` | `rpm` | pending |
+| `replication-monitoring.css` | `rpm` | DONE |
 | `server-health.css` | `srv` | pending |
 | `docs-*.css` files | TBD | Phase 5 evaluation |
 
@@ -1500,7 +1489,7 @@ CSS drift codes (from Part 3):
 | `DUPLICATE_FOUNDATION` | More than one CSS file in the codebase contains a FOUNDATION section. Exactly one is allowed. |
 | `DUPLICATE_CHROME` | More than one CSS file in the codebase contains a CHROME section. Exactly one is allowed. |
 | `PREFIX_MISMATCH` | A class name does not begin with one of the prefixes declared in its containing section's banner. |
-| `MISSING_PURPOSE_COMMENT` | A base class definition is not preceded by a single-line purpose comment. |
+| `MISSING_PURPOSE_COMMENT` | A base class definition is not preceded by a single-line purpose comment. **Pseudo-element rules attached to a class** (e.g., `.foo::placeholder`) are also cataloged as base CSS_CLASS rows by the parser and therefore require a *preceding* purpose comment, not the *trailing* inline comment used for variants. |
 | `MISSING_VARIANT_COMMENT` | A class variant does not carry a trailing inline comment after the opening brace. |
 | `FORBIDDEN_ELEMENT_SELECTOR` | A rule's selector is an element selector (e.g., `body`, `h1`, `a`) and the rule is **outside** a FOUNDATION section. Element-only styling is permitted in FOUNDATION (where reset rules legitimately rely on it) but forbidden everywhere else. Suppressed by the parser when the active section is FOUNDATION-typed. |
 | `FORBIDDEN_UNIVERSAL_SELECTOR` | A rule uses the universal selector `*` and the rule is **outside** a FOUNDATION section. Permitted in FOUNDATION for reset rules; forbidden everywhere else. Suppressed by the parser when the active section is FOUNDATION-typed. |
@@ -1539,4 +1528,5 @@ Future file-type specs (JS, PowerShell, HTML) will add their own drift codes her
 | 0.3 | 2026-05-03 | Bug-fix-pass and OQ-CSS-1 checkpoint. **Parser bug-fix pass complete:** all five sanity-sweep issues from v0.2 resolved in a single populator update. (1) `CSS_RULE` drift codes wrapped with `@(...)` for array safety. (2) Per-compound drift checks consolidated into `Add-CompoundDriftCodes`, called from both primary and descendant paths. (3) HTML_ID emission decoupled from CSS_CLASS/CSS_VARIANT emission so compounds with both an ID and classes produce both row types; descendant IDs become USAGE rows. (4) Shared-map architecture split per-zone (CC vs docs) with `Get-CssZone` deriving zone from filepath. (5) `Format-RuleBody` builds full rule text from AST declarations, threaded through to every emitted row so `raw_text` captures the rule body. **OQ-CSS-1 resolved by forbidding `:not()` and stacked pseudo-classes** — two new drift codes added (`FORBIDDEN_NOT_PSEUDO`, `FORBIDDEN_STACKED_PSEUDO`); refactor recipe (state-class pattern) documented in Part 10's resolution entry. **Two clean parser runs:** post-bug-fix produced 5,949 rows / 87.3% drift; OQ-CSS-1 run unchanged in row count and confirmed both new drift codes attach to expected cases (13 stacked, 15 `:not()` instances across 13 source cases). **Notable finding documented in Part 3.15 decision log:** CC zone has zero shared custom properties; this is a content gap for the conversion phase. **Doc updates:** Part 2.3 (HTML_ID description expanded for primary/descendant emission). Part 2.8 decision log entry for HTML_ID emission rule. Part 3.6 cross-reference to OQ-CSS-1 resolution. Part 3.12 forbidden-patterns table extended with two new codes. Part 3.14 zone-aware scope resolution note added. Part 3.15 decision log extended with five bug-fix-pass entries plus OQ-CSS-1 resolution and the empty-CC-vars finding. Part 10 OQ-CSS-1 marked `[RESOLVED]` with full rationale and refactor recipe. Appendix A extended with two new codes. **Queued next:** validation round-trip on one representative CSS file → drift-code wiring tidy pass → if clean, promote Part 3 to `[FINALIZED]` and begin Part 4 (JS spec). |
 | 0.4 | 2026-05-03 | FOUNDATION-section exemption checkpoint and cc-shared.css design. Spec amendments Gaps 1-4 incorporated. Direction set on cc-shared.css build, custom property naming convention, backup.css as test page. Section status remained `[DRAFT]` pending validation pass. (See session log entry "2026-05-03 (3)" for full detail.) |
 | 0.5 | 2026-05-03 | **Part 3 promoted to `[FINALIZED]`.** Three checkpoints completed in one session: Checkpoint B (cc-shared.css built, 622 rows / 0 drift), Checkpoint C (backup.css refactored, 245 rows / 0 drift), Checkpoint D (doc finalization). Doc rewrite under Option B (clean reference structure, design history moved to Section 3.16 with attribution). **New spec content:** Section 3.7.1 State-on-element pattern as a dedicated subsection capturing the recurring discipline from OQ-CSS-1, the depth-3 nav-link compounds, and the storage-drive descendant rules. Section 3.8 Sub-section markers vs new banners — the discipline rule preventing the "fast-and-loose" failure mode of jumbling unrelated content under one banner. **Spec amendments:** Gap 5 (`FEEDBACK_OVERLAYS` as sixth section type — full integration into ordering, parser arrays, drift-code descriptions). Gap 6 (`@media` permitted in any section; `FORBIDDEN_AT_MEDIA` retired). Gap 7 surfaced and queued as OQ-CSS-3 in Part 10 with concrete shape (treat `@media`-wrapped rules as `CSS_VARIANT` with new `media` variant_type carrying the @media expression in `qualifier_2`). **Parser updates:** `$SectionTypeOrder` array gains `FEEDBACK_OVERLAYS`; FILE ORG list parser accepts both numbered and un-numbered entries with `-- description` strip; **BannerTitles bug fix** — comparison was using `ComponentName` (just NAME) against list-side `<TYPE>: <NAME>` strings; fixed to assemble `"$Signature: $ComponentName"`. `@media` removed from forbidden at-rules. New shared tokens added to cc-shared.css: `--gradient-progress-default`. **New Part 11 added — CSS Refactor Initiative:** plan to refactor all remaining ~28 CSS files to spec before pivoting to JS spec design. Three-phase sequencing (small pages first, large pages last), `*-spec.css` side-by-side pattern (parser sees both, Object_Registry stays clean), per-file workflow, token gap handling, expected 2-4 small spec amendments along the way. Status table tracks per-file progress; cc-shared.css and backup.css already DONE. **Section 11.8 Prefix Registry added** — 3-character prefixes fixed platform-wide; full mapping table for all 18 CC pages (e.g., `bkp` for backup, `bdl` for BDL Import, `biz` for Business Intelligence). Backup.css renamed `bk-` → `bkp-` to conform; 93 occurrences updated cleanly. Future enhancement noted: add `prefix` column to `dbo.Module_Registry` for database-level uniqueness enforcement. **Queued next:** Part 11 Phase 1 — page-by-page refactor sequence beginning with the smaller files. |
-| 0.4 | 2026-05-03 | FOUNDATION-section exemptions checkpoint and cc-shared.css design preparation. **Four spec gaps surfaced and resolved during cc-shared.css design preparation:** (1) Element / universal / attribute selectors permitted inside FOUNDATION sections only; the three corresponding drift codes are suppressed when the active section is FOUNDATION-typed. (2) New drift code `FORBIDDEN_PSEUDO_ELEMENT_LOCATION` flags pseudo-elements outside FOUNDATION that aren't attached to a class. (3) `Prefixes: (none)` sentinel recognized in banner extractor as a valid declaration that opts out of `PREFIX_MISMATCH`; `MISSING_PREFIXES_DECLARATION` only fires when the line is entirely absent. (4) Cross-section prefix overlap addressed as authoring discipline (no parser change). **Parser updated and verified:** 5,949 rows / 87.4% drift; new code correctly attaches to all four bare scrollbar pseudo-element rules in `engine-events.css`; FOUNDATION-aware suppression has nothing to suppress yet because no FOUNDATION-typed banner exists in the codebase. **Major direction decision:** new file `cc-shared.css` will be built spec-compliant from day one and will live alongside `engine-events.css` until pages migrate one-by-one. Solves the longstanding naming-confusion problem where the de-facto shared resource was called `engine-events.css` despite serving as `ControlCenter.Shared`. **Custom property naming convention locked in:** three-part `--<category>-<role>-<modifier>` pattern with fixed category enum (`color`, `size`, `font`, `duration`, `shadow`, `z`). **Backup.css selected as the test page** for the page-level rewrite, chosen for low traffic and reasonable representativeness. **Doc updates:** Top-level status bumped. Current State rewritten with this checkpoint summary, the new naming convention, the cc-shared decision, and the Checkpoints B-D plan. Session log extended with entry (3). Part 3.3 extended with `(none)` sentinel rule. Part 3.4 FOUNDATION row extended with the reset-rule allowance note. Part 3.12 forbidden-patterns table updated for the three exempted codes plus new `FORBIDDEN_PSEUDO_ELEMENT_LOCATION`. Part 3.15 decision log extended with five new entries (Gaps 1-3, cc-shared decision, naming convention). Appendix A extended with new code; three exempted codes' descriptions updated to note FOUNDATION-aware suppression. **Queued next:** Checkpoint B (cc-shared.css build) → Checkpoint C (backup.css refactor) → Checkpoint D (validation complete, Part 3 promotes to `[FINALIZED]`). |
+| 0.6 | 2026-05-03 | **Part 11 Phase 1 in progress — first two files complete.** business-intelligence.css refactored (43 rows / 100% drift → 67 rows / 0% drift, `biz-` prefix). client-relations.css refactored (80 rows / 74% drift → 141 rows / 0% drift, `clr-` prefix). **One spec amendment (Gap 8):** pseudo-element rules attached to a class (e.g., `.foo::placeholder`) are cataloged as base `CSS_CLASS` rows, not as variants — they need a preceding purpose comment, not a trailing inline comment. Documented in Section 3.6 with worked example; Section 3.16 design decisions table extended with Gap 8 row. Appendix A's `MISSING_PURPOSE_COMMENT` description extended to note pseudo-element handling. No parser change needed; the parser was already behaving correctly, only the spec text was silent on the case. **One cc-shared.css change triggered:** `--size-panel-width-xwide` and `--size-panel-offset-xwide` bumped (950px → 1000px and -970px → -1020px) to support the BI Notice Recon detail panel which needs a wider tier than `.wide` provides. The `.xwide` tier had no other consumers at the time of the bump, so the value change is non-breaking. cc-shared.css re-validated at 622 rows / 0 drift after the change. **New companion doc created:** `CC_CSS_Refactor_Migration_Notes.md` (in `Planning/`) captures the per-file changes (class renames, structural changes, deletions, additions, visual/behavioral changes, cc-shared.css impact) and the resulting downstream impact for future JS/HTML migration sessions. Backup.css's entry was authored first as the template; BI and CR entries authored together this session. The doc is referenced from Section 11.4 of this doc and from the top-level "Documents this consolidates" section. **Section 11.7 status table** updated to show BI and CR as DONE (4 of ~28 files complete; 24 remaining). **Section 11.8 Prefix Registry** updated: `business-intelligence.css` and `client-relations.css` flipped from pending to DONE. **Queued next:** continue Phase 1 with `replication-monitoring.css` (`rpm` prefix) and `business-services.css` (`bsv` prefix), then move into Phase 2. |
+| 0.7 | 2026-05-03 | **Part 11 Phase 1, file 3 — replication-monitoring.css.** Refactored end-to-end and validated at zero drift in a single session: 131 rows / 97% drift → 252 rows / 0% drift, `rpm-` prefix. Higher-density layout than BI or CR (1 LAYOUT section + 6 CONTENT sections + 1 RESPONSIVE CONTENT section). **Two new patterns surfaced for the first time and resolved cleanly:** (a) the page's slide-out help panel is structurally identical to cc-shared's `.slide-overlay`/`.slide-panel`, so it's now consumed from cc-shared instead of duplicated locally — only the inner content typography classes (`rpm-info-panel-body-p/-strong/-em`) remain page-local; help panel width changes 440px → 550px in the process (the shared default tier); (b) the page's 7 `event-type-*` classes have uppercase-snake-case suffixes that come from backend event-type codes (`STATE_CHANGE`, `AGENT_START`, etc.) — preserved verbatim with prefix added (`.rpm-event-type-STATE_CHANGE`, etc.) so JS can compose the class name without a casing transform. **Descendant rules flattened** in three places: `.event-transition .state-from/-arrow/-to` → `rpm-state-from/-arrow/-to`; `.info-panel-body p/strong/em` → `rpm-info-panel-body-p/-strong/-em`; `.lower-left .chart-half` → new `rpm-chart-half-tall` leaf class. **One drift caught initially:** three `MISSING_PURPOSE_COMMENT` on the `@media`-wrapped responsive rules where the first draft used trailing inline comments (variant-style) instead of preceding ones. Spec is explicit (Section 3.13) that `@media`-wrapped rules are subject to all spec rules including purpose comments; fix was just to move the comments to preceding lines. **No spec amendments needed.** OQ-CSS-3 (treating `@media`-wrapped rules conceptually as variants) stays queued in Part 10 as a future improvement, not a current pain point. **No cc-shared.css changes** — every value the page needed already had a token. cc-shared.css remains at 622 rows / 0 drift. **Migration notes entry authored.** **Section 11.7 status table** updated to show rpm as DONE (5 of ~28 files complete; 23 remaining). **Section 11.8 Prefix Registry:** `replication-monitoring.css` flipped from pending to DONE. **Part 3 preamble** updated to list rpm in the validation set. **Queued next:** continue Phase 1 with `business-services.css` (`bsv` prefix, 177 rows / 95% drift) — the last small-pages file before Phase 2 begins. |
