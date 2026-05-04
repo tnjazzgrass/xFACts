@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-03 18:03:10
+Generated: 2026-05-04 03:01:57
 
 ## Module Registry
 
@@ -581,8 +581,8 @@ Generated: 2026-05-03 18:03:10
 | ServerOps | Index | index_scan_skip_rebuilt_days | 3 | INT | Days to skip scanning recently rebuilt indexes |
 | ServerOps | Index | index_scan_time_limit_minutes | 0 | INT | Maximum scan duration in minutes (0 = no limit) |
 | ServerOps | Index | index_scan_timeout_base_seconds | 90 | INT | Minimum timeout per index during scanning (seconds) |
-| ServerOps | Index | index_seconds_per_page_offline | 0.00025 | DECIMAL | Time estimate factor for offline rebuilds (seconds per page) |
-| ServerOps | Index | index_seconds_per_page_online | 0.0005 | DECIMAL | Time estimate factor for online rebuilds (seconds per page) |
+| ServerOps | Index | index_seconds_per_page_offline | 0.00020 | DECIMAL | Time estimate factor for offline rebuilds (seconds per page) |
+| ServerOps | Index | index_seconds_per_page_online | 0.0004 | DECIMAL | Time estimate factor for online rebuilds (seconds per page) |
 | ServerOps | Index | index_sync_interval_minutes | 1440 | INT | Minimum minutes between index discovery runs |
 | ServerOps | Index | stats_max_days_stale | 60 | INT | Force statistics update if older than this many days |
 | ServerOps | Index | stats_min_rows | 1000 | INT | Minimum table row count for statistics maintenance |
