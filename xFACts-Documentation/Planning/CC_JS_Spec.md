@@ -11,7 +11,7 @@
 
 This specification defines the structural conventions every Control Center JavaScript file must follow. The conventions exist for one reason: **machine readability**. Every rule in this document is justified by a specific extraction the catalog parser performs against the file. Files that follow the spec parse cleanly into `dbo.Asset_Registry` without ambiguity. Files that don't follow the spec fail with a specific compliance code pointing at the violation.
 
-The spec is intentionally opinionated and rigid. There is no allowance for stylistic drift. Authoring discipline is what makes the catalog reliable, and the catalog is what makes drift detection possible.
+The spec is intentionally opinionated and rigid. There is no allowance for stylistic drift. **Where JavaScript permits multiple ways to express the same construct, the spec picks one and forbids the others.** Authoring discipline is what makes the catalog reliable, and the catalog is what makes drift detection possible.
 
 ---
 
@@ -108,21 +108,22 @@ Five section types, in fixed order:
 
 ### 4.2 The shared file `cc-shared.js`
 
-Seven section types, in fixed order:
+Four section types, in fixed order:
 
 | Order | TYPE | Purpose | Multiple banners? | Where it lives |
 |-------|------|---------|-------------------|----------------|
-| 1 | `IMPORTS` | Same as page files. | No. | Both. |
-| 2 | `FOUNDATION` | Platform-wide constants and primitives — month/day name lookups, status code mappings, default timeout values. The JS analogue of CSS custom property tokens. | Yes — group by concept. | `cc-shared.js` only. |
-| 3 | `CHROME` | Universal page chrome and shared utilities — `escapeHtml`, `formatTimeOfDay`, `engineFetch`, `showAlert`, `showConfirm`, the WebSocket / idle / visibility / connection-banner machinery. | Yes — group by concept. | `cc-shared.js` only. |
-| 4 | `CONSTANTS` | Same as page files. | Yes. | Both. |
-| 5 | `STATE` | Same as page files. | Yes. | Both. |
-| 6 | `INITIALIZATION` | Same as page files. | No. | Both. |
-| 7 | `FUNCTIONS` | Same as page files. | Yes. | Both. |
+| 1 | `IMPORTS` | ES module imports or `require` statements. Reserved for future use; the current platform loads JS via `<script>` tags and shares a global namespace, so files have no IMPORTS banner today. | No. | Both. |
+| 2 | `FOUNDATION` | Platform-wide immutable constants and primitives — month/day name lookups, status code mappings, default timeout values. Holds `const` declarations only; the JS analogue of CSS custom property tokens. | Yes — group by concept. | `cc-shared.js` only. |
+| 3 | `STATE` | Platform-wide mutable runtime state — WebSocket handles, connection-state flags, timer handles, idle-detection state. Holds `var` declarations only. Lives in `cc-shared.js` because the chrome utilities read and write this state on behalf of every page. | Yes — group by concept. | Both. |
+| 4 | `CHROME` | Universal page chrome and shared utilities — `escapeHtml`, `formatTimeOfDay`, `engineFetch`, `showAlert`, `showConfirm`, the WebSocket / idle / visibility / connection-banner machinery. The shared-file analogue of a page file's `INITIALIZATION` and `FUNCTIONS` sections combined. | Yes — group by concept. | `cc-shared.js` only. |
+
+The shared-file taxonomy is intentionally different from the page-file taxonomy (Section 4.1). Both files follow the same structural pattern — declarations come first, worker code comes last — but the *names* of the types differ to signal which ownership model applies. Page files declare local `CONSTANTS` and `STATE` and put their boot code in `INITIALIZATION` and `FUNCTIONS`. The shared file declares platform-wide `FOUNDATION` (immutable) and `STATE` (mutable) and puts its worker code in `CHROME`. The mapping is direct: `FOUNDATION` is `cc-shared.js`'s `CONSTANTS`, `CHROME` is its `INITIALIZATION` + `FUNCTIONS`. `STATE` keeps the same name and meaning in both because the type itself is platform-neutral.
+
+This mirrors `CC_CSS_Spec.md` Section 4 verbatim: the CSS shared file uses `FOUNDATION` and `CHROME` (and may use `CONTENT` and `FEEDBACK_OVERLAYS` for shared widgets) while page files use `LAYOUT`, `CONTENT`, `OVERRIDES`, and `FEEDBACK_OVERLAYS`. The two file kinds use disjoint type vocabularies that signal ownership at a glance.
 
 ### 4.3 Type-order rule
 
-Section types must appear in the order shown. An `INITIALIZATION` banner may not appear before a `STATE` banner. Violations emit `SECTION_TYPE_ORDER_VIOLATION`. The fixed ordering reflects a real cascade dependency: imports must come before anything that consumes them; foundation primitives must be defined before chrome utilities use them; constants and state must be declared before the initialization sequence references them; the initialization sequence wires up the page before any function it calls can be invoked; and functions sit at the bottom because they are the body of work the rest of the file orchestrates.
+Section types must appear in the order shown. An `INITIALIZATION` banner may not appear before a `STATE` banner. Violations emit `SECTION_TYPE_ORDER_VIOLATION`. The fixed ordering reflects a real cascade dependency: imports must come before anything that consumes them; foundation primitives and state must be declared before chrome (in `cc-shared.js`) or before initialization (in page files) references them; the initialization sequence wires up the page before any function it calls can be invoked; and functions sit at the bottom because they are the body of work the rest of the file orchestrates.
 
 ### 4.4 Type uniqueness across files
 
@@ -168,15 +169,29 @@ The same discipline applies to `cc-shared.js` exports, but in inverse: any unpre
 
 ## 6. Function definitions
 
-A function definition is one of three forms:
+A function definition has exactly one form:
 
-1. **Function declaration** — `function name() { ... }`
-2. **Function expression assigned to a `var` or `const`** — `const name = function() { ... }`
-3. **Arrow function expression assigned to a `var` or `const`** — `const name = () => { ... }`
+```javascript
+function name() { ... }
+```
 
-All three produce a `JS_FUNCTION DEFINITION` row in the catalog when they appear at module scope inside a `FUNCTIONS` section. Function declarations inside other functions are not cataloged (the spec forbids nested function declarations except as anonymous callbacks; see Section 14).
+This is the only permitted form. The `function` keyword followed by an identifier is the unambiguous signal "a function is being defined here." It is what every parser, every linter, and every reader recognizes immediately.
 
-### 6.1 Function comment requirement
+### 6.1 Forbidden alternatives
+
+JavaScript permits other constructs that *behave* like function definitions but are not allowed in xFACts code:
+
+```javascript
+const name = function() { ... };       // FORBIDDEN — anonymous function expression
+const name = () => { ... };            // FORBIDDEN — arrow function expression
+const name = function namedThing() { ... };  // FORBIDDEN — named function expression
+```
+
+Each of these emits `FORBIDDEN_ANONYMOUS_FUNCTION` on the row representing the const/var declaration. The intent is uniformity: the spec picks one form and forbids the others so the catalog never has to ask "which way of writing a function did the developer pick this time?"
+
+The same rule applies to other contexts: a function-shaped expression returned from another function, used as an object property value, or stored in a class member must be replaced with a named `function` declaration where possible. The narrow exception is callback arguments — see Section 14.1.
+
+### 6.2 Function comment requirement
 
 Every function definition must be preceded by a single block comment immediately above the declaration. The comment is at minimum a single-sentence purpose. JSDoc-format parameter and return documentation is allowed and encouraged for non-trivial functions, but not mandatory. The comment becomes the row's `purpose_description` in the catalog.
 
@@ -198,24 +213,22 @@ function calcCountdownFromEvent(event, now) { ... }
 
 Missing function comments emit `MISSING_FUNCTION_COMMENT`.
 
-### 6.2 Function naming rules
+### 6.3 Function naming rules
 
 - Top-level function names in a page file must begin with the page prefix followed by an underscore (Section 5).
 - The exception is functions in the page lifecycle hooks banner (Section 8), which use the fixed hook names.
 - Functions in `cc-shared.js` are not page-prefixed (their `Prefix:` line is `(none)`).
 
-### 6.3 Anonymous functions assigned at module scope
+### 6.4 Async and generator functions
 
-A function or arrow expression assigned to a module-scope `const` or `var` is a function. It produces a `JS_FUNCTION DEFINITION` row, not a `JS_CONSTANT DEFINITION` row. The catalog reflects role, not syntactic form.
+`async` and `generator` functions are permitted forms of `function` declarations:
 
 ```javascript
-/* Resolves the chart color set for a given publication name. */
-const bsv_getColor = function(name) {
-    return bsv_chartColors[name] || { line: '#888', fill: 'rgba(136, 136, 136, 0.08)' };
-};
+async function bsv_loadConfig() { ... }
+function* bsv_iterRange(start, end) { ... }
 ```
 
-This row gets `component_type = 'JS_FUNCTION'`, not `JS_CONSTANT`.
+These are catalog-distinguished as `JS_FUNCTION_VARIANT` rows with `variant_type='async'` or `variant_type='generator'` respectively. They are *not* forbidden — they're real semantic distinctions that the catalog records. The base `JS_FUNCTION` type covers plain (sync, non-generator) function declarations.
 
 ---
 
@@ -223,10 +236,10 @@ This row gets `component_type = 'JS_FUNCTION'`, not `JS_CONSTANT`.
 
 Module-scope declarations split into two kinds based on the section they live in:
 
-- **`CONSTANTS` sections:** declarations are `const`. They produce `JS_CONSTANT DEFINITION` rows.
-- **`STATE` sections:** declarations are `var`. They produce `JS_STATE DEFINITION` rows.
+- **`CONSTANTS` and `FOUNDATION` sections:** declarations are `const`. They produce `JS_CONSTANT DEFINITION` rows for primitive values, or `JS_CONSTANT_VARIANT DEFINITION` rows for compound values (objects, arrays, regexes, computed expressions). See Section 17.5 for the full variant grid. The two section types are equivalent for declaration-keyword purposes; `FOUNDATION` is `cc-shared.js`'s name for what page files call `CONSTANTS`.
+- **`STATE` sections:** declarations are `var`. They produce `JS_STATE DEFINITION` rows. Page files and `cc-shared.js` both use this type.
 
-The keyword (`const` vs `var`) is itself a redundant compliance signal — a `const` declaration in a `STATE` section, or a `var` declaration in a `CONSTANTS` section, emits `WRONG_DECLARATION_KEYWORD`. The intent is to make the section type and the keyword line up so a reader scanning either signal arrives at the same conclusion about whether a value is mutable.
+The keyword (`const` vs `var`) is itself a redundant compliance signal — a `const` declaration in a `STATE` section, or a `var` declaration in a `CONSTANTS` or `FOUNDATION` section, emits `WRONG_DECLARATION_KEYWORD`. The intent is to make the section type and the keyword line up so a reader scanning either signal arrives at the same conclusion about whether a value is mutable.
 
 `let` is forbidden anywhere in the codebase. All declarations are either `const` (constants) or `var` (state). The rationale is consistency with the existing codebase, which uses `var` everywhere; `let` introduces a third concept without a corresponding cataloging distinction. Drift code: `FORBIDDEN_LET`.
 
@@ -311,7 +324,7 @@ A file with hooks but with the hooks banner not last emits `HOOKS_BANNER_NOT_LAS
 
 ### 8.3 Catalog representation
 
-Functions inside a `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner produce `JS_HOOK DEFINITION` rows, not `JS_FUNCTION DEFINITION` rows. The role is different — these are API-contract callbacks consumed by the shared module — and giving them their own component type means a query like `SELECT file_name, component_name FROM Asset_Registry WHERE component_type = 'JS_HOOK'` becomes a one-line answer to "which pages implement which hooks."
+Functions inside a `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner produce `JS_HOOK DEFINITION` rows (or `JS_HOOK_VARIANT DEFINITION` for async hooks — see Section 17.5), not `JS_FUNCTION DEFINITION` rows. The role is different — these are API-contract callbacks consumed by the shared module — and giving them their own component type means a query like `SELECT file_name, component_name FROM Asset_Registry WHERE component_type IN ('JS_HOOK', 'JS_HOOK_VARIANT')` becomes a one-line answer to "which pages implement which hooks."
 
 The function comment requirement still applies (`MISSING_FUNCTION_COMMENT` if absent).
 
@@ -338,7 +351,7 @@ class bsv_AgentCard { ... }
 
 ### 9.2 Methods
 
-Methods inside a class body produce `JS_METHOD DEFINITION` rows. Each method must carry a preceding single-sentence purpose comment. Missing method comments emit `MISSING_METHOD_COMMENT`.
+Methods inside a class body produce `JS_METHOD DEFINITION` rows for regular methods, or `JS_METHOD_VARIANT DEFINITION` for static/getter/setter/async forms (see Section 17.5). Each method must carry a preceding single-sentence purpose comment. Missing method comments emit `MISSING_METHOD_COMMENT`.
 
 Methods do not carry the page prefix — they are namespaced inside the class itself.
 
@@ -361,7 +374,7 @@ class bsv_AgentCard {
 
 `IMPORTS` sections contain ES module `import` statements or Node `require` calls. The current Control Center JS code uses neither (page JS is loaded via `<script>` tags, with `cc-shared.js` loaded first to expose its globals), so this section is empty in every current file.
 
-The spec defines `IMPORTS` for forward compatibility. If a future page adopts ES modules, imports will live here. Each import produces a `JS_IMPORT DEFINITION` row keyed on the imported binding name; the source module path lives in the row's `parent_object` column.
+The spec defines `IMPORTS` for forward compatibility. If a future page adopts ES modules, imports will live here. Each import produces a `JS_IMPORT DEFINITION` row keyed on the imported binding name; the source module path lives in the row's `variant_qualifier_2` column. See Section 17.5 for the full row shape.
 
 ---
 
@@ -374,7 +387,7 @@ The `INITIALIZATION` section contains:
 
 This is the boot sequence. Functions in this section may invoke functions from any later section (FUNCTIONS), but functions in FUNCTIONS may not depend on initialization having run beyond the constants and state being populated.
 
-The handler itself is anonymous (no name) and is registered via `addEventListener`, which means it does not produce a `JS_FUNCTION DEFINITION` row — the parser treats it as initialization code, not a named definition. The setup functions called from it (named functions like `bsv_init`, `bsv_injectInfoPanel`) do produce `JS_FUNCTION DEFINITION` rows under the page prefix.
+The handler itself is anonymous (no name) and is registered via `addEventListener`, which means it does not produce a `JS_FUNCTION DEFINITION` row — the parser treats it as initialization code, not a named definition. This is one of the allowed-callback contexts described in Section 14.1. The setup functions called from it (named functions like `bsv_init`, `bsv_injectInfoPanel`) do produce `JS_FUNCTION DEFINITION` rows under the page prefix.
 
 ```javascript
 document.addEventListener('DOMContentLoaded', async function() {
@@ -390,8 +403,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 ```
 
 Note that calls to unprefixed functions (`connectEngineEvents`, `initEngineCardClicks`) are calls into `cc-shared.js`. The lack of a prefix is the signal.
-
-Imports live in the separate `IMPORTS` section, not here. The spec defines `IMPORTS` for forward compatibility. If a future page adopts ES modules, imports will live there. Each import produces a `JS_IMPORT` row keyed on the imported binding name; the source module path lives in the row's `variant_qualifier_2` column. See Section 17 for the full row shape.
 
 ---
 
@@ -410,9 +421,7 @@ No other comment forms are recognized. Stray block comments at file scope (betwe
 
 Inline `//` line comments are permitted **inside function bodies** for explaining specific lines or blocks of logic. They are not cataloged.
 
-Inline `//` line comments are forbidden at file scope (outside function bodies). All file-scope comments must be one of the four block-comment kinds in Section 12.
-
-Drift code: `FORBIDDEN_FILE_SCOPE_LINE_COMMENT`.
+Inline `//` line comments are forbidden at file scope (outside function bodies). All file-scope comments must be one of the four block-comment kinds in Section 12. Each file-scope `//` comment emits a `JS_LINE_COMMENT` row at its own line with `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift attached.
 
 ### 12.2 Comment content rules
 
@@ -444,21 +453,44 @@ Sub-section markers use the inline format `/* -- <label> -- */`. They are decora
 
 ## 14. Forbidden patterns
 
-| Pattern | Drift code | Rationale |
-|---------|------------|-----------|
-| `let` declarations | `FORBIDDEN_LET` | The codebase uses `var` for state and `const` for constants. `let` adds a third concept without a corresponding cataloging distinction. |
-| Multiple declarations per statement (`var a, b, c`) | `FORBIDDEN_MULTI_DECLARATION` | One declaration per statement guarantees one comment per declaration. |
-| Top-level function declared inside an `if`/`while`/`try` block | `FORBIDDEN_CONDITIONAL_DEFINITION` | Definitions must be unconditional so the parser can find them deterministically. The legacy `if (typeof pageRefresh !== 'function')` guard in `engine-events.js` retires under this rule. |
-| `IIFE` at file scope (`(function() { ... })()`) | `FORBIDDEN_IIFE` | Scope isolation is unnecessary when each file is loaded as a single `<script>` tag. IIFEs hide content from the parser. |
-| `eval(...)` | `FORBIDDEN_EVAL` | Security and parser-visibility hazard. |
-| `document.write(...)` | `FORBIDDEN_DOCUMENT_WRITE` | Obsolete API. |
-| `window.<name> = ...` outside `cc-shared.js` | `FORBIDDEN_WINDOW_ASSIGNMENT` | Page files should not pollute the global namespace. Top-level function declarations are already global; explicit `window.` assignment is unnecessary. The shared file is the only place that legitimately attaches to `window`. |
-| Inline `<style>` content in a template literal or string literal | `FORBIDDEN_INLINE_STYLE_IN_JS` | CSS lives in dedicated `.css` files. Inline `<style>` invisible to the CSS parser. |
-| Inline `<script>` content in a template literal or string literal | `FORBIDDEN_INLINE_SCRIPT_IN_JS` | JS lives in dedicated `.js` files. |
-| Defining a function whose name matches a `cc-shared.js` export | `SHADOWS_SHARED_FUNCTION` | Page files must not redefine shared utilities. Use the shared one. The catalog detects this by joining the page file's `JS_FUNCTION DEFINITION` rows against `cc-shared.js`'s shared definitions. |
-| File-scope `//` line comment | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | Spec mandates block comments for the four cataloged comment roles. |
-| CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` | Git is the source of truth for change history. |
-| Element-style ID assignment `el.id = '...'` outside utility constructors | `FORBIDDEN_IMPERATIVE_ID_OUTSIDE_CONSTRUCTOR` | Imperative ID assignment is permitted but discouraged; the catalog flags it for visibility. Fires only when the assignment is in a function whose role is rendering rather than DOM construction. *(Tracked but not enforced — see Section 18 for compliance-detection caveats.)* |
+The xFACts JS spec picks one form of each construct and forbids the others. Every forbidden pattern emits a row in the catalog with the relevant drift code attached, so the catalog always reflects everything the parser found in the file. A clean codebase has zero rows with drift; any drift is an action item to fix.
+
+Some forbidden patterns ride on the row of an existing declaration (e.g. `FORBIDDEN_LET` attaches to the row for the `let`-declared variable). Others have no natural declaration to host the drift, so the parser emits a dedicated row at the violation site using a component_type that exists solely to represent the forbidden pattern (e.g. `JS_IIFE`, `JS_EVAL`). Either way, every violation is visible in the row set with no aggregation needed.
+
+| Pattern | Drift code | Row host | Rationale |
+|---------|------------|----------|-----------|
+| `let` declarations | `FORBIDDEN_LET` | The declaration row (JS_CONSTANT / JS_STATE / etc.) | The codebase uses `var` for state and `const` for constants. `let` adds a third concept without a corresponding cataloging distinction. |
+| Multiple declarations per statement (`var a, b, c`) | `FORBIDDEN_MULTI_DECLARATION` | The declaration row | One declaration per statement guarantees one comment per declaration. |
+| Top-level function declared inside an `if`/`while`/`try` block | `FORBIDDEN_CONDITIONAL_DEFINITION` | The function row | Definitions must be unconditional so the parser can find them deterministically. The legacy `if (typeof pageRefresh !== 'function')` guard in `engine-events.js` retires under this rule. |
+| Anonymous function or arrow expression outside an allowed callback context | `FORBIDDEN_ANONYMOUS_FUNCTION` | The declaration row (JS_CONSTANT_VARIANT for `const x = function() {}`; JS_FUNCTION_VARIANT-equivalent shape rejected) | Functions are defined exactly one way — `function name() {}`. The single carve-out is callback arguments to other calls (Section 14.1). |
+| Defining a function whose name matches a `cc-shared.js` export | `SHADOWS_SHARED_FUNCTION` | The function row | Page files must not redefine shared utilities. Use the shared one. The catalog detects this by joining the page file's function definition rows against `cc-shared.js`'s shared definitions. |
+| Element-property event assignment (`el.onclick = handler`) | `FORBIDDEN_PROPERTY_ASSIGN_EVENT` | The JS_EVENT row | Events are bound exactly one way — `addEventListener`. The property-assign style cannot register multiple handlers per event and is silently lossy if a developer ever needs to add a second. |
+| `IIFE` at file scope (`(function() { ... })()`) | `FORBIDDEN_IIFE` | A `JS_IIFE` row at the violation line | Scope isolation is unnecessary when each file is loaded as a single `<script>` tag. IIFEs hide content from the parser and the reader. |
+| `eval(...)` | `FORBIDDEN_EVAL` | A `JS_EVAL` row at the violation line | Security and parser-visibility hazard. |
+| `document.write(...)` | `FORBIDDEN_DOCUMENT_WRITE` | A `JS_DOCUMENT_WRITE` row at the violation line | Obsolete API. |
+| `window.<name> = ...` outside `cc-shared.js` | `FORBIDDEN_WINDOW_ASSIGNMENT` | A `JS_WINDOW_ASSIGNMENT` row at the violation line | Page files should not pollute the global namespace. Top-level function declarations are already global; explicit `window.` assignment is unnecessary. The shared file is the only place that legitimately attaches to `window`. |
+| Inline `<style>` content in a template literal or string literal | `FORBIDDEN_INLINE_STYLE_IN_JS` | A `JS_INLINE_STYLE` row at the violation line | CSS lives in dedicated `.css` files. Inline `<style>` is invisible to the CSS parser. |
+| Inline `<script>` content in a template literal or string literal | `FORBIDDEN_INLINE_SCRIPT_IN_JS` | A `JS_INLINE_SCRIPT` row at the violation line | JS lives in dedicated `.js` files. |
+| File-scope `//` line comment | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `JS_LINE_COMMENT` row at the violation line | Spec mandates block comments for the four cataloged comment roles. |
+| CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` | The FILE_HEADER row | Git is the source of truth for change history. |
+| Element-style ID assignment `el.id = '...'` outside utility constructors | `FORBIDDEN_IMPERATIVE_ID_OUTSIDE_CONSTRUCTOR` | The HTML_ID DEFINITION row | Imperative ID assignment is permitted but discouraged; the catalog flags it for visibility. *(Tracked but not enforced — see Section 18 for compliance-detection caveats.)* |
+
+### 14.1 Allowed anonymous callback contexts
+
+The `FORBIDDEN_ANONYMOUS_FUNCTION` rule has exactly one carve-out: a function or arrow expression *passed as an argument to another call* may be anonymous. This covers patterns like:
+
+```javascript
+document.addEventListener('DOMContentLoaded', function() { ... });
+someArray.forEach(function(item) { ... });
+data.then(function(result) { ... });
+setTimeout(function() { ... }, 1000);
+```
+
+The justification is practical: requiring a named function for every `.then` or `.forEach` callback would force every page to invent dozens of trivial names like `bsv_handleAgentResult` whose only purpose is to be passed once and never referenced again. The catalog gains nothing from naming these; the surrounding call site already identifies what the callback is for.
+
+**What still gets cataloged inside the callback:** the parser walks into the anonymous body normally, so any function calls, class usage, or HTML markup inside the callback still produce rows. The `parent_function` column on those rows records the name of the *outer call* (e.g., `'.then'`, `'addEventListener'`, `'forEach'`) — this is the closest meaningful anchor for "where in the file did this happen."
+
+**No other carve-outs.** Anonymous functions assigned to a const or var, returned from another function, or used as object property values are all `FORBIDDEN_ANONYMOUS_FUNCTION` violations. Convert them to named function declarations.
 
 ---
 
@@ -471,11 +503,13 @@ Every JS file must:
 3. Declare a valid prefix in every section banner (Section 5)
 4. Precede every function, constant, state variable, hook, class, and method with a single block comment (Sections 6, 7, 8, 9, 12)
 5. Use `const` in CONSTANTS sections and `var` in STATE sections (Section 7)
-6. Place page lifecycle hooks in a `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner that is last in the file (Section 8)
-7. One declaration per statement (Section 7.3)
-8. Use the page prefix on every top-level identifier in a page file, except hooks (Section 5)
-9. Use unprefixed identifiers in `cc-shared.js`, with `Prefix: (none)` declared (Sections 4.2, 5.2)
-10. Match the FILE ORGANIZATION list to banner titles verbatim, in order (Section 2)
+6. Define functions only as `function name() {}` declarations (Section 6)
+7. Bind events only via `addEventListener` (Section 14)
+8. Place page lifecycle hooks in a `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner that is last in the file (Section 8)
+9. One declaration per statement (Section 7.3)
+10. Use the page prefix on every top-level identifier in a page file, except hooks (Section 5)
+11. Use unprefixed identifiers in `cc-shared.js`, with `Prefix: (none)` declared (Sections 4.2, 5.2)
+12. Match the FILE ORGANIZATION list to banner titles verbatim, in order (Section 2)
 
 ---
 
@@ -621,9 +655,11 @@ This file produces the following catalog rows when parsed:
 
 - 1 × `FILE_HEADER DEFINITION`
 - 6 × `COMMENT_BANNER DEFINITION` (one per section)
-- 2 × `JS_CONSTANT DEFINITION` (`ex_ENGINE_PROCESSES`, `ex_DEFAULT_REFRESH_INTERVAL`)
+- 1 × `JS_CONSTANT_VARIANT DEFINITION` (`ex_ENGINE_PROCESSES`, variant_type='object')
+- 1 × `JS_CONSTANT DEFINITION` (`ex_DEFAULT_REFRESH_INTERVAL`)
 - 2 × `JS_STATE DEFINITION` (`ex_currentFilter`, `ex_livePollingTimer`)
-- 5 × `JS_FUNCTION DEFINITION` (`ex_loadConfig`, `ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`)
+- 1 × `JS_FUNCTION_VARIANT DEFINITION` (`ex_loadConfig`, variant_type='async')
+- 4 × `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`)
 - 2 × `JS_HOOK DEFINITION` (`onPageRefresh`, `onPageResumed`)
 - Multiple `JS_FUNCTION USAGE` rows for shared-module calls (`engineFetch`, `escapeHtml`, `connectEngineEvents`) and same-file calls
 - Multiple `CSS_CLASS USAGE` rows for class names in template strings (`ex-agent-card`, `ex-agent-name`)
@@ -639,7 +675,9 @@ This section covers the catalog mechanism as it relates to JS files. The rules b
 
 ### 17.1 What the catalog represents
 
-Every cataloged JS construct gets one row in `dbo.Asset_Registry`. A row's identity is described by the combination of `component_type`, `component_name`, `reference_type`, `file_name`, `occurrence_index`, `variant_type`, `variant_qualifier_1`, and `variant_qualifier_2`. The parser populates one row per definition or usage instance found while walking source files.
+Every cataloged JS construct gets one row in `dbo.Asset_Registry`. The catalog represents **everything the parser found in the file**, with drift codes telling the operator what's wrong. Forbidden patterns produce rows just like permitted ones; the difference is the drift codes attached. A clean codebase has zero rows with non-NULL drift_codes; any drift is an action item to fix during the next refactor pass.
+
+A row's identity is described by the combination of `component_type`, `component_name`, `reference_type`, `file_name`, `occurrence_index`, `variant_type`, `variant_qualifier_1`, and `variant_qualifier_2`. The parser populates one row per definition or usage instance found while walking source files.
 
 ### 17.2 JS-relevant component_type values
 
@@ -649,18 +687,28 @@ Every cataloged JS construct gets one row in `dbo.Asset_Registry`. A row's ident
 | `COMMENT_BANNER` | A section banner comment. One row per section. The section type (`IMPORTS`, `CONSTANTS`, etc.) lives in `signature`. |
 | `JS_IMPORT` | An ES `import` statement or Node `require` call. The imported binding name is `component_name`. The source module path is `variant_qualifier_2`. Always carries a non-NULL `variant_type`. See 17.5. |
 | `JS_CONSTANT` | A `const` declaration of a primitive value (string, number, boolean, null) in a `CONSTANTS` or `FOUNDATION` section. The base form. |
-| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound value (object, array, regex) in a `CONSTANTS` or `FOUNDATION` section. The variant form. See 17.5. |
+| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound value (object, array, regex) or a computed-expression value in a `CONSTANTS` or `FOUNDATION` section. The variant form. See 17.5. |
 | `JS_STATE` | A `var` declaration in a `STATE` section. No variant types. |
 | `JS_FUNCTION` | A regular `function name() {}` declaration at module scope (in any `FUNCTIONS` section other than the `PAGE LIFECYCLE HOOKS` banner), or a `cc-shared.js` function called from another file (USAGE row). The base form. |
-| `JS_FUNCTION_VARIANT` | A function defined as an arrow expression, function expression, async function, async arrow, or generator. The variant form. See 17.5. |
-| `JS_HOOK` | A function inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. No variant types. |
+| `JS_FUNCTION_VARIANT` | An `async function name()` or `function* name()` (generator) declaration. The variant form. See 17.5. |
+| `JS_HOOK` | A regular sync function inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. The base form. |
+| `JS_HOOK_VARIANT` | An async function inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. The variant form. See 17.5. |
 | `JS_CLASS` | A class declaration at module scope. No variant types. |
 | `JS_METHOD` | A regular method defined inside a class body. The class name lives in `parent_function`. The base form. |
 | `JS_METHOD_VARIANT` | A static method, getter, setter, or async method inside a class body. The class name lives in `parent_function`. The variant form. See 17.5. |
 | `JS_TIMER` | A `setInterval` or `setTimeout` call assigned to a tracked handle (a `JS_STATE` variable). The handle name is `component_name`. Always carries a non-NULL `variant_type`. See 17.5. |
-| `JS_EVENT` | An event handler binding via `addEventListener` or direct `.on<event> =` assignment. The event name (`click`, `change`, etc.) is `component_name`. Always carries a non-NULL `variant_type`. See 17.5. |
+| `JS_EVENT` | An `addEventListener` event handler binding. The event name (`click`, `change`, etc.) is `component_name`. No variant types. |
+| `JS_IIFE` | An immediately-invoked function expression at file scope. Exists only to host `FORBIDDEN_IIFE` drift; should never appear in compliant code. |
+| `JS_EVAL` | An `eval(...)` call. Exists only to host `FORBIDDEN_EVAL` drift; should never appear in compliant code. |
+| `JS_DOCUMENT_WRITE` | A `document.write(...)` call. Exists only to host `FORBIDDEN_DOCUMENT_WRITE` drift; should never appear in compliant code. |
+| `JS_WINDOW_ASSIGNMENT` | A `window.<name> = ...` assignment outside `cc-shared.js`. Exists only to host `FORBIDDEN_WINDOW_ASSIGNMENT` drift; should never appear in compliant page-file code. |
+| `JS_INLINE_STYLE` | A `<style>` element found in a JS template/string literal. Exists only to host `FORBIDDEN_INLINE_STYLE_IN_JS` drift; should never appear in compliant code. |
+| `JS_INLINE_SCRIPT` | A `<script>` element found in a JS template/string literal. Exists only to host `FORBIDDEN_INLINE_SCRIPT_IN_JS` drift; should never appear in compliant code. |
+| `JS_LINE_COMMENT` | A `//` line comment at file scope. Exists only to host `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift; should never appear in compliant code. |
 | `CSS_CLASS` | A class name found inside a template literal, string literal, `classList.*` call, `className` assignment, or `setAttribute('class', ...)` call. Always `USAGE`. |
 | `HTML_ID` | An `id="..."` attribute in a template/string literal, `el.id = '...'` assignment, or `setAttribute('id', ...)` call (DEFINITION); a literal-string argument to `getElementById` / `querySelector('#...')` (USAGE). |
+
+The seven `JS_IIFE` / `JS_EVAL` / `JS_DOCUMENT_WRITE` / `JS_WINDOW_ASSIGNMENT` / `JS_INLINE_STYLE` / `JS_INLINE_SCRIPT` / `JS_LINE_COMMENT` types exist solely to give every forbidden pattern a queryable row in the catalog. Once the codebase is fully spec-compliant, these types should produce zero rows. Any non-zero count is an action item.
 
 ### 17.3 Scope determination
 
@@ -669,6 +717,7 @@ Every cataloged JS construct gets one row in `dbo.Asset_Registry`. A row's ident
 - **For USAGE rows of functions:** scope is SHARED if the called function is defined in `cc-shared.js`; LOCAL if defined in the same page file. Calls to functions defined in neither place (uncataloged identifiers) do not produce rows.
 - **For CSS_CLASS USAGE rows:** scope is resolved against existing CSS_CLASS DEFINITION rows in the consumer's zone. SHARED if the class has a SHARED CSS DEFINITION in that zone; LOCAL otherwise. (Requires the CSS populator to have run first; the JS populator emits a degraded-output warning if no CSS_CLASS DEFINITION rows are found in the catalog.)
 - **For HTML_ID rows:** always LOCAL (IDs are inherently page-specific).
+- **For forbidden-pattern rows (JS_IIFE, JS_EVAL, etc.):** scope follows the file's overall scope (SHARED for cc-shared.js, LOCAL for page files). The scope value is informational; the drift code is the action item.
 
 ### 17.4 Drift recording
 
@@ -677,26 +726,28 @@ The parser evaluates every row against the spec in this document and records two
 - `drift_codes` — comma-separated list of stable short codes (e.g., `MISSING_FUNCTION_COMMENT,PREFIX_MISMATCH`)
 - `drift_text` — joined human-readable descriptions corresponding to each code
 
-A row may carry zero, one, or many drift codes. Both columns are NULL when the row is fully spec-compliant.
+A row may carry zero, one, or many drift codes. Both columns are NULL when the row is fully spec-compliant. A clean codebase has zero rows with non-NULL drift_codes.
 
 The full code-to-description mapping for JS appears in Section 19.
 
 ### 17.5 Variant model
 
-The variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) discriminate sub-flavors of certain component types. The model mirrors the CSS populator's variant pattern: separate `_VARIANT` component_type values where there is a true "base" form distinguishable from variant expressions, and a single component_type with always-non-NULL `variant_type` where every instance is inherently a variant of something.
+The variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) discriminate sub-flavors of certain component types. Two patterns are in use:
 
-**Why two patterns:** for JS_FUNCTION, JS_CONSTANT, and JS_METHOD, there is a clear base case (regular function declaration; primitive const; regular method) and the variants are alternative ways of expressing the same construct (arrow function; object/array const; static method). Splitting base from variant gives queries a clean way to ask "show me the regular functions" vs. "show me everything function-shaped." For JS_TIMER, JS_IMPORT, and JS_EVENT, there is no base — a timer is always either an interval or a timeout; an import is always one of four shapes; an event binding is always either a listener or a property assign. Splitting these would force an empty base type with no rows.
+- **Base + `_VARIANT` companion type** — used where there is a clear base case and the variants are alternative ways of expressing semantically-distinct constructs. Examples: `JS_FUNCTION` / `JS_FUNCTION_VARIANT`, `JS_CONSTANT` / `JS_CONSTANT_VARIANT`, `JS_HOOK` / `JS_HOOK_VARIANT`, `JS_METHOD` / `JS_METHOD_VARIANT`.
+- **Single component type, always non-NULL `variant_type`** — used where every instance is inherently a variant of something with no natural base. Examples: `JS_TIMER` (always interval / timeout), `JS_IMPORT` (always one of four shapes).
+
+The variant columns capture **semantic differences**, not stylistic alternatives. Where JavaScript permits multiple ways to write the same thing, the spec picks one and forbids the rest (see Section 14). Variants exist for constructs where the difference is real — async vs. sync function, primitive vs. object const, static vs. instance method.
 
 #### JS_FUNCTION (base) and JS_FUNCTION_VARIANT (variant)
 
 | component_type | variant_type | qualifier_1 | qualifier_2 | Source pattern |
 |---|---|---|---|---|
 | `JS_FUNCTION` | NULL | NULL | NULL | `function bsv_load() {}` |
-| `JS_FUNCTION_VARIANT` | `arrow` | NULL | NULL | `const bsv_load = () => {}` |
-| `JS_FUNCTION_VARIANT` | `expression` | NULL | NULL | `const bsv_load = function() {}` |
 | `JS_FUNCTION_VARIANT` | `async` | NULL | NULL | `async function bsv_load() {}` |
-| `JS_FUNCTION_VARIANT` | `async_arrow` | NULL | NULL | `const bsv_load = async () => {}` |
 | `JS_FUNCTION_VARIANT` | `generator` | NULL | NULL | `function* bsv_iter() {}` |
+
+Note: arrow functions and function expressions assigned to a `const` or `var` are forbidden (see Section 6.1) — they emit `FORBIDDEN_ANONYMOUS_FUNCTION` on the const/var row, not new rows of their own. Only `function name()` declarations produce JS_FUNCTION / JS_FUNCTION_VARIANT rows.
 
 #### JS_CONSTANT (base) and JS_CONSTANT_VARIANT (variant)
 
@@ -706,6 +757,16 @@ The variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2
 | `JS_CONSTANT_VARIANT` | `object` | NULL | NULL | `const bsv_CONFIG = { foo: 1 }` |
 | `JS_CONSTANT_VARIANT` | `array` | NULL | NULL | `const bsv_LEVELS = [1, 2, 3]` |
 | `JS_CONSTANT_VARIANT` | `regex` | NULL | NULL | `const bsv_RE = /^foo/` |
+| `JS_CONSTANT_VARIANT` | `expression` | NULL | NULL | `const bsv_FOO = computeFoo()` (any value computed from a function call, calculation, or other expression) |
+
+#### JS_HOOK (base) and JS_HOOK_VARIANT (variant)
+
+| component_type | variant_type | qualifier_1 | qualifier_2 | Source pattern |
+|---|---|---|---|---|
+| `JS_HOOK` | NULL | NULL | NULL | `function onPageRefresh() {}` |
+| `JS_HOOK_VARIANT` | `async` | NULL | NULL | `async function onPageRefresh() {}` |
+
+Hook names are restricted to the recognized set declared in Section 8. A function inside the `PAGE LIFECYCLE HOOKS` banner whose name is not in that set emits `UNKNOWN_HOOK_NAME` regardless of whether it's a base or variant form.
 
 #### JS_METHOD (base) and JS_METHOD_VARIANT (variant)
 
@@ -739,18 +800,9 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 
 `component_name` is the imported binding name. `variant_qualifier_2` carries the source module path so that `WHERE variant_qualifier_2 = 'lodash'` queries are direct.
 
-#### JS_EVENT (no separate type; always carries variant_type)
-
-| component_type | variant_type | qualifier_1 | qualifier_2 | Source pattern |
-|---|---|---|---|---|
-| `JS_EVENT` | `add_listener` | NULL | NULL | `el.addEventListener('click', handler)` |
-| `JS_EVENT` | `property_assign` | NULL | NULL | `el.onclick = handler` |
-
-`component_name` is the event name (`'click'`, `'change'`, etc.).
-
 #### Component types with no variants
 
-`FILE_HEADER`, `COMMENT_BANNER`, `JS_STATE`, `JS_HOOK`, `JS_CLASS` — variant columns are always NULL.
+`FILE_HEADER`, `COMMENT_BANNER`, `JS_STATE`, `JS_CLASS`, `JS_EVENT`, `JS_IIFE`, `JS_EVAL`, `JS_DOCUMENT_WRITE`, `JS_WINDOW_ASSIGNMENT`, `JS_INLINE_STYLE`, `JS_INLINE_SCRIPT`, `JS_LINE_COMMENT` — variant columns are always NULL.
 
 `CSS_CLASS` and `HTML_ID` rows emitted by the JS populator do not carry variant_type values; the variant model on those rows is owned by the CSS populator (for CSS_CLASS) or treated as inapplicable (for HTML_ID).
 
@@ -764,21 +816,28 @@ For each JS file, the parser produces rows of these types:
 |----------|--------|-------|
 | `FILE_HEADER DEFINITION` | The opening file header block | One per file. `purpose_description` carries the header's purpose paragraph. |
 | `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. |
-| `JS_IMPORT DEFINITION` | Each `import` statement or `require` call | One per imported binding. |
-| `JS_CONSTANT DEFINITION` | Each `const` declaration in a `CONSTANTS` section | `purpose_description` = preceding purpose comment. |
+| `JS_IMPORT DEFINITION` | Each `import` statement or `require` call | One per imported binding. `variant_type` carries the import shape; `variant_qualifier_2` carries the source module path. |
+| `JS_CONSTANT DEFINITION` / `JS_CONSTANT_VARIANT DEFINITION` | Each `const` declaration in a `CONSTANTS` section | Base for primitive values; variant for objects, arrays, regexes, and computed expressions. `purpose_description` = preceding purpose comment. |
 | `JS_STATE DEFINITION` | Each `var` declaration in a `STATE` section | `purpose_description` = preceding purpose comment. |
-| `JS_FUNCTION DEFINITION` | Each top-level function / function-expression / arrow-expression in a `FUNCTIONS` section other than `PAGE LIFECYCLE HOOKS` | `signature` = function signature with parameter names. `purpose_description` = preceding purpose comment. |
-| `JS_HOOK DEFINITION` | Each function in the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner | Same shape as `JS_FUNCTION DEFINITION` but distinct component type. |
+| `JS_FUNCTION DEFINITION` / `JS_FUNCTION_VARIANT DEFINITION` | Each top-level `function` declaration in a `FUNCTIONS` section other than `PAGE LIFECYCLE HOOKS` | Base for plain function declarations; variant for async and generator forms. `signature` = function signature with parameter names. `purpose_description` = preceding purpose comment. |
+| `JS_HOOK DEFINITION` / `JS_HOOK_VARIANT DEFINITION` | Each `function` declaration in the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner | Base for sync hooks; variant for async hooks. Same shape as function rows but distinct component types. |
 | `JS_CLASS DEFINITION` | Each top-level class declaration | `purpose_description` = preceding purpose comment. |
-| `JS_METHOD DEFINITION` | Each method inside a class body | `parent_object` = class name. `purpose_description` = preceding purpose comment. |
+| `JS_METHOD DEFINITION` / `JS_METHOD_VARIANT DEFINITION` | Each method inside a class body | Base for regular methods; variant for static, getter, setter, async forms. `parent_function` = class name. `purpose_description` = preceding purpose comment. |
 | `JS_TIMER DEFINITION` | Each `setInterval` / `setTimeout` call assigned to a tracked handle | `component_name` = handle name. `signature` = the timer function's interval/delay expression. |
 | `JS_FUNCTION USAGE` | Each call to a function defined in the same file or in `cc-shared.js` | Calls to unknown identifiers are not cataloged. |
-| `JS_EVENT USAGE` | Each `addEventListener('event', ...)` or `.on<event> = ...` | `component_name` = event name. |
+| `JS_EVENT USAGE` | Each `addEventListener('event', ...)` call | `component_name` = event name. |
 | `CSS_CLASS USAGE` | Each class name in a template literal, classList call, or setAttribute('class', ...) | Resolved to SHARED or LOCAL via the CSS_CLASS DEFINITION map loaded at startup. |
 | `HTML_ID DEFINITION` | Each `id="..."` in a template/string literal or in `setAttribute('id', ...)` or `el.id = '...'` | LOCAL scope. |
 | `HTML_ID USAGE` | Each `getElementById('...')` or `querySelector('#...')` argument | LOCAL scope. |
+| `JS_IIFE DEFINITION` | Each immediately-invoked function expression at file scope | Always carries `FORBIDDEN_IIFE` drift. |
+| `JS_EVAL USAGE` | Each `eval(...)` call | Always carries `FORBIDDEN_EVAL` drift. |
+| `JS_DOCUMENT_WRITE USAGE` | Each `document.write(...)` call | Always carries `FORBIDDEN_DOCUMENT_WRITE` drift. |
+| `JS_WINDOW_ASSIGNMENT DEFINITION` | Each `window.<name> = ...` assignment outside `cc-shared.js` | Always carries `FORBIDDEN_WINDOW_ASSIGNMENT` drift. |
+| `JS_INLINE_STYLE DEFINITION` | Each `<style>` tag found in a JS template/string literal | Always carries `FORBIDDEN_INLINE_STYLE_IN_JS` drift. |
+| `JS_INLINE_SCRIPT DEFINITION` | Each `<script>` tag found in a JS template/string literal | Always carries `FORBIDDEN_INLINE_SCRIPT_IN_JS` drift. |
+| `JS_LINE_COMMENT DEFINITION` | Each `//` line comment at file scope | Always carries `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift. |
 
-Each row may carry one or more drift codes in `drift_codes` (comma-delimited string) when the rule violates a spec requirement.
+Each row may carry one or more drift codes in `drift_codes` (comma-delimited string) when the row violates a spec requirement.
 
 ---
 
@@ -817,23 +876,26 @@ Every drift code the JS parser may emit, with description.
 | `MISSING_STATE_COMMENT` | A `var` declaration in a STATE section is not preceded by a single block comment. |
 | `MISSING_CLASS_COMMENT` | A class declaration is not preceded by a single block comment. |
 | `MISSING_METHOD_COMMENT` | A method inside a class body is not preceded by a single block comment. |
-| `WRONG_DECLARATION_KEYWORD` | A `var` declaration appears in a CONSTANTS section, or a `const` declaration appears in a STATE section. |
+| `WRONG_DECLARATION_KEYWORD` | A `var` declaration appears in a CONSTANTS or FOUNDATION section, or a `const` declaration appears in a STATE section. |
 | `SHADOWS_SHARED_FUNCTION` | A page file defines a function whose name matches a `cc-shared.js` export. Use the shared one. |
+| `UNKNOWN_HOOK_NAME` | A function inside the `PAGE LIFECYCLE HOOKS` banner has a name that is not in the recognized hook set. |
 
 ### 19.4 Forbidden-pattern codes
 
-| Code | Description |
-|---|---|
-| `FORBIDDEN_LET` | A `let` declaration appears anywhere in the file. |
-| `FORBIDDEN_MULTI_DECLARATION` | A single statement declares multiple variables (`var a, b, c`). |
-| `FORBIDDEN_CONDITIONAL_DEFINITION` | A top-level function or class is declared inside an `if`/`while`/`try` block. |
-| `FORBIDDEN_IIFE` | An immediately-invoked function expression appears at file scope. |
-| `FORBIDDEN_EVAL` | A call to `eval(...)` appears in the file. |
-| `FORBIDDEN_DOCUMENT_WRITE` | A call to `document.write(...)` appears in the file. |
-| `FORBIDDEN_WINDOW_ASSIGNMENT` | An assignment to `window.<name>` appears outside `cc-shared.js`. |
-| `FORBIDDEN_INLINE_STYLE_IN_JS` | A template literal or string literal contains a `<style>` element. |
-| `FORBIDDEN_INLINE_SCRIPT_IN_JS` | A template literal or string literal contains a `<script>` element. |
-| `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `//` line comment appears at file scope. |
+| Code | Description | Row host |
+|---|---|---|
+| `FORBIDDEN_LET` | A `let` declaration appears anywhere in the file. | Declaration row |
+| `FORBIDDEN_MULTI_DECLARATION` | A single statement declares multiple variables (`var a, b, c`). | Declaration row |
+| `FORBIDDEN_CONDITIONAL_DEFINITION` | A top-level function or class is declared inside an `if`/`while`/`try` block. | Function/class row |
+| `FORBIDDEN_ANONYMOUS_FUNCTION` | A function or arrow expression has no name and is not passed as a callback argument to another call. See Section 14.1 for the allowed-callback carve-out. | The const/var row that the expression is assigned to |
+| `FORBIDDEN_PROPERTY_ASSIGN_EVENT` | An event handler is bound via `el.on<event> = handler` instead of `addEventListener`. | JS_EVENT row |
+| `FORBIDDEN_IIFE` | An immediately-invoked function expression appears at file scope. | JS_IIFE row at the violation site |
+| `FORBIDDEN_EVAL` | A call to `eval(...)` appears in the file. | JS_EVAL row at the violation site |
+| `FORBIDDEN_DOCUMENT_WRITE` | A call to `document.write(...)` appears in the file. | JS_DOCUMENT_WRITE row at the violation site |
+| `FORBIDDEN_WINDOW_ASSIGNMENT` | An assignment to `window.<name>` appears outside `cc-shared.js`. | JS_WINDOW_ASSIGNMENT row at the violation site |
+| `FORBIDDEN_INLINE_STYLE_IN_JS` | A template literal or string literal contains a `<style>` element. | JS_INLINE_STYLE row at the violation site |
+| `FORBIDDEN_INLINE_SCRIPT_IN_JS` | A template literal or string literal contains a `<script>` element. | JS_INLINE_SCRIPT row at the violation site |
+| `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `//` line comment appears at file scope. | JS_LINE_COMMENT row at the violation site |
 
 ### 19.5 Comment / structure codes
 
@@ -862,8 +924,8 @@ SELECT
 FROM dbo.Asset_Registry local
 INNER JOIN dbo.Asset_Registry shared
     ON  local.component_name = shared.component_name
-    AND local.component_type = 'JS_FUNCTION'
-    AND shared.component_type = 'JS_FUNCTION'
+    AND local.component_type IN ('JS_FUNCTION', 'JS_FUNCTION_VARIANT')
+    AND shared.component_type IN ('JS_FUNCTION', 'JS_FUNCTION_VARIANT')
     AND local.reference_type  = 'DEFINITION'
     AND shared.reference_type = 'DEFINITION'
 WHERE local.file_type    = 'JS'
@@ -919,7 +981,7 @@ SELECT
     SUM(CASE WHEN component_name = 'onEngineEventRaw'         THEN 1 ELSE 0 END) AS has_onEngineEventRaw
 FROM dbo.Asset_Registry
 WHERE file_type      = 'JS'
-  AND component_type = 'JS_HOOK'
+  AND component_type IN ('JS_HOOK', 'JS_HOOK_VARIANT')
   AND reference_type = 'DEFINITION'
 GROUP BY file_name
 ORDER BY file_name;
@@ -938,9 +1000,28 @@ SELECT
 FROM dbo.Asset_Registry
 WHERE file_type      = 'JS'
   AND file_name      = '<filename.js>'
-  AND component_type IN ('JS_FUNCTION', 'JS_HOOK')
+  AND component_type IN ('JS_FUNCTION', 'JS_FUNCTION_VARIANT', 'JS_HOOK', 'JS_HOOK_VARIANT')
   AND reference_type = 'DEFINITION'
 ORDER BY line_start;
+```
+
+### 20.6 Q6 — Forbidden-pattern inventory
+
+List every forbidden-pattern occurrence with line and context. Once the codebase is fully spec-compliant, this query returns zero rows. Any non-zero count is an immediate action item.
+
+```sql
+SELECT
+    file_name,
+    line_start,
+    component_type,
+    drift_codes,
+    drift_text
+FROM dbo.Asset_Registry
+WHERE file_type      = 'JS'
+  AND component_type IN ('JS_IIFE', 'JS_EVAL', 'JS_DOCUMENT_WRITE',
+                         'JS_WINDOW_ASSIGNMENT', 'JS_INLINE_STYLE',
+                         'JS_INLINE_SCRIPT', 'JS_LINE_COMMENT')
+ORDER BY file_name, line_start;
 ```
 
 ---
@@ -949,5 +1030,7 @@ ORDER BY line_start;
 
 | Version | Date | Description |
 |---|---|---|
-| 1.1 | 2026-05-05 | Status backed off from FINALIZED to DRAFT — pending populator validation against refactored files. Section 17 "Catalog model essentials" expanded with the variant model (Section 17.5): three component types gain `_VARIANT` siblings (`JS_FUNCTION_VARIANT`, `JS_CONSTANT_VARIANT`, `JS_METHOD_VARIANT`) for sub-flavors with a true base form; three component types (`JS_IMPORT`, `JS_TIMER`, `JS_EVENT`) keep their single name and always carry a non-NULL `variant_type` because every instance is inherently a variant. Variant qualifier columns mostly NULL on JS rows; `JS_IMPORT` uses `variant_qualifier_2` for the source module path. All four `parent_object` references in the v1.0 spec text remapped: three to `parent_function` (JS_METHOD class containment) and one to `variant_qualifier_2` (JS_IMPORT source path); `parent_object` was dropped from `dbo.Asset_Registry` in the 2026-05-03 schema migration and the v1.0 references were stale. CSS_CLASS USAGE scope determination clarified to note the dependency on the CSS populator running first. Spec body otherwise unchanged. |
+| 1.3 | 2026-05-05 | Section 4.2 rewritten to align the `cc-shared.js` taxonomy with the same structural pattern used by page files: declarations come first, worker code comes last. The previous seven-type list (`IMPORTS → FOUNDATION → CHROME → CONSTANTS → STATE → INITIALIZATION → FUNCTIONS`) placed `CHROME` before `STATE`, requiring CHROME functions to reference STATE variables declared textually below them via JS hoisting. The new four-type taxonomy is `IMPORTS → FOUNDATION → STATE → CHROME`, mirroring the CSS spec's pattern of using disjoint type vocabularies for shared vs. page files. `FOUNDATION` is `cc-shared.js`'s name for what page files call `CONSTANTS`; `CHROME` is its name for `INITIALIZATION` + `FUNCTIONS`; `STATE` keeps the same name and meaning in both. The `WRONG_DECLARATION_KEYWORD` rule (Sections 7 and 19.4) updated to specify that `var` is forbidden in `FOUNDATION` sections (not just `CONSTANTS`); `const` is forbidden in `STATE` sections in either file kind. No populator code change needed — the populator already treats `FOUNDATION` as a constants-style section for keyword purposes; the spec was the lagging description. |
+| 1.2 | 2026-05-05 | Spec tightened to single-form-only rules during populator change-pass design. Where JavaScript permits multiple ways to express a construct, the spec now picks one and forbids the others — no "allowed but discouraged" wording anywhere. **Function definitions:** Section 6 rewritten — only `function name() {}` declarations are permitted; arrow functions and function expressions assigned to a const/var are forbidden and emit `FORBIDDEN_ANONYMOUS_FUNCTION`. The `JS_FUNCTION_VARIANT` table in Section 17.5 trimmed from six rows to two (`async`, `generator`); the previous `arrow`, `expression`, `async_arrow`, and `expression-assigned` variants are no longer reachable from compliant code. **Event bindings:** Section 14 forbids `el.on<event> = handler` style; only `addEventListener` is permitted. New drift code `FORBIDDEN_PROPERTY_ASSIGN_EVENT`. JS_EVENT moved from "always non-NULL variant_type" to "no variants" in Section 17.5. **Anonymous functions:** Section 14.1 carve-out narrowed to "callback arguments to other calls" only. No softening, no other carve-outs. **Forbidden-pattern row emission:** Section 14 and Section 17 establish that every forbidden pattern emits a row — patterns without a natural declaration host get a dedicated component_type (`JS_IIFE`, `JS_EVAL`, `JS_DOCUMENT_WRITE`, `JS_WINDOW_ASSIGNMENT`, `JS_INLINE_STYLE`, `JS_INLINE_SCRIPT`, `JS_LINE_COMMENT`). The catalog reflects every occurrence; the goal is zero rows with non-NULL drift_codes across the codebase. New compliance query Q6 surfaces forbidden-pattern occurrences. **Other additive changes:** `JS_CONSTANT_VARIANT` extended with `expression` row for computed values. New component type `JS_HOOK_VARIANT` for async lifecycle hooks (symmetric with the JS_FUNCTION/JS_FUNCTION_VARIANT split; future-proofs against async hooks). New drift code `UNKNOWN_HOOK_NAME` documented (the populator already emitted it; spec was missing the entry). **Mechanical updates:** Section 17.2 component_type table extended with seven new forbidden-pattern types plus JS_HOOK_VARIANT. Section 18 "What the parser extracts" table updated with all base/variant pairs and forbidden-pattern row types. Section 19.4 drift codes table includes a "Row host" column showing where each forbidden pattern's drift attaches. Compliance queries Q1, Q4, Q5 updated to union base + variant types. Section 16 illustrative example output updated to reflect new variant classifications. |
+| 1.1 | 2026-05-05 | Status backed off from FINALIZED to DRAFT — pending populator validation against refactored files. Section 17 "Catalog model essentials" expanded with the variant model (Section 17.5): three component types gained `_VARIANT` siblings (`JS_FUNCTION_VARIANT`, `JS_CONSTANT_VARIANT`, `JS_METHOD_VARIANT`) for sub-flavors with a true base form; three component types (`JS_IMPORT`, `JS_TIMER`, `JS_EVENT`) kept their single name and always carry a non-NULL `variant_type` because every instance is inherently a variant. Variant qualifier columns mostly NULL on JS rows; `JS_IMPORT` uses `variant_qualifier_2` for the source module path. All four `parent_object` references in the v1.0 spec text remapped: three to `parent_function` (JS_METHOD class containment) and one to `variant_qualifier_2` (JS_IMPORT source path); `parent_object` was dropped from `dbo.Asset_Registry` in the 2026-05-03 schema migration and the v1.0 references were stale. CSS_CLASS USAGE scope determination clarified to note the dependency on the CSS populator running first. Spec body otherwise unchanged. |
 | 1.0 | 2026-05-04 | Initial release. Spec body finalized after design session. Section types defined: `IMPORTS` → `[FOUNDATION → CHROME →]` `CONSTANTS` → `STATE` → `INITIALIZATION` → `FUNCTIONS` (FOUNDATION and CHROME limited to `cc-shared.js`). Page lifecycle hooks live in a fixed-name `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner that must be last. Twelve component types established: FILE_HEADER, COMMENT_BANNER, JS_IMPORT, JS_CONSTANT, JS_STATE, JS_FUNCTION, JS_HOOK, JS_CLASS, JS_METHOD, JS_TIMER, JS_EVENT, plus existing CSS_CLASS USAGE and HTML_ID DEFINITION/USAGE. Page-prefix scoping mandated for all top-level identifiers in page files (`<prefix>_<name>` form, underscore separator), with exemptions for hook names, the `cc-shared.js` file as a whole, and the IMPORTS/INITIALIZATION sections. Mandatory preceding block comment on every cataloged definition. CHANGELOG blocks forbidden. `let` forbidden; `const` for constants and `var` for state. Drift code reference covers ~35 codes across file-level, section-level, definition-level, forbidden-pattern, and comment/structure categories. |
