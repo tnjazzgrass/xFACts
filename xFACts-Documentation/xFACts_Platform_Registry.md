@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-05 04:57:53
+Generated: 2026-05-05 12:37:19
 
 ## Module Registry
 
@@ -100,6 +100,7 @@ Generated: 2026-05-05 04:57:53
 | ControlCenter.Shared | engine-events-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\engine-events-API.ps1 | Shared API Endpoints |
 | ControlCenter.Shared | cc-shared.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\cc-shared.css | Shared styles and classes |
 | ControlCenter.Shared | engine-events.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\engine-events.css | Shared styles and classes |
+| ControlCenter.Shared | cc-shared.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\cc-shared.js | Shared JavaScript functions |
 | ControlCenter.Shared | engine-events.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\engine-events.js | Shared JavaScript functions |
 | DeptOps.ApplicationsIntegration | ApplicationsIntegration-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration-API.ps1 | Applications & Integration CC API endpoints — BDL catalog management |
 | DeptOps.ApplicationsIntegration | applications-integration.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\applications-integration.css | Applications & Integration CC styles |
