@@ -240,6 +240,9 @@ function New-AssetRow {
         [int]$ColumnStart,
         [string]$ComponentType,
         [string]$ComponentName,
+        [string]$VariantType,
+        [string]$VariantQualifier1,
+        [string]$VariantQualifier2,
         [string]$ReferenceType,
         [string]$Scope,
         [string]$SourceFile,
@@ -258,6 +261,9 @@ function New-AssetRow {
         ColumnStart        = $ColumnStart
         ComponentType      = $ComponentType
         ComponentName      = $ComponentName
+        VariantType        = $VariantType
+        VariantQualifier1  = $VariantQualifier1
+        VariantQualifier2  = $VariantQualifier2
         ReferenceType      = $ReferenceType
         Scope              = $Scope
         SourceFile         = $SourceFile
@@ -309,22 +315,6 @@ function Add-DriftCode {
 # ============================================================================
 # TEXT HELPERS
 # ============================================================================
-
-# Format a multi-line string as a single-line representation.
-function Format-SingleLine {
-    param([string]$Text)
-    if ($null -eq $Text) { return $null }
-    $crlf = "`r`n"; $lf = "`n"; $cr = "`r"
-    return ($Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
-}
-
-# Truncate a string for storage in fixed-width columns.
-function Limit-Text {
-    param([string]$Text, [int]$Max)
-    if ($null -eq $Text) { return $null }
-    if ($Text.Length -le $Max) { return $Text }
-    return $Text.Substring(0, $Max)
-}
 
 # Pull raw text from the source string by character range.
 function Get-RangeText {
@@ -474,12 +464,18 @@ function Split-ClassNames {
 # ============================================================================
 
 # Generic AST walker. Visits every node and invokes the visitor scriptblock.
-# The visitor receives ($Node, $ParentChain) where ParentChain is an array
-# of ancestor node types.
+# The visitor receives ($Node, $ParentChain, $ParentNodes) where:
+#   - $ParentChain is an array of ancestor node TYPE strings
+#   - $ParentNodes is an array of ancestor node references (parallel to chain)
+# The parallel $ParentNodes array lets the visitor inspect actual parent
+# nodes (e.g. to find which VariableDeclarator a FunctionExpression is the
+# init of), enabling parent_function tracking and FORBIDDEN_ANONYMOUS_FUNCTION
+# detection.
 function Invoke-AstWalk {
     param(
         $Node,
         [array]$ParentChain = @(),
+        [array]$ParentNodes = @(),
         [Parameter(Mandatory)][scriptblock]$Visitor
     )
 
@@ -487,7 +483,7 @@ function Invoke-AstWalk {
 
     if ($Node -is [System.Array] -or $Node -is [System.Collections.IList]) {
         foreach ($item in $Node) {
-            Invoke-AstWalk -Node $item -ParentChain $ParentChain -Visitor $Visitor
+            Invoke-AstWalk -Node $item -ParentChain $ParentChain -ParentNodes $ParentNodes -Visitor $Visitor
         }
         return
     }
@@ -495,9 +491,10 @@ function Invoke-AstWalk {
     if ($Node -isnot [System.Management.Automation.PSCustomObject]) { return }
     if (-not ($Node.PSObject.Properties.Name -contains 'type')) { return }
 
-    & $Visitor $Node $ParentChain
+    & $Visitor $Node $ParentChain $ParentNodes
 
     $newChain = @($ParentChain + $Node.type)
+    $newNodes = @($ParentNodes + $Node)
     foreach ($prop in $Node.PSObject.Properties) {
         $name = $prop.Name
         if ($name -in @('type','start','end','loc','range','raw','value','name',
@@ -512,7 +509,7 @@ function Invoke-AstWalk {
         if ($val -is [string] -or $val -is [int] -or $val -is [bool] -or $val -is [double]) {
             continue
         }
-        Invoke-AstWalk -Node $val -ParentChain $newChain -Visitor $Visitor
+        Invoke-AstWalk -Node $val -ParentChain $newChain -ParentNodes $newNodes -Visitor $Visitor
     }
 }
 
@@ -615,14 +612,281 @@ function Test-LineInsideFunction {
     return $false
 }
 
-# Find the immediately-enclosing function name for a node, if any. ParentChain
-# carries types only, so we have to walk the actual AST. For now we accept
-# the limitation that we don't have access to the parent nodes during the
-# visitor callback - return null. Future enhancement: thread parent-name
-# context through the walker.
-function Get-EnclosingFunctionName {
-    param([array]$ParentChain)
+# Find the closest enclosing function/method/class name by walking back
+# through the parent-node chain. Returns:
+#   - the function/method declaration's name (FunctionDeclaration.id.name,
+#     MethodDefinition.key.name)
+#   - for FunctionExpression/ArrowFunctionExpression passed as a CallExpression
+#     argument (allowed-callback context), the callee's display name
+#   - $null if no enclosing function context found (USAGE is at module scope)
+#   - '<anonymous>' for unnameable function expressions (these will also
+#     produce FORBIDDEN_ANONYMOUS_FUNCTION drift at the const/var declaration site)
+function Get-CurrentParentName {
+    param([array]$ParentNodes)
+
+    if ($null -eq $ParentNodes -or $ParentNodes.Count -eq 0) { return $null }
+
+    # Walk backwards through parents looking for the closest container
+    for ($i = $ParentNodes.Count - 1; $i -ge 0; $i--) {
+        $p = $ParentNodes[$i]
+        if ($null -eq $p -or $null -eq $p.type) { continue }
+
+        switch ($p.type) {
+            'FunctionDeclaration' {
+                if ($p.id -and $p.id.name) { return $p.id.name }
+                return '<anonymous>'
+            }
+            'MethodDefinition' {
+                if ($p.key -and $p.key.type -eq 'Identifier' -and $p.key.name) {
+                    return $p.key.name
+                }
+                if ($p.kind -eq 'constructor') { return 'constructor' }
+                return '<anonymous>'
+            }
+            'FunctionExpression' {
+                $name = Get-NameForFunctionExpression -ParentNodes $ParentNodes -ExpressionIndex $i
+                return $name
+            }
+            'ArrowFunctionExpression' {
+                $name = Get-NameForFunctionExpression -ParentNodes $ParentNodes -ExpressionIndex $i
+                return $name
+            }
+        }
+    }
+
     return $null
+}
+
+# Resolve the effective name of a FunctionExpression / ArrowFunctionExpression
+# by inspecting its immediate parent context. Under the v1.2 spec, function
+# expressions are only spec-allowed as callback arguments — every other context
+# is a FORBIDDEN_ANONYMOUS_FUNCTION violation. This helper is still called
+# for the violation cases because USAGE rows nested inside the violating
+# expression need *some* parent_function value; we record the const/var name
+# (or `<anonymous>` if none) so the catalog row points at the right place.
+function Get-NameForFunctionExpression {
+    param(
+        [array]$ParentNodes,
+        [int]$ExpressionIndex
+    )
+
+    $parentSlot = $ExpressionIndex - 1
+    if ($parentSlot -lt 0) { return '<anonymous>' }
+    $parent = $ParentNodes[$parentSlot]
+    if ($null -eq $parent) { return '<anonymous>' }
+
+    switch ($parent.type) {
+        'VariableDeclarator' {
+            if ($parent.id -and $parent.id.type -eq 'Identifier' -and $parent.id.name) {
+                return $parent.id.name
+            }
+            return '<anonymous>'
+        }
+        'AssignmentExpression' {
+            $left = $parent.left
+            if ($left -and $left.type -eq 'MemberExpression' -and
+                $left.property -and $left.property.type -eq 'Identifier' -and
+                $left.property.name) {
+                return $left.property.name
+            }
+            if ($left -and $left.type -eq 'Identifier' -and $left.name) {
+                return $left.name
+            }
+            return '<anonymous>'
+        }
+        'Property' {
+            if ($parent.key -and $parent.key.type -eq 'Identifier' -and $parent.key.name) {
+                return $parent.key.name
+            }
+            if ($parent.key -and $parent.key.type -eq 'Literal' -and $parent.key.value) {
+                return [string]$parent.key.value
+            }
+            return '<anonymous>'
+        }
+        'CallExpression' {
+            # Function expression is being passed as a callback argument —
+            # the spec-allowed context. Use the callee's display name.
+            $callee = $parent.callee
+            if ($null -eq $callee) { return '<anonymous>' }
+            if ($callee.type -eq 'Identifier') { return $callee.name }
+            if ($callee.type -eq 'MemberExpression' -and
+                $callee.property -and $callee.property.type -eq 'Identifier') {
+                return ".$($callee.property.name)"
+            }
+            return '<anonymous>'
+        }
+        default {
+            return '<anonymous>'
+        }
+    }
+}
+
+# Determine whether a FunctionExpression / ArrowFunctionExpression is in a
+# spec-allowed position. Under v1.2 there is exactly one allowed context:
+# 'callback'  - argument to a CallExpression or NewExpression (Section 14.1)
+# Everything else returns 'forbidden'.
+function Get-FunctionExpressionContext {
+    param(
+        [array]$ParentNodes,
+        [int]$ExpressionIndex
+    )
+
+    $parentSlot = $ExpressionIndex - 1
+    if ($parentSlot -lt 0) { return 'forbidden' }
+    $parent = $ParentNodes[$parentSlot]
+    if ($null -eq $parent) { return 'forbidden' }
+
+    switch ($parent.type) {
+        'CallExpression' { return 'callback' }
+        'NewExpression'  { return 'callback' }
+        default          { return 'forbidden' }
+    }
+}
+
+# ============================================================================
+# VARIANT SHAPE HELPERS
+# ============================================================================
+# Each helper inspects an AST node (or relevant context) and returns a
+# hashtable describing the row's variant shape:
+#   @{
+#       ComponentType     = 'JS_FUNCTION' | 'JS_FUNCTION_VARIANT' | ...
+#       VariantType       = 'arrow' | 'async' | 'object' | $null
+#       VariantQualifier1 = (reserved; mostly $null)
+#       VariantQualifier2 = (e.g. import source-module-path)
+#   }
+# Per CC_JS_Spec.md v1.2 Section 17.5.
+
+# JS_FUNCTION (base) vs JS_FUNCTION_VARIANT (async/generator).
+# Under v1.2 spec, only FunctionDeclaration nodes produce JS_FUNCTION rows.
+# Function/arrow expressions assigned to const/var are forbidden patterns
+# (FORBIDDEN_ANONYMOUS_FUNCTION on the const/var declaration row instead).
+function Get-FunctionVariantShape {
+    param($Node)
+
+    if ($Node.type -ne 'FunctionDeclaration') {
+        # Not reached in compliant code; defensive fallback.
+        return @{ ComponentType = 'JS_FUNCTION'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+
+    if ($Node.async -eq $true) {
+        return @{ ComponentType = 'JS_FUNCTION_VARIANT'; VariantType = 'async'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+    if ($Node.generator -eq $true) {
+        return @{ ComponentType = 'JS_FUNCTION_VARIANT'; VariantType = 'generator'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+    return @{ ComponentType = 'JS_FUNCTION'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+}
+
+# JS_HOOK (base, sync) vs JS_HOOK_VARIANT (async).
+function Get-HookVariantShape {
+    param($Node)
+
+    if ($Node.async -eq $true) {
+        return @{ ComponentType = 'JS_HOOK_VARIANT'; VariantType = 'async'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+    return @{ ComponentType = 'JS_HOOK'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+}
+
+# JS_CONSTANT (base, primitive) vs JS_CONSTANT_VARIANT (object/array/regex/expression).
+# Input: $InitNode is the declarator's init expression, possibly $null.
+function Get-ConstantVariantShape {
+    param($InitNode)
+
+    if ($null -eq $InitNode) {
+        return @{ ComponentType = 'JS_CONSTANT'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+
+    switch ($InitNode.type) {
+        'Literal' {
+            # Regex literal carries a non-null `regex` property
+            if ($InitNode.PSObject.Properties.Name -contains 'regex' -and $null -ne $InitNode.regex) {
+                return @{ ComponentType = 'JS_CONSTANT_VARIANT'; VariantType = 'regex'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+            }
+            # Primitive literal (string, number, boolean, null)
+            return @{ ComponentType = 'JS_CONSTANT'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+        }
+        'TemplateLiteral' {
+            # Template literal with no expressions is a string primitive
+            if ($InitNode.expressions -and $InitNode.expressions.Count -gt 0) {
+                return @{ ComponentType = 'JS_CONSTANT_VARIANT'; VariantType = 'expression'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+            }
+            return @{ ComponentType = 'JS_CONSTANT'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+        }
+        'UnaryExpression' {
+            # Negative literal: -1, -3.14
+            if ($InitNode.argument -and $InitNode.argument.type -eq 'Literal') {
+                return @{ ComponentType = 'JS_CONSTANT'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+            }
+            return @{ ComponentType = 'JS_CONSTANT_VARIANT'; VariantType = 'expression'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+        }
+        'Identifier' {
+            # const X = SOMEOTHER_CONST - a reference is a computed expression
+            return @{ ComponentType = 'JS_CONSTANT_VARIANT'; VariantType = 'expression'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+        }
+        'ObjectExpression' {
+            return @{ ComponentType = 'JS_CONSTANT_VARIANT'; VariantType = 'object'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+        }
+        'ArrayExpression' {
+            return @{ ComponentType = 'JS_CONSTANT_VARIANT'; VariantType = 'array'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+        }
+        default {
+            # CallExpression, BinaryExpression, NewExpression, ConditionalExpression,
+            # MemberExpression, FunctionExpression, ArrowFunctionExpression, etc.
+            # The function/arrow expression cases also trigger FORBIDDEN_ANONYMOUS_FUNCTION
+            # at the call site; the row classification is still 'expression' since
+            # that's what the AST actually shows.
+            return @{ ComponentType = 'JS_CONSTANT_VARIANT'; VariantType = 'expression'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+        }
+    }
+}
+
+# JS_METHOD (base, regular method) vs JS_METHOD_VARIANT (static/getter/setter/async).
+function Get-MethodVariantShape {
+    param($Node)
+
+    if ($Node.static -eq $true) {
+        return @{ ComponentType = 'JS_METHOD_VARIANT'; VariantType = 'static'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+    if ($Node.kind -eq 'get') {
+        return @{ ComponentType = 'JS_METHOD_VARIANT'; VariantType = 'getter'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+    if ($Node.kind -eq 'set') {
+        return @{ ComponentType = 'JS_METHOD_VARIANT'; VariantType = 'setter'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+    if ($Node.value -and $Node.value.async -eq $true) {
+        return @{ ComponentType = 'JS_METHOD_VARIANT'; VariantType = 'async'; VariantQualifier1 = $null; VariantQualifier2 = $null }
+    }
+    return @{ ComponentType = 'JS_METHOD'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+}
+
+# JS_TIMER - always a variant (no base form).
+# Input: $CalleeName is 'setInterval' or 'setTimeout'.
+function Get-TimerVariantShape {
+    param([string]$CalleeName)
+
+    $vt = if ($CalleeName -eq 'setInterval') { 'interval' } else { 'timeout' }
+    return @{ ComponentType = 'JS_TIMER'; VariantType = $vt; VariantQualifier1 = $null; VariantQualifier2 = $null }
+}
+
+# JS_IMPORT - always a variant (no base form).
+# Inputs: $Specifier is an ImportSpecifier / ImportDefaultSpecifier /
+# ImportNamespaceSpecifier; $SourcePath is the source module path string.
+function Get-ImportVariantShape {
+    param($Specifier, [string]$SourcePath)
+
+    $vt = switch ($Specifier.type) {
+        'ImportDefaultSpecifier'   { 'default' }
+        'ImportNamespaceSpecifier' { 'namespace' }
+        'ImportSpecifier'          { 'named' }
+        default                    { 'named' }
+    }
+    return @{ ComponentType = 'JS_IMPORT'; VariantType = $vt; VariantQualifier1 = $null; VariantQualifier2 = $SourcePath }
+}
+
+# JS_IMPORT for require() calls (CommonJS form).
+function Get-RequireVariantShape {
+    param([string]$SourcePath)
+    return @{ ComponentType = 'JS_IMPORT'; VariantType = 'require'; VariantQualifier1 = $null; VariantQualifier2 = $SourcePath }
 }
 
 # ============================================================================
@@ -1382,6 +1646,16 @@ Write-Log ("  Shared classes:   {0}" -f $sharedClasses.Count)
 # ============================================================================
 # LOAD CSS_CLASS DEFINITIONS FROM Asset_Registry FOR SCOPE RESOLUTION
 # ============================================================================
+# Outcome of this load is captured in $cssPreLoadState so the verification
+# pass at the end of the run can warn the user when CSS-class scope was
+# resolved against an empty or missing source. Possible values:
+#   'OK'           - the query returned rows
+#   'EMPTY'        - the query succeeded but returned zero rows; this means
+#                    the CSS populator hasn't been run yet, and every
+#                    CSS_CLASS USAGE row will be stamped scope='LOCAL' /
+#                    source_file='<undefined>'
+#   'QUERY_FAILED' - the query returned $null (the helper logs the SQL
+#                    error separately); same downstream effect as EMPTY.
 
 Write-Log "Loading existing CSS_CLASS DEFINITION rows for scope resolution..."
 
@@ -1395,29 +1669,44 @@ WHERE component_type = 'CSS_CLASS'
 
 $sharedClassMap = @{}
 $localClassMap  = @{}
+$cssPreLoadState = 'QUERY_FAILED'
 
 if ($null -ne $cssDefs) {
-    foreach ($d in @($cssDefs)) {
-        $cn = $d.component_name
-        if ([string]::IsNullOrEmpty($cn)) { continue }
-        if ($d.scope -eq 'SHARED') {
-            if (-not $sharedClassMap.ContainsKey($cn)) {
-                $sharedClassMap[$cn] = $d.file_name
+    $defArray = @($cssDefs)
+    if ($defArray.Count -eq 0) {
+        $cssPreLoadState = 'EMPTY'
+    }
+    else {
+        $cssPreLoadState = 'OK'
+        foreach ($d in $defArray) {
+            $cn = $d.component_name
+            if ([string]::IsNullOrEmpty($cn)) { continue }
+            if ($d.scope -eq 'SHARED') {
+                if (-not $sharedClassMap.ContainsKey($cn)) {
+                    $sharedClassMap[$cn] = $d.file_name
+                }
             }
-        }
-        else {
-            if (-not $localClassMap.ContainsKey($cn)) {
-                $localClassMap[$cn] = $d.file_name
+            else {
+                if (-not $localClassMap.ContainsKey($cn)) {
+                    $localClassMap[$cn] = $d.file_name
+                }
             }
         }
     }
 }
-else {
-    Write-Log "Could not load CSS_CLASS DEFINITION rows. Class scope resolution will mark everything '<undefined>'." "WARN"
-}
 
-Write-Log ("  Shared CSS classes:     {0}" -f $sharedClassMap.Count)
-Write-Log ("  Local-only CSS classes: {0}" -f $localClassMap.Count)
+switch ($cssPreLoadState) {
+    'OK' {
+        Write-Log ("  Shared CSS classes:     {0}" -f $sharedClassMap.Count)
+        Write-Log ("  Local-only CSS classes: {0}" -f $localClassMap.Count)
+    }
+    'EMPTY' {
+        Write-Log "CSS_CLASS DEFINITION query returned zero rows. Class scope resolution will mark everything '<undefined>'." "WARN"
+    }
+    'QUERY_FAILED' {
+        Write-Log "Could not load CSS_CLASS DEFINITION rows. Class scope resolution will mark everything '<undefined>'." "WARN"
+    }
+}
 
 # ============================================================================
 # LOAD Object_Registry FOR object_registry_id RESOLUTION
@@ -1600,12 +1889,13 @@ function Add-ClassUsageRow {
     $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
         -LineEnd $LineStart -ColumnStart $ColumnStart `
         -ComponentType 'CSS_CLASS' -ComponentName $ClassName `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
         -ReferenceType 'USAGE' `
         -Scope $scope -SourceFile $sourceFile `
         -SourceSection $sourceSection `
-        -Signature (Limit-Text $Signature 4000) `
+        -Signature $Signature `
         -ParentFunction $ParentFunction `
-        -RawText (Limit-Text $RawText 4000) `
+        -RawText $RawText `
         -PurposeDescription $null
     $script:rows.Add($row)
     return $row
@@ -1636,12 +1926,13 @@ function Add-HtmlIdRow {
     $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
         -LineEnd $LineStart -ColumnStart $ColumnStart `
         -ComponentType 'HTML_ID' -ComponentName $IdName `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
         -ReferenceType $ReferenceType `
         -Scope $scope -SourceFile $sourceFile `
         -SourceSection $sourceSection `
-        -Signature (Limit-Text $Signature 4000) `
+        -Signature $Signature `
         -ParentFunction $ParentFunction `
-        -RawText (Limit-Text $RawText 4000) `
+        -RawText $RawText `
         -PurposeDescription $null
     $script:rows.Add($row)
     return $row
@@ -1689,6 +1980,9 @@ function Add-JsDefinitionRow {
     param(
         [string]$ComponentType,
         [string]$ComponentName,
+        [string]$VariantType,
+        [string]$VariantQualifier1,
+        [string]$VariantQualifier2,
         [int]$LineStart,
         [int]$LineEnd,
         [int]$ColumnStart,
@@ -1712,13 +2006,14 @@ function Add-JsDefinitionRow {
     $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
         -LineEnd $LineEnd -ColumnStart $ColumnStart `
         -ComponentType $ComponentType -ComponentName $ComponentName `
+        -VariantType $VariantType -VariantQualifier1 $VariantQualifier1 -VariantQualifier2 $VariantQualifier2 `
         -ReferenceType 'DEFINITION' `
         -Scope $scope -SourceFile $sourceFile `
         -SourceSection $sourceSection `
-        -Signature (Limit-Text $Signature 4000) `
+        -Signature $Signature `
         -ParentFunction $ParentFunction `
-        -RawText (Limit-Text $RawText 4000) `
-        -PurposeDescription (Limit-Text $PurposeDescription 4000)
+        -RawText $RawText `
+        -PurposeDescription $PurposeDescription
     $script:rows.Add($row)
     return $row
 }
@@ -1759,17 +2054,23 @@ function Add-JsFunctionUsageRow {
     $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
         -LineEnd $LineStart -ColumnStart $ColumnStart `
         -ComponentType 'JS_FUNCTION' -ComponentName $FunctionName `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
         -ReferenceType 'USAGE' `
         -Scope $scope -SourceFile $sourceFile `
         -SourceSection $sourceSection `
-        -Signature (Limit-Text $Signature 4000) `
+        -Signature $Signature `
         -ParentFunction $ParentFunction `
-        -RawText (Limit-Text $RawText 4000) `
+        -RawText $RawText `
         -PurposeDescription $null
     $script:rows.Add($row)
     return $row
 }
 
+# JS_EVENT row emitter. Under v1.2 spec, JS_EVENT has no variants — both
+# `addEventListener` and the forbidden `el.onX = handler` style produce
+# rows of the same shape. The $IsForbidden flag attaches
+# FORBIDDEN_PROPERTY_ASSIGN_EVENT drift when the row originated from the
+# property-assign style.
 function Add-JsEventRow {
     param(
         [string]$EventName,
@@ -1777,7 +2078,8 @@ function Add-JsEventRow {
         [int]$ColumnStart,
         [string]$Signature,
         [string]$ParentFunction,
-        [string]$RawText
+        [string]$RawText,
+        [bool]$IsForbidden = $false
     )
 
     if ([string]::IsNullOrWhiteSpace($EventName)) { return $null }
@@ -1794,25 +2096,286 @@ function Add-JsEventRow {
     $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
         -LineEnd $LineStart -ColumnStart $ColumnStart `
         -ComponentType 'JS_EVENT' -ComponentName $EventName `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
         -ReferenceType 'USAGE' `
         -Scope $scope -SourceFile $sourceFile `
         -SourceSection $sourceSection `
-        -Signature (Limit-Text $Signature 4000) `
+        -Signature $Signature `
         -ParentFunction $ParentFunction `
-        -RawText (Limit-Text $RawText 4000) `
+        -RawText $RawText `
         -PurposeDescription $null
     $script:rows.Add($row)
+
+    if ($IsForbidden) {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_PROPERTY_ASSIGN_EVENT' `
+            -Text "Event '$EventName' bound via property-assign style at line $LineStart; spec requires addEventListener."
+    }
+
+    return $row
+}
+
+# ----- Forbidden-pattern row emitters ---------------------------------------
+# Each forbidden pattern that has no natural declaration host gets its own
+# component_type and a dedicated row at the violation site, with the
+# corresponding FORBIDDEN_* drift attached. Goal: every violation is visible
+# in the row set with no aggregation needed.
+
+# Add a JS_IIFE row at an immediately-invoked function expression site.
+function Add-JsIifeRow {
+    param(
+        [int]$LineStart,
+        [int]$LineEnd,
+        [int]$ColumnStart,
+        [string]$Signature,
+        [string]$RawText
+    )
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_IIFE|<iife>|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $section = Get-SectionForLine -Sections $script:CurrentSections -Line $LineStart
+    $sourceSection = if ($section) { $section.FullTitle } else { $null }
+
+    $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
+        -LineEnd $LineEnd -ColumnStart $ColumnStart `
+        -ComponentType 'JS_IIFE' -ComponentName '<iife>' `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
+        -ReferenceType 'DEFINITION' `
+        -Scope $scope -SourceFile $script:CurrentFile `
+        -SourceSection $sourceSection `
+        -Signature $Signature `
+        -ParentFunction $null `
+        -RawText $RawText `
+        -PurposeDescription $null
+    $script:rows.Add($row)
+
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_IIFE' `
+        -Text "IIFE at file scope, line $LineStart."
+    return $row
+}
+
+# Add a JS_EVAL row at an eval(...) call site.
+function Add-JsEvalRow {
+    param(
+        [int]$LineStart,
+        [int]$LineEnd,
+        [int]$ColumnStart,
+        [string]$Signature,
+        [string]$ParentFunction,
+        [string]$RawText
+    )
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_EVAL|<eval>|USAGE|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $section = Get-SectionForLine -Sections $script:CurrentSections -Line $LineStart
+    $sourceSection = if ($section) { $section.FullTitle } else { $null }
+
+    $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
+        -LineEnd $LineEnd -ColumnStart $ColumnStart `
+        -ComponentType 'JS_EVAL' -ComponentName '<eval>' `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
+        -ReferenceType 'USAGE' `
+        -Scope $scope -SourceFile $script:CurrentFile `
+        -SourceSection $sourceSection `
+        -Signature $Signature `
+        -ParentFunction $ParentFunction `
+        -RawText $RawText `
+        -PurposeDescription $null
+    $script:rows.Add($row)
+
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_EVAL' `
+        -Text "eval() called at line $LineStart."
+    return $row
+}
+
+# Add a JS_DOCUMENT_WRITE row at a document.write(...) call site.
+function Add-JsDocumentWriteRow {
+    param(
+        [int]$LineStart,
+        [int]$LineEnd,
+        [int]$ColumnStart,
+        [string]$Signature,
+        [string]$ParentFunction,
+        [string]$RawText
+    )
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_DOCUMENT_WRITE|<document.write>|USAGE|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $section = Get-SectionForLine -Sections $script:CurrentSections -Line $LineStart
+    $sourceSection = if ($section) { $section.FullTitle } else { $null }
+
+    $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
+        -LineEnd $LineEnd -ColumnStart $ColumnStart `
+        -ComponentType 'JS_DOCUMENT_WRITE' -ComponentName '<document.write>' `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
+        -ReferenceType 'USAGE' `
+        -Scope $scope -SourceFile $script:CurrentFile `
+        -SourceSection $sourceSection `
+        -Signature $Signature `
+        -ParentFunction $ParentFunction `
+        -RawText $RawText `
+        -PurposeDescription $null
+    $script:rows.Add($row)
+
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_DOCUMENT_WRITE' `
+        -Text "document.write() called at line $LineStart."
+    return $row
+}
+
+# Add a JS_WINDOW_ASSIGNMENT row for `window.<name> = ...` outside cc-shared.js.
+function Add-JsWindowAssignmentRow {
+    param(
+        [string]$AssignedName,
+        [int]$LineStart,
+        [int]$LineEnd,
+        [int]$ColumnStart,
+        [string]$Signature,
+        [string]$ParentFunction,
+        [string]$RawText
+    )
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $componentName = "window.$AssignedName"
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_WINDOW_ASSIGNMENT|$componentName|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $section = Get-SectionForLine -Sections $script:CurrentSections -Line $LineStart
+    $sourceSection = if ($section) { $section.FullTitle } else { $null }
+
+    $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
+        -LineEnd $LineEnd -ColumnStart $ColumnStart `
+        -ComponentType 'JS_WINDOW_ASSIGNMENT' -ComponentName $componentName `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
+        -ReferenceType 'DEFINITION' `
+        -Scope $scope -SourceFile $script:CurrentFile `
+        -SourceSection $sourceSection `
+        -Signature $Signature `
+        -ParentFunction $ParentFunction `
+        -RawText $RawText `
+        -PurposeDescription $null
+    $script:rows.Add($row)
+
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_WINDOW_ASSIGNMENT' `
+        -Text "Assignment to $componentName at line $LineStart; outside cc-shared.js."
+    return $row
+}
+
+# Add a JS_INLINE_STYLE row when a JS template/string literal contains <style>.
+function Add-JsInlineStyleRow {
+    param(
+        [int]$LineStart,
+        [int]$LineEnd,
+        [int]$ColumnStart,
+        [string]$Signature,
+        [string]$ParentFunction,
+        [string]$RawText
+    )
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_INLINE_STYLE|<style>|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $section = Get-SectionForLine -Sections $script:CurrentSections -Line $LineStart
+    $sourceSection = if ($section) { $section.FullTitle } else { $null }
+
+    $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
+        -LineEnd $LineEnd -ColumnStart $ColumnStart `
+        -ComponentType 'JS_INLINE_STYLE' -ComponentName '<style>' `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
+        -ReferenceType 'DEFINITION' `
+        -Scope $scope -SourceFile $script:CurrentFile `
+        -SourceSection $sourceSection `
+        -Signature $Signature `
+        -ParentFunction $ParentFunction `
+        -RawText $RawText `
+        -PurposeDescription $null
+    $script:rows.Add($row)
+
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_INLINE_STYLE_IN_JS' `
+        -Text "Template/string literal contains <style> at line $LineStart."
+    return $row
+}
+
+# Add a JS_INLINE_SCRIPT row when a JS template/string literal contains <script>.
+function Add-JsInlineScriptRow {
+    param(
+        [int]$LineStart,
+        [int]$LineEnd,
+        [int]$ColumnStart,
+        [string]$Signature,
+        [string]$ParentFunction,
+        [string]$RawText
+    )
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_INLINE_SCRIPT|<script>|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $section = Get-SectionForLine -Sections $script:CurrentSections -Line $LineStart
+    $sourceSection = if ($section) { $section.FullTitle } else { $null }
+
+    $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
+        -LineEnd $LineEnd -ColumnStart $ColumnStart `
+        -ComponentType 'JS_INLINE_SCRIPT' -ComponentName '<script>' `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
+        -ReferenceType 'DEFINITION' `
+        -Scope $scope -SourceFile $script:CurrentFile `
+        -SourceSection $sourceSection `
+        -Signature $Signature `
+        -ParentFunction $ParentFunction `
+        -RawText $RawText `
+        -PurposeDescription $null
+    $script:rows.Add($row)
+
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_INLINE_SCRIPT_IN_JS' `
+        -Text "Template/string literal contains <script> at line $LineStart."
+    return $row
+}
+
+# Add a JS_LINE_COMMENT row at a file-scope `//` comment site.
+function Add-JsLineCommentRow {
+    param(
+        [int]$LineStart,
+        [int]$ColumnStart,
+        [string]$RawText
+    )
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_LINE_COMMENT|<line-comment>|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $row = New-AssetRow -FileName $script:CurrentFile -LineStart $LineStart `
+        -LineEnd $LineStart -ColumnStart $ColumnStart `
+        -ComponentType 'JS_LINE_COMMENT' -ComponentName '<line-comment>' `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
+        -ReferenceType 'DEFINITION' `
+        -Scope $scope -SourceFile $script:CurrentFile `
+        -SourceSection $null `
+        -Signature $RawText `
+        -ParentFunction $null `
+        -RawText $RawText `
+        -PurposeDescription $null
+    $script:rows.Add($row)
+
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_FILE_SCOPE_LINE_COMMENT' `
+        -Text "Line comment at file scope, line $LineStart."
     return $row
 }
 # ============================================================================
 # PASS 2 - THE VISITOR
 # ============================================================================
 # Walks each file's AST emitting rows and applying drift codes inline. The
-# visitor receives ($Node, $ParentChain) on every visit. State is read from
-# $script:Current* variables set up by the per-file orchestration loop.
+# visitor receives ($Node, $ParentChain, $ParentNodes) on every visit. State
+# is read from $script:Current* variables set up by the per-file orchestration
+# loop.
 
 $visitor = {
-    param($Node, $ParentChain)
+    param($Node, $ParentChain, $ParentNodes)
 
     if ($null -eq $Node -or $null -eq $Node.type) { return }
 
@@ -1822,6 +2385,10 @@ $visitor = {
 
     # The section this node lives in
     $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+
+    # The closest enclosing function/method/class name for parent_function
+    # stamping. $null when the node is at module scope.
+    $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
 
     switch ($Node.type) {
 
@@ -1843,8 +2410,10 @@ $visitor = {
 
             $fnName = $Node.id.name
 
-            # Build signature
-            $sig = "function $fnName("
+            # Build signature - uses async/generator keyword as appropriate
+            $sig = if ($Node.async -eq $true) { "async function $fnName(" }
+                   elseif ($Node.generator -eq $true) { "function* $fnName(" }
+                   else { "function $fnName(" }
             if ($Node.params) {
                 $paramNames = @()
                 foreach ($p in $Node.params) {
@@ -1857,18 +2426,27 @@ $visitor = {
             }
             $sig += ')'
 
-            # Determine component type: hooks live in the PAGE LIFECYCLE HOOKS banner
+            # Determine component type and variant: hooks live in the PAGE
+            # LIFECYCLE HOOKS banner (use Get-HookVariantShape); functions
+            # elsewhere use Get-FunctionVariantShape.
             $isInHooksBanner = ($section -and
                                  $section.TypeName -eq 'FUNCTIONS' -and
                                  $section.BannerName -eq $script:HooksBannerName)
-            $componentType = if ($isInHooksBanner) { 'JS_HOOK' } else { 'JS_FUNCTION' }
+            $shape = if ($isInHooksBanner) {
+                Get-HookVariantShape -Node $Node
+            } else {
+                Get-FunctionVariantShape -Node $Node
+            }
 
             # Capture preceding comment for purpose_description
             $rawComment = Get-PrecedingBlockComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $line
             $purpose = ConvertTo-CleanCommentText -CommentText $rawComment
 
-            $row = Add-JsDefinitionRow -ComponentType $componentType `
+            $row = Add-JsDefinitionRow -ComponentType $shape.ComponentType `
                 -ComponentName $fnName `
+                -VariantType $shape.VariantType `
+                -VariantQualifier1 $shape.VariantQualifier1 `
+                -VariantQualifier2 $shape.VariantQualifier2 `
                 -LineStart $line -LineEnd $endLine -ColumnStart $col `
                 -Signature $sig `
                 -ParentFunction $null `
@@ -1898,8 +2476,9 @@ $visitor = {
                         -Text "Function '$fnName' lives in '$($section.FullTitle)'; expected a FUNCTIONS section."
                 }
 
-                # Prefix check
-                if ($componentType -eq 'JS_FUNCTION' -and -not $section.IsPrefixNone) {
+                # Prefix check (skip for hooks, which use fixed names)
+                $isHook = ($shape.ComponentType -eq 'JS_HOOK' -or $shape.ComponentType -eq 'JS_HOOK_VARIANT')
+                if (-not $isHook -and -not $section.IsPrefixNone) {
                     $expectedPrefix = $section.PrefixValue
                     if (-not [string]::IsNullOrEmpty($expectedPrefix)) {
                         $expected = "$expectedPrefix" + "_"
@@ -1909,7 +2488,7 @@ $visitor = {
                         }
                     }
                 }
-                elseif ($componentType -eq 'JS_HOOK') {
+                elseif ($isHook) {
                     # Hook names must match the recognized set
                     if ($script:RecognizedHookNames -notcontains $fnName) {
                         Add-DriftCode -Row $row -Code 'UNKNOWN_HOOK_NAME' `
@@ -1930,22 +2509,10 @@ $visitor = {
             if (-not $isTopLevel) { return }
 
             # Multi-declaration check (var a, b, c)
-            if ($Node.declarations -and $Node.declarations.Count -gt 1) {
-                # Apply MULTI_DECLARATION drift to the first declaration's row;
-                # the row builder will see this via the loop below and tag it.
-                $isMulti = $true
-            }
-            else {
-                $isMulti = $false
-            }
+            $isMulti = ($Node.declarations -and $Node.declarations.Count -gt 1)
 
             # Forbidden 'let'
-            if ($Node.kind -eq 'let') {
-                $isLet = $true
-            }
-            else {
-                $isLet = $false
-            }
+            $isLet = ($Node.kind -eq 'let')
 
             foreach ($decl in $Node.declarations) {
                 if (-not $decl.id -or $decl.id.type -ne 'Identifier') { continue }
@@ -1956,48 +2523,9 @@ $visitor = {
                 $declEnd  = Get-NodeEndLine -Node $decl
                 $init     = $decl.init
 
-                # Function/arrow expressions assigned to const/var -> JS_FUNCTION
-                if ($init -and ($init.type -eq 'FunctionExpression' -or $init.type -eq 'ArrowFunctionExpression')) {
-                    $arrowMarker = if ($init.type -eq 'ArrowFunctionExpression') { ' => ' } else { ' = function' }
-                    $sig = "$($Node.kind) $declName$arrowMarker(...)"
-                    $rawComment = Get-PrecedingBlockComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $declLine
-                    $purpose = ConvertTo-CleanCommentText -CommentText $rawComment
-
-                    $isInHooksBanner = ($section -and
-                                         $section.TypeName -eq 'FUNCTIONS' -and
-                                         $section.BannerName -eq $script:HooksBannerName)
-                    $componentType = if ($isInHooksBanner) { 'JS_HOOK' } else { 'JS_FUNCTION' }
-
-                    $row = Add-JsDefinitionRow -ComponentType $componentType `
-                        -ComponentName $declName `
-                        -LineStart $declLine -LineEnd $declEnd -ColumnStart $declCol `
-                        -Signature $sig -ParentFunction $null -RawText $sig `
-                        -PurposeDescription $purpose `
-                        -Section $section
-                    if ($row) {
-                        if ($isLet)   { Add-DriftCode -Row $row -Code 'FORBIDDEN_LET' -Text "Function '$declName' is declared with 'let'; spec mandates 'const' or 'var'." }
-                        if ($isMulti) { Add-DriftCode -Row $row -Code 'FORBIDDEN_MULTI_DECLARATION' -Text "Multiple declarations on a single statement; spec mandates one per statement." }
-                        if ([string]::IsNullOrEmpty($purpose)) {
-                            Add-DriftCode -Row $row -Code 'MISSING_FUNCTION_COMMENT' -Text "Function '$declName' has no preceding purpose comment."
-                        }
-                        if ($null -eq $section) {
-                            Add-DriftCode -Row $row -Code 'MISSING_SECTION_BANNER' -Text "Function '$declName' appears outside any section banner."
-                        }
-                        elseif (-not $section.IsPrefixNone -and $componentType -eq 'JS_FUNCTION') {
-                            $expectedPrefix = $section.PrefixValue
-                            if (-not [string]::IsNullOrEmpty($expectedPrefix)) {
-                                $expected = "$expectedPrefix" + "_"
-                                if (-not $declName.StartsWith($expected)) {
-                                    Add-DriftCode -Row $row -Code 'PREFIX_MISMATCH' `
-                                        -Text "Function '$declName' does not start with section prefix '$expected'."
-                                }
-                            }
-                        }
-                    }
-                    continue
-                }
-
-                # Class expressions assigned to const/var -> JS_CLASS
+                # ClassExpression assigned to const/var -> JS_CLASS row.
+                # This is permitted (not flagged) since classes have no
+                # base/anonymous distinction analogous to functions.
                 if ($init -and $init.type -eq 'ClassExpression') {
                     $sig = "$($Node.kind) $declName = class"
                     $rawComment = Get-PrecedingBlockComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $declLine
@@ -2005,6 +2533,7 @@ $visitor = {
 
                     $row = Add-JsDefinitionRow -ComponentType 'JS_CLASS' `
                         -ComponentName $declName `
+                        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
                         -LineStart $declLine -LineEnd $declEnd -ColumnStart $declCol `
                         -Signature $sig -ParentFunction $null -RawText $sig `
                         -PurposeDescription $purpose `
@@ -2019,34 +2548,59 @@ $visitor = {
                     continue
                 }
 
-                # Plain const/var -> JS_CONSTANT or JS_STATE based on section + kind
+                # All other declarations (including the now-forbidden cases of
+                # function/arrow expressions assigned to const/var) classify
+                # as JS_CONSTANT/JS_CONSTANT_VARIANT or JS_STATE based on the
+                # section type and declaration kind. The shape helper picks
+                # variant_type from the init expression's AST shape; for
+                # function/arrow expressions this returns 'expression'.
+                # Forbidden patterns get drift attached after row emission.
+                $isFunctionInit = ($init -and ($init.type -eq 'FunctionExpression' -or $init.type -eq 'ArrowFunctionExpression'))
+
                 $isConstantSection = ($section -and ($section.TypeName -eq 'CONSTANTS' -or $section.TypeName -eq 'FOUNDATION'))
                 $isStateSection    = ($section -and $section.TypeName -eq 'STATE')
 
                 # Component type derivation: section-context first, fall back to kind
-                $componentType = $null
-                if ($isConstantSection)   { $componentType = 'JS_CONSTANT' }
-                elseif ($isStateSection)  { $componentType = 'JS_STATE'    }
-                elseif ($Node.kind -eq 'const') { $componentType = 'JS_CONSTANT' }
-                else                       { $componentType = 'JS_STATE'    }
-
-                # Build signature
-                $valSig = $null
-                if ($init -and $init.type -eq 'Literal') {
-                    $valSig = "$($Node.kind) $declName = $($init.raw)"
+                $isStateComponent = $false
+                if ($isStateSection) {
+                    $isStateComponent = $true
                 }
-                elseif ($init) {
-                    $valSig = "$($Node.kind) $declName = ..."
+                elseif ($isConstantSection) {
+                    $isStateComponent = $false
+                }
+                elseif ($Node.kind -eq 'var') {
+                    $isStateComponent = $true
                 }
                 else {
-                    $valSig = "$($Node.kind) $declName"
+                    $isStateComponent = $false
+                }
+
+                if ($isStateComponent) {
+                    $shape = @{ ComponentType = 'JS_STATE'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
+                }
+                else {
+                    $shape = Get-ConstantVariantShape -InitNode $init
+                }
+
+                # Build signature
+                $valSig = if ($init -and $init.type -eq 'Literal') {
+                    "$($Node.kind) $declName = $($init.raw)"
+                }
+                elseif ($init) {
+                    "$($Node.kind) $declName = ..."
+                }
+                else {
+                    "$($Node.kind) $declName"
                 }
 
                 $rawComment = Get-PrecedingBlockComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $declLine
                 $purpose = ConvertTo-CleanCommentText -CommentText $rawComment
 
-                $row = Add-JsDefinitionRow -ComponentType $componentType `
+                $row = Add-JsDefinitionRow -ComponentType $shape.ComponentType `
                     -ComponentName $declName `
+                    -VariantType $shape.VariantType `
+                    -VariantQualifier1 $shape.VariantQualifier1 `
+                    -VariantQualifier2 $shape.VariantQualifier2 `
                     -LineStart $declLine -LineEnd $declEnd -ColumnStart $declCol `
                     -Signature $valSig -ParentFunction $null -RawText $valSig `
                     -PurposeDescription $purpose `
@@ -2056,6 +2610,13 @@ $visitor = {
                 # Drift checks
                 if ($isLet)   { Add-DriftCode -Row $row -Code 'FORBIDDEN_LET' -Text "'$declName' is declared with 'let'." }
                 if ($isMulti) { Add-DriftCode -Row $row -Code 'FORBIDDEN_MULTI_DECLARATION' -Text "Multiple declarations on one statement." }
+
+                # Forbidden function/arrow expression assigned to const/var
+                if ($isFunctionInit) {
+                    $shapeWord = if ($init.type -eq 'ArrowFunctionExpression') { 'arrow function' } else { 'function expression' }
+                    Add-DriftCode -Row $row -Code 'FORBIDDEN_ANONYMOUS_FUNCTION' `
+                        -Text "$declName is assigned a $shapeWord; spec mandates the 'function name() {}' form for function definitions."
+                }
 
                 # Section + keyword consistency
                 if ($isConstantSection -and $Node.kind -ne 'const') {
@@ -2069,20 +2630,19 @@ $visitor = {
 
                 # Comment requirement
                 if ([string]::IsNullOrEmpty($purpose)) {
-                    if ($componentType -eq 'JS_CONSTANT') {
-                        Add-DriftCode -Row $row -Code 'MISSING_CONSTANT_COMMENT' -Text "Constant '$declName' has no preceding purpose comment."
+                    if ($isStateComponent) {
+                        Add-DriftCode -Row $row -Code 'MISSING_STATE_COMMENT' -Text "State variable '$declName' has no preceding purpose comment."
                     }
                     else {
-                        Add-DriftCode -Row $row -Code 'MISSING_STATE_COMMENT' -Text "State variable '$declName' has no preceding purpose comment."
+                        Add-DriftCode -Row $row -Code 'MISSING_CONSTANT_COMMENT' -Text "Constant '$declName' has no preceding purpose comment."
                     }
                 }
 
-                # Section presence
+                # Section presence and prefix
                 if ($null -eq $section) {
                     Add-DriftCode -Row $row -Code 'MISSING_SECTION_BANNER' -Text "'$declName' appears outside any section banner."
                 }
                 else {
-                    # Prefix check
                     if (-not $section.IsPrefixNone) {
                         $expectedPrefix = $section.PrefixValue
                         if (-not [string]::IsNullOrEmpty($expectedPrefix)) {
@@ -2111,6 +2671,7 @@ $visitor = {
 
             $row = Add-JsDefinitionRow -ComponentType 'JS_CLASS' `
                 -ComponentName $clsName `
+                -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
                 -LineStart $line -LineEnd $endLine -ColumnStart $col `
                 -Signature $sig -ParentFunction $null -RawText $sig `
                 -PurposeDescription $purpose `
@@ -2136,18 +2697,46 @@ $visitor = {
         }
 
         'MethodDefinition' {
-            if (-not $Node.key -or $Node.key.type -ne 'Identifier') { return }
-            $methodName = $Node.key.name
+            if (-not $Node.key -or $Node.key.type -ne 'Identifier') {
+                # Constructor or computed key - handle constructor specially
+                if ($Node.kind -eq 'constructor') {
+                    $methodName = 'constructor'
+                }
+                else {
+                    return
+                }
+            }
+            else {
+                $methodName = $Node.key.name
+            }
             $sig = "$methodName(...)"
             if ($Node.kind -eq 'constructor') { $sig = "constructor(...)" }
+
+            $shape = Get-MethodVariantShape -Node $Node
+
+            # parent_function for METHOD rows = enclosing class name. Walk
+            # back through parent nodes to find the ClassDeclaration/ClassExpression.
+            $className = $null
+            for ($i = $ParentNodes.Count - 1; $i -ge 0; $i--) {
+                $p = $ParentNodes[$i]
+                if ($p -and ($p.type -eq 'ClassDeclaration' -or $p.type -eq 'ClassExpression')) {
+                    if ($p.id -and $p.id.name) {
+                        $className = $p.id.name
+                    }
+                    break
+                }
+            }
 
             $rawComment = Get-PrecedingBlockComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $line
             $purpose = ConvertTo-CleanCommentText -CommentText $rawComment
 
-            $row = Add-JsDefinitionRow -ComponentType 'JS_METHOD' `
+            $row = Add-JsDefinitionRow -ComponentType $shape.ComponentType `
                 -ComponentName $methodName `
+                -VariantType $shape.VariantType `
+                -VariantQualifier1 $shape.VariantQualifier1 `
+                -VariantQualifier2 $shape.VariantQualifier2 `
                 -LineStart $line -LineEnd $endLine -ColumnStart $col `
-                -Signature $sig -ParentFunction $null -RawText $sig `
+                -Signature $sig -ParentFunction $className -RawText $sig `
                 -PurposeDescription $purpose `
                 -Section $section
             if (-not $row) { return }
@@ -2158,13 +2747,17 @@ $visitor = {
         }
 
         'ImportDeclaration' {
-            $sourceVal = if ($Node.source -and $Node.source.value) { $Node.source.value } else { '?' }
+            $sourceVal = if ($Node.source -and $Node.source.value) { [string]$Node.source.value } else { '?' }
             foreach ($spec in $Node.specifiers) {
                 $importedName = $null
                 if ($spec.local -and $spec.local.name) { $importedName = $spec.local.name }
                 if ($importedName) {
-                    Add-JsDefinitionRow -ComponentType 'JS_IMPORT' `
+                    $shape = Get-ImportVariantShape -Specifier $spec -SourcePath $sourceVal
+                    Add-JsDefinitionRow -ComponentType $shape.ComponentType `
                         -ComponentName $importedName `
+                        -VariantType $shape.VariantType `
+                        -VariantQualifier1 $shape.VariantQualifier1 `
+                        -VariantQualifier2 $shape.VariantQualifier2 `
                         -LineStart $line -LineEnd $endLine -ColumnStart $col `
                         -Signature "import $importedName from '$sourceVal'" `
                         -ParentFunction $null `
@@ -2181,21 +2774,20 @@ $visitor = {
             $callee = $Node.callee
             if ($null -eq $callee) { return }
 
-            # Forbidden: eval(...)
+            # Forbidden: eval(...) -> emit JS_EVAL row at the violation site
             if ($callee.type -eq 'Identifier' -and $callee.name -eq 'eval') {
-                # Attach drift to the file header row (file-level drift)
-                if ($script:CurrentFileRow) {
-                    Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_EVAL' `
-                        -Text "eval() called at line $line."
-                }
+                $sig = 'eval(...)'
+                Add-JsEvalRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature $sig -ParentFunction $parentName `
+                    -RawText $sig | Out-Null
             }
 
-            # Forbidden: document.write(...)
+            # Forbidden: document.write(...) -> emit JS_DOCUMENT_WRITE row
             if (Test-CalleeMatchesEnd -Callee $callee -Path @('document','write')) {
-                if ($script:CurrentFileRow) {
-                    Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_DOCUMENT_WRITE' `
-                        -Text "document.write() called at line $line."
-                }
+                $sig = 'document.write(...)'
+                Add-JsDocumentWriteRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature $sig -ParentFunction $parentName `
+                    -RawText $sig | Out-Null
             }
 
             # Direct function call: foo(...)
@@ -2204,7 +2796,7 @@ $visitor = {
                 $sig = "$fnName(...)"
                 Add-JsFunctionUsageRow -FunctionName $fnName `
                     -LineStart $line -ColumnStart $col `
-                    -Signature $sig -ParentFunction $null `
+                    -Signature $sig -ParentFunction $parentName `
                     -RawText $sig | Out-Null
             }
 
@@ -2221,7 +2813,7 @@ $visitor = {
                             Add-ClassUsageRow -ClassName $cls `
                                 -LineStart (Get-NodeLine -Node $arg) `
                                 -ColumnStart (Get-NodeColumn -Node $arg) `
-                                -Signature $sig -ParentFunction $null `
+                                -Signature $sig -ParentFunction $parentName `
                                 -RawText $sig | Out-Null
                         }
                     }
@@ -2237,7 +2829,7 @@ $visitor = {
                     Add-HtmlIdRow -IdName $idName -ReferenceType 'USAGE' `
                         -LineStart (Get-NodeLine -Node $arg) `
                         -ColumnStart (Get-NodeColumn -Node $arg) `
-                        -Signature $sig -ParentFunction $null `
+                        -Signature $sig -ParentFunction $parentName `
                         -RawText $sig | Out-Null
                 }
             }
@@ -2256,7 +2848,7 @@ $visitor = {
                         Add-HtmlIdRow -IdName $im.Groups[1].Value -ReferenceType 'USAGE' `
                             -LineStart (Get-NodeLine -Node $arg) `
                             -ColumnStart (Get-NodeColumn -Node $arg) `
-                            -Signature $sig -ParentFunction $null `
+                            -Signature $sig -ParentFunction $parentName `
                             -RawText $sig | Out-Null
                     }
                     $classMatches = [regex]::Matches($selector, '\.([\w-]+)')
@@ -2264,13 +2856,13 @@ $visitor = {
                         Add-ClassUsageRow -ClassName $cm.Groups[1].Value `
                             -LineStart (Get-NodeLine -Node $arg) `
                             -ColumnStart (Get-NodeColumn -Node $arg) `
-                            -Signature $sig -ParentFunction $null `
+                            -Signature $sig -ParentFunction $parentName `
                             -RawText $sig | Out-Null
                     }
                 }
             }
 
-            # addEventListener('event', ...)
+            # addEventListener('event', ...) -> JS_EVENT row (allowed pattern)
             if (Test-CalleeMatchesEnd -Callee $callee -Path @('addEventListener')) {
                 $arg = $Node.arguments | Select-Object -First 1
                 if ($arg -and $arg.type -eq 'Literal' -and $arg.value -is [string]) {
@@ -2279,7 +2871,7 @@ $visitor = {
                     Add-JsEventRow -EventName $evName `
                         -LineStart (Get-NodeLine -Node $arg) `
                         -ColumnStart (Get-NodeColumn -Node $arg) `
-                        -Signature $sig -ParentFunction $null `
+                        -Signature $sig -ParentFunction $parentName `
                         -RawText $sig | Out-Null
                 }
             }
@@ -2298,7 +2890,7 @@ $visitor = {
                         Add-HtmlIdRow -IdName $attrVal -ReferenceType 'DEFINITION' `
                             -LineStart (Get-NodeLine -Node $arg2) `
                             -ColumnStart (Get-NodeColumn -Node $arg2) `
-                            -Signature $sig -ParentFunction $null `
+                            -Signature $sig -ParentFunction $parentName `
                             -RawText $sig | Out-Null
                     }
                     elseif ($attrName -eq 'class' -and -not [string]::IsNullOrWhiteSpace($attrVal)) {
@@ -2308,7 +2900,7 @@ $visitor = {
                             Add-ClassUsageRow -ClassName $cls `
                                 -LineStart (Get-NodeLine -Node $arg2) `
                                 -ColumnStart (Get-NodeColumn -Node $arg2) `
-                                -Signature $sig -ParentFunction $null `
+                                -Signature $sig -ParentFunction $parentName `
                                 -RawText $sig | Out-Null
                         }
                     }
@@ -2321,8 +2913,12 @@ $visitor = {
                 if ($arg -and $arg.type -eq 'Literal' -and $arg.value -is [string]) {
                     $modName = $arg.value
                     $sig = "require('$modName')"
-                    Add-JsDefinitionRow -ComponentType 'JS_IMPORT' `
+                    $shape = Get-RequireVariantShape -SourcePath $modName
+                    Add-JsDefinitionRow -ComponentType $shape.ComponentType `
                         -ComponentName $modName `
+                        -VariantType $shape.VariantType `
+                        -VariantQualifier1 $shape.VariantQualifier1 `
+                        -VariantQualifier2 $shape.VariantQualifier2 `
                         -LineStart $line -LineEnd $endLine -ColumnStart $col `
                         -Signature $sig -ParentFunction $null `
                         -RawText $sig `
@@ -2344,29 +2940,28 @@ $visitor = {
                 }
             }
 
-            # Forbidden inline style/script
+            $rawSnippet = Get-RangeText -Source $script:CurrentFileSource -Node $Node
+
+            # Forbidden inline style/script -> emit JS_INLINE_STYLE / JS_INLINE_SCRIPT rows
             if (Test-LooksLikeInlineStyle -Text $reconstructed) {
-                if ($script:CurrentFileRow) {
-                    Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_INLINE_STYLE_IN_JS' `
-                        -Text "Template literal contains <style> at line $line."
-                }
+                Add-JsInlineStyleRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature 'template literal contains <style>' `
+                    -ParentFunction $parentName `
+                    -RawText $rawSnippet | Out-Null
             }
             if (Test-LooksLikeInlineScript -Text $reconstructed) {
-                if ($script:CurrentFileRow) {
-                    Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_INLINE_SCRIPT_IN_JS' `
-                        -Text "Template literal contains <script> at line $line."
-                }
+                Add-JsInlineScriptRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature 'template literal contains <script>' `
+                    -ParentFunction $parentName `
+                    -RawText $rawSnippet | Out-Null
             }
 
             if (-not (Test-LooksLikeHtml -Text $reconstructed)) { return }
 
-            $rawSnippet = Get-RangeText -Source $script:CurrentFileSource -Node $Node
-            $rawDisplay = Format-SingleLine -Text $rawSnippet
-
             Add-RowsFromHtmlBearingText -Text $reconstructed `
                 -StartLine $line -StartCol $col `
-                -ParentFunction $null `
-                -RawText $rawDisplay
+                -ParentFunction $parentName `
+                -RawText $rawSnippet
         }
 
         'Literal' {
@@ -2374,29 +2969,28 @@ $visitor = {
             if (-not ($Node.value -is [string])) { return }
             $strVal = [string]$Node.value
 
-            # Forbidden inline style/script
+            $rawSnippet = Get-RangeText -Source $script:CurrentFileSource -Node $Node
+
+            # Forbidden inline style/script -> emit JS_INLINE_STYLE / JS_INLINE_SCRIPT rows
             if (Test-LooksLikeInlineStyle -Text $strVal) {
-                if ($script:CurrentFileRow) {
-                    Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_INLINE_STYLE_IN_JS' `
-                        -Text "String literal contains <style> at line $line."
-                }
+                Add-JsInlineStyleRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature 'string literal contains <style>' `
+                    -ParentFunction $parentName `
+                    -RawText $rawSnippet | Out-Null
             }
             if (Test-LooksLikeInlineScript -Text $strVal) {
-                if ($script:CurrentFileRow) {
-                    Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_INLINE_SCRIPT_IN_JS' `
-                        -Text "String literal contains <script> at line $line."
-                }
+                Add-JsInlineScriptRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature 'string literal contains <script>' `
+                    -ParentFunction $parentName `
+                    -RawText $rawSnippet | Out-Null
             }
 
             if (-not (Test-LooksLikeHtml -Text $strVal)) { return }
 
-            $rawSnippet = Get-RangeText -Source $script:CurrentFileSource -Node $Node
-            $rawDisplay = Format-SingleLine -Text $rawSnippet
-
             Add-RowsFromHtmlBearingText -Text $strVal `
                 -StartLine $line -StartCol $col `
-                -ParentFunction $null `
-                -RawText $rawDisplay
+                -ParentFunction $parentName `
+                -RawText $rawSnippet
         }
 
         # ------- Group A & C: assignment patterns -------------------------
@@ -2406,7 +3000,7 @@ $visitor = {
             $right = $Node.right
             if ($null -eq $left -or $null -eq $right) { return }
 
-            # Pattern 1: window.X = ... (forbidden outside cc-shared.js)
+            # Pattern 1: window.X = ... (forbidden outside cc-shared.js) -> emit JS_WINDOW_ASSIGNMENT row
             if ($left.type -eq 'MemberExpression' -and
                 -not $left.computed -and
                 $left.object -and $left.object.type -eq 'Identifier' -and
@@ -2414,11 +3008,12 @@ $visitor = {
                 $left.property -and $left.property.type -eq 'Identifier') {
                 if ($script:CurrentFile -ne $script:CanonicalSharedFile -and
                     $script:CurrentFile -ne 'engine-events.js') {
-                    if ($script:CurrentFileRow) {
-                        $assignedName = $left.property.name
-                        Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_WINDOW_ASSIGNMENT' `
-                            -Text "Assignment to window.$assignedName at line $line; outside cc-shared.js."
-                    }
+                    $assignedName = $left.property.name
+                    $sig = "window.$assignedName = ..."
+                    Add-JsWindowAssignmentRow -AssignedName $assignedName `
+                        -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                        -Signature $sig -ParentFunction $parentName `
+                        -RawText $sig | Out-Null
                 }
             }
 
@@ -2426,8 +3021,7 @@ $visitor = {
             # JS_TIMER row when LHS is an Identifier matching a tracked
             # state-variable handle, and RHS is a CallExpression to
             # setInterval/setTimeout. The assignment can live anywhere
-            # (function body or module scope - we catalog the assignment
-            # site).
+            # (function body or module scope - we catalog the assignment site).
             if ($left.type -eq 'Identifier' -and
                 $right.type -eq 'CallExpression' -and
                 $right.callee -and $right.callee.type -eq 'Identifier' -and
@@ -2438,22 +3032,26 @@ $visitor = {
                 $handleName = $left.name
                 $callKind = $right.callee.name
                 $sig = "$handleName = $callKind(...)"
+                $shape = Get-TimerVariantShape -CalleeName $callKind
 
-                $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
-                $sourceSection = if ($section) { $section.FullTitle } else { $null }
+                $secForTimer = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+                $sourceSection = if ($secForTimer) { $secForTimer.FullTitle } else { $null }
 
                 $key = "$($script:CurrentFile)|$line|$col|JS_TIMER|$handleName|DEFINITION|"
                 if (Test-AddDedupeKey -Key $key) {
                     $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
                     $row = New-AssetRow -FileName $script:CurrentFile -LineStart $line `
                         -LineEnd $endLine -ColumnStart $col `
-                        -ComponentType 'JS_TIMER' -ComponentName $handleName `
+                        -ComponentType $shape.ComponentType -ComponentName $handleName `
+                        -VariantType $shape.VariantType `
+                        -VariantQualifier1 $shape.VariantQualifier1 `
+                        -VariantQualifier2 $shape.VariantQualifier2 `
                         -ReferenceType 'DEFINITION' `
                         -Scope $scope -SourceFile $script:CurrentFile `
                         -SourceSection $sourceSection `
-                        -Signature (Limit-Text $sig 4000) `
-                        -ParentFunction $null `
-                        -RawText (Limit-Text $sig 4000) `
+                        -Signature $sig `
+                        -ParentFunction $parentName `
+                        -RawText $sig `
                         -PurposeDescription $null
                     $script:rows.Add($row)
                 }
@@ -2473,7 +3071,7 @@ $visitor = {
                         -LineStart (Get-NodeLine -Node $right) `
                         -ColumnStart (Get-NodeColumn -Node $right) `
                         -Signature "className = '$($right.value)'" `
-                        -ParentFunction $null `
+                        -ParentFunction $parentName `
                         -RawText "className = '$($right.value)'" | Out-Null
                 }
             }
@@ -2485,33 +3083,37 @@ $visitor = {
                         -LineStart (Get-NodeLine -Node $right) `
                         -ColumnStart (Get-NodeColumn -Node $right) `
                         -Signature "id = '$idVal'" `
-                        -ParentFunction $null `
+                        -ParentFunction $parentName `
                         -RawText "id = '$idVal'" | Out-Null
                 }
             }
 
+            # el.on<event> = handler -> JS_EVENT row with FORBIDDEN_PROPERTY_ASSIGN_EVENT drift
             if ($propName -match '^on([a-z]+)$') {
                 $evName = $matches[1]
                 $sig = "$propName = ..."
                 Add-JsEventRow -EventName $evName `
                     -LineStart $line -ColumnStart $col `
-                    -Signature $sig -ParentFunction $null `
-                    -RawText $sig | Out-Null
+                    -Signature $sig -ParentFunction $parentName `
+                    -RawText $sig `
+                    -IsForbidden $true | Out-Null
             }
         }
 
-        # ------- File-level forbidden patterns at file scope ----------------
+        # ------- IIFE detection (file-scope expression statements) ----------
 
         'ExpressionStatement' {
-            # Detect IIFE at top level: (function() {...})()
+            # Detect IIFE at top level: (function() {...})() or (() => {...})()
             $isTopLevel = Test-IsTopLevel -ParentChain $ParentChain
             if ($isTopLevel -and $Node.expression -and $Node.expression.type -eq 'CallExpression') {
-                $callee = $Node.expression.callee
-                if ($callee -and ($callee.type -eq 'FunctionExpression' -or $callee.type -eq 'ArrowFunctionExpression')) {
-                    if ($script:CurrentFileRow) {
-                        Add-DriftCode -Row $script:CurrentFileRow -Code 'FORBIDDEN_IIFE' `
-                            -Text "IIFE at file scope, line $line."
-                    }
+                $iifeCallee = $Node.expression.callee
+                if ($iifeCallee -and ($iifeCallee.type -eq 'FunctionExpression' -or $iifeCallee.type -eq 'ArrowFunctionExpression')) {
+                    $sig = '(function() { ... })()'
+                    if ($iifeCallee.type -eq 'ArrowFunctionExpression') { $sig = '(() => { ... })()' }
+                    $rawSnippet = Get-RangeText -Source $script:CurrentFileSource -Node $Node
+                    Add-JsIifeRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                        -Signature $sig `
+                        -RawText $rawSnippet | Out-Null
                 }
             }
         }
@@ -2559,13 +3161,14 @@ foreach ($file in $JsFiles) {
     $headerRow = New-AssetRow -FileName $name -LineStart $headerInfo.StartLine `
         -LineEnd $headerInfo.EndLine -ColumnStart 1 `
         -ComponentType 'FILE_HEADER' -ComponentName $name `
+        -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
         -ReferenceType 'DEFINITION' `
         -Scope $fileScope -SourceFile $name `
         -SourceSection $null `
         -Signature $null `
         -ParentFunction $null `
         -RawText $null `
-        -PurposeDescription (Limit-Text $headerInfo.Description 4000)
+        -PurposeDescription $headerInfo.Description
     $rows.Add($headerRow)
     $fileHeaderRowByFile[$name] = $headerRow
     $script:CurrentFileRow = $headerRow
@@ -2591,13 +3194,14 @@ foreach ($file in $JsFiles) {
         $bannerRow = New-AssetRow -FileName $name -LineStart $s.BannerStartLine `
             -LineEnd $s.BannerEndLine -ColumnStart 1 `
             -ComponentType 'COMMENT_BANNER' -ComponentName $s.BannerName `
+            -VariantType $null -VariantQualifier1 $null -VariantQualifier2 $null `
             -ReferenceType 'DEFINITION' `
             -Scope $fileScope -SourceFile $name `
             -SourceSection $s.FullTitle `
             -Signature $s.TypeName `
             -ParentFunction $null `
             -RawText $null `
-            -PurposeDescription (Limit-Text $s.Description 4000)
+            -PurposeDescription $s.Description
         $rows.Add($bannerRow)
 
         # Per-banner drift codes from Get-BannerInfo
@@ -2627,22 +3231,17 @@ foreach ($file in $JsFiles) {
 
     Invoke-AstWalk -Node $parsed.Ast -Visitor $visitor
 
-    # ----- File-scope // line comments check -----
-    # Acorn returns Line comments alongside Block comments. Any Line comment
-    # at file-scope is a drift. "File-scope" = not inside a function body;
-    # we approximate by checking the comment's line against function body
-    # ranges. A precise implementation walks the AST building line-range
-    # spans for each FunctionDeclaration / Function/Arrow expression body.
-    # For now we use a simpler heuristic: any line comment whose containing
-    # line is NOT inside a known function body gets flagged. This may miss
-    # some cases or include some (e.g., comments inside assigned object
-    # literals at module scope). Worth refining once we see what trips.
-
-    # Build a list of (startLine, endLine) for every function body in the
-    # file. Walk the AST one more time gathering them.
+    # ----- File-scope // line comments -> JS_LINE_COMMENT rows -----
+    # Acorn returns Line comments alongside Block comments. Any line comment
+    # at file scope (outside any function body) is a forbidden pattern under
+    # spec Section 12.1, and gets a JS_LINE_COMMENT row at its own line with
+    # FORBIDDEN_FILE_SCOPE_LINE_COMMENT drift attached. "File-scope" =
+    # not inside a function body, approximated by checking the comment's
+    # line against the body ranges of every FunctionDeclaration /
+    # FunctionExpression / ArrowFunctionExpression in the file.
     $functionRanges = New-Object System.Collections.Generic.List[object]
     $rangeVisitor = {
-        param($n, $pc)
+        param($n, $pc, $pn)
         if ($null -eq $n -or $null -eq $n.type) { return }
         if ($n.type -eq 'FunctionDeclaration' -or
             $n.type -eq 'FunctionExpression' -or
@@ -2660,10 +3259,11 @@ foreach ($file in $JsFiles) {
         foreach ($c in $parsed.Comments) {
             if ($c.type -ne 'Line') { continue }
             $cLine = if ($c.loc -and $c.loc.start) { [int]$c.loc.start.line } else { 0 }
+            $cCol  = if ($c.loc -and $c.loc.start -and ($c.loc.start.PSObject.Properties.Name -contains 'column')) { ([int]$c.loc.start.column) + 1 } else { 1 }
             if ($cLine -le 0) { continue }
             if (-not (Test-LineInsideFunction -Line $cLine -Ranges $functionRanges)) {
-                Add-DriftCode -Row $headerRow -Code 'FORBIDDEN_FILE_SCOPE_LINE_COMMENT' `
-                    -Text "Line comment at file scope, line $cLine."
+                $cRaw = if ($c.value) { "// $($c.value)" } else { '//' }
+                Add-JsLineCommentRow -LineStart $cLine -ColumnStart $cCol -RawText $cRaw | Out-Null
             }
         }
     }
@@ -2704,10 +3304,12 @@ if ($chromeFiles.Count -gt 1) {
 }
 
 # SHADOWS_SHARED_FUNCTION
-# Collect every JS_FUNCTION DEFINITION row and check for name collisions
-# with cc-shared.js shared functions.
+# Collect every function-shaped DEFINITION row and check for name collisions
+# with cc-shared.js shared functions. Under spec v1.2 a function declaration
+# may be classified as JS_FUNCTION (sync, no modifiers) or JS_FUNCTION_VARIANT
+# (async, generator). Both shapes can shadow a shared name.
 $shadowCandidates = @($rows | Where-Object {
-    $_.ComponentType -eq 'JS_FUNCTION' -and
+    ($_.ComponentType -eq 'JS_FUNCTION' -or $_.ComponentType -eq 'JS_FUNCTION_VARIANT') -and
     $_.ReferenceType -eq 'DEFINITION' -and
     $_.Scope -eq 'LOCAL' -and
     $sharedFunctions.Contains($_.ComponentName)
@@ -2788,7 +3390,8 @@ if ($rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($rows.Count) rows..."
 
-# Build DataTable matching dbo.Asset_Registry schema (post G-INIT-3 cleanup)
+# Build DataTable matching dbo.Asset_Registry schema (post G-INIT-3 cleanup,
+# plus the three variant columns added in the file-format initiative).
 $dt = New-Object System.Data.DataTable
 [void]$dt.Columns.Add('file_name',           [string])
 [void]$dt.Columns.Add('object_registry_id',  [int])
@@ -2798,6 +3401,9 @@ $dt = New-Object System.Data.DataTable
 [void]$dt.Columns.Add('column_start',        [int])
 [void]$dt.Columns.Add('component_type',      [string])
 [void]$dt.Columns.Add('component_name',      [string])
+[void]$dt.Columns.Add('variant_type',        [string])
+[void]$dt.Columns.Add('variant_qualifier_1', [string])
+[void]$dt.Columns.Add('variant_qualifier_2', [string])
 [void]$dt.Columns.Add('reference_type',      [string])
 [void]$dt.Columns.Add('scope',               [string])
 [void]$dt.Columns.Add('source_file',         [string])
@@ -2810,14 +3416,16 @@ $dt = New-Object System.Data.DataTable
 [void]$dt.Columns.Add('drift_text',          [string])
 [void]$dt.Columns.Add('occurrence_index',    [int])
 
+# Convert a value to a DBNull-aware DataTable cell value. Empty/whitespace
+# strings collapse to NULL. Length truncation is NOT performed here:
+# under the spec v1.2 column-width review the DB columns are sized to
+# accommodate the values the parser produces, so any oversized value should
+# surface as a SQL error rather than silently lose data.
 function Get-NullableValue {
-    param($Value, [int]$MaxLen = 0)
+    param($Value)
     if ($null -eq $Value) { return [System.DBNull]::Value }
     if ($Value -is [string] -and [string]::IsNullOrWhiteSpace($Value)) {
         return [System.DBNull]::Value
-    }
-    if ($MaxLen -gt 0 -and $Value.Length -gt $MaxLen) {
-        return $Value.Substring(0, $MaxLen)
     }
     return $Value
 }
@@ -2839,16 +3447,19 @@ foreach ($r in $rows) {
     $row['line_end']            = if ($null -eq $r.LineEnd)     { [System.DBNull]::Value } else { [int]$r.LineEnd }
     $row['column_start']        = if ($null -eq $r.ColumnStart) { [System.DBNull]::Value } else { [int]$r.ColumnStart }
     $row['component_type']      = $r.ComponentType
-    $row['component_name']      = Get-NullableValue $r.ComponentName 256
+    $row['component_name']      = Get-NullableValue $r.ComponentName
+    $row['variant_type']        = Get-NullableValue $r.VariantType
+    $row['variant_qualifier_1'] = Get-NullableValue $r.VariantQualifier1
+    $row['variant_qualifier_2'] = Get-NullableValue $r.VariantQualifier2
     $row['reference_type']      = $r.ReferenceType
     $row['scope']               = $r.Scope
     $row['source_file']         = $r.SourceFile
-    $row['source_section']      = Get-NullableValue $r.SourceSection 200
+    $row['source_section']      = Get-NullableValue $r.SourceSection
     $row['signature']           = Get-NullableValue $r.Signature
-    $row['parent_function']     = Get-NullableValue $r.ParentFunction 200
+    $row['parent_function']     = Get-NullableValue $r.ParentFunction
     $row['raw_text']            = Get-NullableValue $r.RawText
     $row['purpose_description'] = Get-NullableValue $r.PurposeDescription
-    $row['drift_codes']         = Get-NullableValue $r.DriftCodes 4000
+    $row['drift_codes']         = Get-NullableValue $r.DriftCodes
     $row['drift_text']          = Get-NullableValue $r.DriftText
     $row['occurrence_index']    = if ($null -eq $r.OccurrenceIndex) { 1 } else { [int]$r.OccurrenceIndex }
     $dt.Rows.Add($row)
@@ -2903,8 +3514,13 @@ SELECT
 FROM dbo.Asset_Registry
 WHERE file_type      = 'JS'
   AND reference_type = 'DEFINITION'
-  AND component_type IN ('JS_FUNCTION', 'JS_HOOK', 'JS_CONSTANT', 'JS_STATE',
-                         'JS_CLASS', 'JS_METHOD', 'FILE_HEADER', 'COMMENT_BANNER')
+  AND component_type IN ('JS_FUNCTION', 'JS_FUNCTION_VARIANT',
+                         'JS_HOOK', 'JS_HOOK_VARIANT',
+                         'JS_CONSTANT', 'JS_CONSTANT_VARIANT',
+                         'JS_STATE',
+                         'JS_CLASS',
+                         'JS_METHOD', 'JS_METHOD_VARIANT',
+                         'FILE_HEADER', 'COMMENT_BANNER')
 GROUP BY component_type
 ORDER BY component_type;
 "@
@@ -2937,6 +3553,101 @@ GROUP BY file_name
 ORDER BY rows_with_drift DESC;
 "@
 if ($verify4) { $verify4 | Format-Table -AutoSize }
+
+Write-Log "Verification: variant_type distribution across variant-bearing component types"
+
+# Confirms that variant_type is being populated for the four component types
+# that carry variants (JS_FUNCTION_VARIANT, JS_HOOK_VARIANT, JS_CONSTANT_VARIANT,
+# JS_METHOD_VARIANT) plus the always-variant types (JS_TIMER, JS_IMPORT). Rows
+# in these types with variant_type IS NULL indicate a populator bug.
+$verify5 = Get-SqlData -Query @"
+SELECT
+    component_type,
+    variant_type,
+    COUNT(*) AS row_count
+FROM dbo.Asset_Registry
+WHERE file_type = 'JS'
+  AND component_type IN ('JS_FUNCTION_VARIANT', 'JS_HOOK_VARIANT',
+                         'JS_CONSTANT_VARIANT', 'JS_METHOD_VARIANT',
+                         'JS_TIMER', 'JS_IMPORT')
+GROUP BY component_type, variant_type
+ORDER BY component_type, variant_type;
+"@
+if ($verify5) { $verify5 | Format-Table -AutoSize }
+
+Write-Log "Verification: parent_function coverage across USAGE rows"
+
+# parent_function should be populated for the majority of USAGE rows and
+# for METHOD definitions. NULL is expected for module-scope USAGE rows
+# (e.g. a getElementById call at file scope). A sudden drop in coverage
+# vs. the previous run signals a regression in the parent-name walker.
+$verify6 = Get-SqlData -Query @"
+SELECT
+    component_type,
+    reference_type,
+    COUNT(*)                                                          AS total_rows,
+    SUM(CASE WHEN parent_function IS NOT NULL THEN 1 ELSE 0 END)       AS with_parent,
+    SUM(CASE WHEN parent_function IS NULL     THEN 1 ELSE 0 END)       AS without_parent
+FROM dbo.Asset_Registry
+WHERE file_type = 'JS'
+  AND reference_type IN ('USAGE', 'DEFINITION')
+  AND component_type IN ('JS_FUNCTION', 'CSS_CLASS', 'HTML_ID', 'JS_EVENT',
+                         'JS_METHOD', 'JS_METHOD_VARIANT',
+                         'JS_TIMER',
+                         'JS_EVAL', 'JS_DOCUMENT_WRITE', 'JS_WINDOW_ASSIGNMENT',
+                         'JS_INLINE_STYLE', 'JS_INLINE_SCRIPT')
+GROUP BY component_type, reference_type
+ORDER BY component_type, reference_type;
+"@
+if ($verify6) { $verify6 | Format-Table -AutoSize }
+
+Write-Log "Verification: column fill audit (NULL counts per column)"
+
+# Quick sanity check that nothing critical is unexpectedly all-NULL or
+# mostly-NULL across the run. Useful for spotting an off-by-one in a
+# new emitter (e.g. forgetting to pass parent_function through).
+$verify7 = Get-SqlData -Query @"
+SELECT
+    'component_name'      AS column_name,
+    SUM(CASE WHEN component_name      IS NULL THEN 1 ELSE 0 END) AS null_count,
+    SUM(CASE WHEN component_name      IS NOT NULL THEN 1 ELSE 0 END) AS notnull_count
+FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'variant_type',        SUM(CASE WHEN variant_type        IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN variant_type        IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'variant_qualifier_1', SUM(CASE WHEN variant_qualifier_1 IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN variant_qualifier_1 IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'variant_qualifier_2', SUM(CASE WHEN variant_qualifier_2 IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN variant_qualifier_2 IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'source_section',      SUM(CASE WHEN source_section      IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN source_section      IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'signature',           SUM(CASE WHEN signature           IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN signature           IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'parent_function',     SUM(CASE WHEN parent_function     IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN parent_function     IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'raw_text',            SUM(CASE WHEN raw_text            IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN raw_text            IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'purpose_description', SUM(CASE WHEN purpose_description IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN purpose_description IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+UNION ALL SELECT 'drift_codes',         SUM(CASE WHEN drift_codes         IS NULL THEN 1 ELSE 0 END), SUM(CASE WHEN drift_codes         IS NOT NULL THEN 1 ELSE 0 END) FROM dbo.Asset_Registry WHERE file_type = 'JS'
+ORDER BY column_name;
+"@
+if ($verify7) { $verify7 | Format-Table -AutoSize }
+
+Write-Log "Verification: forbidden-pattern inventory (spec Q6)"
+
+# Per CC_JS_Spec.md v1.2 Section 20.6: every forbidden pattern emits a
+# row at the violation site with the corresponding FORBIDDEN_* drift on
+# that row. This query inventories those rows by file and pattern type.
+# The combined component_type + drift_codes view confirms the dedicated-row
+# rule (one row per violation, drift on the row, no aggregation elsewhere).
+$verify8 = Get-SqlData -Query @"
+SELECT
+    file_name,
+    component_type,
+    drift_codes,
+    COUNT(*) AS occurrences
+FROM dbo.Asset_Registry
+WHERE file_type = 'JS'
+  AND component_type IN ('JS_IIFE', 'JS_EVAL', 'JS_DOCUMENT_WRITE',
+                         'JS_WINDOW_ASSIGNMENT',
+                         'JS_INLINE_STYLE', 'JS_INLINE_SCRIPT',
+                         'JS_LINE_COMMENT')
+GROUP BY file_name, component_type, drift_codes
+ORDER BY file_name, component_type;
+"@
+if ($verify8) { $verify8 | Format-Table -AutoSize }
 
 # ----- Object_Registry miss report ------------------------------------------
 
