@@ -8,8 +8,7 @@
     parse-css.js Node helper), and generates Asset_Registry rows describing
     every cataloguable component found in the file.
 
-    The CSS populator emits the following row types per CC_FileFormat_
-    Standardization.md Part 3 (CSS Files):
+    The CSS populator emits the following row types per CC_CSS_Spec.md:
 
       * FILE_HEADER DEFINITION rows — one per scanned file. Carries
         header-level drift codes and anchors the file in the catalog.
@@ -17,7 +16,10 @@
         from the header's identity line.
 
       * CSS_CLASS DEFINITION rows for every base class (no compound class
-        modifiers, no pseudo-classes — selector is just .className).
+        modifiers, no pseudo-classes — selector is just .className, or a
+        class plus a pseudo-element such as .className::placeholder).
+        purpose_description holds the single-line purpose comment that
+        the spec mandates immediately above the rule.
 
       * CSS_VARIANT DEFINITION rows for every variant of a class:
           - .parent.modifier         -> variant_type='class',
@@ -28,7 +30,8 @@
                                         variant_qualifier_1='modifier',
                                         variant_qualifier_2='pseudo'
         component_name on every variant row is the parent class's name
-        (the leftmost-class rule).
+        (the leftmost-class rule). purpose_description holds the trailing
+        inline comment that the spec mandates after the opening brace.
 
       * CSS_CLASS USAGE rows for descendant classes that appear after a
         combinator (.foo .bar produces a DEFINITION for .foo and a USAGE
@@ -63,11 +66,11 @@
         banner format. purpose_description holds the banner's description
         block (the prose between the title and the Prefixes: line).
 
-    The parser annotates rows with drift codes per CC_FileFormat_
-    Standardization.md Appendix A. Every row that participates in a spec
-    deviation gets the relevant code(s) appended to drift_codes (a
-    comma-separated list) and human-readable descriptions appended to
-    drift_text. Compliant rows have NULL in both columns.
+    The parser annotates rows with drift codes per CC_CSS_Spec.md Section
+    17. Every row that participates in a spec deviation gets the relevant
+    code(s) appended to drift_codes (a comma-separated list) and human-
+    readable descriptions appended to drift_text. Compliant rows have
+    NULL in both columns.
 
     Refresh semantics:
       * In standalone execution, the populator deletes only its own slice
@@ -93,6 +96,34 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-04  G-INIT-4 resolution. Complete CSS purpose_description coverage
+            for the two remaining comment sources that the populator
+            previously detected (for drift purposes) but discarded the
+            text of:
+              (1) Per-class purpose comments → CSS_CLASS DEFINITION rows.
+                  The /* One-sentence purpose. */ comment that the spec
+                  mandates before each base class is now captured into
+                  purpose_description on the class's row. Pseudo-element
+                  rules attached to a class (.foo::placeholder) are
+                  cataloged as CSS_CLASS rows by the spec and pick up the
+                  same preceding-comment treatment via the existing
+                  base-class emission path.
+              (2) Per-variant trailing inline comments → CSS_VARIANT
+                  DEFINITION rows. The /* state */ comment after the
+                  opening brace of each variant rule is now captured into
+                  purpose_description on the variant's row.
+            Implementation: new ConvertTo-CleanCommentText helper strips
+            line indentation and drops blank lines while preserving
+            line-break structure for multi-line comments. The rule-
+            handling branch of Add-RowsFromAst captures both comment
+            texts alongside the existing presence flags and threads them
+            through new -PrecedingCommentText / -TrailingInlineCommentText
+            parameters on Add-RowsForSelector. Add-CssClassOrVariantRow
+            grows a -PurposeDescription parameter that is written
+            verbatim onto the emitted row. The verification block at the
+            end of the script gains coverage queries for CSS_CLASS
+            DEFINITION and CSS_VARIANT DEFINITION rows alongside the
+            existing FILE_HEADER and COMMENT_BANNER ones.
 2026-05-04  OQ-INIT-1 / G-INIT-3 resolution. Three changes in this pass:
               (1) PURPOSE_DESCRIPTION WIRING. New-RowSkeleton now includes a
                   PurposeDescription field. Add-FileHeaderRow writes the
@@ -169,9 +200,7 @@ CHANGELOG
             are checked. The 13 cases the previous run produced with
             malformed variant_qualifier_2 values (not:hover, hover:not,
             etc.) now carry the appropriate drift codes pending source
-            refactor in the conversion phase. See CC_FileFormat_
-            Standardization.md Part 3 / Part 10 for spec details and the
-            refactor recipe.
+            refactor in the conversion phase.
 2026-05-03  Sanity-sweep fix pass over the first run of the new spec parser.
             Five issues addressed in a single pass:
               (1) Forbidden-selector drift codes intermittently failed to
@@ -198,22 +227,20 @@ CHANGELOG
                   duplicated the selector instead of capturing the full
                   rule body. Now built from the AST's declaration nodes
                   and threaded through to every row emitted from the rule.
-2026-05-03  Major restructure for CSS file format spec compliance per
-            CC_FileFormat_Standardization.md Part 3:
+2026-05-03  Major restructure for CSS file format spec compliance:
               (1) Schema migration: drops state_modifier, component_subtype,
                   parent_object, first_parsed_dttm columns from emitted rows.
                   Adds variant_type, variant_qualifier_1, variant_qualifier_2,
                   drift_codes, drift_text.
               (2) Variant emission: CSS_VARIANT rows replace the old
                   state_modifier-on-CSS_CLASS pattern. Three variant shapes
-                  (class, pseudo, compound_pseudo) populate qualifier columns
-                  per Part 3.6 of the spec.
+                  (class, pseudo, compound_pseudo) populate qualifier columns.
               (3) FILE_HEADER row emission: one row per scanned file holding
                   the file's header-level drift codes and serving as the
                   catalog anchor for files regardless of content.
               (4) Drift detection: 30+ rule checks producing drift codes per
-                  Appendix A. Inline detection in row-builder helpers; codes
-                  accumulate per row.
+                  the spec's drift-code reference. Inline detection in
+                  row-builder helpers; codes accumulate per row.
               (5) Codebase-level pass: after per-file parsing, second pass
                   identifies duplicate FOUNDATION, duplicate CHROME, and
                   cross-references hex literals against shared custom
@@ -287,11 +314,11 @@ $env:NODE_PATH = $NodeLibsPath
 # SPEC CONSTANTS
 # ============================================================================
 
-# The five enumerated section types, in required order.
+# The six enumerated section types, in required order.
 $SectionTypeOrder = @('FOUNDATION', 'CHROME', 'LAYOUT', 'CONTENT', 'OVERRIDES', 'FEEDBACK_OVERLAYS')
 
 # Drift code → human description mapping. Used to populate drift_text in
-# parallel with drift_codes. Keep in sync with Appendix A of the spec doc.
+# parallel with drift_codes. Keep in sync with the spec's drift-code reference.
 $DriftDescriptions = [ordered]@{
     # File header
     'MALFORMED_FILE_HEADER'             = "The file's header block is missing, malformed, or contains required fields out of order."
@@ -467,6 +494,36 @@ function Format-SingleLine {
     return ($Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
 }
 
+# Clean a comment node's text for storage in purpose_description.
+#
+# PostCSS node.text already strips outer /* and */ delimiters, so we receive
+# only the inner content. The cleanup goal is to drop per-line indentation
+# (which is purely visual artifact of how comments are formatted in source)
+# while preserving the line-break structure of multi-line comments. The
+# resulting text is suitable for display in catalog reference views — single-
+# line comments come through clean; multi-line comments retain their line
+# breaks so the original prose structure survives.
+#
+# Returns $null for empty / whitespace-only input so the column can be NULL
+# rather than empty-string in the database.
+function ConvertTo-CleanCommentText {
+    param([string]$RawText)
+
+    if ([string]::IsNullOrWhiteSpace($RawText)) { return $null }
+
+    # Normalize line endings, split, trim each line, drop blank lines.
+    $normalized = $RawText -replace "`r`n", "`n" -replace "`r", "`n"
+    $lines = @($normalized -split "`n" |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    if ($lines.Count -eq 0) { return $null }
+
+    $joined = ($lines -join "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($joined)) { return $null }
+    return $joined
+}
+
 # Build the full single-line representation of a CSS rule (selector + declarations).
 # Used to populate raw_text on CSS_CLASS, CSS_VARIANT, CSS_RULE, and HTML_ID rows
 # so downstream queries can compare rule bodies without re-opening the source file.
@@ -494,7 +551,7 @@ function Format-RuleBody {
 }
 
 # Banner detection: a comment containing a 78-character rule of '=' marks
-# a section banner per Part 3.3 of the spec. The banner format is:
+# a section banner per the spec. The banner format is:
 #   /* ============= (78 =)
 #      <TYPE>: <NAME>
 #      ------------- (78 -)
@@ -968,7 +1025,8 @@ function Add-CssClassOrVariantRow {
         [string]$VariantQualifier2,
         [string]$ReferenceType,
         [int]$LineStart, [int]$LineEnd, [int]$ColumnStart,
-        [string]$Signature, [string]$ParentAtrule, [string]$RawText
+        [string]$Signature, [string]$ParentAtrule, [string]$RawText,
+        [string]$PurposeDescription
     )
 
     if ([string]::IsNullOrWhiteSpace($ComponentName)) { return $null }
@@ -1006,6 +1064,7 @@ function Add-CssClassOrVariantRow {
     $row.Signature          = $Signature
     $row.ParentFunction     = $ParentAtrule
     $row.RawText            = $RawText
+    $row.PurposeDescription = $PurposeDescription
     $script:rows.Add($row)
     return $row
 }
@@ -1248,6 +1307,15 @@ function Get-VariantShape {
 # Decompose a selector into compounds (classes / ids / pseudos), then emit
 # one or more catalog rows. If any forbidden constructs are present, the
 # emitted rows carry the appropriate drift codes.
+#
+# Comment-text capture (G-INIT-4):
+#   - PrecedingCommentText: cleaned text of the comment immediately above
+#     the rule (the spec-mandated per-class purpose comment). Routed to
+#     PurposeDescription on emitted CSS_CLASS DEFINITION rows.
+#   - TrailingInlineCommentText: cleaned text of the comment on the same
+#     line as the opening { (the spec-mandated per-variant trailing
+#     inline comment). Routed to PurposeDescription on emitted
+#     CSS_VARIANT DEFINITION rows.
 function Add-RowsForSelector {
     param(
         [Parameter(Mandatory)] $SelectorNode,
@@ -1259,6 +1327,8 @@ function Add-RowsForSelector {
         [string] $RuleBodyText = $null,    # full rule body for raw_text population
         [bool]   $HasPrecedingComment = $false,
         [bool]   $HasTrailingInlineComment = $false,
+        [string] $PrecedingCommentText = $null,
+        [string] $TrailingInlineCommentText = $null,
         [bool]   $IsPartOfGroup = $false
     )
 
@@ -1322,6 +1392,16 @@ function Add-RowsForSelector {
         $primaryName = $primary.Classes[0]
         $shape = Get-VariantShape -Compound $primary
 
+        # Pick the right comment text for this row:
+        #   - Variants take the trailing inline comment.
+        #   - Base classes (and class+pseudo-element rules, which the spec
+        #     classifies as base CSS_CLASS rows) take the preceding comment.
+        $purposeDesc = if ($shape.VariantType) {
+            $TrailingInlineCommentText
+        } else {
+            $PrecedingCommentText
+        }
+
         $primaryRow = Add-CssClassOrVariantRow `
             -ComponentName $primaryName `
             -VariantType $shape.VariantType `
@@ -1329,7 +1409,8 @@ function Add-RowsForSelector {
             -VariantQualifier2 $shape.VariantQualifier2 `
             -ReferenceType 'DEFINITION' `
             -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
-            -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
+            -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText `
+            -PurposeDescription $purposeDesc
 
         if ($primaryRow) {
             Add-CompoundDriftCodes -Row $primaryRow -Compound $primary `
@@ -1402,6 +1483,8 @@ function Add-RowsForSelector {
             $usageName = $cmp.Classes[0]
             $shape = Get-VariantShape -Compound $cmp
 
+            # Descendant USAGE rows do not carry a purpose_description —
+            # the comment (if any) belongs to the primary, not the descendant.
             $usageRow = Add-CssClassOrVariantRow `
                 -ComponentName $usageName `
                 -VariantType $shape.VariantType `
@@ -1409,7 +1492,8 @@ function Add-RowsForSelector {
                 -VariantQualifier2 $shape.VariantQualifier2 `
                 -ReferenceType 'USAGE' `
                 -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
-                -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
+                -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText `
+                -PurposeDescription $null
 
             if ($usageRow) {
                 Add-CompoundDriftCodes -Row $usageRow -Compound $cmp `
@@ -1522,13 +1606,16 @@ function Add-RowsFromAst {
                        [int]$Node.source.start.column
                    } else { 1 }
 
-        # Did a comment immediately precede this rule?
+        # Did a comment immediately precede this rule? If so, capture its
+        # cleaned text for routing to the emitted row's purpose_description.
         $hasPrecedingComment = $false
+        $precedingCommentText = $null
         if ($script:PreviousSibling -and $script:PreviousSibling.type -eq 'comment') {
             # Distinguish purpose comments from banners: banners have rules of '='
             $bannerCheck = Get-BannerInfo -CommentText $script:PreviousSibling.text
             if (-not $bannerCheck) {
                 $hasPrecedingComment = $true
+                $precedingCommentText = ConvertTo-CleanCommentText -RawText $script:PreviousSibling.text
             }
         }
 
@@ -1536,12 +1623,16 @@ function Add-RowsFromAst {
         # we need to know whether the rule has a comment immediately after the
         # opening brace. PostCSS represents this as the first child node of the
         # rule being a comment with the same source line as the rule's selector.
+        # If present, capture its cleaned text for routing to the emitted row's
+        # purpose_description.
         $hasTrailingInlineComment = $false
+        $trailingInlineCommentText = $null
         if ($Node.nodes -and $Node.nodes.Count -gt 0) {
             $firstChild = $Node.nodes[0]
             if ($firstChild.type -eq 'comment' -and $firstChild.source -and $firstChild.source.start) {
                 if ([int]$firstChild.source.start.line -eq $line) {
                     $hasTrailingInlineComment = $true
+                    $trailingInlineCommentText = ConvertTo-CleanCommentText -RawText $firstChild.text
                 }
             }
         }
@@ -1564,6 +1655,8 @@ function Add-RowsFromAst {
                     -RuleBodyText $ruleBodyText `
                     -HasPrecedingComment $hasPrecedingComment `
                     -HasTrailingInlineComment $hasTrailingInlineComment `
+                    -PrecedingCommentText $precedingCommentText `
+                    -TrailingInlineCommentText $trailingInlineCommentText `
                     -IsPartOfGroup $isGroup
             }
         }
@@ -2013,12 +2106,10 @@ if ($rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($rows.Count) rows..."
 
-# Build DataTable matching the new dbo.Asset_Registry schema.
-# Note: design_notes, related_asset_id, and is_active columns were dropped
-# from the table on 2026-05-04 (G-INIT-3). The DataTable no longer enumerates
-# them. purpose_description is now populated from PurposeDescription on each
-# row (FILE_HEADER rows carry the file's purpose paragraph; COMMENT_BANNER
-# rows carry the section's description block).
+# Build DataTable matching the dbo.Asset_Registry schema. purpose_description
+# carries text from FILE_HEADER (file purpose paragraph), COMMENT_BANNER
+# (section description block), CSS_CLASS DEFINITION (per-class purpose
+# comment), and CSS_VARIANT DEFINITION (trailing inline variant comment).
 $dt = New-Object System.Data.DataTable
 [void]$dt.Columns.Add('file_name',           [string])
 [void]$dt.Columns.Add('object_registry_id',  [int])
@@ -2143,19 +2234,34 @@ ORDER BY COUNT(*) DESC;
 
 if ($driftSummary) { $driftSummary | Format-Table -AutoSize }
 
-Write-Log "Verification: purpose_description coverage on FILE_HEADER and COMMENT_BANNER rows"
+# Coverage report for purpose_description across the four row classes that
+# carry comment-derived text. Useful while G-INIT-3 and G-INIT-4 land; will
+# be removed when the parser pipeline is promoted to production.
+Write-Log "Verification: purpose_description coverage on FILE_HEADER, COMMENT_BANNER, CSS_CLASS DEFINITION, and CSS_VARIANT DEFINITION rows"
 
 $pdCoverage = Get-SqlData -Query @"
 SELECT
-    component_type,
+    CASE
+        WHEN component_type = 'CSS_CLASS'   AND reference_type = 'DEFINITION' THEN 'CSS_CLASS DEFINITION'
+        WHEN component_type = 'CSS_VARIANT' AND reference_type = 'DEFINITION' THEN 'CSS_VARIANT DEFINITION'
+        ELSE component_type
+    END AS row_class,
     COUNT(*) AS total_rows,
     SUM(CASE WHEN purpose_description IS NOT NULL THEN 1 ELSE 0 END) AS rows_with_purpose,
     SUM(CASE WHEN purpose_description IS NULL THEN 1 ELSE 0 END) AS rows_without_purpose
 FROM dbo.Asset_Registry
 WHERE file_type = 'CSS'
-  AND component_type IN ('FILE_HEADER', 'COMMENT_BANNER')
-GROUP BY component_type
-ORDER BY component_type;
+  AND (
+        component_type IN ('FILE_HEADER', 'COMMENT_BANNER')
+        OR (component_type IN ('CSS_CLASS', 'CSS_VARIANT') AND reference_type = 'DEFINITION')
+      )
+GROUP BY
+    CASE
+        WHEN component_type = 'CSS_CLASS'   AND reference_type = 'DEFINITION' THEN 'CSS_CLASS DEFINITION'
+        WHEN component_type = 'CSS_VARIANT' AND reference_type = 'DEFINITION' THEN 'CSS_VARIANT DEFINITION'
+        ELSE component_type
+    END
+ORDER BY row_class;
 "@
 
 if ($pdCoverage) { $pdCoverage | Format-Table -AutoSize }
