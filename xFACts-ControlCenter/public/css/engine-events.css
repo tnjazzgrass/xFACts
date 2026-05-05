@@ -28,6 +28,15 @@
 
    CHANGELOG
    ---------
+    2026-05-05  Reverted body viewport constraint (height:100vh + overflow:
+               hidden) introduced in Phase 4 because pages without a
+               .section-fill element were clipping below the fold on
+               smaller viewports with no scrollbar visible. Body now uses
+               min-height:100vh and natural document flow. .section-fill
+               simplified accordingly (flex sizing no longer needed when
+               body scrolls). The viewport-locked dashboard intent is
+               retained as a backlog item for future implementation in
+               cc-shared.css with proper per-page authoring guidance.  
    2026-04-30  Phase 4 (Chrome Standardization, slide-panel width revision):
                Slide-panel widths revised after a platform-wide audit
                showed the previous defaults under-served typical CC
@@ -94,8 +103,7 @@ body {
     padding-top: 60px;
     background: #1e1e1e;
     color: #d4d4d4;
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
@@ -633,8 +641,6 @@ h1 a:hover { color: #9cdcfe; }
 }
 
 .section-fill {
-    flex: 1;
-    flex-shrink: 1;
     min-height: 0;
     overflow-y: auto;
 }
