@@ -6,7 +6,7 @@
 # consumer detail (5 tabs), and account detail (3 tabs) against crs5_oltp.
 # Accessible via gateway cards on departmental pages — no main nav entry.
 #
-# CSS: /css/client-portal.css, /css/engine-events.css
+# CSS: /css/client-portal.css (engine-events.css temporarily disabled, see 2026-05-05 changelog)
 # JS:  /js/client-portal.js
 # APIs: ClientPortal-API.ps1
 #
@@ -14,7 +14,19 @@
 #
 # CHANGELOG
 # ---------
+# 2026-05-05  Removed engine-events.css link added in Phase 3d. The Phase 4
+#             chrome standardization (2026-04-30) introduced shared rules
+#             (.section, .section-header, body padding) that overrode the
+#             Client Portal's intended light-theme inside the dark CC shell.
+#             Reverted client-portal.css to its pre-Phase-3d standalone form
+#             which carries its own complete chrome rules. The portal is
+#             intentionally an outlier (light content area inside dark frame)
+#             and shouldn't share future shared-chrome changes by default.
+#             A planned future enhancement may re-introduce shared chrome
+#             with explicit per-element overrides where the portal needs to
+#             diverge.
 # 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
+
 #             Get-NavBarHtml helper. Page H1, subtitle, and browser tab title
 #             now render from RBAC_NavRegistry via Get-PageHeaderHtml and
 #             Get-PageBrowserTitle. Dropped the $access.IsDeptOnly branching
@@ -47,7 +59,7 @@ Add-PodeRoute -Method Get -Path '/client-portal' -Authentication 'ADLogin' -Scri
 <head>
     <title>$browserTitle</title>
     <link rel="stylesheet" href="/css/client-portal.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
+<!--    <link rel="stylesheet" href="/css/engine-events.css"> -->
 </head>
 <body>
 $navHtml
