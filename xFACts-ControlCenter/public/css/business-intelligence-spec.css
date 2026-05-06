@@ -35,7 +35,7 @@
    timestamp). The hidden helper toggles element visibility from JS. Both
    are page-local for now; if a second page adopts the same pattern they
    are candidates for promotion to cc-shared.
-   Prefixes: biz
+   Prefix: biz
    ============================================================================ */
 
 /* Small caption shown beside a section title for secondary context. */
@@ -59,7 +59,7 @@
    for tools that are configured but not yet deployed. The Notice Recon
    tile is a card variant that swaps the icon for a row of process-status
    badges (see CONTENT: NOTICE RECON BADGES).
-   Prefixes: biz
+   Prefix: biz
    ============================================================================ */
 
 /* The responsive grid container that holds the tool cards. */
@@ -130,7 +130,7 @@
    shows the current state of its process and is individually clickable
    (the tile itself is not). Badge color encodes process state: success,
    warning, error, running, pending, future.
-   Prefixes: biz
+   Prefix: biz
    ============================================================================ */
 
 /* The horizontal row container that holds the per-process status badges. */
@@ -211,7 +211,7 @@
    summary stats and steps table. Visually distinct from the badges above:
    pills are rounder and sit inline with text, badges are taller and
    represent an entire process. Same color semantics across both.
-   Prefixes: biz
+   Prefix: biz
    ============================================================================ */
 
 /* Inline status pill rendered inside slideout content. */
