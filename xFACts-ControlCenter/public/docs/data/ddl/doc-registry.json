@@ -228,20 +228,11 @@
         "isHub":  false,
         "sections":  [
                          {
-                             "component":  "DmOps.Archive",
-                             "description":  "Account-level data archiving with BIDATA capture and consumer shell cleanup",
+                             "component":  "DmOps",
+                             "description":  "Direct Debt Manager data operations: account-level archive with BIDATA capture and consumer shell purge",
                              "jsonSchema":  "DmOps",
                              "jsonCategories":  null,
                              "sectionOrder":  1,
-                             "ccSlug":  null,
-                             "ccTitle":  null
-                         },
-                         {
-                             "component":  "DmOps.ShellPurge",
-                             "description":  "Consumer shell purge — removes orphaned consumer records with no remaining accounts from crs5_oltp",
-                             "jsonSchema":  "DmOps",
-                             "jsonCategories":  null,
-                             "sectionOrder":  null,
                              "ccSlug":  null,
                              "ccTitle":  null
                          }
