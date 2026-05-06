@@ -39,7 +39,7 @@
    (Client Relations runs heavy queries that benefit from page-level
    caching). The other helpers are generic visibility, alignment, and
    placeholder treatments used throughout the page.
-   Prefixes: clr
+   Prefix: clr
    ============================================================================ */
 
 /* Inline indicator showing whether the page is rendering live or cached data. */
@@ -84,7 +84,7 @@
    .section provides the outer card frame and its own padding; these
    wrappers add a second layer of padding for content blocks, with a
    table variant that removes padding so tables can run edge-to-edge.
-   Prefixes: clr
+   Prefix: clr
    ============================================================================ */
 
 /* Inner content wrapper inside .section, with extra padding around children. */
@@ -105,7 +105,7 @@
    Each card shows a top-line value and a label below. Cards may render
    in a normal state, a warning state (amber border and tinted surface),
    or a critical state (red border and tinted surface).
-   Prefixes: clr
+   Prefix: clr
    ============================================================================ */
 
 /* The responsive grid container that holds the row of summary cards. */
@@ -165,7 +165,7 @@
    queue table by free-text match; the filter chips toggle visibility of
    rows by reason code. The @media block at the bottom of this section
    shrinks the input and hides the filters on narrow viewports.
-   Prefixes: clr
+   Prefix: clr
    ============================================================================ */
 
 /* The free-text search input in the queue section header. */
@@ -248,7 +248,7 @@
    rule. If a similar parent-hover-changes-child pattern surfaces on
    other pages, consider promoting a shared JS-driven class toggle to
    restore the cue cleanly.
-   Prefixes: clr
+   Prefix: clr
    ============================================================================ */
 
 /* Scrollable container wrapping the queue table (with sticky header inside). */
@@ -346,7 +346,7 @@
    .reason-no-data, .reason-discrepancy). Each reason class supplies
    its own background and text color; the base badge class supplies
    shared sizing and shape.
-   Prefixes: clr
+   Prefix: clr
    ============================================================================ */
 
 /* Base reason badge — shared sizing and shape across all reason variants. */
@@ -397,7 +397,7 @@
    has its own header styling (slightly smaller and more muted than the
    parent queue table) and is wrapped in a left-bordered container that
    visually nests it under the parent row.
-   Prefixes: clr
+   Prefix: clr
    ============================================================================ */
 
 /* The container row that hosts the expanded account sub-table. */
