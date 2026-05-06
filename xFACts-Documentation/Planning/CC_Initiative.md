@@ -50,12 +50,22 @@ The original plan was to drive each spec to completion sequentially while refact
 
 *Last updated: 2026-05-06.*
 
-**Next session action item — prefix registry migration to Component_Registry.** Before continuing populator work, consolidate `DmOps.Archive` and `DmOps.ShellPurge` to a single `DmOps` row across `Component_Registry`, `Object_Metadata`, and `System_Metadata`. Then add `cc_prefix CHAR(3) NULL` to `Component_Registry`, backfill the 18 page-row mappings from the doc-based registry below, add a filtered unique index on the column, and update the CSS and JS populators to read `Component_Registry` at startup and validate file-header-declared prefixes against it. New drift code: `PREFIX_REGISTRY_MISMATCH`. Once landed, the doc-based Prefix Registry section in this document retires.
+**Next session action item — populator change pass for prefix registry validation.** Both `Populate-AssetRegistry-CSS.ps1` and `Populate-AssetRegistry-JS.ps1` need to be updated to read the new `Component_Registry.cc_prefix` column at startup and validate file-header-declared prefixes against it. Specific changes for each populator:
+
+1. New startup query joining `Object_Registry` to `Component_Registry` to build a `(file_name → expected_prefix)` map (NULL prefix means "no CC page; banner must declare `(none)`").
+2. Banner regex flip from `^Prefixes\s*:` to `^Prefix\s*:` (singular only). The plural form becomes `MISSING_PREFIX_DECLARATION` drift.
+3. Banner value parsing: stop comma-splitting. The value is exactly one prefix or `(none)`. Anything else emits `MALFORMED_PREFIX_VALUE` on the banner row.
+4. Drift code registrations: rename `MISSING_PREFIXES_DECLARATION` to `MISSING_PREFIX_DECLARATION`, add `MALFORMED_PREFIX_VALUE` and `PREFIX_REGISTRY_MISMATCH` to the descriptions hashtable.
+5. New banner-level validation comparing declared prefix against the registry's expected prefix for the file's component. Mismatches emit `PREFIX_REGISTRY_MISMATCH` on the COMMENT_BANNER row.
+
+CSS populator structure: `$DriftDescriptions` ordered hashtable holds drift code → description; `$script:CurrentFilePrefixes` is set from the banner's parsed Prefixes line; `Add-Drift` function handles drift attribution. The new banner-level registry check goes in the `if ($Node.type -eq 'comment')` branch of `Add-RowsFromAst`, alongside the existing `MISSING_PREFIXES_DECLARATION` and `UNKNOWN_SECTION_TYPE` checks. JS populator structure parallels.
+
+Source file cleanup pairs with the populator work: every CSS file gets `Prefixes:` → `Prefix:`. `cc-shared.css` additionally gets every non-FOUNDATION banner's value reset to `(none)` (the legacy plural form had been used to hold section-grouping commentary like `nav`, `engine`, `page, header` — none of which were valid page prefixes). Dirk handles the source file edits.
 
 **Active spec documents:**
 
-- `CC_CSS_Spec.md` — restructured to operating-manual style this session. Production. CSS populator runs against it cleanly.
-- `CC_JS_Spec.md` — restructured to operating-manual style this session. JS populator at zero file-attributable drift on cc-shared.js and the five spec-aligned CSS files. Still requires Phase 1 batch validation against page JS files.
+- `CC_CSS_Spec.md` — singular `Prefix:` form adopted; new Section 5.3 (single prefix per banner) and 5.4 (registry validation) added; new drift codes `MALFORMED_PREFIX_VALUE` and `PREFIX_REGISTRY_MISMATCH`; legacy `MISSING_PREFIXES_DECLARATION` renamed to `MISSING_PREFIX_DECLARATION`. Production. CSS populator does not yet enforce these rules — populator change pass is the next-session action item.
+- `CC_JS_Spec.md` — Section 5.3 (single prefix per banner) and 5.4 (registry validation) added; new drift codes `MALFORMED_PREFIX_VALUE` and `PREFIX_REGISTRY_MISMATCH` added to the drift code reference. Production. JS populator does not yet enforce the registry validation rule.
 - `CC_HTML_Spec.md` — pre-design (stub). Active when HTML populator catch-up resumes.
 - `CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md` — pre-design (stubs). Queued after HTML.
 
@@ -63,7 +73,7 @@ The original plan was to drive each spec to completion sequentially while refact
 
 | File | Prefix |
 |------|--------|
-| `cc-shared.css` | (uses `--<category>-*` token namespace) |
+| `cc-shared.css` | (uses `--<category>-*` token namespace; banners declare `Prefix: (none)`) |
 | `backup.css` | `bkp` |
 | `business-intelligence.css` | `biz` |
 | `client-relations.css` | `clr` |
@@ -74,7 +84,7 @@ The original plan was to drive each spec to completion sequentially while refact
 
 | File | Prefix | Status |
 |------|--------|--------|
-| `cc-shared.js` | (uses prefix-free shared namespace) | DONE — zero file-attributable drift |
+| `cc-shared.js` | (uses prefix-free shared namespace; banners declare `Prefix: (none)`) | DONE — zero file-attributable drift |
 | `engine-events.js` | (legacy shared file) | LEGACY — deactivates after Phase 1 page JS files migrate to `cc-shared.js` |
 | `backup.js` | `bkp` | QUEUED for Phase 1 batch |
 | `business-intelligence.js` | `biz` | QUEUED for Phase 1 batch |
@@ -84,12 +94,13 @@ The original plan was to drive each spec to completion sequentially while refact
 
 The five Phase 1 page JS files batch with their CSS, HTML, and PS counterparts during the Phase 1 batch sweep. Each Phase 1 page transitions from pre-spec to fully compliant in a single coordinated session.
 
-**Queued work (after the prefix migration):**
+**Queued work:**
 
-1. HTML populator catch-up plus HTML spec design. Bring `Populate-AssetRegistry-HTML.ps1` to current schema, resolve the dynamic-class strategy question (see Pipeline doc), then design `CC_HTML_Spec.md` against existing HTML conventions.
-2. PS populator plus PS spec design (modules and routes). Two specs, one populator covering both.
-3. Phase 1 batch sweep — refactor the five Phase 1 pages across all four file types together.
-4. Page-at-a-time migration for the remaining ~22 pages.
+1. CSS and JS populator change pass for prefix registry validation (next session — see action item above).
+2. HTML populator catch-up plus HTML spec design. Bring `Populate-AssetRegistry-HTML.ps1` to current schema, resolve the dynamic-class strategy question (see Pipeline doc), then design `CC_HTML_Spec.md` against existing HTML conventions.
+3. PS populator plus PS spec design (modules and routes). Two specs, one populator covering both.
+4. Phase 1 batch sweep — refactor the five Phase 1 pages across all four file types together.
+5. Page-at-a-time migration for the remaining ~22 pages.
 
 **Blocked on:** nothing.
 
@@ -97,33 +108,16 @@ The five Phase 1 page JS files batch with their CSS, HTML, and PS counterparts d
 
 ## Prefix Registry
 
-Each CC page declares a 3-character prefix that scopes its page-local identifiers across CSS class names, HTML class attributes, and JS selectors. The prefix is a page-wide identity, not a per-file-type rule.
+The prefix registry lives in `dbo.Component_Registry.cc_prefix`. Each CC page's component carries a 3-character lowercase prefix that scopes its page-local identifiers across CSS class names, HTML class attributes, and JS top-level identifiers. Components without a CC page (shared resources, infrastructure, vendor libraries) carry `cc_prefix = NULL` and their files declare `Prefix: (none)` in section banners.
 
-This table is the canonical prefix-to-page mapping until the next-session migration to `Component_Registry.cc_prefix` lands. New CC pages get a row here at the time they are created.
+The column is enforced by:
 
-| Page | Prefix |
-|------|--------|
-| `admin` | `adm` |
-| `applications-integration` | `aai` |
-| `backup` | `bkp` |
-| `batch-monitoring` | `bat` |
-| `bdl-import` | `bdl` |
-| `bidata-monitoring` | `bid` |
-| `business-intelligence` | `biz` |
-| `business-services` | `bsv` |
-| `client-portal` | `clp` |
-| `client-relations` | `clr` |
-| `dbcc-operations` | `dbc` |
-| `dm-operations` | `dmo` |
-| `file-monitoring` | `flm` |
-| `index-maintenance` | `idx` |
-| `jboss-monitoring` | `jbm` |
-| `jobflow-monitoring` | `jfm` |
-| `platform-monitoring` | `plt` |
-| `replication-monitoring` | `rpm` |
-| `server-health` | `srv` |
+- A filtered unique index (`UQ_Component_Registry_cc_prefix`) preventing two components from claiming the same prefix.
+- A CHECK constraint (`CK_Component_Registry_cc_prefix`) requiring exactly three lowercase ASCII letters, with a case-sensitive collation override so uppercase variants are rejected.
 
-`cc-shared.css` does not have a prefix — it uses the `--<category>-*` token namespace for custom properties and prefix-free class names for shared chrome. The documentation CSS files (`docs-*.css`) are evaluated separately and do not have prefixes assigned at this time.
+The CSS and JS populators read this column at startup to validate banner-declared prefixes. See `CC_CSS_Spec.md` Section 5.4 and `CC_JS_Spec.md` Section 5.4 for the validation rule.
+
+Adding a new CC page: insert the component row in `Component_Registry` with the chosen `cc_prefix`, then create the page's CSS and JS files with banners that declare that prefix. The populators will validate on the next run.
 
 ---
 
@@ -173,6 +167,10 @@ The `cc-shared.js` section taxonomy was rewritten to align with the same structu
 
 Spec restructured to operating-manual style. Body sections now contain rules only, with rationale moved to a dedicated Appendix at the end. All inline code examples consolidated into a single Examples section. Status, Owner, and cross-document references removed from the preamble. The previous in-doc revision history was migrated to this Initiative document and removed from the spec itself. No rule changes — this was a structural cleanup of how the spec is presented, not what it requires.
 
+### 2026-05-06 — Prefix registry validation
+
+Section 5 expanded with a new 5.3 (single prefix per banner) and 5.4 (registry validation against `Component_Registry.cc_prefix`) to formalize the relationship between file-header-declared prefixes and the platform's prefix registry. Two new drift codes added: `MALFORMED_PREFIX_VALUE` (banner declares anything other than a single 3-char prefix or `(none)`) and `PREFIX_REGISTRY_MISMATCH` (declared prefix disagrees with the registry's value for the file's component). The JS spec already used singular `Prefix:` form, so no rename was needed; this was a pure addition. Populator enforcement is queued for the next-session change pass.
+
 ---
 
 ## CSS spec evolution
@@ -186,6 +184,10 @@ Defined the section-type taxonomy (`FOUNDATION`, `CHROME`, `LAYOUT`, `CONTENT`, 
 ### 2026-05-06 — Editorial restructure
 
 Spec restructured to operating-manual style, matching the JS spec's pattern. Body sections now contain rules only, with rationale moved to a dedicated Appendix at the end. All inline code examples consolidated into a single Examples section. The forbidden-patterns table's Rationale column was dropped from the body and consolidated into the Appendix. Status, Owner, and cross-document references removed from the preamble. The previous one-line revision history was migrated to this Initiative document and removed from the spec itself. No rule changes.
+
+### 2026-05-06 — Prefix singularization and registry validation
+
+The plural `Prefixes:` field name was retired in favor of singular `Prefix:`, matching the JS spec's existing convention. The plural form had encouraged misuse: section banners in `cc-shared.css` had accumulated comma-separated lists of section-grouping commentary words (`nav`, `page, header`, `engine`, etc.) that were not valid page prefixes at all. The singular form makes the field's meaning unambiguous — exactly one page prefix, or `(none)`. Three associated changes: drift code `MISSING_PREFIXES_DECLARATION` was renamed to `MISSING_PREFIX_DECLARATION`; new drift code `MALFORMED_PREFIX_VALUE` covers banners declaring anything other than a single 3-char prefix or `(none)`; new Section 5.3 documents the single-prefix-per-banner rule. Section 5.4 was added to formalize registry validation: each banner's declared prefix is cross-referenced against `Component_Registry.cc_prefix` for the file's component, with `PREFIX_REGISTRY_MISMATCH` drift on disagreement. Populator enforcement is queued for the next-session change pass.
 
 ---
 
@@ -207,4 +209,6 @@ A compressed record of cross-cutting decisions made across sessions. One or two 
 - **2026-05-06** — Cross-reference rule established. Permanent docs (specs, Development Guidelines) reference no other docs and stay self-contained. Working docs (Initiative, Pipeline, planning trackers) may reference companions; references are at the doc level or named-section level, never section numbers.
 - **2026-05-06** — Specs no longer carry versioning, status, or owner. A spec is settled until amended; amendments are recorded in this doc's Spec Evolution sections.
 - **2026-05-06** — PowerShell script CHANGELOG entries going forward will be one-line summaries, not narrative paragraphs. Implementation events that need narrative context land in this doc or the Pipeline doc.
-- **2026-05-06** — Decided to migrate the Prefix Registry from this doc to a `cc_prefix CHAR(3) NULL` column on `Component_Registry`. Dependency: consolidate `DmOps.Archive` and `DmOps.ShellPurge` to a single `DmOps` row first. Once the column exists, populators read it at startup and validate file-header-declared prefixes against it. Tracked as the next-session action item; the doc-based registry retires when the migration lands.
+- **2026-05-06** — Decided to migrate the Prefix Registry from this doc to a `cc_prefix CHAR(3) NULL` column on `Component_Registry`. Once the column exists, populators read it at startup and validate file-header-declared prefixes against it.
+- **2026-05-06** — Prefix Registry migration completed. `Component_Registry.cc_prefix` column added with filtered unique index and case-sensitive CHECK constraint. 19 page-component prefixes backfilled. The doc-based Prefix Registry section in this document was retired in favor of the database-resident registry.
+- **2026-05-06** — Prefix declaration form standardized to singular `Prefix:` across both CSS and JS specs. The plural `Prefixes:` form had encouraged misuse in CSS (section-grouping commentary words leaking into the prefix declaration); the singular form removes that ambiguity. Each banner declares exactly one 3-character prefix or `(none)`. Two new drift codes, `MALFORMED_PREFIX_VALUE` and `PREFIX_REGISTRY_MISMATCH`, formalize banner-level validation against the registry. Populator enforcement queued for the next-session change pass.
