@@ -75,6 +75,104 @@
     parameter, all .js files in the scan roots are processed.
 
 CHANGELOG
+2026-05-06  Top-level IIFE handling: file-scope IIFEs are now cataloged
+            as a single JS_IIFE row carrying the IIFE source verbatim in
+            raw_text plus FORBIDDEN_IIFE drift, and the walker no longer
+            descends into the IIFE body. Previously the walker treated an
+            IIFE detection as advisory and continued recursing, which
+            produced cascade drift on every nested declaration (every
+            function inside the IIFE got MISSING_SECTION_BANNER plus
+            PREFIX_MISMATCH plus MISSING_FUNCTION_COMMENT) and -- in
+            practice on the docs-zone files -- crashed the visitor before
+            completing. New mechanism: visitor handlers can return
+            'SKIP_CHILDREN' to signal that Invoke-AstWalk should not
+            recurse into a node's children. The IIFE handler returns this
+            after emitting the JS_IIFE row. Code outside the IIFE (before
+            or after at file scope) is still cataloged normally; only the
+            IIFE body itself is skipped. Mechanism is general-purpose:
+            future structurally-non-conforming patterns can adopt the
+            same SKIP_CHILDREN signal if cataloging their interiors would
+            produce cascade drift rather than meaningful rows.
+2026-05-05  AST walk resilience: each per-file Invoke-AstWalk call is now
+            wrapped in try/catch. If the walk throws (latent visitor bug
+            triggered by an unusual AST shape, e.g., as observed when
+            walking ddl-erd.js), the error is logged, partial rows from
+            that file are discarded, and processing continues with the
+            next file. The file's FILE_HEADER and COMMENT_BANNER rows are
+            preserved (they're emitted before the walk and capture file-
+            level structure independent of content extraction). Walk
+            failures are populator tooling defects, not spec-compliance
+            issues, so no drift code is emitted -- the only signal is
+            the WARN log line. Console output for each file's walk now
+            includes the zone label, matching the CSS populator's format
+            ("Walking <name> (<scope>, zone=<cc|docs>)...").
+2026-05-05  Zone awareness added (mirroring the CSS populator's existing
+            zone architecture). Three substantive changes:
+              (1) ZONE SPLIT. The single global $SharedFiles list is split
+                  into $CcSharedFiles (cc-shared.js, engine-events.js) and
+                  $DocsSharedFiles (nav.js, docs-controlcenter.js,
+                  ddl-erd.js, ddl-loader.js). $SharedFiles is retained as
+                  the union for the few places that still need "is this any
+                  kind of shared file." New Get-JsZone helper derives zone
+                  from filepath (\public\docs\js\ -> docs; otherwise cc),
+                  same shape as Get-CssZone.
+              (2) PER-ZONE SHARED MAPS. Pass 1's $sharedFunctions /
+                  $sharedConstants / $sharedClasses / $sharedSourceFile
+                  hashtables are now per-zone: $ccSharedFunctions,
+                  $docsSharedFunctions, etc. The CSS pre-load query result
+                  is similarly bucketed into $ccSharedClassMap /
+                  $docsSharedClassMap / $ccLocalClassMap / $docsLocalClassMap
+                  using each row's file_name to determine zone. New
+                  $script:CurrentFileZone state, set per-file in Pass 2.
+                  Zone-aware accessor functions (Get-ZoneSharedClassMap,
+                  Get-ZoneLocalClassMap, Get-ZoneSharedFunctions,
+                  Get-ZoneSharedSourceFile) return the zone-appropriate
+                  map for the file currently being walked.
+              (3) ZONE-AWARE RESOLUTION. Add-ClassUsageRow,
+                  Add-JsFunctionUsageRow, and the SHADOWS_SHARED_FUNCTION
+                  detection pass all consume the accessors. Net effect: a
+                  CC page can no longer wrongly resolve a USAGE row to a
+                  docs-zone shared file (or vice versa), and a CC page
+                  defining a function whose name happens to match a
+                  docs-zone shared name is no longer flagged as shadowing.
+            Migration support: cc-shared.js (the spec-compliant new shared
+            file) and engine-events.js (the legacy shared file currently in
+            use by every page) are both listed in $CcSharedFiles during
+            the page-by-page migration period; engine-events.js is removed
+            once every page has cut over.
+2026-05-05  HTML_ID rows now always emitted with scope='LOCAL' per JS spec
+            Section 17.3, regardless of whether the source file is a
+            shared file. The previous behavior stamped HTML_ID rows in
+            cc-shared.js (and engine-events.js) with scope='SHARED' based
+            on $CurrentFileIsShared, which conflicts with the spec's
+            "IDs are inherently page-specific" rule. Even when an id
+            appears inside a markup template emitted by a shared utility,
+            the id itself is a single-page concept.
+2026-05-05  Phase 1 bug fixes from the methodology audit:
+              (1) BUG A - Phantom banner from file-header misclassification.
+                  Test-IsBannerComment was returning true on the file
+                  header because the FILE ORGANIZATION list contains lines
+                  matching <TYPE>: <NAME> for valid section types. Result:
+                  the file header was getting collected as a phantom
+                  banner #0, inflating the section list by one and
+                  causing FILE_ORG_MISMATCH (counts didn't match) plus
+                  spurious MISSING_PREFIX_DECLARATION on the phantom row.
+                  Fix: Test-IsBannerComment now disqualifies header-shaped
+                  comments via Location:/Version:/xFACts-identity-line
+                  guards (matching the CSS populator's existing pattern).
+              (2) BUG B - $SectionTypeOrder map predated JS spec v1.3.
+                  The map ordered CHROME=3 / STATE=5 (v1.0/v1.1 ordering),
+                  but spec v1.3 reorganized cc-shared.js to put STATE
+                  before CHROME. Result: every cc-shared.js parse fired a
+                  spurious SECTION_TYPE_ORDER_VIOLATION. Fix: updated map
+                  to put STATE=3, CHROME=4 (sharing slot with INITIALIZATION
+                  since CHROME = cc-shared.js's INITIALIZATION+FUNCTIONS).
+                  FOUNDATION and CONSTANTS share slot 2 (parallel concepts
+                  in shared vs page files).
+              (3) ENCODING. Source file normalized to pure ASCII. Three
+                  Windows-1252 em-dashes in comments converted to '--'.
+                  PowerShell editors no longer warn about unsupported
+                  Unicode characters when saving.
 2026-05-04  Spec-aware rewrite. Adopts CC_JS_Spec.md as the authoritative
             structural contract. New row types: JS_STATE, JS_HOOK, JS_TIMER,
             FILE_HEADER. Section-aware drift detection: banner format/order,
@@ -119,26 +217,53 @@ $JsScanRoots = @(
     "$CcRoot\public\docs\js"
 )
 
-# Files whose top-level definitions are visible to multiple consumer files.
-# Definitions in these files get scope=SHARED.
+# Shared files split by zone. Each zone's consumers resolve USAGE references
+# only against their own zone's shared map. CC pages cannot consume docs JS
+# (and vice versa); single-pool resolution would produce wrong USAGE
+# attribution when names happened to collide across zones.
 #
-# Control Center zone:
-#   cc-shared.js     - the spec-compliant shared file (post-migration)
-#   engine-events.js - the legacy shared file (alias during migration)
+# CC zone migration in progress: cc-shared.js is the spec-compliant
+# replacement for engine-events.js. Both are listed during the migration so
+# pages can consume either while the page-by-page refactor proceeds. After
+# every page has migrated, engine-events.js comes off the list and out of
+# the codebase.
 #
-# Documentation site zone:
-#   nav.js, docs-controlcenter.js, ddl-erd.js, ddl-loader.js
-#
-# During migration, both cc-shared.js and engine-events.js may exist.
-# Once the migration completes, engine-events.js is removed from this list
-# and from the codebase.
-$SharedFiles = @(
+# Docs zone shared files are nav.js (the docs nav bar) and docs-controlcenter.js
+# (the docs Control Center documentation page); the docs zone has no page
+# consumers today, but the zone separation is structurally enforced so that
+# CC pages don't pick up docs-zone names by accident.
+$CcSharedFiles = @(
     'cc-shared.js',
-    'engine-events.js',
+    'engine-events.js'
+)
+$DocsSharedFiles = @(
     'nav.js',
     'docs-controlcenter.js',
     'ddl-erd.js',
     'ddl-loader.js'
+)
+$SharedFiles = $CcSharedFiles + $DocsSharedFiles
+
+# Same shared-CSS-file split, used to bucket CSS_CLASS DEFINITION rows from
+# the database pre-load into per-zone maps. The JS populator does not parse
+# CSS files itself but needs to know which CSS shared files are CC-zone vs.
+# docs-zone so JS-side CSS_CLASS USAGE rows resolve only against their own
+# zone's CSS shared classes. Mirrors the CSS populator's $CcSharedFiles /
+# $DocsSharedFiles. Kept in sync manually for now; if the lists drift, JS
+# consumers may resolve CSS_CLASS USAGE rows to '<undefined>' even though
+# the class is defined elsewhere in the catalog.
+$CcSharedCssFiles = @(
+    'cc-shared.css',
+    'engine-events.css'
+)
+$DocsSharedCssFiles = @(
+    'docs-base.css',
+    'docs-architecture.css',
+    'docs-controlcenter.css',
+    'docs-erd.css',
+    'docs-hub.css',
+    'docs-narrative.css',
+    'docs-reference.css'
 )
 
 # The single canonical CC-zone shared file. Used for FOUNDATION/CHROME
@@ -160,14 +285,19 @@ $ValidSectionTypes = @(
 )
 
 # Required ordering of section types. Lower index = earlier in file.
+# Page files use:    IMPORTS -> CONSTANTS -> STATE -> INITIALIZATION -> FUNCTIONS
+# cc-shared.js uses: IMPORTS -> FOUNDATION -> STATE -> CHROME
+# FOUNDATION and CONSTANTS share slot 2 (parallel concepts in shared vs. page files).
+# CHROME and INITIALIZATION share slot 4 (CHROME = cc-shared.js's INITIALIZATION+FUNCTIONS
+# combined; per JS spec v1.3 Section 4.2).
 $SectionTypeOrder = @{
     'IMPORTS'        = 1
     'FOUNDATION'     = 2
-    'CHROME'         = 3
-    'CONSTANTS'      = 4
-    'STATE'          = 5
-    'INITIALIZATION' = 6
-    'FUNCTIONS'      = 7
+    'CONSTANTS'      = 2
+    'STATE'          = 3
+    'INITIALIZATION' = 4
+    'CHROME'         = 4
+    'FUNCTIONS'      = 5
 }
 
 # Section types limited to single-banner-only (no multiple banners of this
@@ -207,6 +337,16 @@ $fileHeaderRowByFile = @{}
 # DUPLICATE_FOUNDATION / DUPLICATE_CHROME if more than one file does so.
 $foundationFiles = New-Object System.Collections.Generic.List[string]
 $chromeFiles     = New-Object System.Collections.Generic.List[string]
+
+# Determine which zone a JS file belongs to based on its filepath. Files
+# under public\docs\js\ are docs-zone; everything else is cc-zone. Used both
+# during Pass 1 (to decide which zone's shared map to populate) and during
+# Pass 2 (to scope USAGE resolution).
+function Get-JsZone {
+    param([string]$FullPath)
+    if ($FullPath -match '\\public\\docs\\js\\') { return 'docs' }
+    return 'cc'
+}
 
 function Test-AddDedupeKey {
     param([string]$Key)
@@ -491,7 +631,16 @@ function Invoke-AstWalk {
     if ($Node -isnot [System.Management.Automation.PSCustomObject]) { return }
     if (-not ($Node.PSObject.Properties.Name -contains 'type')) { return }
 
-    & $Visitor $Node $ParentChain $ParentNodes
+    # Visitor may return 'SKIP_CHILDREN' to signal that the walker should
+    # not recurse into this node's children. Used for structurally
+    # forbidden constructs (e.g., top-level IIFEs) where per-row
+    # cataloging of the body would just produce cascade drift -- one
+    # FORBIDDEN_* row at the construct itself is the meaningful catalog
+    # entry; the body is captured verbatim in raw_text on that row.
+    $visitorResult = & $Visitor $Node $ParentChain $ParentNodes
+    if ($null -ne $visitorResult -and ($visitorResult -contains 'SKIP_CHILDREN')) {
+        return
+    }
 
     $newChain = @($ParentChain + $Node.type)
     $newNodes = @($ParentNodes + $Node)
@@ -659,7 +808,7 @@ function Get-CurrentParentName {
 
 # Resolve the effective name of a FunctionExpression / ArrowFunctionExpression
 # by inspecting its immediate parent context. Under the v1.2 spec, function
-# expressions are only spec-allowed as callback arguments — every other context
+# expressions are only spec-allowed as callback arguments -- every other context
 # is a FORBIDDEN_ANONYMOUS_FUNCTION violation. This helper is still called
 # for the violation cases because USAGE rows nested inside the violating
 # expression need *some* parent_function value; we record the const/var name
@@ -704,7 +853,7 @@ function Get-NameForFunctionExpression {
             return '<anonymous>'
         }
         'CallExpression' {
-            # Function expression is being passed as a callback argument —
+            # Function expression is being passed as a callback argument --
             # the spec-allowed context. Use the callee's display name.
             $callee = $parent.callee
             if ($null -eq $callee) { return '<anonymous>' }
@@ -958,7 +1107,18 @@ function Test-IsBannerComment {
     if ($null -eq $CommentText) { return $false }
     if ($CommentText -notmatch '={5,}') { return $false }
 
-    # Must contain a TYPE: NAME line
+    # File headers also contain '=' rules and a FILE ORGANIZATION list whose
+    # entries match the <TYPE>: <NAME> shape. Distinguish by the header-specific
+    # markers (Location: with drive prefix, Version: tracked-in-System_Metadata,
+    # or the xFACts identity line). If any are present, this is the file header
+    # and is not a banner.
+    if ($CommentText -match 'Location\s*:\s*[A-Za-z]:[\\/]' -or
+        $CommentText -match 'Version\s*:\s*Tracked in dbo\.System_Metadata' -or
+        $CommentText -match 'xFACts Control Center\s*-\s*[^=]+\(.+\.[a-z]+\)') {
+        return $false
+    }
+
+    # Must contain a TYPE: NAME line where TYPE is a recognized section type.
     $lines = $CommentText -split "`n"
     foreach ($line in $lines) {
         $stripped = $line -replace '^\s*\*\s?', '' -replace '^\s+', ''
@@ -1526,26 +1686,36 @@ else {
 }
 
 # ============================================================================
-# PASS 1 - PARSE ALL FILES, COLLECT SHARED-SCOPE DEFINITIONS
+# PASS 1 - PARSE ALL FILES, COLLECT SHARED-SCOPE DEFINITIONS (zone-aware)
 # ============================================================================
 # Walk every file once to:
 #   1. Cache the parse result (used by Pass 2)
-#   2. Collect top-level definitions from $SharedFiles members so Pass 2
-#      can resolve USAGE rows to their SHARED source.
+#   2. Collect top-level definitions from $CcSharedFiles + $DocsSharedFiles
+#      members into per-zone maps so Pass 2 can resolve USAGE rows to their
+#      SHARED source within the consumer's own zone only.
 #   3. Track which files declare FOUNDATION or CHROME sections (cross-file
 #      uniqueness check happens after Pass 2).
 
-Write-Log "Pass 1: parse all files, collect SHARED-scope JS definitions..."
+Write-Log "Pass 1: parse all files, collect SHARED-scope JS definitions (zone-aware)..."
 
 $astCache = @{}
 
-$sharedFunctions = New-Object 'System.Collections.Generic.HashSet[string]'
-$sharedConstants = New-Object 'System.Collections.Generic.HashSet[string]'
-$sharedClasses   = New-Object 'System.Collections.Generic.HashSet[string]'
-$sharedSourceFile = @{}
+# Per-zone shared-name maps. CC consumers resolve only against $ccShared*;
+# docs consumers resolve only against $docsShared*. Same split applied to
+# functions, constants, classes, and the source-file lookup that records
+# which file each shared name came from.
+$ccSharedFunctions   = New-Object 'System.Collections.Generic.HashSet[string]'
+$ccSharedConstants   = New-Object 'System.Collections.Generic.HashSet[string]'
+$ccSharedClasses     = New-Object 'System.Collections.Generic.HashSet[string]'
+$ccSharedSourceFile  = @{}
+$docsSharedFunctions = New-Object 'System.Collections.Generic.HashSet[string]'
+$docsSharedConstants = New-Object 'System.Collections.Generic.HashSet[string]'
+$docsSharedClasses   = New-Object 'System.Collections.Generic.HashSet[string]'
+$docsSharedSourceFile = @{}
 
 foreach ($file in $JsFiles) {
     $name = [System.IO.Path]::GetFileName($file)
+    $zone = Get-JsZone -FullPath $file
 
     Write-Host "  Parsing $name ..." -NoNewline
     $parsed = Invoke-JsParse -FilePath $file
@@ -1556,8 +1726,21 @@ foreach ($file in $JsFiles) {
     Write-Host " ok" -ForegroundColor Green
     $astCache[$file] = $parsed
 
-    # If this is a shared file, collect its top-level definitions
+    # If this is a shared file, collect its top-level definitions into the
+    # zone-appropriate maps.
     if ($SharedFiles -notcontains $name) { continue }
+
+    if ($zone -eq 'docs') {
+        $sharedFunctions  = $docsSharedFunctions
+        $sharedConstants  = $docsSharedConstants
+        $sharedClasses    = $docsSharedClasses
+        $sharedSourceFile = $docsSharedSourceFile
+    } else {
+        $sharedFunctions  = $ccSharedFunctions
+        $sharedConstants  = $ccSharedConstants
+        $sharedClasses    = $ccSharedClasses
+        $sharedSourceFile = $ccSharedSourceFile
+    }
 
     $programBody = $parsed.Ast.body
     if ($null -eq $programBody) { continue }
@@ -1639,12 +1822,15 @@ foreach ($file in $JsFiles) {
     }
 }
 
-Write-Log ("  Shared functions: {0}" -f $sharedFunctions.Count)
-Write-Log ("  Shared constants: {0}" -f $sharedConstants.Count)
-Write-Log ("  Shared classes:   {0}" -f $sharedClasses.Count)
+Write-Log ("  CC zone   - shared functions: {0}" -f $ccSharedFunctions.Count)
+Write-Log ("  CC zone   - shared constants: {0}" -f $ccSharedConstants.Count)
+Write-Log ("  CC zone   - shared classes:   {0}" -f $ccSharedClasses.Count)
+Write-Log ("  Docs zone - shared functions: {0}" -f $docsSharedFunctions.Count)
+Write-Log ("  Docs zone - shared constants: {0}" -f $docsSharedConstants.Count)
+Write-Log ("  Docs zone - shared classes:   {0}" -f $docsSharedClasses.Count)
 
 # ============================================================================
-# LOAD CSS_CLASS DEFINITIONS FROM Asset_Registry FOR SCOPE RESOLUTION
+# LOAD CSS_CLASS DEFINITIONS FROM Asset_Registry FOR SCOPE RESOLUTION (zone-aware)
 # ============================================================================
 # Outcome of this load is captured in $cssPreLoadState so the verification
 # pass at the end of the run can warn the user when CSS-class scope was
@@ -1656,6 +1842,12 @@ Write-Log ("  Shared classes:   {0}" -f $sharedClasses.Count)
 #                    source_file='<undefined>'
 #   'QUERY_FAILED' - the query returned $null (the helper logs the SQL
 #                    error separately); same downstream effect as EMPTY.
+#
+# CSS_CLASS DEFINITION rows are bucketed into per-zone maps based on the
+# row's file_name matched against $CcSharedCssFiles / $DocsSharedCssFiles
+# (for SHARED rows) or grouped by zone via the file_name's location for
+# LOCAL rows. CC-zone JS consumers resolve only against $ccSharedClassMap;
+# docs-zone JS consumers resolve only against $docsSharedClassMap.
 
 Write-Log "Loading existing CSS_CLASS DEFINITION rows for scope resolution..."
 
@@ -1667,8 +1859,10 @@ WHERE component_type = 'CSS_CLASS'
   AND file_type = 'CSS';
 "@
 
-$sharedClassMap = @{}
-$localClassMap  = @{}
+$ccSharedClassMap   = @{}
+$docsSharedClassMap = @{}
+$ccLocalClassMap    = @{}
+$docsLocalClassMap  = @{}
 $cssPreLoadState = 'QUERY_FAILED'
 
 if ($null -ne $cssDefs) {
@@ -1681,14 +1875,31 @@ if ($null -ne $cssDefs) {
         foreach ($d in $defArray) {
             $cn = $d.component_name
             if ([string]::IsNullOrEmpty($cn)) { continue }
+            $fn = $d.file_name
+            # Zone bucket: SHARED rows route by their file_name match against the
+            # zone's known shared CSS files; LOCAL rows route by file_name's
+            # docs-prefix convention (docs-* CSS files are always docs-zone).
+            $isDocs = ($DocsSharedCssFiles -contains $fn) -or ($fn -like 'docs-*')
             if ($d.scope -eq 'SHARED') {
-                if (-not $sharedClassMap.ContainsKey($cn)) {
-                    $sharedClassMap[$cn] = $d.file_name
+                if ($isDocs) {
+                    if (-not $docsSharedClassMap.ContainsKey($cn)) {
+                        $docsSharedClassMap[$cn] = $fn
+                    }
+                } else {
+                    if (-not $ccSharedClassMap.ContainsKey($cn)) {
+                        $ccSharedClassMap[$cn] = $fn
+                    }
                 }
             }
             else {
-                if (-not $localClassMap.ContainsKey($cn)) {
-                    $localClassMap[$cn] = $d.file_name
+                if ($isDocs) {
+                    if (-not $docsLocalClassMap.ContainsKey($cn)) {
+                        $docsLocalClassMap[$cn] = $fn
+                    }
+                } else {
+                    if (-not $ccLocalClassMap.ContainsKey($cn)) {
+                        $ccLocalClassMap[$cn] = $fn
+                    }
                 }
             }
         }
@@ -1697,8 +1908,10 @@ if ($null -ne $cssDefs) {
 
 switch ($cssPreLoadState) {
     'OK' {
-        Write-Log ("  Shared CSS classes:     {0}" -f $sharedClassMap.Count)
-        Write-Log ("  Local-only CSS classes: {0}" -f $localClassMap.Count)
+        Write-Log ("  CC zone   - shared CSS classes:     {0}" -f $ccSharedClassMap.Count)
+        Write-Log ("  CC zone   - local-only CSS classes: {0}" -f $ccLocalClassMap.Count)
+        Write-Log ("  Docs zone - shared CSS classes:     {0}" -f $docsSharedClassMap.Count)
+        Write-Log ("  Docs zone - local-only CSS classes: {0}" -f $docsLocalClassMap.Count)
     }
     'EMPTY' {
         Write-Log "CSS_CLASS DEFINITION query returned zero rows. Class scope resolution will mark everything '<undefined>'." "WARN"
@@ -1844,6 +2057,7 @@ function Get-TimerHandleCandidates {
 
 $script:CurrentFile           = $null
 $script:CurrentFileIsShared   = $false
+$script:CurrentFileZone       = 'cc'   # 'cc' or 'docs' -- drives shared-map selection for USAGE resolution
 $script:CurrentFileSource     = $null
 $script:CurrentLocalFuncs     = $null
 $script:CurrentLocalConsts    = $null
@@ -1854,6 +2068,33 @@ $script:CurrentCommentIndex   = $null
 $script:CurrentTimerHandles   = $null
 $script:CurrentFileRow        = $null   # the FILE_HEADER row, for file-level drift
 $script:CurrentFileSectionInst = $null  # used during nested-class method walks
+
+# ----- Zone-aware shared-map accessors --------------------------------------
+#
+# These accessors return the shared map appropriate to the current file's
+# zone. CC consumers see only $ccShared* maps; docs consumers see only
+# $docsShared* maps. This prevents a CC page from accidentally resolving a
+# class or function name to a docs-zone shared definition (or vice versa).
+
+function Get-ZoneSharedClassMap {
+    if ($script:CurrentFileZone -eq 'docs') { return $script:docsSharedClassMap }
+    return $script:ccSharedClassMap
+}
+
+function Get-ZoneLocalClassMap {
+    if ($script:CurrentFileZone -eq 'docs') { return $script:docsLocalClassMap }
+    return $script:ccLocalClassMap
+}
+
+function Get-ZoneSharedFunctions {
+    if ($script:CurrentFileZone -eq 'docs') { return $script:docsSharedFunctions }
+    return $script:ccSharedFunctions
+}
+
+function Get-ZoneSharedSourceFile {
+    if ($script:CurrentFileZone -eq 'docs') { return $script:docsSharedSourceFile }
+    return $script:ccSharedSourceFile
+}
 
 # ----- Row emitters ---------------------------------------------------------
 
@@ -1871,13 +2112,15 @@ function Add-ClassUsageRow {
 
     $scope = 'LOCAL'
     $sourceFile = '<undefined>'
-    if ($sharedClassMap.ContainsKey($ClassName)) {
+    $sharedMap = Get-ZoneSharedClassMap
+    $localMap  = Get-ZoneLocalClassMap
+    if ($sharedMap.ContainsKey($ClassName)) {
         $scope = 'SHARED'
-        $sourceFile = $sharedClassMap[$ClassName]
+        $sourceFile = $sharedMap[$ClassName]
     }
-    elseif ($localClassMap.ContainsKey($ClassName)) {
+    elseif ($localMap.ContainsKey($ClassName)) {
         $scope = 'LOCAL'
-        $sourceFile = $localClassMap[$ClassName]
+        $sourceFile = $localMap[$ClassName]
     }
 
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|CSS_CLASS|$ClassName|USAGE|"
@@ -1914,7 +2157,12 @@ function Add-HtmlIdRow {
 
     if ([string]::IsNullOrWhiteSpace($IdName)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    # Per JS spec Section 17.3: HTML_ID rows are ALWAYS LOCAL. IDs are
+    # inherently page-specific; the SHARED/LOCAL distinction does not apply
+    # to id attributes. Even when the id appears inside cc-shared.js (e.g.,
+    # in a markup template emitted by a shared utility), the id itself is
+    # still a single-page concept.
+    $scope = 'LOCAL'
     $sourceFile = $script:CurrentFile
 
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|HTML_ID|$IdName|$ReferenceType|"
@@ -2033,9 +2281,11 @@ function Add-JsFunctionUsageRow {
     $scope = $null
     $sourceFile = $null
 
-    if ($sharedFunctions.Contains($FunctionName)) {
+    $sharedFns = Get-ZoneSharedFunctions
+    $sharedSrc = Get-ZoneSharedSourceFile
+    if ($sharedFns.Contains($FunctionName)) {
         $scope = 'SHARED'
-        $sourceFile = if ($sharedSourceFile.ContainsKey($FunctionName)) { $sharedSourceFile[$FunctionName] } else { '<shared>' }
+        $sourceFile = if ($sharedSrc.ContainsKey($FunctionName)) { $sharedSrc[$FunctionName] } else { '<shared>' }
     }
     elseif ($script:CurrentLocalFuncs -and $script:CurrentLocalFuncs.Contains($FunctionName)) {
         $scope = 'LOCAL'
@@ -2066,7 +2316,7 @@ function Add-JsFunctionUsageRow {
     return $row
 }
 
-# JS_EVENT row emitter. Under v1.2 spec, JS_EVENT has no variants — both
+# JS_EVENT row emitter. Under v1.2 spec, JS_EVENT has no variants -- both
 # `addEventListener` and the forbidden `el.onX = handler` style produce
 # rows of the same shape. The $IsForbidden flag attaches
 # FORBIDDEN_PROPERTY_ASSIGN_EVENT drift when the row originated from the
@@ -3104,6 +3354,16 @@ $visitor = {
 
         'ExpressionStatement' {
             # Detect IIFE at top level: (function() {...})() or (() => {...})()
+            # Per spec Section 12.x, file-scope IIFEs are forbidden. When one
+            # is detected we emit a single JS_IIFE row carrying the entire
+            # IIFE source in raw_text, then signal the walker to skip the
+            # IIFE body. The body is structurally outside any spec section
+            # (no banner above it, no FILE ORGANIZATION list entry covering
+            # it) so per-row cataloging of its contents would just produce
+            # cascade drift on every nested declaration -- the file-level
+            # FORBIDDEN_IIFE drift on the JS_IIFE row is the meaningful
+            # signal. Code outside the IIFE (before or after) is still
+            # cataloged normally; only the IIFE body itself is skipped.
             $isTopLevel = Test-IsTopLevel -ParentChain $ParentChain
             if ($isTopLevel -and $Node.expression -and $Node.expression.type -eq 'CallExpression') {
                 $iifeCallee = $Node.expression.callee
@@ -3114,6 +3374,7 @@ $visitor = {
                     Add-JsIifeRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
                         -Signature $sig `
                         -RawText $rawSnippet | Out-Null
+                    return 'SKIP_CHILDREN'
                 }
             }
         }
@@ -3126,6 +3387,7 @@ $visitor = {
 foreach ($file in $JsFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     $isShared = $SharedFiles -contains $name
+    $zone = Get-JsZone -FullPath $file
 
     if (-not $astCache.ContainsKey($file)) {
         Write-Log "  Skipping (no parsed AST): $name" "WARN"
@@ -3137,6 +3399,7 @@ foreach ($file in $JsFiles) {
     # Set per-file context for the visitor
     $script:CurrentFile         = $name
     $script:CurrentFileIsShared = $isShared
+    $script:CurrentFileZone     = $zone
     $script:CurrentFileSource   = $parsed.Source
 
     # Build per-file local-definition sets for same-file USAGE resolution
@@ -3227,9 +3490,44 @@ foreach ($file in $JsFiles) {
     # ----- Walk the AST emitting all other rows -----
     $startCount = $rows.Count
     $scopeLabel = if ($isShared) { 'SHARED' } else { 'LOCAL' }
-    Write-Host ("  Walking {0} ({1})..." -f $name, $scopeLabel) -ForegroundColor Cyan
+    Write-Host ("  Walking {0} ({1}, zone={2})..." -f $name, $scopeLabel, $zone) -ForegroundColor Cyan
 
-    Invoke-AstWalk -Node $parsed.Ast -Visitor $visitor
+    try {
+        Invoke-AstWalk -Node $parsed.Ast -Visitor $visitor
+    } catch {
+        # AST walk failed mid-flight. Discard whatever partial rows the walk
+        # added (everything past $startCount) and continue with the next
+        # file. The file's FILE_HEADER and COMMENT_BANNER rows were emitted
+        # before the walk and stay; they capture the file-level structure
+        # even when content extraction failed. The error is logged so the
+        # operator can investigate. NOTE: a walk failure is a populator
+        # tooling defect, not a spec-compliance issue, so it does not
+        # generate a drift code on the row.
+        $partialAdded = $rows.Count - $startCount
+        if ($partialAdded -gt 0) {
+            for ($i = 0; $i -lt $partialAdded; $i++) {
+                $rows.RemoveAt($rows.Count - 1)
+            }
+        }
+        # Capture diagnostic context for visitor bug investigation.
+        # InvocationInfo points at the outermost call site (often the
+        # recursive Invoke-AstWalk), which is unhelpful for a deep recursion.
+        # ScriptStackTrace gives the full call chain; the deepest non-walker
+        # frame is usually the actual offending line.
+        $errLine = if ($_.InvocationInfo) { $_.InvocationInfo.ScriptLineNumber } else { 0 }
+        $errLineText = if ($_.InvocationInfo) { $_.InvocationInfo.Line.Trim() } else { '' }
+        Write-Log ("AST walk failed on {0}: {1} (populator line {2}: {3})" -f $name, $_.Exception.Message, $errLine, $errLineText) "WARN"
+        if ($_.ScriptStackTrace) {
+            Write-Log ("  ScriptStackTrace:") "WARN"
+            foreach ($frameLine in ($_.ScriptStackTrace -split "`r?`n")) {
+                if (-not [string]::IsNullOrWhiteSpace($frameLine)) {
+                    Write-Log ("    " + $frameLine.Trim()) "WARN"
+                }
+            }
+        }
+        Write-Host ("    -> walk failed; FILE_HEADER and COMMENT_BANNER rows kept, content rows discarded ({0} discarded)" -f $partialAdded) -ForegroundColor Yellow
+        continue
+    }
 
     # ----- File-scope // line comments -> JS_LINE_COMMENT rows -----
     # Acorn returns Line comments alongside Block comments. Any line comment
@@ -3303,21 +3601,44 @@ if ($chromeFiles.Count -gt 1) {
     }
 }
 
-# SHADOWS_SHARED_FUNCTION
+# SHADOWS_SHARED_FUNCTION (zone-aware)
 # Collect every function-shaped DEFINITION row and check for name collisions
-# with cc-shared.js shared functions. Under spec v1.2 a function declaration
-# may be classified as JS_FUNCTION (sync, no modifiers) or JS_FUNCTION_VARIANT
-# (async, generator). Both shapes can shadow a shared name.
+# with the shared functions in the row's own zone. A CC-zone page only
+# shadows when its definition collides with a CC-zone shared function; cross-
+# zone collisions (e.g., a CC page defining a function whose name happens to
+# match a docs-zone shared function) are unrelated namespaces and not
+# shadowing. Under spec v1.2 a function declaration may be classified as
+# JS_FUNCTION (sync, no modifiers) or JS_FUNCTION_VARIANT (async, generator).
+# Both shapes can shadow a shared name.
+
+# Build a quick filename->zone lookup for the shadow pass.
+$jsFileZoneByName = @{}
+foreach ($file in $JsFiles) {
+    $name = [System.IO.Path]::GetFileName($file)
+    if (-not $jsFileZoneByName.ContainsKey($name)) {
+        $jsFileZoneByName[$name] = (Get-JsZone -FullPath $file)
+    }
+}
+
 $shadowCandidates = @($rows | Where-Object {
     ($_.ComponentType -eq 'JS_FUNCTION' -or $_.ComponentType -eq 'JS_FUNCTION_VARIANT') -and
     $_.ReferenceType -eq 'DEFINITION' -and
-    $_.Scope -eq 'LOCAL' -and
-    $sharedFunctions.Contains($_.ComponentName)
+    $_.Scope -eq 'LOCAL'
 })
 
 foreach ($row in $shadowCandidates) {
+    $rowZone = if ($jsFileZoneByName.ContainsKey($row.FileName)) { $jsFileZoneByName[$row.FileName] } else { 'cc' }
+    if ($rowZone -eq 'docs') {
+        $zoneShared    = $docsSharedFunctions
+        $zoneSharedSrc = $docsSharedSourceFile
+    } else {
+        $zoneShared    = $ccSharedFunctions
+        $zoneSharedSrc = $ccSharedSourceFile
+    }
+    if (-not $zoneShared.Contains($row.ComponentName)) { continue }
+    $shadowSourceFile = if ($zoneSharedSrc.ContainsKey($row.ComponentName)) { $zoneSharedSrc[$row.ComponentName] } else { '<shared>' }
     Add-DriftCode -Row $row -Code 'SHADOWS_SHARED_FUNCTION' `
-        -Text "Function '$($row.ComponentName)' shadows the shared definition in '$($sharedSourceFile[$row.ComponentName])'."
+        -Text "Function '$($row.ComponentName)' shadows the shared definition in '$shadowSourceFile'."
 }
 # ============================================================================
 # OCCURRENCE INDEX COMPUTATION
