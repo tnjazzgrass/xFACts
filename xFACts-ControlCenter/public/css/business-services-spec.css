@@ -41,7 +41,7 @@
    column on the left (Live Activity cards) and a narrow column on the
    right (Group Filter badges and the start of the History tree). The
    width tiers are page-specific: 1fr left, 320px right.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Two-column grid container for the page's top row of sections. */
@@ -60,7 +60,7 @@
    shared .section already provides 15px padding; this inner wrapper adds
    another 12px around its content for visual separation between the
    section header and the contained component grid.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Inner content wrapper inside each .section container. */
@@ -76,7 +76,7 @@
    shows a group's open/assigned/unassigned/new-today/closed-today counts
    in a five-cell metric row. Cards adopt warning or critical state
    colors based on unassigned-count thresholds set by the page JS.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Responsive grid container that holds the Live Activity cards. */
@@ -187,7 +187,7 @@
    to reveal a per-user breakdown with individual fill bars. User rows
    adopt high or full state colors when their assignment fill ratio
    crosses the page JS thresholds.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Vertical stack container for the flip cards. */
@@ -416,7 +416,7 @@
    A horizontal row of clickable filter pills that scope the History tree
    to a specific assignment group (or "All"). The active badge is filled
    in the shared teal; inactive badges sit muted until hovered.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Horizontal flex container for the filter badge pills. */
@@ -465,7 +465,7 @@
    month row expands inline to a day-level table loaded on demand. Day
    rows are clickable and open the day-detail slideout (which then drills
    into per-user request lists).
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Outer container for the year-grouped history rows. */
@@ -621,7 +621,7 @@
    cc-shared.css. This section defines only the BS-specific content:
    in-panel sub-section titles, group summary cards, and the user/request
    tables shown inside the day-detail and user-day-requests views.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Sub-section title inside the slideout body (e.g., "Group Summary", "Completions by User"). */
@@ -769,7 +769,7 @@
    provided by cc-shared.css. This section defines only the BS-specific
    content: the two-column detail grid showing request metadata, and the
    comment section showing the optional free-text comment.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Two-column grid layout for request metadata fields inside the detail modal. */
@@ -843,7 +843,7 @@
    defines BS-specific buttons used inside slideout request rows (the
    small comment-icon button) and the back-navigation link inside the
    user request list.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Base button used in the slideout's request rows and back-navigation. */
@@ -901,7 +901,7 @@
    containers. The hidden helper toggles element visibility from JS;
    loading and no-activity render centered, muted captions while data is
    in flight or absent.
-   Prefixes: bsv
+   Prefix: bsv
    ============================================================================ */
 
 /* Centered "Loading..." caption shown inside a content container while data is in flight. */
