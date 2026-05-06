@@ -794,6 +794,15 @@
                                        },
                                        {
                                            "ordinal":  5,
+                                           "name":  "cc_prefix",
+                                           "dataType":  "char",
+                                           "length":  "3",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Three-character lowercase page prefix used by CC pages to scope local CSS class names and JS top-level identifiers. NULL for shared and infrastructure components with no CC page. Source of truth for the Prefix Registry consumed by the CSS and JS asset populators during file-header validation."
+                                       },
+                                       {
+                                           "ordinal":  6,
                                            "name":  "is_active",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -802,7 +811,7 @@
                                            "description":  "Soft delete flag. 1 = active component, 0 = retired/decommissioned."
                                        },
                                        {
-                                           "ordinal":  6,
+                                           "ordinal":  7,
                                            "name":  "doc_page_id",
                                            "dataType":  "varchar",
                                            "length":  "30",
@@ -811,7 +820,7 @@
                                            "description":  "Unique page identifier used by the documentation pipeline to derive filenames, build navigation, and link consumers to pages. NULL for components without documentation pages. Multiple components can share the same doc_page_id when they contribute sections to the same page."
                                        },
                                        {
-                                           "ordinal":  7,
+                                           "ordinal":  8,
                                            "name":  "doc_title",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -820,7 +829,7 @@
                                            "description":  "Display title for the page — used in site navigation, Hub card grid, and published documentation. Only populated on the primary row for each page (the row with doc_sort_order set). NULL for secondary rows on multi-component pages and for components without documentation pages."
                                        },
                                        {
-                                           "ordinal":  8,
+                                           "ordinal":  9,
                                            "name":  "doc_json_schema",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -829,7 +838,7 @@
                                            "description":  "Schema name(s) for the JSON DDL reference data consumed by the reference page. Comma-separated when multiple schemas contribute. Maps to JSON filenames in the documentation data directory. NULL when the component does not contribute objects to a reference page."
                                        },
                                        {
-                                           "ordinal":  9,
+                                           "ordinal":  10,
                                            "name":  "doc_json_categories",
                                            "dataType":  "varchar",
                                            "length":  "200",
@@ -838,7 +847,7 @@
                                            "description":  "Category filter(s) applied when the component uses only a subset of a schema\u0027s objects on the reference page. Comma-separated. Filters the JSON data by the category field in Object_Metadata. NULL when no filtering is needed or no reference page contribution exists."
                                        },
                                        {
-                                           "ordinal":  10,
+                                           "ordinal":  11,
                                            "name":  "doc_cc_slug",
                                            "dataType":  "varchar",
                                            "length":  "50",
@@ -847,7 +856,7 @@
                                            "description":  "Named CC guide page slug. When populated, this component has a dedicated CC guide page at {pageId}-cc-{slug}.html in the cc/ subfolder. The doc_title on this same row provides the nav label. When NULL, the standard single-file convention {pageId}-cc.html applies. Only activates when at least one section row for the pageId has a slug — backward compatible with all existing single-CC-guide pages."
                                        },
                                        {
-                                           "ordinal":  11,
+                                           "ordinal":  12,
                                            "name":  "doc_sort_order",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -855,7 +864,7 @@
                                            "description":  "Display order for page position in navigation and the index card grid. Lower values appear first. Uses increments of 10 for easy insertion of new pages. A value of 0 identifies the index page (site root). Only populated on the primary row for each page. NULL for secondary rows and components without documentation pages."
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  13,
                                            "name":  "doc_section_order",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -863,7 +872,7 @@
                                            "description":  "Display order for this component\u0027s section within a multi-component reference page. Controls the sequence of schema sections in the reference page navigation. For single-component pages, this is 1. NULL for the Hub and components without documentation pages."
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  14,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -872,7 +881,7 @@
                                            "description":  "When this component was registered. Auto-populated via default."
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  15,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -892,6 +901,14 @@
                                            "keyColumns":  "component_id"
                                        },
                                        {
+                                           "name":  "UQ_Component_Registry_cc_prefix",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "cc_prefix"
+                                       },
+                                       {
                                            "name":  "UQ_Component_Registry_component_name",
                                            "type":  "NONCLUSTERED",
                                            "isUnique":  true,
@@ -900,6 +917,12 @@
                                            "keyColumns":  "component_name"
                                        }
                                    ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_Component_Registry_cc_prefix",
+                                                    "definition":  "([cc_prefix] IS NULL OR ([cc_prefix]) collate SQL_Latin1_General_CP1_CS_AS like \u0027[a-z][a-z][a-z]\u0027)"
+                                                }
+                                            ],
                        "foreignKeys":  [
                                            {
                                                "name":  "FK_Component_Registry_Module",
