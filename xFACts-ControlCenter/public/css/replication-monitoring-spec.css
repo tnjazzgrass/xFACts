@@ -32,7 +32,7 @@
    a lower grid (charts on the left, event log on the right). These four
    classes describe the page skeleton; they hold no rendered content of
    their own.
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 /* The top charts band — two side-by-side chart sections. */
@@ -78,7 +78,7 @@
    Pull). Each card shows the agent's identity, current run state, queue
    depth metric, and a colored agent-type tag. State classes on the card
    element drive the border and background tint.
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 /* Responsive grid container for the agent status cards. */
@@ -285,7 +285,7 @@
    LAYOUT section above; this section provides only the per-chart wrapper
    sizing (default, wide, half, and the lower-left-tall variant used by
    the small charts in the lower-left column).
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 /* Chart section wrapper — sits inside a section to host one chart. */
@@ -325,7 +325,7 @@
    (.rpm-event-type-STATE_CHANGE, .rpm-event-type-AGENT_START, etc.) — the
    uppercase suffix matches the event-type code emitted by the backend
    verbatim, so JS can compose the class name without a casing transform.
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 /* Event log section wrapper — flex shell that fills its parent column. */
@@ -532,7 +532,7 @@
    toggle, and the per-agent filter button row. These are conceptually
    distinct from the event rows themselves — they're the controls that
    shape what the event log displays.
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 /* Time-range button row above the small charts in the lower-left column. */
@@ -649,7 +649,7 @@
    container, slide animation, header bar with close button) is provided
    by cc-shared.css's .slide-overlay / .slide-panel — this section only
    contains page-local content classes that style the help text inside.
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 /* Small ⓘ icon shown next to a section title to open the help panel. */
@@ -691,7 +691,7 @@
    Tiny page-local helper classes that don't fit elsewhere. Used by the
    event log, the agent cards grid, and other places that need to render
    "loading…" or "no data" placeholder text.
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 /* Centered placeholder text shown while data loads. */
@@ -717,7 +717,7 @@
    Narrow-viewport overrides for the page-grid containers. Below 1200px
    the two-column charts row and lower grid collapse to a single column.
    Below 900px the agent cards grid also collapses to a single column.
-   Prefixes: rpm
+   Prefix: rpm
    ============================================================================ */
 
 @media (max-width: 1200px) {
