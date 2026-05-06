@@ -43,7 +43,7 @@
    of animation utility classes pages can apply directly. Element-only,
    universal, and pseudo-element selectors are spec-permitted in this
    section only because that's how CSS resets work.
-   Prefixes: (none)
+   Prefix: (none)
    ============================================================================ */
 
 :root {
@@ -262,7 +262,7 @@ a { color: var(--color-text-link); }
    xFACts-Helpers.psm1. Contains Home + section links + admin gear (admins
    only). Section accent classes are applied based on RBAC_NavSection data
    and visually pair with the page H1 color.
-   Prefixes: nav
+   Prefix: (none)
    ============================================================================ */
 
 /* The fixed nav bar container at the top of every page. */
@@ -377,7 +377,7 @@ a { color: var(--color-text-link); }
    h1 color in their own CSS, and the body.section-* selectors live in
    FOUNDATION's reset family. We localize h1 styling to the page-title
    chrome by giving it a class wrapper.
-   Prefixes: page, header
+   Prefix: (none)
    ============================================================================ */
 
 /* The H1 element wrapped in a page-title container. */
@@ -462,7 +462,7 @@ a { color: var(--color-text-link); }
    each section's refresh behavior. Pages with no auto-refresh logic still
    display this row with the page-load timestamp; the live dot still
    pulses to indicate the UI is responsive.
-   Prefixes: refresh, live, last, page
+   Prefix: (none)
    ============================================================================ */
 
 /* The refresh info row layout container. */
@@ -587,7 +587,7 @@ a { color: var(--color-text-link); }
    reflects one orchestrator-managed process via WebSocket events. Cards
    sit below the refresh info row in the header bar's right column. Pages
    without orchestrator-driven processes have no engine cards.
-   Prefixes: engine
+   Prefix: (none)
    ============================================================================ */
 
 /* The horizontal row container that holds engine cards side by side. */
@@ -788,7 +788,7 @@ a { color: var(--color-text-link); }
    sits between the header bar and the content area; it stays hidden until a
    connection event sets a state class. JS toggles between four states:
    reconnecting, disconnected, session-expired, and reloading.
-   Prefixes: connection, banner
+   Prefix: (none)
    ============================================================================ */
 
 /* The connection banner container (hidden until a state class is applied). */
@@ -849,7 +849,7 @@ a { color: var(--color-text-link); }
    PlatformMonitoring, future dept-only tools). The link sits below the
    page header and resolves its target via /api/nav-registry/label. Subtle
    by design: muted gray so it doesn't compete with page content.
-   Prefixes: back
+   Prefix: (none)
    ============================================================================ */
 
 /* The back-link element shown on tool pages outside the main nav. */
@@ -874,7 +874,7 @@ a { color: var(--color-text-link); }
    Every page composes its content from .section containers. Each section
    has a header with a title on the left and optional controls + refresh
    badge on the right.
-   Prefixes: section
+   Prefix: (none)
    ============================================================================ */
 
 /* The section container — every page composes its content from these. */
@@ -936,7 +936,7 @@ a { color: var(--color-text-link); }
      default  600px  -- single-column detail views
      .wide    800px  -- tabular detail with multiple columns
      .xwide   1000px -- wide multi-column tables
-   Prefixes: slide
+   Prefix: (none)
    ============================================================================ */
 
 /* The full-viewport overlay behind an open slide panel. */
@@ -1188,7 +1188,7 @@ a { color: var(--color-text-link); }
    close-button class works in both contexts).
 
    uses @keyframes xfModalFadeIn from FOUNDATION
-   Prefixes: xf
+   Prefix: (none)
    ============================================================================ */
 
 /* The full-viewport overlay behind an open modal. */
@@ -1363,7 +1363,7 @@ a { color: var(--color-text-link); }
    Full-viewport overlay shown when user inactivity exceeds the configured
    timeout. Polling pauses underneath; a single move/keypress dismisses
    the overlay and resumes activity.
-   Prefixes: idle
+   Prefix: (none)
    ============================================================================ */
 
 /* The full-viewport idle overlay container. */
