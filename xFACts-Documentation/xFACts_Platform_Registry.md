@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-06 10:03:30
+Generated: 2026-05-06 15:38:32
 
 ## Module Registry
 
@@ -40,8 +40,7 @@ Generated: 2026-05-06 10:03:30
 | DeptOps | DeptOps.BusinessIntelligence | Business Intelligence departmental page |  |  |  |  |  |  |
 | DeptOps | DeptOps.BusinessServices | Business Services departmental page |  |  |  |  |  |  |
 | DeptOps | DeptOps.ClientRelations | Client Relations departmental page |  |  |  |  |  |  |
-| DmOps | DmOps.Archive | Account-level data archiving with BIDATA capture and consumer shell cleanup | dmops | DM Operations | DmOps |  | 105 | 1 |
-| DmOps | DmOps.ShellPurge | Consumer shell purge — removes orphaned consumer records with no remaining accounts from crs5_oltp | dmops | DM Operations | DmOps |  |  |  |
+| DmOps | DmOps | Direct Debt Manager data operations: account-level archive with BIDATA capture and consumer shell purge | dmops | DM Operations | DmOps |  | 105 | 1 |
 | FileOps | FileOps | Real-time SFTP file tracking and escalation management | fileops | File Monitoring | FileOps |  | 100 | 1 |
 | JBoss | JBoss | Real-time JBoss application server health monitoring and management metrics | jboss | JBoss Monitoring | JBoss |  | 60 | 1 |
 | Jira | Jira | Global ticket queue and creation processing | jira | Jira Integration | Jira |  | 120 | 1 |
@@ -54,7 +53,9 @@ Generated: 2026-05-06 10:03:30
 | ServerOps | ServerOps.Replication | Real-time metrics for agent health, queue depth, end-to-end latency, delivery rate and event tracking | replication | Replication Monitoring | ServerOps | Replication | 30 | 1 |
 | ServerOps | ServerOps.ServerHealth | Real-time SQL Server performance and Activity monitoring, XE event capture, disk health, and server diagnostics | serverhealth | Server Health | ServerOps | Activity,Disk | 20 | 1 |
 | Teams | Teams | Global webhook alert queue and delivery processing | teams | Teams Integration | Teams |  | 110 | 1 |
+| Tools | Tools.BDLImport | Bulk Data Load Tool |  |  |  |  |  |  |
 | Tools | Tools.Catalog | Vendor specification catalogs for API endpoints, XML schemas, and data formats | tools | Tools | Tools |  | 140 | 1 |
+| Tools | Tools.ClientPortal | Consumer and Account Lookup |  |  |  |  |  |  |
 | Tools | Tools.Operations | Operational infrastructure for DM integration tools — server configuration, access control, and import tracking |  |  |  |  |  |  |
 | Tools | Tools.Utilities | Platform maintenance utilities for metadata management, data hygiene, and operational tooling |  |  |  |  |  |  |
 
@@ -123,25 +124,25 @@ Generated: 2026-05-06 10:03:30
 | DeptOps.ClientRelations | client-relations.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\client-relations.css | Client Relations CC styles |
 | DeptOps.ClientRelations | client-relations.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\client-relations.js | Client Relations CC client-side logic |
 | DeptOps.ClientRelations | ClientRelations.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\ClientRelations.ps1 | Client Relations CC page route |
-| DmOps.Archive | Archive_BatchDetail | Database | Table | DmOps | Per-table operation detail within each archive batch — delete order, rows affected, duration, and status |
-| DmOps.Archive | Archive_BatchLog | Database | Table | DmOps | Batch-level execution summary for archive processing — one row per batch with counts, timing, and status |
-| DmOps.Archive | Archive_ConsumerExceptionLog | Database | Table | DmOps | Audit trail of TC_ARCH-tagged consumers removed from a batch by runtime re-verification — one row per excepted consumer with confirmation flags for tag removal and AR event writes |
-| DmOps.Archive | Archive_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer and account archived — tall skinny log for BI cross-reference and reconciliation |
-| DmOps.Archive | Archive_Schedule | Database | Table | DmOps | Weekly schedule grid controlling archive execution mode per hour — blocked, full batch, or reduced batch |
-| DmOps.Archive | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
-| DmOps.Archive | dmops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dmops-ref.html | DM Operations reference documentation page |
-| DmOps.Archive | dmops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dmops.html | DM Operations narrative documentation page |
-| DmOps.Archive | Execute-DmConsumerArchive.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmConsumerArchive.ps1 | Unified consumer-level archive execution — TC_ARCH-driven batch deletion of consumers and all linked accounts/transactions from crs5_oltp, with mid-batch BIDATA P-to-C migration |
-| DmOps.Archive | DmOperations-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1 | DM Operations CC API endpoints |
-| DmOps.Archive | dm-operations.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\dm-operations.css | DM Operations CC styles |
-| DmOps.Archive | dm-operations.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\dm-operations.js | DM Operations CC client-side logic |
-| DmOps.Archive | DmOperations.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1 | DM Operations CC page route |
-| DmOps.ShellPurge | ShellPurge_BatchDetail | Database | Table | DmOps | Per-table operation detail within each shell purge batch — delete order, rows affected, duration, and status |
-| DmOps.ShellPurge | ShellPurge_BatchLog | Database | Table | DmOps | Batch-level execution summary for shell purge processing — one row per batch with counts, timing, and status |
-| DmOps.ShellPurge | ShellPurge_ConsumerExceptionLog | Database | Table | DmOps | Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence — one row per consumer per exclusion reason |
-| DmOps.ShellPurge | ShellPurge_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer purged — batch and consumer ID for reconciliation |
-| DmOps.ShellPurge | ShellPurge_Schedule | Database | Table | DmOps | Weekly schedule grid controlling shell purge execution mode per hour — blocked, full batch, or reduced batch |
-| DmOps.ShellPurge | Execute-DmShellPurge.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmShellPurge.ps1 | Consumer shell purge execution — removes orphaned consumer records with no remaining accounts from crs5_oltp |
+| DmOps | Archive_BatchDetail | Database | Table | DmOps | Per-table operation detail within each archive batch — delete order, rows affected, duration, and status |
+| DmOps | Archive_BatchLog | Database | Table | DmOps | Batch-level execution summary for archive processing — one row per batch with counts, timing, and status |
+| DmOps | Archive_ConsumerExceptionLog | Database | Table | DmOps | Audit trail of TC_ARCH-tagged consumers removed from a batch by runtime re-verification — one row per excepted consumer with confirmation flags for tag removal and AR event writes |
+| DmOps | Archive_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer and account archived — tall skinny log for BI cross-reference and reconciliation |
+| DmOps | Archive_Schedule | Database | Table | DmOps | Weekly schedule grid controlling archive execution mode per hour — blocked, full batch, or reduced batch |
+| DmOps | ShellPurge_BatchDetail | Database | Table | DmOps | Per-table operation detail within each shell purge batch — delete order, rows affected, duration, and status |
+| DmOps | ShellPurge_BatchLog | Database | Table | DmOps | Batch-level execution summary for shell purge processing — one row per batch with counts, timing, and status |
+| DmOps | ShellPurge_ConsumerExceptionLog | Database | Table | DmOps | Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence — one row per consumer per exclusion reason |
+| DmOps | ShellPurge_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer purged — batch and consumer ID for reconciliation |
+| DmOps | ShellPurge_Schedule | Database | Table | DmOps | Weekly schedule grid controlling shell purge execution mode per hour — blocked, full batch, or reduced batch |
+| DmOps | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
+| DmOps | dmops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dmops-ref.html | DM Operations reference documentation page |
+| DmOps | dmops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dmops.html | DM Operations narrative documentation page |
+| DmOps | Execute-DmConsumerArchive.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmConsumerArchive.ps1 | Unified consumer-level archive execution — TC_ARCH-driven batch deletion of consumers and all linked accounts/transactions from crs5_oltp, with mid-batch BIDATA P-to-C migration |
+| DmOps | Execute-DmShellPurge.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmShellPurge.ps1 | Consumer shell purge execution — removes orphaned consumer records with no remaining accounts from crs5_oltp |
+| DmOps | DmOperations-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1 | DM Operations CC API endpoints |
+| DmOps | dm-operations.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\dm-operations.css | DM Operations CC styles |
+| DmOps | dm-operations.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\dm-operations.js | DM Operations CC client-side logic |
+| DmOps | DmOperations.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1 | DM Operations CC page route |
 | Documentation.Pipeline | Consolidate-UploadFiles.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Consolidate-UploadFiles.ps1 | Collects all platform files into upload folder |
 | Documentation.Pipeline | Generate-DDLReference.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Generate-DDLReference.ps1 | Orchestrates DDL reference JSON generation |
 | Documentation.Pipeline | Invoke-DocPipeline.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Invoke-DocPipeline.ps1 | Orchestrates the full documentation pipeline |
@@ -384,26 +385,26 @@ Generated: 2026-05-06 10:03:30
 | Teams | WebhookSubscription | Database | Table | Teams | Module-to-webhook subscription mappings |
 | Teams | TR_Teams_AlertQueue_QueueDepth | Database | Trigger | Teams | Monitors alert queue depth and raises warnings |
 | Teams | Process-TeamsAlertQueue.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-TeamsAlertQueue.ps1 | Processes pending alerts and delivers via Teams webhook |
+| Tools.BDLImport | BDLImport-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1 | BDL Import CC API endpoints |
+| Tools.BDLImport | bdl-import.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\bdl-import.css | BDL Import CC styles |
+| Tools.BDLImport | bdl-import.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\bdl-import.js | BDL Import CC client-side logic |
+| Tools.BDLImport | BDLImport.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1 | BDL Import CC page route |
 | Tools.Catalog | Catalog_ApiRegistry | Database | Table | Tools | REST API endpoint catalog — one row per path+method combination. Parsed from OpenAPI 3.0 YAML specs. |
 | Tools.Catalog | Catalog_ApiSchemaRegistry | Database | Table | Tools | REST API schema property catalog — one row per property within each model object. Links to Catalog_ApiRegistry via schema name. |
 | Tools.Catalog | Catalog_BDLElementRegistry | Database | Table | Tools | BDL element catalog — one row per element within each entity type. Links to Catalog_BDLFormatRegistry via spec_version + type_name. |
 | Tools.Catalog | Catalog_BDLFormatRegistry | Database | Table | Tools | BDL entity type catalog — one row per bulk data load format. Parsed from XSD schema definitions. |
 | Tools.Catalog | Catalog_CDLElementRegistry | Database | Table | Tools | CDL element catalog — one row per element within each entity type. Links to Catalog_CDLFormatRegistry via spec_version + type_name. |
 | Tools.Catalog | Catalog_CDLFormatRegistry | Database | Table | Tools | CDL entity type catalog — one row per configuration data format. Parsed from XSD schema definitions. |
+| Tools.ClientPortal | ClientPortal-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ClientPortal-API.ps1 | Client Portal CC API endpoints — search, consumer/account detail, lookups |
+| Tools.ClientPortal | client-portal.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\client-portal.css | Client Portal CC styles — dark chrome with light-themed portal content area |
+| Tools.ClientPortal | client-portal.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\client-portal.js | Client Portal CC client-side logic — navigation, rendering, lookup resolution |
+| Tools.ClientPortal | ClientPortal.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\ClientPortal.ps1 | Client Portal CC page route — consumer and account lookup |
 | Tools.Operations | AccessConfig | Database | Table | Tools | Controls which tools and entity types are available per department. Admin tier users bypass department filtering. |
 | Tools.Operations | AccessFieldConfig | Database | Table | Tools | Department-scoped field-level whitelist for BDL entity access. Child of AccessConfig. |
 | Tools.Operations | BDL_ImportLog | Database | Table | Tools | Audit trail for BDL import executions. One row per import capturing the full lifecycle from validation through DM submission. |
 | Tools.Operations | BDL_ImportTemplate | Database | Table | Tools | Saved column mapping templates for BDL Import. Stores reusable source-to-element field mappings per entity type, allowing users to apply a known file layout without manual column pairing. |
 | Tools.Operations | EnvironmentConfig | Database | Table | Tools | Per-environment configuration for Tools module operations. One row per DM environment with database instance and dmfs file import paths. API URLs sourced from dbo.ServerRegistry. |
-| Tools.Operations | BDLImport-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1 | BDL Import CC API endpoints |
-| Tools.Operations | ClientPortal-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ClientPortal-API.ps1 | Client Portal CC API endpoints — search, consumer/account detail, lookups |
-| Tools.Operations | bdl-import.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\bdl-import.css | BDL Import CC styles |
-| Tools.Operations | client-portal.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\client-portal.css | Client Portal CC styles — dark chrome with light-themed portal content area |
-| Tools.Operations | bdl-import.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\bdl-import.js | BDL Import CC client-side logic |
-| Tools.Operations | client-portal.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\client-portal.js | Client Portal CC client-side logic — navigation, rendering, lookup resolution |
 | Tools.Operations | xlsx.full.min.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\xlsx.full.min.js | SheetJS library for Excel file parsing (BDL Import) |
-| Tools.Operations | BDLImport.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\BDLImport.ps1 | BDL Import CC page route |
-| Tools.Operations | ClientPortal.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\ClientPortal.ps1 | Client Portal CC page route — consumer and account lookup |
 | Tools.Utilities | sp_SyncColumnOrdinals | Database | Procedure | Tools | Aligns Object_Metadata column description sort_order values with actual sys.columns column_id ordinals for a specified table. Deactivates Object_Metadata rows for dropped columns. |
 | Tools.Utilities | parse-css.js | PowerShell | Script | E:\xFACts-PowerShell\parse-css.js | Node.js helper script that parses CSS source into structured AST output. Reads CSS from stdin, uses PostCSS 8.5.12 with postcss-selector-parser 7.1.1 to produce JSON containing rules, at-rules, comments, and decomposed selector trees with line numbers. Invoked as a subprocess by Populate-AssetRegistry-CSS.ps1 during catalog refresh. |
 | Tools.Utilities | parse-js.js | PowerShell | Script | E:\xFACts-PowerShell\parse-js.js | Node.js helper script that parses JavaScript source into structured AST output. Reads JS from stdin, uses Acorn 8.16.0 with acorn-walk 8.3.5 to produce ESTree-format JSON with full source position information. Invoked as a subprocess by Populate-AssetRegistry-JS.ps1 during catalog refresh. |
