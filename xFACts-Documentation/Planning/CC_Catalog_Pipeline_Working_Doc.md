@@ -1,107 +1,116 @@
-# CC Asset Registry Working Document
+# CC Catalog Pipeline Working Document
 
-**Purpose:** Single working document for the Asset_Registry parser implementation effort. Tracks the parser pipeline state, environment, schema state, populator status, lessons learned, and next-session pickup points. This is operational documentation parallel to the CC File Format spec docs — the spec docs say what source files have to look like; this doc says how the parser pipeline that catalogs them is built and where it stands today.
+Operational tracker for the parser pipeline that builds `dbo.Asset_Registry`. Tracks architecture decisions, schema state, populator status, environment state, and lessons learned.
 
-**Will be discarded after the parser pipeline goes live.** Permanent documentation will be HTML in the Control Center, harvesting relevant content from this doc.
+This is operational documentation parallel to the CC file format spec docs. The spec docs say what source files have to look like; this doc says how the parser pipeline that catalogs them is built and where it stands today. This doc will be discarded after the parser pipeline goes live, with content useful for permanent documentation harvested into Control Center HTML.
 
-> Part of the Control Center File Format initiative. For initiative direction, current state, session log, and the platform-wide prefix registry, see `CC_Initiative.md`. For per-file-type spec content (rules every source file must follow), see the relevant `CC_*_Spec.md` doc.
+---
+
+## Related documents
+
+| Document | Contains |
+|---|---|
+| `CC_Initiative.md` | Initiative-level direction, current state, prefix registry, decision history. |
+| `CC_CSS_Spec.md` | CSS file format specification (rules every CSS source file must follow). |
+| `CC_JS_Spec.md` | JavaScript file format specification. |
+| `CC_HTML_Spec.md` | HTML route file specification (pre-design). |
+| `CC_PS_Route_Spec.md` | PowerShell route file specification (pre-design). |
+| `CC_PS_Module_Spec.md` | PowerShell module file specification (pre-design). |
+
+---
+
+## Current state
+
+Catalog is functional and queryable. Production populator scripts are deployed and running successfully against the full Control Center codebase.
+
+**Production scripts:**
+
+- `Populate-AssetRegistry-CSS.ps1` — at current spec generation. Captures purpose_description across all four CSS comment sources (file header, section banner, per-class, per-variant) at 100% coverage on spec-compliant files.
+- `Populate-AssetRegistry-JS.ps1` — spec-aware extractor. Variant emission across all relevant component families. `parent_function` threading on USAGE rows and on JS_METHOD/JS_METHOD_VARIANT rows. Section-aware drift detection covering ~30 codes. Verbatim source capture into widened columns (no text trimming). Top-level IIFE structural skip with full-body capture in raw_text. Per-file AST walk wrapped in try/catch with line-number and stack-trace diagnostics. Zone-aware shared/local resolution (CC zone vs docs zone, with separate shared file lists per zone). HTML_ID rows always emit scope='LOCAL' per spec. cc-shared.js validates at zero file-attributable drift.
+- `Populate-AssetRegistry-HTML.ps1` — production-grade structure but pre-dates the most recent CSS spec migration. References dropped columns and emits the retired `state_modifier='<dynamic>'` shape. Catch-up pending.
+
+**Not yet built:**
+
+- `Refresh-AssetRegistry.ps1` orchestrator. Each populator runs standalone today. The cross-cutting "TRUNCATE the table, then run all populators in order" coordination is currently manual.
+
+**Upstream prerequisite for next populator changes:** the prefix registry migration described in the Initiative doc. Once `Component_Registry` gains a `cc_prefix CHAR(3) NULL` column with backfilled mappings, both CSS and JS populators read it at startup and validate file-header-declared prefixes against it. New drift code: `PREFIX_REGISTRY_MISMATCH`.
 
 ---
 
 ## Where we left off
 
-**Catalog is functional and queryable.** Production populator scripts are deployed and have run successfully against the full Control Center codebase. CSS populator is at the current spec generation. JS populator change pass completed 2026-05-05 against `CC_JS_Spec.md` v1.2 and validated against the first spec-compliant shared file (cc-shared.js → 224 rows / 2 violations, both populator off-by-one bugs on the first banner). HTML populator is production-grade but pre-dates the most recent CSS spec migration and needs catch-up — that's the active work for the next two sessions.
+Sessions are organized around populator and spec work. Pickup options below assume the prefix registry migration (described in the Initiative doc Current State) lands first.
 
-**Production scripts that exist:**
+1. **Apply prefix registry validation to CSS and JS populators.** Once `Component_Registry.cc_prefix` exists, both populators read it at startup, build a slug-to-prefix lookup, and emit `PREFIX_REGISTRY_MISMATCH` when a file header declares a prefix that disagrees with the registry. Small change in both populators.
+2. **HTML populator catch-up plus HTML spec design.** Bring `Populate-AssetRegistry-HTML.ps1` current: clean up references to dropped columns (`state_modifier`, `component_subtype`, `parent_object`, plus `related_asset_id` / `design_notes` / `is_active`); resolve the dynamic-class strategy question (Open question 1 below); confirm the bulk-insert DataTable shape matches current `dbo.Asset_Registry`; remove `WHERE is_active = 1` filters from CSS_CLASS DEFINITION lookups. Then design `CC_HTML_Spec.md` against the HTML conventions already in use across CC route files. Same workflow as CSS and JS: spec, populator, smoke test, first reference implementation.
+3. **PS populator plus PS spec design.** Two specs (module and route) plus one populator covering both. May split into separate sessions per spec.
+4. **Phase 1 batch sweep.** Once all four populators are current and all four specs are in production: refactor the five Phase 1 pages (`backup`, `business-intelligence`, `client-relations`, `replication-monitoring`, `business-services`) across CSS, JS, HTML, and PS together. Output: five fully-compliant Phase 1 pages plus deactivation of `engine-events.js` once page JS files migrate to `cc-shared.js`.
+5. **Page-at-a-time migration for remaining ~22 pages.** After Phase 1 closes.
+6. **`Refresh-AssetRegistry.ps1` orchestrator.** Cross-populator orchestrator: single TRUNCATE, then dispatch CSS to HTML to JS to PS in order, with `sp_getapplock` single-instance locking and consolidated logging. Sequencing-wise this can land any time after all populators are current; not a blocker for migration work.
 
-- `Populate-AssetRegistry-CSS.ps1` — at current spec generation. CHANGELOG runs through 2026-05-04 with G-INIT-4 (per-class purpose comment capture).
-- `Populate-AssetRegistry-HTML.ps1` — production-grade structure. Latest CHANGELOG entry is 2026-05-02. Is one spec generation behind CSS — populator docstring still describes the `state_modifier='<dynamic>'` pattern that the schema migration retired. Bring-current work pending.
-- `Populate-AssetRegistry-JS.ps1` — spec-aware extractor at `CC_JS_Spec.md` v1.2/v1.3 generation. Original rewrite delivered 2026-05-04 against v1.0; change pass completed 2026-05-05 against v1.2. Current capabilities: variant emission across all relevant component families (seven helper functions); `parent_function` threading on USAGE rows and on JS_METHOD/JS_METHOD_VARIANT rows (carries enclosing class name); FILE_HEADER, COMMENT_BANNER, JS_STATE, JS_HOOK, JS_TIMER, JS_EVENT row emission; section-aware drift detection covering ~30 codes including `FORBIDDEN_ANONYMOUS_FUNCTION` and `FORBIDDEN_PROPERTY_ASSIGN_EVENT`; verbatim source capture into widened columns (no `Limit-Text` trimming anywhere); structured CSS pre-load reporting at end of run when DEFINITION row count is empty or query failed; cross-file shadowing detection. Two known populator bugs remain — `FILE_ORG_MISMATCH` and `MISSING_PREFIX_DECLARATION` flag the first banner in a spec-compliant file even when the file is correct. Both are first-banner-only off-by-one issues; all subsequent banners parse cleanly. Bug fix is the immediate next-session opener.
-
-**What has NOT been built yet:**
-
-- `Refresh-AssetRegistry.ps1` orchestrator. Each populator runs standalone today. The cross-cutting "TRUNCATE the table, then run all three populators in order" coordination is currently a manual sequence. Listed as Phase 1D scope.
-
-### Next session pickup options
-
-**Initiative direction shift adopted 2026-05-05:** rather than continue refactoring Phase 1 JS files one at a time before pivoting to other file types, the new sequencing is to bring all four populators (CSS, HTML, JS, PS) and their specs current first, then sweep the Phase 1 page set across all four file types together in batches. The pickup options below reflect that ordering. See `CC_Initiative.md` Current State for the full rationale.
-
-1. **JS populator off-by-one fix (next session opener)** — `cc-shared.js` validated at 224 rows / 2 violations, with both violations attributable to the populator's first-banner extraction logic: `FILE_ORG_MISMATCH` on the FILE_HEADER row (the FILE ORGANIZATION list and the section banners actually match verbatim and in order) and `MISSING_PREFIX_DECLARATION` on the first COMMENT_BANNER row (every banner in cc-shared.js has `Prefix: (none)` declared correctly). All 17 subsequent banners parse cleanly. Suspect: the populator's banner-extraction logic reads a different range or applies different boundary conditions for the first banner because it sits adjacent to the file header without an intervening blank section. Investigation approach: open `Populate-AssetRegistry-JS.ps1`, locate `Test-FileOrgMatchesBanners` and the banner-prefix presence check, compare what each reads for index 0 vs. index N>0, fix the off-by-one and re-run cc-shared.js to confirm zero drift. Estimated 1 short session. Once resolved, the JS populator is considered complete pending Phase 1 batch validation later.
-
-2. **HTML populator catch-up + HTML spec design** — the next material work after the JS off-by-one fix. Bring `Populate-AssetRegistry-HTML.ps1` current: clean up references to dropped columns (`state_modifier`, `component_subtype`, `parent_object`, plus `related_asset_id` / `design_notes` / `is_active` from G-INIT-3); resolve OQ-1 below (dynamic-class strategy); confirm the bulk-insert DataTable shape matches current `dbo.Asset_Registry`; remove `WHERE is_active = 1` filters from CSS_CLASS DEFINITION lookups. Then design `CC_HTML_Spec.md` v1.0 against the HTML conventions already in use across CC route files. Same workflow as JS: spec → populator → smoke test against an unrefactored file → first reference-implementation file. May span more than one session.
-
-3. **PS populator + PS spec design (modules and routes)** — Phase 3 of the catalog pipeline. Two specs (module and route) plus one populator covering both. May split into separate sessions per spec; same workflow as CSS/JS/HTML.
-
-4. **Phase 1 batch sweep** — once all four populators are current and all four specs at v1.x: refactor the five Phase 1 pages (`backup`, `business-intelligence`, `client-relations`, `replication-monitoring`, `business-services`) across CSS, JS, HTML, and PS together. Each page transitions from pre-spec to fully compliant in a single coordinated session. Output: five fully-compliant Phase 1 pages plus the deactivation of `engine-events.js` (and `engine-events.css` if still in parallel form) once all five page JS files migrate to `cc-shared.js`.
-
-5. **Page-at-a-time migration for remaining ~22 pages** — after Phase 1 batch closes. Each remaining page is a single coordinated session from pre-spec to fully compliant.
-
-6. **Refresh-AssetRegistry.ps1 orchestrator** — write the cross-populator orchestrator. Single TRUNCATE, then dispatch CSS → HTML → JS → PS in order, with `sp_getapplock` single-instance locking and consolidated logging. Sequencing-wise this can land any time after all populators are current; not a blocker for migration work.
-
-**Validation strategy reminder:** because every existing source file across CSS/JS/HTML/PS is non-spec-compliant, running a populator over the full codebase produces thousands of drift rows that don't tell us anything we don't already know. The genuinely valuable validation per file type is the first refactored shared/reference file (CSS spec was validated against `cc-shared.css`; JS spec against `cc-shared.js`; HTML and PS specs will follow the same pattern). The Phase 1 batch sweep then iterates page by page; each refactored page is a fresh validation point that can surface spec/populator gaps.
+**Validation strategy.** Every existing source file across CSS/JS/HTML/PS is non-spec-compliant, so running a populator over the full codebase produces thousands of drift rows that don't tell us anything we don't already know. The genuinely valuable validation per file type is the first refactored shared/reference file (CSS validated against `cc-shared.css`; JS against `cc-shared.js`; HTML and PS will follow the same pattern). The Phase 1 batch sweep then iterates page by page; each refactored page is a fresh validation point that can surface spec/populator gaps.
 
 ---
 
-## Architecture decisions (locked in)
+## Architecture decisions
 
 ### Naming and structure
 
 - Table: `dbo.Asset_Registry` — single table, not three per-language tables.
 - Schema: `dbo` (no CC-specific schema prefix).
-- **Three populators + one orchestrator** (orchestrator pending). CSS, HTML, JS each have their own dedicated populator. Each parser has substantial complexity (Node + PostCSS, PS-native, Node + Acorn) and different debugging surfaces; length and maintainability favor separation.
+- Three populators plus one orchestrator (orchestrator pending). CSS, HTML, JS each have their own dedicated populator. Each parser has substantial complexity (Node + PostCSS, PS-native, Node + acorn) and different debugging surfaces.
 - Helper Node scripts live alongside (`parse-css.js`, `parse-js.js` registered under `Tools.Utilities` in `Object_Registry`).
-- Manual trigger from Admin page (no scheduling initially). Currently each populator runs standalone via direct PowerShell execution.
-- Standalone server (FA-SQLDBB), not AG.
+- Manual trigger from Admin page (no scheduling initially).
+- Location: xFACts.dbo (currently AVG-PROD-LSNR)
 
 ### Single-table model with reference_type/scope
 
-The table holds **one row per instance** (definition or usage). DEFINITION vs USAGE is captured in the `reference_type` column. SHARED vs LOCAL is captured in the `scope` column. A shared component used on multiple pages produces multiple USAGE rows — one per consumer location. Lets a single query return the complete picture for any page or any component without joins.
+The table holds one row per instance (definition or usage). DEFINITION vs USAGE is captured in the `reference_type` column. SHARED vs LOCAL is captured in the `scope` column. A shared component used on multiple pages produces multiple USAGE rows, one per consumer location.
 
-### Refresh strategy: TRUNCATE + reload per file_type
+### Refresh strategy: TRUNCATE plus reload per file_type
 
-The catalog represents **current state only**. There is no operational value in tracking historical "this used to exist." Standardization work is expected to retire more rows than it adds per run; under a MERGE+soft-delete model, the table would fill with retired rows that every query would need to filter out. Truncate-and-reload sidesteps that entirely.
+The catalog represents current state only. Standardization work is expected to retire more rows than it adds per run; under a MERGE plus soft-delete model, the table would fill with retired rows that every query would need to filter out.
 
 Refresh semantics:
 
-- **Standalone execution:** each populator deletes only its own slice (`WHERE file_type = 'CSS'` etc.) before bulk-inserting. Makes each populator independently re-runnable for development without disturbing the other slices.
-- **Orchestrated execution (when `Refresh-AssetRegistry.ps1` is built):** the orchestrator TRUNCATEs the whole table once at the start, and each populator's DELETE-WHERE becomes a harmless no-op on already-empty data.
+- **Standalone execution:** each populator deletes only its own slice (`WHERE file_type = 'CSS'` etc.) before bulk-inserting. Each populator independently re-runnable.
+- **Orchestrated execution:** the orchestrator TRUNCATEs the whole table once at the start, and each populator's DELETE-WHERE becomes a harmless no-op on already-empty data.
 
-No external tables FK to `asset_id`, so identity stability across runs is not required. Manual annotations — when added later — go in a **separate annotations table keyed on the natural key** `(file_name, component_type, component_name, reference_type, occurrence_index, variant_type, variant_qualifier_1, variant_qualifier_2)`, NOT on the unstable `asset_id`. The annotations table is where the use cases originally targeted at `design_notes` and `related_asset_id` (cross-references between rows, freeform design rationale on specific rows) will live; those columns were dropped from `Asset_Registry` as part of OQ-INIT-1 / G-INIT-3 resolution.
+No external tables FK to `asset_id`, so identity stability across runs is not required. Manual annotations, when added later, go in a separate annotations table keyed on the natural key, not on the unstable `asset_id`.
 
 ### Schema columns under truncate+reload
 
-- **`occurrence_index`** — per-file ordinal disambiguator for multiple instances of the same component within a parse. Forms part of the natural key. Computed during parse, not maintained across runs. CSS populator has `Set-OccurrenceIndices` function that runs after the row set is built.
-- **`last_parsed_dttm`** — set to `SYSDATETIME()` on every insert under truncate+reload (every row is freshly inserted each run). Reserved for any future shift in refresh strategy.
+- **`occurrence_index`** — per-file ordinal disambiguator for multiple instances of the same component within a parse. Forms part of the natural key. Computed during parse, not maintained across runs.
+- **`last_parsed_dttm`** — set to `SYSDATETIME()` on every insert under truncate+reload.
 
 ### Extraction targets are content types, not file extensions
 
 The catalog organizes by what's being extracted, not by file extension. A single physical file can be visited by multiple extractors, each catching different content types within it.
 
-| Source file extension | What it contains |
+| Source file | What it contains |
 |---|---|
 | `*.css` | CSS only |
-| `*.js` | JS code, plus JS template strings that may contain embedded HTML markup (and rarely embedded CSS) |
-| `*.ps1` (routes in `/scripts/routes/`) | PS code, plus here-strings containing HTML markup (which may contain inline `<style>` blocks with CSS or `<script>` blocks with JS) |
-| `*.ps1` (APIs, suffix `-API.ps1`) | PS code primarily; rarely contains HTML/CSS/JS |
-| `*.psm1` (helpers in `/scripts/modules/`) | PS code plus HTML emission (here-strings or string-concatenation patterns) |
+| `*.js` | JS code, plus JS template strings that may contain embedded HTML markup |
+| `*.ps1` (routes) | PS code, plus here-strings containing HTML markup (which may contain inline `<style>` or `<script>` blocks) |
+| `*.ps1` (APIs, suffix `-API.ps1`) | PS code primarily |
+| `*.psm1` (helpers) | PS code plus HTML emission |
 
-The production extractors are organized by content type they extract, not by file extension they read:
+Production extractors are organized by content type they extract:
 
-- The CSS populator reads only `.css` files
-- The HTML populator reads `.ps1` and `.psm1` files (looking for HTML markup wherever it appears in string tokens)
-- The JS populator reads `.js` files and emits both Group A rows (HTML markup found in template strings — closes the consumption gap left by the HTML populator) and Group B rows (JS code itself)
+- The CSS populator reads only `.css` files.
+- The HTML populator reads `.ps1` and `.psm1` files (looking for HTML markup in string tokens).
+- The JS populator reads `.js` files and emits both Group A rows (HTML markup found in template strings) and Group B rows (JS code itself).
 
-The `file_type` column on each row reflects what content type was extracted, not the file extension. A row from a JS template string in `bidata-monitoring.js` would have `file_type='HTML'` and `file_name='bidata-monitoring.js'` — distinguishable from `file_type='JS'` rows in the same file.
+The `file_type` column on each row reflects what content type was extracted, not the file extension. A row from a JS template string in `bidata-monitoring.js` has `file_type='HTML'` and `file_name='bidata-monitoring.js'`.
 
 ### Coverage gaps from the content-type model
 
 Two known content-type gaps remain:
 
-**Gap 1: Inline `<style>` blocks in route HTML.** A route .ps1 file with CSS rules inside an HTML `<style>` block within a here-string has those rules invisible to all current populators. The HTML extractor sees the `class="..."` USAGE but not the inline definition. The defined class shows up as `source_file = '<undefined>'`. Convention discourages inline `<style>` in this codebase, so prevalence is likely low. Future phase work.
+- **Gap 1:** Inline `<style>` blocks in route HTML. A route `.ps1` file with CSS rules inside an HTML `<style>` block within a here-string has those rules invisible to all current populators. Convention discourages inline `<style>`, so prevalence is likely low. Future phase work.
+- **Gap 2:** Inline `<script>` blocks in route HTML. Same shape as Gap 1 but for JS functions defined inline in route HTML. Convention discourages inline `<script>`; prevalence likely very low. Future phase work.
 
-**Gap 2: Inline `<script>` blocks in route HTML.** Same shape as Gap 1 but for JS functions defined inline in route HTML. Convention discourages inline `<script>` (JS lives in dedicated .js files), so prevalence is likely very low. Future phase work.
-
-(Phase 1C — HTML inside JS template strings — has been **closed** by the JS populator's Group A coverage. Earlier doc revisions described this as an open gap; it is no longer.)
+(A third gap, HTML inside JS template strings, has been closed by the JS populator's Group A coverage.)
 
 ---
 
@@ -119,33 +128,40 @@ The full master list of `component_type` values across all populators. Per-file-
 | `CSS_KEYFRAME` | A `@keyframes` definition or a reference. | CSS |
 | `CSS_RULE` | A non-class rule (e.g., `body`, `*`) — captured for drift visibility. | CSS |
 | `HTML_ID` | An `id="..."` attribute occurrence. | HTML, JS (Group A), CSS (when `#id` appears in selectors) |
-| `JS_IMPORT` | An ES module import or Node `require` statement. Always carries a non-NULL `variant_type` (default / named / namespace / require). | JS |
-| `JS_CONSTANT` | A primitive-value `const` declaration (string, number, boolean, null) in a CONSTANTS or FOUNDATION section. The base form. | JS |
-| `JS_CONSTANT_VARIANT` | A compound-value or computed-expression `const` declaration (object, array, regex, or expression) in a CONSTANTS or FOUNDATION section. | JS |
+| `JS_IMPORT` | An ES module import or Node `require` statement. Always non-NULL `variant_type`. | JS |
+| `JS_CONSTANT` | A primitive-value `const` declaration in a CONSTANTS or FOUNDATION section. | JS |
+| `JS_CONSTANT_VARIANT` | A compound-value or computed-expression `const` declaration. | JS |
 | `JS_STATE` | A `var` declaration in a STATE section. | JS |
-| `JS_FUNCTION` | A regular `function name() {}` declaration at module scope, or a `cc-shared.js` function called from another file (USAGE row). The base form. | JS |
-| `JS_FUNCTION_VARIANT` | A function defined as an arrow expression, function expression, async function, async arrow, or generator. | JS |
-| `JS_HOOK` | A regular page lifecycle hook function (e.g., `onPageRefresh`) inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. The base form. | JS |
-| `JS_HOOK_VARIANT` | An async page lifecycle hook function inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. | JS |
+| `JS_FUNCTION` | A regular `function name() {}` declaration, or a `cc-shared.js` function called from another file (USAGE). | JS |
+| `JS_FUNCTION_VARIANT` | An async or generator function declaration. | JS |
+| `JS_HOOK` | A regular page lifecycle hook function inside the hooks banner. | JS |
+| `JS_HOOK_VARIANT` | An async page lifecycle hook function. | JS |
 | `JS_CLASS` | A JavaScript class declaration. | JS |
-| `JS_METHOD` | A regular method defined inside a class body. The base form. | JS |
-| `JS_METHOD_VARIANT` | A static method, getter, setter, or async method inside a class body. | JS |
-| `JS_TIMER` | A `setInterval` or `setTimeout` call assigned to a tracked handle. Always carries a non-NULL `variant_type` (interval / timeout). | JS |
-| `JS_EVENT` | An event handler binding (`addEventListener` or direct `.on<event>=` assignment). Always carries a non-NULL `variant_type` (add_listener / property_assign). | JS |
-| `PS_FUNCTION` | A PowerShell function definition. | (Future — Phase 3) |
-| `PS_PARAM` | A PowerShell parameter. | (Future — Phase 3) |
-| `PS_COMMAND` | A PowerShell command invocation worth cataloging. | (Future — Phase 3) |
-| `PS_ASSIGNMENT` | A PowerShell module-scope assignment. | (Future — Phase 3) |
-| `API_ROUTE` | An `Add-PodeRoute` definition. | (Future — Phase 3) |
+| `JS_METHOD` | A regular method defined inside a class body. | JS |
+| `JS_METHOD_VARIANT` | A static, getter, setter, or async method. | JS |
+| `JS_TIMER` | A `setInterval` or `setTimeout` call assigned to a tracked handle. Always non-NULL `variant_type`. | JS |
+| `JS_EVENT` | An event handler binding. | JS |
+| `JS_IIFE` | An IIFE at file scope. Hosts `FORBIDDEN_IIFE` drift. | JS |
+| `JS_EVAL` | An `eval(...)` call. Hosts `FORBIDDEN_EVAL` drift. | JS |
+| `JS_DOCUMENT_WRITE` | A `document.write(...)` call. Hosts `FORBIDDEN_DOCUMENT_WRITE` drift. | JS |
+| `JS_WINDOW_ASSIGNMENT` | A `window.<name> = ...` assignment outside `cc-shared.js`. Hosts `FORBIDDEN_WINDOW_ASSIGNMENT` drift. | JS |
+| `JS_INLINE_STYLE` | A `<style>` element in a JS template/string literal. Hosts `FORBIDDEN_INLINE_STYLE_IN_JS` drift. | JS |
+| `JS_INLINE_SCRIPT` | A `<script>` element in a JS template/string literal. Hosts `FORBIDDEN_INLINE_SCRIPT_IN_JS` drift. | JS |
+| `JS_LINE_COMMENT` | A `//` line comment at file scope. Hosts `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift. | JS |
+| `PS_FUNCTION` | A PowerShell function definition. | (Future) |
+| `PS_PARAM` | A PowerShell parameter. | (Future) |
+| `PS_COMMAND` | A PowerShell command invocation worth cataloging. | (Future) |
+| `PS_ASSIGNMENT` | A PowerShell module-scope assignment. | (Future) |
+| `API_ROUTE` | An `Add-PodeRoute` definition. | (Future) |
 
 ### Variant model
 
-The variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) discriminate sub-flavors of certain component types. Two patterns are in use, depending on whether the component family has a true "base" form:
+The variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) discriminate sub-flavors of certain component types. Two patterns are in use:
 
-- **Base + `_VARIANT` companion type** — used where there is a clear base case distinguishable from variant expressions. Examples: `CSS_CLASS` / `CSS_VARIANT` (CSS); `JS_FUNCTION` / `JS_FUNCTION_VARIANT`, `JS_CONSTANT` / `JS_CONSTANT_VARIANT`, `JS_HOOK` / `JS_HOOK_VARIANT`, `JS_METHOD` / `JS_METHOD_VARIANT` (JS).
-- **Single component type, always non-NULL `variant_type`** — used where every instance is inherently a variant of something. Examples: `JS_IMPORT` (always default / named / namespace / require), `JS_TIMER` (always interval / timeout), `JS_EVENT` (always add_listener / property_assign).
+- **Base + `_VARIANT` companion type** — used where there is a clear base case distinguishable from variant expressions. Examples: `CSS_CLASS` / `CSS_VARIANT`; `JS_FUNCTION` / `JS_FUNCTION_VARIANT`; `JS_CONSTANT` / `JS_CONSTANT_VARIANT`; `JS_HOOK` / `JS_HOOK_VARIANT`; `JS_METHOD` / `JS_METHOD_VARIANT`.
+- **Single component type, always non-NULL `variant_type`** — used where every instance is inherently a variant. Examples: `JS_IMPORT`, `JS_TIMER`, `JS_EVENT`.
 
-Per-file-type spec docs document the full variant_type / qualifier_1 / qualifier_2 grid for their language. See `CC_CSS_Spec.md` Section X (TBD) for CSS variants and `CC_JS_Spec.md` Section 17.5 for JS variants.
+Per-file-type spec docs document the full variant_type / qualifier_1 / qualifier_2 grid for their language.
 
 ### file_type values
 
@@ -153,22 +169,29 @@ Per-file-type spec docs document the full variant_type / qualifier_1 / qualifier
 
 ### Scope determination
 
-- **For CSS DEFINITIONs:** SHARED if the file is in the curated shared-files list for its zone (CC zone: `engine-events.css`. Docs zone: the seven `docs-*.css` files). LOCAL otherwise.
-- **For JS DEFINITIONs:** SHARED if the file is in the curated shared-files list for its zone (CC zone: `engine-events.js`. Docs zone: `nav.js`, `docs-controlcenter.js`, `ddl-erd.js`, `ddl-loader.js`). LOCAL otherwise.
-- **For HTML USAGEs (CSS_CLASS USAGE rows from the HTML and JS populators):** cross-referenced against existing CSS_CLASS DEFINITION rows in the consumer's zone. SHARED if the class has any SHARED CSS DEFINITION in that zone; LOCAL if only LOCAL DEFINITION exists in that zone; LOCAL with `source_file = '<undefined>'` if no DEFINITION exists in any CSS file in the zone.
-- **For HTML IDs:** always LOCAL (IDs are inherently page-specific).
+- **CSS DEFINITIONs:** SHARED if the file is in the curated shared-files list for its zone. LOCAL otherwise.
+- **JS DEFINITIONs:** SHARED if the file is in the curated shared-files list for its zone. LOCAL otherwise.
+  - CC zone shared files: `cc-shared.js`, `engine-events.js` (during migration period).
+  - Docs zone shared files: `nav.js`, `docs-controlcenter.js`, `ddl-erd.js`, `ddl-loader.js`.
+- **HTML USAGEs (CSS_CLASS USAGE rows from the HTML and JS populators):** cross-referenced against existing CSS_CLASS DEFINITION rows in the consumer's zone. SHARED if the class has any SHARED CSS DEFINITION in that zone; LOCAL if only LOCAL DEFINITION exists; LOCAL with `source_file = '<undefined>'` if no DEFINITION exists in any CSS file in the zone.
+- **HTML IDs:** always LOCAL.
+- **Forbidden-pattern rows:** scope follows the file's overall scope.
 
 ### Methodology
 
-- **CSS:** Node + PostCSS 8.5.12 + postcss-selector-parser 7.1.1 (subprocess from PowerShell)
-- **JS:** Node + acorn 8.16.0 + acorn-walk 8.3.5 (subprocess from PowerShell)
-- **PowerShell tokenization for HTML extraction:** built-in `[System.Management.Automation.Language.Parser]::ParseFile()` — no external dependency
+- **CSS:** Node + PostCSS 8.5.12 + postcss-selector-parser 7.1.1 (subprocess from PowerShell).
+- **JS:** Node + acorn 8.16.0 + acorn-walk 8.3.5 (subprocess from PowerShell).
+- **PowerShell tokenization for HTML extraction:** built-in `[System.Management.Automation.Language.Parser]::ParseFile()` — no external dependency.
+
+### Architectural divergence between CSS and JS populators
+
+The CSS and JS populators currently use different traversal patterns. JS uses a walker plus visitor pattern (`Invoke-AstWalk` plus `$visitor` scriptblock), with a SKIP_CHILDREN signal for structural skips (used for top-level IIFE handling). CSS uses direct recursive emission (`Add-RowsFromAst` function). The JS pattern is the chosen direction for harmonization; CSS will be aligned to match in a future Phase 3 pass. Function-name harmonization across populators will land at the same time.
 
 ---
 
 ## Schema (current state)
 
-The schema below reflects what is currently live in `dbo.Asset_Registry` on FA-SQLDBB after the 2026-05-05 populator change pass widening.
+The schema below reflects what is currently live in `dbo.Asset_Registry`.
 
 ```sql
 CREATE TABLE dbo.Asset_Registry (
@@ -181,59 +204,67 @@ CREATE TABLE dbo.Asset_Registry (
     column_start          INT            NULL,
     component_type        VARCHAR(20)    NOT NULL,    -- per master list above
     component_name        VARCHAR(500)   NULL,
-    variant_type          VARCHAR(30)    NULL,        -- per-language values; NULL for base rows of types that have a base form
+    variant_type          VARCHAR(30)    NULL,
     variant_qualifier_1   VARCHAR(100)   NULL,
     variant_qualifier_2   VARCHAR(500)   NULL,
     reference_type        VARCHAR(20)    NOT NULL,    -- DEFINITION, USAGE
     scope                 VARCHAR(20)    NOT NULL,    -- SHARED, LOCAL
-    source_file           VARCHAR(200)   NOT NULL,    -- where defined; '<undefined>' if no def
-    source_section        VARCHAR(300)   NULL,        -- COMMENT_BANNER title for context
-    signature             VARCHAR(MAX)   NULL,        -- full selector / declaration / function signature
-    parent_function       VARCHAR(200)   NULL,        -- enclosing function name; for JS_METHOD/JS_METHOD_VARIANT, the enclosing class name
-    raw_text              VARCHAR(MAX)   NULL,        -- raw source snippet
-    purpose_description   VARCHAR(MAX)   NULL,        -- parser-populated from purpose comments / banner descriptions / file header purpose paragraphs
+    source_file           VARCHAR(200)   NOT NULL,
+    source_section        VARCHAR(300)   NULL,
+    signature             VARCHAR(MAX)   NULL,
+    parent_function       VARCHAR(200)   NULL,
+    raw_text              VARCHAR(MAX)   NULL,
+    purpose_description   VARCHAR(MAX)   NULL,
     occurrence_index      INT            NOT NULL DEFAULT(1),
-    drift_codes           VARCHAR(500)   NULL,        -- comma-separated stable short codes
-    drift_text            VARCHAR(MAX)   NULL,        -- joined human-readable drift descriptions
+    drift_codes           VARCHAR(500)   NULL,
+    drift_text            VARCHAR(MAX)   NULL,
     last_parsed_dttm      DATETIME2(7)   NOT NULL DEFAULT(SYSDATETIME())
 );
 ```
 
-**Constraints:** CHECK on `file_type` ∈ {CSS, JS, PS, HTML}, CHECK on `component_type` ∈ enumerated list, CHECK on `reference_type` ∈ {DEFINITION, USAGE}, CHECK on `scope` ∈ {SHARED, LOCAL}.
-
-**Variant model:** Per-language values for `variant_type`, `variant_qualifier_1`, `variant_qualifier_2` are documented in the per-language spec docs. See the "Variant model" subsection of "Component types" above for the architectural pattern (base + `_VARIANT` companion vs. single type with always-non-NULL `variant_type`) and pointers into the per-language specs.
-
-**Schema history:**
-
-- The 2026-05-03 schema migration dropped `state_modifier`, `component_subtype`, `parent_object`, and `first_parsed_dttm`.
-- The 2026-05-04 G-INIT-3 cleanup dropped `related_asset_id`, `design_notes`, and `is_active`. The annotation use cases for `related_asset_id` and `design_notes` are reserved for a future separate annotations table keyed on the natural key.
-- The 2026-05-05 JS variant introduction added `JS_FUNCTION_VARIANT`, `JS_CONSTANT_VARIANT`, and `JS_METHOD_VARIANT` to the `component_type` CHECK constraint enumeration. See `ALTER_AssetRegistry_AddJsVariantTypes.sql`.
-- The 2026-05-05 populator change pass added `JS_HOOK_VARIANT` to the `component_type` CHECK constraint and widened three columns: `component_name` from VARCHAR(256) to VARCHAR(500), `variant_qualifier_2` from VARCHAR(100) to VARCHAR(500), `source_section` from VARCHAR(150) to VARCHAR(300). Rationale: the JS populator is removing all text-trimming so the catalog stores verbatim source content; the widened columns provide generous headroom for the longest realistic values without resorting to VARCHAR(MAX) (which would forfeit indexability on these query-target columns). See `ALTER_AssetRegistry_PopulatorChangePass.sql`.
+**Constraints:** CHECK on `file_type` in {CSS, JS, PS, HTML}, CHECK on `component_type` in enumerated list, CHECK on `reference_type` in {DEFINITION, USAGE}, CHECK on `scope` in {SHARED, LOCAL}.
 
 **Width notes:**
 
-- `drift_codes` is `VARCHAR(500)`. Sufficient for the worst realistic case (~280 characters from 8 maximum-length codes plus separators); populators do not truncate this column under the current change pass.
-- `variant_type` is `VARCHAR(30)`. Largest current value is `compound_pseudo` (15 chars) for CSS. JS variant_type values fit comfortably (`property_assign` = 15, `async_arrow` = 11).
-- `parent_function` is `VARCHAR(200)`. Function/method/class names rarely exceed 50 characters; 200 is 4× headroom over realistic content.
-- `component_name` widened to `VARCHAR(500)` to absorb edge cases like comma-joined identifiers or heavily-namespaced names. Real content rarely exceeds 50 characters.
+- `drift_codes` is `VARCHAR(500)`. Sufficient for the worst realistic case (~280 characters from 8 maximum-length codes plus separators).
+- `variant_type` is `VARCHAR(30)`. Largest current value is `compound_pseudo` (15 chars).
+- `parent_function` is `VARCHAR(200)`. Function/method/class names rarely exceed 50 characters.
+- `component_name` widened to `VARCHAR(500)` to absorb edge cases.
 - `variant_qualifier_2` widened to `VARCHAR(500)` to hold JS_IMPORT module paths with deeply-nested directory structures.
-- `source_section` widened to `VARCHAR(300)` to hold long banner titles (`FUNCTIONS: <descriptive-name>` patterns can run wordy).
+- `source_section` widened to `VARCHAR(300)` to hold long banner titles.
 
-**No CREATE TABLE in source control.** The DDL has not been committed to `xFACts-SQL/`. The schema's authoritative documentation lives here and in `Object_Metadata` (column descriptions, design notes, status_value enumerations). When the parser pipeline goes live and this working doc is retired, the CREATE TABLE may be checked in alongside.
+**No CREATE TABLE in source control.** The DDL has not been committed to `xFACts-SQL/`. The schema's authoritative documentation lives here and in `Object_Metadata` (column descriptions, design notes, status_value enumerations). When the parser pipeline goes live and this working doc is retired, the CREATE TABLE may be checked in.
 
 ---
 
 ## occurrence_index design
 
-Under truncate+reload, occurrence_index serves a single purpose: **uniquely identify multiple instances of the same component within a file's parse**. Computed fresh on each run.
+Under truncate+reload, occurrence_index serves a single purpose: uniquely identify multiple instances of the same component within a file's parse. Computed fresh on each run.
 
-**Definition:** 1-based ordinal of how many times this specific tuple has been seen so far during the current parse, in source-position order. The tuple shape varies by component type — for CSS_VARIANT rows it includes `variant_type` and the qualifier columns; for simpler rows it's just `(file_name, component_name, reference_type)`.
+- **Definition:** 1-based ordinal of how many times this specific tuple has been seen so far during the current parse, in source-position order. The tuple shape varies by component type — for CSS_VARIANT rows it includes `variant_type` and the qualifier columns; for simpler rows it's just `(file_name, component_name, reference_type)`.
+- **Computation:** during parse, the populator maintains a counter dictionary keyed by the tuple. When emitting a row, it increments the counter and assigns the new value to occurrence_index.
+- **Forms part of the natural key** `(file_name, component_type, component_name, reference_type, occurrence_index, variant_type, variant_qualifier_1, variant_qualifier_2)`. This is the stable identifier for cross-references — e.g., when a future annotations table needs to attach a design note to "the second `.bkp-pipeline-card.warning` variant in `backup.css`."
+- **Not stable across reorderings:** if a developer removes the 1st instance, the formerly-2nd one becomes the new 1st. Acceptable because the catalog represents current state, not history.
 
-**Computation:** during parse, the populator maintains a counter dictionary keyed by the tuple. When emitting a row, it increments the counter and assigns the new value to occurrence_index. The CSS populator's `Set-OccurrenceIndices` function does this in a final pass after the row set is built.
+---
 
-**Forms part of the natural key** `(file_name, component_type, component_name, reference_type, occurrence_index, variant_type, variant_qualifier_1, variant_qualifier_2)`. This is the stable identifier for cross-references — for example, when a future annotations table needs to attach a design note to "the second `.bkp-pipeline-card.warning` variant in `backup.css`."
+## Phases
 
-**Not stable across reorderings:** if a developer removes the 1st instance, the formerly-2nd one becomes the new 1st. Annotations attached to occurrence_index=1 would now apply to a different physical instance. Acceptable because the catalog represents current state, not history; reorderings of identical components are rare in practice; and annotations layer on top via a separate table where reordering issues can be reconciled.
+| Phase | Description | Status |
+|---|---|---|
+| 0 | Schema design + DDL | DONE |
+| 0.5 | Object_Registry + Object_Metadata baselines | DONE |
+| 1A | CSS extraction | DONE — at current spec generation |
+| 1B | HTML extraction from .ps1/.psm1 string tokens | PRE-MIGRATION — production-grade structure but emits old `state_modifier='<dynamic>'` shape and needs catch-up |
+| 1C | HTML extraction from .js template strings | DONE — covered by JS populator's Group A |
+| 1D | Production rewrite + orchestrator | PARTIAL — populators production-grade; orchestrator not yet built |
+| 2 | JS function/constant/hook/class/method extraction | DONE — at current spec generation; cc-shared.js validated at zero file-attributable drift |
+| 3 | PS function/route extraction from .ps1/.psm1 | FUTURE |
+| 4 | Inline `<style>` extraction from route HTML | FUTURE — closes Gap 1 |
+| 5 | Inline `<script>` extraction from route HTML | FUTURE — closes Gap 2 |
+| 6 | Admin UI integration | FUTURE — manual trigger button on Admin page |
+| 7 | Generated documentation views | FUTURE — auto-generated markdown from registry queries |
+| Future | Annotations table | FUTURE — separate table keyed on natural key |
 
 ---
 
@@ -243,24 +274,25 @@ Most of what was originally scoped under "production rewrite" has shipped. What 
 
 ### HTML populator catch-up to current spec
 
-The HTML populator still references the pre-migration `state_modifier='<dynamic>'` pattern in its docstring and dynamic-handling logic. Bring it current:
+The HTML populator references the pre-migration `state_modifier='<dynamic>'` pattern in its docstring and dynamic-handling logic. Bring it current:
 
-- Replace `state_modifier='<dynamic>'` rows with the post-migration schema. Either drop the dynamic-modifier capture entirely (it was never very useful) or migrate to a `variant_qualifier_*` representation if there's a defensible mapping.
+- Replace `state_modifier='<dynamic>'` rows. Either drop the dynamic-modifier capture entirely (it was never very useful) or migrate to a `variant_qualifier_*` representation if there's a defensible mapping.
 - Validate against full HTML row set after change.
-- Update its docstring and CHANGELOG to reflect the new approach.
-- Confirm the populator's bulk-insert DataTable schema matches the current `dbo.Asset_Registry` shape (no extra columns being written that the table no longer has).
+- Update docstring and CHANGELOG.
+- Confirm the populator's bulk-insert DataTable schema matches the current `dbo.Asset_Registry` shape.
+- Remove `WHERE is_active = 1` filters from CSS_CLASS DEFINITION lookups.
 
 ### Populator end-of-run RunStatus / DegradedReason banner
 
-Each populator currently runs interactively and prints freeform progress and summary lines. When the populator pipeline runs from the Admin tile (Phase 6), a structured end-of-run banner with `RunStatus` (success / degraded / failed) and `DegradedReason` fields will let the Admin UI parse and surface run state cleanly. Backlogged until the Admin tile work begins — no value in adding the structured output before there's a consumer that parses it. The mid-run WARN line for CSS pre-load already provides immediate operator signal during interactive runs. JS populator's existing structured CSS pre-load reporting at end of run is a partial implementation of this pattern; the full RunStatus banner generalizes it.
+Each populator currently runs interactively and prints freeform progress and summary lines. When the populator pipeline runs from the Admin tile (Phase 6), a structured end-of-run banner with `RunStatus` (success / degraded / failed) and `DegradedReason` fields will let the Admin UI parse and surface run state cleanly. Backlogged until the Admin tile work begins. JS populator's existing structured CSS pre-load reporting at end of run is a partial implementation of this pattern; the full RunStatus banner generalizes it.
 
-### Refresh-AssetRegistry.ps1 orchestrator (not yet built)
+### `Refresh-AssetRegistry.ps1` orchestrator (not yet built)
 
 When built, the orchestrator should:
 
 1. Acquire `sp_getapplock` for single-instance protection.
 2. TRUNCATE `dbo.Asset_Registry` once.
-3. Run CSS populator (must run first — it produces the CSS_CLASS DEFINITION rows that HTML and JS populators cross-reference for scope resolution).
+3. Run CSS populator (must run first — produces the CSS_CLASS DEFINITION rows that HTML and JS populators cross-reference for scope resolution).
 4. Run HTML populator.
 5. Run JS populator.
 6. (When PS populator lands) run PS populator.
@@ -270,38 +302,18 @@ When built, the orchestrator should:
 
 The CSS-must-run-first dependency is real and not currently enforced anywhere except by manual run order. The orchestrator landing closes that hole.
 
-### Production script classification (open question)
+### Production script classification (open)
 
 Where the populators get classified in `Object_Registry` is still parked. Two reasonable options:
 
-- **Tools.Utilities** — parallel to `sp_SyncColumnOrdinals` (Object_Metadata maintenance utility). Parser helpers `parse-css.js` and `parse-js.js` are already registered here, so the populators going here would keep the whole parser pipeline grouped together.
-- **Documentation.Pipeline** — parallel to `Generate-DDLReference.ps1` (produces JSON that downstream documentation pages consume). Asset_Registry data may eventually drive generated documentation views, making this the natural home if that's the long-term intent.
+- **Tools.Utilities** — parallel to `sp_SyncColumnOrdinals` (Object_Metadata maintenance utility). Parser helpers `parse-css.js` and `parse-js.js` are already registered here.
+- **Documentation.Pipeline** — parallel to `Generate-DDLReference.ps1` (produces JSON that downstream documentation pages consume).
 
-Decide when the orchestrator lands; the decision doesn't affect functionality, only registration metadata.
-
----
-
-## Phases (current state)
-
-| Phase | Description | Status |
-|---|---|---|
-| 0 | Schema design + DDL | **DONE** — table created, columns finalized through testing, schema migration shipped 2026-05-03, follow-up cleanup landed 2026-05-04, column widenings landed 2026-05-05 |
-| 0.5 | Object_Registry + Object_Metadata baselines | **DONE** — registered under Engine.SharedInfrastructure with column descriptions, design notes, and status_value enumerations |
-| 1A | CSS extraction | **DONE** — production populator at current spec generation. All four `purpose_description` sources wired (G-INIT-3 + G-INIT-4) |
-| 1B | HTML extraction from .ps1/.psm1 string tokens | **DONE** but **PRE-MIGRATION** — production-grade structure, but emits old `state_modifier='<dynamic>'` shape and needs catch-up to post-migration schema |
-| 1C | HTML extraction from .js template strings | **DONE** — covered by JS populator's Group A |
-| 1D | Production rewrite + orchestrator | **PARTIAL** — populators are production-grade; orchestrator (`Refresh-AssetRegistry.ps1`) not yet built |
-| 2 | JS function/constant/hook/class/method extraction | **DONE** — covered by JS populator's Group B. Spec-aware extractor at `CC_JS_Spec.md` v1.2/v1.3; change pass landed 2026-05-05; first spec-compliant file (cc-shared.js) validated at zero file-attributable drift. Two known first-banner off-by-one populator bugs to fix in the next session. |
-| 3 | PS function/route extraction from .ps1/.psm1 | FUTURE — function definitions, Add-PodeRoute calls |
-| 4 | Inline `<style>` extraction from route HTML | FUTURE — closes Gap 1 |
-| 5 | Inline `<script>` extraction from route HTML | FUTURE — closes Gap 2 |
-| 6 | Admin UI integration | FUTURE — manual trigger button on Admin page |
-| 7 | Generated documentation views | FUTURE — auto-generated markdown from registry queries |
-| Future | Annotations table | FUTURE — separate table keyed on natural key for design notes and cross-references when manual annotation work begins |
+Decide when the orchestrator lands.
 
 ---
 
-## Open questions (still to resolve)
+## Open questions
 
 ### 1. HTML populator dynamic-class strategy
 
@@ -323,19 +335,23 @@ User mentioned "at least 3-4x per day" earlier. Specific schedule (cron / Pode t
 
 ### 4. Object_Metadata enrichment timing
 
-Baseline registration done — Object_Registry row exists and column descriptions are populated. **Still deferred:** enrichment Object_Metadata content (data_flow, design_note, status_value, query, relationship_note rows). Generated only after the orchestrator lands and the production behavior is stable.
+Baseline registration done — Object_Registry row exists and column descriptions are populated. Still deferred: enrichment Object_Metadata content (data_flow, design_note, status_value, query, relationship_note rows). Generated only after the orchestrator lands and production behavior is stable.
 
 ### 5. Helper consumption gap
 
 `xFACts-Helpers.psm1` currently produces a small fraction of the HTML rows that visual inspection suggests are present. The dominant pattern is string-variable indirection — a class name is built into a variable on one line, and the variable is injected into HTML on another line. The HTML populator can't see this statically.
 
-Open question: how much investigation is worthwhile before living with what's there? The CC File Format Standardization initiative addresses this as a coding-convention issue rather than a parser-complexity issue. Files refactored to conform to the format spec produce complete extraction; files that haven't converted produce reduced row counts on indirection patterns. The catalog itself becomes a measure of conversion progress.
+The CC File Format Standardization initiative addresses this as a coding-convention issue rather than a parser-complexity issue. Files refactored to conform to the format spec produce complete extraction; files that haven't converted produce reduced row counts on indirection patterns.
+
+### 6. Underlying visitor null-deref (latent)
+
+During this session's work on the JS populator, four docs JS files (`ddl-erd.js`, `ddl-loader.js`, `docs-controlcenter.js`, `nav.js`) failed AST walk at the visitor's recursive call site with "You cannot call a method on a null-valued expression." After the IIFE structural skip was added (which prevents the walker from descending into top-level IIFE bodies), the failures stopped because the walker no longer encountered the offending node shapes. The bug itself remains latent — contained behind the IIFE skip plus the per-file try/catch wrapper, but not diagnosed. Investigation deferred until a concrete file fails again outside the IIFE-skip carve-out.
 
 ---
 
 ## Catalog data observations (point-in-time snapshots)
 
-These are operational findings from specific catalog snapshots. **Not living truth** — re-running the populators will produce different counts. Kept here as reference points for the standardization work's scope and as a record of the kinds of insights the catalog surfaces.
+These are operational findings from specific catalog snapshots. Not living truth — re-running the populators will produce different counts. Kept here as reference points for the standardization work's scope.
 
 ### 2026-05-04 snapshot (post-G-INIT-4)
 
@@ -350,16 +366,16 @@ Total rows: 7,577. 33 CSS files scanned (28 in the CC zone, 7 in the docs zone, 
 | CSS_CLASS DEFINITION | 3,557 | 715 | 2,842 |
 | CSS_VARIANT DEFINITION | 1,349 | 161 | 1,188 |
 
-Filtering to just the five new-format spec-compliant CSS files: 100% coverage on all four row classes (37 of 37 COMMENT_BANNER, 261 of 261 CSS_CLASS DEFINITION, 106 of 106 CSS_VARIANT DEFINITION, 5 of 5 FILE_HEADER). The non-compliant files contribute every miss in the global numbers — drift counts (`MISSING_PURPOSE_COMMENT` = 2,842, `MISSING_VARIANT_COMMENT` = 1,188) match the row-class miss counts exactly.
+Filtering to just the five new-format spec-compliant CSS files: 100% coverage on all four row classes.
 
 Top drift codes: `MISSING_PURPOSE_COMMENT` (2,842), `FORBIDDEN_DESCENDANT` (1,378), `MISSING_VARIANT_COMMENT` (1,188), `MISSING_SECTION_BANNER` (684). All four are pre-spec residue and will close as files migrate during the page-at-a-time phase.
 
 ### Refactor candidates surfaced by the catalog (2026-05-02 snapshot, still useful)
 
 - **Keyframe duplication:** 26 LOCAL definitions of `pulse`, `spin` etc. that should be using the SHARED keyframes in `engine-events.css`.
-- **Custom modal cleanup:** 81 custom `modal-*` uses across 12 pages should migrate to shared `xf-modal-*`. Easy targets: Backup, BIDATA, JBoss (already partially adopted).
+- **Custom modal cleanup:** 81 custom `modal-*` uses across 12 pages should migrate to shared `xf-modal-*`.
 - **slide-panel naming:** BatchMonitoring uses `xwide`, DmOperations uses `extra-wide`, everyone else uses `wide`. Rename for consistency.
-- **server-health.css line 715/729:** 11 ID-prefixed rules duplicating shared `.slide-panel.wide` styles (the 33-class enumeration discovered during investigation).
+- **server-health.css line 715/729:** 11 ID-prefixed rules duplicating shared `.slide-panel.wide` styles.
 - **index-maintenance.css line 887/896:** same pattern, 6 ID-prefixed rules.
 - **ApplicationsIntegration `admin-badge`/`admin-tool`:** classes used in HTML with no CSS definition.
 - **Admin page `af-*`/`gc-*`/`meta-*`/`sched-*-header-right`:** classes used in HTML without CSS definitions.
@@ -371,7 +387,7 @@ Pages clustered into three groups:
 
 - **Heavy SHARED users** (well-aligned to engine-events infrastructure): BIDATA, Backup, IndexMaintenance, DmOperations, BatchMonitoring.
 - **Balanced:** DBCC, JobFlow, JBoss, FileMonitoring, ReplicationMonitoring, BusinessServices, BusinessIntelligence.
-- **Heavy LOCAL users** (mostly own UI vocabulary): Admin (largest LOCAL catalog), PlatformMonitoring, ServerHealth, BDLImport, ApplicationsIntegration, ClientPortal (intentionally has own visual language — light theme inside CC dark shell).
+- **Heavy LOCAL users:** Admin (largest LOCAL catalog), PlatformMonitoring, ServerHealth, BDLImport, ApplicationsIntegration, ClientPortal (intentionally has own visual language).
 
 ---
 
@@ -379,26 +395,25 @@ Pages clustered into three groups:
 
 ```
 C:\Program Files\
-├── nodejs\                          ← Node.js 24.15.0 (npm 11.12.1) — actively used
-│
-├── nodejs-libs\                     ← Active parser libraries
-│   ├── _downloads\                  (.tgz tarballs, kept for re-extraction)
-│   └── node_modules\
-│       ├── acorn\                   ← acorn 8.16.0
-│       ├── acorn-walk\              ← acorn-walk 8.3.5
-│       ├── postcss\                 ← postcss 8.5.12
-│       ├── postcss-selector-parser\ ← 7.1.1
-│       ├── nanoid\                  (postcss dep)
-│       ├── picocolors\              (postcss dep)
-│       ├── source-map-js\           (postcss dep)
-│       ├── cssesc\                  (postcss-selector-parser dep)
-│       └── util-deprecate\          (postcss-selector-parser dep)
-│
-└── dotnet-lib\                      ← LEGACY — clean up post-launch
-    ├── Esprima.3.0.6\               UNUSED
-    ├── ExCSS.4.3.1\                 UNUSED
-    ├── Acornima.1.6.1\              UNUSED
-    └── (System.* support libs for the abandoned NuGet packages)
++-- nodejs\                          <- Node.js 24.15.0 (npm 11.12.1)
+|
++-- nodejs-libs\                     <- Active parser libraries
+|   +-- _downloads\                  (.tgz tarballs, kept for re-extraction)
+|   +-- node_modules\
+|       +-- acorn\                   <- acorn 8.16.0
+|       +-- acorn-walk\              <- acorn-walk 8.3.5
+|       +-- postcss\                 <- postcss 8.5.12
+|       +-- postcss-selector-parser\ <- 7.1.1
+|       +-- nanoid\                  (postcss dep)
+|       +-- picocolors\              (postcss dep)
+|       +-- source-map-js\           (postcss dep)
+|       +-- cssesc\                  (postcss-selector-parser dep)
+|       +-- util-deprecate\          (postcss-selector-parser dep)
+|
++-- dotnet-lib\                      <- LEGACY — clean up post-launch
+    +-- Esprima.3.0.6\               UNUSED
+    +-- ExCSS.4.3.1\                 UNUSED
+    +-- Acornima.1.6.1\              UNUSED
 ```
 
 `dotnet-lib` cleanup is deferred until the orchestrator lands and the pipeline is verified working end-to-end.
@@ -418,7 +433,7 @@ C:\Program Files\
 - `E:\xFACts-PowerShell\parse-js.js` — Node helper for JS AST extraction. Reads JS from stdin, emits ESTree AST as JSON. Invoked by `Populate-AssetRegistry-JS.ps1`. Registered in `Object_Registry` under `Tools.Utilities`.
 - `E:\xFACts-PowerShell\parse-css.js` — Node helper for CSS AST extraction. Reads CSS from stdin, emits structured JSON with rules, atRules, comments, and selector trees. Invoked by `Populate-AssetRegistry-CSS.ps1`. Registered in `Object_Registry` under `Tools.Utilities`.
 
-The Node helpers are stable and don't need changes for the orchestrator work — they're invoked the same way by the populators today. G-INIT-4's comment-text capture happens entirely in the PowerShell side; the Node parser already emits each comment node's `text` field in its JSON output, so the populator just had to start reading the field.
+The Node helpers are stable and don't need changes for the orchestrator work — they're invoked the same way by the populators today.
 
 ---
 
@@ -430,47 +445,61 @@ The single biggest takeaway. PowerShell 5.1 isn't a real NuGet resolver. NuGet p
 
 ### Why Node + acorn / Node + PostCSS won
 
-- Native to JS ecosystem — runs in its native environment, no impedance mismatch
-- Tiny dependency clusters (acorn = 0 deps; postcss = 3 small deps; selector-parser = 2 small deps)
-- Battle-tested — what every modern web tool uses
-- Air-gappable — Node MSI installs offline, .tgz transfers offline, no internet at runtime
-- Subprocess overhead is ~50-100ms per file — non-issue for ~80 files
-- Trivial PowerShell integration via stdin/stdout JSON
-- Standard `node_modules\` layout means modules find each other automatically
+- Native to JS ecosystem — runs in its native environment, no impedance mismatch.
+- Tiny dependency clusters (acorn = 0 deps; postcss = 3 small deps; selector-parser = 2 small deps).
+- Battle-tested — what every modern web tool uses.
+- Air-gappable — Node MSI installs offline, .tgz transfers offline, no internet at runtime.
+- Subprocess overhead is ~50-100ms per file — non-issue for ~80 files.
+- Trivial PowerShell integration via stdin/stdout JSON.
+- Standard `node_modules\` layout means modules find each other automatically.
 
-### Lesson about library layout
+### Library layout
 
-Initial install used `nodejs-libs\<package>\package\` layout, which broke when modules tried to require their dependencies. Fixed by restructuring to standard `nodejs-libs\node_modules\<package>\`. **Lesson:** when integrating with an ecosystem, use that ecosystem's standard conventions.
+Initial install used `nodejs-libs\<package>\package\` layout, which broke when modules tried to require their dependencies. Fixed by restructuring to standard `nodejs-libs\node_modules\<package>\`. Lesson: when integrating with an ecosystem, use that ecosystem's standard conventions.
 
 ### Out-of-scope / discarded approaches
 
 Listed for reference so we don't reconsider these absent new information:
 
-- **ExCSS** — no line numbers, dropped @keyframes/@media handling
-- **Esprima.NET** — abandoned upstream, last active development ~3 years ago
-- **Acornima** — same .NET Framework dependency conflicts as Esprima, no path forward without binding redirects
-- **Hand-rolled CSS or JS tokenizer** — would only catch known patterns, miss edge cases, no value over Node + standard parser
-- **Jurassic / NiL.JS / YantraJS** — JS interpreters not designed for AST-extraction workflows
-- **Roslyn** — C#/VB analyzer, not for JS or CSS
-- **PostCSS via .NET wrapper** — no good standalone .NET CSS parser exists
+- **ExCSS** — no line numbers, dropped @keyframes/@media handling.
+- **Esprima.NET** — abandoned upstream, last active development ~3 years ago.
+- **Acornima** — same .NET Framework dependency conflicts as Esprima, no path forward without binding redirects.
+- **Hand-rolled CSS or JS tokenizer** — would only catch known patterns, miss edge cases, no value over Node + standard parser.
+- **Jurassic / NiL.JS / YantraJS** — JS interpreters not designed for AST-extraction workflows.
+- **Roslyn** — C#/VB analyzer, not for JS or CSS.
+- **PostCSS via .NET wrapper** — no good standalone .NET CSS parser exists.
+
+### Encoding policy
+
+Source files, populator scripts, and parser output are all ASCII-only. No BOM, no extended characters (em-dashes, smart quotes, arrows). Mixed encodings caused parsing artifacts and hex-escape display issues; unifying on ASCII closed both classes of problem.
+
+### AST walk resilience
+
+Per-file try/catch around the AST walk in both populators. Walk failures are populator tooling defects, not source-file spec drift, so they don't emit drift codes. Diagnostics include populator line number, line content, and full ScriptStackTrace. Failures contained — the populator continues to the next file rather than halting the run.
+
+### SKIP_CHILDREN signal
+
+The JS populator's walker supports a SKIP_CHILDREN return value from the visitor scriptblock, used for top-level IIFE handling: the IIFE itself emits a JS_IIFE row with `FORBIDDEN_IIFE` drift, and the walker does not descend into the IIFE's body. This pattern generalizes — whenever a walked node should be recorded but its children should not be visited, the visitor returns SKIP_CHILDREN.
 
 ---
 
-## Document maintenance
+## Pipeline implementation history
 
-Updated at session end with: decisions made, environment changes, populator status changes, next pickup point. When pipeline goes live (orchestrator built, all phases through 7 reached), content useful for permanent docs gets harvested into HTML inside Control Center, and this file is discarded.
+A compressed record of substantive implementation events on the pipeline. One or two lines per entry. Older entries have been condensed.
 
-### Revision history
-
-| Date | Description |
-|---|---|
-| 2026-05-05 (afternoon) | JS populator change pass implemented and deployed; cc-shared.js created and validated; spec advanced through v1.2 and v1.3; initiative direction shift adopted. Populator rewrite delivered against `CC_JS_Spec.md` v1.2 with all change-pass items landed: variant emission helpers per component family (seven helpers including `Get-HookVariantShape`); `parent_function` AST-walker threading with explicit push/pop rules per node type; `FORBIDDEN_ANONYMOUS_FUNCTION` detection per Section 14.1 callback carve-out; structured CSS pre-load reporting; all `Limit-Text` text-trimming removed in favor of widened columns. `ALTER_AssetRegistry_PopulatorChangePass.sql` ran prior to the populator pass. Smoke test against unrefactored engine-events.js produced 337 rows / 212 violations — all legitimate spec violations (132 `FORBIDDEN_FILE_SCOPE_LINE_COMMENT`, 31 `MISSING_SECTION_BANNER`, 5 `FORBIDDEN_PROPERTY_ASSIGN_EVENT`, 1 `JS_FUNCTION_VARIANT` for engineFetch async, plus various MALFORMED_FILE_HEADER and missing-comment drift), confirming populator behavior on a real-world non-compliant file. cc-shared.js then created as the new properly-named canonical shared file replacing engine-events.js: 1,513 lines, 18 banners (1 FOUNDATION + 1 STATE + 16 CHROME), 224 catalog rows, 2 violations. Both remaining violations are populator off-by-one bugs on the first banner (`FILE_ORG_MISMATCH` and `MISSING_PREFIX_DECLARATION`) — file itself is at zero spec violations. **Spec v1.2 amendments:** Section 6 forbids arrow functions and function expressions assigned to const/var (only `function name() {}` declarations permitted; `FORBIDDEN_ANONYMOUS_FUNCTION` drift code added); Section 14 forbids `el.on<event>=handler` style (only `addEventListener` permitted; `FORBIDDEN_PROPERTY_ASSIGN_EVENT` drift code added); Section 14.1 narrowed to "callback arguments to other calls" only; forbidden-pattern row emission established with seven new component types for patterns without natural declaration hosts (`JS_IIFE`, `JS_EVAL`, `JS_DOCUMENT_WRITE`, `JS_WINDOW_ASSIGNMENT`, `JS_INLINE_STYLE`, `JS_INLINE_SCRIPT`, `JS_LINE_COMMENT`); new compliance query Q6 surfaces forbidden-pattern occurrences. **Spec v1.3 amendments:** `cc-shared.js` taxonomy rewritten in Section 4.2 to align with the CSS spec's pattern of disjoint type vocabularies for shared vs. page files. Old: seven types `IMPORTS → FOUNDATION → CHROME → CONSTANTS → STATE → INITIALIZATION → FUNCTIONS`. New: four types `IMPORTS → FOUNDATION → STATE → CHROME`. `FOUNDATION` is `cc-shared.js`'s name for what page files call `CONSTANTS`; `CHROME` is its name for `INITIALIZATION` + `FUNCTIONS`; `STATE` keeps the same name and meaning in both. Sections 4.3, 7, and 19.4 updated for consistency. The change is primarily a documentation/labeling fix — the populator already enforced FOUNDATION as a constants-style section. **Direction shift:** rather than continue refactoring Phase 1 JS files one-at-a-time before pivoting to other file types, the new sequencing is to bring all four populators (CSS, HTML, JS, PS) and their specs current first, then sweep the Phase 1 page set across all four file types together in batches. Page-at-a-time migration for the remaining ~22 pages begins after Phase 1 batch closes. **This doc updated:** "Where we left off" intro paragraph rewritten to reflect change pass complete + cc-shared.js validated; JS populator script entry rewritten with current capabilities and two known first-banner off-by-one bugs flagged; "Next session pickup options" rewritten with new six-item sequencing reflecting the direction shift; new "Populator end-of-run RunStatus / DegradedReason banner" entry added under Production-rewrite remaining work as backlog (deferred until Admin tile work begins); orchestrator section updated to reference PS populator as a future addition; Phase 2 row in Phases table updated to reflect change pass status and outstanding off-by-one. New validation strategy paragraph: every spec gets validated by its first refactored shared/reference file (CSS via cc-shared.css, JS via cc-shared.js, HTML and PS following the same pattern); Phase 1 batch sweep then iterates page by page. |
-| 2026-05-05 | Populator change pass design landed (CC_JS_Spec.md v1.2 + this doc + ALTER prep). Three additive amendments to the JS spec surfaced during change-pass design: (1) new forbidden pattern `FORBIDDEN_ANONYMOUS_FUNCTION` with allowed-callback carve-out (Section 14/14.1); (2) `JS_CONSTANT_VARIANT` extended with `expression` row for computed values (Section 17.5); (3) new component type `JS_HOOK_VARIANT` for async lifecycle hooks (Section 17.5). This doc updated: master component_type list extended with `JS_HOOK_VARIANT` row; Variant model subsection updated with `JS_HOOK / JS_HOOK_VARIANT` example pair. Schema (current state) DDL block updated to reflect three column widenings — `component_name` VARCHAR(256) → VARCHAR(500), `variant_qualifier_2` VARCHAR(100) → VARCHAR(500), `source_section` VARCHAR(150) → VARCHAR(300). Width notes updated to document each widened column's rationale and to clarify that the populator will no longer truncate any text values. Schema history extended with the 2026-05-05 widening entry. "Where we left off" pickup item #1 rewritten with full change list including: variant emission helpers per component family (now seven helpers including `Get-HookVariantShape`), parent_function AST-walker threading with explicit push/pop rules per node type, `FORBIDDEN_ANONYMOUS_FUNCTION` detection, structured end-of-run CSS pre-load reporting (replacing the old "drift_codes width truncation" item), removal of all text-trimming from row builder. Validation strategy paragraph added: refactored shared file is the meaningful validation point, not full-codebase runs against unrefactored files. New SQL artifact called out: `ALTER_AssetRegistry_PopulatorChangePass.sql` adds `JS_HOOK_VARIANT` to the component_type CHECK constraint and applies the three column widenings in a single script. Phases table updated for 2026-05-05 widenings. |
-| 2026-05-05 | JS variant model designed and documented. Three new component_type values added to the master list — `JS_FUNCTION_VARIANT`, `JS_CONSTANT_VARIANT`, `JS_METHOD_VARIANT` — to capture sub-flavors that have a true base form distinguishable from variant expressions (mirroring the CSS_CLASS / CSS_VARIANT split). Three component types — `JS_IMPORT`, `JS_TIMER`, `JS_EVENT` — keep their single name and always carry a non-NULL `variant_type` because every instance is inherently a variant. Schema (current state) DDL block rewritten to match `INFORMATION_SCHEMA.COLUMNS` output verbatim — corrects pre-existing widths (`drift_codes` is `VARCHAR(500)` not `VARCHAR(MAX)`; `variant_type` is `VARCHAR(30)` not `VARCHAR(20)`); confirms `related_asset_id` / `design_notes` / `is_active` shipped as dropped from G-INIT-3; aligns column ordering. New "Variant model" subsection under Component types documents the architectural pattern (base + `_VARIANT` companion vs. single type with always-non-NULL `variant_type`). "Where we left off" pickup options reordered to lead with the JS populator change pass; full change list documented inline (variant emission helpers per component family, parent_function AST-walker threading, CSS pre-load louder reporting, drift_codes width fix). Companion deliverables: `CC_JS_Spec.md` v1.1 (Section 17 expanded with variant grid in 17.5), `ALTER_AssetRegistry_AddJsVariantTypes.sql` (component_type CHECK constraint extension). |
-| 2026-05-04 | G-INIT-4 implemented and verified live. CSS populator now captures per-class purpose comments onto `CSS_CLASS DEFINITION` rows and per-variant trailing inline comments onto `CSS_VARIANT DEFINITION` rows via the new `ConvertTo-CleanCommentText` helper and threaded `-PrecedingCommentText` / `-TrailingInlineCommentText` parameters. Coverage at 100% on the five new-format spec-compliant CSS files. Schema documentation updated to reflect post-G-INIT-3/4 shape. Phases table updated. Pickup options reordered to lead with JS spec design. Added 2026-05-04 catalog snapshot. |
-| 2026-05-04 | G-INIT-3 closed and verified live — DDL drops applied, patched populator running, FILE_HEADER and COMMENT_BANNER rows populating `purpose_description` correctly. G-INIT-4 raised in `CC_Initiative.md` to track the remaining CSS coverage gap: per-class purpose comments on `CSS_CLASS DEFINITION` rows and per-variant trailing inline comments on `CSS_VARIANT DEFINITION` rows. Tagged as next session's opener. Pickup options reordered to lead with G-INIT-4. |
-| 2026-05-04 | OQ-INIT-1 (`purpose_description` not populated) diagnosed and resolved. Root cause: the CSS populator's `New-RowSkeleton` does not include a `PurposeDescription` field, so every row inserts NULL for this column. The file-header purpose paragraph was being written to `signature` instead, and section-banner descriptions extracted by `Get-BannerInfo` were being computed and discarded. Resolution scope agreed: keep the column, wire up parser population (Option B). Three additional columns identified for removal as part of the same investigation — `related_asset_id`, `design_notes`, and `is_active`. The first two are manual-annotation columns whose use cases relocate to a separate annotations table keyed on the natural key (since manual content cannot survive truncate-and-reload at the row level). The third is dead under the truncate-and-reload model (every row is always active by construction; the column adds zero query value and creates a misleading state-tracking signal). **Implementation delivered:** `Drop_AssetRegistry_Columns.sql` (DDL drop script with default-constraint handling for `is_active`) and patched `Populate-AssetRegistry-CSS.ps1` (PurposeDescription added to row skeleton; Add-FileHeaderRow and Add-CommentBannerRow wired up; DataTable column list trimmed; new verification query reports purpose_description coverage). Cross-populator audit confirmed no other CSS populator references to the dropped columns; HTML and JS populators have pre-existing issues against the 2026-05-03 schema migration plus references to the columns being dropped today, all of which are deferred to their respective spec catch-up sessions. Schema section in this doc rewritten to reflect target post-resolution shape. |
-| 2026-05-04 | Renamed from `Asset_Registry_Working_Doc.md` to `CC_Catalog_Pipeline_Working_Doc.md` to align with the CC_* doc family. Doc consolidation note updated to reflect the file format documentation reorganization (retirement of `CC_Component_Registry_Plan.md`, `CC_FileFormat_Standardization.md`, `CC_FileFormat_Spec.md`, `CC_FileFormat_Parser_Friendly_Conventions_Recommendations.md`; replacement by `CC_Initiative.md` plus the `CC_*_Spec.md` family). Schema DDL rewritten to reflect post-migration shape (dropped `state_modifier`, `component_subtype`, `parent_object`, `first_parsed_dttm`; added `variant_type`, `variant_qualifier_1`, `variant_qualifier_2`, `drift_codes`, `drift_text`). Test populator section replaced with current populator status (production scripts exist; HTML populator is one spec generation behind CSS; no orchestrator built yet). Phase 1C reclassified as DONE (covered by JS populator's Group A). Phase 1D reclassified as PARTIAL. Project goal section trimmed (full motivation now lives in `CC_Initiative.md` Purpose). Single-table model and refresh strategy sections trimmed (covered by spec docs' catalog model essentials). `purpose_description` not currently being populated noted explicitly with pointer to OQ-INIT-1. |
-| 2026-05-02 | Phase 0 (DDL) + Phase 1A (CSS) + Phase 1B (HTML) all completed. ~7,400 rows of catalog data. Drift detection and consumption matrix working. Refresh strategy decision: TRUNCATE + reload per file_type, not MERGE upsert. Object_Registry row + Object_Metadata baselines + column descriptions + design notes + status_value enumerations inserted (Asset_Registry under Engine.SharedInfrastructure). Parser helpers `parse-css.js` and `parse-js.js` registered under Tools.Utilities. Added "extraction targets are content types not file extensions" framing — formalized Gaps 1/2/3 (HTML-in-JS, inline `<style>`, inline `<script>`) as future phases 1C / 4 / 5. |
-| 2026-05-01 | Environment setup complete. Parsers validated. Phase 0 next. |
-| 2026-04-30 | Initial framework draft (as `CC_Component_Registry_Plan.md`). Schema proposed, motivation captured. |
+- **2026-04-30** — Initial framework draft. Schema proposed.
+- **2026-05-01** — Environment setup. Parsers validated. Node + acorn / Node + PostCSS chosen after .NET path failed.
+- **2026-05-02** — Phase 0 (DDL) plus Phase 1A (CSS) plus Phase 1B (HTML) completed. ~7,400 catalog rows. Refresh strategy decided as TRUNCATE plus reload per file_type. Object_Registry plus Object_Metadata baselines registered.
+- **2026-05-03** — Schema migration. Dropped `state_modifier`, `component_subtype`, `parent_object`, `first_parsed_dttm`. Added `variant_type`, `variant_qualifier_1`, `variant_qualifier_2`, `drift_codes`, `drift_text`.
+- **2026-05-04** — Renamed from `Asset_Registry_Working_Doc.md` to current name. Schema updated to post-migration shape. Phase 1C reclassified as DONE (covered by JS populator's Group A).
+- **2026-05-04** — `purpose_description` not populating diagnosed. Three columns dropped from `Asset_Registry` (`related_asset_id`, `design_notes`, `is_active`) — manual-annotation use cases relocate to a future annotations table keyed on the natural key. CSS populator patched to populate `purpose_description` from file headers and section banners.
+- **2026-05-04** — CSS populator extended to capture per-class purpose comments and per-variant trailing inline comments. 100% coverage on Phase 1 reference files. All four CSS comment sources now flow into the catalog.
+- **2026-05-05** — JS variant model added. Three component types gained `_VARIANT` siblings; three kept single-name with always-non-NULL variant_type. Schema rewritten verbatim from `INFORMATION_SCHEMA.COLUMNS` (corrected three pre-existing documentation drifts on column widths).
+- **2026-05-05** — JS populator change pass implemented and deployed. Variant emission helpers per component family. `parent_function` AST-walker threading. `FORBIDDEN_ANONYMOUS_FUNCTION` detection per Section 14.1 callback carve-out. All `Limit-Text` text-trimming removed in favor of widened columns. Three columns widened: `component_name` to VARCHAR(500), `variant_qualifier_2` to VARCHAR(500), `source_section` to VARCHAR(300).
+- **2026-05-05** — cc-shared.js created and validated. 224 catalog rows; first spec-compliant JS file. Two known first-banner off-by-one populator bugs flagged for next session.
+- **2026-05-06** — JS populator Phase 1 fixes applied. Fixed first-banner off-by-one bugs (FILE_HEADER purpose extraction; phantom banner; SectionTypeOrder map updated for v1.3 spec). Fixed encoding (UTF-8 BOM and 41 non-ASCII chars in CSS; Windows-1252 plus 3 em-dashes in JS — both normalized to ASCII).
+- **2026-05-06** — JS populator zone architecture added. Split shared file lists into CC zone (`cc-shared.js`, `engine-events.js`) and docs zone (`nav.js`, `docs-controlcenter.js`, `ddl-erd.js`, `ddl-loader.js`). Pre-load query produces per-zone shared/local class maps. `Get-JsZone` and zone-aware accessor functions added. `SHADOWS_SHARED_FUNCTION` check zone-aware.
+- **2026-05-06** — JS populator HTML_ID always-LOCAL fix per spec.
+- **2026-05-06** — Top-level IIFE structural skip implemented. JS visitor emits `JS_IIFE` row with full body in `raw_text` plus `FORBIDDEN_IIFE` drift, then returns SKIP_CHILDREN. Walker no longer descends into IIFE body. Code outside the IIFE still cataloged normally.
+- **2026-05-06** — AST walk resilience added to both populators. Per-file try/catch with diagnostic capture (populator line, line content, ScriptStackTrace). Walk failures contained and don't emit drift codes (they're populator tooling defects, not file spec drift).
+- **2026-05-06** — Both populators validated cleanly on Phase 1 reference files. Cc-shared.css at 626 rows / 0 drift. Cc-shared.js at 223 rows / 0 drift. Five spec-aligned CSS files all at 0 drift, total 1,868 rows.
