@@ -53,7 +53,7 @@ Each section opens with a banner: a multi-line block comment with this format:
 <TYPE>: <NAME>
 ----------------------------------------------------------------------------
 <Description: 1 to 5 sentences describing what's in this section.>
-Prefixes: <prefix1>, <prefix2>, ...
+Prefix: <prefix>
 ```
 
 (The opening and closing rule lines are sequences of `=` characters of any length five or more, and the inner separator is `-` characters of any length.)
@@ -65,7 +65,7 @@ Prefixes: <prefix1>, <prefix2>, ...
 - `<TYPE>` must be one of the six recognized section types (Section 4). The TYPE token is uppercase letters and underscores only.
 - `<NAME>` is human-readable and may contain spaces, commas, and other punctuation.
 - The description block is 1-5 sentences explaining what the section contains. Required.
-- The `Prefixes:` line declares which class name prefixes are valid in this section (Section 5). Required.
+- The `Prefix:` line declares the page prefix that scopes class names in this section (Section 5). Required, singular.
 
 ### 3.2 Banner authoring discipline
 
@@ -102,14 +102,14 @@ A page may contain multiple `CONTENT` banners (e.g., `CONTENT: PIPELINE STATUS`,
 
 ---
 
-## 5. Prefixes
+## 5. Prefix
 
-Every section banner declares one or more class name prefixes via the `Prefixes:` line. Every base class definition in that section must have a leftmost class name that begins with one of the declared prefixes (followed by a `-`). Drift code: `PREFIX_MISMATCH`.
+Every section banner declares a single page prefix via the `Prefix:` line. Every base class definition in that section must have a leftmost class name that begins with the declared prefix (followed by a `-`). Drift code: `PREFIX_MISMATCH`.
 
 ### 5.1 Special values
 
-- `Prefixes: (none)` - sentinel value. Declares the section has no class definitions, so prefix-matching is intentionally disabled. Used primarily by `FOUNDATION` sections that contain only reset rules, keyframes, and custom properties (which are not classes). The line itself is still required as a structural marker.
-- The `Prefixes:` line is mandatory. Drift code if absent: `MISSING_PREFIXES_DECLARATION`.
+- `Prefix: (none)` - sentinel value. Declares the section has no class definitions, so prefix-matching is intentionally disabled. Used by `cc-shared.css`'s sections (which contain platform-wide chrome and tokens, not page-prefixed content) and by FOUNDATION sections containing only reset rules, keyframes, and custom properties (which are not classes). The line itself is still required as a structural marker.
+- The `Prefix:` line is mandatory. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
 
 ### 5.2 Prefix selection rules
 
@@ -117,6 +117,18 @@ Every section banner declares one or more class name prefixes via the `Prefixes:
 2. **Lowercase letters only.** No digits, no underscores, no hyphens. The hyphen separates the prefix from the rest of the class name.
 3. **No collisions.** No two pages may share a prefix.
 4. **No platform-token collisions.** Prefixes must not start with strings reserved for platform tokens (`color`, `size`, `font`, `duration`, `shadow`, `z`, `gradient`).
+
+### 5.3 Single prefix per banner
+
+Each banner declares exactly one prefix or `(none)`. Multiple comma-separated prefixes are not permitted. A file represents one CC page (or the shared resource), and that page has a single registered prefix; every section in the file uses that same prefix. Drift code if a banner declares anything other than a single 3-character prefix or `(none)`: `MALFORMED_PREFIX_VALUE`.
+
+### 5.4 Registry validation
+
+Each page's prefix is registered in `dbo.Component_Registry.cc_prefix` for the component that owns the page's CSS file. The parser cross-references each banner's declared prefix against the registry and emits drift on disagreement.
+
+- If a file's component has `cc_prefix = NULL` (a shared or infrastructure component, e.g., `ControlCenter.Shared`), every section banner in the file must declare `Prefix: (none)`. A non-`(none)` declaration emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
+- If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every section banner in the file must declare `Prefix: X`. A different value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
+- The registry is the source of truth. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
 
 ---
 
@@ -126,7 +138,7 @@ A class definition is a CSS rule whose selector is a single class (the base form
 
 - Be preceded by a single-line purpose comment immediately above the rule. Drift code: `MISSING_PURPOSE_COMMENT`. The purpose comment becomes the row's `purpose_description` in the catalog.
 - Use only properties supported by the spec (see Section 13 for forbidden patterns).
-- Reside in a section whose declared prefixes match the class's leftmost name token.
+- Reside in a section whose declared prefix matches the class's leftmost name token.
 
 The base class produces a `CSS_CLASS DEFINITION` row in the catalog. See Section 18 for examples.
 
@@ -155,7 +167,7 @@ Each variant produces its own `CSS_VARIANT DEFINITION` row in the catalog, with 
 ### 7.2 Variant authoring rules
 
 - A variant must follow its base class's purpose comment in the file. It does not need its own purpose comment, but every variant must carry a trailing inline comment on the same line as the opening `{`, describing the state or context. Drift code: `MISSING_VARIANT_COMMENT`.
-- Variants must adhere to the same prefix rules as their base class.
+- Variants must adhere to the same prefix rule as their base class.
 - The compound depth limit is two class tokens. A selector with three or more class tokens (`.foo.bar.baz`) emits `COMPOUND_DEPTH_3PLUS`.
 - Stacked pseudo-classes are forbidden. Drift code: `FORBIDDEN_STACKED_PSEUDO`.
 - The `:not(...)` pseudo-class is forbidden in any form. Drift code: `FORBIDDEN_NOT_PSEUDO`.
@@ -195,7 +207,6 @@ When a section's content grows, two structural tools are available: sub-section 
 ### 9.1 Use a new banner when
 
 - The new content is a distinct concept with its own purpose
-- The new content has its own prefix family (e.g., `idle-` vs `toast-` within FEEDBACK_OVERLAYS)
 - The new content has its own audience or readership context
 - A reader scanning the file's FILE ORGANIZATION list would benefit from seeing the new content as a top-level entry
 
@@ -254,7 +265,7 @@ Every CSS file must:
 
 1. Open with a spec-compliant file header (Section 2).
 2. Define all sections under recognized section types in declared order (Sections 3, 4).
-3. Declare valid prefixes in every section banner (Section 5).
+3. Declare a valid prefix in every section banner (Section 5).
 4. Precede every base class with a purpose comment (Section 6).
 5. Add a trailing inline comment on every variant (Section 7).
 6. Use the state-on-element pattern for stateful UI (Section 7.3).
@@ -295,6 +306,8 @@ Every CSS file must:
 | Blank line inside a class definition | `BLANK_LINE_INSIDE_RULE` |
 | More than one blank line between top-level constructs | `EXCESS_BLANK_LINES` |
 | Comment style not matching the four allowed kinds | `FORBIDDEN_COMMENT_STYLE` |
+| Banner declares anything other than a single 3-char prefix or `(none)` | `MALFORMED_PREFIX_VALUE` |
+| Banner's declared prefix disagrees with `Component_Registry.cc_prefix` | `PREFIX_REGISTRY_MISMATCH` |
 
 `@media` is permitted in any section. Wrapped rules are subject to all other spec rules. The wrapping `@media` expression is captured in the catalog's `parent_function` column.
 
@@ -380,10 +393,12 @@ Each row may carry one or more drift codes in `drift_codes` (comma-delimited str
 | Code | Description |
 |---|---|
 | `MISSING_SECTION_BANNER` | A class definition (or other catalogable construct) appears outside any banner. |
-| `MALFORMED_SECTION_BANNER` | A section banner exists but does not follow the strict 5-line format with rule lines, title line, separator, description block, and `Prefixes:` line. |
+| `MALFORMED_SECTION_BANNER` | A section banner exists but does not follow the strict 5-line format with rule lines, title line, separator, description block, and `Prefix:` line. |
 | `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS). |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of the required order. |
-| `MISSING_PREFIXES_DECLARATION` | A section banner is missing the mandatory `Prefixes:` line. |
+| `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
+| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
+| `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
 | `DUPLICATE_FOUNDATION` | More than one CSS file in the codebase contains a FOUNDATION section. |
 | `DUPLICATE_CHROME` | More than one CSS file in the codebase contains a CHROME section. |
 
@@ -391,7 +406,7 @@ Each row may carry one or more drift codes in `drift_codes` (comma-delimited str
 
 | Code | Description |
 |---|---|
-| `PREFIX_MISMATCH` | A class name does not begin with one of the prefixes declared in its containing section's banner. |
+| `PREFIX_MISMATCH` | A class name does not begin with the prefix declared in its containing section's banner. |
 | `MISSING_PURPOSE_COMMENT` | A base class definition is not preceded by a single-line purpose comment. Pseudo-element rules attached to a class are cataloged as base CSS_CLASS rows by the parser and therefore require a preceding purpose comment, not the trailing inline comment used for variants. |
 | `MISSING_VARIANT_COMMENT` | A class variant does not carry a trailing inline comment after the opening brace. |
 
@@ -600,7 +615,7 @@ A small page demonstrating every required pattern. Real pages have more sections
    LAYOUT: PAGE GRID
    ----------------------------------------------------------------------------
    Top-level layout for the example page content area.
-   Prefixes: ex
+   Prefix: ex
    ============================================================================ */
 
 /* The two-column grid container for the example page. */
@@ -616,7 +631,7 @@ A small page demonstrating every required pattern. Real pages have more sections
    ----------------------------------------------------------------------------
    Example status cards. Each card may render in success, warning, or
    critical state via state classes on the card element.
-   Prefixes: ex
+   Prefix: ex
    ============================================================================ */
 
 /* Example status card - base card layout. */
@@ -648,7 +663,7 @@ A small page demonstrating every required pattern. Real pages have more sections
    CONTENT: EXAMPLE BADGES
    ----------------------------------------------------------------------------
    Small pill badges used inside the status cards to label entry types.
-   Prefixes: ex
+   Prefix: ex
    ============================================================================ */
 
 /* Example badge pill - base styling. */
@@ -743,7 +758,7 @@ When toast notifications are added later, the right pattern is two banners of th
 /* ============================================================================
    FEEDBACK_OVERLAYS: IDLE OVERLAY
    ...
-   Prefixes: idle
+   Prefix: idle
    ============================================================================ */
 .idle-overlay { ... }
 .idle-message { ... }
@@ -751,7 +766,7 @@ When toast notifications are added later, the right pattern is two banners of th
 /* ============================================================================
    FEEDBACK_OVERLAYS: TOAST NOTIFICATIONS
    ...
-   Prefixes: toast
+   Prefix: toast
    ============================================================================ */
 .toast { ... }
 .toast.success { ... }
@@ -781,11 +796,15 @@ The fixed type-order rule reflects a real cascade dependency: tokens (FOUNDATION
 
 `FOUNDATION` and `CHROME` are limited to one source file because single-source ownership is what makes them genuinely shared. If multiple files defined `FOUNDATION` content, "the canonical color token" would not have a single home.
 
-### A.5 Prefixes
+### A.5 Prefix
 
 Three-character prefix length is fixed platform-wide because the fixed length keeps class names predictable and makes the prefix visually distinct from the rest of the class name. `.bkp-pipeline-card` reads cleanly; `.bk-pipeline-card` and `.bkpe-pipeline-card` do not.
 
+The single-prefix-per-file rule reflects that a file represents one CC page (or the shared resource), and each page has exactly one registered prefix. Multiple comma-separated values in the `Prefixes:` line was a legacy form that conflated section-grouping commentary with prefix declaration; the singular form removes that ambiguity.
+
 The platform-token collision rule prevents authorial confusion when reading a class like `.color-primary-card` - "color" is a reserved category, and seeing it as a prefix would create ambiguity about whether "color" is a prefix or a category.
+
+The registry validation rule (Section 5.4) makes `Component_Registry.cc_prefix` the source of truth for which prefix belongs to which page. Before the registry existed, the prefix was declared only in the file header and could drift from the platform's understanding silently. Pinning each file's prefix to its component row in the registry surfaces drift as queryable catalog rows.
 
 ### A.6 Class definitions
 
