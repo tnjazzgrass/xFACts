@@ -10,13 +10,13 @@
 
     The CSS populator emits the following row types per CC_CSS_Spec.md:
 
-      * FILE_HEADER DEFINITION rows — one per scanned file. Carries
+      * FILE_HEADER DEFINITION rows -- one per scanned file. Carries
         header-level drift codes and anchors the file in the catalog.
         purpose_description holds the file's purpose paragraph extracted
         from the header's identity line.
 
       * CSS_CLASS DEFINITION rows for every base class (no compound class
-        modifiers, no pseudo-classes — selector is just .className, or a
+        modifiers, no pseudo-classes -- selector is just .className, or a
         class plus a pseudo-element such as .className::placeholder).
         purpose_description holds the single-line purpose comment that
         the spec mandates immediately above the rule.
@@ -96,11 +96,59 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-06  Methodology note (no code change): the JS populator added a
+            walker-level SKIP_CHILDREN signaling mechanism to handle
+            top-level IIFEs as structurally-non-conforming whole-blocks
+            (one row with the body in raw_text, no recursion into the
+            body). The CSS populator does not adopt this mechanism in
+            this revision because CSS uses a different walking model
+            (direct recursion in Add-RowsFromAst rather than visitor
+            pattern), and there is no current CSS-side analog to a top-
+            level IIFE -- no whole-block construct that the spec forbids
+            and whose interior cataloging would produce cascade drift.
+            Worth revisiting in Phase 3 architectural harmonization when
+            the walking models are aligned between populators.
+2026-05-05  AST walk resilience: each per-file Add-RowsFromAst call is now
+            wrapped in try/catch. If the walk throws (latent walker bug
+            triggered by an unusual AST shape), the error is logged,
+            partial rows from that file's content walk are discarded, and
+            processing continues with the next file. The file's FILE_HEADER
+            row is preserved (it's emitted before the walk and captures
+            file-level structure independent of content extraction). Walk
+            failures are populator tooling defects, not spec-compliance
+            issues, so no drift code is emitted -- the only signal is the
+            WARN log line. Mirrors the JS populator's resilience pattern.
+2026-05-05  Methodology audit follow-up. Two changes:
+              (1) FILE_HEADER purpose_description now extracts the multi-
+                  sentence purpose paragraph between the Version line and
+                  the FILE ORGANIZATION heading, per spec Section 2 / 16.
+                  Previously extracted only the parenthetical tagline from
+                  the xFACts identity line (e.g., "Backup Monitoring
+                  Styles"), which was a non-spec-compliant 2-3 word
+                  shortening. New extraction strips bookkeeping lines
+                  (xFACts identity, Location, Version) and rule lines, then
+                  joins the remaining content into a single line. The
+                  $hasIdentity detection from the identity-line regex is
+                  preserved (still required for malformed-header
+                  validation); only the purpose extraction was changed.
+              (2) Source file normalized to pure ASCII. UTF-8 BOM stripped;
+                  41 non-ASCII chars (em-dashes, right-arrows) in comments
+                  converted to ASCII equivalents (-- and ->). Eliminates
+                  the "unsupported Unicode characters" warning when saving
+                  in PowerShell editors and removes the BOM that would
+                  prevent the file from being treated as text by some
+                  GitHub raw-file consumers. No code changes.
+2026-05-05  Migration support for cc-shared.css. $CcSharedFiles now lists
+            both 'cc-shared.css' (the spec-compliant replacement) and
+            'engine-events.css' (the legacy shared file that all current
+            pages still consume). Both stay listed during the page-by-page
+            migration; engine-events.css is removed once every page has
+            cut over and the file is deleted from the codebase.
 2026-05-04  G-INIT-4 resolution. Complete CSS purpose_description coverage
             for the two remaining comment sources that the populator
             previously detected (for drift purposes) but discarded the
             text of:
-              (1) Per-class purpose comments → CSS_CLASS DEFINITION rows.
+              (1) Per-class purpose comments -> CSS_CLASS DEFINITION rows.
                   The /* One-sentence purpose. */ comment that the spec
                   mandates before each base class is now captured into
                   purpose_description on the class's row. Pseudo-element
@@ -108,7 +156,7 @@ CHANGELOG
                   cataloged as CSS_CLASS rows by the spec and pick up the
                   same preceding-comment treatment via the existing
                   base-class emission path.
-              (2) Per-variant trailing inline comments → CSS_VARIANT
+              (2) Per-variant trailing inline comments -> CSS_VARIANT
                   DEFINITION rows. The /* state */ comment after the
                   opening brace of each variant rule is now captured into
                   purpose_description on the variant's row.
@@ -136,7 +184,7 @@ CHANGELOG
                   purpose_description column now receives the row value
                   rather than a hardcoded NULL.
               (2) DROPPED-COLUMN CLEANUP. The bulk-insert DataTable no
-                  longer references design_notes or related_asset_id —
+                  longer references design_notes or related_asset_id --
                   the corresponding columns were dropped from
                   dbo.Asset_Registry in this same release. Three
                   associated [void]$dt.Columns.Add() calls and three NULL
@@ -165,7 +213,7 @@ CHANGELOG
             comments on list entries are stripped before comparison.
 2026-05-03  Added FEEDBACK_OVERLAYS as a sixth section type (spec amendment
             Gap 5 surfaced during cc-shared.css build). Section type order
-            is now FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES →
+            is now FOUNDATION -> CHROME -> LAYOUT -> CONTENT -> OVERRIDES ->
             FEEDBACK_OVERLAYS. The new type covers transient, behavior-
             driven viewport-overlay elements (idle overlay, future toast
             notifications, loading spinners, confirmation flashes) that
@@ -191,11 +239,11 @@ CHANGELOG
                   in FOUNDATION have no class names; the (none) sentinel
                   is the explicit "no class prefixes apply here" declaration.
                   The MISSING_PREFIXES_DECLARATION check still fires if
-                  the Prefixes line is entirely missing — (none) is a
+                  the Prefixes line is entirely missing -- (none) is a
                   declaration, just one that disables PREFIX_MISMATCH.
 2026-05-03  OQ-CSS-1 resolution: forbid :not() and stacked pseudo-classes.
-            Two new drift codes added — FORBIDDEN_NOT_PSEUDO and
-            FORBIDDEN_STACKED_PSEUDO — and detection logic added to
+            Two new drift codes added -- FORBIDDEN_NOT_PSEUDO and
+            FORBIDDEN_STACKED_PSEUDO -- and detection logic added to
             Add-CompoundDriftCodes so both primary and descendant compounds
             are checked. The 13 cases the previous run produced with
             malformed variant_qualifier_2 values (not:hover, hover:not,
@@ -254,7 +302,7 @@ CHANGELOG
             resolution now correctly points at the actual docs file that
             defines each consumed component.
 2026-05-02  Initial production implementation. Replaces the throwaway test
-            populator. Algorithmic core preserved — compound vs descendant
+            populator. Algorithmic core preserved -- compound vs descendant
             selector decomposition, multi-selector dedupe, banner-driven
             source_section enrichment, CSS_VARIABLE and CSS_KEYFRAME def/use
             tracking, and CSS_RULE for non-class selectors all carry forward.
@@ -294,7 +342,14 @@ $CssScanRoots = @(
 # only against their own zone's shared map. CC pages cannot consume docs CSS
 # (and vice versa); the previous single-pool design produced wrong USAGE
 # attribution when class names happened to collide across zones.
+#
+# CC zone migration in progress: cc-shared.css is the spec-compliant
+# replacement for engine-events.css. Both are listed during the migration so
+# pages can consume either while the page-by-page refactor proceeds. After
+# every page has migrated, engine-events.css comes off the list and out of
+# the codebase.
 $CcSharedFiles = @(
+    'cc-shared.css',
     'engine-events.css'
 )
 $DocsSharedFiles = @(
@@ -317,7 +372,7 @@ $env:NODE_PATH = $NodeLibsPath
 # The six enumerated section types, in required order.
 $SectionTypeOrder = @('FOUNDATION', 'CHROME', 'LAYOUT', 'CONTENT', 'OVERRIDES', 'FEEDBACK_OVERLAYS')
 
-# Drift code → human description mapping. Used to populate drift_text in
+# Drift code -> human description mapping. Used to populate drift_text in
 # parallel with drift_codes. Keep in sync with the spec's drift-code reference.
 $DriftDescriptions = [ordered]@{
     # File header
@@ -325,10 +380,10 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_CHANGELOG'               = "The file header contains a CHANGELOG block. CHANGELOG blocks are not allowed in CSS file headers."
     'FILE_ORG_MISMATCH'                 = "The FILE ORGANIZATION list in the header does not exactly match the section banner titles in the file body, by content or by order."
     # Section banners
-    'MISSING_SECTION_BANNER'            = "A class definition (or other catalogable construct) appears outside any banner — no section banner precedes it in the file."
+    'MISSING_SECTION_BANNER'            = "A class definition (or other catalogable construct) appears outside any banner -- no section banner precedes it in the file."
     'MALFORMED_SECTION_BANNER'          = "A section banner exists but does not follow the strict 5-line format with 78-character rules."
     'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS)."
-    'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order (FOUNDATION → CHROME → LAYOUT → CONTENT → OVERRIDES → FEEDBACK_OVERLAYS)."
+    'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order (FOUNDATION -> CHROME -> LAYOUT -> CONTENT -> OVERRIDES -> FEEDBACK_OVERLAYS)."
     'MISSING_PREFIXES_DECLARATION'      = "A section banner is missing the mandatory Prefixes: line in its description block."
     'DUPLICATE_FOUNDATION'              = "More than one CSS file in the codebase contains a FOUNDATION section."
     'DUPLICATE_CHROME'                  = "More than one CSS file in the codebase contains a CHROME section."
@@ -403,7 +458,7 @@ function Set-OccurrenceIndices {
 # DRIFT HELPERS
 # ============================================================================
 
-# Append a drift code to a row's drift_codes list. Idempotent — adding the
+# Append a drift code to a row's drift_codes list. Idempotent -- adding the
 # same code twice is a no-op. Also appends the human description to drift_text.
 function Add-Drift {
     param(
@@ -411,7 +466,7 @@ function Add-Drift {
         [Parameter(Mandatory)] [string]$Code
     )
     if (-not $script:DriftDescriptions.Contains($Code)) {
-        Write-Log "Add-Drift: unknown drift code '$Code' — refusing to attach." 'WARN'
+        Write-Log "Add-Drift: unknown drift code '$Code' -- refusing to attach." 'WARN'
         return
     }
 
@@ -500,7 +555,7 @@ function Format-SingleLine {
 # only the inner content. The cleanup goal is to drop per-line indentation
 # (which is purely visual artifact of how comments are formatted in source)
 # while preserving the line-break structure of multi-line comments. The
-# resulting text is suitable for display in catalog reference views — single-
+# resulting text is suitable for display in catalog reference views -- single-
 # line comments come through clean; multi-line comments retain their line
 # breaks so the original prose structure survives.
 #
@@ -577,7 +632,7 @@ function Get-BannerInfo {
     if ($CommentText -notmatch '={5,}') { return $null }
 
     # File headers also contain '=' rules but are not banners. Distinguish by
-    # presence of header-specific markers — Location: and Version: lines, or
+    # presence of header-specific markers -- Location: and Version: lines, or
     # the xFACts identity line. If any of these are present, it's a header,
     # not a banner.
     if ($CommentText -match 'Location\s*:\s*[A-Za-z]:[\\/]' -or
@@ -620,13 +675,13 @@ function Get-BannerInfo {
         $sectionName = $matches[2].Trim()
     }
     else {
-        # Title doesn't follow TYPE: NAME format — old-style banner
+        # Title doesn't follow TYPE: NAME format -- old-style banner
         $sectionType = $null
         $sectionName = $titleLine
         $isMalformed = $true
     }
 
-    # Prefixes: line — last content line that starts with "Prefixes:". The
+    # Prefixes: line -- last content line that starts with "Prefixes:". The
     # special sentinel "(none)" declares that this section has no class
     # definitions and prefix matching is intentionally disabled. Used
     # primarily by FOUNDATION sections that contain reset rules and
@@ -917,7 +972,7 @@ Write-Log "Pass 2: generating Asset_Registry rows..."
 # Per-file context state.
 $script:CurrentFile         = $null
 $script:CurrentFileIsShared = $false
-$script:CurrentFileZone     = 'cc'   # 'cc' or 'docs' — drives USAGE map selection
+$script:CurrentFileZone     = 'cc'   # 'cc' or 'docs' -- drives USAGE map selection
 $script:CurrentBannerInfo   = $null   # full banner descriptor
 $script:CurrentBannerOuter  = $null   # banner title (for source_section)
 $script:CurrentSectionTypes = $null   # array of section types seen so far in file
@@ -1337,7 +1392,7 @@ function Add-RowsForSelector {
     # If RuleBodyText wasn't provided (older callers), fall back to the selector.
     if ([string]::IsNullOrEmpty($RuleBodyText)) { $RuleBodyText = $RuleSelectorText }
 
-    # Locate the primary compound — first one that has a class or an id.
+    # Locate the primary compound -- first one that has a class or an id.
     $primaryIdx = -1
     for ($i = 0; $i -lt $compounds.Count; $i++) {
         if ($compounds[$i].Classes.Count -gt 0 -or $compounds[$i].Ids.Count -gt 0) {
@@ -1347,7 +1402,7 @@ function Add-RowsForSelector {
 
     $hasMultipleCompounds = ($compounds.Count -gt 1)
 
-    # Selector with no class and no id → element-only / universal / attribute-only / pseudo-element-only.
+    # Selector with no class and no id -> element-only / universal / attribute-only / pseudo-element-only.
     if ($primaryIdx -lt 0) {
         $row = Add-CssRuleRow -LineStart $LineStart -LineEnd $LineEnd `
             -ColumnStart $ColumnStart -Signature $RuleSelectorText `
@@ -1417,7 +1472,7 @@ function Add-RowsForSelector {
                 -ExtraClassCount $shape.ExtraClassCount `
                 -IsPartOfGroup $IsPartOfGroup -InDescendant $false
 
-            # The primary compound DOES NOT itself contribute FORBIDDEN_DESCENDANT —
+            # The primary compound DOES NOT itself contribute FORBIDDEN_DESCENDANT --
             # the descendant relationship is between the primary and what follows.
             # When the compound list has more than one element, the primary still
             # participates in a descendant-combinator selector, so flag it.
@@ -1455,7 +1510,7 @@ function Add-RowsForSelector {
     }
 
     # ----- PRIMARY emission: id side (if any ids present) ------------------
-    # Independent of class emission — when both are present we want both rows.
+    # Independent of class emission -- when both are present we want both rows.
 
     if ($primary.Ids.Count -gt 0) {
         foreach ($idName in $primary.Ids) {
@@ -1483,7 +1538,7 @@ function Add-RowsForSelector {
             $usageName = $cmp.Classes[0]
             $shape = Get-VariantShape -Compound $cmp
 
-            # Descendant USAGE rows do not carry a purpose_description —
+            # Descendant USAGE rows do not carry a purpose_description --
             # the comment (if any) belongs to the primary, not the descendant.
             $usageRow = Add-CssClassOrVariantRow `
                 -ComponentName $usageName `
@@ -1502,7 +1557,7 @@ function Add-RowsForSelector {
             }
         }
 
-        # Id-side descendant USAGE — independent of class emission, same as primary
+        # Id-side descendant USAGE -- independent of class emission, same as primary
         if ($cmp.Ids.Count -gt 0) {
             foreach ($idName in $cmp.Ids) {
                 $idRow = Add-HtmlIdRow -IdName $idName -ReferenceType 'USAGE' `
@@ -1593,7 +1648,7 @@ function Add-RowsFromAst {
             $script:PreviousSibling = $Node
             return
         }
-        # Non-banner comment — just record it as the previous sibling so the
+        # Non-banner comment -- just record it as the previous sibling so the
         # next rule's "has preceding comment" check works.
         $script:PreviousSibling = $Node
         return
@@ -1637,7 +1692,7 @@ function Add-RowsFromAst {
             }
         }
 
-        # Comma-grouped selectors → flag every constituent
+        # Comma-grouped selectors -> flag every constituent
         $isGroup = $false
         if ($Node.selectors -and @($Node.selectors).Count -gt 1) { $isGroup = $true }
 
@@ -1703,7 +1758,7 @@ function Add-RowsFromAst {
                 -RawText "$($Node.prop): $($Node.value)")
         }
 
-        # CSS_KEYFRAME USAGE — resolve against the consumer's zone
+        # CSS_KEYFRAME USAGE -- resolve against the consumer's zone
         if ($Node.prop -in @('animation','animation-name')) {
             $kfMap = Get-ZoneSharedKeyframeMap
             foreach ($tok in ($Node.value -split '\s+|,')) {
@@ -1717,7 +1772,7 @@ function Add-RowsFromAst {
             }
         }
 
-        # Hex literal tracking — store on file metadata for Pass 3 cross-check
+        # Hex literal tracking -- store on file metadata for Pass 3 cross-check
         $hexLiterals = Get-HexLiterals -Value $Node.value
         if ($hexLiterals.Count -gt 0) {
             if (-not $script:fileMeta[$script:CurrentFile].HexLiterals) {
@@ -1766,7 +1821,7 @@ function Add-RowsFromAst {
         $atruleLabel = $atruleLabel.Trim()
 
         # Forbidden at-rules: @import, @font-face, @supports. (@media is
-        # permitted per spec amendment Gap 6 — responsive design is a
+        # permitted per spec amendment Gap 6 -- responsive design is a
         # legitimate need; @media-wrapped rules are cataloged via the
         # parent_function column. @keyframes is permitted in FOUNDATION
         # only and handled separately above.) Emit a CSS_RULE row
@@ -1846,15 +1901,40 @@ function Add-FileHeaderForFile {
                 # Inspect content
                 if ($first.text -match 'xFACts Control Center\s*-\s*([^()]+)\s*\(([^)]+)\)') {
                     $hasIdentity = $true
-                    $purposeDescription = $matches[1].Trim()
                 }
                 if ($first.text -match 'Location\s*:\s*\S') { $hasLocation = $true }
                 if ($first.text -match 'Version\s*:\s*Tracked in dbo\.System_Metadata\s*\(component:\s*\S') { $hasVersion = $true }
 
                 if ($first.text -match 'CHANGELOG') { $hasChangelog = $true }
 
-                # FILE ORGANIZATION list extraction
+                # Extract purpose paragraph for the FILE_HEADER row's
+                # purpose_description. Per spec Section 2 / 16, this is the
+                # multi-sentence narrative between the Version line and the
+                # FILE ORGANIZATION heading. Bookkeeping lines (xFACts identity,
+                # Location, Version) and rule lines are stripped; remaining
+                # content is joined into a single line.
                 $textLines = $first.text -split "`n" | ForEach-Object { $_.TrimEnd() }
+                $fileOrgIdx = -1
+                for ($i = 0; $i -lt $textLines.Count; $i++) {
+                    if ($textLines[$i] -match '^\s*FILE ORGANIZATION\s*$') { $fileOrgIdx = $i; break }
+                }
+                $stopAt = if ($fileOrgIdx -ge 0) { $fileOrgIdx } else { $textLines.Count }
+                $descLines = New-Object System.Collections.Generic.List[string]
+                for ($i = 0; $i -lt $stopAt; $i++) {
+                    $line = $textLines[$i].Trim()
+                    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                    if ($line -match '^[=]{5,}\s*$') { continue }
+                    if ($line -match '^[-]{5,}\s*$') { continue }
+                    if ($line -match '^xFACts Control Center\b') { continue }
+                    if ($line -match '^Location\s*:') { continue }
+                    if ($line -match '^Version\s*:') { continue }
+                    $descLines.Add($line)
+                }
+                if ($descLines.Count -gt 0) {
+                    $purposeDescription = ($descLines -join ' ').Trim()
+                }
+
+                # FILE ORGANIZATION list extraction
                 $inFileOrg = $false
                 foreach ($line in $textLines) {
                     if ($line -match '^\s*FILE ORGANIZATION\s*$') { $inFileOrg = $true; continue }
@@ -1883,7 +1963,7 @@ function Add-FileHeaderForFile {
                 }
             }
             else {
-                # First node was a banner — that means file has no header
+                # First node was a banner -- that means file has no header
                 $isMalformed = $true
             }
         }
@@ -1940,8 +2020,44 @@ foreach ($file in $CssFiles) {
     # Emit FILE_HEADER row first
     [void](Add-FileHeaderForFile -AST $astCache[$file].ast -FileName $name)
 
-    # Walk the rest of the AST
-    Add-RowsFromAst -Node $astCache[$file].ast
+    # Walk the rest of the AST. Wrapped in try/catch so a latent bug in the
+    # walker triggered by an unusual AST shape doesn't kill the whole run.
+    # On failure, partial rows from this file's content walk are discarded
+    # (rolled back to the post-FILE_HEADER count) and processing continues
+    # with the next file. The FILE_HEADER row stays so the file is still
+    # represented in the catalog. This mirrors the JS populator's resilience
+    # pattern. Walk failures are populator tooling defects, not spec-
+    # compliance issues, so no drift code is emitted -- the only signal is
+    # the WARN log line.
+    $afterHeaderCount = $rows.Count
+    try {
+        Add-RowsFromAst -Node $astCache[$file].ast
+    } catch {
+        $partialAdded = $rows.Count - $afterHeaderCount
+        if ($partialAdded -gt 0) {
+            for ($i = 0; $i -lt $partialAdded; $i++) {
+                $rows.RemoveAt($rows.Count - 1)
+            }
+        }
+        # Capture diagnostic context for visitor bug investigation.
+        # InvocationInfo points at the outermost call site (often the
+        # recursive walker), which is unhelpful for a deep recursion.
+        # ScriptStackTrace gives the full call chain; the deepest non-walker
+        # frame is usually the actual offending line.
+        $errLine = if ($_.InvocationInfo) { $_.InvocationInfo.ScriptLineNumber } else { 0 }
+        $errLineText = if ($_.InvocationInfo) { $_.InvocationInfo.Line.Trim() } else { '' }
+        Write-Log ("AST walk failed on {0}: {1} (populator line {2}: {3})" -f $name, $_.Exception.Message, $errLine, $errLineText) "WARN"
+        if ($_.ScriptStackTrace) {
+            Write-Log ("  ScriptStackTrace:") "WARN"
+            foreach ($frameLine in ($_.ScriptStackTrace -split "`r?`n")) {
+                if (-not [string]::IsNullOrWhiteSpace($frameLine)) {
+                    Write-Log ("    " + $frameLine.Trim()) "WARN"
+                }
+            }
+        }
+        Write-Host ("    -> walk failed; FILE_HEADER row kept, content rows discarded ({0} discarded)" -f $partialAdded) -ForegroundColor Yellow
+        continue
+    }
 
     # Capture banner titles seen in this file (for FILE_ORG_MISMATCH check).
     # The FILE ORG list parser captures full "<TYPE>: <NAME>" entries, so the
@@ -2030,7 +2146,7 @@ foreach ($fname in $fileMeta.Keys) {
     $meta = $fileMeta[$fname]
     if ($null -eq $meta.HexLiterals -or $meta.HexLiterals.Count -eq 0) { continue }
 
-    # Skip the file containing FOUNDATION — its hex literals ARE the
+    # Skip the file containing FOUNDATION -- its hex literals ARE the
     # custom property definitions (or related content).
     if ($meta.FoundationLine) { continue }
 
