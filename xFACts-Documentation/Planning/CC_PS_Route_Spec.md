@@ -1,23 +1,14 @@
 # Control Center PowerShell Route File Format Specification
 
-**Status:** `[DRAFT — design session not yet held]`
-**Owner:** Dirk
-
-> Part of the Control Center File Format initiative. For initiative direction, current state, session log, and the platform-wide prefix registry, see `CC_Initiative.md`.
-
----
-
-## Purpose
+*This spec is not yet drafted. The Pre-design observations below capture what the original retired Spec doc said about PS route conventions plus review notes flagging what needs to be reconsidered against the principles established during CSS and JS spec design (typed sections, three-character page prefixes, variants-as-rows catalog model, drift codes). When the design session for this spec lands, observation content moves into rule sections, with whatever revisions emerge.*
 
 This specification will define the structural conventions every Control Center PowerShell route file must follow. Route files are page route handlers and API route handlers — `*.ps1` files in `scripts/routes/` that define HTML routes (page rendering) or API endpoints. The conventions exist for one reason: machine readability. Every rule will be justified by a specific extraction the catalog parser performs against the file.
-
-**This document is currently in pre-design state.** The spec body sections below are stubs. The "Pre-design observations" section holds harvested content from the retired `CC_FileFormat_Spec.md` (v0.2, April 2026) that predates the CSS-era principles established during the CSS spec design. The harvested content has not been validated against those principles. The PS route spec design session will review every harvested item, decide what survives, and draft the actual spec body.
 
 ---
 
 ## Pre-design observations
 
-Harvested from the retired `CC_FileFormat_Spec.md` (v0.2, April 2026). Each observation carries review notes flagging items the design session needs to evaluate. **None of the content below is authoritative.** When the design session lands, content moves out of this section into the appropriate numbered sections, with whatever revisions emerge. This section gets deleted when it is empty.
+Harvested from the retired `CC_FileFormat_Spec.md` (v0.2, April 2026). Each observation carries review notes flagging items the design session needs to evaluate. **None of the content below is authoritative.** When the design session lands, content moves out of this section into the appropriate rule sections, with whatever revisions emerge. This section gets deleted when it is empty.
 
 ### Observation 1 — Two kinds of PS1 files
 
@@ -53,8 +44,8 @@ The retired Spec doc proposed this PS1 file header template:
 
 **Review notes:**
 
-- The CHANGELOG block needs to be reconsidered. The CSS spec adopted "git is the source of truth for change history" and forbids CHANGELOG blocks. The same logic likely applies to PS, but the design session should make this an explicit decision.
-- The retired Spec doc carved out PS1 headers as not having a FILE ORGANIZATION list (CSS-only feature). Whether route files benefit from a FILE ORGANIZATION list is a design question — depends on whether the typed-section model adopted for CSS extends to PS.
+- The CHANGELOG block needs to be reconsidered. The CSS and JS specs adopted "git is the source of truth for change history" and forbid CHANGELOG blocks. The same logic likely applies to PS, but the design session should make this an explicit decision.
+- The retired Spec doc carved out PS1 headers as not having a FILE ORGANIZATION list (CSS-only feature at the time). Whether route files benefit from a FILE ORGANIZATION list is a design question — depends on whether the typed-section model adopted for CSS and JS extends to PS.
 
 ### Observation 3 — Required structure
 
@@ -71,11 +62,11 @@ Section banner: N. <Last section>
 [end of file]
 ```
 
-For route files specifically, the conventional sections were not strictly mandated by name (unlike JS where `SHARED CONSTANTS`, `STATE`, etc. were mandatory).
+For route files specifically, the conventional sections were not strictly mandated by name.
 
 **Review notes:**
 
-- The CSS spec adopted typed sections (FOUNDATION, CHROME, LAYOUT, etc.) with strict ordering. Whether route files benefit from typed sections is a design question. Possible candidates: `IMPORTS`, `CONSTANTS`, `ROUTES`, `HELPERS`. The design session should evaluate against actual route files to see what natural groupings exist.
+- The CSS and JS specs adopted typed sections (FOUNDATION, CHROME, LAYOUT, CONSTANTS, STATE, etc.) with strict ordering. Whether route files benefit from typed sections is a design question. Possible candidates: `IMPORTS`, `CONSTANTS`, `ROUTES`, `HELPERS`. The design session should evaluate against actual route files to see what natural groupings exist.
 
 ### Observation 4 — Section banner format
 
@@ -90,12 +81,12 @@ The retired Spec doc proposed this PS1 section banner template:
 # ============================================================================
 ```
 
-Same four-line shape as the JS spec. Numbered free-form sections starting at 1.
+Numbered free-form sections starting at 1.
 
 **Review notes:**
 
-- The CSS spec adopted a 5-line banner format with `<TYPE>: <NAME>` titles and a mandatory `Prefixes:` declaration line. The design session should decide whether route files adopt the same shape, or whether the route-file use case is different enough to keep numbered free-form sections.
-- Whether route files need a `Prefixes:` analogue is a real design question. Page-prefix scoping in PS would mean function names, route paths, or helper variable names tagged with the page's three-character prefix — but route paths are externally-facing identifiers (URLs hit by JavaScript fetch calls) and may not benefit from prefix scoping the way CSS classes and JS function names do.
+- The CSS and JS specs adopted a 5-line banner format with `<TYPE>: <NAME>` titles and a mandatory `Prefixes:` (CSS) or `Prefix:` (JS) declaration line. The design session should decide whether route files adopt the same shape, or whether the route-file use case is different enough to keep numbered free-form sections.
+- Whether route files need a `Prefix:` analogue is a real design question. Page-prefix scoping in PS would mean function names, route paths, or helper variable names tagged with the page's three-character prefix — but route paths are externally-facing identifiers (URLs hit by JavaScript fetch calls) and may not benefit from prefix scoping the way CSS classes and JS function names do.
 
 ### Observation 5 — Sub-section markers
 
@@ -109,8 +100,8 @@ Single-line comment, dash-flanked, ignored by the parser, used as visual reading
 
 **Review notes:**
 
-- Carries forward in principle. Same as the CSS spec's `/* -- label -- */` sub-section markers.
-- The CSS spec also formalized the discipline rule: prefer creating a new banner over expanding an existing one when adding distinct concepts. The same discipline should apply to PS route files.
+- Carries forward in principle. Same as the CSS and JS specs' sub-section markers.
+- The CSS and JS specs also formalized the discipline rule: prefer creating a new banner over expanding an existing one when adding distinct concepts. The same discipline should apply to PS route files.
 
 ### Observation 6 — What the parser extracts from route files
 
@@ -126,7 +117,7 @@ Compliance violation proposed: `Add-PodeRoute` call with no preceding comment bl
 
 **Review notes:**
 
-- The component types align with the CSS spec's pattern of one row per cataloguable construct.
+- The component types align with the CSS and JS specs' pattern of one row per cataloguable construct.
 - Whether `API_ROUTE` `purpose_description` extraction comes from a comment block immediately preceding the `Add-PodeRoute` call is a reasonable starting point. The design session should evaluate against actual route files to see if a more structured approach (e.g., comment-based help on the ScriptBlock) would be more consistent with how module functions are documented.
 - HTML_ID extraction from inline HTML strings embedded in PS string literals is non-trivial parser work. The design session should confirm the approach is feasible. The CSS parser already handles HTML_ID extraction from CSS selectors; the PS implementation will be different because the IDs are inside string literals, not in PS syntax.
 
@@ -156,7 +147,7 @@ The retired Spec doc captured this rule: route files (page route .ps1, not API .
 
 **Acceptable inline JS:**
 
-- A single small `<script>` block immediately before the `engine-events.js` script tag, defining the `ENGINE_PROCESSES` map and any other configuration the shared module needs at load time.
+- A single small `<script>` block immediately before the `engine-events.js` (or `cc-shared.js` after migration) script tag, defining the `ENGINE_PROCESSES` map and any other configuration the shared module needs at load time.
 - Inline event handler attributes (`onclick="someFunction()"`, `onchange="..."`, etc.) referencing functions defined in the page's `.js` file. These are normal HTML usage.
 
 **Substantive inline JS — flagged as WARNING:**
@@ -171,7 +162,7 @@ The compliance violation message proposed: `Line N: Substantive inline <script> 
 
 - This is genuinely valuable content. The 5-line threshold and the no-function-definitions rule give a concrete WARNING-level test that could land directly.
 - The "Move to <pagename>.js per CC convention" guidance assumes every page has a corresponding `.js` file. Confirm against actual page inventory — there might be pages without dedicated JS files where the bootstrap pattern legitimately needs more than 5 lines.
-- The CSS spec's drift code model uses `WARNING` severity implicitly through parser behavior. Whether route files need an explicit severity model is a design question, or whether substantive inline JS just emits a drift code (analogous to `FORBIDDEN_DESCENDANT` or similar).
+- The CSS and JS specs use a single drift severity model (all drift codes carry the same weight; severity is implicit in what the code represents). Whether route files need an explicit WARNING-vs-error distinction is a design question, or whether substantive inline JS just emits a drift code (analogous to `FORBIDDEN_DESCENDANT` or `FORBIDDEN_INLINE_SCRIPT_IN_JS`).
 
 ### Observation 9 — Component name extraction from Version line
 
@@ -179,108 +170,4 @@ The retired Spec doc identified that the `Version: Tracked in dbo.System_Metadat
 
 **Review notes:**
 
-- Carries forward as a pattern. Same convention used in CSS spec's file header.
-
----
-
-## 1. Required structure  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 2. File header  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 3. Section banners  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 4. Section types  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 5. Route definitions  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 6. Route documentation  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 7. Inline HTML in route files  *[stub]*
-
-(To be defined during PS route spec design. Will cover ID conventions in inline HTML, the relationship to `CC_HTML_Spec.md`, and the boundaries between HTML emitted from PS and HTML emitted from JS.)
-
----
-
-## 8. Inline JavaScript in route files  *[stub]*
-
-(To be defined during PS route spec design. Will cover the acceptable-vs-substantive thresholds for inline `<script>` blocks.)
-
----
-
-## 9. Comments  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 10. Required patterns summary  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 11. Forbidden patterns  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 12. Illustrative example  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 13. Catalog model essentials  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 14. What the parser extracts  *[stub]*
-
-(To be defined during PS route spec design.)
-
----
-
-## 15. Drift codes reference  *[stub]*
-
-(To be defined during PS route spec design. PS-route-specific drift codes only.)
-
----
-
-## 16. Compliance queries  *[stub]*
-
-(To be defined during PS route spec design. PS-route queries scoped to `WHERE file_type = 'PS'` plus filename pattern matching for routes.)
-
----
-
-## Revision history
-
-| Version | Date | Description |
-|---|---|---|
-| 0.1 | 2026-05-04 | Initial scaffold. Pre-design observations harvested from the retired `CC_FileFormat_Spec.md` Part 4 (route portions) plus universal Section 1.1 / 1.2 PS portions, awaiting review during PS route spec design session. |
+- Carries forward as a pattern. Same convention used in CSS and JS spec file headers.
