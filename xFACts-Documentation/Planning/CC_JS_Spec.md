@@ -112,7 +112,7 @@ Section types must appear in the order shown. Drift code: `SECTION_TYPE_ORDER_VI
 
 ---
 
-## 5. Prefixes
+## 5. Prefix
 
 Every section banner declares a single page prefix via the `Prefix:` line. Every top-level identifier (function name, constant name, state variable name) defined in that section must begin with the declared prefix followed by an underscore. Drift code: `PREFIX_MISMATCH`.
 
@@ -128,6 +128,18 @@ The page prefix is a 3-character lowercase identifier and is the same prefix use
   - The `IMPORTS` and `INITIALIZATION` sections of any file.
 
 The `Prefix:` line itself is mandatory regardless of value. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
+
+### 5.3 Single prefix per banner
+
+Each banner declares exactly one prefix or `(none)`. Multiple comma-separated prefixes are not permitted. A file represents one CC page (or the shared resource), and that page has a single registered prefix; every page-prefixed section in the file uses that same prefix. Drift code if a banner declares anything other than a single 3-character prefix or `(none)`: `MALFORMED_PREFIX_VALUE`.
+
+### 5.4 Registry validation
+
+Each page's prefix is registered in `dbo.Component_Registry.cc_prefix` for the component that owns the page's JS file. The parser cross-references each banner's declared prefix against the registry and emits drift on disagreement.
+
+- If a file's component has `cc_prefix = NULL` (a shared or infrastructure component, e.g., `ControlCenter.Shared`), every section banner in the file must declare `Prefix: (none)`. A non-`(none)` declaration emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
+- If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every page-prefixed section banner must declare `Prefix: X`. Sections that legitimately use `(none)` (the hooks banner, IMPORTS, INITIALIZATION) are exempt from this check. A section whose banner declares a different prefix value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
+- The registry is the source of truth. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
 
 ---
 
@@ -329,6 +341,8 @@ Some forbidden patterns ride on the row of an existing declaration. Others have 
 | Inline `<script>` content in a template literal or string literal | `FORBIDDEN_INLINE_SCRIPT_IN_JS` | A `JS_INLINE_SCRIPT` row at the violation line |
 | File-scope `//` line comment | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `JS_LINE_COMMENT` row at the violation line |
 | CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` | The FILE_HEADER row |
+| Banner declares anything other than a single 3-char prefix or `(none)` | `MALFORMED_PREFIX_VALUE` | The COMMENT_BANNER row |
+| Banner's declared prefix disagrees with `Component_Registry.cc_prefix` | `PREFIX_REGISTRY_MISMATCH` | The COMMENT_BANNER row |
 
 ### 14.1 Allowed anonymous callback contexts
 
@@ -538,6 +552,8 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 | `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list. |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of the required order. |
 | `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
+| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
+| `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
 | `DUPLICATE_FOUNDATION` | More than one JS file in the codebase contains a FOUNDATION section. |
 | `DUPLICATE_CHROME` | More than one JS file in the codebase contains a CHROME section. |
 | `HOOKS_BANNER_NOT_LAST` | A `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner exists but is not the last banner in the file. |
@@ -852,69 +868,8 @@ This file produces the following catalog rows when parsed:
 - 1 x `JS_FUNCTION_VARIANT DEFINITION` (`ex_loadConfig`, variant_type='async')
 - 4 x `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`)
 - 2 x `JS_HOOK DEFINITION` (`onPageRefresh`, `onPageResumed`)
-- Multiple `JS_FUNCTION USAGE` rows for shared-module calls (`engineFetch`, `escapeHtml`, `connectEngineEvents`) and same-file calls
-- Multiple `CSS_CLASS USAGE` rows for class names in template strings (`ex-agent-card`, `ex-agent-name`)
-- 1 x `HTML_ID USAGE` (`agent-cards` from `getElementById`)
 
 Zero drift rows expected.
-
-### 20.2 Function definition forms
-
-Permitted:
-
-```javascript
-function bsv_loadAgents() { ... }
-async function bsv_loadConfig() { ... }
-function* bsv_iterRange(start, end) { ... }
-```
-
-Forbidden:
-
-```javascript
-const bsv_loadAgents = function() { ... };       // FORBIDDEN_ANONYMOUS_FUNCTION
-const bsv_loadAgents = () => { ... };            // FORBIDDEN_ANONYMOUS_FUNCTION
-const bsv_loadAgents = function namedThing() { ... };  // FORBIDDEN_ANONYMOUS_FUNCTION
-```
-
-### 20.3 Constants and state
-
-```javascript
-/* Default polling interval in seconds; overridden by GlobalConfig on page load. */
-const bsv_DEFAULT_REFRESH_INTERVAL = 10;
-
-/* Currently selected agent filter; ALL or a specific agent ID. */
-var bsv_currentFilter = 'ALL';
-```
-
-### 20.4 Function with JSDoc parameter and return documentation
-
-```javascript
-/**
- * Calculates the countdown to the next scheduled execution.
- *
- * @param {Object} event - PROCESS_COMPLETED event with intervalSeconds, scheduledTime, runMode, status
- * @param {number} now - Current time in ms (Date.now())
- * @returns {number|null} Countdown in seconds, or null if no countdown applies
- */
-function calcCountdownFromEvent(event, now) { ... }
-```
-
-### 20.5 Class with methods
-
-```javascript
-/* Renders an agent status card and manages its update lifecycle. */
-class bsv_AgentCard {
-
-    /* Constructor - takes the agent record and the container element. */
-    constructor(agent, container) { ... }
-
-    /* Renders the current state of the card to the DOM. */
-    render() { ... }
-
-    /* Updates the card's pending-command count display. */
-    updatePending(count) { ... }
-}
-```
 
 ---
 
@@ -922,66 +877,26 @@ class bsv_AgentCard {
 
 This appendix explains why selected rules are what they are. Entries are keyed to body section numbers. Sections without entries here have no rationale beyond the rule itself.
 
-### A.1 Required structure
+### A.5 Prefix
 
-The strict three-part structure (header, sections, end-of-file) is what lets the parser walk a file deterministically: the parse position is always either reading the header, reading inside a section, or done.
+The single-prefix-per-file rule reflects that a file represents one CC page (or the shared resource), and each page has exactly one registered prefix.
 
-### A.2 File header
-
-The header is mandated as a single block comment rather than line comments because the parser receives it as a single `Block` comment AST node. Detection is trivially "is the first node of the source a block comment in the right shape," with no need to coalesce a run of consecutive line comments.
-
-CHANGELOG blocks are forbidden because git is the source of truth for change history. CHANGELOG blocks duplicate what git already provides and create drift between the two records.
-
-The FILE ORGANIZATION list must match the body banners verbatim because verbatim matching makes the list a real table of contents - a reader sees the section titles in the list and can navigate to them by exact-string search.
-
-### A.4 Section types
-
-`FOUNDATION` and `CHROME` exist as distinct types in `cc-shared.js` (rather than reusing `CONSTANTS` and `FUNCTIONS`) because the names signal which ownership model applies. Page files declare local `CONSTANTS` and `STATE` and put their boot code in `INITIALIZATION` and `FUNCTIONS`. The shared file declares platform-wide `FOUNDATION` (immutable) and `STATE` (mutable) and puts its worker code in `CHROME`. The two file kinds use disjoint type vocabularies so a reader can tell which kind of file they're reading by glancing at any banner.
-
-The fixed type-order rule reflects a real cascade dependency: imports must come before anything that consumes them; foundation primitives and state must be declared before chrome (in `cc-shared.js`) or before initialization (in page files) references them; the initialization sequence wires up the page before any function it calls can be invoked; and functions sit at the bottom because they are the body of work the rest of the file orchestrates.
-
-`FOUNDATION` and `CHROME` are limited to one source file because single-source ownership is what makes them genuinely shared. If multiple files defined `FOUNDATION` content, "the canonical month names array" would not have a single home.
-
-### A.5 Prefixes
-
-The page prefix is what makes function names globally identifiable across the platform's JS namespace. Reading `bsv_loadActivity()` anywhere in the codebase instantly tells the reader where the function lives: `business-services.js`. There is no ambiguity, no cross-file grep needed.
-
-The same discipline applies to `cc-shared.js` exports in inverse: any unprefixed identifier in a Control Center JS file is, by spec, a `cc-shared.js` import. The reader does not have to ask where `escapeHtml` comes from; the lack of a prefix is the answer.
-
-The separator after the prefix is an underscore because JS identifiers do not allow hyphens. CSS uses a hyphen because CSS class names allow hyphens. The two-language separator difference is the only divergence; the prefix itself is identical between the page's CSS file and JS file.
+The registry validation rule (Section 5.4) makes `Component_Registry.cc_prefix` the source of truth for which prefix belongs to which page. Before the registry existed, the prefix was declared only in the file header and could drift from the platform's understanding silently. Pinning each file's prefix to its component row in the registry surfaces drift as queryable catalog rows.
 
 ### A.6 Function definitions
 
-The single-form rule (`function name() {}` only) exists for uniformity: the spec picks one form and forbids the others so the catalog never has to ask "which way of writing a function did the developer pick this time?"
-
-Async and generator functions are not forbidden because they are real semantic distinctions that the catalog records as variants. The base `JS_FUNCTION` type covers plain (sync, non-generator) function declarations; async and generator forms are `JS_FUNCTION_VARIANT` rows.
+The single-form rule for function declarations exists to make the catalog's function row count predictable. If functions could be declared as `const name = function() {}` or `const name = () => {}`, the parser would have to either treat those as JS_FUNCTION rows (conflating const declarations with function declarations) or as JS_CONSTANT_VARIANT rows (making "list all functions" require a JOIN between two component types). One form means one row type. The narrow callback exception preserves natural JS idioms (`addEventListener('click', function() { ... })`) without compromising the catalog's clarity.
 
 ### A.7 Constants and state
 
-The `WRONG_DECLARATION_KEYWORD` rule (forbidding `var` in `CONSTANTS` or `FOUNDATION` sections, or `const` in `STATE` sections) makes the section type and the keyword line up so a reader scanning either signal arrives at the same conclusion about whether a value is mutable.
+The `const` vs `var` split by section reflects the semantic distinction. CONSTANTS are immutable; STATE mutates over the page's lifetime. Forcing the keyword to match the section makes the file's structure self-documenting: a reader skimming the STATE section knows everything in it can change at runtime; everything in CONSTANTS or FOUNDATION cannot.
 
-`let` is forbidden because the codebase uses `var` everywhere; `let` introduces a third concept without a corresponding cataloging distinction.
-
-The one-declaration-per-statement rule guarantees one declaration per `VariableDeclarator` in the AST and makes per-declaration comment requirements unambiguous - the comment must precede a single declaration, not a multi-declaration list.
+`let` is forbidden because it adds a third declaration kind without adding semantic value over `const` and `var`. The two-kind discipline keeps the spec's section-keyword mapping clean.
 
 ### A.8 Page lifecycle hooks
 
-Hooks get their own component type (`JS_HOOK` rather than `JS_FUNCTION`) because the role is different - these are API-contract callbacks consumed by the shared module. Giving them their own component type means a query like `SELECT file_name, component_name FROM Asset_Registry WHERE component_type IN ('JS_HOOK', 'JS_HOOK_VARIANT')` becomes a one-line answer to "which pages implement which hooks."
-
-The hooks banner must be last because hooks call functions defined elsewhere in the file. Placing them at the bottom puts the consumer below the producers - same cascade dependency reason that drives the section type ordering.
-
-### A.10 Imports
-
-The current platform loads JS via `<script>` tags and shares a global namespace, so files have no IMPORTS banner today. The spec defines `IMPORTS` for forward compatibility against a future migration to ES modules.
+The hooks-banner-last rule produces a stable file-scanning experience. A reader looking for "this page's contract with cc-shared.js" knows exactly where to find it (last banner in the file). The `Prefix: (none)` declaration prevents the spec's prefix-matching from erroneously flagging hook names as PREFIX_MISMATCH violations.
 
 ### A.14 Forbidden patterns
 
-Some forbidden patterns ride on the row of an existing declaration (e.g., `FORBIDDEN_LET` attaches to the row for the `let`-declared variable). Others have no natural declaration to host the drift, so the parser emits a dedicated row at the violation site using a component_type that exists solely to represent the forbidden pattern (e.g., `JS_IIFE`, `JS_EVAL`). Either way, every violation is visible in the row set with no aggregation needed.
-
-The `FORBIDDEN_ANONYMOUS_FUNCTION` carve-out for callback arguments exists because requiring a named function for every `.then` or `.forEach` callback would force every page to invent dozens of trivial names whose only purpose is to be passed once and never referenced again. The catalog gains nothing from naming these; the surrounding call site already identifies what the callback is for.
-
-### A.16 Catalog model
-
-Forbidden patterns produce rows just like permitted ones because the catalog is meant to represent everything the parser found in the file. Cataloging only compliant constructs would hide violations from queries.
-
-The `_VARIANT` companion-type pattern (e.g., `JS_FUNCTION` / `JS_FUNCTION_VARIANT`) is used where there is a clear base case and the variants are alternative ways of expressing semantically-distinct constructs. Where every instance is inherently a variant with no natural base (e.g., `JS_TIMER` is always an interval or a timeout), a single component type is used and `variant_type` is always non-NULL.
+The dedicated component_type rows for forbidden patterns (JS_IIFE, JS_EVAL, JS_DOCUMENT_WRITE, etc.) exist because these patterns have no natural declaration row to host the drift. An IIFE doesn't have a name; eval doesn't have a binding. The dedicated row gives every forbidden-pattern occurrence a queryable catalog presence regardless of where in the source it appears.
