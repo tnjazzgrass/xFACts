@@ -37,7 +37,7 @@
    Operations sit on the left; Queue, Retention, and Storage on the right.
    On viewports narrower than 1200px the columns stack vertically via the
    @media rule at the bottom of the section.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* The two-column flex container that holds left and right page columns. */
@@ -73,7 +73,7 @@
    section has no rows to display. These are page-local because the wording
    and styling vary slightly by context; cc-shared has slide-empty for
    panel-internal empty states which is a different visual treatment.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* Italic muted-color placeholder shown while content is loading. */
@@ -109,7 +109,7 @@
    health, with status badge pills and frame coloring. Each card may render
    in one of five states (success, running, warning, failed, unknown);
    cards may also opt into clickable behavior to open a detail slideout.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* Flex container holding the row of pipeline cards. */
@@ -252,7 +252,7 @@
    counts. Each section contains a card pair with click-through targets
    to open detail slideouts. Status cards render an icon, label, value,
    and detail caption.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* The flex row holding two sections side by side. */
@@ -347,7 +347,7 @@
    Combined section showing currently-running backup operations grouped by
    type (current backup, network copy, AWS upload, retention purge). Each
    group renders as a small table with a header label and progress bars.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* Scrollable container for the active operations section content. */
@@ -459,7 +459,7 @@
    bar. Drives are grouped by location (local, network) and color-coded
    by health threshold. Each gauge segment can be in one of three active
    states (healthy, warning, critical) or inactive.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* Wrapper for a single storage location's drive group. */
@@ -567,7 +567,7 @@
    intentionally a muted shade (#b5b07a) rather than the platform's
    standard yellow accent so it reads as informational rather than as a
    warning indicator.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* Backup-type badge base (the inline pill styling shared across all types). */
@@ -608,7 +608,7 @@
    uses the shared .xf-modal-overlay / .xf-modal.wide / .xf-modal-header /
    .xf-modal-body classes from cc-shared.css. These sub-components are
    page-local until a second page proves cross-page reuse.
-   Prefixes: bkp
+   Prefix: bkp
    ============================================================================ */
 
 /* Detail summary bar — renders at top of modal body with key stats. */
