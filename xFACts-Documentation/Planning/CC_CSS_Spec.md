@@ -56,12 +56,12 @@ Each section opens with a banner: a multi-line block comment with this format:
 Prefix: <prefix>
 ```
 
-(The opening and closing rule lines are sequences of `=` characters of any length five or more, and the inner separator is `-` characters of any length.)
+The opening and closing rule lines are exactly 76 `=` characters. The inner separator is exactly 76 `-` characters.
 
 ### 3.1 Banner format rules
 
-- The opening and closing `=` rules each consist of `=` characters of any length 5 or more.
-- The middle `-` rule separates the title line from the description block.
+- The opening and closing `=` rule lines each consist of exactly 76 `=` characters.
+- The middle `-` rule line is exactly 76 `-` characters and separates the title line from the description block.
 - `<TYPE>` must be one of the six recognized section types (Section 4). The TYPE token is uppercase letters and underscores only.
 - `<NAME>` is human-readable and may contain spaces, commas, and other punctuation.
 - The description block is 1-5 sentences explaining what the section contains. Required.
@@ -79,12 +79,12 @@ Six section types are recognized, in fixed order:
 
 | Order | TYPE | Purpose | Where it lives |
 |-------|------|---------|----------------|
-| 1 | `FOUNDATION` | Custom property tokens, CSS resets, scrollbar styling, keyframes, animation utilities | Shared resource files only (`cc-shared.css`). Pages do not have FOUNDATION sections. |
-| 2 | `CHROME` | Universal page chrome - nav bar, header bar, refresh info, engine cards, connection banner | Shared resource files only (`cc-shared.css`). Pages do not have CHROME sections. |
+| 1 | `FOUNDATION` | Custom property tokens, CSS resets, scrollbar styling, keyframes, animation utilities | Component anchor file only (see §4.3). Pages do not have FOUNDATION sections. |
+| 2 | `CHROME` | Universal page chrome - nav bar, header bar, refresh info, engine cards, connection banner | Component anchor file only (see §4.3). Pages do not have CHROME sections. |
 | 3 | `LAYOUT` | Page-level structural layout (column grids, page wrappers, multi-column flex containers) | Page files. Each page has at most one LAYOUT section. |
 | 4 | `CONTENT` | Page-specific content components - cards, tables, badges, panels, sub-components | Page files. Pages typically have multiple CONTENT sections (one per logical concept). |
 | 5 | `OVERRIDES` | Last-resort overrides of shared classes for page-specific contexts | Page files. Use sparingly. |
-| 6 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements - idle overlay, toast notifications, loading spinners, confirmation flashes | Either shared (`cc-shared.css`) or page files, depending on whether the overlay is universal or page-specific. |
+| 6 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements - idle overlay, toast notifications, loading spinners, confirmation flashes | Either anchor file or page file, depending on whether the overlay is universal or page-specific. |
 
 A file may contain multiple sections of the same type; they are author-ordered by author choice. The order rule is between types, not between sections within a type.
 
@@ -96,9 +96,18 @@ Section types must appear in the order shown. Drift code: `SECTION_TYPE_ORDER_VI
 
 A page may contain multiple `CONTENT` banners (e.g., `CONTENT: PIPELINE STATUS`, `CONTENT: STORAGE STATUS`, `CONTENT: BACKUP TYPE BADGES`). They are independent banners with their own descriptions and prefix declarations. This is encouraged - each banner per distinct concept makes the file's organization visible at a glance.
 
-### 4.3 Type uniqueness across files
+### 4.3 Type uniqueness — anchor file rule
 
-`FOUNDATION` and `CHROME` sections may exist in only one file across the codebase: `cc-shared.css`. Drift codes: `DUPLICATE_FOUNDATION`, `DUPLICATE_CHROME`.
+`FOUNDATION` and `CHROME` sections may exist in only one file per component. That file is the **component's anchor file** — the single source of truth for the component's tokens, resets, keyframes, and chrome. The platform recognizes one anchor file per component:
+
+| Component | Anchor file |
+|-----------|-------------|
+| `ControlCenter.Shared` (CC application) | `cc-shared.css` |
+| `Documentation.Site` (docs application) | `docs-shared.css` (planned; currently `docs-base.css` until that migration completes) |
+
+Any other CSS file containing a FOUNDATION or CHROME section is drift. Drift codes: `DUPLICATE_FOUNDATION`, `DUPLICATE_CHROME`. The check is per-component: a FOUNDATION section in `cc-shared.css` is fine; a FOUNDATION section in `docs-shared.css` is fine; a FOUNDATION section in any third file is not.
+
+The single-source-of-truth principle is preserved per-component: tokens, keyframes, and chrome live in exactly one place for any given component. Two anchor files exist because the CC application and the docs site are functionally separate domains with distinct visual chromes; what they share is the discipline, not the file.
 
 ---
 
@@ -108,7 +117,7 @@ Every section banner declares a single page prefix via the `Prefix:` line. Every
 
 ### 5.1 Special values
 
-- `Prefix: (none)` - sentinel value. Declares the section has no class definitions, so prefix-matching is intentionally disabled. Used by `cc-shared.css`'s sections (which contain platform-wide chrome and tokens, not page-prefixed content) and by FOUNDATION sections containing only reset rules, keyframes, and custom properties (which are not classes). The line itself is still required as a structural marker.
+- `Prefix: (none)` - sentinel value. Declares the section has no class definitions, so prefix-matching is intentionally disabled. Used by anchor file sections (which contain platform-wide chrome and tokens, not page-prefixed content) and by FOUNDATION sections containing only reset rules, keyframes, and custom properties (which are not classes). The line itself is still required as a structural marker.
 - The `Prefix:` line is mandatory. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
 
 ### 5.2 Prefix selection rules
@@ -126,7 +135,7 @@ Each banner declares exactly one prefix or `(none)`. Multiple comma-separated pr
 
 Each page's prefix is registered in `dbo.Component_Registry.cc_prefix` for the component that owns the page's CSS file. The parser cross-references each banner's declared prefix against the registry and emits drift on disagreement.
 
-- If a file's component has `cc_prefix = NULL` (a shared or infrastructure component, e.g., `ControlCenter.Shared`), every section banner in the file must declare `Prefix: (none)`. A non-`(none)` declaration emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
+- If a file's component has `cc_prefix = NULL` (a shared or infrastructure component, e.g., `ControlCenter.Shared`, `Documentation.Site`), every section banner in the file must declare `Prefix: (none)`. A non-`(none)` declaration emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
 - If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every section banner in the file must declare `Prefix: X`. A different value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
 - The registry is the source of truth. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
 
@@ -225,7 +234,7 @@ See Section 18 for a worked example illustrating the new-banner pattern.
 
 ## 10. Custom property tokens
 
-Custom properties (CSS variables) are the canonical mechanism for sharing values across the codebase. Tokens live in `:root` declarations inside the `FOUNDATION` section of `cc-shared.css`. Pages consume tokens via `var(--token-name)` references.
+Custom properties (CSS variables) are the canonical mechanism for sharing values across the codebase. Tokens live in `:root` declarations inside the FOUNDATION section of the component's anchor file (Section 4.3). Pages consume tokens via `var(--token-name)` references.
 
 ### 10.1 Token naming convention
 
@@ -246,14 +255,14 @@ The category enum is closed. Adding a new category requires a spec amendment.
 - Values used in 2+ places across the codebase are tokens. Values used only once may stay as literals; the catalog will surface promotion candidates when a literal repeats.
 - Pages reference tokens via `var(...)` only. Direct hex literals where a token exists emit `DRIFT_HEX_LITERAL`.
 - Direct pixel literals where a size token exists emit `DRIFT_PX_LITERAL`.
-- Tokens are defined once in `cc-shared.css`'s FOUNDATION section. Page files do not redeclare tokens or override them locally.
-- Adding a new token requires a small update to `cc-shared.css` and a `Component_Registry` version bump on `ControlCenter.Shared`.
+- Tokens are defined once, in the component's anchor file FOUNDATION section. Page files do not redeclare tokens or override them locally.
+- Adding a new token requires a small update to the anchor file and a `Component_Registry` version bump on the anchor's component (e.g., `ControlCenter.Shared` for cc-shared.css; `Documentation.Site` for docs-shared.css).
 
 ---
 
 ## 11. @keyframes
 
-`@keyframes` definitions are permitted only in the FOUNDATION section of `cc-shared.css`. Pages may consume keyframes via `animation: <keyframe-name> ...` references, but may not define new keyframes locally. Drift code: `FORBIDDEN_KEYFRAMES_LOCATION`.
+`@keyframes` definitions are permitted only in the FOUNDATION section of the component's anchor file (Section 4.3). Pages may consume keyframes via `animation: <keyframe-name> ...` references, but may not define new keyframes locally. Drift code: `FORBIDDEN_KEYFRAMES_LOCATION`.
 
 Each `@keyframes` block produces a catalog row of type `CSS_KEYFRAMES DEFINITION` with the keyframe name as `component_name`.
 
@@ -272,7 +281,7 @@ Every CSS file must:
 7. Use a new banner per distinct concept; sub-section markers only for sub-components (Section 9).
 8. Reference shared values via `var(--token-name)` only (Section 10).
 9. Match the FILE ORGANIZATION list to banner titles verbatim, in order (Section 2).
-10. Place all `@keyframes` definitions in `cc-shared.css`'s FOUNDATION section (Section 11).
+10. Place all `@keyframes` definitions in the component's anchor file FOUNDATION section (Section 11).
 
 ---
 
@@ -297,8 +306,8 @@ Every CSS file must:
 | `@import` | `FORBIDDEN_AT_IMPORT` |
 | `@font-face` | `FORBIDDEN_AT_FONT_FACE` |
 | `@supports` | `FORBIDDEN_AT_SUPPORTS` |
-| `@keyframes` outside FOUNDATION | `FORBIDDEN_KEYFRAMES_LOCATION` |
-| Custom property defined outside FOUNDATION | `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` |
+| `@keyframes` outside the component's anchor file FOUNDATION | `FORBIDDEN_KEYFRAMES_LOCATION` |
+| Custom property defined outside the component's anchor file FOUNDATION | `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` |
 | Hex literal where token exists | `DRIFT_HEX_LITERAL` |
 | Pixel literal where token exists | `DRIFT_PX_LITERAL` |
 | CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` |
@@ -364,10 +373,10 @@ The full code-to-description mapping for CSS appears in Section 16.
 | Row type | Source | Notes |
 |----------|--------|-------|
 | `FILE_HEADER DEFINITION` | The opening file header block | One per file. Carries `purpose_description` from the header text. |
-| `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. |
+| `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. Format violations attach as drift codes (§16.2). |
 | `CSS_CLASS DEFINITION` | Each base class declaration | `component_name` = class name, `purpose_description` = the preceding purpose comment. |
 | `CSS_VARIANT DEFINITION` | Each variant of a base class | `component_name` = base class name, `signature` = full variant selector, `variant_type` and `qualifier_*` describe the variant shape. |
-| `CSS_VARIABLE DEFINITION` | Each `--token: value` declaration in `:root` | One per token. Lives only in `cc-shared.css`'s FOUNDATION. |
+| `CSS_VARIABLE DEFINITION` | Each `--token: value` declaration in `:root` | One per token. Lives only in the component's anchor file FOUNDATION. |
 | `CSS_VARIABLE USAGE` | Each `var(--token-name)` reference | One per reference. Includes the source rule's selector in `parent_function`. |
 | `CSS_KEYFRAMES DEFINITION` | Each `@keyframes name { ... }` block | One per keyframe definition. |
 | `CSS_RULE DEFINITION` | Forbidden at-rules emitted to attach drift codes | Used internally for `@import`, `@font-face`, `@supports`. |
@@ -390,17 +399,25 @@ Each row may carry one or more drift codes in `drift_codes` (comma-delimited str
 
 ### 16.2 Section-level codes
 
+The banner format defined in Section 3 is enforced via granular drift codes — each format violation produces its own code so refactor work can be triaged precisely. A non-conformant banner produces a `COMMENT_BANNER` row carrying drift codes that describe every way the banner deviates from §3.1.
+
 | Code | Description |
 |---|---|
 | `MISSING_SECTION_BANNER` | A class definition (or other catalogable construct) appears outside any banner. |
-| `MALFORMED_SECTION_BANNER` | A section banner exists but does not follow the strict 5-line format with rule lines, title line, separator, description block, and `Prefix:` line. |
+| `BANNER_INLINE_SHAPE` | A banner uses the inline single-line form (`/* ===== Title ===== */`). The canonical form is multi-line with rule lines, title line, separator, description block, and `Prefix:` line. |
+| `BANNER_INVALID_RULE_CHAR` | A banner's opening or closing bracketing line is not composed entirely of `=` characters. |
+| `BANNER_INVALID_RULE_LENGTH` | A banner's opening or closing `=` rule line is not exactly 76 characters long. |
+| `BANNER_INVALID_SEPARATOR_CHAR` | A banner's middle separator line is missing or is not composed entirely of `-` characters. |
+| `BANNER_INVALID_SEPARATOR_LENGTH` | A banner's middle separator line is not exactly 76 `-` characters long. |
+| `BANNER_MALFORMED_TITLE_LINE` | A banner's title line does not parse as `<TYPE>: <NAME>`. |
+| `BANNER_MISSING_DESCRIPTION` | A banner has no description text between the separator line and the `Prefix:` line. |
 | `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS). |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of the required order. |
 | `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
 | `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
 | `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
-| `DUPLICATE_FOUNDATION` | More than one CSS file in the codebase contains a FOUNDATION section. |
-| `DUPLICATE_CHROME` | More than one CSS file in the codebase contains a CHROME section. |
+| `DUPLICATE_FOUNDATION` | A FOUNDATION section appears in a file that is not the component's anchor file. |
+| `DUPLICATE_CHROME` | A CHROME section appears in a file that is not the component's anchor file. |
 
 ### 16.3 Class-level codes
 
@@ -436,8 +453,8 @@ Each row may carry one or more drift codes in `drift_codes` (comma-delimited str
 | `FORBIDDEN_AT_IMPORT` | The file contains an `@import` rule. |
 | `FORBIDDEN_AT_FONT_FACE` | The file contains an `@font-face` rule. |
 | `FORBIDDEN_AT_SUPPORTS` | The file contains an `@supports` rule. |
-| `FORBIDDEN_KEYFRAMES_LOCATION` | An `@keyframes` definition appears in a section other than FOUNDATION (or in a file with no FOUNDATION). |
-| `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` | A custom property definition (`--name: value`) appears in a section other than FOUNDATION. |
+| `FORBIDDEN_KEYFRAMES_LOCATION` | An `@keyframes` definition appears in a section other than FOUNDATION, or in a file other than the component's anchor file. |
+| `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` | A custom property definition (`--name: value`) appears in a section other than FOUNDATION, or in a file other than the component's anchor file. |
 
 ### 16.6 Value codes
 
@@ -539,7 +556,7 @@ ORDER BY occurrences DESC;
 
 ### 17.5 Q5 - Promotion-to-shared candidates
 
-Find class names defined locally in three or more files, where no shared definition exists. Each result is a candidate for promotion to `cc-shared.css`.
+Find class names defined locally in three or more files, where no shared definition exists. Each result is a candidate for promotion to the component's anchor file.
 
 ```sql
 WITH LocalCounts AS (
@@ -790,11 +807,15 @@ CHANGELOG blocks are forbidden because git is the source of truth for change his
 
 The FILE ORGANIZATION list must match the body banners verbatim because verbatim matching makes the list a real table of contents - a reader sees the section titles in the list and can navigate to them by exact-string search.
 
+### A.3 Section banners
+
+The 76-character rule for both `=` rule lines and `-` separator lines is a fixed value rather than a range. A fixed length makes banners visually uniform across the codebase. The chosen value (76) fits within an 80-column convention with margin for `/* ` and ` */` comment delimiters.
+
 ### A.4 Section types
 
 The fixed type-order rule reflects a real cascade dependency: tokens (FOUNDATION) must be defined before they are consumed; shared chrome classes must be defined before page-specific content can override them; overrides must follow the classes they override.
 
-`FOUNDATION` and `CHROME` are limited to one source file because single-source ownership is what makes them genuinely shared. If multiple files defined `FOUNDATION` content, "the canonical color token" would not have a single home.
+The anchor-file rule (§4.3) — that FOUNDATION and CHROME live in exactly one file per component — preserves single-source ownership at the component scale. Without this rule, "the canonical color token for the docs site" or "the canonical reset for CC pages" would not have a single home, and drift between competing definitions would be inevitable. The platform recognizes one anchor file per component because the CC application and the docs site are functionally separate domains; they share the discipline (one anchor per component, all FOUNDATION there) without sharing the file. A future third domain would follow the same pattern: register a component for it, define its anchor file, all FOUNDATION lives there.
 
 ### A.5 Prefix
 
@@ -828,7 +849,7 @@ The 2+ usage threshold for tokenizing values is a deliberate cutoff. A token-for
 
 ### A.11 @keyframes
 
-The single-source rule for keyframes mirrors the custom-property single-source rule and exists for the same reason: animation primitives are platform-wide, not page-specific. If two pages each defined a `pulse` keyframe, they could drift.
+The single-anchor-file rule for keyframes mirrors the custom-property single-anchor-file rule and exists for the same reason: animation primitives are platform-wide within a component, not page-specific. If two pages within the CC application each defined a `pulse` keyframe, they could drift; pinning all CC keyframes to `cc-shared.css` keeps them in one place. The same rule applies per component — the docs site's keyframes live in its anchor file, not scattered across docs pages.
 
 ### A.13 Forbidden patterns
 
@@ -849,3 +870,7 @@ The compound-declaration prohibition (each declaration on its own line) exists f
 ### A.14 Catalog model
 
 A row's identity is composite (component_type, component_name, reference_type, file_name, occurrence_index) because no single column is sufficient to disambiguate. The same class can be defined in multiple files (LOCAL vs SHARED), and a single file can reference the same identifier multiple times. The composite identity supports queries like "where is this defined" (single row), "where is this used" (multiple rows), and "what's in this file" (rows scoped by file_name).
+
+### A.16 Drift codes — banner granularity
+
+The §16.2 banner code set is intentionally granular rather than coarse. A single combined code would collapse every kind of banner non-conformance into one verdict, which makes refactor work hard to triage — a reader could not tell from the code alone whether the banner had the wrong rule-line length, was missing a description, used an inline shape, or had a malformed title line. Each granular code (`BANNER_INVALID_RULE_LENGTH`, `BANNER_INLINE_SHAPE`, `BANNER_MISSING_DESCRIPTION`, etc.) describes exactly one violation, allowing precise queries like "find every banner with the wrong rule length" or "list every inline-shape banner candidate for refactor." A non-conformant banner may carry several granular codes simultaneously when it violates multiple rules.
