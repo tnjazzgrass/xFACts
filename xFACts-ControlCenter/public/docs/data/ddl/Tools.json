@@ -2474,7 +2474,49 @@
 
               ],
     "scripts":  [
-
+                    {
+                        "name":  "parse-css.js",
+                        "description":  "Node.js helper script invoked as a subprocess from PowerShell to parse CSS source files into structured JSON. Wraps PostCSS 8.5.12 and postcss-selector-parser 7.1.1 for AST extraction with full line-number metadata and decomposed selector trees. Output drives the CSS extraction populator in the Asset_Registry parser pipeline.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
+                        "name":  "parse-js.js",
+                        "description":  "Node.js helper script invoked as a subprocess from PowerShell to parse JavaScript source files into structured JSON. Wraps Acorn 8.16.0 and acorn-walk 8.3.5 for AST extraction with full source position metadata. Output drives the JS extraction populator in the Asset_Registry parser pipeline.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
+                        "name":  "Populate-AssetRegistry-CSS.ps1",
+                        "description":  "Asset_Registry parser pipeline component for CSS source files. Walks every CSS file in the Control Center codebase, parses each via the parse-css.js Node helper, and emits one Asset_Registry row per cataloged construct. Validates each row against CC_CSS_Spec.md rules and attaches drift codes for any deviation.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
+                        "name":  "Populate-AssetRegistry-JS.ps1",
+                        "description":  "Asset_Registry parser pipeline component for JavaScript source files. Walks every JS file in the Control Center codebase, parses each via the parse-js.js Node helper, and emits Asset_Registry rows for both JS code constructs and HTML markup found inside template strings. Validates each row against CC_JS_Spec.md rules and attaches drift codes for any deviation.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
+                        "name":  "xFACts-AssetRegistryFunctions.ps1",
+                        "description":  "Shared function library for the Asset_Registry parser pipeline. Dot-sourced by every populator in the family after xFACts-OrchestratorFunctions.ps1. Centralizes row construction, drift code attachment, occurrence-index computation, registry loads, bulk insert, banner detection and parsing, file-header parsing, pre-built section list construction, and the generic AST visitor walker.",
+                        "module":  "Tools",
+                        "category":  "Utilities",
+                        "dataFlow":  "Reads dbo.Object_Registry to build the (file_name to registry_id) map used at bulk-insert time for foreign-key resolution. Reads dbo.Component_Registry joined to dbo.Object_Registry to build the (file_name to cc_prefix) map used by populators for prefix registry validation. Writes to dbo.Asset_Registry via SqlBulkCopy from a DataTable assembled from per-populator row collections. All reads and writes use the configured xFACts database connection inherited from xFACts-OrchestratorFunctions.ps1.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "Hybrid Drift Code Attachment",
+                                                "note":  "Add-DriftCode validates each code against a per-populator master $script:DriftDescriptions hashtable; unknown codes are refused with a warning. Description text defaults to the master entry but can be overridden per-call with a -Context string for row-specific detail (e.g., a function name that fails its prefix check). Test-DriftCodesAgainstMasterTable runs at the output boundary before bulk insert as a final guardrail against typos and stale codes that escaped validation.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Pre-Built Section List with Body-Line Ranges",
+                                                "note":  "New-SectionList walks every block comment in a parsed file once at the start of per-file processing, identifies banner-shaped comments via Test-IsBannerComment, parses each via Get-BannerInfo, and produces a sorted list of section instances with body-line ranges (banner-end+1 to next-banner-start-1). Get-SectionForLine then provides O(n) line-to-section lookup during AST walking. Replaces the legacy running-state model that depended on walker-equals-source-order traversal — the pre-built list is correct under any walking order, including tree-order visitor walks where nodes at higher line numbers may be visited before nodes at lower line numbers.",
+                                                "sortOrder":  2
+                                            }
+                                        ]
+                    }
                 ],
     "xeSessions":  [
 
