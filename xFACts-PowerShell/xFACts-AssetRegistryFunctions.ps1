@@ -25,6 +25,19 @@
     decomposition, variant shape helpers, HTML attribute extraction, AST
     parent-context helpers) stays in each populator.
 
+    Comment-shape contract: Get-FileHeaderInfo and New-SectionList accept
+    a normalized comment-object shape with these fields:
+        .Type      - 'Block' for block comments (the only kind cataloged)
+        .Text      - inner text of the comment, with /* */ delimiters stripped
+        .LineStart - 1-based source line of the opening delimiter
+        .LineEnd   - 1-based source line of the closing delimiter
+    The acorn JS AST already produces objects close to this shape (.type,
+    .value, .loc.start.line, .loc.end.line); the JS populator wraps each
+    comment to the normalized shape before calling these helpers. PostCSS
+    produces a different shape (.type='comment', .text, .source.start.line);
+    the CSS populator wraps similarly. The wrapping is a one-shot adapter
+    in each populator; helpers see only the normalized shape.
+
     Dot-source AFTER xFACts-OrchestratorFunctions.ps1 at the top of each
     populator:
         . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
@@ -33,6 +46,48 @@
 
     CHANGELOG
     ---------
+    2026-05-07  Banner detection split into permissive detector + strict
+                validator. Test-IsBannerComment now returns $true for any
+                comment whose shape suggests an intended section banner
+                (rule lines of '=' or '-', or single-line '===== Title ====='
+                form), regardless of whether the title line uses a recognized
+                TYPE token. Get-BannerInfo emits granular drift codes per
+                spec rule violated rather than the previous catch-all
+                MALFORMED_SECTION_BANNER.
+                  New codes:
+                    BANNER_INLINE_SHAPE
+                    BANNER_INVALID_RULE_CHAR
+                    BANNER_INVALID_RULE_LENGTH
+                    BANNER_INVALID_SEPARATOR_CHAR
+                    BANNER_INVALID_SEPARATOR_LENGTH
+                    BANNER_MALFORMED_TITLE_LINE
+                    BANNER_MISSING_DESCRIPTION
+                  UNKNOWN_SECTION_TYPE (existing) now emitted when title
+                  line shape is correct but the TYPE token is not in the
+                  closed enum. MISSING_PREFIX_DECLARATION unchanged.
+                  Retired: MALFORMED_SECTION_BANNER (granular codes
+                  replace it). Restores catalog visibility for the ~260
+                  non-conforming banners across unrefactored files that
+                  the strict gate was rejecting outright.
+    2026-05-07  Bug fixes from first run.
+                - Get-ObjectRegistryMap and Get-ComponentRegistryPrefixMap
+                  now use the authoritative column names from Object_Registry's
+                  DDL JSON: object_type (not file_type) and registry_id (not
+                  object_registry_id). The populator-facing -FileType param
+                  is preserved as a short alias and translated to the spec's
+                  full object_type string ('JavaScript' for JS, 'Script' for
+                  PS, 'CSS' / 'HTML' for the others).
+                - Invoke-AssetRegistryBulkInsert's $Misses parameter now
+                  accepts an empty HashSet via [AllowEmptyCollection()] so
+                  the bulk insert step works on the first run, before any
+                  Object_Registry misses have accumulated.
+    2026-05-07  Comment-shape contract formalized. Get-FileHeaderInfo and
+                New-SectionList now read normalized .Type/.Text/.LineStart/
+                .LineEnd fields rather than acorn's .type/.value/.loc.start.
+                Each populator wraps language-specific comment objects into
+                the normalized shape before calling these helpers. Added
+                'selectorTree' to Invoke-AstWalk's skip list so the walker
+                does not descend into PostCSS's decomposed-selector subtree.
     2026-05-06  Initial implementation. Extracted shared logic from
                 Populate-AssetRegistry-CSS.ps1 and Populate-AssetRegistry-JS.ps1
                 as part of the populator alignment pass. Adopted JS visitor
@@ -224,10 +279,17 @@ function Set-OccurrenceIndices {
 # REGISTRY LOADS
 # ============================================================================
 
-# Build a (file_name -> object_registry_id) map from dbo.Object_Registry.
-# Filters by file_type and is_active = 1. Used at the bulk-insert step to
-# populate object_registry_id; misses are tracked separately and reported as
-# advisories so the operator knows which files to add to Object_Registry.
+# Build a (file_name -> registry_id) map from dbo.Object_Registry.
+# Filters by object_type and is_active = 1. Used at the bulk-insert step
+# to populate Asset_Registry.object_registry_id; misses are tracked
+# separately and reported as advisories so the operator knows which files
+# to add to Object_Registry.
+#
+# The -FileType parameter is the populator-facing alias (CSS/HTML/JS/PS).
+# Object_Registry classifies files via object_type using the spec's full
+# names: 'CSS' for CSS, 'HTML' for HTML, 'JavaScript' for JS, 'Script' for
+# PowerShell. The mapping happens here so each populator can pass its
+# native short alias.
 function Get-ObjectRegistryMap {
     param(
         [Parameter(Mandatory)][string]$ServerInstance,
@@ -235,10 +297,17 @@ function Get-ObjectRegistryMap {
         [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS')][string]$FileType
     )
 
+    $objectType = switch ($FileType) {
+        'CSS'  { 'CSS' }
+        'HTML' { 'HTML' }
+        'JS'   { 'JavaScript' }
+        'PS'   { 'Script' }
+    }
+
     $query = @"
-SELECT object_name, object_registry_id
+SELECT object_name, registry_id
 FROM dbo.Object_Registry
-WHERE file_type = '$FileType'
+WHERE object_type = '$objectType'
   AND is_active = 1
 "@
 
@@ -250,7 +319,7 @@ WHERE file_type = '$FileType'
                                  -ErrorAction Stop `
                                  -SuppressProviderContextWarning -TrustServerCertificate
         foreach ($row in $results) {
-            $map[$row.object_name] = [int]$row.object_registry_id
+            $map[$row.object_name] = [int]$row.registry_id
         }
     }
     catch {
@@ -261,10 +330,10 @@ WHERE file_type = '$FileType'
 }
 
 # Build a (file_name -> cc_prefix) map by joining dbo.Object_Registry to
-# dbo.Component_Registry on component_name, filtered to a single file_type.
-# Files whose component has cc_prefix = NULL are included with $null as the
-# value. Files not in Object_Registry are absent from the map (callers detect
-# this via .ContainsKey()).
+# dbo.Component_Registry on component_name, filtered to a single object_type
+# (translated from the populator's FileType alias). Files whose component
+# has cc_prefix = NULL are included with $null as the value. Files not in
+# Object_Registry are absent from the map (callers detect this via .ContainsKey()).
 #
 # Used by the prefix registry validation work: every page-file banner declares
 # a Prefix value, which is validated against this map's value for the file.
@@ -276,12 +345,19 @@ function Get-ComponentRegistryPrefixMap {
         [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS')][string]$FileType
     )
 
+    $objectType = switch ($FileType) {
+        'CSS'  { 'CSS' }
+        'HTML' { 'HTML' }
+        'JS'   { 'JavaScript' }
+        'PS'   { 'Script' }
+    }
+
     $query = @"
 SELECT o.object_name, c.cc_prefix
 FROM dbo.Object_Registry o
 JOIN dbo.Component_Registry c
   ON o.component_name = c.component_name
-WHERE o.file_type = '$FileType'
+WHERE o.object_type = '$objectType'
   AND o.is_active = 1
 "@
 
@@ -324,7 +400,7 @@ function Invoke-AssetRegistryBulkInsert {
         [Parameter(Mandatory)][string]$Database,
         [Parameter(Mandatory)][System.Collections.Generic.List[object]]$Rows,
         [Parameter(Mandatory)]$ObjectRegistryMap,
-        [Parameter(Mandatory)][System.Collections.Generic.HashSet[string]]$Misses
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.HashSet[string]]$Misses
     )
 
     $dt = New-Object System.Data.DataTable
@@ -488,39 +564,110 @@ function Test-IsBannerComment {
     )
 
     if ($null -eq $CommentText) { return $false }
-    if ($CommentText -notmatch '={5,}') { return $false }
 
-    # File-header disqualifications
+    # Permissive detector: admit anything that LOOKS like an intended
+    # section banner. Strict spec validation runs separately in
+    # Get-BannerInfo and emits granular drift codes per rule violated.
+    # The goal is "any banner-shaped comment becomes a catalog row" so
+    # that drift is visible; it is not "only spec-conformant banners
+    # become rows".
+    #
+    # Three accepted shapes:
+    #   1. Multi-line block with a rule-line of >=5 '=' characters
+    #   2. Multi-line block with a rule-line of >=5 '-' characters
+    #      (legacy convention, still appears in some files)
+    #   3. Single-line inline form: ===== Title =====
+    #      (common in docs-* files; gets flagged downstream)
+
+    # File-header disqualifications (these comment shapes should never
+    # be misread as banners regardless of their internal punctuation)
     if ($CommentText -match 'Location\s*:\s*[A-Za-z]:[\\/]' -or
         $CommentText -match 'Version\s*:\s*Tracked in dbo\.System_Metadata' -or
         $CommentText -match 'xFACts Control Center\s*-\s*[^=]+\(.+\.[a-z]+\)') {
         return $false
     }
 
-    # Must contain a recognized TYPE: NAME line
-    $lines = $CommentText -split "`n"
-    foreach ($line in $lines) {
-        $stripped = $line -replace '^\s*\*\s?', '' -replace '^\s+', ''
-        $stripped = $stripped.Trim()
-        if ($stripped -match '^([A-Z_]+)\s*:\s*(.+)$') {
-            $type = $matches[1]
-            if ($type -in $ValidSectionTypes) { return $true }
-        }
+    $crlf = "`r`n"; $cr = "`r"
+    $normalized = $CommentText -replace $crlf, "`n" -replace $cr, "`n"
+    $rawLines   = $normalized -split "`n"
+
+    # Strip per-line leading whitespace and JSDoc-style asterisks
+    $lines = @()
+    foreach ($l in $rawLines) {
+        $stripped = $l -replace '^\s*\*\s?', '' -replace '^\s+', ''
+        $lines += $stripped.TrimEnd()
     }
+
+    # Filter out leading/trailing blank lines for shape analysis
+    $first = 0
+    while ($first -lt $lines.Count -and [string]::IsNullOrWhiteSpace($lines[$first])) { $first++ }
+    $last  = $lines.Count - 1
+    while ($last -ge 0 -and [string]::IsNullOrWhiteSpace($lines[$last])) { $last-- }
+    if ($last -lt $first) { return $false }
+
+    $effective = @()
+    for ($i = $first; $i -le $last; $i++) { $effective += $lines[$i] }
+
+    # Shape 3: single effective line of inline form ===== Title =====
+    if ($effective.Count -eq 1) {
+        if ($effective[0] -match '^={3,}\s+\S.*\s+={3,}$') { return $true }
+        return $false
+    }
+
+    # Shapes 1 & 2: multi-line block with at least one rule-line.
+    # A rule-line is a line consisting solely of '=' (>=5) or '-' (>=5).
+    foreach ($line in $effective) {
+        if ($line -match '^={5,}\s*$') { return $true }
+        if ($line -match '^-{5,}\s*$') { return $true }
+    }
+
     return $false
 }
 
 # Parse a section banner comment into its structural fields. Returns an
 # ordered hashtable:
-#   TypeName    - section type (FOUNDATION, CHROME, FUNCTIONS, etc.) or $null
+#   TypeName    - section type (FOUNDATION, CHROME, LAYOUT, etc.) or $null.
+#                 Set only when the title line shape is correct AND the
+#                 token is in -ValidSectionTypes. Otherwise $null and the
+#                 BannerName carries a best-effort fallback.
 #   BannerName  - banner display name (everything after the colon on the
-#                 title line) or $null
-#   Description - description block between the title and the Prefix line,
-#                 with banner-rule lines and boundary blanks stripped
+#                 title line) or, if the title line is malformed, the
+#                 first non-rule non-blank line trimmed of surrounding
+#                 whitespace. Pass-through preserves variation in the
+#                 source so the catalog highlights inconsistency rather
+#                 than hiding it.
+#   Description - description block between the separator and the Prefix
+#                 line, with banner-rule and separator lines stripped
 #   Prefix      - raw value of the "Prefix:" line (before sentinel handling)
-#   IsValid     - $true if TypeName, BannerName, and Prefix were all parsed
-#   DriftCodes  - array of per-banner drift codes (MALFORMED_SECTION_BANNER,
-#                 MISSING_PREFIX_DECLARATION) accumulated during parse
+#   IsValid     - $true only when every spec rule passes
+#   DriftCodes  - array of granular drift codes for spec violations:
+#                   BANNER_INLINE_SHAPE             single-line form
+#                   BANNER_INVALID_RULE_CHAR        bracket line not all '='
+#                   BANNER_INVALID_RULE_LENGTH      bracket '=' line != 76 chars
+#                   BANNER_INVALID_SEPARATOR_CHAR   separator line not all '-'
+#                   BANNER_INVALID_SEPARATOR_LENGTH separator line != 76 chars
+#                   BANNER_MALFORMED_TITLE_LINE     no recognizable TYPE: NAME
+#                   UNKNOWN_SECTION_TYPE            TYPE shape OK but not in enum
+#                   BANNER_MISSING_DESCRIPTION      empty description block
+#                   MISSING_PREFIX_DECLARATION      no Prefix: line found
+#
+# Per CC_CSS_Spec.md Section 3, the canonical banner form is:
+#
+#     ============================================================================  (76 '=')
+#     <TYPE>: <NAME>
+#     ----------------------------------------------------------------------------  (76 '-')
+#     <Description: 1 to 5 sentences describing what's in this section.>
+#     Prefix: <prefix>
+#     ============================================================================  (76 '=')
+#
+# Description may span multiple physical lines. Effective shape is then
+# six structural pieces: top rule, title, separator, description (>=1
+# non-blank line), prefix, bottom rule.
+#
+# Caller is responsible for emitting the codes onto the COMMENT_BANNER row
+# via Add-DriftCode in the populator. The validator only describes; it
+# does not gate row emission. Test-IsBannerComment is the (permissive)
+# admission gate.
 #
 # Section-type validation uses the caller-supplied -ValidSectionTypes list
 # (the closed enum differs per language: CSS has FOUNDATION/CHROME/LAYOUT/
@@ -542,13 +689,13 @@ function Get-BannerInfo {
     }
 
     if ($null -eq $CommentText) {
-        $info.DriftCodes += 'MALFORMED_SECTION_BANNER'
+        $info.DriftCodes += 'BANNER_MALFORMED_TITLE_LINE'
         return $info
     }
 
     $crlf = "`r`n"; $cr = "`r"
     $normalized = $CommentText -replace $crlf, "`n" -replace $cr, "`n"
-    $rawLines = $normalized -split "`n"
+    $rawLines   = $normalized -split "`n"
 
     # Strip per-line leading whitespace and JSDoc-style asterisks
     $lines = @()
@@ -557,30 +704,104 @@ function Get-BannerInfo {
         $lines += $stripped.TrimEnd()
     }
 
-    # Find the title line (TYPE: NAME with a recognized TYPE)
-    $titleLineIdx = -1
+    # Build effective-lines view: drop leading and trailing blanks for
+    # shape analysis. Effective lines are what the spec is written
+    # against.
+    $first = 0
+    while ($first -lt $lines.Count -and [string]::IsNullOrWhiteSpace($lines[$first])) { $first++ }
+    $last  = $lines.Count - 1
+    while ($last -ge 0 -and [string]::IsNullOrWhiteSpace($lines[$last])) { $last-- }
+
+    $effective = @()
+    if ($last -ge $first) {
+        for ($i = $first; $i -le $last; $i++) { $effective += $lines[$i] }
+    }
+
+    # ---- Validation Pass 1: inline-shape check ----
+    # The single-line form (===== Title =====) is invalid by spec - the
+    # banner must be multi-line. When detected, we still parse what we
+    # can but the catalog row carries the inline-shape drift code.
+    $isInlineForm = ($effective.Count -eq 1 -and
+                     $effective[0] -match '^={3,}\s+\S.*\s+={3,}$')
+    if ($isInlineForm) {
+        $info.DriftCodes += 'BANNER_INLINE_SHAPE'
+    }
+
+    # ---- Validation Pass 2: bracketing rule lines ----
+    # The first and last effective lines must each be exactly 76 '='
+    # characters. Two failure modes are distinguished:
+    #   BANNER_INVALID_RULE_CHAR   - bracket line is not all '='
+    #   BANNER_INVALID_RULE_LENGTH - bracket line is '=' but != 76 chars
+    # Inline form has no bracketing rule lines per se and is exempt.
+    if (-not $isInlineForm -and $effective.Count -ge 2) {
+        $sawNonEqualRuleChar  = $false
+        $sawWrongLengthEqRule = $false
+
+        foreach ($bracket in @($effective[0], $effective[$effective.Count - 1])) {
+            $trimmed = $bracket -replace '\s+$', ''
+            if ($trimmed -match '^=+$') {
+                if ($trimmed.Length -ne 76) { $sawWrongLengthEqRule = $true }
+            } else {
+                $sawNonEqualRuleChar = $true
+            }
+        }
+
+        if ($sawNonEqualRuleChar)  { $info.DriftCodes += 'BANNER_INVALID_RULE_CHAR' }
+        if ($sawWrongLengthEqRule) { $info.DriftCodes += 'BANNER_INVALID_RULE_LENGTH' }
+    }
+
+    # ---- Validation Pass 3: title line ----
+    # Look for the first line matching ^TOKEN: NAME shape, where TOKEN is
+    # all-uppercase letters/underscores (the spec form). Then check
+    # whether TOKEN is in the enum.
+    $titleLineIdx     = -1
+    $unknownTypeFound = $false
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match '^([A-Z_]+)\s*:\s*(.+)$') {
             $candidateType = $matches[1]
+            $candidateName = $matches[2].Trim()
             if ($candidateType -in $ValidSectionTypes) {
-                $info.TypeName = $candidateType
-                $info.BannerName = $matches[2].Trim()
-                $titleLineIdx = $i
+                $info.TypeName   = $candidateType
+                $info.BannerName = $candidateName
+                $titleLineIdx    = $i
                 break
+            } else {
+                # Title-line shape correct but TYPE not in enum.
+                # Remember the first such occurrence; keep scanning in
+                # case a later line uses a valid TYPE.
+                if (-not $unknownTypeFound) {
+                    $unknownTypeFound = $true
+                    $titleLineIdx     = $i
+                    $info.BannerName  = $candidateName
+                }
             }
         }
     }
 
     if ($titleLineIdx -lt 0) {
-        $info.DriftCodes += 'MALFORMED_SECTION_BANNER'
-        return $info
+        # No line at all matched the TYPE: NAME shape. Best-effort
+        # fallback for BannerName: first non-rule, non-blank effective
+        # line, trimmed.
+        $info.DriftCodes += 'BANNER_MALFORMED_TITLE_LINE'
+        foreach ($line in $effective) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            if ($line -match '^([=\-\.])\1{4,}\s*$') { continue }
+            $info.BannerName = $line.Trim()
+            break
+        }
+    } elseif ($unknownTypeFound -and -not $info.TypeName) {
+        $info.DriftCodes += 'UNKNOWN_SECTION_TYPE'
     }
 
-    # Find the Prefix line (singular - the post-standardization spec form)
+    # ---- Validation Pass 4: Prefix line ----
+    # Singular - the post-standardization spec form. Look anywhere in
+    # the comment after the title line (or anywhere if no title line
+    # was found).
     $prefixLineIdx = -1
-    for ($i = $titleLineIdx + 1; $i -lt $lines.Count; $i++) {
+    $prefixSearchStart = if ($titleLineIdx -ge 0) { $titleLineIdx + 1 } else { 0 }
+    for ($i = $prefixSearchStart; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match '^Prefix\s*:\s*(.+)$') {
-            $info.Prefix = $matches[1].Trim()
+            $info.Prefix   = $matches[1].Trim()
             $prefixLineIdx = $i
             break
         }
@@ -590,33 +811,77 @@ function Get-BannerInfo {
         $info.DriftCodes += 'MISSING_PREFIX_DECLARATION'
     }
 
-    # Description = lines between title and Prefix (or end of comment),
-    # excluding banner-rule lines.
-    $descStart = $titleLineIdx + 1
-    $descEnd   = if ($prefixLineIdx -ge 0) { $prefixLineIdx - 1 } else { $lines.Count - 1 }
+    # ---- Validation Pass 5: separator line ----
+    # The spec form has exactly one separator line of 76 '-' characters
+    # between the title and the description. We look for the first
+    # rule-shaped line in the body region (after title, before prefix
+    # if known, else end). If absent or malformed, emit the matching
+    # drift code.
+    if ($titleLineIdx -ge 0) {
+        $sepSearchEnd = if ($prefixLineIdx -ge 0) { $prefixLineIdx - 1 } else { $lines.Count - 1 }
+        $sepFound  = $false
+        $sepLine   = $null
+        for ($i = $titleLineIdx + 1; $i -le $sepSearchEnd; $i++) {
+            $candidate = $lines[$i] -replace '\s+$', ''
+            # The separator is a pure-symbol rule-shaped line. Match
+            # any of '=', '-', '.' as a candidate so we can emit the
+            # right granular code.
+            if ($candidate -match '^([=\-\.])\1{4,}$') {
+                $sepFound = $true
+                $sepLine  = $candidate
+                break
+            }
+        }
 
-    $descLines = New-Object System.Collections.Generic.List[string]
-    for ($i = $descStart; $i -le $descEnd; $i++) {
-        $line = $lines[$i]
-        if ($line -match '^[=]{5,}\s*$') { continue }
-        if ($line -match '^[-]{5,}\s*$') { continue }
-        $descLines.Add($line)
+        if (-not $sepFound) {
+            # No separator at all - description block (if any) sits
+            # directly under the title with no rule between them.
+            $info.DriftCodes += 'BANNER_INVALID_SEPARATOR_CHAR'
+        } else {
+            if ($sepLine -notmatch '^-+$') {
+                $info.DriftCodes += 'BANNER_INVALID_SEPARATOR_CHAR'
+            }
+            if ($sepLine.Length -ne 76) {
+                $info.DriftCodes += 'BANNER_INVALID_SEPARATOR_LENGTH'
+            }
+        }
     }
 
-    while ($descLines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($descLines[0])) {
-        $descLines.RemoveAt(0)
-    }
-    while ($descLines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($descLines[$descLines.Count - 1])) {
-        $descLines.RemoveAt($descLines.Count - 1)
+    # ---- Description extraction + presence check ----
+    # Description sits between the separator (or title, if no separator)
+    # and the Prefix line. Strip rule-shaped lines and boundary blanks.
+    if ($titleLineIdx -ge 0) {
+        $descStart = $titleLineIdx + 1
+        $descEnd   = if ($prefixLineIdx -ge 0) { $prefixLineIdx - 1 } else { $lines.Count - 1 }
+
+        $descLines = New-Object System.Collections.Generic.List[string]
+        for ($i = $descStart; $i -le $descEnd; $i++) {
+            $line = $lines[$i]
+            if ($line -match '^[=]{5,}\s*$') { continue }
+            if ($line -match '^[-]{5,}\s*$') { continue }
+            if ($line -match '^[\.]{5,}\s*$') { continue }
+            $descLines.Add($line)
+        }
+
+        while ($descLines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($descLines[0])) {
+            $descLines.RemoveAt(0)
+        }
+        while ($descLines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($descLines[$descLines.Count - 1])) {
+            $descLines.RemoveAt($descLines.Count - 1)
+        }
+
+        if ($descLines.Count -gt 0) {
+            $info.Description = ($descLines -join "`n").Trim()
+        } else {
+            $info.DriftCodes += 'BANNER_MISSING_DESCRIPTION'
+        }
     }
 
-    if ($descLines.Count -gt 0) {
-        $info.Description = ($descLines -join "`n").Trim()
-    }
-
-    if (-not [string]::IsNullOrEmpty($info.TypeName) -and
-        -not [string]::IsNullOrEmpty($info.BannerName) -and
-        $prefixLineIdx -ge 0) {
+    # ---- Validity ----
+    # Strict: every check must pass for IsValid = $true.
+    if ($info.DriftCodes.Count -eq 0 -and
+        -not [string]::IsNullOrEmpty($info.TypeName) -and
+        -not [string]::IsNullOrEmpty($info.BannerName)) {
         $info.IsValid = $true
     }
 
@@ -683,6 +948,15 @@ function Test-PrefixValueIsValid {
 # (e.g. '\\public\\css\\' for CSS, '\\public\\js\\' for JS). Currently this
 # is captured for future use; the function does not yet emit a drift code
 # for a Location mismatch.
+#
+# Comments contract: each entry in $Comments is expected to expose normalized
+# fields:
+#   .Type      - 'Block' for block comments
+#   .Text      - inner text of the comment (delimiters stripped)
+#   .LineStart - 1-based line of the opening delimiter
+#   .LineEnd   - 1-based line of the closing delimiter
+# Per-language adapters in each populator wrap acorn / PostCSS comment
+# objects into this shape before calling.
 function Get-FileHeaderInfo {
     param(
         [Parameter(Mandatory)]$Comments,
@@ -707,7 +981,7 @@ function Get-FileHeaderInfo {
     # First Block comment in the file
     $headerComment = $null
     foreach ($c in $Comments) {
-        if ($c.type -eq 'Block') {
+        if ($c.Type -eq 'Block') {
             $headerComment = $c
             break
         }
@@ -719,9 +993,7 @@ function Get-FileHeaderInfo {
     }
 
     # Must start at line 1
-    $headerStart = if ($headerComment.loc -and $headerComment.loc.start) {
-        [int]$headerComment.loc.start.line
-    } else { 0 }
+    $headerStart = if ($null -ne $headerComment.LineStart) { [int]$headerComment.LineStart } else { 0 }
 
     if ($headerStart -ne 1) {
         $info.DriftCodes += 'MALFORMED_FILE_HEADER'
@@ -729,13 +1001,11 @@ function Get-FileHeaderInfo {
     }
 
     $info.StartLine = $headerStart
-    $info.EndLine   = if ($headerComment.loc -and $headerComment.loc.end) {
-        [int]$headerComment.loc.end.line
-    } else { $headerStart }
+    $info.EndLine   = if ($null -ne $headerComment.LineEnd) { [int]$headerComment.LineEnd } else { $headerStart }
 
     # Parse content
     $crlf = "`r`n"; $cr = "`r"
-    $normalized = $headerComment.value -replace $crlf, "`n" -replace $cr, "`n"
+    $normalized = $headerComment.Text -replace $crlf, "`n" -replace $cr, "`n"
     $rawLines = $normalized -split "`n"
 
     $lines = @()
@@ -769,8 +1039,10 @@ function Get-FileHeaderInfo {
             if ($line -match '^[-]{3,}\s*$') { continue }
             if ($line -match '^[=]{5,}\s*$') { break }
             if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            # Strip optional leading "1. " numbered prefix (legacy form)
+            $entry = $line -replace '^\s*\d+\.\s+', ''
             # Strip trailing -- annotations
-            $entry = $line -replace '\s+--.*$', ''
+            $entry = $entry -replace '\s+--.*$', ''
             $entry = $entry.Trim()
             if (-not [string]::IsNullOrEmpty($entry)) {
                 $info.FileOrgList += $entry
@@ -835,6 +1107,10 @@ function Get-FileHeaderInfo {
 # Used by Get-SectionForLine to look up "what section is this line in" without
 # re-walking the AST. Replaces the running-state model that the CSS populator
 # used previously.
+#
+# Comments contract: same normalized shape as Get-FileHeaderInfo expects -
+# .Type / .Text / .LineStart / .LineEnd. See Get-FileHeaderInfo header
+# comment for details.
 function New-SectionList {
     param(
         [Parameter(Mandatory)]$Comments,
@@ -848,32 +1124,32 @@ function New-SectionList {
     # Collect banner-shaped block comments
     $bannerComments = New-Object System.Collections.Generic.List[object]
     foreach ($c in $Comments) {
-        if ($c.type -ne 'Block') { continue }
-        if (Test-IsBannerComment -CommentText $c.value -ValidSectionTypes $ValidSectionTypes) {
+        if ($c.Type -ne 'Block') { continue }
+        if (Test-IsBannerComment -CommentText $c.Text -ValidSectionTypes $ValidSectionTypes) {
             $bannerComments.Add($c)
         }
     }
 
     # Sort by start line
     $sorted = $bannerComments | Sort-Object {
-        if ($_.loc -and $_.loc.start) { [int]$_.loc.start.line } else { 0 }
+        if ($null -ne $_.LineStart) { [int]$_.LineStart } else { 0 }
     }
     $sortedArr = @($sorted)
 
     for ($i = 0; $i -lt $sortedArr.Count; $i++) {
         $b = $sortedArr[$i]
-        $bStart = if ($b.loc -and $b.loc.start) { [int]$b.loc.start.line } else { 0 }
-        $bEnd   = if ($b.loc -and $b.loc.end)   { [int]$b.loc.end.line   } else { $bStart }
+        $bStart = if ($null -ne $b.LineStart) { [int]$b.LineStart } else { 0 }
+        $bEnd   = if ($null -ne $b.LineEnd)   { [int]$b.LineEnd   } else { $bStart }
 
         $bodyStart = $bEnd + 1
         $bodyEnd   = if ($i -lt ($sortedArr.Count - 1)) {
             $next = $sortedArr[$i + 1]
-            if ($next.loc -and $next.loc.start) { ([int]$next.loc.start.line) - 1 } else { $FileLineCount }
+            if ($null -ne $next.LineStart) { ([int]$next.LineStart) - 1 } else { $FileLineCount }
         } else {
             $FileLineCount
         }
 
-        $info = Get-BannerInfo -CommentText $b.value -ValidSectionTypes $ValidSectionTypes
+        $info = Get-BannerInfo -CommentText $b.Text -ValidSectionTypes $ValidSectionTypes
 
         $sections.Add([ordered]@{
             Index            = $i
@@ -964,7 +1240,11 @@ function Test-FileOrgMatchesBanners {
 # Skips primitive properties (start, end, loc, range, raw, etc.) that don't
 # contain child nodes. The skip list is conservative and language-agnostic;
 # it covers acorn's JS AST shape and PostCSS's CSS AST shape without
-# excluding anything that could legitimately contain children.
+# excluding anything that could legitimately contain children. PostCSS
+# rule nodes carry a 'selectorTree' property whose inner nodes have 'type'
+# fields (selector, class, pseudo, etc.) - the walker skips it because the
+# CSS visitor processes rule selectors via $Node.selectorTree.nodes once
+# per rule, not by recursing into each selector token.
 function Invoke-AstWalk {
     param(
         $Node,
@@ -1001,7 +1281,7 @@ function Invoke-AstWalk {
                         'computed','static','async','generator',
                         'kind','shorthand','method','delegate','optional',
                         'tail','cooked','directive','regex',
-                        'selector','selectors','prop','important','text',
+                        'selector','selectors','selectorTree','prop','important','text',
                         'params')) {
             continue
         }
