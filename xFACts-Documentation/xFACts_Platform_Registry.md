@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-06 15:38:32
+Generated: 2026-05-07 03:28:45
 
 ## Module Registry
 
@@ -408,6 +408,9 @@ Generated: 2026-05-06 15:38:32
 | Tools.Utilities | sp_SyncColumnOrdinals | Database | Procedure | Tools | Aligns Object_Metadata column description sort_order values with actual sys.columns column_id ordinals for a specified table. Deactivates Object_Metadata rows for dropped columns. |
 | Tools.Utilities | parse-css.js | PowerShell | Script | E:\xFACts-PowerShell\parse-css.js | Node.js helper script that parses CSS source into structured AST output. Reads CSS from stdin, uses PostCSS 8.5.12 with postcss-selector-parser 7.1.1 to produce JSON containing rules, at-rules, comments, and decomposed selector trees with line numbers. Invoked as a subprocess by Populate-AssetRegistry-CSS.ps1 during catalog refresh. |
 | Tools.Utilities | parse-js.js | PowerShell | Script | E:\xFACts-PowerShell\parse-js.js | Node.js helper script that parses JavaScript source into structured AST output. Reads JS from stdin, uses Acorn 8.16.0 with acorn-walk 8.3.5 to produce ESTree-format JSON with full source position information. Invoked as a subprocess by Populate-AssetRegistry-JS.ps1 during catalog refresh. |
+| Tools.Utilities | Populate-AssetRegistry-CSS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-CSS.ps1 | Asset_Registry parser pipeline component for CSS source files. Walks every CSS file in the Control Center codebase, parses each via the parse-css.js Node helper, and emits one Asset_Registry row per cataloged construct. Validates each row against CC_CSS_Spec.md rules and attaches drift codes for any deviation. |
+| Tools.Utilities | Populate-AssetRegistry-JS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-JS.ps1 | Asset_Registry parser pipeline component for JavaScript source files. Walks every JS file in the Control Center codebase, parses each via the parse-js.js Node helper, and emits Asset_Registry rows for both JS code constructs and HTML markup found inside template strings. Validates each row against CC_JS_Spec.md rules and attaches drift codes for any deviation. |
+| Tools.Utilities | xFACts-AssetRegistryFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-AssetRegistryFunctions.ps1 | Shared function library for the Asset_Registry parser pipeline. Dot-sourced by every populator in the family. Centralizes row construction, drift code attachment, occurrence-index computation, registry loads, bulk insert, banner detection and parsing, file-header parsing, pre-built section list construction, and the generic AST visitor walker. Per-language logic stays in each populator. |
 
 ## Global Configuration
 
