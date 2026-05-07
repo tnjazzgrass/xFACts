@@ -328,7 +328,8 @@
                                            "name":  "asset_id",
                                            "dataType":  "int",
                                            "nullable":  false,
-                                           "identity":  true
+                                           "identity":  true,
+                                           "description":  "Surrogate primary key. Not stable across runs."
                                        },
                                        {
                                            "ordinal":  2,
@@ -336,14 +337,16 @@
                                            "dataType":  "varchar",
                                            "length":  "200",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The source file the row was extracted from."
                                        },
                                        {
                                            "ordinal":  3,
                                            "name":  "object_registry_id",
                                            "dataType":  "int",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Foreign key to dbo.Object_Registry.registry_id. NULL when the file has no Object_Registry row."
                                        },
                                        {
                                            "ordinal":  4,
@@ -351,28 +354,32 @@
                                            "dataType":  "varchar",
                                            "length":  "10",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The content type extracted, not the file extension."
                                        },
                                        {
                                            "ordinal":  5,
                                            "name":  "line_start",
                                            "dataType":  "int",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The 1-based source line where this construct begins."
                                        },
                                        {
                                            "ordinal":  6,
                                            "name":  "line_end",
                                            "dataType":  "int",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The 1-based source line where this construct ends."
                                        },
                                        {
                                            "ordinal":  7,
                                            "name":  "column_start",
                                            "dataType":  "int",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The 0-based column where this construct begins on its starting line."
                                        },
                                        {
                                            "ordinal":  8,
@@ -380,7 +387,8 @@
                                            "dataType":  "varchar",
                                            "length":  "20",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The type of construct this row represents."
                                        },
                                        {
                                            "ordinal":  9,
@@ -388,7 +396,8 @@
                                            "dataType":  "varchar",
                                            "length":  "500",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The construct\u0027s identifier."
                                        },
                                        {
                                            "ordinal":  10,
@@ -396,7 +405,8 @@
                                            "dataType":  "varchar",
                                            "length":  "30",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Discriminates sub-flavors within a component_type."
                                        },
                                        {
                                            "ordinal":  11,
@@ -404,7 +414,8 @@
                                            "dataType":  "varchar",
                                            "length":  "100",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "First qualifier slot of the variant."
                                        },
                                        {
                                            "ordinal":  12,
@@ -412,7 +423,8 @@
                                            "dataType":  "varchar",
                                            "length":  "500",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Second qualifier slot of the variant."
                                        },
                                        {
                                            "ordinal":  13,
@@ -420,7 +432,8 @@
                                            "dataType":  "varchar",
                                            "length":  "20",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Whether this row defines a construct or references one."
                                        },
                                        {
                                            "ordinal":  14,
@@ -428,7 +441,8 @@
                                            "dataType":  "varchar",
                                            "length":  "20",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Whether the construct lives in a curated shared file or in a page-local file."
                                        },
                                        {
                                            "ordinal":  15,
@@ -436,7 +450,8 @@
                                            "dataType":  "varchar",
                                            "length":  "200",
                                            "nullable":  false,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "For DEFINITION rows, equals file_name. For USAGE rows, the file where the construct is defined."
                                        },
                                        {
                                            "ordinal":  16,
@@ -444,7 +459,8 @@
                                            "dataType":  "varchar",
                                            "length":  "300",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The full title of the section banner this row belongs to."
                                        },
                                        {
                                            "ordinal":  17,
@@ -452,7 +468,8 @@
                                            "dataType":  "varchar",
                                            "length":  "MAX",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Construct-specific structural detail."
                                        },
                                        {
                                            "ordinal":  18,
@@ -460,7 +477,8 @@
                                            "dataType":  "varchar",
                                            "length":  "200",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "The enclosing context, where applicable."
                                        },
                                        {
                                            "ordinal":  19,
@@ -468,7 +486,8 @@
                                            "dataType":  "varchar",
                                            "length":  "MAX",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Verbatim source text of the construct."
                                        },
                                        {
                                            "ordinal":  20,
@@ -476,7 +495,8 @@
                                            "dataType":  "varchar",
                                            "length":  "MAX",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Human-authored description of the construct, extracted from preceding comments."
                                        },
                                        {
                                            "ordinal":  23,
@@ -484,7 +504,8 @@
                                            "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "((1))"
+                                           "default":  "((1))",
+                                           "description":  "1-based ordinal disambiguator for repeated instances within a file."
                                        },
                                        {
                                            "ordinal":  24,
@@ -492,7 +513,8 @@
                                            "dataType":  "varchar",
                                            "length":  "500",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Comma-separated list of spec-drift codes attached to this row."
                                        },
                                        {
                                            "ordinal":  25,
@@ -500,7 +522,8 @@
                                            "dataType":  "varchar",
                                            "length":  "MAX",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Pipe-separated human-readable descriptions corresponding to drift_codes."
                                        },
                                        {
                                            "ordinal":  27,
@@ -508,7 +531,8 @@
                                            "dataType":  "datetime2",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "default":  "(sysdatetime())"
+                                           "default":  "(sysdatetime())",
+                                           "description":  "Timestamp of the run that inserted this row."
                                        }
                                    ],
                        "indexes":  [
@@ -4959,18 +4983,6 @@
 
               ],
     "scripts":  [
-                    {
-                        "name":  "parse-css.js",
-                        "description":  "Node.js helper script invoked as a subprocess from PowerShell to parse CSS source files into structured JSON. Wraps PostCSS 8.5.12 and postcss-selector-parser 7.1.1 for AST extraction with full line-number metadata and decomposed selector trees. Output drives the CSS extraction populator in the Asset_Registry parser pipeline.",
-                        "module":  "Tools",
-                        "category":  "Utilities"
-                    },
-                    {
-                        "name":  "parse-js.js",
-                        "description":  "Node.js helper script invoked as a subprocess from PowerShell to parse JavaScript source files into structured JSON. Wraps Acorn 8.16.0 and acorn-walk 8.3.5 for AST extraction with full source position metadata. Output drives the JS extraction populator in the Asset_Registry parser pipeline.",
-                        "module":  "Tools",
-                        "category":  "Utilities"
-                    },
                     {
                         "name":  "Sync-ClientHierarchy.ps1",
                         "description":  "Rebuilds dbo.ClientHierarchy from crs5_oltp creditor and creditor group tables using a recursive CTE to resolve the full group hierarchy in a single pass. Uses MERGE to insert new creditors, update changed metadata, and delete creditors removed from the source. The CTE walks all groups regardless of soft-delete status, capturing the hierarchy as it exists in DM. Active flags at creditor, parent group, and top parent levels enable discrepancy detection.",
