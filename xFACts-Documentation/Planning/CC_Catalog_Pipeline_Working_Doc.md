@@ -25,30 +25,33 @@ Catalog is functional and queryable. Production populator scripts are deployed a
 
 **Production scripts:**
 
-- `Populate-AssetRegistry-CSS.ps1` — at current spec generation. Captures purpose_description across all four CSS comment sources (file header, section banner, per-class, per-variant) at 100% coverage on spec-compliant files.
-- `Populate-AssetRegistry-JS.ps1` — spec-aware extractor. Variant emission across all relevant component families. `parent_function` threading on USAGE rows and on JS_METHOD/JS_METHOD_VARIANT rows. Section-aware drift detection covering ~30 codes. Verbatim source capture into widened columns (no text trimming). Top-level IIFE structural skip with full-body capture in raw_text. Per-file AST walk wrapped in try/catch with line-number and stack-trace diagnostics. Zone-aware shared/local resolution (CC zone vs docs zone, with separate shared file lists per zone). HTML_ID rows always emit scope='LOCAL' per spec. cc-shared.js validates at zero file-attributable drift.
-- `Populate-AssetRegistry-HTML.ps1` — production-grade structure but pre-dates the most recent CSS spec migration. References dropped columns and emits the retired `state_modifier='<dynamic>'` shape. Catch-up pending.
+- `Populate-AssetRegistry-CSS.ps1` — at current spec generation. Captures purpose_description across all four CSS comment sources (file header, section banner, per-class, per-variant) at 100% coverage on spec-compliant files. Currently uses direct-recursion walking model and running-state section tracking. Refactor in progress to consume new `xFACts-AssetRegistryFunctions.ps1` and adopt visitor pattern, pre-built section list, and prefix registry validation. Source files have been edited to singular `Prefix:` form; populator does not yet enforce this — will catch up in the alignment refactor.
+- `Populate-AssetRegistry-JS.ps1` — spec-aware extractor. Variant emission across all relevant component families. `parent_function` threading on USAGE rows and on JS_METHOD/JS_METHOD_VARIANT rows. Section-aware drift detection covering ~30 codes. Verbatim source capture into widened columns (no text trimming). Top-level IIFE structural skip with full-body capture in raw_text. Per-file AST walk wrapped in try/catch with line-number and stack-trace diagnostics. Zone-aware shared/local resolution (CC zone vs docs zone, with separate shared file lists per zone). HTML_ID rows always emit scope='LOCAL' per spec. cc-shared.js validates at zero file-attributable drift. Refactor queued (after CSS) to consume `xFACts-AssetRegistryFunctions.ps1` and add prefix registry validation.
+- `Populate-AssetRegistry-HTML.ps1` — production-grade structure but pre-dates the most recent CSS spec migration. References dropped columns and emits the retired `state_modifier='<dynamic>'` shape. Catch-up pending; will also be refactored to consume the helpers file.
+
+**Shared infrastructure (new this session, not yet deployed):**
+
+- `xFACts-AssetRegistryFunctions.ps1` — domain-specific helpers file for the Asset Registry populator family. ~1,015 lines, 20 functions. Centralizes row construction, dedupe tracking, drift code attachment (hybrid: master-table validation plus optional row-specific context), occurrence-index computation, Object_Registry / Component_Registry registry loads, bulk insert plus DataTable shape, comment-text cleanup, banner detection plus parsing, file-header parsing, pre-built section list construction with body-line ranges, file-org match check, and the generic AST visitor walker. Pattern parallels `xFACts-IndexFunctions.ps1`: each populator dot-sources `xFACts-OrchestratorFunctions.ps1` first, then `xFACts-AssetRegistryFunctions.ps1`, then calls `Initialize-XFActsScript`. Will deploy together with the refactored CSS populator.
 
 **Not yet built:**
 
 - `Refresh-AssetRegistry.ps1` orchestrator. Each populator runs standalone today. The cross-cutting "TRUNCATE the table, then run all populators in order" coordination is currently manual.
 
-**Upstream prerequisite for next populator changes:** the prefix registry migration described in the Initiative doc. Once `Component_Registry` gains a `cc_prefix CHAR(3) NULL` column with backfilled mappings, both CSS and JS populators read it at startup and validate file-header-declared prefixes against it. New drift code: `PREFIX_REGISTRY_MISMATCH`.
-
 ---
 
 ## Where we left off
 
-Sessions are organized around populator and spec work. Pickup options below assume the prefix registry migration (described in the Initiative doc Current State) lands first.
+Sessions are organized around populator and spec work. Pickup options below assume the prefix registry migration (described in the Initiative doc) is complete.
 
-1. **Apply prefix registry validation to CSS and JS populators.** Once `Component_Registry.cc_prefix` exists, both populators read it at startup, build a slug-to-prefix lookup, and emit `PREFIX_REGISTRY_MISMATCH` when a file header declares a prefix that disagrees with the registry. Small change in both populators.
-2. **HTML populator catch-up plus HTML spec design.** Bring `Populate-AssetRegistry-HTML.ps1` current: clean up references to dropped columns (`state_modifier`, `component_subtype`, `parent_object`, plus `related_asset_id` / `design_notes` / `is_active`); resolve the dynamic-class strategy question (Open question 1 below); confirm the bulk-insert DataTable shape matches current `dbo.Asset_Registry`; remove `WHERE is_active = 1` filters from CSS_CLASS DEFINITION lookups. Then design `CC_HTML_Spec.md` against the HTML conventions already in use across CC route files. Same workflow as CSS and JS: spec, populator, smoke test, first reference implementation.
-3. **PS populator plus PS spec design.** Two specs (module and route) plus one populator covering both. May split into separate sessions per spec.
-4. **Phase 1 batch sweep.** Once all four populators are current and all four specs are in production: refactor the five Phase 1 pages (`backup`, `business-intelligence`, `client-relations`, `replication-monitoring`, `business-services`) across CSS, JS, HTML, and PS together. Output: five fully-compliant Phase 1 pages plus deactivation of `engine-events.js` once page JS files migrate to `cc-shared.js`.
-5. **Page-at-a-time migration for remaining ~22 pages.** After Phase 1 closes.
-6. **`Refresh-AssetRegistry.ps1` orchestrator.** Cross-populator orchestrator: single TRUNCATE, then dispatch CSS to HTML to JS to PS in order, with `sp_getapplock` single-instance locking and consolidated logging. Sequencing-wise this can land any time after all populators are current; not a blocker for migration work.
+1. **Refactor `Populate-AssetRegistry-CSS.ps1` to consume the new helpers file plus add prefix registry validation.** Detailed eleven-item action list in `CC_Initiative.md` Current State. Substantive refactor; CSS populator is currently 2,394 lines, target post-refactor is ~450 lines. Includes the registry-validation work that was originally scoped as a small five-change pass before the alignment expansion.
+2. **Refactor `Populate-AssetRegistry-JS.ps1` to consume the new helpers file plus add prefix registry validation.** Larger delta (3,983 lines down to ~2,400-2,500). May land in the same session as CSS if context permits, otherwise the next session.
+3. **HTML populator catch-up plus HTML spec design.** Bring `Populate-AssetRegistry-HTML.ps1` current: clean up references to dropped columns (`state_modifier`, `component_subtype`, `parent_object`, plus `related_asset_id` / `design_notes` / `is_active`); resolve the dynamic-class strategy question (Open question 1 below); confirm the bulk-insert DataTable shape matches current `dbo.Asset_Registry`; remove `WHERE is_active = 1` filters from CSS_CLASS DEFINITION lookups; refactor to consume `xFACts-AssetRegistryFunctions.ps1`. Then design `CC_HTML_Spec.md` against the HTML conventions already in use across CC route files.
+4. **PS populator plus PS spec design.** Two specs (module and route) plus one populator covering both. PS populator will also consume the helpers file.
+5. **Phase 1 batch sweep.** Once all four populators are current and all four specs are in production: refactor the five Phase 1 pages (`backup`, `business-intelligence`, `client-relations`, `replication-monitoring`, `business-services`) across CSS, JS, HTML, and PS together. Output: five fully-compliant Phase 1 pages plus deactivation of `engine-events.js` once page JS files migrate to `cc-shared.js`.
+6. **Page-at-a-time migration for remaining ~22 pages.** After Phase 1 closes.
+7. **`Refresh-AssetRegistry.ps1` orchestrator.** Cross-populator orchestrator: single TRUNCATE, then dispatch CSS to HTML to JS to PS in order, with `sp_getapplock` single-instance locking and consolidated logging. Sequencing-wise this can land any time after all populators are current; not a blocker for migration work.
 
-**Validation strategy.** Every existing source file across CSS/JS/HTML/PS is non-spec-compliant, so running a populator over the full codebase produces thousands of drift rows that don't tell us anything we don't already know. The genuinely valuable validation per file type is the first refactored shared/reference file (CSS validated against `cc-shared.css`; JS against `cc-shared.js`; HTML and PS will follow the same pattern). The Phase 1 batch sweep then iterates page by page; each refactored page is a fresh validation point that can surface spec/populator gaps.
+**Validation strategy.** Every existing source file across CSS/JS/HTML/PS is non-spec-compliant, so running a populator over the full codebase produces thousands of drift rows that don't tell us anything we don't already know. The genuinely valuable validation per file type is the first refactored shared/reference file (CSS validated against `cc-shared.css`; JS against `cc-shared.js`; HTML and PS will follow the same pattern). The Phase 1 batch sweep then iterates page by page; each refactored page is a fresh validation point that can surface spec/populator gaps. The CSS populator alignment refactor itself will be validated by re-running against `cc-shared.css` and the five Phase 1 page CSS files (all currently at zero drift on the pre-refactor populator); if the refactored populator preserves zero-drift on those files, behavior parity is confirmed.
 
 ---
 
@@ -60,6 +63,7 @@ Sessions are organized around populator and spec work. Pickup options below assu
 - Schema: `dbo` (no CC-specific schema prefix).
 - Three populators plus one orchestrator (orchestrator pending). CSS, HTML, JS each have their own dedicated populator. Each parser has substantial complexity (Node + PostCSS, PS-native, Node + acorn) and different debugging surfaces.
 - Helper Node scripts live alongside (`parse-css.js`, `parse-js.js` registered under `Tools.Utilities` in `Object_Registry`).
+- Shared PowerShell helpers live in `xFACts-AssetRegistryFunctions.ps1`, dot-sourced by each populator after `xFACts-OrchestratorFunctions.ps1`.
 - Manual trigger from Admin page (no scheduling initially).
 - Location: xFACts.dbo (currently AVG-PROD-LSNR)
 
@@ -183,9 +187,19 @@ Per-file-type spec docs document the full variant_type / qualifier_1 / qualifier
 - **JS:** Node + acorn 8.16.0 + acorn-walk 8.3.5 (subprocess from PowerShell).
 - **PowerShell tokenization for HTML extraction:** built-in `[System.Management.Automation.Language.Parser]::ParseFile()` — no external dependency.
 
-### Architectural divergence between CSS and JS populators
+### Populator alignment (in progress)
 
-The CSS and JS populators currently use different traversal patterns. JS uses a walker plus visitor pattern (`Invoke-AstWalk` plus `$visitor` scriptblock), with a SKIP_CHILDREN signal for structural skips (used for top-level IIFE handling). CSS uses direct recursive emission (`Add-RowsFromAst` function). The JS pattern is the chosen direction for harmonization; CSS will be aligned to match in a future Phase 3 pass. Function-name harmonization across populators will land at the same time.
+The CSS and JS populators were independently developed and currently diverge on several structural axes. Alignment is in progress as of 2026-05-06. Decisions locked:
+
+- **Walking model:** visitor pattern for both. JS already uses this (`Invoke-AstWalk` plus visitor scriptblock); CSS migrates from direct recursion. Visitor receives parent chain (ancestor type strings) plus parent nodes (ancestor node references) for parent-context queries. SKIP_CHILDREN signal returnable from visitor for structural skips (e.g., top-level IIFEs, where the construct itself emits a drift row but per-row cataloging of the body would produce cascade drift).
+- **Section tracking:** pre-built section list with body-line ranges. JS already does this via `New-SectionList` plus `Get-SectionForLine`; CSS migrates from running-state (`$script:CurrentBannerInfo`, `$script:PreviousSibling`). The pre-built model is correct under any walking order, where running state depends on walker-equals-source-order which is fragile.
+- **Drift attachment:** hybrid model. Master `$script:DriftDescriptions` ordered hashtable per populator (different drift codes per language). `Add-DriftCode` validates the code against the master table (refuses unknown codes with WARN); description text defaults to the master entry but can be overridden per-call with a `-Context` string for row-specific detail. Output-boundary check (`Test-DriftCodesAgainstMasterTable`) runs before bulk insert and warns on any code that escaped validation.
+- **Banner detection plus parsing:** parameterized via `-ValidSectionTypes`. Each populator passes its own valid-types list (CSS: FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS; JS: FOUNDATION, CHROME, IMPORTS, CONSTANTS, STATE, INITIALIZATION, FUNCTIONS); the helpers handle format validation uniformly.
+- **File-header parsing:** separates parse from emit. `Get-FileHeaderInfo` returns a structured info object; row emission and drift attachment happen in the calling populator.
+- **FILE_ORG_MISMATCH:** moved from cross-file Pass 3 (CSS legacy) to per-file Pass 2 (matches JS). The check is per-file by nature; cross-file location was an accident.
+- **Catch-all codes for unknown values in closed enums:** `UNKNOWN_SECTION_TYPE`, `UNKNOWN_HOOK_NAME` (JS only). Fired when a banner's TYPE or a hook function's name doesn't match the closed enum. Surfaces unknown-but-encountered values to the catalog for human review.
+
+The shared infrastructure delivered as `xFACts-AssetRegistryFunctions.ps1` provides the helpers; per-language logic stays in each populator. The architectural-divergence section that previously lived here in this doc is retired; alignment is the active state.
 
 ---
 
@@ -235,6 +249,8 @@ CREATE TABLE dbo.Asset_Registry (
 
 **No CREATE TABLE in source control.** The DDL has not been committed to `xFACts-SQL/`. The schema's authoritative documentation lives here and in `Object_Metadata` (column descriptions, design notes, status_value enumerations). When the parser pipeline goes live and this working doc is retired, the CREATE TABLE may be checked in.
 
+**Object_Registry / Asset_Registry column-name asymmetry.** `Object_Registry`'s primary key is `registry_id`. `Asset_Registry`'s foreign-key column referencing it is `object_registry_id`. The populators' `Object_Registry` load query selects `registry_id`; the bulk-insert into `Asset_Registry` writes that value to `object_registry_id`. The shared helper `Get-ObjectRegistryMap` handles this internally. Worth flagging because the asymmetric naming is a footgun for future query writers.
+
 ---
 
 ## occurrence_index design
@@ -242,7 +258,7 @@ CREATE TABLE dbo.Asset_Registry (
 Under truncate+reload, occurrence_index serves a single purpose: uniquely identify multiple instances of the same component within a file's parse. Computed fresh on each run.
 
 - **Definition:** 1-based ordinal of how many times this specific tuple has been seen so far during the current parse, in source-position order. The tuple shape varies by component type — for CSS_VARIANT rows it includes `variant_type` and the qualifier columns; for simpler rows it's just `(file_name, component_name, reference_type)`.
-- **Computation:** during parse, the populator maintains a counter dictionary keyed by the tuple. When emitting a row, it increments the counter and assigns the new value to occurrence_index.
+- **Computation:** during parse, the populator maintains a counter dictionary keyed by the tuple. When emitting a row, it increments the counter and assigns the new value to occurrence_index. After alignment, this lives in the shared helper `Set-OccurrenceIndices` using the fuller CSS-style key (includes variant columns); JS rows without variant columns have empty strings in those parts of the key, behaving identically to a simpler key.
 - **Forms part of the natural key** `(file_name, component_type, component_name, reference_type, occurrence_index, variant_type, variant_qualifier_1, variant_qualifier_2)`. This is the stable identifier for cross-references — e.g., when a future annotations table needs to attach a design note to "the second `.bkp-pipeline-card.warning` variant in `backup.css`."
 - **Not stable across reorderings:** if a developer removes the 1st instance, the formerly-2nd one becomes the new 1st. Acceptable because the catalog represents current state, not history.
 
@@ -254,11 +270,11 @@ Under truncate+reload, occurrence_index serves a single purpose: uniquely identi
 |---|---|---|
 | 0 | Schema design + DDL | DONE |
 | 0.5 | Object_Registry + Object_Metadata baselines | DONE |
-| 1A | CSS extraction | DONE — at current spec generation |
+| 1A | CSS extraction | DONE — at current spec generation; alignment refactor in progress |
 | 1B | HTML extraction from .ps1/.psm1 string tokens | PRE-MIGRATION — production-grade structure but emits old `state_modifier='<dynamic>'` shape and needs catch-up |
 | 1C | HTML extraction from .js template strings | DONE — covered by JS populator's Group A |
-| 1D | Production rewrite + orchestrator | PARTIAL — populators production-grade; orchestrator not yet built |
-| 2 | JS function/constant/hook/class/method extraction | DONE — at current spec generation; cc-shared.js validated at zero file-attributable drift |
+| 1D | Production rewrite + orchestrator | PARTIAL — populators production-grade; helpers file delivered; alignment refactor in progress; orchestrator not yet built |
+| 2 | JS function/constant/hook/class/method extraction | DONE — at current spec generation; cc-shared.js validated at zero file-attributable drift; alignment refactor queued |
 | 3 | PS function/route extraction from .ps1/.psm1 | FUTURE |
 | 4 | Inline `<style>` extraction from route HTML | FUTURE — closes Gap 1 |
 | 5 | Inline `<script>` extraction from route HTML | FUTURE — closes Gap 2 |
@@ -272,6 +288,10 @@ Under truncate+reload, occurrence_index serves a single purpose: uniquely identi
 
 Most of what was originally scoped under "production rewrite" has shipped. What remains:
 
+### Populator alignment refactor
+
+In progress. Helpers file (`xFACts-AssetRegistryFunctions.ps1`) delivered. CSS populator refactor next (eleven-item action list in `CC_Initiative.md` Current State). JS populator refactor immediately following.
+
 ### HTML populator catch-up to current spec
 
 The HTML populator references the pre-migration `state_modifier='<dynamic>'` pattern in its docstring and dynamic-handling logic. Bring it current:
@@ -281,10 +301,11 @@ The HTML populator references the pre-migration `state_modifier='<dynamic>'` pat
 - Update docstring and CHANGELOG.
 - Confirm the populator's bulk-insert DataTable schema matches the current `dbo.Asset_Registry` shape.
 - Remove `WHERE is_active = 1` filters from CSS_CLASS DEFINITION lookups.
+- Refactor to consume `xFACts-AssetRegistryFunctions.ps1`.
 
 ### Populator end-of-run RunStatus / DegradedReason banner
 
-Each populator currently runs interactively and prints freeform progress and summary lines. When the populator pipeline runs from the Admin tile (Phase 6), a structured end-of-run banner with `RunStatus` (success / degraded / failed) and `DegradedReason` fields will let the Admin UI parse and surface run state cleanly. Backlogged until the Admin tile work begins. JS populator's existing structured CSS pre-load reporting at end of run is a partial implementation of this pattern; the full RunStatus banner generalizes it.
+Each populator currently runs interactively and prints freeform progress and summary lines. When the populator pipeline runs from the Admin tile (Phase 6), a structured end-of-run banner with `RunStatus` (success / degraded / failed) and `DegradedReason` fields will let the Admin UI parse and surface run state cleanly. Backlogged until the Admin tile work begins.
 
 ### `Refresh-AssetRegistry.ps1` orchestrator (not yet built)
 
@@ -309,7 +330,7 @@ Where the populators get classified in `Object_Registry` is still parked. Two re
 - **Tools.Utilities** — parallel to `sp_SyncColumnOrdinals` (Object_Metadata maintenance utility). Parser helpers `parse-css.js` and `parse-js.js` are already registered here.
 - **Documentation.Pipeline** — parallel to `Generate-DDLReference.ps1` (produces JSON that downstream documentation pages consume).
 
-Decide when the orchestrator lands.
+Decide when the orchestrator lands. The new `xFACts-AssetRegistryFunctions.ps1` shared helpers file gets the same classification as the populators themselves once decided.
 
 ---
 
@@ -345,7 +366,22 @@ The CC File Format Standardization initiative addresses this as a coding-convent
 
 ### 6. Underlying visitor null-deref (latent)
 
-During this session's work on the JS populator, four docs JS files (`ddl-erd.js`, `ddl-loader.js`, `docs-controlcenter.js`, `nav.js`) failed AST walk at the visitor's recursive call site with "You cannot call a method on a null-valued expression." After the IIFE structural skip was added (which prevents the walker from descending into top-level IIFE bodies), the failures stopped because the walker no longer encountered the offending node shapes. The bug itself remains latent — contained behind the IIFE skip plus the per-file try/catch wrapper, but not diagnosed. Investigation deferred until a concrete file fails again outside the IIFE-skip carve-out.
+During the JS populator's earlier work, four docs JS files (`ddl-erd.js`, `ddl-loader.js`, `docs-controlcenter.js`, `nav.js`) failed AST walk at the visitor's recursive call site with "You cannot call a method on a null-valued expression." After the IIFE structural skip was added (which prevents the walker from descending into top-level IIFE bodies), the failures stopped because the walker no longer encountered the offending node shapes. The bug itself remains latent — contained behind the IIFE skip plus the per-file try/catch wrapper, but not diagnosed. Investigation deferred until a concrete file fails again outside the IIFE-skip carve-out. Worth a fresh look during the alignment refactor since the visitor walker now lives in shared infrastructure.
+
+### 7. Object_Metadata enrichment for the populator family
+
+As of 2026-05-06, `dbo.Object_Metadata` carries:
+
+- Asset_Registry table: full base rows plus 24 column-description rows
+- `parse-css.js`, `parse-js.js`: base rows only (description, module, category)
+- `Populate-AssetRegistry-CSS.ps1`, `Populate-AssetRegistry-JS.ps1`: base rows only
+- `xFACts-AssetRegistryFunctions.ps1`: base rows plus 1 data_flow row plus 2 design_note rows
+
+The deferred enrichment is intentional: the two populators are about to be substantively refactored, the HTML and PS populators don't exist yet, and the orchestrator hasn't been built. Populating rich enrichment rows now would just create churn as those scripts change.
+
+Return to this after all four populators are aligned, deployed, and the `Refresh-AssetRegistry.ps1` orchestrator is in production. Add the full enrichment row set across the family: data_flow rows describing what each populator reads and writes, design_note rows capturing architectural patterns (visitor walking model, pre-built section list, drift attachment, registry validation, zone-aware shared/local resolution), and any relationship_note rows linking populators to the table they populate and to their helper scripts. The Asset_Registry table itself may also get additional design_note rows (truncate-and-reload model, natural key, Object_Registry column-name asymmetry, variant model) and `query` rows from the spec docs' compliance queries. Same level of richness the helpers file currently reaches, scaled across the family.
+
+Pure documentation work, no external dependency beyond the pipeline being complete. Captured here so it doesn't get overlooked.
 
 ---
 
@@ -432,6 +468,7 @@ C:\Program Files\
 
 - `E:\xFACts-PowerShell\parse-js.js` — Node helper for JS AST extraction. Reads JS from stdin, emits ESTree AST as JSON. Invoked by `Populate-AssetRegistry-JS.ps1`. Registered in `Object_Registry` under `Tools.Utilities`.
 - `E:\xFACts-PowerShell\parse-css.js` — Node helper for CSS AST extraction. Reads CSS from stdin, emits structured JSON with rules, atRules, comments, and selector trees. Invoked by `Populate-AssetRegistry-CSS.ps1`. Registered in `Object_Registry` under `Tools.Utilities`.
+- `E:\xFACts-PowerShell\xFACts-AssetRegistryFunctions.ps1` — PowerShell shared helpers for the populator family. Dot-sourced by each populator after `xFACts-OrchestratorFunctions.ps1`. Object_Registry / Object_Metadata registration pending deployment.
 
 The Node helpers are stable and don't need changes for the orchestrator work — they're invoked the same way by the populators today.
 
@@ -479,7 +516,11 @@ Per-file try/catch around the AST walk in both populators. Walk failures are pop
 
 ### SKIP_CHILDREN signal
 
-The JS populator's walker supports a SKIP_CHILDREN return value from the visitor scriptblock, used for top-level IIFE handling: the IIFE itself emits a JS_IIFE row with `FORBIDDEN_IIFE` drift, and the walker does not descend into the IIFE's body. This pattern generalizes — whenever a walked node should be recorded but its children should not be visited, the visitor returns SKIP_CHILDREN.
+The walker (now in `xFACts-AssetRegistryFunctions.ps1`'s `Invoke-AstWalk`) supports a SKIP_CHILDREN return value from the visitor scriptblock, used for top-level IIFE handling: the IIFE itself emits a JS_IIFE row with `FORBIDDEN_IIFE` drift, and the walker does not descend into the IIFE's body. This pattern generalizes — whenever a walked node should be recorded but its children should not be visited, the visitor returns SKIP_CHILDREN.
+
+### Verification queries belong in SSMS, not in populators
+
+Earlier populator versions accumulated end-of-run "Verification:" query blocks (3 in CSS, 8 in JS) for inspecting catalog content alongside summary output during console runs. These were development conveniences only; the actual operational query was the per-file drift summary, run separately in SSMS. The verification blocks added ~150 lines of code with no production value and were removed during the alignment refactor.
 
 ---
 
@@ -503,3 +544,7 @@ A compressed record of substantive implementation events on the pipeline. One or
 - **2026-05-06** — Top-level IIFE structural skip implemented. JS visitor emits `JS_IIFE` row with full body in `raw_text` plus `FORBIDDEN_IIFE` drift, then returns SKIP_CHILDREN. Walker no longer descends into IIFE body. Code outside the IIFE still cataloged normally.
 - **2026-05-06** — AST walk resilience added to both populators. Per-file try/catch with diagnostic capture (populator line, line content, ScriptStackTrace). Walk failures contained and don't emit drift codes (they're populator tooling defects, not file spec drift).
 - **2026-05-06** — Both populators validated cleanly on Phase 1 reference files. Cc-shared.css at 626 rows / 0 drift. Cc-shared.js at 223 rows / 0 drift. Five spec-aligned CSS files all at 0 drift, total 1,868 rows.
+- **2026-05-06** — `xFACts-AssetRegistryFunctions.ps1` shared helpers file created (~1,015 lines, 20 functions). Centralizes row construction, drift attachment, registry loads, banner parsing, file-header parsing, pre-built section list, and the generic AST visitor walker. Pattern parallels `xFACts-IndexFunctions.ps1`. Each populator dot-sources OrchestratorFunctions then AssetRegistryFunctions explicitly. Helpers file delivered but not yet deployed; deploys with the refactored CSS populator that consumes it.
+- **2026-05-06** — Populator alignment design locked. Visitor pattern for both populators; pre-built section list; hybrid drift attachment (master-table validation plus optional context); separated file-header parse/emit; FILE_ORG_MISMATCH per-file in Pass 2; closed-enum catch-all codes; output-boundary drift code check. End-of-run verification query blocks removed from both populators (deleted ~150 lines across the two scripts; SSMS handles inspection going forward).
+- **2026-05-06** — Strict prefix registry validation (Option B) chosen. CSS: every banner must declare the file's `cc_prefix`; no per-section `(none)` carve-outs. JS: every banner must declare the file's `cc_prefix` except the hooks banner, IMPORTS section, and INITIALIZATION section per `CC_JS_Spec.md` §5.2. Closes the loophole that a permissive reading would leave open.
+- **2026-05-06** — Asset_Registry column descriptions populated in `dbo.Object_Metadata` (24 description rows, populator-agnostic, brief). Two populators and the helpers file registered in `dbo.Object_Registry` under `Tools.Utilities`. Populators got base metadata rows only since they're about to be substantively refactored; helpers file got base rows plus a data_flow row and two design_note rows since it's in final form. Full enrichment for the populator family deferred to Open Question 7.
