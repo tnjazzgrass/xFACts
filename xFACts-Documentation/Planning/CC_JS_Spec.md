@@ -194,10 +194,10 @@ Drift code if `var` appears in a `CONSTANTS` or `FOUNDATION` section, or `const`
 Every constant and state declaration must be preceded by a single-line block comment describing its purpose. Drift codes: `MISSING_CONSTANT_COMMENT` (constants), `MISSING_STATE_COMMENT` (state variables).
 
 ### 7.2 Naming conventions
-
-- **Constants**: SCREAMING_SNAKE_CASE preferred for primitive values; camelCase acceptable for objects and lookup tables. Both must carry the page prefix.
-- **State variables**: camelCase. Must carry the page prefix.
-
+- **Constants holding fixed configuration values written as primitive literals** (numbers, strings, booleans): SCREAMING_SNAKE_CASE.
+- **Constants holding objects, arrays, or computed values**: camelCase.
+- **State variables**: camelCase.
+- All identifiers must carry the page prefix (except in the anchor file `cc-shared.js`, which uses `Prefix: (none)`).
 The case-distinction rule is conventional, not parser-enforced.
 
 ### 7.3 Multiple declarations per statement
