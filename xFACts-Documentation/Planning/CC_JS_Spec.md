@@ -56,12 +56,12 @@ Each section opens with a banner: a multi-line block comment with this format:
 Prefix: <prefix>
 ```
 
-(The opening and closing rule lines are sequences of `=` characters of any length five or more, and the inner separator is `-` characters of any length.)
+The opening and closing rule lines are exactly 76 `=` characters. The inner separator is exactly 76 `-` characters.
 
 ### 3.1 Banner format rules
 
-- The opening and closing `=` rules each consist of `=` characters of any length 5 or more.
-- The middle `-` rule separates the title line from the description block.
+- The opening and closing `=` rule lines each consist of exactly 76 `=` characters.
+- The middle `-` rule line is exactly 76 `-` characters and separates the title line from the description block.
 - `<TYPE>` must be one of the recognized section types (Section 4). The TYPE token is uppercase letters and underscores only.
 - `<NAME>` is human-readable and may contain spaces, commas, and other punctuation.
 - The description block is 1-5 sentences explaining what the section contains. Required.
@@ -69,7 +69,7 @@ Prefix: <prefix>
 
 ### 3.2 Banner authoring discipline
 
-When adding new content to a file, prefer creating a new banner over expanding an existing one if the new content is a distinct concept.
+When adding new content to a file, prefer creating a new banner over expanding an existing one if the new content is a distinct concept. See Section 13 for the full rule on sub-section markers vs. new banners.
 
 ---
 
@@ -139,6 +139,7 @@ Each page's prefix is registered in `dbo.Component_Registry.cc_prefix` for the c
 
 - If a file's component has `cc_prefix = NULL` (a shared or infrastructure component, e.g., `ControlCenter.Shared`), every section banner in the file must declare `Prefix: (none)`. A non-`(none)` declaration emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
 - If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every page-prefixed section banner must declare `Prefix: X`. Sections that legitimately use `(none)` (the hooks banner, IMPORTS, INITIALIZATION) are exempt from this check. A section whose banner declares a different prefix value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
+- Top-level identifiers (function names, top-level constants, top-level state variables, top-level classes, and revealing-module wrappers) must begin with the file's registered `cc_prefix` followed by an underscore. This rule applies independently of banners. Hooks and methods inside classes are exempt. Drift code: `PREFIX_MISSING`.
 - The registry is the source of truth. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
 
 ---
@@ -233,7 +234,7 @@ Functions inside the hooks banner produce `JS_HOOK DEFINITION` rows (or `JS_HOOK
 
 ### 8.4 Hook naming
 
-Hook names are the API contract with `cc-shared.js`. They cannot be renamed. The hooks banner declares `Prefix: (none)` so functions inside the banner do not trigger `PREFIX_MISMATCH`. A function inside the banner whose name is not in the recognized set emits `UNKNOWN_HOOK_NAME`.
+Hook names are the API contract with `cc-shared.js`. They cannot be renamed. The hooks banner declares `Prefix: (none)` so functions inside the banner do not trigger `PREFIX_MISMATCH` or `PREFIX_MISSING`. A function inside the banner whose name is not in the recognized set emits `UNKNOWN_HOOK_NAME`.
 
 ---
 
@@ -334,6 +335,7 @@ Some forbidden patterns ride on the row of an existing declaration. Others have 
 | Defining a function whose name matches a `cc-shared.js` export | `SHADOWS_SHARED_FUNCTION` | The function row |
 | Element-property event assignment (`el.onclick = handler`) | `FORBIDDEN_PROPERTY_ASSIGN_EVENT` | The JS_EVENT row |
 | IIFE at file scope (`(function() { ... })()`) | `FORBIDDEN_IIFE` | A `JS_IIFE` row at the violation line |
+| Top-level `const X = (function(){...})()` or `var X = (function(){...})()` (revealing-module IIFE) | `FORBIDDEN_REVEALING_MODULE` | The const/var declaration row |
 | `eval(...)` | `FORBIDDEN_EVAL` | A `JS_EVAL` row at the violation line |
 | `document.write(...)` | `FORBIDDEN_DOCUMENT_WRITE` | A `JS_DOCUMENT_WRITE` row at the violation line |
 | `window.<name> = ...` outside `cc-shared.js` | `FORBIDDEN_WINDOW_ASSIGNMENT` | A `JS_WINDOW_ASSIGNMENT` row at the violation line |
@@ -341,8 +343,6 @@ Some forbidden patterns ride on the row of an existing declaration. Others have 
 | Inline `<script>` content in a template literal or string literal | `FORBIDDEN_INLINE_SCRIPT_IN_JS` | A `JS_INLINE_SCRIPT` row at the violation line |
 | File-scope `//` line comment | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `JS_LINE_COMMENT` row at the violation line |
 | CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` | The FILE_HEADER row |
-| Banner declares anything other than a single 3-char prefix or `(none)` | `MALFORMED_PREFIX_VALUE` | The COMMENT_BANNER row |
-| Banner's declared prefix disagrees with `Component_Registry.cc_prefix` | `PREFIX_REGISTRY_MISMATCH` | The COMMENT_BANNER row |
 
 ### 14.1 Allowed anonymous callback contexts
 
@@ -351,6 +351,15 @@ A function or arrow expression passed as an argument to another call may be anon
 The parser walks into the anonymous body normally, so any function calls, class usage, or HTML markup inside the callback still produce rows. The `parent_function` column on those rows records the name of the outer call.
 
 No other carve-outs. Anonymous functions assigned to a const or var, returned from another function, or used as object property values are all `FORBIDDEN_ANONYMOUS_FUNCTION` violations.
+
+### 14.2 Forbidden wrapper patterns
+
+Two top-level wrapper patterns are forbidden:
+
+- **Top-level IIFE** — `(function() { ... })();` or `(() => { ... })();` as a standalone statement. Drift code: `FORBIDDEN_IIFE`. Row host: `JS_IIFE`.
+- **Revealing-module IIFE** — `const X = (function() { ... })();`, `var X = (function() { ... })();`, or arrow equivalents. Drift code: `FORBIDDEN_REVEALING_MODULE`. Row host: the const/var declaration row (`JS_CONSTANT_VARIANT` or `JS_STATE`).
+
+Both patterns require a full file rewrite, not in-place repair.
 
 ---
 
@@ -391,8 +400,8 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 | `COMMENT_BANNER` | A section banner comment. One row per section. The section type lives in `signature`. |
 | `JS_IMPORT` | An ES `import` statement or Node `require` call. The imported binding name is `component_name`. The source module path is `variant_qualifier_2`. Always non-NULL `variant_type`. |
 | `JS_CONSTANT` | A `const` declaration of a primitive value in a `CONSTANTS` or `FOUNDATION` section. |
-| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. |
-| `JS_STATE` | A `var` declaration in a `STATE` section. No variants. |
+| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. Also the row host for revealing-module wrappers (Section 14.2). |
+| `JS_STATE` | A `var` declaration in a `STATE` section. No variants. Also the row host for revealing-module wrappers using `var` (Section 14.2). |
 | `JS_FUNCTION` | A regular `function name() {}` declaration. |
 | `JS_FUNCTION_VARIANT` | An `async function name()` or `function* name()` (generator) declaration. |
 | `JS_HOOK` | A regular sync function inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. |
@@ -455,7 +464,7 @@ Variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) d
 | `JS_CONSTANT_VARIANT` | `object` | NULL | NULL | `const bsv_CONFIG = { foo: 1 }` |
 | `JS_CONSTANT_VARIANT` | `array` | NULL | NULL | `const bsv_LEVELS = [1, 2, 3]` |
 | `JS_CONSTANT_VARIANT` | `regex` | NULL | NULL | `const bsv_RE = /^foo/` |
-| `JS_CONSTANT_VARIANT` | `expression` | NULL | NULL | Value computed from a function call or expression |
+| `JS_CONSTANT_VARIANT` | `expression` | NULL | NULL | Value computed from a function call or expression. Includes the revealing-module wrapper case (Section 14.2). |
 
 #### JS_HOOK (base) and JS_HOOK_VARIANT (variant)
 
@@ -545,17 +554,25 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 
 ### 18.2 Section-level codes
 
+The banner format defined in Section 3 is enforced via granular drift codes — each format violation produces its own code so refactor work can be triaged precisely. A non-conformant banner produces a `COMMENT_BANNER` row carrying drift codes that describe every way the banner deviates from §3.1.
+
 | Code | Description |
 |---|---|
 | `MISSING_SECTION_BANNER` | A definition appears outside any banner. |
-| `MALFORMED_SECTION_BANNER` | A section banner exists but does not follow the strict format. |
-| `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list. |
+| `BANNER_INLINE_SHAPE` | A banner uses the inline single-line form (`/* ===== Title ===== */`). The canonical form is multi-line with rule lines, title line, separator, description block, and `Prefix:` line. |
+| `BANNER_INVALID_RULE_CHAR` | A banner's opening or closing bracketing line is not composed entirely of `=` characters. |
+| `BANNER_INVALID_RULE_LENGTH` | A banner's opening or closing `=` rule line is not exactly 76 characters long. |
+| `BANNER_INVALID_SEPARATOR_CHAR` | A banner's middle separator line is missing or is not composed entirely of `-` characters. |
+| `BANNER_INVALID_SEPARATOR_LENGTH` | A banner's middle separator line is not exactly 76 `-` characters long. |
+| `BANNER_MALFORMED_TITLE_LINE` | A banner's title line does not parse as `<TYPE>: <NAME>`. |
+| `BANNER_MISSING_DESCRIPTION` | A banner has no description text between the separator line and the `Prefix:` line. |
+| `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list for the file kind. Page files allow IMPORTS, CONSTANTS, STATE, INITIALIZATION, FUNCTIONS. cc-shared.js allows IMPORTS, FOUNDATION, STATE, CHROME. |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of the required order. |
 | `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
 | `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
 | `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
-| `DUPLICATE_FOUNDATION` | More than one JS file in the codebase contains a FOUNDATION section. |
-| `DUPLICATE_CHROME` | More than one JS file in the codebase contains a CHROME section. |
+| `DUPLICATE_FOUNDATION` | A FOUNDATION section appears in a JS file other than `cc-shared.js`. |
+| `DUPLICATE_CHROME` | A CHROME section appears in a JS file other than `cc-shared.js`. |
 | `HOOKS_BANNER_NOT_LAST` | A `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner exists but is not the last banner in the file. |
 
 ### 18.3 Definition-level codes
@@ -563,6 +580,7 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 | Code | Description |
 |---|---|
 | `PREFIX_MISMATCH` | A top-level identifier name does not begin with the prefix declared in its containing section's banner. |
+| `PREFIX_MISSING` | A top-level identifier does not begin with the file's registered `Component_Registry.cc_prefix` followed by an underscore. Independent of banners. Hooks and methods inside classes are exempt. |
 | `MISSING_FUNCTION_COMMENT` | A function definition is not preceded by a single block comment. |
 | `MISSING_CONSTANT_COMMENT` | A `const` declaration in a CONSTANTS section is not preceded by a single block comment. |
 | `MISSING_STATE_COMMENT` | A `var` declaration in a STATE section is not preceded by a single block comment. |
@@ -582,6 +600,7 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 | `FORBIDDEN_ANONYMOUS_FUNCTION` | A function or arrow expression has no name and is not passed as a callback argument. | The const/var row |
 | `FORBIDDEN_PROPERTY_ASSIGN_EVENT` | An event handler is bound via `el.on<event> = handler` instead of `addEventListener`. | JS_EVENT row |
 | `FORBIDDEN_IIFE` | An IIFE appears at file scope. | JS_IIFE row |
+| `FORBIDDEN_REVEALING_MODULE` | A `const` or `var` declaration is initialized by an immediately-invoked function expression (the revealing-module pattern). | The const/var declaration row (`JS_CONSTANT_VARIANT` or `JS_STATE`) |
 | `FORBIDDEN_EVAL` | A call to `eval(...)` appears in the file. | JS_EVAL row |
 | `FORBIDDEN_DOCUMENT_WRITE` | A call to `document.write(...)` appears in the file. | JS_DOCUMENT_WRITE row |
 | `FORBIDDEN_WINDOW_ASSIGNMENT` | An assignment to `window.<name>` appears outside `cc-shared.js`. | JS_WINDOW_ASSIGNMENT row |
@@ -877,11 +896,21 @@ Zero drift rows expected.
 
 This appendix explains why selected rules are what they are. Entries are keyed to body section numbers. Sections without entries here have no rationale beyond the rule itself.
 
+### A.3 Section banners
+
+The 76-character rule for both `=` rule lines and `-` separator lines is a fixed value rather than a range. A fixed length makes banners visually uniform across the codebase. The chosen value (76) fits within an 80-column convention with margin for `/* ` and ` */` comment delimiters.
+
+### A.4 Section types
+
+`FOUNDATION` and `CHROME` belong only in `cc-shared.js` because they are platform-wide constructs. CSS has the same constraint via the anchor-file rule (`CC_CSS_Spec.md` §4.3); JS reuses the same model with `cc-shared.js` as the platform's single anchor file for shared JS constructs.
+
 ### A.5 Prefix
 
 The single-prefix-per-file rule reflects that a file represents one CC page (or the shared resource), and each page has exactly one registered prefix.
 
 The registry validation rule (Section 5.4) makes `Component_Registry.cc_prefix` the source of truth for which prefix belongs to which page. Before the registry existed, the prefix was declared only in the file header and could drift from the platform's understanding silently. Pinning each file's prefix to its component row in the registry surfaces drift as queryable catalog rows.
+
+The `PREFIX_MISSING` rule (Section 5.4 final bullet) extends the prefix discipline to identifiers themselves, independent of banners. Banner-anchored `PREFIX_MISMATCH` is silent on a file with no banners; `PREFIX_MISSING` closes that gap and ensures every top-level identifier is checked against the file's registered `cc_prefix` regardless of whether banners are in place.
 
 ### A.6 Function definitions
 
@@ -900,3 +929,9 @@ The hooks-banner-last rule produces a stable file-scanning experience. A reader 
 ### A.14 Forbidden patterns
 
 The dedicated component_type rows for forbidden patterns (JS_IIFE, JS_EVAL, JS_DOCUMENT_WRITE, etc.) exist because these patterns have no natural declaration row to host the drift. An IIFE doesn't have a name; eval doesn't have a binding. The dedicated row gives every forbidden-pattern occurrence a queryable catalog presence regardless of where in the source it appears.
+
+The revealing-module pattern (`const X = (function(){...})()`) is treated as a forbidden wrapper rather than a forbidden construct because it does have a natural host — the const or var declaration that binds the IIFE result to a name. The wrapper row carries the drift; the inner functions are not cataloged because they have no spec-equivalent identity. This parallels how the top-level IIFE is handled, with the JS_IIFE row hosting the drift in that case. The two patterns share a common diagnosis: the file's design is structurally non-spec and requires rewriting, not in-place repair.
+
+### A.18 Drift codes — banner granularity
+
+The §18.2 banner code set is intentionally granular rather than coarse. A single combined code would collapse every kind of banner non-conformance into one verdict, which makes refactor work hard to triage — a reader could not tell from the code alone whether the banner had the wrong rule-line length, was missing a description, used an inline shape, or had a malformed title line. Each granular code (`BANNER_INVALID_RULE_LENGTH`, `BANNER_INLINE_SHAPE`, `BANNER_MISSING_DESCRIPTION`, etc.) describes exactly one violation, allowing precise queries like "find every banner with the wrong rule length" or "list every inline-shape banner candidate for refactor." A non-conformant banner may carry several granular codes simultaneously when it violates multiple rules.
