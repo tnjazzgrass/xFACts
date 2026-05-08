@@ -1516,7 +1516,11 @@ $CssVisitor = {
                     }
                 }
             }
-            if ($hasBlankInside) {
+            # :root carve-out (CC_CSS_Spec.md §10.2): the platform's token
+            # catalog is permitted to use blank lines as visual separators
+            # between token groups. No other rule body has this exemption.
+            $isRootRule = ($Node.selector -and $Node.selector.Trim() -eq ':root')
+            if ($hasBlankInside -and -not $isRootRule) {
                 for ($ri = $ruleRowsStartIdx; $ri -lt $script:rows.Count; $ri++) {
                     $r = $script:rows[$ri]
                     if ($r.ComponentType -in @('CSS_CLASS','CSS_VARIANT','CSS_RULE','HTML_ID')) {
