@@ -428,6 +428,24 @@ Pure documentation work, no external dependency beyond the pipeline being comple
 
 These are operational findings from specific catalog snapshots. Not living truth — re-running the populators will produce different counts. Kept here as reference points for the standardization work's scope.
 
+### 2026-05-08 — Spec-file drift investigation
+
+Routine spot-check after the 2026-05-07 alignment refactor surfaced unexpected drift on previously-clean files. Five files (`backup-spec.css`, `business-intelligence-spec.css`, `business-services-spec.css`, `client-relations-spec.css`, `replication-monitoring-spec.css`) showed `EXCESS_BLANK_LINES` on their FILE_HEADER rows. cc-shared.css showed four distinct drift codes: `EXCESS_BLANK_LINES` on FILE_HEADER, `BLANK_LINE_INSIDE_RULE` on the `:root` block (49-192), `FORBIDDEN_COMPOUND_DECLARATION` on three single-line rules (lines 217, 219, 223), and `FORBIDDEN_COMMENT_STYLE` at lines 198 and 361.
+
+Investigation against the actual file contents confirmed the following diagnoses:
+
+- **`EXCESS_BLANK_LINES` on six FILE_HEADER rows — populator bug.** The check counts blank lines that occur *inside* the file header block comment (between the purpose paragraph and the FILE ORGANIZATION line) as if they were blank lines between top-level constructs. They aren't — they're inside a `/* ... */` block and therefore CSS-meaningless. Files with single-paragraph headers don't trigger the false positive; only multi-paragraph headers do, which is why all six affected files share the multi-paragraph header structure. Fix: detector ignores content inside comment blocks. No spec change needed. One fix closes drift on all six files.
+
+- **`BLANK_LINE_INSIDE_RULE` on `:root` block — spec gap.** The rule was written for class definitions (CSS spec §13, rationale in A.13: contiguous bodies, blank lines suggesting the body should be split). `:root` token blocks legitimately use blank lines as visual category separators. The populator is correctly applying the rule as written; the rule itself needs a `:root` carve-out. Spec amendment plus a small populator change to suppress the check inside `:root`.
+
+- **`FORBIDDEN_COMPOUND_DECLARATION` on three single-line rules — real violations.** The `::-webkit-scrollbar`, `::-webkit-scrollbar-thumb`, and `*` rules at lines 217/219/223 have multiple declarations on the same line. Real violations of the rule as written. Fix: edit cc-shared.css to put each declaration on its own line.
+
+- **`FORBIDDEN_COMMENT_STYLE` at lines 198 and 361 — real violations.** Stray block comments not matching any of the four allowed kinds. Lines around 198 are documentation comments above the `body` rule; line 361 is similar. Fix: edit cc-shared.css to either remove the stray comments (moving content into the section banner description block) or reformat as sub-section markers.
+
+Both the populator EXCESS_BLANK_LINES bug and the BLANK_LINE_INSIDE_RULE spec gap should land before the cc-shared.css file edits so the file edits don't have to happen twice. Action items captured at the top of the Initiative doc Next Steps list.
+
+Lesson reinforced: even after a major populator refactor and validation against the reference files, a routine spot-check against a different cohort of files (the spec.css references plus the anchor file) surfaced four distinct issues that a single test pass against one file wouldn't have found. Multi-cohort validation matters.
+
 ### 2026-05-07 snapshot (post-JS-alignment-refactor)
 
 Total JS rows: 9,639. Drift rate: 20.9% (2,019 of 9,639 rows).
