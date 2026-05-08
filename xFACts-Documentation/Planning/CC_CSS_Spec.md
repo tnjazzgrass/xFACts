@@ -257,6 +257,7 @@ The category enum is closed. Adding a new category requires a spec amendment.
 - Direct pixel literals where a size token exists emit `DRIFT_PX_LITERAL`.
 - Tokens are defined once, in the component's anchor file FOUNDATION section. Page files do not redeclare tokens or override them locally.
 - Adding a new token requires a small update to the anchor file and a `Component_Registry` version bump on the anchor's component (e.g., `ControlCenter.Shared` for cc-shared.css; `Documentation.Site` for docs-shared.css).
+- Within `:root`, blank lines may separate token groups for visual readability. Sub-section markers (`/* -- label -- */`) above each group are encouraged. This is the only place in the codebase where blank lines inside a rule body are permitted.
 
 ---
 
@@ -312,7 +313,7 @@ Every CSS file must:
 | Pixel literal where token exists | `DRIFT_PX_LITERAL` |
 | CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` |
 | Two or more declarations on the same line | `FORBIDDEN_COMPOUND_DECLARATION` |
-| Blank line inside a class definition | `BLANK_LINE_INSIDE_RULE` |
+| Blank line inside a class definition (except inside `:root`) | `BLANK_LINE_INSIDE_RULE` |
 | More than one blank line between top-level constructs | `EXCESS_BLANK_LINES` |
 | Comment style not matching the four allowed kinds | `FORBIDDEN_COMMENT_STYLE` |
 | Banner declares anything other than a single 3-char prefix or `(none)` | `MALFORMED_PREFIX_VALUE` |
@@ -469,7 +470,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 |---|---|
 | `FORBIDDEN_COMMENT_STYLE` | A comment exists that is not one of the four allowed kinds. |
 | `FORBIDDEN_COMPOUND_DECLARATION` | Two or more declarations appear on the same line. Each declaration must be on its own line. |
-| `BLANK_LINE_INSIDE_RULE` | A blank line appears inside a class definition (between the opening `{` and the closing `}`). |
+| `BLANK_LINE_INSIDE_RULE` | A blank line appears inside a class definition (between the opening `{` and the closing `}`). Does not apply to `:root`, which is permitted to use blank lines as visual separators between token groups (see §10.2). |
 | `EXCESS_BLANK_LINES` | More than one blank line appears between top-level constructs. |
 
 ---
