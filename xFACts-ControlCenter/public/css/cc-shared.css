@@ -32,7 +32,6 @@
    FEEDBACK_OVERLAYS: IDLE OVERLAY
    ============================================================================ */
 
-
 /* ============================================================================
    FOUNDATION: TOKENS, RESETS, KEYFRAMES, ANIMATION UTILITIES
    ----------------------------------------------------------------------------
@@ -195,8 +194,7 @@
 * { box-sizing: border-box; }
 
 /* -- Body: viewport-constrained flex column -- */
-/* The page never causes browser-level scroll. Chrome takes natural height; */
-/* content area fills remaining space and manages its own internal scroll.  */
+/* The page never causes browser-level scroll. Chrome takes natural height; content area fills remaining space and manages its own internal scroll. */
 body {
     font-family: var(--font-family-default);
     margin: 0;
@@ -214,13 +212,22 @@ body {
 a { color: var(--color-text-link); }
 
 /* -- Dark scrollbars (WebKit) -- */
-::-webkit-scrollbar          { width: var(--size-scrollbar-width); height: var(--size-scrollbar-width); }
+::-webkit-scrollbar {
+    width: var(--size-scrollbar-width);
+    height: var(--size-scrollbar-width);
+}
 ::-webkit-scrollbar-track    { background: transparent; }
-::-webkit-scrollbar-thumb    { background: var(--color-status-disabled); border-radius: var(--size-radius-default); }
+::-webkit-scrollbar-thumb {
+    background: var(--color-status-disabled);
+    border-radius: var(--size-radius-default);
+}
 ::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
 
 /* -- Dark scrollbars (Firefox) -- */
-* { scrollbar-width: thin; scrollbar-color: var(--color-status-disabled) transparent; }
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-status-disabled) transparent;
+}
 
 /* -- Keyframes (consumed by rules throughout this file) -- */
 @keyframes pulse {
@@ -253,7 +260,6 @@ a { color: var(--color-text-link); }
 .cc-spinning {
     animation: spin var(--duration-slow) ease-in-out;
 }
-
 
 /* ============================================================================
    CHROME: NAV BAR
@@ -358,12 +364,10 @@ a { color: var(--color-text-link); }
     border-bottom-color: var(--color-accent-tools);
 }
 
-/* Admin-section guard: never rendered as a nav link (gear-only access). */
-/* Defensive rule that hides the link if a future code change accidentally emits one. */
+/* Admin-section guard: never rendered as a nav link (gear-only access). Defensive rule that hides the link if a future code change accidentally emits one. */
 .nav-section-admin { /* admin-section nav link guard (always hidden) */
     display: none;
 }
-
 
 /* ============================================================================
    CHROME: PAGE TITLE
@@ -451,7 +455,6 @@ a { color: var(--color-text-link); }
     transform: translateX(-50%);
     top: var(--size-spacing-xs);
 }
-
 
 /* ============================================================================
    CHROME: REFRESH INFO
@@ -578,7 +581,6 @@ a { color: var(--color-text-link); }
     color: var(--color-accent-platform);
     background: transparent;
 }
-
 
 /* ============================================================================
    CHROME: ENGINE CARDS
@@ -779,7 +781,6 @@ a { color: var(--color-text-link); }
     text-align: right;
 }
 
-
 /* ============================================================================
    CHROME: CONNECTION BANNER
    ----------------------------------------------------------------------------
@@ -841,7 +842,6 @@ a { color: var(--color-text-link); }
     color: var(--color-text-on-primary);
 }
 
-
 /* ============================================================================
    CHROME: BACK LINK
    ----------------------------------------------------------------------------
@@ -865,7 +865,6 @@ a { color: var(--color-text-link); }
 .back-link:hover { /* hover state for the back link */
     color: var(--color-text-link);
 }
-
 
 /* ============================================================================
    CONTENT: SECTIONS
@@ -923,7 +922,6 @@ a { color: var(--color-text-link); }
     align-items: center;
     gap: var(--size-spacing-md);
 }
-
 
 /* ============================================================================
    CONTENT: SLIDE PANELS
@@ -1174,7 +1172,6 @@ a { color: var(--color-text-link); }
     text-align: center;
 }
 
-
 /* ============================================================================
    CONTENT: MODAL SYSTEM
    ----------------------------------------------------------------------------
@@ -1355,7 +1352,6 @@ a { color: var(--color-text-link); }
 .xf-modal-close:hover { /* hover state for the close button */
     color: var(--color-text-primary);
 }
-
 
 /* ============================================================================
    FEEDBACK_OVERLAYS: IDLE OVERLAY
