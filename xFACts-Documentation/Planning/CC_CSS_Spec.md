@@ -2,6 +2,8 @@
 
 *These rules are the current authority for Control Center CSS files. They are settled until explicitly amended; any proposed change is discussed before adoption. Where rationale exists for a rule, it appears in the Appendix at the corresponding section number.*
 
+*Specs describe rules and shapes — never present contents. Statements about how many files currently do something, which files are empty today, or what the codebase looks like right now do not belong in this document; they age into inaccuracy the moment the codebase changes. If census-style information is needed, it lives in queries against `dbo.Asset_Registry`, not here.*
+
 ---
 
 ## 1. Required structure
