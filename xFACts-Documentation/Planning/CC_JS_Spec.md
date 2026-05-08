@@ -2,6 +2,8 @@
 
 *These rules are the current authority for Control Center JavaScript files. They are settled until explicitly amended; any proposed change is discussed before adoption. Where rationale exists for a rule, it appears in the Appendix at the corresponding section number.*
 
+*Specs describe rules and shapes — never present contents. Statements about how many files currently do something, which files are empty today, or what the codebase looks like right now do not belong in this document; they age into inaccuracy the moment the codebase changes. If census-style information is needed, it lives in queries against `dbo.Asset_Registry`, not here.*
+
 ---
 
 ## 1. Required structure
@@ -126,6 +128,7 @@ The page prefix is a 3-character lowercase identifier and is the same prefix use
   - All sections in `cc-shared.js`.
   - The page lifecycle hooks banner in any page file.
   - The `IMPORTS` and `INITIALIZATION` sections of any file.
+  - The `CONSTANTS: ENGINE PROCESSES` banner in any page file (§7.4).
 
 The `Prefix:` line itself is mandatory regardless of value. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
 
@@ -204,6 +207,12 @@ The case-distinction rule is conventional, not parser-enforced.
 
 `var a, b, c;` and `const a = 1, b = 2;` are forbidden. Each declaration gets its own statement. Drift code: `FORBIDDEN_MULTI_DECLARATION`.
 
+### 7.4 Engine processes contract banner
+
+The `ENGINE_PROCESSES` constant is a name contract with `cc-shared.js`: the identifier is read by exact name and cannot carry a page prefix. Pages that call `connectEngineEvents()` declare it in a fixed-form `CONSTANTS` banner with the name `ENGINE PROCESSES` and `Prefix: (none)`. The value is `{}` when the page has no collectors; the banner is still present.
+
+When the banner exists, it precedes any page-prefixed `CONSTANTS` banner.
+
 ---
 
 ## 8. Page lifecycle hooks
@@ -256,7 +265,7 @@ Methods do not carry the page prefix; they are namespaced inside the class itsel
 
 ## 10. Imports
 
-`IMPORTS` sections contain ES module `import` statements or Node `require` calls. The current Control Center JS code uses neither, so this section is empty in every current file.
+`IMPORTS` sections contain ES module `import` statements or Node `require` calls. If a file has no imports, the IMPORTS banner is omitted entirely, along with its corresponding FILE ORGANIZATION entry.
 
 Each import produces a `JS_IMPORT DEFINITION` row keyed on the imported binding name. The source module path lives in `variant_qualifier_2`. See Section 16.5 for the variant grid.
 
@@ -341,6 +350,7 @@ Some forbidden patterns ride on the row of an existing declaration. Others have 
 | `window.<name> = ...` outside `cc-shared.js` | `FORBIDDEN_WINDOW_ASSIGNMENT` | A `JS_WINDOW_ASSIGNMENT` row at the violation line |
 | Inline `<style>` content in a template literal or string literal | `FORBIDDEN_INLINE_STYLE_IN_JS` | A `JS_INLINE_STYLE` row at the violation line |
 | Inline `<script>` content in a template literal or string literal | `FORBIDDEN_INLINE_SCRIPT_IN_JS` | A `JS_INLINE_SCRIPT` row at the violation line |
+| Inline `on<event>="..."` attribute in a template literal or string literal | `FORBIDDEN_INLINE_EVENT_IN_JS` | A `JS_INLINE_EVENT` row at the violation line |
 | File-scope `//` line comment | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `JS_LINE_COMMENT` row at the violation line |
 | CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` | The FILE_HEADER row |
 
@@ -417,6 +427,7 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 | `JS_WINDOW_ASSIGNMENT` | A `window.<name> = ...` assignment outside `cc-shared.js`. Exists solely to host `FORBIDDEN_WINDOW_ASSIGNMENT` drift. |
 | `JS_INLINE_STYLE` | A `<style>` element found in a JS template/string literal. Exists solely to host `FORBIDDEN_INLINE_STYLE_IN_JS` drift. |
 | `JS_INLINE_SCRIPT` | A `<script>` element found in a JS template/string literal. Exists solely to host `FORBIDDEN_INLINE_SCRIPT_IN_JS` drift. |
+| `JS_INLINE_EVENT` | An inline `on<event>="..."` attribute found in a JS template literal or string literal. Exists solely to host `FORBIDDEN_INLINE_EVENT_IN_JS` drift. |
 | `JS_LINE_COMMENT` | A `//` line comment at file scope. Exists solely to host `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift. |
 | `CSS_CLASS` | A class name found inside a template literal, string literal, `classList.*` call, `className` assignment, or `setAttribute('class', ...)` call. Always `USAGE`. |
 | `HTML_ID` | An `id="..."` attribute (DEFINITION) or a literal-string argument to `getElementById` / `querySelector('#...')` (USAGE). |
@@ -538,6 +549,7 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 | `JS_WINDOW_ASSIGNMENT DEFINITION` | Each `window.<name> = ...` assignment outside `cc-shared.js` | Always `FORBIDDEN_WINDOW_ASSIGNMENT` drift. |
 | `JS_INLINE_STYLE DEFINITION` | Each `<style>` tag in a JS template/string literal | Always `FORBIDDEN_INLINE_STYLE_IN_JS` drift. |
 | `JS_INLINE_SCRIPT DEFINITION` | Each `<script>` tag in a JS template/string literal | Always `FORBIDDEN_INLINE_SCRIPT_IN_JS` drift. |
+| `JS_INLINE_EVENT DEFINITION` | Each inline `on<event>="..."` attribute in a JS template/string literal | Always `FORBIDDEN_INLINE_EVENT_IN_JS` drift. |
 | `JS_LINE_COMMENT DEFINITION` | Each `//` line comment at file scope | Always `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift. |
 
 ---
@@ -606,6 +618,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `FORBIDDEN_WINDOW_ASSIGNMENT` | An assignment to `window.<name>` appears outside `cc-shared.js`. | JS_WINDOW_ASSIGNMENT row |
 | `FORBIDDEN_INLINE_STYLE_IN_JS` | A template literal or string literal contains a `<style>` element. | JS_INLINE_STYLE row |
 | `FORBIDDEN_INLINE_SCRIPT_IN_JS` | A template literal or string literal contains a `<script>` element. | JS_INLINE_SCRIPT row |
+| `FORBIDDEN_INLINE_EVENT_IN_JS` | A template literal or string literal contains an inline `on<event>="..."` attribute. Bind events via `addEventListener` after rendering. | JS_INLINE_EVENT row |
 | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `//` line comment appears at file scope. | JS_LINE_COMMENT row |
 
 ### 18.5 Comment / structure codes
