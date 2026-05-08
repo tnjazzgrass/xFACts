@@ -13,10 +13,10 @@
 
    FILE ORGANIZATION
    -----------------
-   IMPORTS
-   CONSTANTS
-   STATE
-   INITIALIZATION
+   CONSTANTS: ENGINE PROCESSES
+   CONSTANTS: PAGE CONFIGURATION
+   STATE: PAGE STATE
+   INITIALIZATION: PAGE BOOT
    FUNCTIONS: LIVE POLLING
    FUNCTIONS: DATA LOADING
    FUNCTIONS: CONSUMER GROUPING
@@ -29,22 +29,15 @@
    ============================================================================ */
 
 /* ============================================================================
-   IMPORTS
+   CONSTANTS: ENGINE PROCESSES
    ----------------------------------------------------------------------------
-   This page does not declare any imports. Shared chrome and utilities are
-   provided globally by cc-shared.js, which loads before this script.
+   The ENGINE_PROCESSES contract: a map from orchestrator process names to
+   engine card slugs that cc-shared.js reads at startup to wire up the
+   engine indicator subsystem. The Client Relations page has no
+   orchestrator-driven collectors today, so the map is empty; the banner
+   and declaration are still required because cc-shared.js's
+   connectEngineEvents() reads the identifier by exact name on init.
    Prefix: (none)
-   ============================================================================ */
-
-/* ============================================================================
-   CONSTANTS
-   ----------------------------------------------------------------------------
-   Module-level constants used by this page. ENGINE_PROCESSES is the
-   contract name cc-shared.js reads on startup to wire up engine cards;
-   it is empty here because the Client Relations page has no
-   orchestrator-driven collectors today. The refresh interval default is
-   overwritten at load time from GlobalConfig.
-   Prefix: clr
    ============================================================================ */
 
 /* Maps orchestrator process names to engine card slugs. cc-shared.js
@@ -53,6 +46,14 @@
    onEngineProcessCompleted hook. */
 const ENGINE_PROCESSES = {};
 
+/* ============================================================================
+   CONSTANTS: PAGE CONFIGURATION
+   ----------------------------------------------------------------------------
+   Module-level configuration constants for this page. The refresh
+   interval default is overwritten at load time from GlobalConfig.
+   Prefix: clr
+   ============================================================================ */
+
 /* Default live-polling interval in seconds. Overwritten at page load by
    clr_loadRefreshInterval from GlobalConfig (ControlCenter |
    refresh_clientrelations_seconds). 1800 = 30 minutes; the queue is
@@ -60,7 +61,7 @@ const ENGINE_PROCESSES = {};
 const clr_PAGE_REFRESH_INTERVAL_DEFAULT = 1800;
 
 /* ============================================================================
-   STATE
+   STATE: PAGE STATE
    ----------------------------------------------------------------------------
    Module-scope mutable state for the Reg F queue UI: the live-poll timer
    handle, page-load date for midnight rollover detection, the cached
@@ -108,7 +109,7 @@ var clr_activeReasonFilter = 'ALL';
 var clr_searchTerm = '';
 
 /* ============================================================================
-   INITIALIZATION
+   INITIALIZATION: PAGE BOOT
    ----------------------------------------------------------------------------
    Single DOMContentLoaded handler that does the page's first data load,
    reads the refresh interval from GlobalConfig, starts the auto-refresh
