@@ -223,8 +223,10 @@ function connectEngineEvents() {
 }
 
 /* Visibility-change handler. Pauses WebSocket reconnects on hidden, resumes
-   the WebSocket and notifies the page on return. Bound by
-   connectEngineEvents. */
+   the WebSocket and notifies the page on return. On return, drives the
+   refresh-button spin animation before invoking onPageResumed so every
+   page gets the same visual feedback that fresh data is being loaded.
+   Bound by connectEngineEvents. */
 function handleVisibilityChange() {
     if (document.visibilityState === 'hidden') {
         enginePageHidden = true;
@@ -243,6 +245,16 @@ function handleVisibilityChange() {
         engineWs.readyState !== WebSocket.OPEN &&
         engineWs.readyState !== WebSocket.CONNECTING) {
         openEngineWebSocket();
+    }
+
+    /* Drive the refresh-button spin animation so the user sees a clear
+       signal that the page is reloading data after returning from a
+       hidden tab. The animation runs in parallel with onPageResumed
+       fetching new data. */
+    var btn = document.querySelector('.page-refresh-btn');
+    if (btn) {
+        btn.classList.add('spinning');
+        btn.addEventListener('animationend', clearRefreshSpin, { once: true });
     }
 
     /* Notify the page so it can do an immediate data refresh. */
@@ -1399,7 +1411,8 @@ function pageRefresh() {
 }
 
 /* animationend handler for the refresh button spin animation. Clears the
-   spinning class so the next refresh starts the animation cleanly. */
+   spinning class so the next refresh starts the animation cleanly. Shared
+   by manual refresh (pageRefresh) and tab-resume (handleVisibilityChange). */
 function clearRefreshSpin(e) {
     e.currentTarget.classList.remove('spinning');
 }
