@@ -1516,7 +1516,7 @@ $CssVisitor = {
                     }
                 }
             }
-            # :root carve-out (CC_CSS_Spec.md §10.2): the platform's token
+            # :root carve-out (CC_CSS_Spec.md Section 10.2): the platform's token
             # catalog is permitted to use blank lines as visual separators
             # between token groups. No other rule body has this exemption.
             $isRootRule = ($Node.selector -and $Node.selector.Trim() -eq ':root')
