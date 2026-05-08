@@ -757,7 +757,7 @@ function Get-BannerInfo {
     $titleLineIdx     = -1
     $unknownTypeFound = $false
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match '^([A-Z_]+)\s*:\s*(.+)$') {
+        if ($lines[$i] -cmatch '^([A-Z_]+)\s*:\s*(.+)$') {
             $candidateType = $matches[1]
             $candidateName = $matches[2].Trim()
             if ($candidateType -in $ValidSectionTypes) {
@@ -1026,7 +1026,7 @@ function Get-FileHeaderInfo {
     # FILE ORGANIZATION list
     $fileOrgStart = -1
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match '^FILE\s+ORGANIZATION\s*$') {
+        if ($lines[$i] -cmatch '^FILE\s+ORGANIZATION\s*$') {
             $fileOrgStart = $i
             break
         }
