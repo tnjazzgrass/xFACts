@@ -83,7 +83,7 @@ CHANGELOG
                 the COMMENT_BANNER row that broke the ordering, replacing
                 the previous single file-level code on FILE_HEADER.
               - Prefix registry validation (Option B per CC_JS_Spec.md
-                §5.4): every page-file banner declares the file's
+                Section 5.4): every page-file banner declares the file's
                 cc_prefix or (none); the hooks banner, IMPORTS, and
                 INITIALIZATION sections are exempt and may declare (none).
                 New drift codes MALFORMED_PREFIX_VALUE and
@@ -141,7 +141,7 @@ CHANGELOG
             it), FUNCTION_IN_NON_FUNCTION_SECTION (out-of-spec; PREFIX
             and SECTION_BANNER codes carry the meaningful signal),
             DUPLICATE_IMPORTS_BANNER / DUPLICATE_INITIALIZATION_BANNER
-            (out-of-spec; the §4.1 single-banner-only rule has no
+            (out-of-spec; the Section 4.1 single-banner-only rule has no
             spec-defined drift code, and duplicate banners are visible
             via two COMMENT_BANNER rows with the same signature).
 2026-05-06  Top-level IIFE structural skip implemented; SKIP_CHILDREN
@@ -235,7 +235,7 @@ $DocsSharedCssFiles = @(
 $CanonicalSharedFile = 'cc-shared.js'
 
 # Files exempt from the FORBIDDEN_WINDOW_ASSIGNMENT check. Per CC_JS_Spec.md
-# §14, only cc-shared.js may carry window.<name> = ... assignments. Listed
+# Section 14, only cc-shared.js may carry window.<name> = ... assignments. Listed
 # separately from $CcSharedFiles because the two lists serve different
 # purposes (USAGE resolution vs. spec exemption) and may diverge over time.
 $WindowAssignmentExemptFiles = @('cc-shared.js')
@@ -261,7 +261,7 @@ $ValidSectionTypes_Shared = @('IMPORTS', 'FOUNDATION', 'STATE', 'CHROME')
 #   IMPORTS -> FOUNDATION -> STATE -> CHROME
 # FOUNDATION and CONSTANTS share slot 2 (parallel concepts in shared vs.
 # page files). CHROME and INITIALIZATION share slot 4 (CHROME = cc-shared.js's
-# INITIALIZATION+FUNCTIONS combined, per CC_JS_Spec.md §4.2). The hashtable
+# INITIALIZATION+FUNCTIONS combined, per CC_JS_Spec.md Section 4.2). The hashtable
 # accommodates both file kinds without requiring two parallel arrays.
 $SectionTypeOrder = @{
     'IMPORTS'        = 1
@@ -273,17 +273,17 @@ $SectionTypeOrder = @{
     'FUNCTIONS'      = 5
 }
 
-# The fixed banner name for the page lifecycle hooks group. Per §8.1, the
-# banner declares Prefix: (none); per §5.4, this is a sanctioned (none)
+# The fixed banner name for the page lifecycle hooks group. Per Section 8.1, the
+# banner declares Prefix: (none); per Section 5.4, this is a sanctioned (none)
 # carve-out under the prefix registry validation rule.
 $HooksBannerName = 'PAGE LIFECYCLE HOOKS'
 
 # Section types whose banners may legitimately declare Prefix: (none) on a
-# page file (per CC_JS_Spec.md §5.2). These are the carve-outs the strict
+# page file (per CC_JS_Spec.md Section 5.2). These are the carve-outs the strict
 # (Option B) registry validation rule honors.
 $PrefixNoneAllowedSectionTypes = @('IMPORTS', 'INITIALIZATION')
 
-# The five recognized hook function names (CC_JS_Spec.md §8). API contract
+# The five recognized hook function names (CC_JS_Spec.md Section 8). API contract
 # with cc-shared.js -- these names cannot be renamed.
 $RecognizedHookNames = @(
     'onPageRefresh',
@@ -299,11 +299,11 @@ $RecognizedHookNames = @(
 # Pass 3 still appear here so attachment doesn't fail on the master-table
 # check.
 $DriftDescriptions = [ordered]@{
-    # File header (§18.1)
+    # File header (Section 18.1)
     'MALFORMED_FILE_HEADER'             = "The file's header block is missing, malformed, or contains required fields out of order."
     'FORBIDDEN_CHANGELOG_BLOCK'         = "The file header contains a CHANGELOG block. CHANGELOG blocks are not allowed in JS file headers."
     'FILE_ORG_MISMATCH'                 = "The FILE ORGANIZATION list in the header does not exactly match the section banner titles in the file body, by content or by order."
-    # Section banners (§18.2)
+    # Section banners (Section 18.2)
     'MISSING_SECTION_BANNER'            = "A definition appears outside any banner -- no section banner precedes it in the file."
     'BANNER_INLINE_SHAPE'               = "A section banner uses the single-line ===== Title ===== form. The spec requires a multi-line banner with bracketing rule lines, title line, separator, description block, and Prefix line."
     'BANNER_INVALID_RULE_CHAR'          = "A section banner's opening or closing bracketing line is not composed entirely of '=' characters. Both bracket lines must be all '='."
@@ -320,7 +320,7 @@ $DriftDescriptions = [ordered]@{
     'DUPLICATE_FOUNDATION'              = "A FOUNDATION section appears in a JS file other than cc-shared.js (the anchor file). FOUNDATION sections live only in the anchor file."
     'DUPLICATE_CHROME'                  = "A CHROME section appears in a JS file other than cc-shared.js (the anchor file). CHROME sections live only in the anchor file."
     'HOOKS_BANNER_NOT_LAST'             = "A FUNCTIONS: PAGE LIFECYCLE HOOKS banner exists but is not the last banner in the file."
-    # Definition-level (§18.3)
+    # Definition-level (Section 18.3)
     'PREFIX_MISMATCH'                   = "A top-level identifier name does not begin with the prefix declared in its containing section's banner."
     'PREFIX_MISSING'                    = "A top-level identifier does not begin with the file's registered prefix. Component_Registry declares a cc_prefix for the file but the identifier name does not match. Fires independently of banners; surfaces prefix non-conformance in pre-spec files that have no banners yet."
     'MISSING_FUNCTION_COMMENT'          = "A function definition is not preceded by a single block comment."
@@ -331,7 +331,7 @@ $DriftDescriptions = [ordered]@{
     'WRONG_DECLARATION_KEYWORD'         = "A var declaration appears in a CONSTANTS or FOUNDATION section, or a const declaration appears in a STATE section."
     'SHADOWS_SHARED_FUNCTION'           = "A page file defines a function whose name matches a cc-shared.js export."
     'UNKNOWN_HOOK_NAME'                 = "A function inside the hooks banner has a name not in the recognized hook set."
-    # Forbidden patterns (§18.4)
+    # Forbidden patterns (Section 18.4)
     'FORBIDDEN_LET'                     = "A let declaration appears anywhere in the file."
     'FORBIDDEN_MULTI_DECLARATION'       = "A single statement declares multiple variables. Each declaration gets its own statement."
     'FORBIDDEN_CONDITIONAL_DEFINITION'  = "A top-level function or class is declared inside an if/while/try block."
@@ -344,8 +344,9 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_WINDOW_ASSIGNMENT'       = "An assignment to window.<name> appears outside cc-shared.js."
     'FORBIDDEN_INLINE_STYLE_IN_JS'      = "A template literal or string literal contains a <style> element."
     'FORBIDDEN_INLINE_SCRIPT_IN_JS'     = "A template literal or string literal contains a <script> element."
+    'FORBIDDEN_INLINE_EVENT_IN_JS'      = "A template literal or string literal contains an inline on<event>=`"...`" attribute. Bind events via addEventListener after rendering."
     'FORBIDDEN_FILE_SCOPE_LINE_COMMENT' = "A // line comment appears at file scope. Line comments are permitted only inside function bodies."
-    # Comment / structure (§18.5)
+    # Comment / structure (Section 18.5)
     'FORBIDDEN_COMMENT_STYLE'           = "A comment exists that is not one of the allowed kinds (file header, section banner, purpose comment, sub-section marker)."
     'BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE' = "More than one consecutive blank line appears inside a function body."
     'EXCESS_BLANK_LINES'                = "More than one blank line appears between top-level constructs."
@@ -479,6 +480,17 @@ function Test-LooksLikeInlineScript {
     param([string]$Text)
     if ($null -eq $Text) { return $false }
     return $Text -match '<\s*script\b'
+}
+
+function Test-LooksLikeInlineEvent {
+    param([string]$Text)
+    if ($null -eq $Text) { return $false }
+    # Match an HTML inline event handler attribute: whitespace, then 'on'
+    # followed by one or more lowercase letters (the event name), optional
+    # whitespace, '=', optional whitespace, then an opening quote. The
+    # leading whitespace requirement rules out 'data-onload="..."' and
+    # similar custom attributes, since '-' is not whitespace.
+    return $Text -match '\son[a-z]+\s*=\s*["'']'
 }
 
 
@@ -711,7 +723,7 @@ function Get-IdentifierName {
 # Each helper inspects an AST node (or context) and returns a hashtable
 # describing the row's variant shape:
 #   @{ ComponentType; VariantType; VariantQualifier1; VariantQualifier2 }
-# Per CC_JS_Spec.md §16.5.
+# Per CC_JS_Spec.md Section 16.5.
 
 # JS_FUNCTION (base) vs JS_FUNCTION_VARIANT (async/generator).
 # Only FunctionDeclaration nodes produce JS_FUNCTION rows; function/arrow
@@ -1385,7 +1397,7 @@ function Add-CommentBannerRow {
     }
 
     # ---- DUPLICATE_FOUNDATION / DUPLICATE_CHROME (anchor-file enforcement) ----
-    # Per the 2026-05-07 anchor-file generalization (CC_CSS_Spec.md §4.3 mirror,
+    # Per the 2026-05-07 anchor-file generalization (CC_CSS_Spec.md Section 4.3 mirror,
     # applied to JS): FOUNDATION/CHROME may appear ONLY in cc-shared.js. The
     # drift code fires whenever they appear in any other file, regardless of
     # whether more than one file declares them.
@@ -1414,12 +1426,12 @@ function Add-CommentBannerRow {
     }
 
     # ---- PREFIX_REGISTRY_MISMATCH (JS strict-with-carve-outs / Option B) ----
-    # Per CC_JS_Spec.md §5.4:
+    # Per CC_JS_Spec.md Section 5.4:
     #   - File has registry mapping with cc_prefix = NULL  -> banner must be (none).
     #     Any non-(none) value is a mismatch.
     #   - File has registry mapping with cc_prefix = X     -> banner must be X,
     #     EXCEPT for the hooks banner, IMPORTS, and INITIALIZATION sections
-    #     which may declare (none) per §5.2. A different value is always a mismatch.
+    #     which may declare (none) per Section 5.2. A different value is always a mismatch.
     #   - File has no registry mapping at all              -> skip validation;
     #     missing Object_Registry row is reported by the miss advisory.
     if ($script:CurrentRegistryHasMapping -and $Section.Prefix -and (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
@@ -1541,7 +1553,7 @@ function Add-HtmlIdRow {
     )
     if ([string]::IsNullOrWhiteSpace($IdName)) { return $null }
 
-    # Per CC_JS_Spec.md §16.3, HTML_ID rows are ALWAYS scope='LOCAL' regardless
+    # Per CC_JS_Spec.md Section 16.3, HTML_ID rows are ALWAYS scope='LOCAL' regardless
     # of whether the host file is shared. IDs are inherently page-specific.
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|HTML_ID|$IdName|$ReferenceType|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
@@ -1770,6 +1782,23 @@ function Add-JsInlineScriptRow {
     $script:rows.Add($row)
     Add-DriftCode -Row $row -Code 'FORBIDDEN_INLINE_SCRIPT_IN_JS' `
         -Context "Template/string literal contains <script> at line $LineStart."
+    return $row
+}
+
+function Add-JsInlineEventRow {
+    param([int]$LineStart, [int]$LineEnd, [int]$ColumnStart, [string]$Signature, [string]$ParentFunction, [string]$RawText)
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_INLINE_EVENT|<inline-event>|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $row = New-JsRow `
+        -ComponentType 'JS_INLINE_EVENT' -ComponentName '<inline-event>' `
+        -ReferenceType 'DEFINITION' -Scope $scope -SourceFile $script:CurrentFile `
+        -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
+        -Signature $Signature -ParentFunction $ParentFunction -RawText $RawText
+    $script:rows.Add($row)
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_INLINE_EVENT_IN_JS' `
+        -Context "Template/string literal contains inline on<event>=... at line $LineStart."
     return $row
 }
 
@@ -2444,6 +2473,11 @@ $JsVisitor = {
                     -Signature 'template literal contains <script>' -ParentFunction $parentName `
                     -RawText $rawSnippet | Out-Null
             }
+            if (Test-LooksLikeInlineEvent -Text $reconstructed) {
+                Add-JsInlineEventRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature 'template literal contains inline on<event>=' -ParentFunction $parentName `
+                    -RawText $rawSnippet | Out-Null
+            }
 
             if (-not (Test-LooksLikeHtml -Text $reconstructed)) { return }
             Add-RowsFromHtmlBearingText -Text $reconstructed -StartLine $line -StartCol $col `
@@ -2464,6 +2498,11 @@ $JsVisitor = {
             if (Test-LooksLikeInlineScript -Text $strVal) {
                 Add-JsInlineScriptRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
                     -Signature 'string literal contains <script>' -ParentFunction $parentName `
+                    -RawText $rawSnippet | Out-Null
+            }
+            if (Test-LooksLikeInlineEvent -Text $strVal) {
+                Add-JsInlineEventRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
+                    -Signature 'string literal contains inline on<event>=' -ParentFunction $parentName `
                     -RawText $rawSnippet | Out-Null
             }
 
@@ -2755,7 +2794,7 @@ foreach ($file in $JsFiles) {
 
     # ---- File-scope // line comments -> JS_LINE_COMMENT rows ----
     # acorn returns Line comments alongside Block comments. A line comment
-    # outside any function body is a forbidden pattern under §12.1.
+    # outside any function body is a forbidden pattern under Section 12.1.
     $functionRanges = New-Object System.Collections.Generic.List[object]
     $rangeVisitor = {
         param($n, $pc, $pn)
