@@ -125,11 +125,36 @@ document.addEventListener('DOMContentLoaded', function() {
     clr_startAutoRefresh();
     clr_startLivePolling();
     connectEngineEvents();
-    initEngineCardClicks();
 
     /* Search input - re-renders on each keystroke. */
     document.getElementById('queue-search').addEventListener('input', function() {
         clr_searchTerm = this.value.trim().toLowerCase();
+        clr_renderQueue();
+    });
+
+    /* Delegated click on the reason-filters container. The badges are
+       re-rendered into innerHTML on every refresh, so binding here once
+       on the stable container survives re-renders without listener
+       accumulation. */
+    document.getElementById('reason-filters').addEventListener('click', function(e) {
+        var badge = e.target.closest('.filter-badge');
+        if (!badge || !this.contains(badge)) return;
+        var prev = this.querySelector('.filter-badge.active');
+        if (prev) prev.classList.remove('active');
+        badge.classList.add('active');
+        clr_activeReasonFilter = badge.getAttribute('data-reason');
+        clr_renderQueue();
+    });
+
+    /* Delegated click on the queue-table container. The consumer rows are
+       re-rendered into innerHTML on every refresh, so binding here once
+       on the stable container survives re-renders without listener
+       accumulation. */
+    document.getElementById('queue-table').addEventListener('click', function(e) {
+        var row = e.target.closest('.consumer-row');
+        if (!row || !this.contains(row)) return;
+        var consumerKey = row.getAttribute('data-consumer');
+        clr_expandedConsumers[consumerKey] = !clr_expandedConsumers[consumerKey];
         clr_renderQueue();
     });
 });
@@ -410,16 +435,6 @@ function clr_renderReasonFilters() {
     }
 
     container.innerHTML = html;
-
-    /* Bind click handlers. */
-    container.querySelectorAll('.filter-badge').forEach(function(badge) {
-        badge.addEventListener('click', function() {
-            container.querySelectorAll('.filter-badge').forEach(function(b) { b.classList.remove('active'); });
-            this.classList.add('active');
-            clr_activeReasonFilter = this.getAttribute('data-reason');
-            clr_renderQueue();
-        });
-    });
 }
 
 /* ============================================================================
@@ -547,15 +562,6 @@ function clr_renderQueue() {
     loading.classList.add('hidden');
     container.innerHTML = html;
     container.classList.remove('hidden');
-
-    /* Bind expand/collapse click handlers. */
-    container.querySelectorAll('.consumer-row').forEach(function(row) {
-        row.addEventListener('click', function() {
-            var consumerKey = this.getAttribute('data-consumer');
-            clr_expandedConsumers[consumerKey] = !clr_expandedConsumers[consumerKey];
-            clr_renderQueue();
-        });
-    });
 }
 
 /* ============================================================================
