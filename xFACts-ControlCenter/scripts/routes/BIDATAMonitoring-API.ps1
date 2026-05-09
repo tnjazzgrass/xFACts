@@ -5,6 +5,15 @@
 #
 # API endpoints for the BIDATA Monitoring page.
 # Provides data for today's build status, step progress, and historical data.
+#
+# CHANGELOG
+# ---------
+# 2026-05-09  step-progress: added live next-step-name lookup for IN_PROGRESS
+#             builds. Queries msdb.dbo.sysjobsteps on the configured source
+#             server (GlobalConfig: bidata_build_source_server) at request
+#             time and returns next_step_name in the response. The query is
+#             best-effort -- failures or missing rows leave the field null
+#             and the UI falls back to its existing "Step N executing" label.
 # ============================================================================
 
 # ============================================================================
@@ -98,8 +107,10 @@ WHERE build_date >= DATEADD(DAY, -14, GETDATE())
 
 # ============================================================================
 # API: Step Progress
-# Returns step details for current build execution panel
-# Enhanced: includes build status and current step elapsed time calculation
+# Returns step details for the Current Build Execution panel.
+# For IN_PROGRESS builds, also returns next_step_name (live lookup against
+# msdb.dbo.sysjobsteps on the configured source server) so the running row
+# can show the actual step name instead of a positional counter.
 # ============================================================================
 Add-PodeRoute -Method Get -Path '/api/bidata/step-progress' -Authentication 'ADLogin' -ScriptBlock {
     try {
@@ -133,6 +144,7 @@ ORDER BY build_id DESC
                     steps = @()
                     avg_durations = @{}
                     current_step_elapsed_seconds = $null
+                    next_step_name = $null
                     message = "No build found for today"
                     timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
                 }
@@ -186,6 +198,7 @@ ORDER BY s.step_id
         
         $steps = @()
         $totalCompletedSeconds = 0
+        $maxCapturedStepId = 0
         foreach ($row in $dataset.Tables[0].Rows) {
             $steps += @{
                 step_id = $row['step_id']
@@ -197,6 +210,9 @@ ORDER BY s.step_id
             }
             if ($row['duration_seconds'] -isnot [DBNull]) {
                 $totalCompletedSeconds += $row['duration_seconds']
+            }
+            if ([int]$row['step_id'] -gt $maxCapturedStepId) {
+                $maxCapturedStepId = [int]$row['step_id']
             }
         }
         
@@ -234,6 +250,71 @@ GROUP BY s.step_id, s.step_name
         }
         
         $conn.Close()
+
+        # -- Look up the next step's name from sysjobsteps on the source server --
+        # Best-effort: any failure leaves $nextStepName as $null and the UI
+        # falls back to its existing "Step N executing" label.
+        $nextStepName = $null
+        if ($isRunning -and $maxCapturedStepId -gt 0) {
+            $cfgConn = $null
+            try {
+                $cfgConn = New-Object System.Data.SqlClient.SqlConnection($connString)
+                $cfgConn.Open()
+                $cfgCmd = $cfgConn.CreateCommand()
+                $cfgCmd.CommandText = @"
+SELECT
+    MAX(CASE WHEN setting_name = 'bidata_build_source_server' THEN setting_value END) AS source_server,
+    MAX(CASE WHEN setting_name = 'bidata_build_job_name'      THEN setting_value END) AS job_name
+FROM dbo.GlobalConfig
+WHERE setting_name IN ('bidata_build_source_server', 'bidata_build_job_name')
+  AND is_active = 1
+"@
+                $cfgCmd.CommandTimeout = 5
+                $cfgReader = $cfgCmd.ExecuteReader()
+                $sourceServer = $null
+                $jobNameForLookup = $null
+                if ($cfgReader.Read()) {
+                    $sourceServer = if ($cfgReader['source_server'] -is [DBNull]) { $null } else { [string]$cfgReader['source_server'] }
+                    $jobNameForLookup = if ($cfgReader['job_name'] -is [DBNull]) { $null } else { [string]$cfgReader['job_name'] }
+                }
+                $cfgReader.Close()
+                $cfgConn.Close()
+                
+                if (-not [string]::IsNullOrEmpty($sourceServer) -and -not [string]::IsNullOrEmpty($jobNameForLookup)) {
+                    $nextStepId = $maxCapturedStepId + 1
+                    $msdbConnString = "Server=$sourceServer;Database=msdb;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=5;"
+                    $msdbConn = $null
+                    try {
+                        $msdbConn = New-Object System.Data.SqlClient.SqlConnection($msdbConnString)
+                        $msdbConn.Open()
+                        $msdbCmd = $msdbConn.CreateCommand()
+                        $msdbCmd.CommandText = @"
+SELECT js.step_name
+FROM msdb.dbo.sysjobs j
+INNER JOIN msdb.dbo.sysjobsteps js ON js.job_id = j.job_id
+WHERE j.name = @job_name
+  AND js.step_id = @step_id
+"@
+                        $msdbCmd.Parameters.AddWithValue("@job_name", $jobNameForLookup) | Out-Null
+                        $msdbCmd.Parameters.AddWithValue("@step_id", $nextStepId) | Out-Null
+                        $msdbCmd.CommandTimeout = 5
+                        $stepNameResult = $msdbCmd.ExecuteScalar()
+                        if ($stepNameResult -isnot [DBNull] -and $null -ne $stepNameResult) {
+                            $nextStepName = [string]$stepNameResult
+                        }
+                    }
+                    finally {
+                        if ($msdbConn -and $msdbConn.State -eq 'Open') { $msdbConn.Close() }
+                    }
+                }
+            }
+            catch {
+                # Best-effort lookup -- leave $nextStepName as $null on any failure
+            }
+            finally {
+                if ($cfgConn -and $cfgConn.State -eq 'Open') { $cfgConn.Close() }
+            }
+        }
         
         Write-PodeJsonResponse -Value @{
             build_id = [int]$buildId
@@ -243,6 +324,7 @@ GROUP BY s.step_id, s.step_name
             avg_durations = $avgDurations
             current_step_elapsed_seconds = $currentStepElapsed
             next_step_number = $steps.Count + 1
+            next_step_name = $nextStepName
             timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
