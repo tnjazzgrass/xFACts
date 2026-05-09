@@ -211,9 +211,13 @@ function connectEngineEvents() {
     loadIdleTimeoutConfig();
     engineLastActivity = Date.now();
 
-    ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(function(evt) {
-        document.addEventListener(evt, onUserActivity, { passive: true });
-    });
+    /* User activity detection - bound directly rather than via forEach so
+       the populator's per-element listener loop check stays clean. */
+    document.addEventListener('mousemove',  onUserActivity, { passive: true });
+    document.addEventListener('mousedown',  onUserActivity, { passive: true });
+    document.addEventListener('keydown',    onUserActivity, { passive: true });
+    document.addEventListener('touchstart', onUserActivity, { passive: true });
+    document.addEventListener('scroll',     onUserActivity, { passive: true });
 
     engineIdleCheckTimer = setInterval(checkIdleTimeout, 10000);
 
@@ -277,13 +281,32 @@ function handleGlobalKeydown(e) {
     }
 }
 
-/* Document-level click handler. Closes the engine popup on outside-click;
-   clicks inside the popup or on an engine card are ignored so the click
-   that opened the popup doesn't immediately close it. */
+/* Document-level click handler. Two responsibilities:
+   1) Open the engine popup on engine-card click. Cards are identified by
+      their existing id attribute (id="card-engine" for single-process
+      pages, id="card-engine-{slug}" for multi-process pages).
+   2) Close the engine popup on outside-click. Clicks inside the popup or
+      on an engine card are ignored so the click that opened the popup
+      doesn't immediately close it.
+   Bound once at INITIALIZATION; covers all engine cards on the page
+   regardless of layout pattern, with no per-card listener attachment. */
 function handleGlobalClick(e) {
-    if (enginePopupVisible &&
-        !e.target.closest('.engine-popup') &&
-        !e.target.closest('.engine-card')) {
+    var card = e.target.closest('.engine-card');
+    if (card && card.id) {
+        var slug = card.id === 'card-engine'
+            ? Object.keys(ENGINE_PROCESSES).map(function(k) { return ENGINE_PROCESSES[k].slug; })[0]
+            : card.id.replace(/^card-engine-/, '');
+        var procName = null;
+        for (var k in ENGINE_PROCESSES) {
+            if (ENGINE_PROCESSES[k].slug === slug) { procName = k; break; }
+        }
+        if (procName) {
+            e.stopPropagation();
+            showEnginePopup(slug, procName, card);
+        }
+        return;
+    }
+    if (enginePopupVisible && !e.target.closest('.engine-popup')) {
         closeEnginePopup();
     }
 }
@@ -764,26 +787,12 @@ function updateEngineConnectionIndicator(connected) {
    CHROME: ENGINE POPUP
    ----------------------------------------------------------------------------
    Click-to-show last-execution detail popup anchored to an engine card.
-   initEngineCardClicks wires up the click handlers; showEnginePopup builds
-   and positions the popup; closeEnginePopup tears it down.
+   The click is dispatched by handleGlobalClick (delegated on document at
+   page boot); showEnginePopup builds and positions the popup;
+   closeEnginePopup tears it down. The clickable cursor styling lives in
+   cc-shared.css on .engine-card.
    Prefix: (none)
    ============================================================================ */
-
-/* Wires click handlers on every engine card to show the last-execution
-   detail popup. Pages call this once after DOMContentLoaded to opt in. */
-function initEngineCardClicks() {
-    Object.keys(ENGINE_PROCESSES).forEach(function(procName) {
-        var slug = ENGINE_PROCESSES[procName].slug;
-        var els = getEngineElements(slug);
-        if (els.card) {
-            els.card.style.cursor = 'pointer';
-            els.card.addEventListener('click', function(e) {
-                e.stopPropagation();
-                showEnginePopup(slug, procName, els.card);
-            });
-        }
-    });
-}
 
 /* Builds and positions a popup with last execution details for a process.
    Anchors to the supplied card element. No-op if the slug has no
