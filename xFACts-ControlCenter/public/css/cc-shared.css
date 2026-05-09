@@ -604,7 +604,8 @@ a { color: var(--color-text-link); }
     padding: var(--size-radius-sm);
 }
 
-/* A single engine indicator card. */
+/* A single engine indicator card. Always clickable when present (the
+   document-level click handler in cc-shared.js opens the popup). */
 .engine-card {
     width: 68px;
     display: flex;
@@ -615,6 +616,7 @@ a { color: var(--color-text-link); }
     border: var(--size-border-thin) solid var(--color-border-subtle);
     border-radius: var(--size-radius-sm);
     background: var(--color-bg-card);
+    cursor: pointer;
 }
 
 .engine-card.card-warning { /* warning frame coloring (overdue) */
