@@ -1,5 +1,5 @@
 # xFACts Backlog Items
-## Updated: May 2, 2026
+## Updated: May 9, 2026
 
 Open build, enhancement, and bug fix items across the xFACts platform. Organized by module and component. Components with no open items are omitted.
 
@@ -108,17 +108,8 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 
 | Type | Item | Priority | Notes |
 |------|------|----------|-------|
-| Enhance | Alert architecture alignment | High | Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters. Populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
-
----
-
-## DeptOps
-
-### BusinessIntelligence
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | BI file storage cleanup integration | Medium | Integrate BI Manager's Python cleanup script (remote file site, deletes files older than 16 months). Determine execution model (scheduled via orchestrator vs. on-demand button on BI page). Display results on Business Intelligence page. Pending script finalization and requirements gathering. |
+| Enhance | Alert architecture alignment | High | Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters? Populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
+| Enhance | Alert architecture on modal | High | Enhance to add multiple alert destinations from the modal directly. Currently multiple paths only appear with SQL server direct updates/additions.
 
 ---
 
