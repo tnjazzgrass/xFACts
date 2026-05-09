@@ -57,6 +57,19 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-09  FORBIDDEN_PER_ELEMENT_LISTENER_LOOP detection added per
+            CC_JS_Spec.md Section 12 (Event handler binding). Detects
+            per-element listener attachment via forEach + addEventListener
+            and via addEventListener inside for-of / for-in / for-loop
+            bodies -- the patterns Section 12 forbids in favor of event
+            delegation. Detection lives in the existing addEventListener
+            block in the CallExpression visitor case; the drift code
+            attaches to the same JS_EVENT USAGE row that already fires for
+            the listener. New helper Test-IsInsideElementLoop walks the
+            parent-node chain looking for an enclosing forEach callback or
+            for-loop body, stopping at any nested FunctionDeclaration so
+            inner functions inside loops don't false-positive their own
+            addEventListener calls.
 2026-05-07  Alignment refactor + prefix registry validation + permissive
             banner detection. Adopts the visitor-pattern walker, pre-built
             section list, hybrid drift attachment, file-header parsing,
@@ -345,6 +358,7 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_INLINE_STYLE_IN_JS'      = "A template literal or string literal contains a <style> element."
     'FORBIDDEN_INLINE_SCRIPT_IN_JS'     = "A template literal or string literal contains a <script> element."
     'FORBIDDEN_INLINE_EVENT_IN_JS'      = "A template literal or string literal contains an inline on<event>=`"...`" attribute. Bind events via addEventListener after rendering."
+    'FORBIDDEN_PER_ELEMENT_LISTENER_LOOP' = "An addEventListener call appears inside a forEach callback or a for-loop body, attaching one listener per element. Spec Section 12 requires event delegation: a single addEventListener on a stable parent that dispatches by event.target.matches/closest plus data-* attributes."
     'FORBIDDEN_FILE_SCOPE_LINE_COMMENT' = "A // line comment appears at file scope. Line comments are permitted only inside function bodies."
     # Comment / structure (Section 18.5)
     'FORBIDDEN_COMMENT_STYLE'           = "A comment exists that is not one of the allowed kinds (file header, section banner, purpose comment, sub-section marker)."
@@ -624,6 +638,68 @@ function Test-LineInsideFunction {
     if ($null -eq $Ranges) { return $false }
     foreach ($r in $Ranges) {
         if ($Line -ge $r.Start -and $Line -le $r.End) { return $true }
+    }
+    return $false
+}
+
+# Returns $true if the current node is inside a per-element listener loop --
+# i.e. inside a forEach callback (or map/some/every/find/filter callback,
+# all of which are array-iteration callbacks that take a per-element
+# function), or inside a for-of / for-in / for loop body. Used by the
+# addEventListener detection in the CallExpression visitor case to fire
+# FORBIDDEN_PER_ELEMENT_LISTENER_LOOP per CC_JS_Spec.md Section 12.
+#
+# The walk stops as soon as it crosses into a nested FunctionDeclaration,
+# since that means the addEventListener is inside an inner function defined
+# inside the loop -- not actually attached to each element by the loop
+# itself. FunctionExpression and ArrowFunctionExpression DO NOT stop the
+# walk because the loop's callback IS one of those; we want to keep
+# climbing past the callback to find its enclosing CallExpression and
+# decide whether that's a forEach (or sibling).
+function Test-IsInsideElementLoop {
+    param([array]$ParentNodes)
+    if ($null -eq $ParentNodes -or $ParentNodes.Count -eq 0) { return $false }
+
+    # Names of array-iteration methods whose callback runs once per element.
+    # forEach is the dominant case; the others are included because attaching
+    # an event listener inside any of them is the same anti-pattern.
+    $perElementMethods = @('forEach', 'map', 'filter', 'find', 'some', 'every')
+
+    for ($i = $ParentNodes.Count - 1; $i -ge 0; $i--) {
+        $p = $ParentNodes[$i]
+        if ($null -eq $p) { continue }
+        if (-not ($p.PSObject.Properties.Name -contains 'type')) { continue }
+
+        # Stop the walk at any nested named function -- if addEventListener
+        # is inside an inner function defined inside the loop, it's not
+        # being attached per-element by the loop itself.
+        if ($p.type -eq 'FunctionDeclaration') { return $false }
+
+        # for-of / for-in / for loop bodies. The addEventListener call is
+        # inside the loop's BlockStatement body.
+        if ($p.type -eq 'ForOfStatement' -or
+            $p.type -eq 'ForInStatement' -or
+            $p.type -eq 'ForStatement') {
+            return $true
+        }
+
+        # forEach (and siblings) callback. Pattern: the addEventListener
+        # call is inside a FunctionExpression / ArrowFunctionExpression
+        # whose immediate parent is a CallExpression whose callee is
+        # MemberExpression with property.name in $perElementMethods.
+        if ($p.type -eq 'FunctionExpression' -or $p.type -eq 'ArrowFunctionExpression') {
+            $grandparentSlot = $i - 1
+            if ($grandparentSlot -ge 0) {
+                $gp = $ParentNodes[$grandparentSlot]
+                if ($gp -and ($gp.PSObject.Properties.Name -contains 'type') -and
+                    $gp.type -eq 'CallExpression' -and $gp.callee -and
+                    $gp.callee.type -eq 'MemberExpression' -and
+                    $gp.callee.property -and $gp.callee.property.type -eq 'Identifier' -and
+                    $perElementMethods -contains $gp.callee.property.name) {
+                    return $true
+                }
+            }
+        }
     }
     return $false
 }
@@ -2400,11 +2476,22 @@ $JsVisitor = {
                 $arg = $Node.arguments | Select-Object -First 1
                 if ($arg -and $arg.type -eq 'Literal' -and $arg.value -is [string]) {
                     $evName = $arg.value
-                    Add-JsEventRow -EventName $evName `
+                    $evRow = Add-JsEventRow -EventName $evName `
                         -LineStart (Get-NodeLine -Node $arg) `
                         -ColumnStart (Get-NodeColumn -Node $arg) `
                         -Signature "addEventListener('$evName', ...)" -ParentFunction $parentName `
-                        -RawText "addEventListener('$evName', ...)" | Out-Null
+                        -RawText "addEventListener('$evName', ...)"
+
+                    # FORBIDDEN_PER_ELEMENT_LISTENER_LOOP per CC_JS_Spec.md Section 12.
+                    # If this addEventListener call is inside a forEach callback
+                    # (or sibling) or inside a for-of/for-in/for loop body, the
+                    # listener is being attached one-per-element rather than
+                    # via delegation. Attach the drift code to the same
+                    # JS_EVENT USAGE row that just fired -- no separate row.
+                    if ($evRow -and (Test-IsInsideElementLoop -ParentNodes $ParentNodes)) {
+                        Add-DriftCode -Row $evRow -Code 'FORBIDDEN_PER_ELEMENT_LISTENER_LOOP' `
+                            -Context "addEventListener('$evName', ...) at line $line is inside a per-element loop; spec Section 12 requires delegation."
+                    }
                 }
             }
 
@@ -2468,7 +2555,7 @@ $JsVisitor = {
                     -Signature 'template literal contains <style>' -ParentFunction $parentName `
                     -RawText $rawSnippet | Out-Null
             }
-            if (Test-LooksLikeInlineScript -Text $reconstructed) {
+             if (Test-LooksLikeInlineScript -Text $reconstructed) {
                 Add-JsInlineScriptRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
                     -Signature 'template literal contains <script>' -ParentFunction $parentName `
                     -RawText $rawSnippet | Out-Null
@@ -2498,11 +2585,6 @@ $JsVisitor = {
             if (Test-LooksLikeInlineScript -Text $strVal) {
                 Add-JsInlineScriptRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
                     -Signature 'string literal contains <script>' -ParentFunction $parentName `
-                    -RawText $rawSnippet | Out-Null
-            }
-            if (Test-LooksLikeInlineEvent -Text $strVal) {
-                Add-JsInlineEventRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
-                    -Signature 'string literal contains inline on<event>=' -ParentFunction $parentName `
                     -RawText $rawSnippet | Out-Null
             }
 
