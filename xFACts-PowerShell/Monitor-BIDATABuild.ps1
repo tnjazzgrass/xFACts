@@ -22,6 +22,13 @@
 
     CHANGELOG
     ---------
+    2026-05-09  Multi-invocation support
+                Step 5 grouping now partitions sysjobhistory by job outcome
+                  (step_id=0) boundaries instead of collapsing all rows into
+                  a single attempt. Each invocation gets its own BuildExecution
+                  record and notification.
+                Removed the early-exit "all-done-and-notified" shortcut from
+                  Step 3; per-instance dedup in Step 6 is sufficient.
     2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
                 Send-BuildNotification body rewritten to call shared Send-TeamsAlert
                   (replaces direct EXEC Teams.sp_QueueAlert)
@@ -318,33 +325,68 @@ function Get-JobHistory {
         INNER JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id
         WHERE j.name = '$JobName'
           AND h.run_date = $runDateInt
-        ORDER BY h.instance_id, h.step_id
+        ORDER BY h.instance_id
 "@
     
     return Get-SourceData -ServerInstance $ServerInstance -Query $query
 }
 
-function Get-AverageStepDurations {
+function Group-JobInvocations {
     <#
     .SYNOPSIS
-        Retrieves average step durations from recent successful builds for ETA calculation
+        Partitions sysjobhistory rows into discrete job invocations.
+
+    .DESCRIPTION
+        Each SQL Agent job invocation in sysjobhistory is a contiguous run of 
+        step_id > 0 rows terminated by a step_id = 0 row (the job-level outcome).
+        Steps within an invocation have monotonically increasing instance_ids.
+        
+        Returns an ordered array of invocation hashtables, each containing:
+          - Anchor      : MIN(instance_id) of the invocation's step rows.
+                          Stable for the lifetime of the invocation; used as
+                          the deduplication key against BIDATA.BuildExecution.
+          - Steps       : Array of step rows (step_id > 0) for this invocation.
+          - JobOutcome  : The step_id = 0 row, or $null if the invocation is
+                          still in progress (no outcome row yet).
+
+        Invocations are emitted in chronological order. An invocation with no
+        Steps (orphan job outcome with no preceding steps) is skipped.
     #>
-    param([int]$DaysBack = 14)
+    param($History)
     
-    $query = @"
-        SELECT 
-            s.step_id,
-            s.step_name,
-            AVG(s.duration_seconds) AS avg_seconds
-        FROM BIDATA.StepExecution s
-        INNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id
-        WHERE b.build_date >= DATEADD(DAY, -$DaysBack, GETDATE())
-          AND b.status = 'COMPLETED'
-          AND s.run_status = 1
-        GROUP BY s.step_id, s.step_name
-"@
+    $invocations = @()
+    $currentSteps = @()
     
-    return Get-SqlData -Query $query
+    # History is already ordered by instance_id (Get-JobHistory ORDER BY clause)
+    foreach ($row in @($History)) {
+        if ($row.step_id -eq 0) {
+            # Job outcome row terminates the current invocation
+            if ($currentSteps.Count -gt 0) {
+                $anchor = [int]($currentSteps | Measure-Object -Property instance_id -Minimum).Minimum
+                $invocations += @{
+                    Anchor     = $anchor
+                    Steps      = $currentSteps
+                    JobOutcome = $row
+                }
+            }
+            $currentSteps = @()
+        }
+        else {
+            $currentSteps += $row
+        }
+    }
+    
+    # Trailing steps without an outcome row = in-progress invocation
+    if ($currentSteps.Count -gt 0) {
+        $anchor = [int]($currentSteps | Measure-Object -Property instance_id -Minimum).Minimum
+        $invocations += @{
+            Anchor     = $anchor
+            Steps      = $currentSteps
+            JobOutcome = $null
+        }
+    }
+    
+    return ,$invocations
 }
 
 function Send-BuildNotification {
@@ -412,11 +454,12 @@ function Send-BuildNotification {
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  xFACts BIDATA Build Monitor v1.2.0" -ForegroundColor Cyan
+Write-Host "  xFACts BIDATA Build Monitor" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
 $scriptStart = Get-Date
+$finalStatus = "POLLING"   # Default for orchestrator callback if no invocations processed
 
 # ----------------------------------------
 # Step 1: Load configuration from GlobalConfig
@@ -502,20 +545,6 @@ if ($existingBuilds) {
     
     Write-Log "  Found $(@($existingBuilds).Count) existing record(s)"
     Write-Log "  Processed instance_ids: $($processedInstances.Keys -join ', ')"
-    
-    # Early exit if today's build is already completed and notified
-    $completedBuild = @($existingBuilds) | Where-Object { $_.status -eq 'COMPLETED' -and $_.notified_dttm -isnot [DBNull] } | Select-Object -First 1
-    if ($completedBuild) {
-        Write-Log "  Build already COMPLETED and notified (Build ID: $($completedBuild.build_id)). Nothing to do."
-        if ($TaskId -gt 0) {
-            $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
-            Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
-                -TaskId $TaskId -ProcessId $ProcessId `
-                -Status "SUCCESS" -DurationMs $totalMs `
-                -Output "Build already COMPLETED - Date: $($targetDate.ToString('yyyy-MM-dd'))"
-        }
-        exit 0
-    }
 }
 else {
     Write-Log "  No existing records for today"
@@ -530,7 +559,7 @@ $Script:SourceQueryFailed = $false
 $jobHistory = Get-JobHistory -ServerInstance $Config.SourceServer -BuildDate $targetDate -JobName $Config.JobName
 
 if ($Script:SourceQueryFailed) {
-    Write-Log "  Source server query failed — cannot determine build state. Skipping cycle." "WARN"
+    Write-Log "  Source server query failed - cannot determine build state. Skipping cycle." "WARN"
     if ($TaskId -gt 0) {
         $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
         Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
@@ -624,55 +653,41 @@ if ($null -eq $jobHistory -or @($jobHistory).Count -eq 0) {
             Write-Log "  Still within grace period - no alert needed"
         }
     }
-        else {
-                Write-Log "  Could not determine scheduled start time" "WARN"
-            }
+    else {
+        Write-Log "  Could not determine scheduled start time" "WARN"
+    }
     
-            Write-Host ""
-            if ($TaskId -gt 0) {
-                $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
-                Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
-                    -TaskId $TaskId -ProcessId $ProcessId `
-                    -Status "NOT_STARTED" -DurationMs $totalMs `
-                    -Output "Build not started yet - Date: $($targetDate.ToString('yyyy-MM-dd'))"
-            }
-            exit 1
-        }
+    Write-Host ""
+    if ($TaskId -gt 0) {
+        $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
+        Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
+            -TaskId $TaskId -ProcessId $ProcessId `
+            -Status "NOT_STARTED" -DurationMs $totalMs `
+            -Output "Build not started yet - Date: $($targetDate.ToString('yyyy-MM-dd'))"
+    }
+    exit 1
+}
 
 $historyCount = @($jobHistory).Count
 Write-Log "  Found $historyCount history record(s)"
 
 # ----------------------------------------
-# Step 5: Group history as single execution per day
+# Step 5: Partition history into discrete invocations
 # ----------------------------------------
 Write-Log "Analyzing execution attempts..."
 
-# Separate job outcome (step_id = 0) from individual steps
-$jobOutcome = $jobHistory | Where-Object { $_.step_id -eq 0 } | Select-Object -First 1
-$stepHistory = $jobHistory | Where-Object { $_.step_id -gt 0 }
+$invocations = Group-JobInvocations -History $jobHistory
 
-# Always use MIN from steps (stable throughout build), fall back to job outcome only if no steps
-$instanceId = if ($stepHistory -and @($stepHistory).Count -gt 0) { 
-    [int]($stepHistory | Measure-Object -Property instance_id -Minimum).Minimum 
-} elseif ($jobOutcome) {
-    [int]$jobOutcome.instance_id 
-} else {
-    $null
-}
-
-Write-Log "  Using instance_id: $instanceId"
-
-# Build single execution attempt (no loop needed for single-run-per-day)
-$executionAttempts = @{ $instanceId = $jobHistory }
-
-Write-Log "  Found 1 execution attempt"
+Write-Log "  Found $($invocations.Count) execution attempt(s)"
 
 # ----------------------------------------
-# Step 6: Process each execution attempt
+# Step 6: Process each invocation
 # ----------------------------------------
 
-foreach ($instanceId in ($executionAttempts.Keys | Sort-Object)) {
-    $attemptRecords = $executionAttempts[$instanceId]
+foreach ($invocation in $invocations) {
+    $instanceId = $invocation.Anchor
+    $stepHistory = $invocation.Steps
+    $jobOutcome = $invocation.JobOutcome
     
     Write-Log "Processing instance_id $instanceId..."
     
@@ -681,23 +696,14 @@ foreach ($instanceId in ($executionAttempts.Keys | Sort-Object)) {
         $existingRecord = $processedInstances[$instanceId]
         if ($existingRecord.status -in @("COMPLETED", "FAILED") -and $existingRecord.notified_dttm -isnot [DBNull]) {
             Write-Log "  Already completed and notified. Skipping."
+            $finalStatus = $existingRecord.status
             continue
         }
     }
     
-    # Separate job outcome (step_id = 0) from individual steps  
-    $jobOutcome = $attemptRecords | Where-Object { $_.step_id -eq 0 } | Select-Object -First 1
-    $stepHistory = $attemptRecords | Where-Object { $_.step_id -gt 0 }
-    
-    # Determine build state for this attempt
-    $buildStarted = @($stepHistory).Count -gt 0
+    # Determine build state for this invocation
     $buildCompleted = $null -ne $jobOutcome -and $jobOutcome.run_status -eq 1
     $buildFailed = $null -ne $jobOutcome -and $jobOutcome.run_status -eq 0
-    
-    if (-not $buildStarted) {
-        Write-Log "  No steps recorded yet for this instance"
-        continue
-    }
     
     $finalStatus = if ($buildCompleted) { "COMPLETED" } elseif ($buildFailed) { "FAILED" } else { "IN_PROGRESS" }
     Write-Log "  Status: $finalStatus"
@@ -828,6 +834,7 @@ foreach ($instanceId in ($executionAttempts.Keys | Sort-Object)) {
                   AND status = 'NOT_STARTED'
 "@
             Invoke-SqlNonQuery -Query $updateNotStartedQuery | Out-Null
+            $notStartedRecord = $null   # Only supersede once across multiple invocations
         }
     }
     else {
@@ -937,14 +944,15 @@ foreach ($instanceId in ($executionAttempts.Keys | Sort-Object)) {
                 
                 if ($notifyResult) {
                     Write-Log "    Notification queued" "SUCCESS"
-                    
-                    # Mark as notified
-                    $markNotifiedQuery = "UPDATE BIDATA.BuildExecution SET notified_dttm = GETDATE() WHERE build_id = $buildId"
-                    Invoke-SqlNonQuery -Query $markNotifiedQuery | Out-Null
                 }
                 else {
-                    Write-Log "    Failed to queue notification" "ERROR"
+                    Write-Log "    Notification skipped (dedup) or failed to queue" "INFO"
                 }
+                
+                # Mark as notified regardless of dedup outcome - the notification 
+                # decision for this instance is final once we reach this point.
+                $markNotifiedQuery = "UPDATE BIDATA.BuildExecution SET notified_dttm = GETDATE() WHERE build_id = $buildId"
+                Invoke-SqlNonQuery -Query $markNotifiedQuery | Out-Null
             }
             else {
                 Write-Log "  PREVIEW: Would send $finalStatus notification (trigger: $triggerValue)" "WARN"
@@ -969,15 +977,9 @@ Write-Host "  Summary" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Target Date:        $($targetDate.ToString('yyyy-MM-dd'))"
-Write-Host "  Execution Attempts: $($executionAttempts.Count)"
+Write-Host "  Execution Attempts: $($invocations.Count)"
 Write-Host "  Script Duration:    $([int]$scriptDuration.TotalMilliseconds) ms"
 Write-Host ""
-
-if (-not $Execute) {
-    Write-Host "  *** PREVIEW MODE - No changes were made ***" -ForegroundColor Yellow
-    Write-Host "  Run with -Execute to perform actual updates" -ForegroundColor Yellow
-    Write-Host ""
-}
 
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  Monitor Complete" -ForegroundColor Cyan
@@ -991,11 +993,11 @@ if ($TaskId -gt 0) {
     $totalMs = [int]$scriptDuration.TotalMilliseconds
     if ($finalStatus -eq "COMPLETED") {
         $taskStatus = "SUCCESS"
-        $outputMsg = "Build COMPLETED - Date: $($targetDate.ToString('yyyy-MM-dd')), Attempts: $($executionAttempts.Count)"
+        $outputMsg = "Build COMPLETED - Date: $($targetDate.ToString('yyyy-MM-dd')), Attempts: $($invocations.Count)"
     }
     else {
         $taskStatus = "POLLING"
-        $outputMsg = "Build $finalStatus - Date: $($targetDate.ToString('yyyy-MM-dd')), Attempts: $($executionAttempts.Count)"
+        $outputMsg = "Build $finalStatus - Date: $($targetDate.ToString('yyyy-MM-dd')), Attempts: $($invocations.Count)"
     }
     Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
         -TaskId $TaskId -ProcessId $ProcessId `
