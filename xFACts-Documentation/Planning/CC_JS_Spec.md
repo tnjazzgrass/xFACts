@@ -71,7 +71,7 @@ The opening and closing rule lines are exactly 76 `=` characters. The inner sepa
 
 ### 3.2 Banner authoring discipline
 
-When adding new content to a file, prefer creating a new banner over expanding an existing one if the new content is a distinct concept. See Section 13 for the full rule on sub-section markers vs. new banners.
+When adding new content to a file, prefer creating a new banner over expanding an existing one if the new content is a distinct concept. See Section 14 for the full rule on sub-section markers vs. new banners.
 
 ---
 
@@ -163,7 +163,7 @@ Forbidden alternatives, all emitting `FORBIDDEN_ANONYMOUS_FUNCTION` on the row r
 | `const name = () => { ... };` | Arrow function expression |
 | `const name = function namedThing() { ... };` | Named function expression |
 
-The narrow exception is callback arguments to other calls; see Section 14.1.
+The narrow exception is callback arguments to other calls; see Section 15.1.
 
 ### 6.1 Function comment requirement
 
@@ -177,7 +177,7 @@ Every function definition must be preceded by a single block comment immediately
 
 ### 6.3 Async and generator functions
 
-`async` and `generator` functions are permitted forms of `function` declarations and are catalog-distinguished as `JS_FUNCTION_VARIANT` rows with `variant_type='async'` or `variant_type='generator'` (Section 16.5).
+`async` and `generator` functions are permitted forms of `function` declarations and are catalog-distinguished as `JS_FUNCTION_VARIANT` rows with `variant_type='async'` or `variant_type='generator'` (Section 17.5).
 
 ---
 
@@ -185,7 +185,7 @@ Every function definition must be preceded by a single block comment immediately
 
 Module-scope declarations split into two kinds based on the section they live in:
 
-- **`CONSTANTS` and `FOUNDATION` sections**: declarations are `const`. Primitive values produce `JS_CONSTANT DEFINITION` rows; compound values (objects, arrays, regexes, computed expressions) produce `JS_CONSTANT_VARIANT DEFINITION` rows. See Section 16.5.
+- **`CONSTANTS` and `FOUNDATION` sections**: declarations are `const`. Primitive values produce `JS_CONSTANT DEFINITION` rows; compound values (objects, arrays, regexes, computed expressions) produce `JS_CONSTANT_VARIANT DEFINITION` rows. See Section 17.5.
 - **`STATE` sections**: declarations are `var`. They produce `JS_STATE DEFINITION` rows.
 
 Drift code if `var` appears in a `CONSTANTS` or `FOUNDATION` section, or `const` in a `STATE` section: `WRONG_DECLARATION_KEYWORD`.
@@ -231,7 +231,7 @@ A page file defines only the hooks it uses. `cc-shared.js` probes for each via `
 
 ### 8.1 The hooks banner
 
-If any hooks are defined, they live in a `FUNCTIONS` banner with the fixed name `PAGE LIFECYCLE HOOKS`. The banner declares `Prefix: (none)`. See Section 20 for an example.
+If any hooks are defined, they live in a `FUNCTIONS` banner with the fixed name `PAGE LIFECYCLE HOOKS`. The banner declares `Prefix: (none)`. See Section 21 for an example.
 
 ### 8.2 Banner placement rule
 
@@ -239,7 +239,7 @@ If the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner exists, it must be the last bann
 
 ### 8.3 Catalog representation
 
-Functions inside the hooks banner produce `JS_HOOK DEFINITION` rows (or `JS_HOOK_VARIANT DEFINITION` for async hooks; see Section 16.5), not `JS_FUNCTION DEFINITION` rows. The function comment requirement still applies.
+Functions inside the hooks banner produce `JS_HOOK DEFINITION` rows (or `JS_HOOK_VARIANT DEFINITION` for async hooks; see Section 17.5), not `JS_FUNCTION DEFINITION` rows. The function comment requirement still applies.
 
 ### 8.4 Hook naming
 
@@ -257,7 +257,7 @@ Class declarations live at module scope inside a `FUNCTIONS` section and produce
 
 ### 9.2 Methods
 
-Methods inside a class body produce `JS_METHOD DEFINITION` rows for regular methods, or `JS_METHOD_VARIANT DEFINITION` for static/getter/setter/async forms (Section 16.5). Each method must carry a preceding single-sentence purpose comment. Drift code: `MISSING_METHOD_COMMENT`.
+Methods inside a class body produce `JS_METHOD DEFINITION` rows for regular methods, or `JS_METHOD_VARIANT DEFINITION` for static/getter/setter/async forms (Section 17.5). Each method must carry a preceding single-sentence purpose comment. Drift code: `MISSING_METHOD_COMMENT`.
 
 Methods do not carry the page prefix; they are namespaced inside the class itself.
 
@@ -267,7 +267,7 @@ Methods do not carry the page prefix; they are namespaced inside the class itsel
 
 `IMPORTS` sections contain ES module `import` statements or Node `require` calls. If a file has no imports, the IMPORTS banner is omitted entirely, along with its corresponding FILE ORGANIZATION entry.
 
-Each import produces a `JS_IMPORT DEFINITION` row keyed on the imported binding name. The source module path lives in `variant_qualifier_2`. See Section 16.5 for the variant grid.
+Each import produces a `JS_IMPORT DEFINITION` row keyed on the imported binding name. The source module path lives in `variant_qualifier_2`. See Section 17.5 for the variant grid.
 
 ---
 
@@ -280,11 +280,36 @@ The `INITIALIZATION` section contains:
 
 Functions in this section may invoke functions from any later section. Functions in `FUNCTIONS` may not depend on initialization having run beyond the constants and state being populated.
 
-The `DOMContentLoaded` handler itself is anonymous and is registered via `addEventListener`. It does not produce a `JS_FUNCTION DEFINITION` row; the parser treats it as initialization code, not a named definition. This is one of the allowed-callback contexts described in Section 14.1.
+The `DOMContentLoaded` handler itself is anonymous and is registered via `addEventListener`. It does not produce a `JS_FUNCTION DEFINITION` row; the parser treats it as initialization code, not a named definition. This is one of the allowed-callback contexts described in Section 15.1.
 
 ---
 
-## 12. Comments
+## 12. Event handler binding
+
+Event handlers are attached via `addEventListener`. The canonical form is event delegation.
+
+### 12.1 Delegation pattern
+
+A delegation binding has three parts:
+
+1. A stable parent — an element that exists in the page's static markup or is rendered exactly once and not replaced.
+2. A single `addEventListener` call on that parent, registered during page boot inside the `INITIALIZATION` section.
+3. A handler function that dispatches by examining `event.target` via `event.target.matches(selector)` or `event.target.closest(selector)`.
+
+Per-row context (record IDs, group IDs, tracking IDs, etc.) is carried on rendered elements via `data-*` attributes and read by the handler via `event.target.dataset.<name>` or `event.target.closest('.<row-class>').dataset.<name>`.
+
+### 12.2 Permitted direct-binding cases
+
+Direct binding is permitted in exactly these cases:
+
+1. **Singleton elements bound at page boot.** An element that exists exactly once on the page and is not subject to re-rendering, bound during the `DOMContentLoaded` handler in `INITIALIZATION`.
+2. **Window-level and document-level events.** Events bound on `window` or `document`.
+
+Any binding case that fits neither §12.1 nor §12.2 is evaluated as a spec amendment, not as a per-file authoring choice.
+
+---
+
+## 13. Comments
 
 Comments serve four roles, and only four:
 
@@ -295,24 +320,24 @@ Comments serve four roles, and only four:
 
 No other comment forms are recognized. Stray block comments at file scope are a parse error.
 
-### 12.1 Inline comments
+### 13.1 Inline comments
 
 Inline `//` line comments are permitted inside function bodies for explaining specific lines or blocks of logic. They are not cataloged.
 
 Inline `//` line comments are forbidden at file scope. Each file-scope `//` comment emits a `JS_LINE_COMMENT` row at its own line with `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift attached.
 
-### 12.2 Comment content rules
+### 13.2 Comment content rules
 
 - Purpose comments are written in present-tense, descriptive style. They describe what the function/constant/state does, not why it does it.
 - Section banner descriptions may be 1-5 sentences. They explain what the section contains.
 
 ---
 
-## 13. Sub-section markers vs. new banners
+## 14. Sub-section markers vs. new banners
 
 When a section's content grows, two structural tools are available: sub-section markers (lightweight visual dividers within a single banner) and new banners of the same type.
 
-### 13.1 Use a new banner when
+### 14.1 Use a new banner when
 
 - The new content is a distinct concept with its own purpose
 - The new content has its own audience or readership context
@@ -320,7 +345,7 @@ When a section's content grows, two structural tools are available: sub-section 
 
 A new banner gets its own row in the FILE ORGANIZATION list.
 
-### 13.2 Use a sub-section marker when
+### 14.2 Use a sub-section marker when
 
 - The new content is a sub-component of an existing concept
 - Grouping is for visual reading aid only, not a structural distinction
@@ -329,7 +354,7 @@ Sub-section markers use the inline format `/* -- <label> -- */`. They are decora
 
 ---
 
-## 14. Forbidden patterns
+## 15. Forbidden patterns
 
 Every forbidden pattern emits a row in the catalog with the relevant drift code attached. A clean codebase has zero rows with drift; any drift is an action item to fix.
 
@@ -343,6 +368,7 @@ Some forbidden patterns ride on the row of an existing declaration. Others have 
 | Anonymous function or arrow expression outside an allowed callback context | `FORBIDDEN_ANONYMOUS_FUNCTION` | The const/var declaration row |
 | Defining a function whose name matches a `cc-shared.js` export | `SHADOWS_SHARED_FUNCTION` | The function row |
 | Element-property event assignment (`el.onclick = handler`) | `FORBIDDEN_PROPERTY_ASSIGN_EVENT` | The JS_EVENT row |
+| Per-element `addEventListener` call inside a loop on rendered list/grid content | `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` | The JS_EVENT row |
 | IIFE at file scope (`(function() { ... })()`) | `FORBIDDEN_IIFE` | A `JS_IIFE` row at the violation line |
 | Top-level `const X = (function(){...})()` or `var X = (function(){...})()` (revealing-module IIFE) | `FORBIDDEN_REVEALING_MODULE` | The const/var declaration row |
 | `eval(...)` | `FORBIDDEN_EVAL` | A `JS_EVAL` row at the violation line |
@@ -354,7 +380,7 @@ Some forbidden patterns ride on the row of an existing declaration. Others have 
 | File-scope `//` line comment | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `JS_LINE_COMMENT` row at the violation line |
 | CHANGELOG block in file header | `FORBIDDEN_CHANGELOG_BLOCK` | The FILE_HEADER row |
 
-### 14.1 Allowed anonymous callback contexts
+### 15.1 Allowed anonymous callback contexts
 
 A function or arrow expression passed as an argument to another call may be anonymous. This covers patterns like `addEventListener` callbacks, `.forEach` / `.map` callbacks, `.then` callbacks, and `setTimeout` / `setInterval` callbacks.
 
@@ -362,7 +388,7 @@ The parser walks into the anonymous body normally, so any function calls, class 
 
 No other carve-outs. Anonymous functions assigned to a const or var, returned from another function, or used as object property values are all `FORBIDDEN_ANONYMOUS_FUNCTION` violations.
 
-### 14.2 Forbidden wrapper patterns
+### 15.2 Forbidden wrapper patterns
 
 Two top-level wrapper patterns are forbidden:
 
@@ -373,17 +399,17 @@ Both patterns require a full file rewrite, not in-place repair.
 
 ---
 
-## 15. Required patterns summary
+## 16. Required patterns summary
 
 Every JS file must:
 
 1. Open with a spec-compliant file header (Section 2).
 2. Define all sections under recognized section types in declared order (Sections 3, 4).
 3. Declare a valid prefix in every section banner (Section 5).
-4. Precede every function, constant, state variable, hook, class, and method with a single block comment (Sections 6, 7, 8, 9, 12).
+4. Precede every function, constant, state variable, hook, class, and method with a single block comment (Sections 6, 7, 8, 9, 13).
 5. Use `const` in CONSTANTS sections and `var` in STATE sections (Section 7).
 6. Define functions only as `function name() {}` declarations (Section 6).
-7. Bind events only via `addEventListener` (Section 14).
+7. Bind events only via `addEventListener`, with delegation as the canonical pattern and the carve-outs in Section 12.2 as the only direct-binding cases permitted (Section 12).
 8. Place page lifecycle hooks in a `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner that is last in the file (Section 8).
 9. Use one declaration per statement (Section 7.3).
 10. Use the page prefix on every top-level identifier in a page file, except hooks (Section 5).
@@ -392,17 +418,17 @@ Every JS file must:
 
 ---
 
-## 16. Catalog model
+## 17. Catalog model
 
 This section covers the catalog mechanism as it relates to JS files. Every cataloged JS construct gets one row in `dbo.Asset_Registry`.
 
-### 16.1 What the catalog represents
+### 17.1 What the catalog represents
 
 The catalog represents everything the parser found in the file, with drift codes telling the operator what's wrong. Forbidden patterns produce rows just like permitted ones; the difference is the drift codes attached. A clean codebase has zero rows with non-NULL `drift_codes`.
 
 A row's identity is the combination of `component_type`, `component_name`, `reference_type`, `file_name`, `occurrence_index`, `variant_type`, `variant_qualifier_1`, and `variant_qualifier_2`.
 
-### 16.2 JS-relevant component_type values
+### 17.2 JS-relevant component_type values
 
 | component_type | Meaning |
 |---|---|
@@ -410,8 +436,8 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 | `COMMENT_BANNER` | A section banner comment. One row per section. The section type lives in `signature`. |
 | `JS_IMPORT` | An ES `import` statement or Node `require` call. The imported binding name is `component_name`. The source module path is `variant_qualifier_2`. Always non-NULL `variant_type`. |
 | `JS_CONSTANT` | A `const` declaration of a primitive value in a `CONSTANTS` or `FOUNDATION` section. |
-| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. Also the row host for revealing-module wrappers (Section 14.2). |
-| `JS_STATE` | A `var` declaration in a `STATE` section. No variants. Also the row host for revealing-module wrappers using `var` (Section 14.2). |
+| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. Also the row host for revealing-module wrappers (Section 15.2). |
+| `JS_STATE` | A `var` declaration in a `STATE` section. No variants. Also the row host for revealing-module wrappers using `var` (Section 15.2). |
 | `JS_FUNCTION` | A regular `function name() {}` declaration. |
 | `JS_FUNCTION_VARIANT` | An `async function name()` or `function* name()` (generator) declaration. |
 | `JS_HOOK` | A regular sync function inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. |
@@ -420,7 +446,7 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 | `JS_METHOD` | A regular method defined inside a class body. The class name lives in `parent_function`. |
 | `JS_METHOD_VARIANT` | A static method, getter, setter, or async method inside a class body. |
 | `JS_TIMER` | A `setInterval` or `setTimeout` call assigned to a tracked handle. The handle name is `component_name`. Always non-NULL `variant_type`. |
-| `JS_EVENT` | An `addEventListener` event handler binding. The event name is `component_name`. No variants. |
+| `JS_EVENT` | An `addEventListener` event handler binding. The event name is `component_name`. No variants. Hosts `FORBIDDEN_PROPERTY_ASSIGN_EVENT` drift on element-property assignments and `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` drift on per-element listener loops. |
 | `JS_IIFE` | An IIFE at file scope. Exists solely to host `FORBIDDEN_IIFE` drift. |
 | `JS_EVAL` | An `eval(...)` call. Exists solely to host `FORBIDDEN_EVAL` drift. |
 | `JS_DOCUMENT_WRITE` | A `document.write(...)` call. Exists solely to host `FORBIDDEN_DOCUMENT_WRITE` drift. |
@@ -432,7 +458,7 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 | `CSS_CLASS` | A class name found inside a template literal, string literal, `classList.*` call, `className` assignment, or `setAttribute('class', ...)` call. Always `USAGE`. |
 | `HTML_ID` | An `id="..."` attribute (DEFINITION) or a literal-string argument to `getElementById` / `querySelector('#...')` (USAGE). |
 
-### 16.3 Scope determination
+### 17.3 Scope determination
 
 - DEFINITION rows in `cc-shared.js`: scope is `SHARED`.
 - DEFINITION rows in any page file: scope is `LOCAL`.
@@ -441,7 +467,7 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 - HTML_ID rows: always `LOCAL`.
 - Forbidden-pattern rows: scope follows the file's overall scope. The drift code is the action item; the scope value is informational.
 
-### 16.4 Drift recording
+### 17.4 Drift recording
 
 The parser evaluates every row against the spec and records two things when the row deviates:
 
@@ -450,9 +476,9 @@ The parser evaluates every row against the spec and records two things when the 
 
 A row may carry zero, one, or many drift codes. Both columns are NULL when the row is fully spec-compliant.
 
-The full code-to-description mapping for JS appears in Section 18.
+The full code-to-description mapping for JS appears in Section 19.
 
-### 16.5 Variant model
+### 17.5 Variant model
 
 Variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) discriminate sub-flavors of certain component types. Two patterns are in use:
 
@@ -475,7 +501,7 @@ Variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) d
 | `JS_CONSTANT_VARIANT` | `object` | NULL | NULL | `const bsv_CONFIG = { foo: 1 }` |
 | `JS_CONSTANT_VARIANT` | `array` | NULL | NULL | `const bsv_LEVELS = [1, 2, 3]` |
 | `JS_CONSTANT_VARIANT` | `regex` | NULL | NULL | `const bsv_RE = /^foo/` |
-| `JS_CONSTANT_VARIANT` | `expression` | NULL | NULL | Value computed from a function call or expression. Includes the revealing-module wrapper case (Section 14.2). |
+| `JS_CONSTANT_VARIANT` | `expression` | NULL | NULL | Value computed from a function call or expression. Includes the revealing-module wrapper case (Section 15.2). |
 
 #### JS_HOOK (base) and JS_HOOK_VARIANT (variant)
 
@@ -524,7 +550,7 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 
 ---
 
-## 17. What the parser extracts
+## 18. What the parser extracts
 
 | Row type | Source | Notes |
 |----------|--------|-------|
@@ -539,7 +565,7 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 | `JS_METHOD DEFINITION` / `JS_METHOD_VARIANT DEFINITION` | Each method inside a class body | Base for regular methods; variant for static/getter/setter/async forms. `parent_function` = class name. |
 | `JS_TIMER DEFINITION` | Each `setInterval` / `setTimeout` call assigned to a tracked handle | `component_name` = handle name. |
 | `JS_FUNCTION USAGE` | Each call to a function defined in the same file or in `cc-shared.js` | Calls to unknown identifiers are not cataloged. |
-| `JS_EVENT USAGE` | Each `addEventListener('event', ...)` call | `component_name` = event name. |
+| `JS_EVENT USAGE` | Each `addEventListener('event', ...)` call | `component_name` = event name. Hosts `FORBIDDEN_PROPERTY_ASSIGN_EVENT` drift on element-property assignments and `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` drift on per-element listener loops. |
 | `CSS_CLASS USAGE` | Each class name in a template literal, classList call, or setAttribute('class', ...) | Resolved to SHARED or LOCAL via the CSS_CLASS DEFINITION map. |
 | `HTML_ID DEFINITION` | Each `id="..."` in a template/string literal or `setAttribute('id', ...)` or `el.id = '...'` | LOCAL scope. |
 | `HTML_ID USAGE` | Each `getElementById('...')` or `querySelector('#...')` argument | LOCAL scope. |
@@ -554,9 +580,9 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 
 ---
 
-## 18. Drift codes reference
+## 19. Drift codes reference
 
-### 18.1 File-level codes
+### 19.1 File-level codes
 
 | Code | Description |
 |---|---|
@@ -564,7 +590,7 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 | `FORBIDDEN_CHANGELOG_BLOCK` | The file header contains a CHANGELOG block. |
 | `FILE_ORG_MISMATCH` | The FILE ORGANIZATION list in the header does not exactly match the section banner titles in the file body. |
 
-### 18.2 Section-level codes
+### 19.2 Section-level codes
 
 The banner format defined in Section 3 is enforced via granular drift codes — each format violation produces its own code so refactor work can be triaged precisely. A non-conformant banner produces a `COMMENT_BANNER` row carrying drift codes that describe every way the banner deviates from §3.1.
 
@@ -587,7 +613,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `DUPLICATE_CHROME` | A CHROME section appears in a JS file other than `cc-shared.js`. |
 | `HOOKS_BANNER_NOT_LAST` | A `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner exists but is not the last banner in the file. |
 
-### 18.3 Definition-level codes
+### 19.3 Definition-level codes
 
 | Code | Description |
 |---|---|
@@ -602,7 +628,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `SHADOWS_SHARED_FUNCTION` | A page file defines a function whose name matches a `cc-shared.js` export. |
 | `UNKNOWN_HOOK_NAME` | A function inside the hooks banner has a name not in the recognized hook set. |
 
-### 18.4 Forbidden-pattern codes
+### 19.4 Forbidden-pattern codes
 
 | Code | Description | Row host |
 |---|---|---|
@@ -611,6 +637,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `FORBIDDEN_CONDITIONAL_DEFINITION` | A top-level function or class is declared inside an `if`/`while`/`try` block. | Function/class row |
 | `FORBIDDEN_ANONYMOUS_FUNCTION` | A function or arrow expression has no name and is not passed as a callback argument. | The const/var row |
 | `FORBIDDEN_PROPERTY_ASSIGN_EVENT` | An event handler is bound via `el.on<event> = handler` instead of `addEventListener`. | JS_EVENT row |
+| `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` | An `addEventListener` call is bound to a per-iteration element inside a `forEach`, `for...of`, or `for` loop. The canonical pattern is delegation on a stable parent (Section 12). | JS_EVENT row |
 | `FORBIDDEN_IIFE` | An IIFE appears at file scope. | JS_IIFE row |
 | `FORBIDDEN_REVEALING_MODULE` | A `const` or `var` declaration is initialized by an immediately-invoked function expression (the revealing-module pattern). | The const/var declaration row (`JS_CONSTANT_VARIANT` or `JS_STATE`) |
 | `FORBIDDEN_EVAL` | A call to `eval(...)` appears in the file. | JS_EVAL row |
@@ -621,7 +648,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `FORBIDDEN_INLINE_EVENT_IN_JS` | A template literal or string literal contains an inline `on<event>="..."` attribute. Bind events via `addEventListener` after rendering. | JS_INLINE_EVENT row |
 | `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` | A `//` line comment appears at file scope. | JS_LINE_COMMENT row |
 
-### 18.5 Comment / structure codes
+### 19.5 Comment / structure codes
 
 | Code | Description |
 |---|---|
@@ -631,11 +658,11 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 
 ---
 
-## 19. Compliance queries
+## 20. Compliance queries
 
 Standard SQL queries against `dbo.Asset_Registry` for JS compliance reporting. Each query is scoped to `WHERE file_type = 'JS'`.
 
-### 19.1 Q1 - Shared-function shadowing
+### 20.1 Q1 - Shared-function shadowing
 
 Find every page file that defines a function whose name matches a `cc-shared.js` export.
 
@@ -659,7 +686,7 @@ WHERE local.file_type    = 'JS'
 ORDER BY local.component_name, local.file_name;
 ```
 
-### 19.2 Q2 - Drift summary per file
+### 20.2 Q2 - Drift summary per file
 
 Counts of total rows and rows-with-drift per file. Use this to prioritize conversion work.
 
@@ -674,7 +701,7 @@ GROUP BY file_name
 ORDER BY rows_with_drift DESC;
 ```
 
-### 19.3 Q3 - Drift code distribution
+### 20.3 Q3 - Drift code distribution
 
 What's the most common kind of drift across the JS codebase?
 
@@ -691,7 +718,7 @@ GROUP BY TRIM(value)
 ORDER BY COUNT(*) DESC;
 ```
 
-### 19.4 Q4 - Hook implementation matrix
+### 20.4 Q4 - Hook implementation matrix
 
 Which pages implement which hooks?
 
@@ -711,7 +738,7 @@ GROUP BY file_name
 ORDER BY file_name;
 ```
 
-### 19.5 Q5 - Page glossary (function reference)
+### 20.5 Q5 - Page glossary (function reference)
 
 For one specific page, list every function it defines with its purpose comment.
 
@@ -729,7 +756,7 @@ WHERE file_type      = 'JS'
 ORDER BY line_start;
 ```
 
-### 19.6 Q6 - Forbidden-pattern inventory
+### 20.6 Q6 - Forbidden-pattern inventory
 
 List every forbidden-pattern occurrence with line and context. Once the codebase is fully spec-compliant, this query returns zero rows.
 
@@ -750,9 +777,9 @@ ORDER BY file_name, line_start;
 
 ---
 
-## 20. Examples
+## 21. Examples
 
-### 20.1 Minimal complete page file
+### 21.1 Minimal complete page file
 
 A small page demonstrating every required pattern. Real pages have more sections.
 
@@ -818,6 +845,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     await ex_loadConfig();
     ex_refreshAll();
     connectEngineEvents();
+
+    /* Delegated click handler on the agent grid. */
+    const agentGrid = document.getElementById('ex-agent-grid');
+    agentGrid.addEventListener('click', ex_onAgentGridClick);
+
+    /* Singleton refresh button. */
+    const refreshBtn = document.getElementById('ex-refresh-btn');
+    refreshBtn.addEventListener('click', ex_refreshAll);
+
+    /* Window resize listener. */
+    window.addEventListener('resize', ex_onWindowResize);
 });
 
 
@@ -859,15 +897,33 @@ function ex_loadAgents() {
 
 /* Renders the agent cards into the page's agent container. */
 function ex_renderAgents(agents) {
-    const container = document.getElementById('agent-cards');
+    const container = document.getElementById('ex-agent-grid');
     container.innerHTML = agents.map(ex_buildAgentCard).join('');
 }
 
 /* Builds the HTML for a single agent card. */
 function ex_buildAgentCard(agent) {
-    return '<div class="ex-agent-card">' +
+    return '<div class="ex-agent-card" data-agent-id="' + agent.id + '">' +
            '<span class="ex-agent-name">' + escapeHtml(agent.name) + '</span>' +
            '</div>';
+}
+
+/* Delegated handler for clicks inside the agent grid. */
+function ex_onAgentGridClick(event) {
+    const card = event.target.closest('.ex-agent-card');
+    if (!card) return;
+    const agentId = card.dataset.agentId;
+    ex_handleAgentClick(agentId);
+}
+
+/* Acts on a click for a specific agent. */
+function ex_handleAgentClick(agentId) {
+    /* ... */
+}
+
+/* Window resize handler. */
+function ex_onWindowResize() {
+    /* ... */
 }
 
 
@@ -898,8 +954,9 @@ This file produces the following catalog rows when parsed:
 - 1 x `JS_CONSTANT DEFINITION` (`ex_DEFAULT_REFRESH_INTERVAL`)
 - 2 x `JS_STATE DEFINITION` (`ex_currentFilter`, `ex_livePollingTimer`)
 - 1 x `JS_FUNCTION_VARIANT DEFINITION` (`ex_loadConfig`, variant_type='async')
-- 4 x `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`)
+- 7 x `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`, `ex_onAgentGridClick`, `ex_handleAgentClick`, `ex_onWindowResize`)
 - 2 x `JS_HOOK DEFINITION` (`onPageRefresh`, `onPageResumed`)
+- 3 x `JS_EVENT USAGE` (the agent-grid click delegation, the singleton refresh button, the window resize listener)
 
 Zero drift rows expected.
 
@@ -939,12 +996,27 @@ The `const` vs `var` split by section reflects the semantic distinction. CONSTAN
 
 The hooks-banner-last rule produces a stable file-scanning experience. A reader looking for "this page's contract with cc-shared.js" knows exactly where to find it (last banner in the file). The `Prefix: (none)` declaration prevents the spec's prefix-matching from erroneously flagging hook names as PREFIX_MISMATCH violations.
 
-### A.14 Forbidden patterns
+### A.12 Event handler binding
+
+Event delegation is canonical because it survives re-rendering. CC pages render and re-render their content as data updates; a delegated listener attached at page boot to a stable parent survives every subsequent re-render without rebinding. Direct binding requires the page author to remember to rebind after every render. That is a footgun the spec avoids by mandating delegation as the default.
+
+The carve-outs in §12.2 are deliberately narrow. Each represents a case where the canonical pattern is mechanically inapplicable, not where it is pragmatically suboptimal:
+
+- **Singleton elements** (carve-out 1) exist exactly once on the page and are not subject to re-rendering. They have no related siblings the listener could be delegated across; the only available delegation parent is the page's root or `document.body`, which would funnel every page-level click through one global router. Direct binding on the singleton itself is structurally cleaner.
+- **Window/document-level events** (carve-out 2) bind to the top of the DOM tree. There is no parent to delegate from. The "delegation" pattern and the "direct binding" pattern collapse to the same thing here: `window.addEventListener('resize', handler)`.
+
+The form-input case is covered by delegation, not by a carve-out. A form is a stable parent; its inputs are reachable via `event.target.matches('#...')` or `event.target.matches('[name=...]')`. The handler routes per-input via that check. This trades a small amount of routing boilerplate for consistency with the canonical pattern across every other binding case in the file. The trade is worth it because the initiative's premise is that there is one way to do this; carve-outs erode that premise unless they represent a structural inapplicability of the canonical form, which the form case does not.
+
+The `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` drift code targets the dominant anti-pattern: a `forEach` over rendered list/grid elements that calls `addEventListener` on each. This shape is mechanically detectable at the AST level — a loop containing an `addEventListener` call on a per-iteration element — and represents the most common authoring mistake delegation prevents. The drift fires on the JS_EVENT row inside the loop, with the `parent_function` column carrying the enclosing function name so the operator can locate the rebind site.
+
+The carve-out rule is an authoring rule. The parser cannot in general distinguish a legitimate singleton-element direct binding from a misapplied direct binding to an element that should have been delegated; both look identical at the AST level. This is the same shape as other authoring rules in the spec — §6.1 (function comment quality), §7.2 (case distinction in constant naming), §13 (sub-section marker vs new banner judgment), §14 (banner authoring discipline). The pattern is consistent: the spec sets the rule; the parser catches what it can; humans catch the rest. The catalog still surfaces useful signal — a high `JS_EVENT` row count on a page is a flag for review even when the populator cannot auto-classify each row.
+
+### A.15 Forbidden patterns
 
 The dedicated component_type rows for forbidden patterns (JS_IIFE, JS_EVAL, JS_DOCUMENT_WRITE, etc.) exist because these patterns have no natural declaration row to host the drift. An IIFE doesn't have a name; eval doesn't have a binding. The dedicated row gives every forbidden-pattern occurrence a queryable catalog presence regardless of where in the source it appears.
 
 The revealing-module pattern (`const X = (function(){...})()`) is treated as a forbidden wrapper rather than a forbidden construct because it does have a natural host — the const or var declaration that binds the IIFE result to a name. The wrapper row carries the drift; the inner functions are not cataloged because they have no spec-equivalent identity. This parallels how the top-level IIFE is handled, with the JS_IIFE row hosting the drift in that case. The two patterns share a common diagnosis: the file's design is structurally non-spec and requires rewriting, not in-place repair.
 
-### A.18 Drift codes — banner granularity
+### A.19 Drift codes — banner granularity
 
-The §18.2 banner code set is intentionally granular rather than coarse. A single combined code would collapse every kind of banner non-conformance into one verdict, which makes refactor work hard to triage — a reader could not tell from the code alone whether the banner had the wrong rule-line length, was missing a description, used an inline shape, or had a malformed title line. Each granular code (`BANNER_INVALID_RULE_LENGTH`, `BANNER_INLINE_SHAPE`, `BANNER_MISSING_DESCRIPTION`, etc.) describes exactly one violation, allowing precise queries like "find every banner with the wrong rule length" or "list every inline-shape banner candidate for refactor." A non-conformant banner may carry several granular codes simultaneously when it violates multiple rules.
+The §19.2 banner code set is intentionally granular rather than coarse. A single combined code would collapse every kind of banner non-conformance into one verdict, which makes refactor work hard to triage — a reader could not tell from the code alone whether the banner had the wrong rule-line length, was missing a description, used an inline shape, or had a malformed title line. Each granular code (`BANNER_INVALID_RULE_LENGTH`, `BANNER_INLINE_SHAPE`, `BANNER_MISSING_DESCRIPTION`, etc.) describes exactly one violation, allowing precise queries like "find every banner with the wrong rule length" or "list every inline-shape banner candidate for refactor." A non-conformant banner may carry several granular codes simultaneously when it violates multiple rules.
