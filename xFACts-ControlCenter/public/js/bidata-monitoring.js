@@ -9,6 +9,12 @@
 
    CHANGELOG
    ---------
+   2026-05-09  renderCurrentBuildExecution: running-step row now displays
+                 the actual step name from data.next_step_name (sourced from
+                 sysjobsteps via the API). Falls back to "Step N executing"
+                 when the lookup is unavailable.
+               renderBuildsForDate: attempt-header suffix recognizes
+                 IN_PROGRESS as "(Running)" instead of "(Failed)".
    2026-04-30  Phase 4 (Standardization): full alignment to shared module.
                  - Deleted local escapeHtml; uses shared escapeHtml.
                  - Deleted local formatTime; uses shared formatTimeOfDay.
@@ -31,12 +37,12 @@
 // CONFIGURATION
 // ============================================================================
 
-// Engine events — process map for shared WebSocket module (engine-events.js)
+// Engine events - process map for shared WebSocket module (engine-events.js)
 var ENGINE_PROCESSES = {
     'Monitor-BIDATABuild': { slug: 'bidata' }
 };
 
-// Live polling (Refresh Architecture — plumbing ready, not currently active)
+// Live polling (Refresh Architecture - plumbing ready, not currently active)
 var PAGE_REFRESH_INTERVAL = 30;   // Default; overridden by GlobalConfig on load
 
 // Page hooks for engine-events.js shared module
@@ -132,7 +138,7 @@ function startAutoRefresh() {
     }, 60000);
 }
 
-// ── Live sections: placeholder for future direct polling ──
+// -- Live sections: placeholder for future direct polling --
 function refreshLiveSections() {
     // Currently unused -- all sections are event-driven.
     // When live polling is enabled, move sections here that need
@@ -140,7 +146,7 @@ function refreshLiveSections() {
     updateTimestamp();
 }
 
-// ── Event-driven sections: refresh on orchestrator PROCESS_COMPLETED ──
+// -- Event-driven sections: refresh on orchestrator PROCESS_COMPLETED --
 function refreshEventSections() {
     loadLiveActivity();
     loadCurrentBuildExecution();
@@ -148,7 +154,7 @@ function refreshEventSections() {
     updateTimestamp();
 }
 
-// ── Manual refresh: everything (excluding Duration Trend -- action-driven) ──
+// -- Manual refresh: everything (excluding Duration Trend -- action-driven) --
 function refreshAll() {
     loadLiveActivity();
     loadCurrentBuildExecution();
@@ -450,9 +456,15 @@ function renderCurrentBuildExecution(data) {
             runningStartTime = calculateEndTime(lastStep.run_time, lastStep.duration_seconds);
         }
 
+        // Prefer the actual step name from msdb (data.next_step_name); fall back to
+        // the positional "Step N executing" label if the lookup wasn't available.
+        var runningLabel = data.next_step_name
+            ? (escapeHtml(data.next_step_name) + ' executing...')
+            : ('Step ' + data.next_step_number + ' executing...');
+
         html += '<div class="step-row step-running">';
         html += '<span class="step-status-badge running"><span class="spinning-gear">&#9881;</span></span>';
-        html += '<span class="step-name">Step ' + data.next_step_number + ' executing...</span>';
+        html += '<span class="step-name">' + runningLabel + '</span>';
         html += '<span class="step-time">' + runningStartTime + '</span>';
         html += '<span class="step-time">--:--:--</span>';
         html += '<span class="step-duration-col step-duration-running">' + formatDuration(data.current_step_elapsed_seconds) + '</span>';
@@ -698,7 +710,10 @@ function renderBuildsForDate(data, dateStr) {
         }
 
         if (data.builds.length > 1) {
-            html += '<div class="build-attempt-header">Attempt #' + (data.builds.length - idx) + (build.status === 'COMPLETED' ? ' (Final)' : ' (Failed)') + '</div>';
+            var attemptSuffix = build.status === 'COMPLETED' ? ' (Final)'
+                              : build.status === 'IN_PROGRESS' ? ' (Running)'
+                              : ' (Failed)';
+            html += '<div class="build-attempt-header">Attempt #' + (data.builds.length - idx) + attemptSuffix + '</div>';
         }
 
         html += '<div class="detail-section"><h3>Summary</h3><div class="detail-grid">';
