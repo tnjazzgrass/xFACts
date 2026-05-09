@@ -120,6 +120,11 @@ document.addEventListener('DOMContentLoaded', function() {
     bsv_startLivePolling();
     connectEngineEvents();
     initEngineCardClicks();
+
+    document.getElementById('distribution-cards').addEventListener('click', bsv_onDistributionClick);
+    document.getElementById('group-badges').addEventListener('click', bsv_onGroupBadgesClick);
+    document.getElementById('history-tree').addEventListener('click', bsv_onHistoryTreeClick);
+    document.getElementById('slideout-body').addEventListener('click', bsv_onSlideoutBodyClick);
 });
 
 
@@ -328,7 +333,7 @@ function bsv_renderDistribution(groups) {
         var newToday = g.new_today || 0;
         var fillPct = totalCap > 0 ? Math.round((totalAssigned / totalCap) * 100) : 0;
 
-        html += '<div class="flip-card" onclick="this.classList.toggle(\'flipped\')">';
+        html += '<div class="flip-card">';
 
         /* Front face. */
         html += '<div class="flip-card-front">';
@@ -368,6 +373,14 @@ function bsv_renderDistribution(groups) {
     });
 
     container.innerHTML = html;
+}
+
+/* Delegated click handler for the distribution flip cards. Toggles the
+   'flipped' state on the .flip-card element nearest the click. */
+function bsv_onDistributionClick(event) {
+    var card = event.target.closest('.flip-card');
+    if (!card) return;
+    card.classList.toggle('flipped');
 }
 
 
@@ -411,19 +424,19 @@ function bsv_loadHistory() {
 function bsv_renderGroupBadges(groups) {
     var container = document.getElementById('group-badges');
 
-    var html = '<span class="group-badge ' + (bsv_selectedGroupFilter === '0' ? 'active' : '') + '" onclick="bsv_selectGroupFilter(\'0\')">All</span>';
+    var html = '<span class="group-badge ' + (bsv_selectedGroupFilter === '0' ? 'active' : '') + '" data-group-id="0">All</span>';
 
     groups.forEach(function(g) {
         var gid = g.group_id.toString();
         var activeClass = (bsv_selectedGroupFilter === gid) ? 'active' : '';
-        html += '<span class="group-badge ' + activeClass + '" onclick="bsv_selectGroupFilter(\'' + gid + '\')">' + escapeHtml(g.group_short_name) + '</span>';
+        html += '<span class="group-badge ' + activeClass + '" data-group-id="' + gid + '">' + escapeHtml(g.group_short_name) + '</span>';
     });
 
     container.innerHTML = html;
 }
 
 /* Sets the active group filter and reloads the history tree. Called
-   from the inline onclick handlers on each group badge. */
+   from the delegated click handler on the group badges container. */
 function bsv_selectGroupFilter(groupId) {
     bsv_selectedGroupFilter = groupId;
     bsv_loadHistory();
@@ -451,7 +464,7 @@ function bsv_renderHistory(years, totalCount) {
 
     years.forEach(function(yearData) {
         html += '<div class="history-year">';
-        html += '<div class="year-header" onclick="bsv_toggleYear(this)">';
+        html += '<div class="year-header">';
         html += '<span class="expand-icon">&#9654;</span>';
         html += '<span class="year-label">' + yearData.year + '</span>';
         html += '<div class="year-stats">';
@@ -466,7 +479,7 @@ function bsv_renderHistory(years, totalCount) {
 
         yearData.months.forEach(function(monthData) {
             html += '<tbody class="month-group">';
-            html += '<tr class="month-row" onclick="bsv_toggleMonth(this, ' + yearData.year + ', ' + monthData.month + ')">';
+            html += '<tr class="month-row" data-year="' + yearData.year + '" data-month="' + monthData.month + '">';
             html += '<td class="expand-cell"><span class="expand-icon">&#9654;</span></td>';
             html += '<td class="month-cell">' + MONTH_NAMES[monthData.month] + '</td>';
             html += '<td>' + monthData.received.toLocaleString() + '</td>';
@@ -486,7 +499,7 @@ function bsv_renderHistory(years, totalCount) {
 }
 
 /* Toggles the expanded state of a year row in the history tree.
-   Wired up from the year header's inline onclick. */
+   Called from the delegated click handler on the history tree. */
 function bsv_toggleYear(el) {
     var content = el.nextElementSibling;
     var icon = el.querySelector('.expand-icon');
@@ -551,7 +564,7 @@ function bsv_renderMonthDays(container, days) {
     html += '</tr></thead><tbody>';
 
     days.forEach(function(d, idx) {
-        html += '<tr class="day-row ' + (idx % 2 === 0 ? '' : 'row-odd') + '" onclick="bsv_loadDayDetail(\'' + d.date + '\')">';
+        html += '<tr class="day-row ' + (idx % 2 === 0 ? '' : 'row-odd') + '" data-date="' + d.date + '">';
         html += '<td>' + d.day_of_week + '</td>';
         var dateParts = d.date.split('-');
         html += '<td>' + dateParts[1] + '/' + dateParts[2] + '</td>';
@@ -562,6 +575,35 @@ function bsv_renderMonthDays(container, days) {
 
     html += '</tbody></table>';
     container.innerHTML = html;
+}
+
+/* Delegated click handler for the group filter badges. Reads the
+   data-group-id from the clicked badge and applies the filter. */
+function bsv_onGroupBadgesClick(event) {
+    var badge = event.target.closest('.group-badge');
+    if (!badge) return;
+    bsv_selectGroupFilter(badge.dataset.groupId);
+}
+
+/* Delegated click handler for the history tree. Routes to the
+   appropriate toggle or load action based on which row class was
+   clicked: year header (toggle expand), month row (toggle expand and
+   lazy-load days), or day row (open the day-detail slideout). */
+function bsv_onHistoryTreeClick(event) {
+    var yearHeader = event.target.closest('.year-header');
+    if (yearHeader) {
+        bsv_toggleYear(yearHeader);
+        return;
+    }
+    var monthRow = event.target.closest('.month-row');
+    if (monthRow) {
+        bsv_toggleMonth(monthRow, parseInt(monthRow.dataset.year, 10), parseInt(monthRow.dataset.month, 10));
+        return;
+    }
+    var dayRow = event.target.closest('.day-row');
+    if (dayRow) {
+        bsv_loadDayDetail(dayRow.dataset.date);
+    }
 }
 
 
@@ -625,7 +667,7 @@ function bsv_renderDayDetail(data) {
         html += '</tr></thead><tbody>';
 
         data.users.forEach(function(u) {
-            html += '<tr class="user-detail-row" onclick="bsv_loadUserDayRequests(\'' + data.date + '\', \'' + bsv_escapeJs(u.username) + '\')">';
+            html += '<tr class="user-detail-row" data-date="' + escapeHtml(data.date) + '" data-username="' + escapeHtml(u.username) + '">';
             html += '<td>' + escapeHtml(u.group_short_name) + '</td>';
             html += '<td>' + escapeHtml(u.username) + '</td>';
             html += '<td class="completed-cell">' + u.completed + '</td>';
@@ -676,7 +718,7 @@ function bsv_renderUserDayRequests(data) {
     html += '</tr></thead><tbody>';
 
     data.requests.forEach(function(r) {
-        var commentBtn = r.has_comment ? '<button class="btn btn-xs btn-comment" onclick="event.stopPropagation(); bsv_openRequestDetail(' + r.tracking_id + ')" title="View comment">&#128172;</button>' : '';
+        var commentBtn = r.has_comment ? '<button class="btn btn-xs btn-comment" data-tracking-id="' + r.tracking_id + '" title="View comment">&#128172;</button>' : '';
 
         html += '<tr>';
         html += '<td class="mono">' + escapeHtml(r.consumer_number || '') + '</td>';
@@ -691,9 +733,32 @@ function bsv_renderUserDayRequests(data) {
     html += '</tbody></table>';
 
     /* Back button. */
-    html += '<button class="btn btn-sm btn-back" onclick="bsv_loadDayDetail(\'' + data.date + '\')">&#8592; Back to day summary</button>';
+    html += '<button class="btn btn-sm btn-back" data-date="' + escapeHtml(data.date) + '">&#8592; Back to day summary</button>';
 
     body.innerHTML = html;
+}
+
+/* Delegated click handler for the slideout body. Routes to the
+   appropriate action based on which row or button was clicked: the
+   comment button (open request detail modal), the back button (return
+   to day summary), or a user-detail row (drill into per-user
+   requests). The button checks come first so a button click inside a
+   row doesn't also fire the row's drill-down. */
+function bsv_onSlideoutBodyClick(event) {
+    var commentBtn = event.target.closest('.btn-comment');
+    if (commentBtn) {
+        bsv_openRequestDetail(parseInt(commentBtn.dataset.trackingId, 10));
+        return;
+    }
+    var backBtn = event.target.closest('.btn-back');
+    if (backBtn) {
+        bsv_loadDayDetail(backBtn.dataset.date);
+        return;
+    }
+    var userRow = event.target.closest('.user-detail-row');
+    if (userRow) {
+        bsv_loadUserDayRequests(userRow.dataset.date, userRow.dataset.username);
+    }
 }
 
 
@@ -804,10 +869,8 @@ function bsv_closeSlideout() {
    FUNCTIONS: UTILITIES
    ----------------------------------------------------------------------------
    Page-local helpers: timestamp display, the inline connection-error
-   banner, MM/DD/YYYY display formatting, and JS-string escaping. The
-   inline-onclick rendering pattern uses bsv_escapeJs for embedded
-   string interpolation; the standard HTML escapeHtml from cc-shared.js
-   handles attribute and content escaping.
+   banner, and MM/DD/YYYY display formatting. The standard escapeHtml
+   from cc-shared.js handles HTML attribute and content escaping.
    Prefix: bsv
    ============================================================================ */
 
@@ -847,19 +910,6 @@ function bsv_formatDisplayDate(dateStr) {
     if (parts.length === 3) return parts[1] + '/' + parts[2] + '/' + parts[0];
     return dateStr;
 }
-
-/* Escapes a string for safe interpolation into a JavaScript string
-   literal inside an inline onclick attribute. Different from HTML
-   escaping: escapes backslashes and single/double quotes, leaves
-   angle brackets alone. */
-function bsv_escapeJs(str) {
-    if (!str) return '';
-    return str.toString()
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"');
-}
-
 
 /* ============================================================================
    FUNCTIONS: PAGE LIFECYCLE HOOKS
