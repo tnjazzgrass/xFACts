@@ -57,6 +57,27 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-11  Universal anchor-row refactor. Added JS_FILE as a pure-anchor
+            row, emitted once per scanned .js file. The new row sits
+            immediately before FILE_HEADER in the per-file emission order
+            and serves as the universal "this file was scanned" anchor
+            across all populators (CSS, JS, HTML, future PS), matching
+            the existing HTML_FILE and CSS_FILE patterns. JS_FILE carries
+            no raw_text, no purpose_description, and no signature; it is
+            structural only. Scope mirrors the file's shared/local
+            classification.
+            FILE_HEADER's behavior is unchanged - it continues to be
+            emitted with the same content, line range, and drift codes
+            (MALFORMED_FILE_HEADER, FORBIDDEN_CHANGELOG_BLOCK,
+            FILE_ORG_MISMATCH) as before. The split simply separates
+            "the file as a whole" from "the file's header block".
+            The orphaned $script:fileHeaderRowByFile script-scope map
+            (declared and populated, but never read) was removed. The
+            new $script:jsFileRowByFile tracker replaces it; it is
+            populated by Add-JsFileRow and will be consumed by the
+            orphan drift-code detection passes (EXCESS_BLANK_LINES,
+            FORBIDDEN_COMMENT_STYLE, BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE)
+            being wired up in the next deliverable.
 2026-05-09  FORBIDDEN_PER_ELEMENT_LISTENER_LOOP detection added per
             CC_JS_Spec.md Section 12 (Event handler binding). Detects
             per-element listener attachment via forEach + addEventListener
@@ -375,8 +396,13 @@ $DriftDescriptions = [ordered]@{
 $script:rows       = New-Object System.Collections.Generic.List[object]
 $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 
-# Per-file FILE_HEADER row references for cross-file Pass 3 attachment.
-$script:fileHeaderRowByFile = @{}
+# Per-file JS_FILE row references. Pass 3 / post-walk code uses this map
+# to attach file-overall drift codes (EXCESS_BLANK_LINES,
+# FORBIDDEN_COMMENT_STYLE) to each file's JS_FILE anchor row. The JS_FILE
+# row is the universal "this file was scanned" anchor and is the natural
+# host for whole-file concerns; FILE_HEADER continues to host header-
+# block-specific concerns.
+$script:jsFileRowByFile = @{}
 
 # Per-file context used by the visitor and emitters during the AST walk.
 $script:CurrentFile               = $null
@@ -1395,6 +1421,33 @@ function Resolve-CssClassUsage {
     return @{ Scope = 'LOCAL'; SourceFile = '<undefined>' }
 }
 
+# Emit the JS_FILE anchor row for the current file. Exactly one row per
+# scanned .js file. This is the universal "this file was scanned" anchor,
+# parallel to CSS_FILE, HTML_FILE, and (future) PS_FILE. The row carries
+# no raw_text, no purpose_description, and no signature - it is purely
+# structural. File-overall drift codes (EXCESS_BLANK_LINES,
+# FORBIDDEN_COMMENT_STYLE) attach to this row.
+function Add-JsFileRow {
+    param([int]$LineEnd)
+
+    $key = "$($script:CurrentFile)|1|JS_FILE|$($script:CurrentFile)|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $row = New-JsRow `
+        -ComponentType 'JS_FILE' `
+        -ComponentName $script:CurrentFile `
+        -LineStart     1 `
+        -LineEnd       $LineEnd `
+        -ColumnStart   1 `
+        -ReferenceType 'DEFINITION' `
+        -Scope         $scope `
+        -SuppressSectionLookup
+    $script:rows.Add($row)
+    $script:jsFileRowByFile[$script:CurrentFile] = $row
+    return $row
+}
+
 function Add-FileHeaderRow {
     param([int]$LineStart, [int]$LineEnd, [string]$RawText, [string]$PurposeDescription)
     $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
@@ -1409,7 +1462,6 @@ function Add-FileHeaderRow {
         -PurposeDescription $PurposeDescription `
         -SuppressSectionLookup
     $script:rows.Add($row)
-    $script:fileHeaderRowByFile[$script:CurrentFile] = $row
     return $row
 }
 
@@ -2076,6 +2128,32 @@ $JsVisitor = {
 
             if ([string]::IsNullOrEmpty($purpose)) {
                 Add-DriftCode -Row $row -Code 'MISSING_FUNCTION_COMMENT' -Context "Function '$fnName' has no preceding purpose comment."
+            }
+
+            # BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE: walk the function's
+            # body statements and detect gaps > 1 line between consecutive
+            # statements. Per JS spec Section 19.5, more than one blank line
+            # inside a function body is drift. The rule is intentionally
+            # scoped to top-level function declarations only (the rows this
+            # case emits); methods inside classes are out of scope. See the
+            # JS spec appendix entry for rationale.
+            #
+            # Detection model mirrors EXCESS_BLANK_LINES: compare each
+            # statement's start line to the previous statement's end line.
+            # A gap of more than 2 means two or more blank lines.
+            if ($Node.body -and $Node.body.body -and $Node.body.body.Count -ge 2) {
+                $bodyStmts = $Node.body.body
+                for ($si = 1; $si -lt $bodyStmts.Count; $si++) {
+                    $prevStmt = $bodyStmts[$si - 1]
+                    $curStmt  = $bodyStmts[$si]
+                    $prevEnd  = if ($prevStmt.loc -and $prevStmt.loc.end)   { [int]$prevStmt.loc.end.line   } else { 0 }
+                    $curStart = if ($curStmt.loc  -and $curStmt.loc.start) { [int]$curStmt.loc.start.line } else { 0 }
+                    if ($prevEnd -gt 0 -and $curStart -gt 0 -and ($curStart - $prevEnd) -gt 2) {
+                        Add-DriftCode -Row $row -Code 'BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE' `
+                            -Context "Function '$fnName' has more than one blank line between body statements at line $curStart."
+                        break
+                    }
+                }
             }
         }
 
@@ -2774,6 +2852,13 @@ foreach ($file in $JsFiles) {
         -FileLineCount    $fileLineCount `
         -ValidSectionTypes $script:CurrentValidSectionTypes
 
+    # ---- Emit JS_FILE anchor row ----
+    # The JS_FILE row precedes FILE_HEADER and serves as the universal
+    # file-level anchor. It is purely structural - no content, no drift
+    # by default. The orphan-code detection passes (EXCESS_BLANK_LINES,
+    # FORBIDDEN_COMMENT_STYLE) attach to this row.
+    $jsFileRow = Add-JsFileRow -LineEnd $fileLineCount
+
     # ---- Emit FILE_HEADER row ----
     $headerInfo = Get-FileHeaderInfo -Comments $normalizedComments
     $headerRawText = $null
@@ -2874,6 +2959,57 @@ foreach ($file in $JsFiles) {
         continue
     }
 
+    # ---- FORBIDDEN_COMMENT_STYLE: stray block comments ----
+    # Per JS spec Section 13, only four kinds of block comments are
+    # permitted: file header, section banner, purpose comment preceding
+    # a definition, and sub-section marker (/* -- label -- */). Any
+    # block comment that doesn't match one of these kinds is stray.
+    #
+    # Detection: walk the normalized comment list. A block comment is
+    # claimed if any of these hold:
+    #   - It's at line 1 (the file header)
+    #   - It passes Test-IsBannerComment (a section banner)
+    #   - Its line appears in $script:CurrentCommentIndex with Used=true
+    #     (it was consumed as a definition's preceding purpose comment by
+    #     Get-PrecedingBlockComment during the AST walk)
+    #   - Its trimmed text matches the sub-section marker pattern
+    # Line comments are handled separately (see below) and don't enter
+    # this check.
+    $strayLines = New-Object System.Collections.Generic.List[int]
+    foreach ($c in $normalizedComments) {
+        if ($c.Type -ne 'Block') { continue }
+
+        # File header at line 1
+        if ([int]$c.LineStart -eq 1) { continue }
+
+        # Section banner
+        if (Test-IsBannerComment -CommentText $c.Text -ValidSectionTypes $script:CurrentValidSectionTypes) {
+            continue
+        }
+
+        # Consumed by a definition as its purpose comment
+        $consumed = $false
+        foreach ($ci in $script:CurrentCommentIndex) {
+            if ([int]$ci.StartLine -eq [int]$c.LineStart -and $ci.Used) {
+                $consumed = $true
+                break
+            }
+        }
+        if ($consumed) { continue }
+
+        # Sub-section marker: /* -- label -- */
+        $trimmedText = if ($c.Text) { $c.Text.Trim() } else { '' }
+        if ($trimmedText -match '^--.+--$') { continue }
+
+        # If we got here, it's a stray block comment.
+        $strayLines.Add([int]$c.LineStart)
+    }
+    if ($strayLines.Count -gt 0 -and $jsFileRow) {
+        $linesText = ($strayLines | Sort-Object) -join ', '
+        Add-DriftCode -Row $jsFileRow -Code 'FORBIDDEN_COMMENT_STYLE' `
+            -Context "Stray block comments not matching any of the four allowed kinds (file header, banner, purpose comment, sub-section marker) at line(s): $linesText."
+    }
+
     # ---- File-scope // line comments -> JS_LINE_COMMENT rows ----
     # acorn returns Line comments alongside Block comments. A line comment
     # outside any function body is a forbidden pattern under Section 12.1.
@@ -2916,6 +3052,35 @@ foreach ($file in $JsFiles) {
 # ============================================================================
 
 Write-Log "Pass 3: cross-file compliance checks..."
+
+# EXCESS_BLANK_LINES: any file with blank-line gaps greater than 2 between
+# consecutive top-level statements gets the drift code attached to its
+# JS_FILE row. Mirrors the CSS populator's detection model. The check
+# uses each top-level node's source range: gap = curStart - prevEnd; gap
+# > 2 means 2+ blank lines.
+foreach ($file in $JsFiles) {
+    $name = [System.IO.Path]::GetFileName($file)
+    if (-not $astCache.ContainsKey($file)) { continue }
+    $ast = $astCache[$file].Ast
+    if ($null -eq $ast.body -or $ast.body.Count -lt 2) { continue }
+
+    $excessFound = $false
+    for ($ni = 1; $ni -lt $ast.body.Count; $ni++) {
+        $prev = $ast.body[$ni - 1]
+        $cur  = $ast.body[$ni]
+        $prevEnd  = if ($prev.loc -and $prev.loc.end)   { [int]$prev.loc.end.line   } else { 0 }
+        $curStart = if ($cur.loc  -and $cur.loc.start) { [int]$cur.loc.start.line } else { 0 }
+        if ($prevEnd -gt 0 -and $curStart -gt 0 -and ($curStart - $prevEnd) -gt 2) {
+            $excessFound = $true
+            break
+        }
+    }
+
+    if ($excessFound -and $script:jsFileRowByFile.ContainsKey($name)) {
+        Add-DriftCode -Row $script:jsFileRowByFile[$name] -Code 'EXCESS_BLANK_LINES' `
+            -Context "More than one blank line appears between top-level constructs in $name."
+    }
+}
 
 # Build a quick filename->zone lookup for the zone-aware shadow check.
 $jsFileZoneByName = @{}
