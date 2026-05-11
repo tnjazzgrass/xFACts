@@ -46,6 +46,16 @@
 
     CHANGELOG
     ---------
+    2026-05-11  Get-ObjectRegistryMap and Get-ComponentRegistryPrefixMap
+                -FileType parameter expanded to accept a string array and
+                four new alias values: 'Route', 'API', 'Module', 'Config'.
+                Query WHERE clause changed from object_type = '<x>' to
+                object_type IN (<list>). Enables the HTML populator to
+                resolve Asset_Registry FKs against the three object types
+                that host HTML in this codebase (Route .ps1, API .ps1,
+                Module .psm1) in a single query. Existing single-value
+                callers (CSS / HTML / JS / PS) are unaffected -- PowerShell
+                accepts a single string where an array is expected.
     2026-05-07  Banner detection split into permissive detector + strict
                 validator. Test-IsBannerComment now returns $true for any
                 comment whose shape suggests an intended section banner
@@ -287,29 +297,47 @@ function Set-OccurrenceIndices {
 # separately and reported as advisories so the operator knows which files
 # to add to Object_Registry.
 #
-# The -FileType parameter is the populator-facing alias (CSS/HTML/JS/PS).
-# Object_Registry classifies files via object_type using the spec's full
-# names: 'CSS' for CSS, 'HTML' for HTML, 'JavaScript' for JS, 'Script' for
-# PowerShell. The mapping happens here so each populator can pass its
-# native short alias.
+# The -FileType parameter is the populator-facing alias. It accepts either
+# a single value or a string array. Object_Registry classifies files via
+# object_type using the spec's full names: 'CSS' for CSS, 'JavaScript' for
+# JS, 'HTML' for HTML, 'Script' for standalone PowerShell scripts, 'Route'
+# for Pode page route .ps1 files, 'API' for Pode API route .ps1 files,
+# 'Module' for .psm1 helper modules, and 'Config' for .psd1 server config
+# files. The HTML populator passes @('Route','API','Module') because HTML
+# is embedded inside those three file kinds rather than living in standalone
+# files. The mapping from alias to spec name happens here so each populator
+# can pass its native short alias(es).
 function Get-ObjectRegistryMap {
     param(
         [Parameter(Mandatory)][string]$ServerInstance,
         [Parameter(Mandatory)][string]$Database,
-        [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS')][string]$FileType
+        [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS','Route','API','Module','Config')][string[]]$FileType
     )
 
-    $objectType = switch ($FileType) {
-        'CSS'  { 'CSS' }
-        'HTML' { 'HTML' }
-        'JS'   { 'JavaScript' }
-        'PS'   { 'Script' }
+    $objectTypes = New-Object System.Collections.Generic.List[string]
+    foreach ($ft in $FileType) {
+        $mapped = switch ($ft) {
+            'CSS'    { 'CSS' }
+            'HTML'   { 'HTML' }
+            'JS'     { 'JavaScript' }
+            'PS'     { 'Script' }
+            'Route'  { 'Route' }
+            'API'    { 'API' }
+            'Module' { 'Module' }
+            'Config' { 'Config' }
+        }
+        if (-not $objectTypes.Contains($mapped)) { [void]$objectTypes.Add($mapped) }
     }
+
+    # Build the IN-list with single quotes around each value. All values
+    # come from the closed alias set above, so there is no injection risk
+    # from the -FileType parameter.
+    $inList = ($objectTypes | ForEach-Object { "'$_'" }) -join ', '
 
     $query = @"
 SELECT object_name, registry_id
 FROM dbo.Object_Registry
-WHERE object_type = '$objectType'
+WHERE object_type IN ($inList)
   AND is_active = 1
 "@
 
@@ -332,10 +360,17 @@ WHERE object_type = '$objectType'
 }
 
 # Build a (file_name -> cc_prefix) map by joining dbo.Object_Registry to
-# dbo.Component_Registry on component_name, filtered to a single object_type
-# (translated from the populator's FileType alias). Files whose component
-# has cc_prefix = NULL are included with $null as the value. Files not in
-# Object_Registry are absent from the map (callers detect this via .ContainsKey()).
+# dbo.Component_Registry on component_name, filtered to one or more
+# object_types (translated from the populator's FileType alias). Files
+# whose component has cc_prefix = NULL are included with $null as the
+# value. Files not in Object_Registry are absent from the map (callers
+# detect this via .ContainsKey()).
+#
+# The -FileType parameter accepts either a single value or a string array.
+# Same alias-to-object_type mapping as Get-ObjectRegistryMap: CSS, HTML,
+# JS, PS, Route, API, Module, Config. The HTML populator passes
+# @('Route','API','Module') because HTML is embedded inside those three
+# file kinds rather than living in standalone files.
 #
 # Used by the prefix registry validation work: every page-file banner declares
 # a Prefix value, which is validated against this map's value for the file.
@@ -344,22 +379,35 @@ function Get-ComponentRegistryPrefixMap {
     param(
         [Parameter(Mandatory)][string]$ServerInstance,
         [Parameter(Mandatory)][string]$Database,
-        [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS')][string]$FileType
+        [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS','Route','API','Module','Config')][string[]]$FileType
     )
 
-    $objectType = switch ($FileType) {
-        'CSS'  { 'CSS' }
-        'HTML' { 'HTML' }
-        'JS'   { 'JavaScript' }
-        'PS'   { 'Script' }
+    $objectTypes = New-Object System.Collections.Generic.List[string]
+    foreach ($ft in $FileType) {
+        $mapped = switch ($ft) {
+            'CSS'    { 'CSS' }
+            'HTML'   { 'HTML' }
+            'JS'     { 'JavaScript' }
+            'PS'     { 'Script' }
+            'Route'  { 'Route' }
+            'API'    { 'API' }
+            'Module' { 'Module' }
+            'Config' { 'Config' }
+        }
+        if (-not $objectTypes.Contains($mapped)) { [void]$objectTypes.Add($mapped) }
     }
+
+    # Build the IN-list with single quotes around each value. All values
+    # come from the closed alias set above, so there is no injection risk
+    # from the -FileType parameter.
+    $inList = ($objectTypes | ForEach-Object { "'$_'" }) -join ', '
 
     $query = @"
 SELECT o.object_name, c.cc_prefix
 FROM dbo.Object_Registry o
 JOIN dbo.Component_Registry c
   ON o.component_name = c.component_name
-WHERE o.object_type = '$objectType'
+WHERE o.object_type IN ($inList)
   AND o.is_active = 1
 "@
 
