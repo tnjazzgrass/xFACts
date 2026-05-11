@@ -310,7 +310,7 @@
                                            "description":  "How the process is scheduled: 0 = Disabled, 1 = Scheduled (interval/time-based), 2 = Queue-driven (triggered by running_count \u003e 0)"
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  13,
                                            "name":  "running_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -319,7 +319,7 @@
                                            "description":  "For scheduled processes: number of currently active instances. For queue-driven processes: number of pending items to process. Incremented before launch (scheduled) or by queue triggers (queue-driven), decremented/reset on completion"
                                        },
                                        {
-                                           "ordinal":  15,
+                                           "ordinal":  14,
                                            "name":  "allow_concurrent",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -328,7 +328,7 @@
                                            "description":  "When enabled, the engine launches new instances even when running_count \u003e 0. Used for processes with batch claiming logic where multiple instances safely process different content"
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  15,
                                            "name":  "last_execution_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -336,7 +336,7 @@
                                            "description":  "When the process was last launched. Used by interval-based scheduling to determine if due"
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  16,
                                            "name":  "last_execution_status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -345,7 +345,7 @@
                                            "description":  "Result of the most recent execution: SUCCESS, FAILED, RUNNING, or TIMEOUT"
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  17,
                                            "name":  "last_duration_ms",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -353,7 +353,7 @@
                                            "description":  "Duration of the most recent execution in milliseconds"
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  18,
                                            "name":  "last_successful_date",
                                            "dataType":  "date",
                                            "nullable":  true,
@@ -361,7 +361,42 @@
                                            "description":  "Date of last successful execution. Used by time-based scheduling to prevent duplicate runs on the same day"
                                        },
                                        {
+                                           "ordinal":  19,
+                                           "name":  "cc_engine_slug",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Short slug used in engine card DOM IDs on the Control Center page that displays this process. The slug forms part of three IDs per card: card-engine-\u003cslug\u003e, engine-bar-\u003cslug\u003e, and engine-cd-\u003cslug\u003e. Required for active scheduled processes (run_mode = 1); NULL for queue processors (run_mode = 2) and inactive processes (run_mode = 0). The HTML populator validates each engine card\u0027s slug against this column."
+                                       },
+                                       {
                                            "ordinal":  20,
+                                           "name":  "cc_engine_label",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Text shown in the engine card\u0027s label span on the Control Center page. The HTML populator validates each card\u0027s rendered label against this column. Required for active scheduled processes (run_mode = 1); NULL for queue processors (run_mode = 2) and inactive processes (run_mode = 0)."
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "cc_page_route",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Control Center page route on which this process appears as an engine card. The HTML populator validates engine card placement against this column, emitting ENGINE_CARD_PAGE_MISMATCH when a card appears on a page whose route does not match. Required for active scheduled processes (run_mode = 1); NULL for queue processors (run_mode = 2) and inactive processes (run_mode = 0)."
+                                       },
+                                       {
+                                           "ordinal":  22,
+                                           "name":  "cc_sort_order",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Display order of this process\u0027s engine card within the page\u0027s engine row, ascending. Lower values render first (leftmost). The HTML populator validates declaration order against this column, emitting ENGINE_CARD_ORDER_MISMATCH when cards are emitted out of registry order. Required for active scheduled processes (run_mode = 1); NULL for queue processors (run_mode = 2) and inactive processes (run_mode = 0)."
+                                       },
+                                       {
+                                           "ordinal":  23,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -370,7 +405,7 @@
                                            "description":  "When the record was created"
                                        },
                                        {
-                                           "ordinal":  21,
+                                           "ordinal":  24,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -380,7 +415,7 @@
                                            "description":  "Who created the record"
                                        },
                                        {
-                                           "ordinal":  22,
+                                           "ordinal":  25,
                                            "name":  "modified_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -388,7 +423,7 @@
                                            "description":  "When the record was last modified"
                                        },
                                        {
-                                           "ordinal":  23,
+                                           "ordinal":  26,
                                            "name":  "modified_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
