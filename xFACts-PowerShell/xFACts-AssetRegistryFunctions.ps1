@@ -129,7 +129,8 @@ function New-AssetRegistryRow {
         [string]$Signature,
         [string]$ParentFunction,
         [string]$RawText,
-        [string]$PurposeDescription
+        [string]$PurposeDescription,
+        [Nullable[bool]]$HasDynamicContent = $null
     )
 
     return [ordered]@{
@@ -151,6 +152,7 @@ function New-AssetRegistryRow {
         ParentFunction     = $ParentFunction
         RawText            = $RawText
         PurposeDescription = $PurposeDescription
+        HasDynamicContent  = $HasDynamicContent
         DriftCodes         = $null
         DriftText          = $null
         OccurrenceIndex    = 1
@@ -423,6 +425,7 @@ function Invoke-AssetRegistryBulkInsert {
     [void]$dt.Columns.Add('parent_function',     [string])
     [void]$dt.Columns.Add('raw_text',            [string])
     [void]$dt.Columns.Add('purpose_description', [string])
+    [void]$dt.Columns.Add('has_dynamic_content', [bool])
     [void]$dt.Columns.Add('drift_codes',         [string])
     [void]$dt.Columns.Add('drift_text',          [string])
     [void]$dt.Columns.Add('occurrence_index',    [int])
@@ -455,6 +458,7 @@ function Invoke-AssetRegistryBulkInsert {
         $row['parent_function']     = Get-NullableValue $r.ParentFunction
         $row['raw_text']            = Get-NullableValue $r.RawText
         $row['purpose_description'] = Get-NullableValue $r.PurposeDescription
+        $row['has_dynamic_content'] = if ($null -eq $r.HasDynamicContent) { [System.DBNull]::Value } else { [bool]$r.HasDynamicContent }
         $row['drift_codes']         = Get-NullableValue $r.DriftCodes
         $row['drift_text']          = Get-NullableValue $r.DriftText
         $row['occurrence_index']    = if ($null -eq $r.OccurrenceIndex) { 1 } else { [int]$r.OccurrenceIndex }
