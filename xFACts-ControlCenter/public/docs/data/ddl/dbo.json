@@ -473,6 +473,14 @@
                                        },
                                        {
                                            "ordinal":  18,
+                                           "name":  "has_dynamic_content",
+                                           "dataType":  "bit",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When TRUE, the parent attribute or text construct from which this row was extracted also contains runtime-only content the populator cannot statically resolve (e.g., a class attribute that combines literal class names with a parameter-passed class name). When FALSE or NULL, the parent construct is fully captured in the catalog. Used by HTML and JS populator rows; not meaningful for CSS rows, which are always fully literal."
+                                       },
+                                       {
+                                           "ordinal":  19,
                                            "name":  "parent_function",
                                            "dataType":  "varchar",
                                            "length":  "200",
@@ -481,7 +489,7 @@
                                            "description":  "The enclosing context, where applicable."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  20,
                                            "name":  "raw_text",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -490,7 +498,7 @@
                                            "description":  "Verbatim source text of the construct."
                                        },
                                        {
-                                           "ordinal":  20,
+                                           "ordinal":  21,
                                            "name":  "purpose_description",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -499,7 +507,7 @@
                                            "description":  "Human-authored description of the construct, extracted from preceding comments."
                                        },
                                        {
-                                           "ordinal":  23,
+                                           "ordinal":  22,
                                            "name":  "occurrence_index",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -508,7 +516,7 @@
                                            "description":  "1-based ordinal disambiguator for repeated instances within a file."
                                        },
                                        {
-                                           "ordinal":  24,
+                                           "ordinal":  23,
                                            "name":  "drift_codes",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -517,7 +525,7 @@
                                            "description":  "Comma-separated list of spec-drift codes attached to this row."
                                        },
                                        {
-                                           "ordinal":  25,
+                                           "ordinal":  24,
                                            "name":  "drift_text",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -526,7 +534,7 @@
                                            "description":  "Pipe-separated human-readable descriptions corresponding to drift_codes."
                                        },
                                        {
-                                           "ordinal":  27,
+                                           "ordinal":  25,
                                            "name":  "last_parsed_dttm",
                                            "dataType":  "datetime2",
                                            "nullable":  false,
@@ -580,7 +588,7 @@
                        "checkConstraints":  [
                                                 {
                                                     "name":  "CK_Asset_Registry_component_type",
-                                                    "definition":  "([component_type]=\u0027API_ROUTE\u0027 OR [component_type]=\u0027PS_ASSIGNMENT\u0027 OR [component_type]=\u0027PS_COMMAND\u0027 OR [component_type]=\u0027PS_PARAM\u0027 OR [component_type]=\u0027PS_FUNCTION\u0027 OR [component_type]=\u0027JS_LINE_COMMENT\u0027 OR [component_type]=\u0027JS_INLINE_SCRIPT\u0027 OR [component_type]=\u0027JS_INLINE_STYLE\u0027 OR [component_type]=\u0027JS_WINDOW_ASSIGNMENT\u0027 OR [component_type]=\u0027JS_DOCUMENT_WRITE\u0027 OR [component_type]=\u0027JS_EVAL\u0027 OR [component_type]=\u0027JS_IIFE\u0027 OR [component_type]=\u0027JS_EVENT\u0027 OR [component_type]=\u0027JS_TIMER\u0027 OR [component_type]=\u0027JS_METHOD_VARIANT\u0027 OR [component_type]=\u0027JS_METHOD\u0027 OR [component_type]=\u0027JS_CLASS\u0027 OR [component_type]=\u0027JS_HOOK_VARIANT\u0027 OR [component_type]=\u0027JS_HOOK\u0027 OR [component_type]=\u0027JS_FUNCTION_VARIANT\u0027 OR [component_type]=\u0027JS_FUNCTION\u0027 OR [component_type]=\u0027JS_STATE\u0027 OR [component_type]=\u0027JS_CONSTANT_VARIANT\u0027 OR [component_type]=\u0027JS_CONSTANT\u0027 OR [component_type]=\u0027JS_IMPORT\u0027 OR [component_type]=\u0027HTML_ID\u0027 OR [component_type]=\u0027CSS_RULE\u0027 OR [component_type]=\u0027CSS_KEYFRAME\u0027 OR [component_type]=\u0027CSS_VARIABLE\u0027 OR [component_type]=\u0027CSS_VARIANT\u0027 OR [component_type]=\u0027CSS_CLASS\u0027 OR [component_type]=\u0027COMMENT_BANNER\u0027 OR [component_type]=\u0027FILE_HEADER\u0027)"
+                                                    "definition":  "([component_type]=\u0027API_ROUTE\u0027 OR [component_type]=\u0027PS_ASSIGNMENT\u0027 OR [component_type]=\u0027PS_COMMAND\u0027 OR [component_type]=\u0027PS_PARAM\u0027 OR [component_type]=\u0027PS_FUNCTION\u0027 OR [component_type]=\u0027JS_FILE\u0027 OR [component_type]=\u0027JS_LINE_COMMENT\u0027 OR [component_type]=\u0027JS_INLINE_EVENT\u0027 OR [component_type]=\u0027JS_INLINE_SCRIPT\u0027 OR [component_type]=\u0027JS_INLINE_STYLE\u0027 OR [component_type]=\u0027JS_WINDOW_ASSIGNMENT\u0027 OR [component_type]=\u0027JS_DOCUMENT_WRITE\u0027 OR [component_type]=\u0027JS_EVAL\u0027 OR [component_type]=\u0027JS_IIFE\u0027 OR [component_type]=\u0027JS_EVENT\u0027 OR [component_type]=\u0027JS_TIMER\u0027 OR [component_type]=\u0027JS_METHOD_VARIANT\u0027 OR [component_type]=\u0027JS_METHOD\u0027 OR [component_type]=\u0027JS_CLASS\u0027 OR [component_type]=\u0027JS_HOOK_VARIANT\u0027 OR [component_type]=\u0027JS_HOOK\u0027 OR [component_type]=\u0027JS_FUNCTION_VARIANT\u0027 OR [component_type]=\u0027JS_FUNCTION\u0027 OR [component_type]=\u0027JS_STATE\u0027 OR [component_type]=\u0027JS_CONSTANT_VARIANT\u0027 OR [component_type]=\u0027JS_CONSTANT\u0027 OR [component_type]=\u0027JS_IMPORT\u0027 OR [component_type]=\u0027HTML_COMMENT\u0027 OR [component_type]=\u0027HTML_SVG\u0027 OR [component_type]=\u0027HTML_ENTITY\u0027 OR [component_type]=\u0027HTML_TEXT\u0027 OR [component_type]=\u0027HTML_DATA_ATTRIBUTE\u0027 OR [component_type]=\u0027HTML_ID\u0027 OR [component_type]=\u0027CSS_FILE\u0027 OR [component_type]=\u0027CSS_RULE\u0027 OR [component_type]=\u0027CSS_KEYFRAME\u0027 OR [component_type]=\u0027CSS_VARIABLE\u0027 OR [component_type]=\u0027CSS_VARIANT\u0027 OR [component_type]=\u0027CSS_CLASS\u0027 OR [component_type]=\u0027COMMENT_BANNER\u0027 OR [component_type]=\u0027FILE_HEADER\u0027)"
                                                 },
                                                 {
                                                     "name":  "CK_Asset_Registry_file_type",
