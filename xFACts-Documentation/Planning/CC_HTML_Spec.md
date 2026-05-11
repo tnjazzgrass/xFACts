@@ -8,16 +8,6 @@
 
 ---
 
-# Control Center HTML File Format Specification
-
-*These rules are the current authority for HTML markup emitted by Control Center route files. They are settled until explicitly amended; any proposed change is discussed before adoption. Where rationale exists for a rule, it appears in the Appendix at the corresponding section number.*
-
-*Specs describe rules and shapes — never present contents. Statements about how many files currently do something, which pages are empty today, or what the codebase looks like right now do not belong in this document; they age into inaccuracy the moment the codebase changes. If census-style information is needed, it lives in queries against `dbo.Asset_Registry`, not here.*
-
-*The HTML spec governs the shape and content of HTML markup. The PowerShell file containing the markup — its file header, its section banners, its function definitions, its route declarations — is governed by the PowerShell spec. A row in the catalog with `file_type = 'HTML'` represents an HTML construct extracted from a PS file by the HTML populator; the file's PS-level constructs are extracted separately by the PowerShell populator and produce rows with `file_type = 'PS'`.*
-
----
-
 ## 1. Required structure
 
 HTML in the Control Center is emitted from PowerShell route files (`*.ps1` in `scripts/routes/`) and from helper module functions (`*.psm1` in `scripts/modules/`). HTML does not exist as standalone `.html` files. Every HTML construct in the codebase appears inside a PowerShell string token — typically a here-string assigned to a `$html` variable that is then passed to `Write-PodeHtmlResponse`, or a string built up via `System.Text.StringBuilder` inside a helper function.
@@ -454,9 +444,7 @@ Each class name in HTML markup produces one `CSS_CLASS USAGE` row.
 | `scope` | Resolved from CSS_CLASS DEFINITION rows: `SHARED` if defined in `cc-shared.css`, `LOCAL` if defined in a page-specific CSS file |
 | `source_file` | The file containing the matching DEFINITION row, or `'<undefined>'` if no match |
 | `parent_function` | The PS function emitting the markup (when applicable) |
-| `parent_object` | NULL initially; populated by PS populator with the route path |
 | `has_dynamic_content` | TRUE when the class attribute also contains runtime-only class composition not statically catalogable; FALSE when the attribute is fully resolved |
-
 The `signature` column carries the full attribute value (not just the individual class name), which makes class-combination queries possible — "find every place where `bsv-pipeline-card` appears with `warning`" is a single signature pattern match.
 
 ### 5.4 Class references in helper-emitted HTML
@@ -1236,7 +1224,7 @@ The HTML populator emits rows into `dbo.Asset_Registry` representing every catal
 
 ### 13.1 What the catalog represents
 
-A row's identity is described by the combination of `component_type`, `component_name`, `reference_type`, `file_name`, and `occurrence_index`. The HTML populator emits one row per definition or usage instance found while walking the HTML markup inside PS string tokens.
+A row's identity is described by the combination of `component_type`, `component_name`, `reference_type`, `file_name`, and `occurrence_index`. The HTML populator emits one `HTML_FILE DEFINITION` row per scanned PS file as the file-level anchor, plus one row per definition or usage instance found while walking the HTML markup inside PS string tokens.
 
 The catalog is the authoritative answer to questions like: "where is the `bsv-modal-detail` ID declared?", "how many pages emit engine cards?", "what tooltip text appears on the page refresh button across pages?", "which HTML files contain spec drift today, and of what kinds?". Every such question becomes a SQL query against this table.
 
@@ -1244,7 +1232,7 @@ The catalog is the authoritative answer to questions like: "where is the `bsv-mo
 
 | `component_type` | Source | Meaning |
 |---|---|---|
-| `FILE_HEADER` | The PS file containing HTML emission | One row per scanned PS file. Anchors the file in the catalog regardless of HTML content. (Note: this row is emitted by the PS populator, not the HTML populator. Mentioned here because it scopes HTML rows.) |
+| `HTML_FILE` | The PS file containing HTML emission | One row per scanned PS file. The file-level anchor for §15.1 page-shell drift codes. Emitted by the HTML populator. (Note: distinct from `FILE_HEADER`, which is the PS populator's file-level anchor row. The two coexist when the PS populator has run, one for HTML concerns and one for PS concerns.) |
 | `HTML_ID` | `id="..."` attributes | One row per ID declaration. Resolved against `getElementById` calls in JS for cross-population linkage. |
 | `HTML_DATA_ATTRIBUTE` | `data-*` attributes | One row per data-* attribute declaration. Resolved against JS `dataset.foo` reads for cross-population linkage. |
 | `HTML_TEXT` | Element text content and four user-facing attribute values (`title`, `placeholder`, `aria-label`, `alt`) | One row per text node or attribute value. Categorical naming per §8.2.2. |
@@ -1253,9 +1241,10 @@ The catalog is the authoritative answer to questions like: "where is the `bsv-mo
 | `HTML_COMMENT` | HTML comments | One row per recognized comment kind (§10.5.1). |
 | `CSS_CLASS` | `class="..."` attribute values | One row per class name in the attribute. Resolves against CSS_CLASS DEFINITION rows (§5.6). |
 | `JS_FUNCTION` | Event handler attributes (`onclick="..."`, etc.) | One row per function call in the handler. Resolves against JS_FUNCTION DEFINITION rows (§6.5). |
+| `CSS_FILE` | `<link rel="stylesheet" href="...">` references | One row per CSS file reference. Resolves against CSS_FILE DEFINITION rows. |
+| `JS_FILE` | `<script src="...">` references | One row per JS file reference. Resolves against JS_FILE DEFINITION rows. |
 
-The CSS_CLASS USAGE rows from HTML markup share the `component_type` value with CSS_CLASS DEFINITION rows from CSS files; the `reference_type` and `scope` columns distinguish them.
-
+The CSS_CLASS USAGE rows from HTML markup share the `component_type` value with CSS_CLASS DEFINITION rows from CSS files; the `reference_type` and `scope` columns distinguish them. The same pattern applies to CSS_FILE and JS_FILE.
 ### 13.3 reference_type values for HTML rows
 
 For HTML markup, every row is emitted as a DEFINITION:
@@ -1287,12 +1276,15 @@ The `has_dynamic_content` BIT column is set TRUE on rows where the parent attrib
 
 ### 13.6 Cross-populator dependencies
 
-The HTML populator's emitted rows depend on populator pipeline ordering:
+The HTML populator's emitted rows resolve their cross-populator references against existing catalog rows at scan time. The HTML populator never edits rows emitted by other populators; it reads them.
 
 - `CSS_CLASS USAGE` rows have `scope` and `source_file` resolved against `CSS_CLASS DEFINITION` rows already in the catalog at HTML-populator scan time. Per pipeline order CSS → HTML → JS → PS, CSS DEFINITION rows always exist when HTML scans.
+- `CSS_FILE USAGE` rows (from `<link rel="stylesheet">` references) have `scope` and `source_file` resolved against `CSS_FILE DEFINITION` rows already in the catalog. Same pipeline relationship.
+- `JS_FILE USAGE` rows (from `<script src="...">` references) have `scope` and `source_file` resolved against `JS_FILE DEFINITION` rows already in the catalog. Same pipeline relationship.
 - `HTML_ID DEFINITION` rows are produced by HTML and consumed by JS. Per pipeline order, JS scans after HTML, so JS USAGE rows resolve against HTML DEFINITION rows.
 - `HTML_DATA_ATTRIBUTE DEFINITION` rows are produced by HTML and consumed by JS. Same pipeline relationship.
-- `parent_object` on HTML rows is populated by the PS populator (which runs after HTML) with the route path enclosing the markup.
+
+The `parent_function` column on every HTML row is filled by the HTML populator itself at row-emit time, from the enclosing PowerShell function name observed during the populator's own PS-AST walk of the route or helper file. No other populator edits this column.
 
 When a populator runs standalone (out of pipeline order), unresolved cross-populator references resolve to `<undefined>` for `source_file` and `LOCAL` for `scope`. Standalone runs are valid for development and testing; production pipeline runs always follow the CSS → HTML → JS → PS order.
 
@@ -1303,9 +1295,8 @@ This table maps source HTML constructs to the catalog rows the HTML populator em
 
 | Source construct | Row type | Key columns |
 |---|---|---|
-| Page-level HTML emission (route file) | Implicit context | Establishes file_name, route path (later filled in by PS populator), parent_function, and source_section (banner context from PS file) |
-| `id="..."` attribute on any element | `HTML_ID DEFINITION` | `component_name` = the ID value, `signature` = `id="<value>"` |
-| `data-*="..."` attribute on any element | `HTML_DATA_ATTRIBUTE DEFINITION` | `component_name` = the attribute name including `data-`, `signature` = the full attribute |
+| Route file containing HTML emission | `HTML_FILE DEFINITION` | `component_name` = the page route (e.g., `/server-health`), `scope` = `LOCAL`, `line_start` = 1, `line_end` = file's total line count. Anchor row for §15.1 page-shell drift codes. |
+| Helper file emitting HTML fragments | `HTML_FILE DEFINITION` | `component_name` = the helper function name (e.g., `Get-NavBarHtml`), `scope` = `SHARED`, `line_start` = 1, `line_end` = file's total line count. Helper files have one `HTML_FILE` row per file, not per emitting function — multiple helper functions in the same file share the row. || `data-*="..."` attribute on any element | `HTML_DATA_ATTRIBUTE DEFINITION` | `component_name` = the attribute name including `data-`, `signature` = the full attribute |
 | Element text node (non-whitespace character data between opening and closing tags) | `HTML_TEXT DEFINITION` | `component_name` = categorical name per §8.2.2, `raw_text` = literal text |
 | `title="..."` attribute value | `HTML_TEXT DEFINITION` | `component_name` = `attr-title`, `raw_text` = literal value |
 | `placeholder="..."` attribute value | `HTML_TEXT DEFINITION` | `component_name` = `attr-placeholder`, `raw_text` = literal value |
@@ -1335,6 +1326,8 @@ The populator does not emit rows for:
 The HTML populator may emit any of the following drift codes on emitted rows. Codes are organized by spec section. For the full pattern-to-code mapping, see Section 12 (Forbidden patterns).
 
 ### 15.1 Page shell codes (§1)
+
+Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.2, not to extracted construct rows. The `HTML_FILE` row represents the file as a structural unit; page-shell violations are file-level concerns about whether the emission is well-shaped overall, not about any individual construct.
 
 | Code | Description |
 |---|---|
