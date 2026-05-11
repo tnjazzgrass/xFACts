@@ -29,6 +29,32 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-11  Universal anchor-row refactor. Added CSS_FILE as a pure-anchor
+            row, emitted once per scanned .css file. The new row sits
+            immediately before FILE_HEADER in the per-file emission order
+            and serves as the universal "this file was scanned" anchor
+            across all populators (CSS, JS, HTML, future PS), matching
+            the existing HTML_FILE pattern. CSS_FILE carries no
+            raw_text, no purpose_description, and no signature; it is
+            structural only. Scope mirrors the file's shared/local
+            classification.
+            FILE_HEADER's behavior is unchanged - it continues to be
+            emitted with the same content, line range, and drift codes
+            (MALFORMED_FILE_HEADER, FORBIDDEN_CHANGELOG_BLOCK,
+            FILE_ORG_MISMATCH) as before. The split simply separates
+            "the file as a whole" from "the file's header block".
+            Two file-overall drift codes that were attaching to
+            FILE_HEADER as a convenience now attach to CSS_FILE
+            instead, because they describe the whole file rather than
+            the header construct:
+              EXCESS_BLANK_LINES        - blank-line gaps between
+                                          top-level constructs anywhere
+                                          in the file
+              FORBIDDEN_COMMENT_STYLE   - stray block comments anywhere
+                                          in the file that don't match
+                                          one of the four allowed kinds
+            All other drift codes remain on whichever row they
+            attached to before.
 2026-05-07  Banner drift granular codes. Aligned with CC_CSS_Spec.md
             Section 3 (one canonical banner form, no alternates). Replaced
             the catch-all MALFORMED_SECTION_BANNER with seven granular
@@ -225,6 +251,13 @@ $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 
 # Per-file metadata accumulated during walk and used by Pass 3.
 $script:fileMeta = @{}
+
+# Per-file CSS_FILE row references. Pass 3 uses this map to attach
+# file-overall drift codes (EXCESS_BLANK_LINES) to each file's CSS_FILE
+# anchor row. The CSS_FILE row is the universal "this file was scanned"
+# anchor and is the natural host for whole-file concerns; FILE_HEADER
+# continues to host header-block-specific concerns.
+$script:cssFileRowByFile = @{}
 
 # Per-file context used by row emitters during the AST walk. Replaces the
 # previous running-state model. The section list is the source of truth for
@@ -683,6 +716,33 @@ function Resolve-ClassScope {
         return @{ Scope = 'SHARED'; SourceFile = $map[$ClassName] }
     }
     return @{ Scope = 'LOCAL'; SourceFile = $script:CurrentFile }
+}
+
+# Emit the CSS_FILE anchor row for the current file. Exactly one row per
+# scanned .css file. This is the universal "this file was scanned" anchor,
+# parallel to JS_FILE, HTML_FILE, and (future) PS_FILE. The row carries
+# no raw_text, no purpose_description, and no signature - it is purely
+# structural. Pass 3 attaches file-overall drift codes (EXCESS_BLANK_LINES)
+# to this row.
+function Add-CssFileRow {
+    param([int]$LineEnd)
+
+    $key = "$($script:CurrentFile)|1|CSS_FILE|$($script:CurrentFile)|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $row = New-CssRow `
+        -ComponentType 'CSS_FILE' `
+        -ComponentName $script:CurrentFile `
+        -LineStart     1 `
+        -LineEnd       $LineEnd `
+        -ColumnStart   1 `
+        -ReferenceType 'DEFINITION' `
+        -Scope         $scope `
+        -SuppressSectionLookup
+    $script:rows.Add($row)
+    $script:cssFileRowByFile[$script:CurrentFile] = $row
+    return $row
 }
 
 function Add-FileHeaderRow {
@@ -1666,6 +1726,13 @@ foreach ($file in $CssFiles) {
     $scopeLabel = if ($isShared) { 'SHARED' } else { 'LOCAL' }
     Write-Host ("  Walking {0} ({1}, zone={2})..." -f $name, $scopeLabel, $zone) -ForegroundColor Cyan
 
+    # ---- Emit CSS_FILE anchor row ----
+    # The CSS_FILE row precedes FILE_HEADER and serves as the universal
+    # file-level anchor. It is purely structural - no content, no drift
+    # by default. Pass 3 attaches file-overall drift codes
+    # (EXCESS_BLANK_LINES) to this row.
+    $cssFileRow = Add-CssFileRow -LineEnd $script:CurrentFileLineCount
+
     # ---- Emit FILE_HEADER row ----
     $headerInfo = Get-FileHeaderInfo -Comments $script:CurrentNormalizedComments
     $headerRawText = $null
@@ -1746,9 +1813,9 @@ foreach ($file in $CssFiles) {
         # If we got here, it's a stray block comment.
         $strayLines.Add([int]$c.LineStart)
     }
-    if ($strayLines.Count -gt 0 -and $headerRow) {
+    if ($strayLines.Count -gt 0 -and $cssFileRow) {
         $linesText = ($strayLines | Sort-Object) -join ', '
-        Add-DriftCode -Row $headerRow -Code 'FORBIDDEN_COMMENT_STYLE' `
+        Add-DriftCode -Row $cssFileRow -Code 'FORBIDDEN_COMMENT_STYLE' `
             -Context "Stray block comments not matching any of the four allowed kinds (file header, banner, purpose, trailing variant, sub-section marker) at line(s): $linesText."
     }
 
@@ -1913,7 +1980,7 @@ foreach ($file in $CssFiles) {
 
     if ($excessFound -and $rowsByFile.ContainsKey($name)) {
         foreach ($r in $rowsByFile[$name]) {
-            if ($r.ComponentType -eq 'FILE_HEADER') {
+            if ($r.ComponentType -eq 'CSS_FILE') {
                 Add-DriftCode -Row $r -Code 'EXCESS_BLANK_LINES'
                 break
             }
