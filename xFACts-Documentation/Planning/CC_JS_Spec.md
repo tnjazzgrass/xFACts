@@ -20,6 +20,8 @@ Every line of code in the file lives inside exactly one of these three parts.
 
 ## 2. File header
 
+*Catalog-side note: the parser additionally emits a single `JS_FILE` anchor row per scanned file, representing the file as a whole. The anchor row is a populator function, not a source-file construct — the author writes nothing for it. See §17.2 for details.*
+
 The header is a single block comment at the very top of the file. Every field is mandatory and appears in this exact order:
 
 ```
@@ -432,7 +434,8 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 
 | component_type | Meaning |
 |---|---|
-| `FILE_HEADER` | The file's header block. One row per scanned file. |
+| `JS_FILE` | The file-level anchor row. One row per scanned `.js` file. Serves as the universal "this file was scanned" anchor and the host for file-overall drift codes (`EXCESS_BLANK_LINES`, `FORBIDDEN_COMMENT_STYLE`). Carries no `raw_text`, `purpose_description`, or `signature` — the row is purely structural. The same anchor-row pattern exists in the CSS, HTML, and (future) PS populators as `CSS_FILE`, `HTML_FILE`, and `PS_FILE`. |
+| `FILE_HEADER` | The parsed file-header block. One row per scanned file. Carries header-block-specific drift codes (`MALFORMED_FILE_HEADER`, `FORBIDDEN_CHANGELOG_BLOCK`, `FILE_ORG_MISMATCH`) and the header's `purpose_description`. |
 | `COMMENT_BANNER` | A section banner comment. One row per section. The section type lives in `signature`. |
 | `JS_IMPORT` | An ES `import` statement or Node `require` call. The imported binding name is `component_name`. The source module path is `variant_qualifier_2`. Always non-NULL `variant_type`. |
 | `JS_CONSTANT` | A `const` declaration of a primitive value in a `CONSTANTS` or `FOUNDATION` section. |
@@ -554,8 +557,8 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 
 | Row type | Source | Notes |
 |----------|--------|-------|
-| `FILE_HEADER DEFINITION` | The opening file header block | One per file. `purpose_description` carries the header's purpose paragraph. |
-| `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. |
+| `JS_FILE DEFINITION` | The file as a whole | One per scanned file. Universal anchor row. `component_name` = bare filename. No `raw_text` or `purpose_description`. Hosts file-overall drift codes. |
+| `FILE_HEADER DEFINITION` | The opening file header block | One per file. `purpose_description` carries the header's purpose paragraph. Hosts header-block-specific drift codes. || `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. |
 | `JS_IMPORT DEFINITION` | Each `import` statement or `require` call | One per imported binding. `variant_type` = import shape; `variant_qualifier_2` = source module path. |
 | `JS_CONSTANT DEFINITION` / `JS_CONSTANT_VARIANT DEFINITION` | Each `const` declaration in a `CONSTANTS` or `FOUNDATION` section | Base for primitive values; variant for objects, arrays, regexes, computed expressions. `purpose_description` = preceding purpose comment. |
 | `JS_STATE DEFINITION` | Each `var` declaration in a `STATE` section | `purpose_description` = preceding purpose comment. |
@@ -653,7 +656,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | Code | Description |
 |---|---|
 | `FORBIDDEN_COMMENT_STYLE` | A comment exists that is not one of the allowed kinds. |
-| `BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE` | More than one consecutive blank line appears inside a function body. |
+| `BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE` | More than one consecutive blank line appears inside a top-level function declaration's body. The rule is scoped to top-level `function name() {}` declarations only; methods inside classes are out of scope. See Appendix A.19. |
 | `EXCESS_BLANK_LINES` | More than one blank line appears between top-level constructs. |
 
 ---
@@ -948,6 +951,7 @@ function onPageResumed() {
 
 This file produces the following catalog rows when parsed:
 
+- 1 x `JS_FILE DEFINITION`
 - 1 x `FILE_HEADER DEFINITION`
 - 6 x `COMMENT_BANNER DEFINITION` (one per section)
 - 1 x `JS_CONSTANT_VARIANT DEFINITION` (`ex_ENGINE_PROCESSES`, variant_type='object')
@@ -1020,3 +1024,9 @@ The revealing-module pattern (`const X = (function(){...})()`) is treated as a f
 ### A.19 Drift codes — banner granularity
 
 The §19.2 banner code set is intentionally granular rather than coarse. A single combined code would collapse every kind of banner non-conformance into one verdict, which makes refactor work hard to triage — a reader could not tell from the code alone whether the banner had the wrong rule-line length, was missing a description, used an inline shape, or had a malformed title line. Each granular code (`BANNER_INVALID_RULE_LENGTH`, `BANNER_INLINE_SHAPE`, `BANNER_MISSING_DESCRIPTION`, etc.) describes exactly one violation, allowing precise queries like "find every banner with the wrong rule length" or "list every inline-shape banner candidate for refactor." A non-conformant banner may carry several granular codes simultaneously when it violates multiple rules.
+
+### A.19 (cont.) Drift codes — function-body blank-line scope
+
+The `BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE` rule (§19.5) is intentionally scoped to top-level `function name() {}` declarations only. Methods inside class bodies are deliberately excluded for now.
+
+The reasoning is that the spec's broader "inside function body" allowances (e.g., §13.1 permitting inline `//` line comments inside function bodies) are framed in the context of top-level functions, not class methods. Class methods are also not currently used anywhere in the codebase, so making the scope narrow-by-default is low-risk. The decision is left open for future revisit: if class methods become common, the rule can be broadened to cover their bodies as well, with the populator attaching the drift code to the relevant `JS_METHOD` / `JS_METHOD_VARIANT` row in place of (or in addition to) the function row it targets today.
