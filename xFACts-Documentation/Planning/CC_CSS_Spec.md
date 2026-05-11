@@ -20,6 +20,8 @@ Every line of code in the file lives inside exactly one of these three parts.
 
 ## 2. File header
 
+*Catalog-side note: the parser additionally emits a single `CSS_FILE` anchor row per scanned file, representing the file as a whole. The anchor row is a populator function, not a source-file construct — the author writes nothing for it. See §14.2 for details.*
+
 The header is a single block comment at the very top of the file. Every field is mandatory and appears in this exact order:
 
 ```
@@ -341,8 +343,8 @@ The catalog is the answer to questions like: "where is `.bkp-pipeline-card` defi
 
 | component_type | Meaning |
 |---|---|
-| `FILE_HEADER` | The file's header block. One row per scanned file. Carries header-level drift codes and serves as the "this file was scanned" anchor regardless of what else the file contains. |
-| `CSS_CLASS` | A class definition (`.foo { ... }`). Pseudo-element rules attached to a class (e.g., `.foo::placeholder`) are also cataloged as `CSS_CLASS` rows, not as variants. |
+| `CSS_FILE` | The file-level anchor row. One row per scanned `.css` file. Serves as the universal "this file was scanned" anchor and the host for file-overall drift codes (`EXCESS_BLANK_LINES`, `FORBIDDEN_COMMENT_STYLE`). Carries no `raw_text`, `purpose_description`, or `signature` — the row is purely structural. The same anchor-row pattern exists in the JS, HTML, and (future) PS populators as `JS_FILE`, `HTML_FILE`, and `PS_FILE`. |
+| `FILE_HEADER` | The parsed file-header block. One row per scanned file. Carries header-block-specific drift codes (`MALFORMED_FILE_HEADER`, `FORBIDDEN_CHANGELOG_BLOCK`, `FILE_ORG_MISMATCH`) and the header's `purpose_description`. || `CSS_CLASS` | A class definition (`.foo { ... }`). Pseudo-element rules attached to a class (e.g., `.foo::placeholder`) are also cataloged as `CSS_CLASS` rows, not as variants. |
 | `CSS_VARIANT` | A class variant definition - a row whose selector compounds the parent class with additional class or pseudo-class qualifiers. The `component_name` is the parent's class name; qualifiers live in `variant_qualifier_1` / `variant_qualifier_2`. Pseudo-classes only - pseudo-elements are CSS_CLASS rows. |
 | `CSS_KEYFRAMES` | An `@keyframes` definition or a reference. |
 | `CSS_VARIABLE` | A custom property definition (`--name: value`) or a `var(--name)` reference. |
@@ -375,8 +377,8 @@ The full code-to-description mapping for CSS appears in Section 16.
 
 | Row type | Source | Notes |
 |----------|--------|-------|
-| `FILE_HEADER DEFINITION` | The opening file header block | One per file. Carries `purpose_description` from the header text. |
-| `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. Format violations attach as drift codes (§16.2). |
+| `CSS_FILE DEFINITION` | The file as a whole | One per scanned file. Universal anchor row. `component_name` = bare filename. No `raw_text` or `purpose_description`. Hosts file-overall drift codes. |
+| `FILE_HEADER DEFINITION` | The opening file header block | One per file. Carries `purpose_description` from the header text. Hosts header-block-specific drift codes. || `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. Format violations attach as drift codes (§16.2). |
 | `CSS_CLASS DEFINITION` | Each base class declaration | `component_name` = class name, `purpose_description` = the preceding purpose comment. |
 | `CSS_VARIANT DEFINITION` | Each variant of a base class | `component_name` = base class name, `signature` = full variant selector, `variant_type` and `qualifier_*` describe the variant shape. |
 | `CSS_VARIABLE DEFINITION` | Each `--token: value` declaration in `:root` | One per token. Lives only in the component's anchor file FOUNDATION. |
@@ -709,6 +711,7 @@ A small page demonstrating every required pattern. Real pages have more sections
 
 This file produces the following catalog rows when parsed:
 
+- 1 x `CSS_FILE DEFINITION`
 - 1 x `FILE_HEADER DEFINITION`
 - 3 x `COMMENT_BANNER DEFINITION` (one per section)
 - 3 x `CSS_CLASS DEFINITION` (`ex-page-grid`, `ex-status-card`, `ex-badge` are bases)
