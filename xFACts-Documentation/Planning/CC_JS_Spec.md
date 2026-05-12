@@ -83,28 +83,28 @@ The recognized section types differ between page files and the shared file `cc-s
 
 ### 4.1 Page files
 
-Five section types, in fixed order:
+Four section types, in fixed order:
 
 | Order | TYPE | Purpose | Multiple banners? |
 |-------|------|---------|-------------------|
 | 1 | `IMPORTS` | ES module imports or `require` statements. | No - single banner only. |
 | 2 | `CONSTANTS` | Module-scope `const` declarations of immutable values. | Yes - group by concept. |
 | 3 | `STATE` | Module-scope `var` declarations of mutable values. | Yes - group by concept. |
-| 4 | `INITIALIZATION` | The `DOMContentLoaded` handler and any one-time setup functions called from it. | No - single banner only. |
-| 5 | `FUNCTIONS` | Everything else - data loading, rendering, event handlers, helpers, hooks. | Yes. The banner for page lifecycle hooks has a fixed name (Section 8) and must be last. |
+| 4 | `FUNCTIONS` | Everything else - data loading, rendering, event handlers, helpers, hooks, and the mandatory `<prefix>_init` page boot function (Section 11). | Yes. The banner for page lifecycle hooks has a fixed name (Section 8) and must be last. |
 
 ### 4.2 The shared file `cc-shared.js`
 
-Four section types, in fixed order:
+Five section types, in fixed order:
 
 | Order | TYPE | Purpose | Multiple banners? | Where it lives |
 |-------|------|---------|-------------------|----------------|
 | 1 | `IMPORTS` | ES module imports or `require` statements. Reserved for future use. | No. | Both. |
 | 2 | `FOUNDATION` | Platform-wide immutable constants and primitives. Holds `const` declarations only. | Yes - group by concept. | `cc-shared.js` only. |
 | 3 | `STATE` | Platform-wide mutable runtime state. Holds `var` declarations only. | Yes - group by concept. | Both. |
-| 4 | `CHROME` | Universal page chrome and shared utilities. | Yes - group by concept. | `cc-shared.js` only. |
+| 4 | `BOOTLOADER` | Page-module discovery, loading, and lifecycle invocation. Holds the shared chrome action dispatch table and its delegated listener. | No - single banner only. | `cc-shared.js` only. |
+| 5 | `CHROME` | Universal page chrome and shared utilities. | Yes - group by concept. | `cc-shared.js` only. |
 
-`FOUNDATION` is `cc-shared.js`'s name for what page files call `CONSTANTS`; `CHROME` is its name for `INITIALIZATION` plus `FUNCTIONS` combined; `STATE` keeps the same name and meaning in both file kinds.
+`FOUNDATION` is `cc-shared.js`'s name for what page files call `CONSTANTS`; `CHROME` covers the universal chrome utilities pages consume after boot; `STATE` keeps the same name and meaning in both file kinds.
 
 ### 4.3 Type-order rule
 
@@ -112,7 +112,7 @@ Section types must appear in the order shown. Drift code: `SECTION_TYPE_ORDER_VI
 
 ### 4.4 Type uniqueness across files
 
-`FOUNDATION` and `CHROME` sections may exist in only one file across the codebase: `cc-shared.js`. Drift codes: `DUPLICATE_FOUNDATION`, `DUPLICATE_CHROME`.
+`FOUNDATION`, `BOOTLOADER`, and `CHROME` sections may exist in only one file across the codebase: `cc-shared.js`. Drift codes: `DUPLICATE_FOUNDATION`, `DUPLICATE_BOOTLOADER`, `DUPLICATE_CHROME`.
 
 ---
 
@@ -129,7 +129,7 @@ The page prefix is a 3-character lowercase identifier and is the same prefix use
 - `Prefix: (none)` - sentinel value. Declares the section has no page-prefix scoping. Used by:
   - All sections in `cc-shared.js`.
   - The page lifecycle hooks banner in any page file.
-  - The `IMPORTS` and `INITIALIZATION` sections of any file.
+  - The `IMPORTS` section of any file.
   - The `CONSTANTS: ENGINE PROCESSES` banner in any page file (§7.4).
 
 The `Prefix:` line itself is mandatory regardless of value. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
@@ -143,7 +143,7 @@ Each banner declares exactly one prefix or `(none)`. Multiple comma-separated pr
 Each page's prefix is registered in `dbo.Component_Registry.cc_prefix` for the component that owns the page's JS file. The parser cross-references each banner's declared prefix against the registry and emits drift on disagreement.
 
 - If a file's component has `cc_prefix = NULL` (a shared or infrastructure component, e.g., `ControlCenter.Shared`), every section banner in the file must declare `Prefix: (none)`. A non-`(none)` declaration emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
-- If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every page-prefixed section banner must declare `Prefix: X`. Sections that legitimately use `(none)` (the hooks banner, IMPORTS, INITIALIZATION) are exempt from this check. A section whose banner declares a different prefix value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
+- If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every page-prefixed section banner must declare `Prefix: X`. Sections that legitimately use `(none)` (the hooks banner, IMPORTS) are exempt from this check. A section whose banner declares a different prefix value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
 - Top-level identifiers (function names, top-level constants, top-level state variables, top-level classes, and revealing-module wrappers) must begin with the file's registered `cc_prefix` followed by an underscore. This rule applies independently of banners. Hooks and methods inside classes are exempt. Drift code: `PREFIX_MISSING`.
 - The registry is the source of truth. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
 
@@ -273,16 +273,17 @@ Each import produces a `JS_IMPORT DEFINITION` row keyed on the imported binding 
 
 ---
 
-## 11. Initialization
+## 11. Page boot
 
-The `INITIALIZATION` section contains:
+Every page file declares a single page boot function named `<prefix>_init`. The bootloader (§4.2) invokes it by computed name (`window[pageKey + '_init']()`) after the page's JS module loads.
 
-1. The `document.addEventListener('DOMContentLoaded', ...)` handler that runs page setup
-2. Any one-time setup functions called only from that handler
+### 11.1 Form
 
-Functions in this section may invoke functions from any later section. Functions in `FUNCTIONS` may not depend on initialization having run beyond the constants and state being populated.
+`<prefix>_init` is a top-level `function` declaration in the `FUNCTIONS` section. `const` or `var` arrow-expression forms are not permitted. Drift code: `MISSING_PAGE_INIT`.
 
-The `DOMContentLoaded` handler itself is anonymous and is registered via `addEventListener`. It does not produce a `JS_FUNCTION DEFINITION` row; the parser treats it as initialization code, not a named definition. This is one of the allowed-callback contexts described in Section 15.1.
+### 11.2 Ordering
+
+Functions called from `<prefix>_init` may invoke functions from anywhere else in the file. Other functions may not depend on `<prefix>_init` having completed beyond the constants and state being populated.
 
 ---
 
@@ -295,7 +296,7 @@ Event handlers are attached via `addEventListener`. The canonical form is event 
 A delegation binding has three parts:
 
 1. A stable parent — an element that exists in the page's static markup or is rendered exactly once and not replaced.
-2. A single `addEventListener` call on that parent, registered during page boot inside the `INITIALIZATION` section.
+2. A single `addEventListener` call on that parent, registered during page boot inside the `<prefix>_init` function (Section 11).
 3. A handler function that dispatches by examining `event.target` via `event.target.matches(selector)` or `event.target.closest(selector)`.
 
 Per-row context (record IDs, group IDs, tracking IDs, etc.) is carried on rendered elements via `data-*` attributes and read by the handler via `event.target.dataset.<name>` or `event.target.closest('.<row-class>').dataset.<name>`.
@@ -304,7 +305,7 @@ Per-row context (record IDs, group IDs, tracking IDs, etc.) is carried on render
 
 Direct binding is permitted in exactly these cases:
 
-1. **Singleton elements bound at page boot.** An element that exists exactly once on the page and is not subject to re-rendering, bound during the `DOMContentLoaded` handler in `INITIALIZATION`.
+1. **Singleton elements bound at page boot.** An element that exists exactly once on the page and is not subject to re-rendering, bound during the page's `<prefix>_init` function (Section 11).
 2. **Window-level and document-level events.** Events bound on `window` or `document`.
 
 Any binding case that fits neither §12.1 nor §12.2 is evaluated as a spec amendment, not as a per-file authoring choice.
@@ -607,12 +608,13 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `BANNER_INVALID_SEPARATOR_LENGTH` | A banner's middle separator line is not exactly 76 `-` characters long. |
 | `BANNER_MALFORMED_TITLE_LINE` | A banner's title line does not parse as `<TYPE>: <NAME>`. |
 | `BANNER_MISSING_DESCRIPTION` | A banner has no description text between the separator line and the `Prefix:` line. |
-| `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list for the file kind. Page files allow IMPORTS, CONSTANTS, STATE, INITIALIZATION, FUNCTIONS. cc-shared.js allows IMPORTS, FOUNDATION, STATE, CHROME. |
+| `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list for the file kind. Page files allow IMPORTS, CONSTANTS, STATE, FUNCTIONS. cc-shared.js allows IMPORTS, FOUNDATION, STATE, BOOTLOADER, CHROME. |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of the required order. |
 | `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
 | `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
 | `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
 | `DUPLICATE_FOUNDATION` | A FOUNDATION section appears in a JS file other than `cc-shared.js`. |
+| `DUPLICATE_BOOTLOADER` | A BOOTLOADER section appears in a JS file other than `cc-shared.js`. |
 | `DUPLICATE_CHROME` | A CHROME section appears in a JS file other than `cc-shared.js`. |
 | `HOOKS_BANNER_NOT_LAST` | A `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner exists but is not the last banner in the file. |
 
@@ -622,6 +624,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 |---|---|
 | `PREFIX_MISMATCH` | A top-level identifier name does not begin with the prefix declared in its containing section's banner. |
 | `PREFIX_MISSING` | A top-level identifier does not begin with the file's registered `Component_Registry.cc_prefix` followed by an underscore. Independent of banners. Hooks and methods inside classes are exempt. |
+| `MISSING_PAGE_INIT` | A page file does not contain a top-level function declaration named `<prefix>_init`, or `<prefix>_init` is declared as a `const`/`var` arrow expression rather than a `function` declaration. The bootloader cannot invoke the page without it. |
 | `MISSING_FUNCTION_COMMENT` | A function definition is not preceded by a single block comment. |
 | `MISSING_CONSTANT_COMMENT` | A `const` declaration in a CONSTANTS section is not preceded by a single block comment. |
 | `MISSING_STATE_COMMENT` | A `var` declaration in a STATE section is not preceded by a single block comment. |
@@ -800,7 +803,7 @@ A small page demonstrating every required pattern. Real pages have more sections
    -----------------
    CONSTANTS: PAGE CONFIGURATION
    STATE: PAGE STATE
-   INITIALIZATION: PAGE BOOT
+   FUNCTIONS: PAGE BOOT
    FUNCTIONS: DATA LOADING
    FUNCTIONS: RENDERING
    FUNCTIONS: PAGE LIFECYCLE HOOKS
@@ -838,13 +841,17 @@ var ex_livePollingTimer = null;
 
 
 /* ============================================================================
-   INITIALIZATION: PAGE BOOT
+   FUNCTIONS: PAGE BOOT
    ----------------------------------------------------------------------------
-   DOMContentLoaded handler and one-time setup. Runs once on page load.
-   Prefix: (none)
+   The mandatory <prefix>_init function called by the cc-shared.js bootloader
+   after this module loads. Performs one-time page setup.
+   Prefix: ex
    ============================================================================ */
 
-document.addEventListener('DOMContentLoaded', async function() {
+/* Page boot function. Called by the cc-shared.js bootloader after this
+   module is loaded. Loads configuration, performs the initial render,
+   wires the engine subsystem, and binds delegated event listeners. */
+async function ex_init() {
     await ex_loadConfig();
     ex_refreshAll();
     connectEngineEvents();
@@ -859,7 +866,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     /* Window resize listener. */
     window.addEventListener('resize', ex_onWindowResize);
-});
+}
 
 
 /* ============================================================================
@@ -957,7 +964,7 @@ This file produces the following catalog rows when parsed:
 - 1 x `JS_CONSTANT_VARIANT DEFINITION` (`ex_ENGINE_PROCESSES`, variant_type='object')
 - 1 x `JS_CONSTANT DEFINITION` (`ex_DEFAULT_REFRESH_INTERVAL`)
 - 2 x `JS_STATE DEFINITION` (`ex_currentFilter`, `ex_livePollingTimer`)
-- 1 x `JS_FUNCTION_VARIANT DEFINITION` (`ex_loadConfig`, variant_type='async')
+- 2 x `JS_FUNCTION_VARIANT DEFINITION` (`ex_init` and `ex_loadConfig`, both variant_type='async')
 - 7 x `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`, `ex_onAgentGridClick`, `ex_handleAgentClick`, `ex_onWindowResize`)
 - 2 x `JS_HOOK DEFINITION` (`onPageRefresh`, `onPageResumed`)
 - 3 x `JS_EVENT USAGE` (the agent-grid click delegation, the singleton refresh button, the window resize listener)
@@ -976,7 +983,9 @@ The 76-character rule for both `=` rule lines and `-` separator lines is a fixed
 
 ### A.4 Section types
 
-`FOUNDATION` and `CHROME` belong only in `cc-shared.js` because they are platform-wide constructs. CSS has the same constraint via the anchor-file rule (`CC_CSS_Spec.md` §4.3); JS reuses the same model with `cc-shared.js` as the platform's single anchor file for shared JS constructs.
+`FOUNDATION`, `BOOTLOADER`, and `CHROME` belong only in `cc-shared.js` because they are platform-wide constructs. CSS has the same constraint via the anchor-file rule (`CC_CSS_Spec.md` §4.3); JS reuses the same model with `cc-shared.js` as the platform's single anchor file for shared JS constructs.
+
+`BOOTLOADER` is conceptually distinct from `CHROME` because of its lifecycle role. Chrome utilities (the connection banner, the engine card system, the shared fetch wrapper, modals, formatting helpers) are *consumed by* pages — pages call them. The bootloader does the inverse: it *consumes* the page by fetching the page's JS module and invoking the page's `<prefix>_init` function. The bootloader runs first, before any chrome utility runs, before any page code exists in the browser. Giving it its own section type makes that ordering visible in the file structure and queryable in the catalog (`WHERE section_type = 'BOOTLOADER'`).
 
 ### A.5 Prefix
 
@@ -999,6 +1008,14 @@ The `const` vs `var` split by section reflects the semantic distinction. CONSTAN
 ### A.8 Page lifecycle hooks
 
 The hooks-banner-last rule produces a stable file-scanning experience. A reader looking for "this page's contract with cc-shared.js" knows exactly where to find it (last banner in the file). The `Prefix: (none)` declaration prevents the spec's prefix-matching from erroneously flagging hook names as PREFIX_MISMATCH violations.
+
+### A.11 Page boot
+
+The `<prefix>_init` function exists as the single platform entry point each page exposes to the bootloader. A fixed, derivable name (`<prefix>` plus `_init`) lets the bootloader resolve the entry point without per-page configuration — every page has exactly one, every page names it the same way, and the bootloader knows where to find it.
+
+The top-level `function` declaration requirement (rather than allowing `const ex_init = () => {}` or `var ex_init = function() {}`) exists because the bootloader looks the function up via `window[pageKey + '_init']`. Top-level `function` declarations attach to `window` automatically; `const` and `var` declarations do not. Allowing the arrow-expression form would break the bootloader silently — the page would load, no error would fire, but `<prefix>_init` would never run.
+
+Keeping `<prefix>_init` in the `FUNCTIONS` section (rather than giving it its own section type, mirroring the legacy `INITIALIZATION`) reflects that the page boot function is structurally just another function. It produces the same `JS_FUNCTION DEFINITION` or `JS_FUNCTION_VARIANT DEFINITION` row in the catalog as any other function; its specialness lives in the bootloader's runtime behavior, not in the file's structural anatomy.
 
 ### A.12 Event handler binding
 
