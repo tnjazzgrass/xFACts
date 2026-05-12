@@ -30,8 +30,9 @@
     The HTML_FILE row's component_name is the bare filename, joined to
     Object_Registry on object_name with object_type IN (Route, API, Module).
     HTML_FILE is HTML's anchor row, parallel to CSS_FILE / JS_FILE in the
-    HTML populators; the file_type column (always 'HTML' for rows emitted
-    by this populator) disambiguates which kind of file is being anchored.
+    CSS / JS populators; the file_type column (always 'HTML' for rows
+    emitted by this populator) disambiguates which kind of file is being
+    anchored.
 
     Wave 1 implements:
       * File discovery (Route, API, and Module files)
@@ -102,6 +103,21 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-11  Universal anchor-row refactor: HTML side completion.
+            With the CSS and JS populators now emitting pure-anchor
+            CSS_FILE / JS_FILE rows (separate from their parsed-header
+            FILE_HEADER rows), the HTML populator's asset-reference
+            resolver pre-loads were retargeted to match:
+            - CSS_FILE pre-load: now queries component_type = 'CSS_FILE'
+              (was 'FILE_HEADER' with file_type = 'CSS' as an interim
+              measure). file_type filter dropped as redundant.
+            - JS_FILE pre-load: now queries component_type = 'JS_FILE'
+              (was 'FILE_HEADER' with file_type = 'JS'). Same shape.
+            No change to row emissions. HTML_FILE remains the anchor
+            row for HTML; HTML does not emit a FILE_HEADER row because
+            HTML markup has no file-header construct (the host PS file's
+            header will be cataloged by the future PS populator as a
+            file_type = 'PS' row).
 2026-05-11  Catalog audit and resolver pre-load fixes.
 
             Background: while investigating CSS_FILE / JS_FILE asset
@@ -1980,12 +1996,10 @@ function New-HtmlRow {
 # the file contains.
 #
 # HTML_FILE is HTML's file-level anchor row, parallel to CSS_FILE / JS_FILE
-# in the universal anchor-row model (see Asset_Registry_Universal_Anchor_Refactor.md
-# in Planning/). The CSS and JS populators currently emit dual-purpose
-# FILE_HEADER rows for their anchors; the universal model splits that into
-# a pure-anchor <TYPE>_FILE row plus a parsed-header FILE_HEADER row. HTML's
-# anchor is already in the universal-correct shape (HTML_FILE); the CSS and
-# JS populators will be refactored separately to match.
+# in the CSS / JS populators. HTML does not emit a companion FILE_HEADER
+# row because HTML markup has no file-header construct; the host PS file's
+# header block will be cataloged separately by the future PS populator
+# (file_type = 'PS').
 #
 # Scope is derived from Object_Registry classification:
 #   Route, API -> LOCAL  (page-specific)
@@ -2715,38 +2729,24 @@ Write-Log ("  JS_FUNCTION DEFINITIONs loaded: {0} shared, {1} local" -f `
            $script:jsFunctionSharedMap.Count, $script:jsFunctionLocalMap.Count)
 
 # CSS_FILE and JS_FILE asset reference resolution. The CSS and JS populators
-# currently emit one FILE_HEADER DEFINITION row per .css / .js file as their
-# file-level anchor; the HTML populator's <link rel="stylesheet" href="...">
-# and <script src="..."></script> references resolve against those rows by
-# matching the bare filename. The map captures filename -> file_name path
-# (the file_name column already stores the bare filename, so the map's key
-# and value will be the same; we capture file_name separately in case the
-# convention ever changes).
+# each emit one CSS_FILE / JS_FILE DEFINITION row per scanned file as their
+# pure-anchor row (component_name = bare filename). The HTML populator's
+# <link rel="stylesheet" href="..."> and <script src="..."></script>
+# references resolve against those rows by matching the bare filename.
 #
-# UNIVERSAL REFACTOR NOTE: when the planned universal anchor-row refactor
-# lands (see Asset_Registry_Universal_Anchor_Refactor.md in Planning/),
-# CSS and JS populators will split their dual-purpose FILE_HEADER row into
-# a pure-anchor CSS_FILE / JS_FILE row plus a parsed-header FILE_HEADER row.
-# At that point these queries change to target CSS_FILE and JS_FILE
-# respectively. For now they target FILE_HEADER because that's what the
-# CSS / JS populators currently emit.
-#
-# We split shared vs local CSS files based on filename convention:
-# cc-shared.css and cc-shared.js are SHARED by convention; every other file
-# is LOCAL. The CSS / JS populators may carry the scope on the row itself
-# (CSS populator emits 9 SHARED FILE_HEADER rows, JS emits 6 SHARED), but
-# we use the filename convention here to stay decoupled from the scope
-# rules of those other populators -- if their scope conventions change,
-# our resolver doesn't need to follow.
-Write-Log "Loading CSS FILE_HEADER rows for asset-reference resolution..."
+# Shared vs local: we use the filename convention (cc-shared.css /
+# cc-shared.js / engine-events.js are SHARED, everything else LOCAL) rather
+# than reading the scope from the row itself. This decouples the resolver
+# from the CSS / JS populators' scope conventions - if those change, the
+# resolver doesn't need to follow.
+Write-Log "Loading CSS_FILE rows for asset-reference resolution..."
 $script:cssFileMap = @{}
 try {
     $cssFileQuery = @"
 SELECT component_name, file_name
 FROM dbo.Asset_Registry
-WHERE component_type = 'FILE_HEADER'
+WHERE component_type = 'CSS_FILE'
   AND reference_type = 'DEFINITION'
-  AND file_type      = 'CSS'
 "@
     $cssFileResults = Invoke-Sqlcmd -ServerInstance $script:XFActsServerInstance `
                                     -Database       $script:XFActsDatabase `
@@ -2763,19 +2763,18 @@ WHERE component_type = 'FILE_HEADER'
     }
 }
 catch {
-    Write-Log "CSS FILE_HEADER query failed: $($_.Exception.Message)." 'WARN'
+    Write-Log "CSS_FILE query failed: $($_.Exception.Message)." 'WARN'
 }
-Write-Log ("  CSS FILE_HEADERs loaded: {0}" -f $script:cssFileMap.Count)
+Write-Log ("  CSS_FILE rows loaded: {0}" -f $script:cssFileMap.Count)
 
-Write-Log "Loading JS FILE_HEADER rows for asset-reference resolution..."
+Write-Log "Loading JS_FILE rows for asset-reference resolution..."
 $script:jsFileMap = @{}
 try {
     $jsFileQuery = @"
 SELECT component_name, file_name
 FROM dbo.Asset_Registry
-WHERE component_type = 'FILE_HEADER'
+WHERE component_type = 'JS_FILE'
   AND reference_type = 'DEFINITION'
-  AND file_type      = 'JS'
 "@
     $jsFileResults = Invoke-Sqlcmd -ServerInstance $script:XFActsServerInstance `
                                    -Database       $script:XFActsDatabase `
@@ -2792,9 +2791,9 @@ WHERE component_type = 'FILE_HEADER'
     }
 }
 catch {
-    Write-Log "JS FILE_HEADER query failed: $($_.Exception.Message)." 'WARN'
+    Write-Log "JS_FILE query failed: $($_.Exception.Message)." 'WARN'
 }
-Write-Log ("  JS FILE_HEADERs loaded: {0}" -f $script:jsFileMap.Count)
+Write-Log ("  JS_FILE rows loaded: {0}" -f $script:jsFileMap.Count)
 
 # ============================================================================
 # PER-FILE WALK
