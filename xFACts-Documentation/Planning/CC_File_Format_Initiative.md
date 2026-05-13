@@ -14,7 +14,9 @@ The architectural change at the core: HTML stops referencing JS function names. 
 
 ## 2. Where things stand right now
 
-### 2.1 Completed in the most recent session
+### 2.1 Completed across sessions
+
+#### Session 1 — JS spec amendments + bootloader implementation
 
 **JS spec amendments** (`CC_JS_Spec.md`):
 - §4.1 — `INITIALIZATION` removed from page-file section types; page files now have four section types (IMPORTS, CONSTANTS, STATE, FUNCTIONS)
@@ -59,12 +61,52 @@ The architectural change at the core: HTML stops referencing JS function names. 
 - Failure mode 2 (missing init): page-error-banner appears with "Page boot function not found"
 - Failure mode 3 (init throws): page-error-banner appears with "Page boot failed"
 
+#### Session 2 — HTML spec amendments + helper additions + PS spec design
+
+**HTML spec amendments** (`CC_HTML_Spec.md`) — completed and shipped. The shipped spec contains 17 numbered sections plus Appendix, 2176 lines, 104 drift codes (net change: +18 new codes, -4 retired, 16 relocated from prior section). All 13 amendment areas from §4.2 of this initiative doc are reflected. Key locked decisions:
+
+- Two body attributes: `data-page` (page key) and `data-prefix` (CSS/JS prefix); JS files keep slug names
+- Fully explicit `data-action-<event>` (no implicit click)
+- Hybrid prefix convention: page-local `data-action` values unprefixed, shared chrome actions prefixed `cc-`
+- 8-event closed set (click/change/input/submit/keydown/keyup/focus/blur)
+- Per-event dispatch tables (`<prefix>_clickActions`, `sharedClickActions`)
+- Argument attributes via `data-action-<arg-name>`
+- Umbrella code `FORBIDDEN_INLINE_EVENT_HANDLER` plus 16 specific shape codes
+- New component type `HTML_EVENT_HANDLER`
+- Three accuracy-pass corrections applied during finalization
+
+**HTML helper additions** (`xFACts-Helpers.psm1`):
+- `Get-PageScriptTagHtml` — returns the single `<script src="/js/cc-shared.js"></script>` string for embedding before `</body>` in page route files. Centralizes the script-tag emission so it produces one `CSS_FILE USAGE` catalog row from a SHARED-scope helper instead of one row per consuming page.
+- Inventory line added to the file header function list.
+
+**Bootloader test page validation:**
+- All five validation outcomes confirmed in-browser: `test_init` ran, page-local action fired, bogus action logged warning, shared dispatch works, page-refresh button correctly no-ops on a test page that has no `.page-refresh-btn` element.
+
+**PS spec preliminary notes** (`CC_PS_Spec_Notes.md`) — a 680-line working doc captured to bootstrap the PS spec drafting next session. Captures:
+- HTML/PS division of labor (HTML populator owns markup; PS populator owns everything else in `.ps1` / `.psm1` files including API endpoints, function declarations, comment-based help, variable assignments, RBAC checks, SQL invocations, etc.)
+- Five file roles (page route, API route, module, standalone script in `E:\xFACts-PowerShell\`, other locations TBD)
+- Banner format shared with CSS/JS/HTML specs (76-char rules, separator, description, Prefix line)
+- File header format using PowerShell comment-based-help (`<# .SYNOPSIS .DESCRIPTION .NOTES #>`)
+- Dedicated `CHANGELOG` section with its own banner — required in page route files and standalone scripts; forbidden in API route files and module files
+- Per-role file shape templates with section-type closed enums per role
+- Catalog row types (PS_FILE, FILE_HEADER, COMMENT_BANNER, PS_CHANGELOG, PS_FUNCTION, PS_PARAMETER, PS_VARIABLE, PS_EXPORT, API_ROUTE, WEBSOCKET_ROUTE, MIDDLEWARE, PS_FUNCTION USAGE, SQL_QUERY USAGE, GLOBALCONFIG_REF USAGE, RBAC_CHECK USAGE, MODULE_IMPORT USAGE, PS_COMMENT, PS_DOCBLOCK)
+- Function-level rules ([CmdletBinding] mandatory, docblock mandatory, Verb-Noun naming with approved-verb policy)
+- Nine categories of drift codes (40-60 codes total — file header, banner, changelog, function, variable, module export, route, SQL, formatting, cross-file)
+- Open questions list for next-session resolution (section type closed enums, PS_CHANGELOG row granularity, scriptblock size threshold, SQL embedding canonical form, etc.)
+- Populator architecture notes (no external parser — uses native PS AST via `[System.Management.Automation.Language.Parser]::ParseInput()`, three-pass model mirrors CSS, 1500-2500 line estimate, runs last in CSS→HTML→JS→PS pipeline)
+- Inheritance summary from existing specs
+
+The two preliminary PS docs (`CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md`) remain in place but are now stale; they get deleted when `CC_PS_Spec.md` lands.
+
 ### 2.2 What's deployable now
 
-- `cc-shared.js` with bootloader section: deployed and validated
-- `cc-shared.css` with page-error-banner styling: deployed and validated
-- `CC_JS_Spec.md` v2: published
+- `cc-shared.js` with bootloader section: deployed and validated (Session 1)
+- `cc-shared.css` with page-error-banner styling: deployed and validated (Session 1)
+- `CC_JS_Spec.md` v2: published (Session 1)
+- `CC_HTML_Spec.md` with bootloader-driven dispatch amendments: published (Session 2)
+- `xFACts-Helpers.psm1` with `Get-PageScriptTagHtml` helper: deployed (Session 2)
 - `BootloaderTest.ps1` and `test.js`: deployed; will be deleted at the end of the initiative
+- `CC_PS_Spec_Notes.md` preliminary working doc: ready for next session
 
 ### 2.3 What's still running on the legacy model
 
@@ -76,13 +118,13 @@ Every existing page is still using:
 
 None of these pages run through the bootloader yet. The bootloader is purely additive in cc-shared.js — pages that don't declare `data-page` are completely unaffected by the new code.
 
-The five offline-refactored page files mentioned at session start (originally refactored to the current CSS/JS specs and intended to swap in once tested) need to be re-refactored against the new spec before they go live. They are still page files in waiting; they haven't replaced anything in production.
+The five offline-refactored page files mentioned at the start of the initiative (originally refactored to the current CSS/JS specs and intended to swap in once tested) need to be re-refactored against the new spec before they go live. They are still page files in waiting; they haven't replaced anything in production.
 
 ---
 
 ## 3. Decisions reference
 
-Outcomes from the design discussion that drove the JS spec amendments and bootloader implementation. Use this as a quick lookup; full rationale lives in the spec appendices.
+Outcomes from the design discussion that drove the JS spec amendments, HTML spec amendments, and bootloader implementation. Use this as a quick lookup; full rationale lives in the spec appendices.
 
 | # | Topic | Outcome |
 |---|---|---|
@@ -94,11 +136,13 @@ Outcomes from the design discussion that drove the JS spec amendments and bootlo
 | Q3 sub | Failure handling | Three failure modes (script 404, init not defined, init throws) each populate the `#page-error-banner` placeholder + log to console. |
 | Q4a | `data-action` naming | Hybrid. Page-local actions unprefixed (`data-action="open-request-detail"`); shared chrome actions prefixed `cc-` (`data-action="cc-page-refresh"`). |
 | Q4b | Argument naming | Structured. Action arguments use `data-action-<arg-name>` (e.g., `data-action-request-id="123"`). Distinguishes argument attributes from event-type attributes via reference to a known event list. |
-| Q4c | Dispatch mechanism | Lookup table. Each page declares `<prefix>_actions` constant; cc-shared.js declares `sharedActions`. Dispatcher pre-resolves `closest('[data-action]')` and calls handler with `(target, event)`. |
-| Q5 | Non-click events | `data-action` is click (implicit); other events use `data-action-<event>` (e.g., `data-action-change`, `data-action-keydown`). Recognized event list starts selective and is amended as needed. Each event type gets its own dispatch table (`<prefix>_changeActions`, etc.) and its own delegated listener. |
+| Q4c | Dispatch mechanism | Per-event-type dispatch tables. Each page declares `<prefix>_<event>Actions` constants; cc-shared.js declares `shared<event>Actions`. Dispatcher pre-resolves `closest('[data-action-<event>]')` and calls handler with `(target, event)`. |
+| Q5 | Non-click events | All events use `data-action-<event>` (no implicit click). Recognized event closed set: click, change, input, submit, keydown, keyup, focus, blur. Each event type gets its own dispatch table and its own delegated listener. |
 | Q5 sub | Argument rule | Arguments are always explicit (`data-action-<arg-name>`), regardless of event type. |
 | Q6 | Multi-file per page | Single file per page by default. Multi-module support deferred until a concrete page warrants splitting; see §5. |
 | Q7 | Migration order | Spec first. Build infrastructure to spec. Validate runtime. Update populators. Convert pages. Roll out. |
+| Q8 | Body attributes | Two attributes: `data-page` (used by the bootloader to find the module) and `data-prefix` (used to look up the prefix's dispatch tables and to scope IDs/classes/JS identifiers). |
+| Q9 | HTML helper for the script tag | `Get-PageScriptTagHtml` in `xFACts-Helpers.psm1` returns the script-tag string. Pages call it once and substitute it into their HTML emission before `</body>`. |
 
 ### 3.1 The multi-consumer principle
 
@@ -121,7 +165,7 @@ The `data-action` rule is intentionally inverted from IDs/classes/identifiers be
 
 The Asset_Registry catalog pipeline (CSS populator → HTML populator → JS populator → PS populator) is **100% manual standalone execution**. It is not a scheduled process, has no orchestrator wrapper, emits no ProcessRegistry rows, and is not invoked by the engine. An operator runs the pipeline by hand when they want a fresh catalog — typically after a refactor session, a page conversion, or a spec amendment.
 
-Any populator pre-design documents or comments that reference Orchestrator.ProcessRegistry, engine card validation via ProcessRegistry joins, or scheduled-process integration are stale relative to this decision and need to be removed when those populators are next touched. The §4.4 HTML populator update explicitly removes the Wave 4 ProcessRegistry plan. PS populator (§4.6) is being built fresh and so will not introduce orchestrator coupling at all.
+Any populator pre-design documents or comments that reference Orchestrator.ProcessRegistry, engine card validation via ProcessRegistry joins, or scheduled-process integration are stale relative to this decision and need to be removed when those populators are next touched. The §4.5 HTML populator update explicitly removes the Wave 4 ProcessRegistry plan. PS populator (§4.7) is being built fresh and so will not introduce orchestrator coupling at all.
 
 A simple invocation wrapper script may be added later to chain the four populators in order (CSS → HTML → JS → PS) for convenience, but the wrapper is a standalone tool the operator runs manually, not a registered process.
 
@@ -129,9 +173,20 @@ A simple invocation wrapper script may be added later to chain the four populato
 
 ## 4. Path forward
 
-The remaining work, in strict execution order. Every item is in scope. Nothing is deferred.
+The remaining work, organized by what's complete, what's actively running, and what's still ahead. The PS spec work runs in parallel with the remaining populator updates — neither blocks the other.
 
-### 4.1 JS populator update
+### Completed
+
+| § | Item | Notes |
+|---|---|---|
+| 4.1 | JS spec amendments | Shipped Session 1. See §2.1. |
+| 4.2 | Bootloader implementation in cc-shared.js + cc-shared.css | Shipped Session 1 and validated end-to-end. |
+| 4.3 | HTML spec amendments | Shipped Session 2 as `CC_HTML_Spec.md`. |
+| 4.4 | HTML helper-function additions (partial) | `Get-PageScriptTagHtml` shipped Session 2. Other helper updates fold into per-page conversions in §4.10. |
+
+### Active and unblocked (can proceed in parallel)
+
+#### 4.5 JS populator update
 
 Aligns the JS populator with the amended JS spec.
 
@@ -141,7 +196,7 @@ Aligns the JS populator with the amended JS spec.
 - Add `MISSING_PAGE_INIT` detection (page files lacking a top-level `<prefix>_init` function declaration, or having one declared as `const`/`var` arrow expression)
 - Update `UNKNOWN_SECTION_TYPE` enumeration to match the amended spec
 - Remove validation related to the deleted INITIALIZATION section
-- Add structural cataloging of dispatch tables (`<prefix>_actions`, `<prefix>_changeActions`, etc.): each key-value pair becomes its own catalog row
+- Add structural cataloging of dispatch tables (`<prefix>_clickActions`, `<prefix>_changeActions`, etc.): each key-value pair becomes its own catalog row
 
 After the populator updates, run a full catalog refresh and verify expected drift signal:
 - Every existing page file fires `MISSING_PAGE_INIT`
@@ -149,186 +204,110 @@ After the populator updates, run a full catalog refresh and verify expected drif
 - cc-shared.js fires zero drift
 - BootloaderTest's `test.js` fires zero drift
 
-### 4.2 HTML spec amendments
+This work is relatively small and can slot in opportunistically between PS spec work or HTML populator work.
 
-The HTML spec gets the inversion model's HTML-side rules. The current spec exists in full at `xFACts-Documentation/Planning/CC_HTML_Spec.md` and is the working version; amendments are applied to it directly.
+#### 4.6 HTML populator update
 
-The eleven distinct amendment areas, in roughly the order they appear in the spec:
+The HTML populator (`Populate-AssetRegistry-HTML.ps1`) already exists at Wave 2 functionality and is the authoritative source of HTML cataloging. It scans `.ps1` and `.psm1` files (there are no standalone `.html` files in the CC app — every page's HTML lives inside PowerShell here-strings or StringBuilder append chains), uses PowerShell AST walking to locate HTML-emission constructs, then runs its own HTML tokenizer (which treats PowerShell interpolation as first-class) to extract the markup. It emits `file_type = 'HTML'` rows with the host `.ps1`/`.psm1` file as `file_name`.
 
-**§1 Required structure / page shell**
-- §1.1 page-shell template: add `<body data-page="<prefix>">` attribute; replace the two `<script>` tags with a single `<script src="/js/cc-shared.js"></script>` tag
-- §1.1 page-shell template: add the `#page-error-banner` placeholder div between the connection banner placeholder and page-specific content
-- §1.2 page-shell rules: add new rule "the `<body>` element declares `data-page` whose value matches the page's `cc_prefix` from `Component_Registry`"; drift code `MISSING_DATA_PAGE`
-- §1.4 body content rules: add new rule "the `#page-error-banner` placeholder appears exactly once per page, with `id="page-error-banner"` and `class="page-error-banner"`, empty"; drift codes `MISSING_PAGE_ERROR_BANNER` and a banner-content code parallel to `FORBIDDEN_BANNER_CONTENT`
-- §1.6 access-denied page exemptions: add `MISSING_DATA_PAGE` and `MISSING_PAGE_ERROR_BANNER` to the suppressed list (the access-denied page is pre-bootloader and doesn't need the new chrome)
+Current state: Wave 1 (file discovery + tokenizer + page-shell drift codes) and Wave 2 (attribute-level row extraction — `HTML_ID`, `HTML_DATA_ATTRIBUTE`, `CSS_CLASS USAGE`, `CSS_FILE USAGE`, `JS_FILE USAGE`, `JS_FUNCTION USAGE`) are delivered. Wave 2.1 (drift code attachment for the new row types) is the active next step; Wave 3 (HTML_TEXT, HTML_ENTITY, HTML_SVG, HTML_COMMENT extraction) is planned. The original Wave 4 plan included Orchestrator.ProcessRegistry-driven engine card validation — that scope is now removed (see §3.3); engine-card validation, if retained at all, becomes a direct catalog query without ProcessRegistry coupling.
 
-**§3 Asset references**
-- §3.2 JS file references: rewrite to mandate exactly one `<script>` tag, exactly `<script src="/js/cc-shared.js"></script>`. Drop the page-specific-then-shared ordering rule (only one script tag exists now)
-- §3.2 drift codes: remove `MALFORMED_PAGE_JS_REFERENCE`, `JS_REFERENCE_ORDER_VIOLATION`, `UNEXPECTED_JS_REFERENCE`. Replace with codes appropriate to the single-script model (`UNEXPECTED_PAGE_SCRIPT_TAG` for any page-specific script tag, etc.)
-- §3.3 asset path mapping: drop the JS path column from the table; pages no longer load page-specific JS via `<script src=>`
-
-**§4 ID conventions**
-- §4.1 chrome IDs: add `page-error-banner` to the closed set with appropriate purpose and section reference
-
-**§6 Event handler conventions — REMOVE ENTIRELY**
-- Delete §6.1 through §6.6 (the inline event handler rules)
-- Delete the 16 drift codes that policed inline handlers (§15.6 — `MULTIPLE_HANDLER_STATEMENTS`, `INLINE_HANDLER_EXPRESSION`, `MALFORMED_HANDLER_CALL`, `TRAILING_HANDLER_SEMICOLON`, `FORBIDDEN_REVEALING_MODULE_CALL`, `FORBIDDEN_BUILTIN_METHOD_CALL`, `HANDLER_FUNCTION_NAME_MISMATCH`, `FORBIDDEN_EVENT_METHOD_CALL`, `FORBIDDEN_HANDLER_CONDITIONAL`, `FORBIDDEN_INLINE_DOM_OPERATION`, `FORBIDDEN_INLINE_ASSIGNMENT`, `FORBIDDEN_JAVASCRIPT_PROTOCOL`, `FORBIDDEN_ARGUMENT_EXPRESSION`, `MALFORMED_ARGUMENT_QUOTING`, `MALFORMED_ARGUMENT_LIST`, `FORBIDDEN_HELPER_PAGE_FUNCTION_CALL`)
-- Add a new top-level forbidden-pattern entry: any HTML attribute named `on*` (matching the inline event handler family) is forbidden. Single drift code: `FORBIDDEN_INLINE_EVENT_HANDLER`
-
-**New §6 (post-inversion) — data-action family rules**
-- Section number §6 becomes the home of the new dispatch rules (replacing the deleted inline-handler rules)
-- Hybrid prefix convention: page-local `data-action` values are unprefixed (e.g., `data-action="open-request-detail"`); shared chrome actions use the `cc-` prefix (e.g., `data-action="cc-page-refresh"`)
-- Event-type attribute naming: `data-action` (click implicit), `data-action-<event>` for other events (e.g., `data-action-change`, `data-action-keydown`, `data-action-submit`). The recognized event list is a closed set defined in this section
-- Argument attribute naming: `data-action-<arg-name>` for action arguments (e.g., `data-action-request-id="123"`). The `<arg-name>` is a kebab-case identifier; JS reads it via `event.target.dataset.actionRequestId`
-- Drift codes for the new family: `ORPHANED_ACTION_ARGUMENT` (a `data-action-<arg>` attribute appears on an element without a corresponding `data-action`), `UNRESOLVED_DATA_ACTION` (a `data-action` value has no matching dispatch table entry in the JS catalog), `UNKNOWN_EVENT_TYPE` (a `data-action-<event>` uses an event name not in the recognized set), `EVENT_ATTRIBUTE_WITHOUT_HANDLER` (a `data-action-<event>` attribute exists but no dispatch table for that event type is cataloged)
-
-**§7 data-* attribute conventions**
-- §7 needs minor clarification noting that `data-action`, `data-action-<event>`, and `data-action-<arg-name>` are governed by the new §6 (data-action family rules), not by the generic `data-*` rules in this section. The generic `data-*` rules still apply to other `data-*` attributes (`data-filter`, `data-batch-id`, etc.)
-
-**§11 Required patterns summary**
-- §11.2 page chrome: add `page-error-banner` placeholder to the required chrome list
-- §11.3 asset references: change "exactly two JS files referenced" to "exactly one JS file referenced (cc-shared.js)"
-- §11.6 (current "Event handlers"): replace entirely with rules for `data-action` family (since §6 is being replaced)
-
-**§12 Forbidden patterns summary table**
-- §12.6 event handler patterns: replace entirely with single entry for `FORBIDDEN_INLINE_EVENT_HANDLER`
-- §12.7 data-* patterns: add data-action family violations (the four new drift codes)
-
-**§13.6 Cross-populator dependencies**
-- Remove the JS_FUNCTION USAGE row commentary (HTML no longer emits these — they came from inline `onclick=` patterns which are deleted)
-- Add: HTML emits `HTML_DATA_ATTRIBUTE DEFINITION` rows for `data-action` family values; these resolve against `JS_DISPATCH_ENTRY DEFINITION` rows emitted by the JS populator (per JS spec §4.2 of the initiative). When a `data-action` value has no matching dispatch entry, drift code `UNRESOLVED_DATA_ACTION` attaches at HTML scan time *if* the JS catalog is present; otherwise the drift surfaces via query
-
-**§14 What the parser extracts table**
-- Remove the row for "event handler attributes → JS_FUNCTION USAGE" (gone)
-- Add rows for the new `data-action` family: `data-action` value → HTML_DATA_ATTRIBUTE DEFINITION with categorical naming; `data-action-<arg>` value → HTML_DATA_ATTRIBUTE DEFINITION linked to its parent's `data-action`
-
-**§15 Drift codes reference**
-- §15.6 (event handler codes): delete the entire subsection; replace with single `FORBIDDEN_INLINE_EVENT_HANDLER` entry
-- §15.7 (data-* codes): add the four new family drift codes (`ORPHANED_ACTION_ARGUMENT`, `UNRESOLVED_DATA_ACTION`, `UNKNOWN_EVENT_TYPE`, `EVENT_ATTRIBUTE_WITHOUT_HANDLER`)
-- Add `MISSING_DATA_PAGE` and `MISSING_PAGE_ERROR_BANNER` to §15.1 (page-shell codes)
-
-**§16 Compliance queries**
-- Existing queries that reference `JS_FUNCTION USAGE` rows from HTML need review — they should now query `HTML_DATA_ATTRIBUTE DEFINITION` rows for `data-action` values instead
-
-**Appendix**
-- Add appendix entries for the new rules' rationale (parallel to how the JS spec's appendix A.4, A.11 capture rationale for BOOTLOADER and `<prefix>_init`)
-- Specifically: rationale for why `data-action` uses inverted prefix convention (cc- for shared rather than page-local), rationale for the event-type attribute pattern, rationale for explicit argument attributes
-
-**Cascade verification**
-After all amendments, search the spec for stale references to:
-- "two CSS files" / "two JS files" / "two `<script>` tags" patterns — should all collapse to one for JS
-- "inline event handler" / "`onclick=`" / "event handler attribute" patterns — should be gone or refer to the new model
-- Section number references that may have shifted
-
-The bootloader test page (`BootloaderTest.ps1` + `test.js` — see §4.7 trigger) already implements the post-amendment shape and can serve as the reference example for what the new spec describes.
-
-### 4.3 HTML helper-function updates
-
-Helpers like `Get-NavBarHtml`, `Get-PageHeaderHtml`, `Get-PageBrowserTitle` generate chrome HTML. Under the new HTML spec, the chrome they emit needs to:
-
-- Include the `#page-error-banner` placeholder (probably emitted by one of the header helpers)
-- Use `data-action="cc-page-refresh"` on the refresh button instead of `onclick="pageRefresh()"`
-- Drop any inline event handlers
-
-These helpers live in `xFACts-Helpers.psm1` (component: ControlCenter.Shared). Update them once; every page that consumes them picks up the change at conversion time.
-
-### 4.4 HTML populator update
-
-The HTML populator (`Populate-AssetRegistry-HTML.ps1`) already exists and is the authoritative source of HTML cataloging. It scans `.ps1` and `.psm1` files (there are no standalone `.html` files in the CC app — every page's HTML lives inside PowerShell here-strings or StringBuilder append chains), uses PowerShell AST walking to locate HTML-emission constructs, then runs its own HTML tokenizer (which treats PowerShell interpolation as first-class) to extract the markup. It emits `file_type = 'HTML'` rows with the host `.ps1`/`.psm1` file as `file_name`.
-
-This populator is under active wave-based development. Current state: Wave 1 (file discovery + tokenizer + page-shell drift codes) and Wave 2 (attribute-level row extraction — `HTML_ID`, `HTML_DATA_ATTRIBUTE`, `CSS_CLASS USAGE`, `CSS_FILE USAGE`, `JS_FILE USAGE`, `JS_FUNCTION USAGE`) are delivered; Wave 2.1 (drift code attachment for the new row types) is pending; Wave 3 (HTML_TEXT, HTML_ENTITY, HTML_SVG, HTML_COMMENT extraction) is planned. The original Wave 4 plan included Orchestrator.ProcessRegistry-driven engine card validation — that scope is now removed (see below); engine-card validation, if retained at all, becomes a direct catalog query without ProcessRegistry coupling.
-
-Updates required for this initiative:
-- Recognize `data-page` as a chrome attribute on `<body>`; emit drift code `MISSING_DATA_PAGE` if absent
+Updates required for this initiative, now unblocked since the HTML spec amendments are shipped:
+- Recognize `data-page` and `data-prefix` as chrome attributes on `<body>`; emit drift codes `MISSING_DATA_PAGE`, `MISSING_DATA_PREFIX` if absent
 - Recognize the `#page-error-banner` placeholder requirement; emit drift code `MISSING_PAGE_ERROR_BANNER` if absent
 - Validate the single-`<script>`-tag rule (now exactly one `<script src="/js/cc-shared.js">`, not two)
-- Drop the existing inline event-handler validation rules and their drift codes (§15.6 of the current HTML spec) — those rules are deleted from the spec at §4.2
+- Drop the existing inline event-handler validation rules — those rules are deleted from the spec
 - Recognize the `data-action` family attributes: distinguish dispatch tokens, event-type attributes (`data-action-<event>`), and argument attributes (`data-action-<arg-name>`) via the recognized-event closed set
-- Emit new `data-action` family drift codes from §4.2: `ORPHANED_ACTION_ARGUMENT`, `UNRESOLVED_DATA_ACTION`, `UNKNOWN_EVENT_TYPE`, `EVENT_ATTRIBUTE_WITHOUT_HANDLER`
-- Cross-populator resolution: validate `data-action` values against `<prefix>_actions` / `sharedActions` dispatch-table entries cataloged by the JS populator (clean lookup against rows, no more parsing source for case labels or function names)
-- Remove all Orchestrator.ProcessRegistry references from the populator's planned Wave 4: the catalog pipeline is now 100% manual standalone execution, with no scheduled-process integration, no orchestrator wrapper, and no ProcessRegistry rows. Engine card validation (if retained) is performed via direct catalog query against the cataloged `engine-card` ID patterns, not by joining to a ProcessRegistry table
+- Recognize the umbrella `FORBIDDEN_INLINE_EVENT_HANDLER` plus the 16 specific shape codes
+- Emit `HTML_EVENT_HANDLER` rows for any inline `on*` attributes found
+- Emit new `data-action` family drift codes: `ORPHANED_ACTION_ARGUMENT`, `UNRESOLVED_DATA_ACTION`, `UNKNOWN_EVENT_TYPE`, `EVENT_ATTRIBUTE_WITHOUT_HANDLER`
+- Cross-populator resolution: validate `data-action` values against `<prefix>_<event>Actions` / `shared<event>Actions` dispatch-table entries cataloged by the JS populator (clean lookup against rows, no more parsing source for case labels or function names)
+- Remove all Orchestrator.ProcessRegistry references from the populator's planned Wave 4
 
-These changes slot into the existing populator's wave plan. They can land as part of Wave 2.1 (since several are drift code attachments on existing row types) or as a dedicated Wave 5, depending on the populator author's preference at implementation time.
+These changes slot into the populator's wave plan. They can land as part of Wave 2.1 or as a dedicated Wave 5, depending on the populator author's preference at implementation time.
 
-After the populator updates, run a full catalog refresh. Every existing page file fires expected drift codes (`MISSING_DATA_PAGE`, `MISSING_PAGE_ERROR_BANNER`, the now-illegal `onclick=` patterns, the second `<script>` tag, etc.). BootloaderTest.ps1's HTML emission fires zero drift on the new rules (it's the reference shape).
+After the populator updates, run a full catalog refresh. Every existing page file fires expected drift codes (`MISSING_DATA_PAGE`, `MISSING_DATA_PREFIX`, `MISSING_PAGE_ERROR_BANNER`, the now-illegal `onclick=` patterns, the second `<script>` tag, etc.). BootloaderTest.ps1's HTML emission fires zero drift on the new rules (it's the reference shape).
 
-### 4.5 PS Spec — draft and finalize
+This is a multi-session effort — the populator is ~3,010 lines and the changes are substantial.
 
-`CC_PS_Spec.md` is the single specification covering all three Control Center PowerShell file roles: page route files (e.g., `BatchMonitoring.ps1`), API route files (e.g., `BatchMonitoring-API.ps1`), and module files (e.g., `xFACts-Helpers.psm1`). The current pre-design documents (`CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md`) are consolidated into this single spec when the design session lands; both pre-design docs are then deleted.
+#### 4.7 PS Spec — draft and finalize
 
-File role is determined by filename and extension:
-- `.psm1` → module file
-- `-API.ps1` in `scripts/routes/` → API route file
-- All other `.ps1` files in `scripts/routes/` → page route file
+`CC_PS_Spec.md` is the single specification covering all five Control Center PowerShell file roles: page route files (e.g., `BatchMonitoring.ps1`), API route files (e.g., `BatchMonitoring-API.ps1`), module files (e.g., `xFACts-Helpers.psm1`), and standalone scripts in `E:\xFACts-PowerShell\` (collectors, monitors, orchestrators, populators, documentation pipeline scripts). The current pre-design documents (`CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md`) are consolidated into this single spec when the design session lands; both pre-design docs are then deleted.
 
-The single-spec shape mirrors the CSS and JS specs: the structural rules (file header, section banners, FILE ORGANIZATION matching, prefix declaration format, comment style, blank-line discipline) are identical across all three roles and stated once. The role-conditional rules (allowed section types, what content the file contains, what the populator extracts) are stated per role in their own subsections — the same pattern as `§4.1 Page files` vs `§4.2 The shared file cc-shared.js` in the JS spec.
+**Preliminary notes captured.** `CC_PS_Spec_Notes.md` (this session, ~680 lines) contains the foundational design decisions: HTML/PS division of labor, file role taxonomy, banner format inheritance from CSS/JS, file header structure, dedicated CHANGELOG section design, catalog row types, per-role file shape templates, function-level rules, drift code categories, populator architecture, and open questions for spec drafting. The next session consumes this doc and produces `CC_PS_Spec.md`.
+
+File role is determined by filename, extension, and directory:
+- `.psm1` in `xFACts-ControlCenter/scripts/modules/` → module file
+- `-API.ps1` in `xFACts-ControlCenter/scripts/routes/` → API route file
+- Other `.ps1` files in `xFACts-ControlCenter/scripts/routes/` → page route file
+- `.ps1` in `E:\xFACts-PowerShell\` → standalone script
+
+The single-spec shape mirrors the CSS and JS specs: the structural rules (file header, section banners, FILE ORGANIZATION matching, prefix declaration format, comment style, blank-line discipline) are identical across all roles and stated once. The role-conditional rules (allowed section types, what content the file contains, what the populator extracts) are stated per role in their own subsections — the same pattern as `§4.1 Page files` vs `§4.2 The shared file cc-shared.js` in the JS spec.
 
 The design session produces:
-- Required structure (same for all three roles)
-- File header rules (no CHANGELOG, matching CSS/JS)
-- Section banner format (5-line banner with `Prefix:` line, matching CSS/JS)
-- Section types per role:
-  - Page route file types: probably `IMPORTS`, `CONSTANTS`, `ROUTE` (the single `Add-PodeRoute` block), maybe `HELPERS`
-  - API route file types: probably `IMPORTS`, `CONSTANTS`, `ROUTES` (multiple API registrations grouped by purpose)
-  - Module file types: probably `IMPORTS`, `CONSTANTS`, `FUNCTIONS`, with a closing `Export-ModuleMember`
-- Whether `Prefix:` is meaningful for each role and what it would scope (function names in modules definitely; route paths in route files probably not the same way)
+- Required structure (same for all roles)
+- File header rules using PowerShell comment-based-help
+- Section banner format (carrying forward CSS/JS format, with `#` comment character)
+- CHANGELOG section design (dedicated section, role-conditional requirement)
+- Section types per role (closed enum per role)
+- Whether `Prefix:` is meaningful for each role and what it would scope
 - Inline-HTML rules within page route files (under the new HTML spec, this collapses cleanly: one `<script src="/js/cc-shared.js">` tag, no inline `<script>` blocks, no `onclick=` attributes, chrome emitted via helpers)
-- Catalog row emission per role:
-  - `PS_FILE`, `FILE_HEADER`, `COMMENT_BANNER` rows for all three roles
-  - `PS_FUNCTION DEFINITION` rows for module files
-  - `API_ROUTE DEFINITION` rows for both route file roles
-  - `HTML_ID`, `HTML_DATA_ATTRIBUTE`, `HTML_CLASS_USAGE` rows extracted from inline HTML strings in page route files
-- Drift codes
+- Catalog row emission per role
+- Drift codes (40-60 codes across nine categories)
 - Examples — one minimal example per role
 - Appendix rationale entries
 
-### 4.6 PS populator — build
+This work runs in parallel with §4.5 (JS populator) and §4.6 (HTML populator). PS spec drafting does not depend on either populator being current; the spec is a design artifact.
 
-The PS populator does not yet exist. Build it now, after the PS spec is finalized, implementing the unified spec across all three file roles.
+#### 4.8 PS populator — build
 
-This populator catalogs **PowerShell-side constructs only**. The HTML inside `.ps1` here-strings is the existing HTML populator's territory (see §4.4) — the two populators scan the same `.ps1`/`.psm1` files but emit non-overlapping row sets. The HTML populator emits `file_type = 'HTML'` rows for HTML constructs; the PS populator emits `file_type = 'PS'` rows for PowerShell constructs. Neither touches the other's domain.
+The PS populator does not yet exist. Build it now, after the PS spec is finalized, implementing the unified spec across all file roles.
 
-Structure:
-- File-role detection by filename and extension (~10 lines): `.psm1` → module, `-API.ps1` → API route, other `.ps1` in routes → page route
-- Shared structural validation: file header, section banners, FILE ORGANIZATION list, prefix declaration (where applicable per role), comment style, blank-line discipline. Written once, applies to all three roles.
+This populator catalogs **PowerShell-side constructs only**. The HTML inside `.ps1` here-strings is the existing HTML populator's territory — the two populators scan the same `.ps1`/`.psm1` files but emit non-overlapping row sets. The HTML populator emits `file_type = 'HTML'` rows for HTML constructs; the PS populator emits `file_type = 'PS'` rows for PowerShell constructs. Neither touches the other's domain. The PS populator owns: PowerShell function declarations, parameter blocks, variable assignments, `Add-PodeRoute` registrations (page and API routes), `Add-PodeMiddleware` registrations, `Add-PodeRouteWebSocket` registrations, `Export-ModuleMember` statements, comment-based-help docblocks, SQL query invocations, GlobalConfig references, RBAC check calls, `Import-Module` / dot-source statements, and non-banner comments.
+
+Structure follows the CSS populator pattern:
+- File-role detection by filename, extension, and directory (~10 lines)
+- Shared structural validation: file header, section banners, FILE ORGANIZATION list, prefix declaration (where applicable per role), comment style, blank-line discipline. Written once, applies to all roles.
 - Role-conditional section-type validation: an `allowedTypes[role]` lookup driving the type check
-- Role-conditional row extraction:
-  - Module role: `PS_FUNCTION DEFINITION` rows from function declarations; `PS_EXPORT` rows from `Export-ModuleMember` statements
-  - Page route role: one `API_ROUTE DEFINITION` row (the page registration via `Add-PodeRoute`); `PS_FUNCTION` rows for any helper functions defined in the file (rare); RBAC check pattern validation
-  - API route role: multiple `API_ROUTE DEFINITION` rows, one per endpoint registration; pattern validation for the standard API response shape
+- Role-conditional row extraction
 - AST walking via `[System.Management.Automation.Language.Parser]::ParseInput()`, the same approach the HTML populator already uses
 
 The PS populator is smaller than the HTML populator because it doesn't deal with HTML at all — no tokenizer, no embedded-language parsing, no `PowerShell interpolation as first-class concept` work. Just AST walking for PS constructs plus spec-driven structural validation. Estimated size: 1500-2500 lines.
 
 Pipeline ordering: PS populator runs after the HTML populator. The HTML populator's USAGE rows resolve against CSS/JS DEFINITION rows; the PS populator's USAGE rows (e.g., cross-component references in helper calls) resolve against existing CSS/JS/HTML DEFINITION rows. No circular dependencies.
 
-### 4.7 First page conversion
+### Sequenced (depend on the above)
+
+#### 4.9 First page conversion
 
 A single representative page conversion to validate the end-to-end model across all four populators. Suggested candidate: **BatchMonitoring** (smallest unresolved row count among non-departmental, non-Phase-1, non-mid-restructure pages).
 
 The conversion is a single coordinated update touching:
 - `BatchMonitoring.ps1` (page route file) — rewritten to the new PS spec; emits new HTML chrome shape; references only `cc-shared.css` and `cc-shared.js`
 - `BatchMonitoring-API.ps1` (API route file) — rewritten to the new PS spec; pure API rules
-- `batch-monitoring.js` — rewritten with `bch_init` function, `bch_actions` dispatch table, no `DOMContentLoaded` handler, no inline event handler bindings
+- `batch-monitoring.js` — rewritten with `bch_init` function, `bch_clickActions` (and other event dispatch tables as needed), no `DOMContentLoaded` handler, no inline event handler bindings
 - `batch-monitoring.css` — already on the current CSS spec; verify no changes needed against the catalog
 
-Verification step: catalog refresh after conversion. Expected outcome — BatchMonitoring fires zero drift; the catalog shows clean cross-population resolution between every HTML `data-action` value, the JS `bch_actions` entries, the CSS classes referenced, and the PS route paths.
+Verification step: catalog refresh after conversion. Expected outcome — BatchMonitoring fires zero drift; the catalog shows clean cross-population resolution between every HTML `data-action` value, the JS `bch_<event>Actions` entries, the CSS classes referenced, and the PS route paths.
 
 If any drift unexpectedly appears, resolve it before proceeding. This is the moment to catch any subtle issue with the model before it propagates across the platform.
 
-### 4.8 Roll out to remaining pages
+This step requires §4.5, §4.6, §4.7, and §4.8 all to be complete.
+
+#### 4.10 Roll out to remaining pages
 
 Each remaining page gets the same coordinated conversion as BatchMonitoring. Order is flexible; departmental pages and the most-complex pages (Admin, BDLImport) probably go last so the model is well-exercised on simpler pages first.
 
 Conversion of each page is one self-contained session task:
-- Page route file rewrite
+- Page route file rewrite (now consuming `Get-PageScriptTagHtml` for the script-tag emission)
 - API route file rewrite
 - JS file rewrite
 - CSS file review (usually unchanged)
+- Any remaining HTML helper updates that the per-page work makes necessary (e.g., adding the `#page-error-banner` placeholder emission to a header helper if we choose to centralize it)
 - Catalog verification (zero drift expected on completion)
 - Version bump in System_Metadata for each affected component
 
-### 4.9 engine-events retirement (finish line)
+#### 4.11 engine-events retirement (finish line)
 
 When every page has converted off `engine-events.js` and `engine-events.css`, both files are deleted.
 
@@ -337,11 +316,12 @@ Two steps:
 - Delete both files from the codebase and the GitHub repo
 - Final System_Metadata version bumps marking the migration complete on every affected component
 
-### 4.10 Cleanup
+#### 4.12 Cleanup
 
 - Delete `BootloaderTest.ps1` and `test.js`
-- Delete `CC_HTML_JS_Wiring_Design.md` (the document that kicked off this initiative; its decisions are now reflected in the JS spec and this initiative doc's §3)
-- Delete the pre-design docs `CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md` if they weren't deleted at §4.5 (they should have been, but check)
+- Delete `CC_HTML_JS_Wiring_Design.md` (the document that kicked off this initiative; its decisions are now reflected in the JS spec, HTML spec, and this initiative doc's §3)
+- Delete the pre-design docs `CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md` if they weren't deleted at §4.7 (they should have been, but check)
+- Delete `CC_PS_Spec_Notes.md` (consumed by the spec drafting at §4.7; deleted once `CC_PS_Spec.md` is published)
 - Delete this document (`CC_File_Format_Initiative.md`)
 - Final version bumps on every component touched during the initiative
 
@@ -353,7 +333,7 @@ Conditions that, if met during the work in §4, interrupt the main sequence for 
 
 ### 5.1 A page warrants splitting into multiple modules
 
-**Trigger:** During a page conversion (§4.8), a page is too complex to live cleanly as a single JS file. Candidates noted at session start: Admin, BDLImport, ServerHealth, PlatformMonitoring.
+**Trigger:** During a page conversion (§4.10), a page is too complex to live cleanly as a single JS file. Candidates noted at session start: Admin, BDLImport, ServerHealth, PlatformMonitoring.
 
 **Sub-effort when triggered:**
 - Bootloader code update in cc-shared.js — accept `data-modules` attribute on `<body>`, parse comma-separated list, load each file in parallel, await all loads before invoking `<prefix>_init`
@@ -371,22 +351,26 @@ The sub-effort is bounded: roughly one focused session. Most of the work is the 
 
 ## 6. Loose-end touch-ups
 
-Small items surfaced during the session that need attention at the next natural opportunity. Not separate work items, just attach-to-the-next-relevant-edit notes.
+Small items surfaced during the initiative that need attention at the next natural opportunity. Not separate work items, just attach-to-the-next-relevant-edit notes.
 
 - **`cc-shared.js` `CHROME: INITIALIZATION` section description** — currently says pages call `connectEngineEvents()` from "their DOMContentLoaded handler." Update to "from their `<prefix>_init` function" when the first page conversion goes through.
 - **`cc-shared.css` `CHROME: CONNECTION BANNER` section description** — currently says the banner is driven by `updateConnectionBanner()` in engine-events.js. Update to "in cc-shared.js" when next touched.
 - **Multi-consumer principle** — capture in `xFACts_Development_Guidelines.md` as a permanent guideline. One short paragraph explaining the four consumers and the test.
+- **Page-error-banner emission helper** — currently each page would need to emit `<div id="page-error-banner" class="page-error-banner"></div>` directly inside its HTML. Consider whether the existing `Get-PageHeaderHtml` helper should be extended to emit it, or whether a new helper (`Get-PageErrorBannerHtml`?) is the cleaner shape. Decide during the first page conversion (§4.9) when the actual pattern is concrete.
 
 ---
 
 ## 7. Key files and links
 
-- **Specs (permanent, in `Planning/`):** `CC_HTML_Spec.md`, `CC_JS_Spec.md`, `CC_CSS_Spec.md`, `CC_PS_Spec.md` (single spec covering page route, API route, and module files; consolidates the current pre-design `CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md` at §4.5)
+- **Specs (permanent, in `Planning/`):** `CC_HTML_Spec.md`, `CC_JS_Spec.md`, `CC_CSS_Spec.md`, `CC_PS_Spec.md` (single spec covering all PS roles; not yet drafted — consolidates the current pre-design `CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md` at §4.7)
+- **Preliminary spec notes (in `Planning/`, transitional):** `CC_PS_Spec_Notes.md` — design decisions captured this session; deleted at §4.12 when `CC_PS_Spec.md` is published
+- **Operational pipeline tracker (in `Planning/`):** `CC_Catalog_Pipeline_Working_Doc.md` — populator status, schema state, lessons learned. Parallel to this initiative doc; both retired at end of initiative.
 - **Permanent platform docs:** `xFACts_Development_Guidelines.md`, `xFACts_Platform_Registry.md`, `xFACts_Backlog_Items.md`
 - **Source-of-truth assets:** `cc-shared.js`, `cc-shared.css`, `xFACts-Helpers.psm1`
-- **Legacy shared files (slated for deletion at §4.9):** `engine-events.js`, `engine-events.css`, `engine-events-API.ps1`
-- **Test artifacts (slated for deletion at §4.10):** `BootloaderTest.ps1` (route at `/bootloader-test`), `test.js`
-- **This document and the initiative source doc (slated for deletion at §4.10):** `CC_File_Format_Initiative.md`, `CC_HTML_JS_Wiring_Design.md`
+- **Legacy shared files (slated for deletion at §4.11):** `engine-events.js`, `engine-events.css`, `engine-events-API.ps1`
+- **Test artifacts (slated for deletion at §4.12):** `BootloaderTest.ps1` (route at `/bootloader-test`), `test.js`
+- **Stale pre-design docs (slated for deletion at §4.7 / §4.12):** `CC_PS_Route_Spec.md`, `CC_PS_Module_Spec.md`
+- **Documents slated for deletion at §4.12:** `CC_File_Format_Initiative.md` (this document), `CC_HTML_JS_Wiring_Design.md`, `CC_Initiative.md` (predecessor of this doc; frozen pre-bootloader, historical reference only)
 
 ---
 
@@ -396,8 +380,8 @@ Ideas evaluated during the initiative but consciously not pursued, recorded so t
 
 ### 8.1 Asset_Registry cc_prefix and base_name columns
 
-Evaluated in mid-session. Proposed two new columns on `Asset_Registry`: `cc_prefix` capturing the prefix portion of `component_name` (when present), and `base_name` capturing the name with the prefix and separator stripped. Intent was to enable cross-page consolidation queries (e.g., "show every page that declares a modal-confirmation pattern") and surface candidates for chrome promotion.
+Evaluated in mid-initiative. Proposed two new columns on `Asset_Registry`: `cc_prefix` capturing the prefix portion of `component_name` (when present), and `base_name` capturing the name with the prefix and separator stripped. Intent was to enable cross-page consolidation queries (e.g., "show every page that declares a modal-confirmation pattern") and surface candidates for chrome promotion.
 
 **Outcome: deferred.** The naive split-on-first-separator extraction was run against current data and returned ~300 distinct cc_prefix values, the majority of which were compound-word first segments (`slideout`, `engine`, `card`, `section`) rather than real page prefixes. The naive extraction produces too much noise to be useful as drift detection on current data; a validated extraction (require the prefix to exist in `Component_Registry.cc_prefix`) would erase most of the signal because the codebase pre-dates prefix discipline and currently uses many informal prefixes that aren't formally registered.
 
-The columns are forward-looking — they'd be useful once the codebase has been refactored to follow `<page-prefix>-<base>` discipline uniformly. Pre-refactor, the value proposition isn't compelling enough to justify adding speculative infrastructure. Revisit after the page conversions in §4.7 and §4.8 have made naming conventions consistent; at that point concrete query use cases will drive exactly what shape the columns should take.
+The columns are forward-looking — they'd be useful once the codebase has been refactored to follow `<page-prefix>-<base>` discipline uniformly. Pre-refactor, the value proposition isn't compelling enough to justify adding speculative infrastructure. Revisit after the page conversions in §4.9 and §4.10 have made naming conventions consistent; at that point concrete query use cases will drive exactly what shape the columns should take.
