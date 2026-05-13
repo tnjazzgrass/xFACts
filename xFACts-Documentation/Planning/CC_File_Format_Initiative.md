@@ -82,21 +82,26 @@ The architectural change at the core: HTML stops referencing JS function names. 
 **Bootloader test page validation:**
 - All five validation outcomes confirmed in-browser: `test_init` ran, page-local action fired, bogus action logged warning, shared dispatch works, page-refresh button correctly no-ops on a test page that has no `.page-refresh-btn` element.
 
-**PS spec preliminary notes** (`CC_PS_Spec_Notes.md`) — a 680-line working doc captured to bootstrap the PS spec drafting next session. Captures:
-- HTML/PS division of labor (HTML populator owns markup; PS populator owns everything else in `.ps1` / `.psm1` files including API endpoints, function declarations, comment-based help, variable assignments, RBAC checks, SQL invocations, etc.)
-- Five file roles (page route, API route, module, standalone script in `E:\xFACts-PowerShell\`, other locations TBD)
-- Banner format shared with CSS/JS/HTML specs (76-char rules, separator, description, Prefix line)
-- File header format using PowerShell comment-based-help (`<# .SYNOPSIS .DESCRIPTION .NOTES #>`)
-- Dedicated `CHANGELOG` section with its own banner — required in page route files and standalone scripts; forbidden in API route files and module files
-- Per-role file shape templates with section-type closed enums per role
-- Catalog row types (PS_FILE, FILE_HEADER, COMMENT_BANNER, PS_CHANGELOG, PS_FUNCTION, PS_PARAMETER, PS_VARIABLE, PS_EXPORT, API_ROUTE, WEBSOCKET_ROUTE, MIDDLEWARE, PS_FUNCTION USAGE, SQL_QUERY USAGE, GLOBALCONFIG_REF USAGE, RBAC_CHECK USAGE, MODULE_IMPORT USAGE, PS_COMMENT, PS_DOCBLOCK)
-- Function-level rules ([CmdletBinding] mandatory, docblock mandatory, Verb-Noun naming with approved-verb policy)
-- Nine categories of drift codes (40-60 codes total — file header, banner, changelog, function, variable, module export, route, SQL, formatting, cross-file)
-- Open questions list for next-session resolution (section type closed enums, PS_CHANGELOG row granularity, scriptblock size threshold, SQL embedding canonical form, etc.)
-- Populator architecture notes (no external parser — uses native PS AST via `[System.Management.Automation.Language.Parser]::ParseInput()`, three-pass model mirrors CSS, 1500-2500 line estimate, runs last in CSS→HTML→JS→PS pipeline)
-- Inheritance summary from existing specs
+**PS spec preliminary notes** (`CC_PS_Spec_Notes.md`) — a 680-line working doc captured to bootstrap the PS spec drafting next session. Captures HTML/PS division of labor, file role taxonomy, banner format inheritance, file header structure, dedicated CHANGELOG section design, catalog row types, per-role file shape templates, function-level rules, drift code categories, populator architecture, and open questions for spec drafting.
 
-The two preliminary PS docs (`CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md`) remain in place but are now stale; they get deleted when `CC_PS_Spec.md` lands.
+#### Session 3 — PS spec drafted and published
+
+**PS spec drafted and shipped** (`CC_PS_Spec.md`). The shipped spec contains 20 numbered sections plus Appendix, ~1900 lines. Consolidates the prior preliminary docs (`CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md`) and the working notes doc (`CC_PS_Spec_Notes.md`) into a single specification covering all PowerShell file roles. Key locked decisions:
+
+- Six file roles: page-route, api-route, module, standalone, shared-library, plus the special-case path mapping for `Start-ControlCenter.ps1` (handled as standalone). `server.psd1` and other `.psd1` files are out of scope.
+- File header format: PowerShell native comment-based-help (`<# .SYNOPSIS .DESCRIPTION .PARAMETER .COMPONENT .NOTES #>`) with `.NOTES` containing exactly three fields: File Name, Location, and FILE ORGANIZATION block. `.COMPONENT` carries the component name (replacing the prior signpost-style Version line). `.EXAMPLE` and other PS help keywords forbidden.
+- 10 section types: `CHANGELOG`, `IMPORTS`, `PARAMETERS`, `INITIALIZATION`, `CONSTANTS`, `VARIABLES`, `FUNCTIONS`, `EXECUTION`, `ROUTE`, `EXPORTS`. Naming aligned with PowerShell idiom (`VARIABLES` not `STATE`, `EXECUTION` not `MAIN`).
+- Banner format: 76-char `=` rules and `-` separator inherited from CSS/JS specs, with `Prefix:` declaration line. Generic singleton NAMEs (e.g., `ROUTE: PAGE PATH`, `ROUTE: API ENDPOINTS`, `EXPORTS: MODULE EXPORTS`).
+- Role-allowed-types matrix specifies which section types each role allows, forbids, or requires (e.g., page-route requires exactly 1 ROUTE; module requires 1+ FUNCTIONS and exactly 1 EXPORTS; standalone requires exactly 1 EXECUTION; CHANGELOG forbidden in api-route and module).
+- Date-driven CHANGELOG with per-entry catalog rows (`PS_CHANGELOG_ENTRY`); no version numbers anywhere.
+- All API routes regardless of HTTP method must call `Test-ActionEndpoint` (fail-open against `RBAC_ActionRegistry` for unregistered endpoints — the call is the universal hook point so registration takes effect automatically when added).
+- SQL queries embedded as here-strings (`@"..."@`); `Invoke-Sqlcmd` calls require `-TrustServerCertificate` and `-ApplicationName`.
+- Function-level rules: `[CmdletBinding()]` mandatory, comment-based-help docblock mandatory (with `.PARAMETER` for each parameter); Verb-Noun naming with PowerShell approved-verb list.
+- Mini-banners (`# ---`), box-drawing dividers (`# ──`), removed-code headstones, and free-standing block comments outside header/banner/docblock are forbidden.
+- Catalog model: full `PS_FILE` anchor, `FILE_HEADER`, `COMMENT_BANNER`, `PS_CHANGELOG_ENTRY`, `PS_FUNCTION`/`_VARIANT`, `PS_PARAMETER`, `PS_CONSTANT`/`PS_VARIABLE`, `PS_ROUTE`, `PS_EXPORT`, `SQL_QUERY`, `GLOBALCONFIG_REF`, `RBAC_CHECK`, `MODULE_IMPORT`, plus forbidden-pattern host rows.
+- 9 compliance queries shipped: drift summary, drift distribution, per-file rewrite checklist, function inventory, CHANGELOG entries in date range, forbidden-pattern inventory, function call graph, SQL query coverage, API endpoint inventory (with RBAC_ActionRegistry coverage gap query).
+
+**Preliminary docs deleted** (per §4.12): `CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md`, `CC_PS_Spec_Notes.md`. Content fully consolidated into `CC_PS_Spec.md`.
 
 ### 2.2 What's deployable now
 
@@ -106,7 +111,7 @@ The two preliminary PS docs (`CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md`) rema
 - `CC_HTML_Spec.md` with bootloader-driven dispatch amendments: published (Session 2)
 - `xFACts-Helpers.psm1` with `Get-PageScriptTagHtml` helper: deployed (Session 2)
 - `BootloaderTest.ps1` and `test.js`: deployed; will be deleted at the end of the initiative
-- `CC_PS_Spec_Notes.md` preliminary working doc: ready for next session
+- `CC_PS_Spec.md`: published (Session 3)
 
 ### 2.3 What's still running on the legacy model
 
@@ -143,6 +148,10 @@ Outcomes from the design discussion that drove the JS spec amendments, HTML spec
 | Q7 | Migration order | Spec first. Build infrastructure to spec. Validate runtime. Update populators. Convert pages. Roll out. |
 | Q8 | Body attributes | Two attributes: `data-page` (used by the bootloader to find the module) and `data-prefix` (used to look up the prefix's dispatch tables and to scope IDs/classes/JS identifiers). |
 | Q9 | HTML helper for the script tag | `Get-PageScriptTagHtml` in `xFACts-Helpers.psm1` returns the script-tag string. Pages call it once and substitute it into their HTML emission before `</body>`. |
+| Q10 | PS file header form | PowerShell native comment-based-help (`<# .SYNOPSIS ... #>`) with `.COMPONENT` carrying the component name (unlocks native `Get-Help -Component` filtering) and `.NOTES` carrying three fields: File Name, Location, and FILE ORGANIZATION. `.EXAMPLE` and other PS help keywords forbidden. No version literals anywhere in the header. |
+| Q11 | PS section types and naming | 10 types: `CHANGELOG`, `IMPORTS`, `PARAMETERS`, `INITIALIZATION`, `CONSTANTS`, `VARIABLES`, `FUNCTIONS`, `EXECUTION`, `ROUTE`, `EXPORTS`. PowerShell-idiomatic naming (`VARIABLES` not `STATE`, `EXECUTION` not `MAIN`). |
+| Q12 | PS role taxonomy | Five roles: page-route, api-route, module, standalone, shared-library. `Start-ControlCenter.ps1` mapped to standalone via path exception. `.psd1` files out of scope. |
+| Q13 | PS RBAC discipline | Every API route regardless of HTTP method calls `Test-ActionEndpoint`. Fail-open against `RBAC_ActionRegistry` (the override layer; currently sparse and intentionally so — it's for specific action permissions, not a comprehensive endpoint inventory). Page-level RBAC via `Get-UserAccess`. The catalog itself (via `PS_ROUTE` rows) serves as the comprehensive endpoint inventory. |
 
 ### 3.1 The multi-consumer principle
 
@@ -157,6 +166,7 @@ This principle should be captured in `xFACts_Development_Guidelines.md` so it's 
 | HTML IDs | `<prefix>-foo` | unprefixed (e.g., `last-update`) |
 | CSS classes | `<prefix>-foo` | unprefixed (e.g., `nav-link`) |
 | JS top-level identifiers | `<prefix>_foo` | unprefixed (e.g., `pageRefresh`) |
+| PS top-level identifiers | `<prefix>_foo` | unprefixed in shared-library/module files |
 | **`data-action` values** | **unprefixed** (e.g., `open-request-detail`) | **`cc-` prefixed** (e.g., `cc-page-refresh`) |
 
 The `data-action` rule is intentionally inverted from IDs/classes/identifiers because the prefix carries dispatch-routing information at runtime (which dispatcher should handle this event), not categorization information.
@@ -173,7 +183,7 @@ A simple invocation wrapper script may be added later to chain the four populato
 
 ## 4. Path forward
 
-The remaining work, organized by what's complete, what's actively running, and what's still ahead. The PS spec work runs in parallel with the remaining populator updates — neither blocks the other.
+The remaining work, organized by what's complete, what's actively running, and what's still ahead.
 
 ### Completed
 
@@ -183,6 +193,7 @@ The remaining work, organized by what's complete, what's actively running, and w
 | 4.2 | Bootloader implementation in cc-shared.js + cc-shared.css | Shipped Session 1 and validated end-to-end. |
 | 4.3 | HTML spec amendments | Shipped Session 2 as `CC_HTML_Spec.md`. |
 | 4.4 | HTML helper-function additions (partial) | `Get-PageScriptTagHtml` shipped Session 2. Other helper updates fold into per-page conversions in §4.10. |
+| 4.7 | PS Spec drafted and finalized | Shipped Session 3 as `CC_PS_Spec.md`. Prelim docs deleted. |
 
 ### Active and unblocked (can proceed in parallel)
 
@@ -204,7 +215,7 @@ After the populator updates, run a full catalog refresh and verify expected drif
 - cc-shared.js fires zero drift
 - BootloaderTest's `test.js` fires zero drift
 
-This work is relatively small and can slot in opportunistically between PS spec work or HTML populator work.
+This work is relatively small and can slot in opportunistically between PS populator work or HTML populator work.
 
 #### 4.6 HTML populator update
 
@@ -230,38 +241,9 @@ After the populator updates, run a full catalog refresh. Every existing page fil
 
 This is a multi-session effort — the populator is ~3,010 lines and the changes are substantial.
 
-#### 4.7 PS Spec — draft and finalize
-
-`CC_PS_Spec.md` is the single specification covering all five Control Center PowerShell file roles: page route files (e.g., `BatchMonitoring.ps1`), API route files (e.g., `BatchMonitoring-API.ps1`), module files (e.g., `xFACts-Helpers.psm1`), and standalone scripts in `E:\xFACts-PowerShell\` (collectors, monitors, orchestrators, populators, documentation pipeline scripts). The current pre-design documents (`CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md`) are consolidated into this single spec when the design session lands; both pre-design docs are then deleted.
-
-**Preliminary notes captured.** `CC_PS_Spec_Notes.md` (this session, ~680 lines) contains the foundational design decisions: HTML/PS division of labor, file role taxonomy, banner format inheritance from CSS/JS, file header structure, dedicated CHANGELOG section design, catalog row types, per-role file shape templates, function-level rules, drift code categories, populator architecture, and open questions for spec drafting. The next session consumes this doc and produces `CC_PS_Spec.md`.
-
-File role is determined by filename, extension, and directory:
-- `.psm1` in `xFACts-ControlCenter/scripts/modules/` → module file
-- `-API.ps1` in `xFACts-ControlCenter/scripts/routes/` → API route file
-- Other `.ps1` files in `xFACts-ControlCenter/scripts/routes/` → page route file
-- `.ps1` in `E:\xFACts-PowerShell\` → standalone script
-
-The single-spec shape mirrors the CSS and JS specs: the structural rules (file header, section banners, FILE ORGANIZATION matching, prefix declaration format, comment style, blank-line discipline) are identical across all roles and stated once. The role-conditional rules (allowed section types, what content the file contains, what the populator extracts) are stated per role in their own subsections — the same pattern as `§4.1 Page files` vs `§4.2 The shared file cc-shared.js` in the JS spec.
-
-The design session produces:
-- Required structure (same for all roles)
-- File header rules using PowerShell comment-based-help
-- Section banner format (carrying forward CSS/JS format, with `#` comment character)
-- CHANGELOG section design (dedicated section, role-conditional requirement)
-- Section types per role (closed enum per role)
-- Whether `Prefix:` is meaningful for each role and what it would scope
-- Inline-HTML rules within page route files (under the new HTML spec, this collapses cleanly: one `<script src="/js/cc-shared.js">` tag, no inline `<script>` blocks, no `onclick=` attributes, chrome emitted via helpers)
-- Catalog row emission per role
-- Drift codes (40-60 codes across nine categories)
-- Examples — one minimal example per role
-- Appendix rationale entries
-
-This work runs in parallel with §4.5 (JS populator) and §4.6 (HTML populator). PS spec drafting does not depend on either populator being current; the spec is a design artifact.
-
 #### 4.8 PS populator — build
 
-The PS populator does not yet exist. Build it now, after the PS spec is finalized, implementing the unified spec across all file roles.
+The PS populator does not yet exist. Build it now that the PS spec is finalized, implementing the unified spec across all file roles.
 
 This populator catalogs **PowerShell-side constructs only**. The HTML inside `.ps1` here-strings is the existing HTML populator's territory — the two populators scan the same `.ps1`/`.psm1` files but emit non-overlapping row sets. The HTML populator emits `file_type = 'HTML'` rows for HTML constructs; the PS populator emits `file_type = 'PS'` rows for PowerShell constructs. Neither touches the other's domain. The PS populator owns: PowerShell function declarations, parameter blocks, variable assignments, `Add-PodeRoute` registrations (page and API routes), `Add-PodeMiddleware` registrations, `Add-PodeRouteWebSocket` registrations, `Export-ModuleMember` statements, comment-based-help docblocks, SQL query invocations, GlobalConfig references, RBAC check calls, `Import-Module` / dot-source statements, and non-banner comments.
 
@@ -292,7 +274,7 @@ Verification step: catalog refresh after conversion. Expected outcome — BatchM
 
 If any drift unexpectedly appears, resolve it before proceeding. This is the moment to catch any subtle issue with the model before it propagates across the platform.
 
-This step requires §4.5, §4.6, §4.7, and §4.8 all to be complete.
+This step requires §4.5, §4.6, and §4.8 all to be complete.
 
 #### 4.10 Roll out to remaining pages
 
@@ -320,8 +302,6 @@ Two steps:
 
 - Delete `BootloaderTest.ps1` and `test.js`
 - Delete `CC_HTML_JS_Wiring_Design.md` (the document that kicked off this initiative; its decisions are now reflected in the JS spec, HTML spec, and this initiative doc's §3)
-- Delete the pre-design docs `CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md` if they weren't deleted at §4.7 (they should have been, but check)
-- Delete `CC_PS_Spec_Notes.md` (consumed by the spec drafting at §4.7; deleted once `CC_PS_Spec.md` is published)
 - Delete this document (`CC_File_Format_Initiative.md`)
 - Final version bumps on every component touched during the initiative
 
@@ -362,14 +342,12 @@ Small items surfaced during the initiative that need attention at the next natur
 
 ## 7. Key files and links
 
-- **Specs (permanent, in `Planning/`):** `CC_HTML_Spec.md`, `CC_JS_Spec.md`, `CC_CSS_Spec.md`, `CC_PS_Spec.md` (single spec covering all PS roles; not yet drafted — consolidates the current pre-design `CC_PS_Route_Spec.md` and `CC_PS_Module_Spec.md` at §4.7)
-- **Preliminary spec notes (in `Planning/`, transitional):** `CC_PS_Spec_Notes.md` — design decisions captured this session; deleted at §4.12 when `CC_PS_Spec.md` is published
+- **Specs (permanent, in `Planning/`):** `CC_HTML_Spec.md`, `CC_JS_Spec.md`, `CC_CSS_Spec.md`, `CC_PS_Spec.md`
 - **Operational pipeline tracker (in `Planning/`):** `CC_Catalog_Pipeline_Working_Doc.md` — populator status, schema state, lessons learned. Parallel to this initiative doc; both retired at end of initiative.
 - **Permanent platform docs:** `xFACts_Development_Guidelines.md`, `xFACts_Platform_Registry.md`, `xFACts_Backlog_Items.md`
 - **Source-of-truth assets:** `cc-shared.js`, `cc-shared.css`, `xFACts-Helpers.psm1`
 - **Legacy shared files (slated for deletion at §4.11):** `engine-events.js`, `engine-events.css`, `engine-events-API.ps1`
 - **Test artifacts (slated for deletion at §4.12):** `BootloaderTest.ps1` (route at `/bootloader-test`), `test.js`
-- **Stale pre-design docs (slated for deletion at §4.7 / §4.12):** `CC_PS_Route_Spec.md`, `CC_PS_Module_Spec.md`
 - **Documents slated for deletion at §4.12:** `CC_File_Format_Initiative.md` (this document), `CC_HTML_JS_Wiring_Design.md`, `CC_Initiative.md` (predecessor of this doc; frozen pre-bootloader, historical reference only)
 
 ---
