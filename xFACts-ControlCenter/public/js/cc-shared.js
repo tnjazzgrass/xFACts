@@ -167,47 +167,96 @@ var engineIdleCheckTimer = null;
    BOOTLOADER: PAGE BOOT AND ACTION DISPATCH
    ----------------------------------------------------------------------------
    Orchestrates page module discovery, loading, and lifecycle invocation. The
-   DOMContentLoaded handler reads the page's data-page attribute, injects the
-   page's JS module, invokes the page's <prefix>_init function, and registers
-   the shared chrome action dispatch listener. Failures populate the
-   page-error-banner placeholder when present and log to the console.
+   DOMContentLoaded handler reads data-page and data-prefix from <body>,
+   injects the page's JS module, invokes the page's <prefix>_init function,
+   and registers a delegated event listener for each recognized event type
+   from CC_HTML_Spec.md Section 6.4. Each listener routes data-action-<event>
+   values to the matching dispatch table: cc-* values go to the shared chrome
+   tables in this file, page-local values go to the page's own dispatch
+   tables exposed on window. Failures populate the page-error-banner
+   placeholder when present and log to the console.
    Prefix: (none)
    ============================================================================ */
 
-/* Shared chrome action dispatch table. Maps cc-* data-action values to
-   handler functions exposed by other sections of this file. Grows as new
-   shared actions are introduced; entries are added one at a time as pages
-   are converted and surface concrete needs. */
-const sharedActions = {
+/* The closed set of recognized event names from CC_HTML_Spec.md Section
+   6.4. The bootloader registers one delegated listener per entry on
+   document.body at page boot. Extending the recognized set requires a
+   spec amendment plus a corresponding entry here. */
+const RECOGNIZED_EVENTS = ['click', 'change', 'input', 'submit',
+                           'keydown', 'keyup', 'focus', 'blur'];
+
+/* Shared chrome action dispatch tables, one per recognized event. Each
+   table maps cc-* data-action-<event> values to handler functions
+   exposed by other sections of this file. Tables grow as new shared
+   actions are introduced; entries are added one at a time as pages
+   surface concrete needs. */
+const sharedClickActions = {
     'cc-page-refresh': pageRefresh,
     'cc-reload-page':  reloadPage
 };
+const sharedChangeActions  = {};
+const sharedInputActions   = {};
+const sharedSubmitActions  = {};
+const sharedKeydownActions = {};
+const sharedKeyupActions   = {};
+const sharedFocusActions   = {};
+const sharedBlurActions    = {};
 
-/* Bootloader entry point. Fires once on DOMContentLoaded. Reads data-page
-   from <body>, loads the page's JS module, invokes <prefix>_init, and
-   registers the shared chrome action dispatch listener on document.body. */
+/* Lookup of event name to its shared dispatch table. Used by
+   handleSharedAction to find the right table for the event that fired
+   without a switch/case ladder. */
+const sharedActionTables = {
+    click:    sharedClickActions,
+    change:   sharedChangeActions,
+    input:    sharedInputActions,
+    submit:   sharedSubmitActions,
+    keydown:  sharedKeydownActions,
+    keyup:    sharedKeyupActions,
+    focus:    sharedFocusActions,
+    blur:     sharedBlurActions
+};
+
+/* Bootloader entry point. Fires once on DOMContentLoaded. Reads
+   data-page and data-prefix from <body>, registers a delegated listener
+   for each recognized event so cc-* actions dispatch even before the
+   page module loads, then injects the page's JS module. */
 document.addEventListener('DOMContentLoaded', function() {
-    document.body.addEventListener('click', handleSharedAction);
+    registerSharedActionListeners();
 
     const pageKey = document.body.dataset.page;
-    if (!pageKey) {
+    const prefix  = document.body.dataset.prefix;
+
+    if (!pageKey || !prefix) {
         return;
     }
 
-    loadPageModule(pageKey);
+    loadPageModule(pageKey, prefix);
 });
+
+/* Registers one delegated listener per recognized event on document.body.
+   Each listener routes events targeting elements that declare
+   data-action-<event> to the shared dispatch table for that event when
+   the action value carries the cc- prefix. Page-local actions are
+   handled by listeners registered in the page's <prefix>_init function. */
+function registerSharedActionListeners() {
+    RECOGNIZED_EVENTS.forEach(function(eventName) {
+        document.body.addEventListener(eventName, function(event) {
+            handleSharedAction(eventName, event);
+        });
+    });
+}
 
 /* Injects the page's JS module via a <script> tag and wires success and
    failure callbacks. On successful load, invokes <prefix>_init. On any
    failure, logs to the console and populates the page-error-banner. */
-function loadPageModule(pageKey) {
+function loadPageModule(pageKey, prefix) {
     const script = document.createElement('script');
     script.src = '/js/' + pageKey + '.js';
     script.onload = function() {
-        invokePageInit(pageKey);
+        invokePageInit(pageKey, prefix);
     };
     script.onerror = function() {
-        renderPageError(pageKey, 'Page module failed to load.');
+        renderPageError('Page module failed to load.');
         console.error('[cc-shared] Failed to load page module: /js/' + pageKey + '.js');
     };
     document.head.appendChild(script);
@@ -216,12 +265,12 @@ function loadPageModule(pageKey) {
 /* Looks up the page's <prefix>_init function on window and invokes it.
    Logs to the console and populates the page-error-banner if the function
    is missing or throws during execution. */
-function invokePageInit(pageKey) {
-    const initFnName = pageKey + '_init';
+function invokePageInit(pageKey, prefix) {
+    const initFnName = prefix + '_init';
     const initFn = window[initFnName];
 
     if (typeof initFn !== 'function') {
-        renderPageError(pageKey, 'Page boot function not found.');
+        renderPageError('Page boot function not found.');
         console.error('[cc-shared] Page module loaded but ' + initFnName + '() not found');
         return;
     }
@@ -229,7 +278,7 @@ function invokePageInit(pageKey) {
     try {
         initFn();
     } catch (err) {
-        renderPageError(pageKey, 'Page boot failed.');
+        renderPageError('Page boot failed.');
         console.error('[cc-shared] ' + initFnName + '() threw during execution:', err);
     }
 }
@@ -237,7 +286,7 @@ function invokePageInit(pageKey) {
 /* Populates the page-error-banner placeholder with a user-facing error
    message and a refresh control. Falls back to console-only output when
    the placeholder is absent from the page shell. */
-function renderPageError(pageKey, message) {
+function renderPageError(message) {
     const banner = document.getElementById('page-error-banner');
     if (!banner) {
         return;
@@ -246,30 +295,32 @@ function renderPageError(pageKey, message) {
     banner.innerHTML =
         '<span class="page-error-banner-message">' + escapeHtml(message) + '</span>' +
         ' <button type="button" class="page-error-banner-refresh" ' +
-        'data-action="cc-reload-page">Refresh</button>' +
+        'data-action-click="cc-reload-page">Refresh</button>' +
         ' <span class="page-error-banner-contact">If the problem continues, ' +
         'contact the Applications &amp; Integration team.</span>';
     banner.classList.add('page-error-banner-visible');
 }
 
-/* Delegated dispatcher for shared chrome actions. Routes data-action
-   values that begin with cc- to handlers in sharedActions. Page-local
-   actions (no cc- prefix) are ignored here and handled by the page's
-   own delegated listener registered in <prefix>_init. */
-function handleSharedAction(event) {
-    const target = event.target.closest('[data-action]');
+/* Delegated dispatcher for shared chrome actions. Routes
+   data-action-<event> values that begin with cc- to handlers in the
+   shared dispatch table for the firing event. Page-local actions (no
+   cc- prefix) are ignored here and handled by the page's own delegated
+   listeners registered in <prefix>_init. */
+function handleSharedAction(eventName, event) {
+    const attrName = 'data-action-' + eventName;
+    const target = event.target.closest('[' + attrName + ']');
     if (!target) {
         return;
     }
 
-    const action = target.dataset.action;
+    const action = target.getAttribute(attrName);
     if (!action || action.indexOf('cc-') !== 0) {
         return;
     }
 
-    const handler = sharedActions[action];
+    const handler = sharedActionTables[eventName][action];
     if (!handler) {
-        console.warn('[cc-shared] Unknown shared action: ' + action);
+        console.warn('[cc-shared] Unknown shared ' + eventName + ' action: ' + action);
         return;
     }
 
