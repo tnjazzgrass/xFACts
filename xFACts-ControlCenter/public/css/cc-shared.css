@@ -25,6 +25,7 @@
    CHROME: REFRESH INFO
    CHROME: ENGINE CARDS
    CHROME: CONNECTION BANNER
+   CHROME: PAGE ERROR BANNER
    CHROME: BACK LINK
    CONTENT: SECTIONS
    CONTENT: SLIDE PANELS
@@ -842,6 +843,64 @@ a { color: var(--color-text-link); }
 
 .banner-link:hover { /* hover state for the inline banner link */
     color: var(--color-text-on-primary);
+}
+
+/* ============================================================================
+   CHROME: PAGE ERROR BANNER
+   ----------------------------------------------------------------------------
+   Visible page-load error display, populated by the bootloader in
+   cc-shared.js when the page module fails to load, the <prefix>_init
+   function is missing, or <prefix>_init throws during execution. The
+   placeholder element <div id="page-error-banner"> sits between the header
+   bar and the content area and stays hidden until the bootloader adds the
+   page-error-banner-visible class.
+   Prefix: (none)
+   ============================================================================ */
+
+/* The page error banner container (hidden until the visible class is applied). */
+#page-error-banner {
+    display: none;
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    font-size: var(--font-size-content);
+    text-align: center;
+    border-radius: var(--size-radius-lg);
+    margin-bottom: var(--size-spacing-md);
+    background: var(--color-banner-disconnected-bg);
+    border: var(--size-border-thin) solid var(--color-banner-disconnected-border);
+    color: var(--color-status-critical);
+    flex-shrink: 0;
+}
+
+#page-error-banner.page-error-banner-visible { /* bootloader-populated state */
+    display: block;
+}
+
+/* Primary message - the short headline explaining what failed. */
+.page-error-banner-message {
+    font-weight: 600;
+    margin-right: var(--size-spacing-sm);
+}
+
+/* Refresh button - reuses the cc-reload-page shared action. */
+.page-error-banner-refresh {
+    background: transparent;
+    color: inherit;
+    border: var(--size-border-thin) solid currentColor;
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    font-size: inherit;
+    font-family: inherit;
+    cursor: pointer;
+    margin-right: var(--size-spacing-sm);
+}
+
+.page-error-banner-refresh:hover { /* hover state for the refresh button */
+    background: rgba(255, 255, 255, 0.08);
+}
+
+/* Contact-team trailing text. */
+.page-error-banner-contact {
+    opacity: 0.85;
 }
 
 /* ============================================================================
