@@ -10,29 +10,37 @@ This is operational documentation parallel to the CC file format spec docs. The 
 
 | Document | Contains |
 |---|---|
-| `CC_Initiative.md` | Initiative-level direction, current state, prefix registry, anchor file registry, decision history. |
-| `CC_HTML_JS_Wiring_Design.md` | Active design conversation: should CC pages continue current HTML→JS wiring pattern or shift to inverted (bootloader-driven, data-attribute dispatch) pattern? Drives a pause in HTML populator Wave 2.1 and several related work items. |
-| `CC_CSS_Spec.md` | CSS file format specification (rules every CSS source file must follow). |
-| `CC_JS_Spec.md` | JavaScript file format specification. |
-| `CC_HTML_Spec.md` | HTML markup specification (markup emitted by route .ps1 files and helper module functions). |
-| `CC_PS_Route_Spec.md` | PowerShell route file specification (pre-design). |
-| `CC_PS_Module_Spec.md` | PowerShell module file specification (pre-design). |
+| `CC_File_Format_Initiative.md` | Active initiative tracker. Carries forward decisions, completed work, remaining path forward across CSS/JS/HTML/PS specs and populators. The current operational planning doc for the file format work. |
+| `CC_Initiative.md` | Historical reference. Predecessor of `CC_File_Format_Initiative.md`; froze pre-bootloader work and is kept for historical context. Deleted at end of initiative. |
+| `CC_HTML_JS_Wiring_Design.md` | Historical reference. The design conversation doc that drove the bootloader/dispatch model. Conversation is resolved; decisions are now reflected in `CC_HTML_Spec.md`, `CC_JS_Spec.md`, and `CC_File_Format_Initiative.md` §3. Deleted at end of initiative. |
+| `CC_CSS_Spec.md` | CSS file format specification (rules every CSS source file must follow). Current. |
+| `CC_JS_Spec.md` | JavaScript file format specification. Current (amended Session 1 of the bootloader work — INITIALIZATION removed, BOOTLOADER section type added, `<prefix>_init` requirement formalized). |
+| `CC_HTML_Spec.md` | HTML markup specification (markup emitted by route .ps1 files and helper module functions). Current (amended Session 2 of the bootloader work — bootloader-driven dispatch via `data-page` + `data-prefix` + `data-action-<event>` family; inline event handler family forbidden). |
+| `CC_PS_Spec_Notes.md` | Preliminary notes for the PS spec. Captures HTML/PS division of labor, file role taxonomy, banner format inheritance, dedicated CHANGELOG section design, catalog row types, drift code categories, and open questions for spec drafting. Consumed by the next session that drafts the actual `CC_PS_Spec.md`. Deleted when the spec is published. |
+| `CC_PS_Route_Spec.md`, `CC_PS_Module_Spec.md` | Stale pre-design notes. Superseded by `CC_PS_Spec_Notes.md`. Deleted at PS spec publication. |
 
 ---
 
 ## Current state
 
-Catalog is functional and queryable. All three production populator scripts (CSS, JS, HTML) are deployed and running successfully against the full Control Center codebase plus the docs site CSS files. Universal anchor-row refactor delivered 2026-05-12 across all three populators: every file produces a pure-anchor `<TYPE>_FILE` row; FILE_HEADER is reserved for the parsed-header construct (where one exists). HTML doesn't emit FILE_HEADER because HTML markup has no file-header construct. All schema additions implied by the HTML spec are deployed. Helpers file in production.
+Catalog is functional and queryable. All three production populator scripts (CSS, JS, HTML) are deployed and running successfully against the full Control Center codebase plus the docs site CSS files. Universal anchor-row refactor delivered 2026-05-12 across all three populators: every file produces a pure-anchor `<TYPE>_FILE` row; FILE_HEADER is reserved for the parsed-header construct (where one exists). HTML doesn't emit FILE_HEADER because HTML markup has no file-header construct.
 
-**Direction pause (2026-05-12):** HTML populator Wave 2.1 paused pending the HTML/JS wiring design conversation. See `CC_HTML_JS_Wiring_Design.md`. The pause affects HTML populator drift code attachment work, the JS_FILE / JS_FUNCTION USAGE resolution decision, the Phase 1 batch sweep approach, and HTML Spec §3.2 / §6 amendments. CSS work, PS populator design, and infrastructure work continue independently.
+**HTML/JS wiring conversation resolved.** The conversation that paused HTML populator Wave 2.1 reached resolution across two sessions of bootloader work. The inverted wiring model was adopted in full:
+
+- HTML elements declare behavior via `data-action-<event>` attributes (no inline event handlers)
+- A bootloader in `cc-shared.js` reads `<body data-page>` and `<body data-prefix>` at DOMContentLoaded, dynamically loads the page's JS module, and invokes `<prefix>_init`
+- JS modules declare per-event dispatch tables (`<prefix>_clickActions`, `sharedClickActions`, etc.) consumed by delegated listeners
+- The HTML→JS function-name reference asymmetry that triggered the conversation does not arise under the new model — HTML markup contains no JS function names
+
+The bootloader is deployed and validated end-to-end (`cc-shared.js`, `cc-shared.css`, `BootloaderTest.ps1`, `test.js`). The HTML spec is updated to the bootloader-driven shape. The JS spec is updated to require `<prefix>_init`. HTML populator Wave 2.1 is now **unblocked**, as is the JS populator update and the JS_FILE/JS_FUNCTION USAGE resolution work. All previously-paused items in this doc are reclassified as active.
 
 **Production scripts:**
 
 - `Populate-AssetRegistry-CSS.ps1` — current. Refactored across the 2026-05-06 and 2026-05-07 sessions to consume the `xFACts-AssetRegistryFunctions.ps1` helpers file, adopt the visitor pattern, use the pre-built section list, perform prefix registry validation, and split banner detection into permissive admission plus strict validation. Captures purpose_description across all four CSS comment sources at 100% coverage on spec-compliant files. Emits granular banner drift codes. Universal anchor refactor 2026-05-12: now emits `Add-CssFileRow` as the pure-anchor row builder, with FILE_HEADER reserved for the parsed-header construct.
 
-- `Populate-AssetRegistry-JS.ps1` — current. Refactored across the 2026-05-07 session for alignment work, then patched 2026-05-08 for inline event handler detection and 2026-05-09 for per-element listener loop detection. The populator consumes `xFACts-AssetRegistryFunctions.ps1`, walks via `Invoke-AstWalk`, uses the pre-built section list, performs prefix registry validation with strict-with-carve-outs, and splits banner detection into permissive admission plus strict validation. Drift codes emitted include `FORBIDDEN_REVEALING_MODULE`, `PREFIX_MISSING`, `FORBIDDEN_INLINE_EVENT_IN_JS`, and `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP`. Spec and populator are aligned; the populator emits exactly the drift codes the JS spec defines. Definition-suppression mechanism implemented for forbidden top-level wrapper patterns. Universal anchor refactor 2026-05-12: now emits `Add-JsFileRow` as the pure-anchor row builder, with FILE_HEADER reserved for the parsed-header construct. Three previously-unattached drift codes (`FORBIDDEN_COMMENT_STYLE`, `EXCESS_BLANK_LINES`, `BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE`) were attached to their proper rows during the universal anchor work; they now surface ~25 drift rows on appropriate files as expected.
+- `Populate-AssetRegistry-JS.ps1` — current at the prior JS spec generation. **Spec updates pending populator update** (the JS spec was amended 2026-05-12 for bootloader integration; the populator does not yet recognize the new `BOOTLOADER` section type, the `INITIALIZATION` removal, the `<prefix>_init` requirement, or dispatch table cataloging). Until updated, the populator will flag spec-compliant cc-shared.js as having drift and won't yet emit `MISSING_PAGE_INIT` against legacy pages. Otherwise the populator is sound: it consumes `xFACts-AssetRegistryFunctions.ps1`, walks via `Invoke-AstWalk`, uses the pre-built section list, performs prefix registry validation with strict-with-carve-outs, and splits banner detection into permissive admission plus strict validation. Drift codes already implemented include `FORBIDDEN_REVEALING_MODULE`, `PREFIX_MISSING`, `FORBIDDEN_INLINE_EVENT_IN_JS`, and `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP`. Definition-suppression mechanism implemented for forbidden top-level wrapper patterns. Universal anchor refactor 2026-05-12: emits `Add-JsFileRow` as the pure-anchor row builder.
 
-- `Populate-AssetRegistry-HTML.ps1` — current at Wave 2 functionality. Built across multiple sessions following the locked-and-amended HTML spec. Consumes `xFACts-AssetRegistryFunctions.ps1`. Tokenizes PS files via `[System.Management.Automation.Language.Parser]::ParseFile()`. Implements PS-AST walker for emission discovery. Emits the `HTML_FILE` anchor row plus Wave 2 row types (HTML_ID, HTML_DATA_ATTRIBUTE, CSS_CLASS USAGE, JS_FUNCTION USAGE, CSS_FILE USAGE, JS_FILE USAGE) plus COMMENT_BANNER. Implements page-prefix stripping for HTML_TEXT categorical naming. Implements purpose comment harvesting for slideouts/modals/panels. Read-only cross-populator model per spec §13.6: HTML populator reads from upstream DEFINITION rows, never edits them. Universal anchor refactor 2026-05-12: pre-load queries retargeted from FILE_HEADER (interim) to `CSS_FILE` / `JS_FILE` (universal model). **Wave 2.1 paused** pending the HTML/JS wiring conversation — several Wave 2.1 drift codes target patterns that may change or disappear under the inverted wiring model.
+- `Populate-AssetRegistry-HTML.ps1` — current at Wave 2 functionality. Built across multiple sessions following the locked-and-amended HTML spec. Consumes `xFACts-AssetRegistryFunctions.ps1`. Tokenizes PS files via `[System.Management.Automation.Language.Parser]::ParseFile()`. Implements PS-AST walker for emission discovery. Emits the `HTML_FILE` anchor row plus Wave 2 row types (HTML_ID, HTML_DATA_ATTRIBUTE, CSS_CLASS USAGE, JS_FUNCTION USAGE, CSS_FILE USAGE, JS_FILE USAGE) plus COMMENT_BANNER. Implements page-prefix stripping for HTML_TEXT categorical naming. Implements purpose comment harvesting for slideouts/modals/panels. Read-only cross-populator model per spec §13.6: HTML populator reads from upstream DEFINITION rows, never edits them. Universal anchor refactor 2026-05-12: pre-load queries retargeted from FILE_HEADER (interim) to `CSS_FILE` / `JS_FILE` (universal model). **Wave 2.1 unblocked** following the wiring conversation resolution. Wave 2.1 work plus the HTML spec amendments (recognize `data-page`/`data-prefix`, `data-action-<event>` family, FORBIDDEN_INLINE_EVENT_HANDLER family) are the active scope.
 
 **Shared infrastructure (deployed):**
 
@@ -42,35 +50,37 @@ Catalog is functional and queryable. All three production populator scripts (CSS
 
 - `Refresh-AssetRegistry.ps1` orchestrator. Each populator runs standalone today. The cross-cutting "TRUNCATE the table, then run all populators in order" coordination is currently manual. On-demand execution from Admin page (matching documentation pipeline pattern) will land alongside the orchestrator; no scheduling.
 
-- PS populator. Design pending; can proceed in parallel with the wiring conversation since PS work is largely independent.
+- PS populator. Preliminary spec notes captured 2026-05-13 in `CC_PS_Spec_Notes.md`; spec drafting is the next-session work; populator build follows spec.
 
 ---
 
 ## Where we left off
 
-Sessions are organized around populator and spec work. Pickup options below assume work through 2026-05-12 is complete: universal anchor-row refactor delivered across all three populators; HTML populator at Wave 2 functionality; JS drift code attachment fixes deployed; HTML/JS wiring conversation opened with `CC_HTML_JS_Wiring_Design.md` as the active discussion doc.
+Pickup options for the next session(s). All items are unblocked unless explicitly marked otherwise.
 
-1. **Resolve the HTML/JS wiring conversation.** Active discussion. Outcome determines: HTML Spec §3.2 / §6 amendment scope; JS Spec entry-point and dispatch section additions; HTML populator Wave 2.1 drift code work; JS_FILE / JS_FUNCTION USAGE resolution approach; Phase 1 batch sweep refactor pattern; pilot page selection. Until settled, Wave 2.1 and related items are paused. See `CC_HTML_JS_Wiring_Design.md`.
+1. **PS spec drafting (active priority).** `CC_PS_Spec_Notes.md` captures the foundational design decisions across HTML/PS division of labor, file role taxonomy (page route, API route, module, standalone script), banner format inheritance, file header structure, dedicated CHANGELOG section design, catalog row types, function-level rules, drift code categories, and open questions. The next session consumes this doc and produces the actual `CC_PS_Spec.md`. Runs in parallel with populator update work.
 
-2. **HTML populator Wave 2.1 (paused).** Drift code attachment work for additional HTML constructs per spec §15. Resumes after wiring conversation. Several Wave 2.1 codes target §3.2 (script tag placement) and §6 (event handlers) patterns that may change or disappear under the inverted model.
+2. **HTML populator Wave 2.1 plus spec-amendment updates.** Drift code attachment work for additional HTML constructs per spec §15, plus the bootloader-driven amendments shipped this initiative: recognize `data-page` and `data-prefix` body attributes, recognize the `data-action-<event>` family (closed event set of click/change/input/submit/keydown/keyup/focus/blur), recognize the `#page-error-banner` placeholder requirement, recognize the umbrella `FORBIDDEN_INLINE_EVENT_HANDLER` plus 16 specific shape codes, emit `HTML_EVENT_HANDLER` rows for inline `on*` attributes, validate `data-action` values against `<prefix>_<event>Actions` and `shared<event>Actions` dispatch tables cataloged by the JS populator, drop the single-script-tag → two-script-tags asymmetry checks. Multi-session effort given populator size (~3,010 lines).
 
-3. **JS_FILE / JS_FUNCTION USAGE resolution (paused).** 41 unresolved JS_FILE USAGE rows and 284 unresolved JS_FUNCTION USAGE rows on the HTML side (root cause: pipeline order means JS runs after HTML; HTML's USAGE rows have no DEFINITION rows to resolve against at scan time). Three resolution options identified plus a fourth surfaced by the wiring discussion (USAGE rows don't exist under inverted model). Decision deferred.
+3. **JS populator update.** Smaller scope: recognize `BOOTLOADER` as a valid section type in cc-shared.js, remove `INITIALIZATION` from page-file allowed section types, add `DUPLICATE_BOOTLOADER` detection, add `MISSING_PAGE_INIT` detection, update `UNKNOWN_SECTION_TYPE` enumeration, add structural cataloging of per-event dispatch tables (`<prefix>_<event>Actions`). Can slot in opportunistically between PS spec and HTML populator sessions.
 
-4. **JS spec cross-spec rule additions.** Pending wiring outcome. Originally scheduled as a post-HTML-populator catch-up pass for ID string validation (`JS_HTML_ID_UNRESOLVED`, `JS_HTML_ID_MALFORMED`), data-* attribute resolution (`JS_DATA_ATTRIBUTE_UNRESOLVED`), has_dynamic_content flag application, and `ENGINE_PROCESSES` validation against `Orchestrator.ProcessRegistry`. The inverted wiring model could change parts of this — `data-action` dispatch validation would replace or extend the existing scope.
+4. **PS populator build.** Follows PS spec finalization. Estimated 1500-2500 lines following the CSS populator pattern. Uses native PowerShell AST via `[System.Management.Automation.Language.Parser]::ParseInput()` — no external parser. Catalogs PS-side constructs only; HTML inside `.ps1` here-strings remains the HTML populator's territory.
 
-5. **PS populator plus PS spec design (unblocked).** Two specs (module and route) plus one populator covering both. Can proceed in parallel with the wiring conversation. PS populator will consume the helpers file and follow the permissive-admission pattern. Emits its own per-file PS_FILE anchor row.
+5. **First page conversion (BatchMonitoring suggested).** Coordinated update across `BatchMonitoring.ps1` (page route), `BatchMonitoring-API.ps1` (API route), `batch-monitoring.js` (with `bch_init` and per-event dispatch tables), `batch-monitoring.css` (verify clean). Verification: catalog refresh shows zero drift on BatchMonitoring and clean cross-population resolution. Requires HTML populator Wave 2.1 plus spec amendments, JS populator update, PS spec finalization, and PS populator build all complete.
 
-6. **Phase 1 batch sweep (paused).** Once all four populators are current and all four specs are in production, refactor the five Phase 1 pages across CSS, JS, HTML, and PS together. CSS and JS halves are complete. HTML and PS halves pending wiring outcome — if inverted model is adopted, the JS refactor work for these files extends to `data-action` dispatch refactoring.
+6. **Roll out to remaining ~22 CC pages.** Same conversion pattern as BatchMonitoring, per page. Departmental and most-complex pages (Admin, BDLImport, ServerHealth, PlatformMonitoring) probably go last.
 
-7. **`docs-base.css` → `docs-shared.css` migration (unblocked).** Parallel to `engine-events.css` → `cc-shared.css`. Anchor file for `Documentation.Site`. Includes a small populator change to recognize the second anchor file. See `CC_Initiative.md` Queued Work.
+7. **`docs-base.css` → `docs-shared.css` migration.** Parallel to `engine-events.css` → `cc-shared.css`. Anchor file for `Documentation.Site`. Includes a small populator change to recognize the second anchor file.
 
-8. **Per-file refactor for the seven docs CSS files (unblocked).** Joins the per-file refactor queue.
+8. **Per-file refactor for the seven docs CSS files.** Joins the per-file refactor queue.
 
-9. **Page-at-a-time migration for remaining ~22 CC pages (paused).** After Phase 1 closes.
+9. **`Refresh-AssetRegistry.ps1` orchestrator.** Cross-populator orchestrator: single TRUNCATE, then dispatch CSS → HTML → JS → PS in order, with `sp_getapplock` single-instance locking, on-demand execution from Admin page, and consolidated logging. Sequencing-wise can land any time after all populators are current.
 
-10. **`Refresh-AssetRegistry.ps1` orchestrator (unblocked).** Cross-populator orchestrator: single TRUNCATE, then dispatch CSS → HTML → JS → PS in order, with `sp_getapplock` single-instance locking, on-demand execution from Admin page, and consolidated logging. Sequencing-wise can land any time after all populators are current.
+10. **engine-events retirement.** When every page has converted off `engine-events.js` and `engine-events.css`, delete both files plus `engine-events-API.ps1`. Final version bumps mark migration complete.
 
-**Validation strategy.** Every existing source file across CSS/JS/HTML/PS is non-spec-compliant, so running a populator over the full codebase produces thousands of drift rows that don't tell us anything we don't already know. The genuinely valuable validation per file type is the first refactored shared/reference file (CSS validated against `cc-shared.css`; JS against `cc-shared.js`; HTML pending), then the first non-trivial page-file refactor. The HTML populator's Wave 2 runs have validated the cross-population resolution model: CSS_FILE resolves cleanly (37 resolved / 0 unresolved); CSS_CLASS USAGE resolves correctly via the CSS_CLASS DEFINITION rows. The JS_FILE / JS_FUNCTION asymmetric resolution gap is structural to pipeline order and surfaced the wiring conversation rather than being a populator bug.
+**Validation strategy.** Every existing source file across CSS/JS/HTML/PS is non-spec-compliant, so running a populator over the full codebase produces thousands of drift rows that don't tell us anything we don't already know. The genuinely valuable validation per file type is the first refactored shared/reference file (CSS validated against `cc-shared.css`; JS against `cc-shared.js`; HTML pending against `BootloaderTest.ps1` and the first page conversion; PS pending against the first refactored route file), then the first non-trivial page-file refactor. The HTML populator's Wave 2 runs have validated the cross-population resolution model: CSS_FILE resolves cleanly (37 resolved / 0 unresolved); CSS_CLASS USAGE resolves correctly via the CSS_CLASS DEFINITION rows.
+
+The historical JS_FILE / JS_FUNCTION USAGE asymmetry (325 unresolved rows on the HTML side as of 2026-05-12, structural to pipeline order) no longer applies under the bootloader-driven model. HTML markup contains no JS function name references and no page-specific `<script src=>` tags; both reference types disappear at the source level. The pre-existing unresolved rows will clear naturally as pages convert to the new model. No back-fill resolution strategy or post-pass orchestrator sweep is needed.
 
 ---
 
@@ -103,28 +113,15 @@ The FILE_HEADER row, where it exists, holds parsed-header content (purpose, pref
 
 The two rows coexist cleanly on the same physical file. The model also accommodates files coexisting in the catalog with different file_type values — e.g., a PS route file produces an `HTML_FILE` anchor row (file_type = 'HTML') for its HTML emission and will eventually produce a `PS_FILE` anchor row (file_type = 'PS') from the PS populator for its PowerShell concerns.
 
-Asset-reference resolution between populators uses the `<TYPE>_FILE` anchor rows: HTML's `<link rel="stylesheet">` references resolve against `CSS_FILE` rows; HTML's `<script src=>` references resolve against `JS_FILE` rows. The CSS resolution works at scan time (CSS runs before HTML). The JS resolution doesn't work at scan time (JS runs after HTML) — see "Pipeline order and the resolution asymmetry" below.
+Asset-reference resolution between populators uses the `<TYPE>_FILE` anchor rows: HTML's `<link rel="stylesheet">` references resolve against `CSS_FILE` rows; HTML's `<script src="/js/cc-shared.js">` reference resolves against `JS_FILE` rows. Under the bootloader-driven model, the script-tag references collapse to a single shared file per page, so JS_FILE USAGE rows from HTML resolve cleanly against the cc-shared.js DEFINITION row.
 
 ### Pipeline order: CSS → HTML → JS → PS
 
-The four populators run in a fixed order driven by the cross-population dependency relationships. CSS is the grandparent. HTML is the parent. JS is both child and grandchild. PS runs last.
-
-The order was revised 2026-05-10 during HTML spec drafting. Under the corrected order, HTML DEFINITION rows for IDs and data-attributes exist when JS scans, so JS USAGE rows resolve cleanly. The architecture supports this: HTML depends only on CSS (which runs first); JS extends its existing CSS resolution mechanism to HTML.
+The four populators run in a fixed order driven by the cross-population dependency relationships. CSS is the grandparent. HTML is the parent. JS depends on HTML for dispatch-table-to-data-attribute resolution. PS runs last and resolves PS USAGE rows against all upstream DEFINITION rows.
 
 The 2026-05-11 §13.6 amendment locked in a strict read-only cross-populator model: no populator ever edits another populator's rows; all cross-references resolve at scan time against existing DEFINITION rows produced by upstream populators. Each populator is independently re-runnable. The populator family invariant "produce rows, never modify others' rows" holds uniformly.
 
-### Pipeline order and the resolution asymmetry
-
-The pipeline order resolves most cross-references at scan time, but not all. The asymmetry, surfaced 2026-05-12:
-
-- CSS references from HTML resolve cleanly (CSS runs before HTML): `CSS_FILE USAGE` 37/0, `CSS_CLASS USAGE` works correctly.
-- JS references from HTML cannot resolve at scan time (JS runs after HTML): `JS_FILE USAGE` 0/41, `JS_FUNCTION USAGE` 0/284.
-
-The asymmetry is structural — under any linear pipeline order, the HTML↔JS relationship has one direction that can't resolve at scan time (HTML→JS under current order; would invert under JS→HTML order, breaking the JS→HTML direction).
-
-This asymmetry surfaced the HTML/JS wiring conversation (see `CC_HTML_JS_Wiring_Design.md`). The conversation considers whether the HTML→JS references should exist at all — under an inverted wiring model (HTML declares `data-page`; bootloader discovers JS modules; JS dispatches via `data-action`), those references would not exist in the HTML markup, and the catalog asymmetry would not arise. The conversation also considers options that retain the current wiring pattern with various resolution strategies for the unresolvable rows.
-
-Until the wiring conversation settles, the unresolved rows remain `<undefined>` in the catalog. This is honest — it reflects what the HTML populator can see at its own scan time — but it's also the trigger for the design discussion.
+Under the bootloader-driven model, the resolution asymmetry that previously affected HTML→JS function-name references no longer applies. HTML markup no longer references JS function names — instead, HTML declares `data-action-<event>` values that resolve against JS-side dispatch table entries (`<prefix>_<event>Actions`, `shared<event>Actions`). Because JS runs after HTML in the pipeline, the JS populator can resolve its dispatch-table-entry definitions cleanly against the HTML-side USAGE rows. The HTML populator emits `data-action` value USAGE rows; the JS populator emits dispatch-table-entry DEFINITION rows; cross-population resolution at JS scan time succeeds.
 
 ### Single-table model with reference_type/scope
 
@@ -158,6 +155,7 @@ The catalog organizes by what's being extracted, not by file extension. A single
 | `*.ps1` (routes) | PS code, plus here-strings containing HTML markup (which may contain inline `<style>` or `<script>` blocks) |
 | `*.ps1` (APIs, suffix `-API.ps1`) | PS code primarily |
 | `*.psm1` (helpers) | PS code plus HTML emission |
+| `*.ps1` (standalone scripts in `E:\xFACts-PowerShell\`) | PS code |
 
 Production extractors are organized by content type they extract. The `file_type` column on each row reflects what content type was extracted, not the file extension.
 
@@ -175,7 +173,7 @@ The populator family follows a consistent design principle: detection (admission
 
 Both the CSS and JS populators implement this for section banners: `Test-IsBannerComment` (permissive) admits any banner-shaped comment; `Get-BannerInfo` (strict) validates against §3.1 and emits granular drift codes for each violation. A non-conformant banner produces a `COMMENT_BANNER` row with one or more drift codes attached; it does not get dropped.
 
-The HTML populator extends the same pattern to HTML constructs with defined shapes. The principle generalizes across the populator family.
+The HTML populator extends the same pattern to HTML constructs with defined shapes. The PS populator will follow the same pattern when built. The principle generalizes across the populator family.
 
 ### Definition suppression for forbidden top-level wrappers
 
@@ -203,16 +201,17 @@ The full master list of `component_type` values across all populators.
 | `CSS_KEYFRAME` | A `@keyframes` definition or a reference. | CSS |
 | `CSS_RULE` | A non-class rule (e.g., `body`, `*`) — captured for drift visibility. | CSS |
 | `HTML_ID` | An `id="..."` attribute occurrence (DEFINITION) or `getElementById` reference (USAGE). | HTML, JS (Group A), CSS (when `#id` appears in selectors) |
-| `HTML_DATA_ATTRIBUTE` | A `data-*` attribute (DEFINITION) or JS dataset/getAttribute reference (USAGE). | HTML, JS |
+| `HTML_DATA_ATTRIBUTE` | A `data-*` attribute (DEFINITION) or JS dataset/getAttribute reference (USAGE). Under the bootloader-driven model, `data-action`, `data-action-<event>`, and `data-action-<arg>` attributes are captured here. | HTML, JS |
 | `HTML_TEXT` | Element text content or user-facing attribute value (`title`, `placeholder`, `aria-label`, `alt`). | HTML |
 | `HTML_ENTITY` | An HTML entity reference or direct Unicode character. | HTML |
 | `HTML_SVG` | An inline `<svg>` element (one row per outer `<svg>`, internals in `raw_text`). | HTML |
 | `HTML_COMMENT` | An HTML comment (categorized as section divider, inline annotation, or panel purpose comment). | HTML |
+| `HTML_EVENT_HANDLER` | An inline `on*` attribute caught for drift visibility. The bootloader-driven model forbids these entirely; rows always carry `FORBIDDEN_INLINE_EVENT_HANDLER` plus one of the 16 specific shape codes. | HTML |
 | `JS_IMPORT` | An ES module import or Node `require` statement. Always non-NULL `variant_type`. | JS |
 | `JS_CONSTANT` | A primitive-value `const` declaration in a CONSTANTS or FOUNDATION section. | JS |
 | `JS_CONSTANT_VARIANT` | A compound-value or computed-expression `const` declaration. Also hosts `FORBIDDEN_REVEALING_MODULE` drift on revealing-module wrappers. | JS |
 | `JS_STATE` | A `var` declaration in a STATE section. Also hosts `FORBIDDEN_REVEALING_MODULE` drift on revealing-module wrappers using `var`. | JS |
-| `JS_FUNCTION` | A regular `function name() {}` declaration, or a `cc-shared.js` function called from another file (USAGE). | JS, HTML (USAGE rows from event handler attributes) |
+| `JS_FUNCTION` | A regular `function name() {}` declaration. Also a `cc-shared.js` function called from another file (USAGE, though most legacy USAGE rows from inline event handlers disappear under the bootloader-driven model). | JS, HTML (legacy USAGE rows from event handler attributes, disappearing as pages convert) |
 | `JS_FUNCTION_VARIANT` | An async or generator function declaration. | JS |
 | `JS_HOOK` | A regular page lifecycle hook function inside the hooks banner. | JS |
 | `JS_HOOK_VARIANT` | An async page lifecycle hook function. | JS |
@@ -229,13 +228,19 @@ The full master list of `component_type` values across all populators.
 | `JS_INLINE_SCRIPT` | A `<script>` element in a JS template/string literal. Hosts `FORBIDDEN_INLINE_SCRIPT_IN_JS` drift. | JS |
 | `JS_INLINE_EVENT` | An inline `on<event>="..."` attribute in a JS template/string literal. Hosts `FORBIDDEN_INLINE_EVENT_IN_JS` drift. | JS |
 | `JS_LINE_COMMENT` | A `//` line comment at file scope. Hosts `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift. | JS |
+| `JS_DISPATCH_ENTRY` | A key-value pair within a per-event dispatch table (`<prefix>_<event>Actions` or `shared<event>Actions`). Each entry becomes its own DEFINITION row. Resolves against HTML-side `data-action` USAGE rows. (Future, added with JS populator update.) | JS (future) |
 | `PS_FUNCTION` | A PowerShell function definition. | (Future) |
-| `PS_PARAM` | A PowerShell parameter. | (Future) |
-| `PS_COMMAND` | A PowerShell command invocation worth cataloging. | (Future) |
-| `PS_ASSIGNMENT` | A PowerShell module-scope assignment. | (Future) |
-| `API_ROUTE` | An `Add-PodeRoute` definition. | (Future) |
+| `PS_PARAMETER` | A PowerShell function/script parameter. | (Future) |
+| `PS_VARIABLE` | A script-scope variable assignment. | (Future) |
+| `PS_EXPORT` | An `Export-ModuleMember` argument. Modules only. | (Future) |
+| `PS_CHANGELOG` | The dedicated CHANGELOG section in roles that require it (page route files, standalone scripts). Granularity TBD — per section or per entry. | (Future) |
+| `PS_DOCBLOCK` | A `<# .SYNOPSIS ... #>` comment-based-help block on a function. | (Future) |
+| `PS_COMMENT` | A non-banner, non-docblock comment. | (Future) |
+| `API_ROUTE` | An `Add-PodeRoute` definition. Page routes have one; API files have many; modules should have none. | (Future) |
+| `WEBSOCKET_ROUTE` | An `Add-PodeRouteWebSocket` definition. | (Future) |
+| `MIDDLEWARE` | An `Add-PodeMiddleware` definition. | (Future) |
 
-`CK_Asset_Registry_component_type` CHECK constraint admits 44 values total as of 2026-05-12.
+`CK_Asset_Registry_component_type` CHECK constraint admits 44 values total as of 2026-05-12. The constraint will be extended when JS_DISPATCH_ENTRY (from the JS populator update), HTML_EVENT_HANDLER (from the HTML populator update), and the PS-side component types (from the PS populator build) are introduced.
 
 ### Variant model
 
@@ -257,6 +262,7 @@ The variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2
 - **HTML USAGEs:** cross-referenced against existing DEFINITION rows in the consumer's zone.
 - **HTML_FILE DEFINITIONs:** LOCAL for route files; SHARED for helper files.
 - **HTML_ID DEFINITIONs:** LOCAL for page-emitted IDs, SHARED for helper-emitted (chrome) IDs.
+- **HTML data-action USAGE rows (future):** scope follows the page's scope; resolve against JS_DISPATCH_ENTRY DEFINITION rows in matching scope.
 - **Forbidden-pattern rows:** scope follows the file's overall scope.
 
 ### Methodology
@@ -279,7 +285,7 @@ The CSS, JS, and HTML populators are all aligned on the same structural shape:
 - **Forbidden-wrapper handling (JS only):** definition-suppression flag mechanism.
 - **Universal anchor-row model (all):** every file produces a `<TYPE>_FILE` anchor row; FILE_HEADER reserved for parsed-header construct.
 
-The shared infrastructure delivered as `xFACts-AssetRegistryFunctions.ps1` provides the helpers; per-language logic stays in each populator.
+The PS populator, when built, will follow the same alignment patterns. The shared infrastructure delivered as `xFACts-AssetRegistryFunctions.ps1` provides the helpers; per-language logic stays in each populator.
 
 ---
 
@@ -357,11 +363,11 @@ Under truncate+reload, occurrence_index serves a single purpose: uniquely identi
 | 0 | Schema design + DDL | DONE |
 | 0.5 | Object_Registry + Object_Metadata baselines | DONE |
 | 1A | CSS extraction | DONE — at current spec generation |
-| 1B | HTML extraction from .ps1/.psm1 string tokens | DONE — Wave 2 complete; Wave 2.1 paused pending wiring conversation |
+| 1B | HTML extraction from .ps1/.psm1 string tokens | DONE — Wave 2 complete; Wave 2.1 plus bootloader-driven spec amendments active |
 | 1C | HTML extraction from .js template strings | DONE — covered by JS populator's Group A |
 | 1D | Production rewrite + orchestrator | PARTIAL — populators production-grade; helpers file in production; orchestrator not yet built |
-| 2 | JS function/constant/hook/class/method extraction | DONE — at current spec generation |
-| 3 | PS function/route extraction from .ps1/.psm1 | UNBLOCKED — can proceed in parallel with wiring conversation |
+| 2 | JS function/constant/hook/class/method extraction | DONE — at prior JS spec generation. Bootloader-amendment updates active (BOOTLOADER section, MISSING_PAGE_INIT, JS_DISPATCH_ENTRY rows). |
+| 3 | PS function/route extraction from .ps1/.psm1 | ACTIVE — preliminary spec notes captured 2026-05-13; spec drafting next session; populator build follows |
 | 4 | Inline `<style>` extraction from route HTML | FUTURE — closes Gap 1; HTML spec already detects presence via `FORBIDDEN_INLINE_STYLE_BLOCK` drift |
 | 5 | Inline `<script>` extraction from route HTML | FUTURE — closes Gap 2; HTML spec already detects presence via `FORBIDDEN_INLINE_SCRIPT_BLOCK` drift |
 | 6 | Admin UI integration | FUTURE — manual trigger button on Admin page |
@@ -370,30 +376,62 @@ Under truncate+reload, occurrence_index serves a single purpose: uniquely identi
 
 ---
 
-## Production-rewrite remaining work
+## Active and remaining work
 
-Most of what was originally scoped under "production rewrite" has shipped. What remains:
+What's actively in flight or pending, organized by category. None of these items are blocked; all can proceed in parallel except as noted.
 
-### HTML populator Wave 2.1 (paused)
+### HTML populator Wave 2.1 plus spec-amendment updates
 
-Drift code attachment work for additional HTML constructs per spec §15. Pending wiring conversation outcome. Several Wave 2.1 codes target §3.2 (script tag placement) and §6 (event handlers) patterns that may change or disappear under the inverted model.
+Drift code attachment work for additional HTML constructs per spec §15, combined with the bootloader-driven amendments shipped in the HTML spec. Updates:
 
-### JS populator cross-spec rule additions (paused)
+- Recognize `data-page` and `data-prefix` chrome attributes on `<body>`; emit `MISSING_DATA_PAGE`, `MISSING_DATA_PREFIX` if absent
+- Recognize the `#page-error-banner` placeholder; emit `MISSING_PAGE_ERROR_BANNER` if absent
+- Validate the single-`<script>`-tag rule (exactly one `<script src="/js/cc-shared.js">`)
+- Drop legacy inline event-handler validation rules; add the umbrella `FORBIDDEN_INLINE_EVENT_HANDLER` plus 16 specific shape codes
+- Emit `HTML_EVENT_HANDLER` rows for any inline `on*` attributes found
+- Recognize the `data-action` family attributes: dispatch tokens, event-type attributes (`data-action-<event>`), argument attributes (`data-action-<arg-name>`) via the recognized-event closed set (click/change/input/submit/keydown/keyup/focus/blur)
+- Emit new drift codes: `ORPHANED_ACTION_ARGUMENT`, `UNRESOLVED_DATA_ACTION`, `UNKNOWN_EVENT_TYPE`, `EVENT_ATTRIBUTE_WITHOUT_HANDLER`
+- Cross-populator resolution: validate `data-action` values against `<prefix>_<event>Actions` and `shared<event>Actions` dispatch-table entries (JS_DISPATCH_ENTRY DEFINITION rows) cataloged by the JS populator
 
-The JS spec gains cross-spec rules originally scheduled as a post-HTML-populator catch-up pass:
+The populator is ~3,010 lines. This is a multi-session effort.
+
+### JS populator update
+
+Aligns the JS populator with the amended JS spec. Smaller scope:
+
+- Recognize `BOOTLOADER` as a valid section type in cc-shared.js
+- Remove `INITIALIZATION` from page-file allowed section types
+- Add `DUPLICATE_BOOTLOADER` detection
+- Add `MISSING_PAGE_INIT` detection (page files lacking a top-level `<prefix>_init` function declaration)
+- Update `UNKNOWN_SECTION_TYPE` enumeration
+- Add structural cataloging of per-event dispatch tables: each entry in `<prefix>_clickActions`, `<prefix>_changeActions`, etc. becomes a JS_DISPATCH_ENTRY DEFINITION row; cc-shared.js's `sharedClickActions`, `sharedChangeActions`, etc. produce SHARED-scope JS_DISPATCH_ENTRY rows
+
+Can slot in opportunistically between PS spec work and HTML populator sessions.
+
+### JS populator cross-spec rule additions
+
+The JS spec gains cross-spec rules originally scheduled as a post-HTML-populator catch-up pass. Under the bootloader-driven model, the scope is refined:
 
 - ID string validation: `JS_HTML_ID_UNRESOLVED`, `JS_HTML_ID_MALFORMED`
-- data-* attribute resolution: `JS_DATA_ATTRIBUTE_UNRESOLVED`
+- data-action validation: instead of free-form data-attribute resolution, validate that every dispatch-table key in the JS file corresponds to a `data-action-<event>` attribute value somewhere in the HTML emission (catalog-query resolution at JS scan time)
 - `has_dynamic_content` flag application to JS-side CSS_CLASS USAGE rows from template literals
 - ENGINE_PROCESSES validation: `MISSING_ENGINE_PROCESSES_DECLARATION`, `ENGINE_PROCESS_PAGE_MISMATCH`, `ENGINE_SLUG_JS_MISMATCH`, `MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS`
 
-The inverted wiring model could change parts of this — `data-action` dispatch validation would replace or extend the existing scope. Spec and populator updates land after wiring conversation settles.
+Spec and populator updates land alongside the JS populator update above.
+
+### PS spec drafting (active priority)
+
+Spec drafting next session, consuming `CC_PS_Spec_Notes.md` as the design input. Produces `CC_PS_Spec.md`. Deletes the two stale preliminary docs (`CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md`) at spec publication.
+
+### PS populator build (after spec)
+
+Build the populator following the CSS populator pattern. Estimated 1500-2500 lines. Uses native PowerShell AST via `[System.Management.Automation.Language.Parser]::ParseInput()` — no external parser. Catalogs PS-side constructs only.
 
 ### Populator end-of-run RunStatus / DegradedReason banner
 
 Each populator currently runs interactively and prints freeform progress and summary lines. When the populator pipeline runs from the Admin tile, a structured end-of-run banner with `RunStatus` (success / degraded / failed) and `DegradedReason` fields will let the Admin UI parse and surface run state cleanly. Backlogged until the Admin tile work begins.
 
-### `Refresh-AssetRegistry.ps1` orchestrator (not yet built; unblocked)
+### `Refresh-AssetRegistry.ps1` orchestrator (not yet built)
 
 When built, the orchestrator should:
 
@@ -402,13 +440,13 @@ When built, the orchestrator should:
 3. Run CSS populator.
 4. Run HTML populator.
 5. Run JS populator.
-6. (When PS populator lands) run PS populator.
+6. Run PS populator.
 7. Release applock.
 8. Per-file success/failure summary at end.
 9. Standard logging via `Write-Log` from `xFACts-OrchestratorFunctions.ps1`.
 10. On-demand execution from Admin page.
 
-The orchestrator could also host a post-pass resolution sweep if the HTML/JS wiring conversation settles on retaining HTML→JS USAGE rows with a back-fill resolution strategy. See `CC_HTML_JS_Wiring_Design.md`.
+Can land any time after all populators are current.
 
 ### Production script classification (open)
 
@@ -429,13 +467,19 @@ Under the pre-migration schema, the HTML populator emitted `state_modifier='<dyn
 
 **Resolution:** the HTML spec mandates a single dynamic class assembly pattern (array-join, §5.2.1) and forbids inline interpolation mixing. The populator emits one CSS_CLASS USAGE row per literal class name in the array. The `has_dynamic_content` BIT flag is set TRUE on the static rows when parameter-fed classes are present.
 
-### 2. Admin UI trigger pattern
+### 2. (Resolved) Admin UI trigger pattern
 
 On-demand execution from Admin page (matching documentation pipeline trigger pattern), no scheduling. Pattern locked. Implementation lands in Phase 6 alongside the orchestrator.
 
-### 3. (Active) HTML/JS wiring model
+### 3. (Resolved 2026-05-13) HTML/JS wiring model
 
-See `CC_HTML_JS_Wiring_Design.md`. Drives several decisions: HTML Spec §3.2/§6 amendments, JS Spec entry-point and dispatch additions, HTML populator Wave 2.1 drift codes, JS_FILE/JS_FUNCTION USAGE resolution approach, Phase 1 batch sweep refactor pattern, pilot page selection.
+**Resolution:** Adopted the bootloader-driven inverted wiring model in full. Decisions captured in `CC_File_Format_Initiative.md` §3. HTML elements declare behavior via `data-action-<event>` attributes; cc-shared.js bootloader reads `data-page` and `data-prefix` to load page modules and invoke `<prefix>_init`; per-event dispatch tables (`<prefix>_clickActions`, `sharedClickActions`, etc.) consumed by delegated listeners.
+
+Consequences across the work items in this doc:
+- HTML populator Wave 2.1 unblocked, with refined scope (see Active and remaining work above)
+- JS populator gains new section type, new drift codes, and new dispatch-entry cataloging
+- The HTML→JS function-name resolution asymmetry disappears because HTML markup contains no JS function name references under the new model
+- Phase 1 batch sweep retired as an idea (the page-conversion roll-out in `CC_File_Format_Initiative.md` §4.10 replaces it; pages convert one at a time with full coordinated updates rather than batched)
 
 ### 4. Helper consumption gap
 
@@ -462,9 +506,9 @@ HTML             21
 JS               30
 ```
 
-Anchor rows present and well-formed across all three populators. CSS_FILE resolution clean (37/0); JS_FILE resolution structurally impossible at scan time (0/41) due to pipeline order CSS → HTML → JS. JS_FUNCTION USAGE rows on HTML side: 284 unresolved, all `<undefined>` source_file.
+Anchor rows present and well-formed across all three populators. CSS_FILE resolution clean (37/0); JS_FILE resolution showed 41 unresolved rows at this snapshot. JS_FUNCTION USAGE rows on HTML side: 284 unresolved, all `<undefined>` source_file.
 
-Per-page distribution of unresolved HTML→JS USAGE rows:
+Per-page distribution of unresolved HTML→JS USAGE rows at the 2026-05-12 snapshot:
 
 | Page | Count |
 |---|---|
@@ -488,7 +532,7 @@ Per-page distribution of unresolved HTML→JS USAGE rows:
 | BusinessIntelligence.ps1 | 4 |
 | ClientRelations.ps1 | 3 |
 
-Total: 325 rows of permanent `<undefined>` source_file values from HTML→JS USAGE references. These surface the structural asymmetry that drove the HTML/JS wiring conversation (see `CC_HTML_JS_Wiring_Design.md`). The distribution informs pilot page selection — heavy pages (ServerHealth, Admin, PlatformMonitoring) are also the most behaviorally complex; moderate pages (BatchMonitoring, DBCCOperations) are more representative of typical CC interaction patterns.
+Total: 325 unresolved rows of HTML→JS USAGE references at the 2026-05-12 snapshot. The bootloader-driven wiring model resolves this structurally: HTML markup no longer references JS function names. As pages convert to the bootloader-driven shape, these rows disappear at the source level (the inline `onclick="functionName()"` patterns are deleted, not retargeted). The per-page distribution informed pilot page selection — heavier pages (ServerHealth, Admin, PlatformMonitoring) probably convert last; moderate pages (BatchMonitoring, DBCCOperations) make better first-conversion candidates.
 
 Three previously-unattached JS drift codes (`FORBIDDEN_COMMENT_STYLE`, `EXCESS_BLANK_LINES`, `BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE`) were attached to their proper rows during the universal anchor work. They now surface ~25 drift rows on appropriate files as expected.
 
@@ -503,6 +547,8 @@ Architecture decisions: `has_dynamic_content` flag column on `dbo.Asset_Registry
 All four Phase 1 page JS files refactored to spec compliance, delivered as offline `*-spec.js` companions. The methodology stabilized through the four sessions. Each refactor was a coordinated single pass: structural changes plus inline event handler migration to delegated `addEventListener` bindings plus per-element listener loop migration to delegation.
 
 Notable discoveries: pre-existing bugs surfaced by careful reading (`replication-monitoring.js` had `onSessionExpired() { stopPolling(); }` referring to a function that doesn't exist; `updateTimestamp` defined twice via JS hoisting); `business-intelligence.js` rewrite eliminated revealing-module wrapper; per-element listener loop pattern caught by inspection in three of four files; shared-function migration coverage reaching critical mass; first production run of §12 populator catch-up surfaced exactly three genuine violations all resolved in the same session.
+
+These five offline-refactored files need re-refactoring against the bootloader-driven JS spec before they go live. The bootloader spec requires `<prefix>_init` as the entry point (replacing the DOMContentLoaded handler pattern) and per-event dispatch tables (replacing the `addEventListener` bindings the prior refactor introduced). The earlier refactor work isn't wasted — most of the structural cleanup carries forward — but the entry-point and dispatch shapes need updating.
 
 ### 2026-05-08 — Inline event handler drift surfaced; first non-trivial Phase 1 page validation
 
@@ -589,7 +635,7 @@ C:\Program Files\
 - `E:\xFACts-PowerShell\parse-css.js` -- Node helper for CSS AST extraction.
 - `E:\xFACts-PowerShell\xFACts-AssetRegistryFunctions.ps1` -- PowerShell shared helpers for the populator family.
 
-The Node helpers are stable and don't need changes for the orchestrator work. The HTML populator does not require a Node helper; it uses PowerShell's built-in `[System.Management.Automation.Language.Parser]`.
+The Node helpers are stable and don't need changes for the orchestrator work. The HTML populator does not require a Node helper; it uses PowerShell's built-in `[System.Management.Automation.Language.Parser]`. The PS populator (future) will follow the same pattern as HTML — no Node helper needed.
 
 ---
 
@@ -638,17 +684,21 @@ Each new file refactored is a fresh chance to discover gaps.
 
 ### Cross-population dependencies must drive pipeline order
 
-The 2026-05-10 HTML spec drafting session surfaced a pipeline order issue. The dependency relationships drive ordering, not file-extension alphabetization or perceived complexity. The 2026-05-12 resolution asymmetry surfaced a related lesson: pipeline order can resolve dependencies in one direction at scan time, but cross-references in both directions (HTML→JS via `<script src=>` plus JS→HTML via `getElementById`) cannot both resolve under any linear ordering. This drove the HTML/JS wiring conversation.
+The 2026-05-10 HTML spec drafting session surfaced a pipeline order issue. The dependency relationships drive ordering, not file-extension alphabetization or perceived complexity. The 2026-05-12 resolution asymmetry surfaced a related lesson: pipeline order can resolve dependencies in one direction at scan time, but cross-references in both directions (HTML→JS via `<script src=>` plus JS→HTML via `getElementById`) cannot both resolve under any linear ordering.
+
+The bootloader-driven wiring model (adopted 2026-05-13) resolves this structurally rather than via pipeline ordering: by eliminating HTML→JS function-name references at the source level, the asymmetry disappears. The lesson generalizes: when pipeline ordering creates structural asymmetry that no ordering can resolve, the right fix is often at the source-code level (delete the asymmetric reference), not at the pipeline level.
 
 ### Read-only cross-populator model
 
-The 2026-05-11 §13.6 amendment crystallized a design principle: no populator ever edits another populator's rows. Cross-references resolve at scan time against existing DEFINITION rows produced by upstream populators. Every populator is independently re-runnable under the new model. The populator family invariant "produce rows, never modify others' rows" holds uniformly.
-
-This principle creates a tension with cross-references that cannot resolve at scan time under any linear pipeline order (see HTML→JS case above). Resolution options that preserve the read-only model include: accept `<undefined>` in the catalog, eliminate the reference at the source-code level (via the inverted wiring model), or use an orchestrator post-pass for resolution (which is a write but is owned by the orchestrator, not a populator).
+The 2026-05-11 §13.6 amendment crystallized a design principle: no populator ever edits another populator's rows. Cross-references resolve at scan time against existing DEFINITION rows produced by upstream populators. Every populator is independently re-runnable. The populator family invariant "produce rows, never modify others' rows" holds uniformly.
 
 ### Universal anchor-row model
 
 The 2026-05-12 refactor adopted a universal pattern: every populator emits a `<TYPE>_FILE` anchor row for every scanned file, separately from any parsed-header construct. The pattern replaces an earlier dual-purpose model where CSS and JS populators emitted FILE_HEADER as both anchor and parsed-header row. The new model is cleaner because the two concerns (file-existence-marker, file-header-parsed-content) are conceptually distinct and have different drift attachment needs. The model also supports types that lack a parsed-header construct (HTML, which has no file-header in markup).
+
+### Source-level resolution beats catalog gymnastics
+
+The 2026-05-13 bootloader adoption resolved 325 catalog rows of unresolvable HTML→JS USAGE references not by adding resolution machinery (back-fill, post-pass, orchestrator sweep) but by eliminating the references at the source-code level. Inline `onclick="functionName()"` patterns disappeared; they were replaced with `data-action="action-name"` attributes that resolve cleanly under the new pipeline order. The lesson: when the catalog model exposes a structural problem with the source-code pattern, the right fix is usually in the source code, not in the catalog. Refactoring the pattern is cheaper and more durable than adding machinery to work around it.
 
 ---
 
@@ -697,3 +747,11 @@ A compressed record of substantive implementation events on the pipeline. One or
 - **2026-05-12** -- JS_FILE / JS_FUNCTION USAGE resolution gap surfaced after universal anchor verification. Root cause: pipeline order. CSS resolves cleanly; JS cannot resolve at scan time. Decision deferred pending HTML/JS wiring conversation.
 - **2026-05-12** -- HTML/JS wiring conversation opened. `CC_HTML_JS_Wiring_Design.md` created as the planning doc for the discussion. HTML populator Wave 2.1 and several related items paused.
 - **2026-05-12** -- Universal anchor working document (`Asset_Registry_Universal_Anchor_Refactor.md`) retired. Work integrated into `CC_Initiative.md` and this document.
+- **2026-05-13 (Session 1)** -- JS spec amendments shipped: INITIALIZATION section removed; BOOTLOADER section type added to cc-shared.js; `<prefix>_init` requirement formalized; `DUPLICATE_BOOTLOADER`, `MISSING_PAGE_INIT` drift codes added; Appendix A.4/A.11 rationale entries.
+- **2026-05-13 (Session 1)** -- cc-shared.js bootloader implementation deployed: BOOTLOADER section with `sharedActions` dispatch table, DOMContentLoaded handler reading `data-page`, `loadPageModule`, `invokePageInit`, `renderPageError`, `handleSharedAction`. 113 lines added.
+- **2026-05-13 (Session 1)** -- cc-shared.css page-error-banner styling deployed (CHROME: PAGE ERROR BANNER section, 59 lines).
+- **2026-05-13 (Session 1)** -- `BootloaderTest.ps1` (Pode route at `/bootloader-test`) and `test.js` deployed for end-to-end validation. All five validation scenarios passed in browser: happy-path init, page-local dispatch, shared dispatch, unknown action warn, three failure modes (script 404, missing init, init throws).
+- **2026-05-13 (Session 2)** -- HTML spec amendments shipped as `CC_HTML_Spec.md` (2,176 lines, 104 drift codes). 13 amendment areas covering body attributes (`data-page` + `data-prefix`), `data-action-<event>` family with closed 8-event set, hybrid prefix convention (page-local unprefixed, shared `cc-` prefixed), per-event dispatch tables, argument attributes via `data-action-<arg>`, umbrella FORBIDDEN_INLINE_EVENT_HANDLER plus 16 specific shape codes, new HTML_EVENT_HANDLER component type, single-script-tag rule (`/js/cc-shared.js` only). 18 new drift codes added, 4 retired, 16 relocated.
+- **2026-05-13 (Session 2)** -- `xFACts-Helpers.psm1` patched with `Get-PageScriptTagHtml` helper. Single function returning the literal `<script src="/js/cc-shared.js"></script>` string. Header comment inventory updated. Deployed and Pode service restarted.
+- **2026-05-13 (Session 2)** -- HTML/JS wiring conversation resolved. Bootloader-driven inverted model adopted in full. Wave 2.1 unblocked; JS populator update unblocked; JS_FILE/JS_FUNCTION USAGE resolution work superseded (rows disappear at source level as pages convert).
+- **2026-05-13 (Session 2)** -- `CC_PS_Spec_Notes.md` captured (~680 lines). Preliminary notes for PS spec drafting: HTML/PS division of labor, five file roles (page route, API route, module, standalone script, other TBD), banner format inheritance from CSS/JS, file header using PowerShell comment-based-help, dedicated CHANGELOG section design (required in page routes and standalone scripts; forbidden in API routes and modules), per-role file shape templates, catalog row types, function-level rules, nine categories of drift codes, populator architecture, nine open questions for next-session resolution.
