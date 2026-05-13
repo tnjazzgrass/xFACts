@@ -26,14 +26,14 @@ Every page route emits HTML conforming to this shape, in this exact order:
     <link rel="stylesheet" href="/css/<page>.css">
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body class="section-<sectionKey>">
+<body class="section-<sectionKey>" data-page="<slug>" data-prefix="<prefix>">
 $navHtml
 
     <!-- page header bar -->
     <!-- connection banner placeholder -->
+    <!-- page error banner placeholder -->
     <!-- page-specific content -->
 
-    <script src="/js/<page>.js"></script>
     <script src="/js/cc-shared.js"></script>
 </body>
 </html>
@@ -46,16 +46,19 @@ $navHtml
 - The `<head>` contains exactly these elements, in this order: one `<title>` element, one or more `<link rel="stylesheet">` elements per Section 3, and nothing else. Drift code: `MALFORMED_HEAD`.
 - The `<title>` element's content is the value of the `$browserTitle` PowerShell variable, sourced from `Get-PageBrowserTitle`. Drift code: `FORBIDDEN_HARDCODED_TITLE`.
 - The `<body>` element opens with a `class="section-<sectionKey>"` attribute, where `<sectionKey>` matches the page's `RBAC_NavSection.section_key` value. Drift code: `MISSING_BODY_SECTION_CLASS`.
+- The `<body>` element declares a `data-page="<slug>"` attribute, where `<slug>` matches the page's URL slug (lowercase, hyphen-separated, derived from the rightmost path segment of the page route). Drift code: `MISSING_DATA_PAGE`.
+- The `<body>` element declares a `data-prefix="<prefix>"` attribute, where `<prefix>` matches the page's `cc_prefix` from `Component_Registry`. Drift code: `MISSING_DATA_PREFIX`.
 - The first content inside `<body>` is the `$navHtml` substitution, sourced from `Get-NavBarHtml`. Drift code: `MISSING_NAV_SUBSTITUTION`.
-- The last content inside `<body>` before `</body>` is the `<script>` tag block per Section 3. Drift code: `MALFORMED_BODY_CLOSE`.
+- The last content inside `<body>` before `</body>` is the `<script>` tag per Section 3. Drift code: `MALFORMED_BODY_CLOSE`.
 
 ### 1.3 Body content shape
 
-Between `$navHtml` and the `<script>` block, the body contains page content in this implicit order:
+Between `$navHtml` and the `<script>` tag, the body contains page content in this implicit order:
 
 1. The page header bar — a single block containing the page title (via `$headerHtml` substitution) and refresh chrome (live indicator, last-updated timestamp, page refresh button, optional engine cards per Section 2).
 2. The connection banner placeholder — a single `<div id="connection-banner" class="connection-banner"></div>` element with no content.
-3. The page-specific content — any number of layout containers, sections, slideouts, modals, or other page-level constructs.
+3. The page error banner placeholder — a single `<div id="page-error-banner" class="page-error-banner"></div>` element with no content.
+4. The page-specific content — any number of layout containers, sections, slideouts, modals, or other page-level constructs.
 
 ### 1.4 Body content rules
 
@@ -63,11 +66,14 @@ Between `$navHtml` and the `<script>` block, the body contains page content in t
 - The page header bar contains exactly one `$headerHtml` substitution, sourced from `Get-PageHeaderHtml`. Drift code: `FORBIDDEN_HARDCODED_PAGE_HEADER`.
 - The connection banner placeholder appears exactly once per page, with `id="connection-banner"` and `class="connection-banner"`. Drift code: `MISSING_CONNECTION_BANNER` if absent.
 - The connection banner placeholder is empty — no content between the opening and closing tags. Drift code: `FORBIDDEN_BANNER_CONTENT`.
-- Page-specific content begins after the connection banner placeholder.
+- The page error banner placeholder appears exactly once per page, with `id="page-error-banner"` and `class="page-error-banner"`. Drift code: `MISSING_PAGE_ERROR_BANNER` if absent.
+- The page error banner placeholder is empty — no content between the opening and closing tags. Drift code: `FORBIDDEN_PAGE_ERROR_BANNER_CONTENT`.
+- The page error banner placeholder appears immediately after the connection banner placeholder. Drift code: `PAGE_ERROR_BANNER_ORDER_VIOLATION`.
+- Page-specific content begins after the page error banner placeholder.
 
 ### 1.5 Helper-emitted HTML fragments
 
-A helper module function that emits an HTML fragment for substitution into a page shell — `Get-NavBarHtml`, `Get-PageHeaderHtml`, `Get-HomePageSections`, and similar — produces partial markup, not a complete page. Helper-emitted fragments are governed by Section 5 (Class attribute conventions), Section 6 (Event handler conventions), and other applicable attribute-level rules, but are not subject to the page-shell rules in §1.1–1.4.
+A helper module function that emits an HTML fragment for substitution into a page shell — `Get-NavBarHtml`, `Get-PageHeaderHtml`, `Get-HomePageSections`, and similar — produces partial markup, not a complete page. Helper-emitted fragments are governed by Section 5 (Class attribute conventions), Section 6 (Action dispatch via data-action attributes), and other applicable attribute-level rules, but are not subject to the page-shell rules in §1.1–1.4.
 
 ### 1.6 Access-denied page
 
@@ -77,11 +83,15 @@ The access-denied page must conform to this rule set:
 
 - The document opens with `<!DOCTYPE html>` per §1.2.
 - The document uses an inline `<style>` block in `<head>` containing all visual styling for the page. This is the only HTML construct permitted to use an inline `<style>` block. Drift code: `FORBIDDEN_INLINE_STYLE_BLOCK` is suppressed for `Get-AccessDeniedHtml`.
-- The document does not load external CSS or JS files. Drift code `FORBIDDEN_EXTERNAL_ASSET_REFERENCE` does not apply.
-- The document does not include `$navHtml`, `$headerHtml`, `$browserTitle` substitutions, or the connection banner placeholder. Drift codes `MISSING_NAV_SUBSTITUTION`, `MISSING_HEADER_BAR`, `MISSING_CONNECTION_BANNER` do not apply.
-- All other applicable spec rules apply normally — class attribute conventions (§5), event handler conventions (§6), forbidden inline expressions (§12).
+- The document does not load external CSS or JS files. Drift codes related to CSS and JS asset references in §3 (`MALFORMED_CSS_LINK`, `MALFORMED_PAGE_CSS_REFERENCE`, `MALFORMED_SHARED_CSS_REFERENCE`, `CSS_REFERENCE_ORDER_VIOLATION`, `UNEXPECTED_CSS_REFERENCE`, `MISSING_SHARED_SCRIPT_TAG`, `UNEXPECTED_SCRIPT_TAG`, `WRONG_SCRIPT_SOURCE`, `MALFORMED_JS_SCRIPT`) do not apply.
+- The document does not include `$navHtml`, `$headerHtml`, `$browserTitle` substitutions, or the connection banner placeholder. Drift codes `MISSING_NAV_SUBSTITUTION`, `MISSING_HEADER_BAR`, and `MISSING_CONNECTION_BANNER` do not apply.
+- The document does not declare `data-page` or `data-prefix` attributes on `<body>` and does not include the `#page-error-banner` placeholder. Drift codes `MISSING_DATA_PAGE`, `MISSING_DATA_PREFIX`, and `MISSING_PAGE_ERROR_BANNER` do not apply.
+- All other applicable spec rules apply normally — class attribute conventions (§5), forbidden inline expressions (§12), and the rules in §6 (the `data-action` family) apply only to elements that declare `data-action-*` attributes; the access-denied page does not declare such attributes and so §6 has no effect.
 
 The exemptions listed above apply exclusively to `Get-AccessDeniedHtml`. Any other helper or route file that emits a `<style>` block, omits external asset references, or skips the page-shell substitutions is in violation of the spec.
+
+---
+
 ## 2. Page chrome
 
 The page chrome is the set of structural elements every conforming page renders, regardless of page-specific content. Chrome elements connect the page to the shared `cc-shared.js` runtime, the WebSocket engine-events stream, and the live-update timing system. The exact markup of every chrome element is mandated; deviations are drift.
@@ -121,7 +131,7 @@ The refresh info block's markup is exactly:
 <div class="refresh-info">
     <span class="live-indicator"></span>
     <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-    <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>
+    <button class="page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
 </div>
 ```
 
@@ -130,7 +140,7 @@ The refresh info block's markup is exactly:
 - The outer container is exactly `<div class="refresh-info">`. Drift code: `MALFORMED_REFRESH_INFO_CONTAINER`.
 - The first child is exactly `<span class="live-indicator"></span>`. The element is empty (no content). Drift code: `MALFORMED_LIVE_INDICATOR`.
 - The status line is exactly `<span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>`. The literal text `| Updated: ` between the two spans is required. The `last-update` span's content is exactly the literal `-`. Drift code: `MALFORMED_LIVE_STATUS_LINE`.
-- The page refresh button is exactly `<button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>`. Class, onclick, title, and entity reference are mandated verbatim. Drift code: `MALFORMED_REFRESH_BUTTON`.
+- The page refresh button is exactly `<button class="page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>`. Class, `data-action-click` value, title, and entity reference are mandated verbatim. Drift code: `MALFORMED_REFRESH_BUTTON`.
 - The `last-update` ID is the canonical chrome ID for the last-update timestamp. It appears exactly once per page. Drift code: `DUPLICATE_LAST_UPDATE_ID`.
 
 ### 2.3 Engine cards
@@ -199,6 +209,13 @@ Additional validations of the JS-side `ENGINE_PROCESSES` declaration against the
 ### 2.4 Connection banner placeholder
 
 The connection banner placeholder is governed by §1.4 (an empty `<div>` with `id="connection-banner"` and `class="connection-banner"`, appearing exactly once per page). The banner's content is rendered at runtime by `cc-shared.js` based on WebSocket connection state. The placeholder element exists only as a DOM target for the runtime.
+
+### 2.5 Page error banner placeholder
+
+The page error banner placeholder is governed by §1.4 (an empty `<div>` with `id="page-error-banner"` and `class="page-error-banner"`, appearing exactly once per page, immediately after the connection banner placeholder). The banner's content is rendered at runtime by `cc-shared.js` when page module loading or initialization fails. The placeholder element exists only as a DOM target for the runtime.
+
+---
+
 ## 3. Asset references
 
 A page references external CSS and JavaScript files via `<link rel="stylesheet">` and `<script src="">` elements. Asset references identify the file path to load, the load order, and the placement within the page shell.
@@ -220,37 +237,39 @@ CSS file references appear inside `<head>` between the `<title>` element and the
 - The page-specific reference appears before the shared reference. Drift code: `CSS_REFERENCE_ORDER_VIOLATION`.
 - Exactly two CSS references appear in `<head>`. Pages do not load other CSS files. Drift code: `UNEXPECTED_CSS_REFERENCE`.
 
-### 3.2 JavaScript file references
+### 3.2 JavaScript file reference
 
-JavaScript file references appear immediately before the closing `</body>` tag. A page references exactly two JavaScript files, in this exact order:
+Exactly one JavaScript file is referenced in HTML markup, via a single `<script>` tag appearing immediately before the closing `</body>` tag:
 
 ```
-<script src="/js/<page>.js"></script>
 <script src="/js/cc-shared.js"></script>
 ```
 
+The page-specific JS file (e.g., `/js/batch-monitoring.js`) is loaded dynamically by the bootloader in `cc-shared.js` based on the `data-page` attribute (§1.2). It does not appear in HTML markup as a `<script>` tag and is not catalogued as a `JS_FILE USAGE` row from HTML.
+
 #### 3.2.1 JS reference rules
 
-- Every JS reference uses the form `<script src="..."></script>` exactly. The element is empty (no content between opening and closing tags). No additional attributes are permitted (no `type=`, no `defer`, no `async`, no `crossorigin=`). Drift code: `MALFORMED_JS_SCRIPT`.
-- The first JS reference is the page-specific script. Its `src` value is `/js/<page>.js` where `<page>` matches the page's URL slug. Drift code: `MALFORMED_PAGE_JS_REFERENCE`.
-- The second JS reference is exactly `<script src="/js/cc-shared.js"></script>`. Drift code: `MALFORMED_SHARED_JS_REFERENCE`.
-- The page-specific reference appears before the shared reference. Drift code: `JS_REFERENCE_ORDER_VIOLATION`.
-- Exactly two JS references appear in `<body>`. Pages do not load other JS files via `<script>` tags. Drift code: `UNEXPECTED_JS_REFERENCE`.
-- The JS reference block is the last content inside `<body>`. No other elements appear between the JS references and the closing `</body>` tag. Drift code: `JS_REFERENCE_NOT_LAST`.
+- The `<script>` tag uses the form `<script src="..."></script>` exactly. The element is empty (no content between opening and closing tags). No additional attributes are permitted (no `type=`, no `defer`, no `async`, no `crossorigin=`). Drift code: `MALFORMED_JS_SCRIPT`.
+- Exactly one `<script>` tag appears in `<body>`. Drift code: `MISSING_SHARED_SCRIPT_TAG` if absent; `UNEXPECTED_SCRIPT_TAG` if more than one `<script>` tag is present.
+- The `<script>` tag's `src` value is exactly `/js/cc-shared.js`. Drift code: `WRONG_SCRIPT_SOURCE`.
+- The `<script>` tag is the last content inside `<body>`. No other elements appear between the `<script>` tag and the closing `</body>` tag. Drift code: `JS_REFERENCE_NOT_LAST`.
+- A `<script>` element containing body content (i.e., not the asset reference form `<script src="..."></script>`) is forbidden. Drift code: `FORBIDDEN_INLINE_SCRIPT_BLOCK`. (See §12.12.)
 
 ### 3.3 Asset path mapping
 
-The `<page>` placeholder in CSS and JS reference paths matches the page's URL slug:
+The `<page>` placeholder in CSS reference paths and the `data-page` attribute value both match the page's URL slug:
 
-| Page route | CSS path | JS path |
+| Page route | CSS path | `data-page` value |
 |---|---|---|
-| `/batch-monitoring` | `/css/batch-monitoring.css` | `/js/batch-monitoring.js` |
-| `/departmental/business-services` | `/css/business-services.css` | `/js/business-services.js` |
-| `/server-health` | `/css/server-health.css` | `/js/server-health.js` |
+| `/batch-monitoring` | `/css/batch-monitoring.css` | `batch-monitoring` |
+| `/departmental/business-services` | `/css/business-services.css` | `business-services` |
+| `/server-health` | `/css/server-health.css` | `server-health` |
 
 The slug is derived from the rightmost path segment of the page route, lowercase, hyphen-separated.
 
-The HTML populator resolves each asset reference against `CSS_FILE` and `JS_FILE` definition rows already in the catalog. References that resolve to a known file have `source_file` populated with the matching definition's file path. References that do not resolve (the target file does not exist or has not been cataloged yet) have `source_file = '<undefined>'`. This mirrors the `CSS_CLASS USAGE` resolution pattern.
+The HTML populator resolves each CSS reference against `CSS_FILE` definition rows already in the catalog. References that resolve to a known file have `source_file` populated with the matching definition's file path. References that do not resolve (the target file does not exist or has not been cataloged yet) have `source_file = '<undefined>'`. This mirrors the `CSS_CLASS USAGE` resolution pattern.
+
+The single `<script src="/js/cc-shared.js">` reference resolves to the `JS_FILE DEFINITION` row for `cc-shared.js` emitted by the JS populator. Per pipeline order (CSS → HTML → JS → PS), this reference resolves at HTML-populator scan time only when the JS populator has previously run; in standalone runs, the reference resolves to `source_file = '<undefined>'`. This is the structural resolution gap discussed in the populator pipeline; it is a property of pipeline order, not of HTML conformance.
 
 ### 3.4 Inline asset blocks
 
@@ -259,6 +278,9 @@ The HTML spec forbids inline `<style>` blocks and inline `<script>` blocks conta
 ### 3.5 Asset references in helper-emitted HTML
 
 Helper module functions that emit HTML fragments (e.g., `Get-NavBarHtml`, `Get-PageHeaderHtml`) do not declare asset references. Their output is consumed by route files via `$variable` substitution and inherits the asset references declared by the consuming page. Helper-emitted HTML fragments containing `<link>` or `<script>` elements are drift. Drift code: `FORBIDDEN_HELPER_ASSET_REFERENCE`.
+
+---
+
 ## 4. ID conventions
 
 Element IDs are unique identifiers assigned via the `id="..."` attribute. IDs serve as DOM lookup targets for JavaScript (`getElementById`), CSS hooks for chrome elements, and ARIA reference anchors. Every ID on a page falls into one of two categories: chrome IDs (mandated platform-wide identifiers) or page-local IDs (page-author-defined identifiers scoped to a single page).
@@ -271,13 +293,14 @@ Chrome IDs are platform-wide identifiers used by `cc-shared.js`, `cc-shared.css`
 |---|---|---|
 | `last-update` | Timestamp display target. Updated by `cc-shared.js` on each successful refresh. | §2.2 |
 | `connection-banner` | Connection state banner placeholder. Populated by `cc-shared.js` on WebSocket state change. | §1.4, §2.4 |
+| `page-error-banner` | Page boot error banner placeholder. Populated by `cc-shared.js` when page module loading or initialization fails. | §1.4, §2.5 |
 | `card-engine-<slug>` | Engine card outer container. Slug from `Orchestrator.ProcessRegistry.cc_engine_slug`. | §2.3 |
 | `engine-bar-<slug>` | Engine status bar element. Updated by WebSocket events. | §2.3 |
 | `engine-cd-<slug>` | Engine countdown text element. Updated by JS-side timer logic. | §2.3 |
 
 #### 4.1.1 Chrome ID rules
 
-- A page must declare each chrome ID exactly when its associated chrome element is present. Chrome ID declaration is governed by the rules in the section that defines the element (§1.4 for connection banner, §2.2 for last-update, §2.3 for engine card IDs).
+- A page must declare each chrome ID exactly when its associated chrome element is present. Chrome ID declaration is governed by the rules in the section that defines the element (§1.4 for connection banner and page error banner, §2.2 for last-update, §2.3 for engine card IDs).
 - Chrome IDs are never used as page-local IDs. A page-local element may not be assigned `id="last-update"` or any other chrome ID. Drift code: `CHROME_ID_REUSED_AS_LOCAL`.
 - Chrome IDs are never used in CSS selectors. The CSS spec forbids ID selectors entirely (§13 of CSS spec, drift code `FORBIDDEN_ID_SELECTOR`); chrome IDs exist solely for JS DOM lookups. This is enforced by the CSS spec.
 
@@ -347,7 +370,7 @@ Every slideout, modal, and slide-up panel declaration must be preceded by an HTM
 
 ```
 <!-- Slideout for displaying request details with comments and timeline -->
-<div id="bsv-slideout-request-overlay" class="slide-panel-overlay" onclick="..."></div>
+<div id="bsv-slideout-request-overlay" class="slide-panel-overlay" data-action-click="close-request-slideout"></div>
 <div id="bsv-slideout-request" class="slide-panel xwide">...</div>
 ```
 
@@ -364,6 +387,9 @@ Form input elements (`<input>`, `<select>`, `<textarea>`) used as page-local for
 Helper module functions that emit HTML fragments (e.g., `Get-NavBarHtml`, `Get-PageHeaderHtml`) may declare IDs that are platform-shared rather than page-local. These IDs follow the same chrome-ID rules in §4.1: they are part of the platform's chrome contract and are not subject to page-prefix rules.
 
 A helper function emitting HTML with a page-prefixed ID is drift, since helpers do not belong to a specific page. Drift code: `FORBIDDEN_HELPER_PAGE_PREFIX_ID`.
+
+---
+
 ## 5. Class attribute conventions
 
 The `class` attribute on HTML elements references CSS classes that style the element. Class references in HTML are catalog `CSS_CLASS USAGE` rows; they resolve against `CSS_CLASS DEFINITION` rows emitted by the CSS populator.
@@ -445,6 +471,7 @@ Each class name in HTML markup produces one `CSS_CLASS USAGE` row.
 | `source_file` | The file containing the matching DEFINITION row, or `'<undefined>'` if no match |
 | `parent_function` | The PS function emitting the markup (when applicable) |
 | `has_dynamic_content` | TRUE when the class attribute also contains runtime-only class composition not statically catalogable; FALSE when the attribute is fully resolved |
+
 The `signature` column carries the full attribute value (not just the individual class name), which makes class-combination queries possible — "find every place where `bsv-pipeline-card` appears with `warning`" is a single signature pattern match.
 
 ### 5.4 Class references in helper-emitted HTML
@@ -491,119 +518,109 @@ This flag also applies to JS-side class extraction (Group A rows from JS templat
 The HTML populator resolves each emitted `CSS_CLASS USAGE` row's `scope` and `source_file` columns against `CSS_CLASS DEFINITION` rows already in the catalog at populator scan time. Per the populator pipeline order (CSS → HTML → JS → PS), CSS DEFINITION rows always exist before HTML scans, except in standalone-reload scenarios.
 
 When standalone-reloading the HTML populator before CSS has been populated, every USAGE row emitted will resolve to `scope = LOCAL` and `source_file = '<undefined>'`. The populator emits a startup warning when no CSS DEFINITION rows are present and continues without resolution.
-## 6. Event handler conventions
 
-Inline event handlers are HTML attributes whose name begins with `on` (`onclick`, `onchange`, `onkeydown`, `onsubmit`, etc.) and whose value is a JavaScript expression executed when the named event fires. Event handlers are the connection point between HTML markup and page-specific JavaScript.
+---
 
-The spec mandates that inline event handlers contain only function calls, not arbitrary JavaScript expressions. Each event handler attribute produces a `JS_FUNCTION USAGE` row in the catalog.
+## 6. Action dispatch via data-action attributes
 
-### 6.1 Allowed event handler format
+Pages connect user interactions to JavaScript by declaring `data-action-<event>` attributes on HTML elements. The JavaScript file boots via the bootloader in `cc-shared.js`, which registers delegated event listeners on `document.body`; those listeners route events to handler functions by looking up the `data-action-<event>` value in a dispatch table.
 
-An event handler attribute value contains exactly one function call. The function must be either a chrome function (defined in `cc-shared.js`) or a page-local function (defined in the page's `.js` file).
+This section governs the shape of the HTML attributes. The JS-side dispatch tables and their structure are governed by the JavaScript spec.
+
+### 6.1 Action attribute format
+
+Every action attribute uses the form `data-action-<event>="<action-value>"` where:
+
+- `<event>` is one of the recognized event names from §6.4
+- `<action-value>` is a kebab-case identifier (lowercase letters, digits, and hyphens) naming the action
+
+Action values fall into two categories:
+
+- **Page-local actions** are unprefixed (e.g., `open-request-detail`, `filter-by-status`). They dispatch through the page's own dispatch table (`<prefix>_<event>Actions`, defined in the page's JS file).
+- **Shared chrome actions** are `cc-` prefixed (e.g., `cc-page-refresh`, `cc-reload-page`). They dispatch through `sharedClickActions`, `sharedChangeActions`, etc., defined in `cc-shared.js`.
 
 ```
-onclick="pageRefresh()"                              ← chrome function call
-onclick="closeSlideout()"                            ← chrome function call
-onclick="bsv_openRequestDetail(123)"                 ← page-local function call
-onchange="bsv_setActiveFilter(this.value)"           ← page-local function call with argument
+<button data-action-click="open-request-detail">View</button>
+<button data-action-click="cc-page-refresh">Refresh</button>
+<select data-action-change="filter-by-status">...</select>
+<input data-action-keydown="search-on-enter">
 ```
 
-#### 6.1.1 Event handler rules
+### 6.2 Action attribute rules
 
-- The attribute value contains exactly one function call. Drift code: `MULTIPLE_HANDLER_STATEMENTS` if more than one statement appears (e.g., `onclick="doA(); doB()"`).
-- The function call is a top-level expression. The value cannot include conditional logic, variable assignments, property access expressions, or any other JavaScript syntax. Drift code: `INLINE_HANDLER_EXPRESSION`.
-- The function name is followed immediately by an opening parenthesis. Whitespace between name and parenthesis emits drift. Drift code: `MALFORMED_HANDLER_CALL`.
-- The function call's closing parenthesis is the last non-whitespace character in the attribute value. Trailing semicolons emit drift. Drift code: `TRAILING_HANDLER_SEMICOLON`.
+- Every action attribute name is exactly `data-action-<event>` where `<event>` is in the closed set from §6.4. Drift code: `UNKNOWN_EVENT_TYPE`.
+- Every action value uses lowercase letters, digits, and hyphens only. Other characters emit drift. Drift code: `MALFORMED_ACTION_VALUE`.
+- Page-local action values are unprefixed. Shared action values use the `cc-` prefix exactly. Action values that begin with `cc-` resolve against the shared dispatch table; action values without `cc-` resolve against the page's local dispatch table.
+- An action value (page-local or shared) must have a matching entry in the corresponding dispatch table. If no match exists, drift code: `UNRESOLVED_DATA_ACTION`. Resolution is event-type-scoped: a `data-action-click="save"` resolves against `<prefix>_clickActions['save']` or `sharedClickActions['save']`, not against any other event's dispatch table.
 
-### 6.2 Function naming
+### 6.3 Action argument attributes
 
-The function called by an event handler must follow the JavaScript spec's naming conventions for the appropriate scope. The HTML spec mandates that handlers reference functions by name only — no namespace traversal, no method invocation on objects.
+An element with a `data-action-<event>` attribute may declare zero or more argument attributes that pass data to the dispatched handler.
 
-#### 6.2.1 Page-local function calls
+```
+<button data-action-click="open-batch-detail" data-action-batch-id="12345">Open</button>
+<select data-action-change="filter-by-priority" data-action-default-priority="high">...</select>
+```
 
-Page-local functions are defined in the page's JavaScript file and follow the JavaScript spec's prefix convention: `<prefix>_<funcName>` where `<prefix>` matches the page's `cc_prefix` (e.g., `bsv_openRequestDetail`, `bch_filterBatches`).
+Argument attributes use the form `data-action-<arg-name>="<value>"` where:
 
-#### 6.2.2 Chrome function calls
+- `<arg-name>` is a kebab-case identifier (lowercase letters, digits, hyphens)
+- `<arg-name>` must not be any value from the recognized event list in §6.4
 
-Chrome functions are defined in `cc-shared.js` and have no prefix (e.g., `pageRefresh`, `closeSlideout`, `showAlert`, `showConfirm`). The set of chrome functions is governed by the JavaScript spec.
+The JS handler reads each argument via the corresponding dataset property using the standard kebab-to-camelCase conversion: `data-action-batch-id` is read as `target.dataset.actionBatchId`.
 
-#### 6.2.3 Function naming rules
+#### 6.3.1 Argument attribute rules
 
-- A handler's function name uses underscore-separated lowercase or camelCase per the JavaScript spec. The HTML spec does not redefine these rules; it cross-references them.
-- A handler that calls a function via dotted property access (e.g., `onclick="Admin.openX()"`) emits drift. The CC platform does not use revealing-module patterns. Drift code: `FORBIDDEN_REVEALING_MODULE_CALL`.
-- A handler that calls a method on a built-in object (e.g., `onclick="window.location.href='/admin'"`) emits drift. Navigation must use `<a href="...">` (see §7); other built-in object access must be wrapped in a named page-local function. Drift code: `FORBIDDEN_BUILTIN_METHOD_CALL`.
-- A handler whose function name is not registered as a chrome function and does not match the page's prefix emits drift. Drift code: `HANDLER_FUNCTION_NAME_MISMATCH`.
+- Every argument attribute appears on an element that also declares at least one `data-action-<event>` attribute. An argument attribute without an action attribute on the same element is orphaned. Drift code: `ORPHANED_ACTION_ARGUMENT`.
+- An argument attribute's name (`<arg-name>` portion) must not match any event name from §6.4. (This prevents collision between argument attributes and event-type attributes.) Drift code: `ARGUMENT_NAME_COLLIDES_WITH_EVENT`.
+- Argument attribute names use lowercase letters, digits, and hyphens only. Drift code: `MALFORMED_ACTION_ARGUMENT_NAME`.
+- Argument attribute values are static strings. PowerShell variable interpolation in argument values follows the same rules as `data-*` attributes (§7.2): values must come from a fully-resolved variable, not mixed inline. Drift code: `FORBIDDEN_INLINE_ACTION_ARGUMENT_INTERPOLATION`.
 
-### 6.3 Forbidden inline patterns
+### 6.4 Recognized events
 
-Some inline patterns appear plausible but are forbidden because they bypass JavaScript spec validation. The catalog cannot resolve them as `JS_FUNCTION USAGE` rows.
+The closed set of recognized events that may appear as the `<event>` portion of `data-action-<event>`:
 
-| Pattern | Drift code |
+| Event | When it fires |
 |---|---|
-| `onclick="event.stopPropagation()"` (calling a method on the event object) | `FORBIDDEN_EVENT_METHOD_CALL` |
-| `onkeydown="if(event.key==='Enter') doX()"` (conditional logic in handler) | `FORBIDDEN_HANDLER_CONDITIONAL` |
-| `onclick="this.classList.toggle('active')"` (DOM manipulation in handler) | `FORBIDDEN_INLINE_DOM_OPERATION` |
-| `onclick="window.location.href='/admin'"` (assignment expression) | `FORBIDDEN_INLINE_ASSIGNMENT` |
-| `onclick="javascript:doX()"` (javascript: pseudo-protocol) | `FORBIDDEN_JAVASCRIPT_PROTOCOL` |
+| `click` | Mouse click or keyboard activation on the element |
+| `change` | User changes a form control's value and the change is committed (typically when the control loses focus) |
+| `input` | User changes a form control's value (fires on every keystroke or modification) |
+| `submit` | A form is submitted |
+| `keydown` | A keyboard key is pressed down while the element has focus |
+| `keyup` | A keyboard key is released while the element has focus |
+| `focus` | The element gains focus |
+| `blur` | The element loses focus |
 
-Each of these patterns must be rewritten as a named function call. The function definition lives in the page's `.js` file or in `cc-shared.js`.
+Events not in this set emit `UNKNOWN_EVENT_TYPE` drift on the offending attribute. Extending the recognized set requires a spec amendment to add a row to this table and a corresponding extension to the bootloader and to relevant pages' dispatch tables.
 
-For example, the conditional `onkeydown="if(event.key==='Enter') confirmInput()"` becomes:
+### 6.5 Catalog rows for action attributes
 
-```html
-<input type="text" onkeydown="bsv_confirmInputOnEnter(event)">
-```
-
-```javascript
-function bsv_confirmInputOnEnter(event) {
-    if (event.key === 'Enter') {
-        bsv_confirmInput();
-    }
-}
-```
-
-The function takes the event object as an argument when needed and encapsulates the conditional logic.
-
-### 6.4 Argument conventions
-
-An event handler may pass arguments to the called function. The spec mandates conventions for what arguments are permitted.
-
-#### 6.4.1 Allowed argument forms
-
-```
-onclick="bsv_openRequestDetail(123)"                 ← literal argument
-onclick="bsv_openRequestDetail('user-input')"        ← string literal argument
-onchange="bsv_setActiveFilter(this.value)"           ← element value reference
-onclick="bsv_handleAction(this)"                     ← element reference
-onclick="bsv_processRow(this, 'priority')"           ← multiple arguments
-```
-
-#### 6.4.2 Argument rules
-
-- Arguments are literal values (numbers, strings), `this` (a reference to the element firing the event), or `this.<property>` (a property of the element). No other expressions are permitted as arguments. Drift code: `FORBIDDEN_ARGUMENT_EXPRESSION`.
-- String literal arguments use single quotes (`'value'`) since the surrounding attribute value uses double quotes. Drift code: `MALFORMED_ARGUMENT_QUOTING`.
-- Multiple arguments are separated by `, ` (comma followed by single space). Drift code: `MALFORMED_ARGUMENT_LIST`.
-
-### 6.5 Catalog rows for event handlers
-
-Each event handler attribute produces one `JS_FUNCTION USAGE` row.
+Each `data-action-<event>` attribute on each element produces one `HTML_DATA_ATTRIBUTE DEFINITION` row.
 
 | Column | Value |
 |---|---|
-| `component_type` | `JS_FUNCTION` |
-| `component_name` | The function name (e.g., `pageRefresh`, `bsv_openRequestDetail`) |
-| `reference_type` | `USAGE` |
-| `signature` | The full event handler attribute (e.g., `onclick="bsv_openRequestDetail(123)"`) |
-| `scope` | Resolved from `JS_FUNCTION DEFINITION` rows: `SHARED` if defined in `cc-shared.js`, `LOCAL` if defined in a page-specific JS file |
-| `source_file` | The file containing the matching DEFINITION row, or `'<undefined>'` if no match |
+| `component_type` | `HTML_DATA_ATTRIBUTE` |
+| `component_name` | The attribute name including the `data-` prefix (e.g., `data-action-click`, `data-action-change`) |
+| `reference_type` | `DEFINITION` |
+| `signature` | The full attribute including the value (e.g., `data-action-click="open-detail"`) |
+| `variant_type` | The action value (e.g., `open-detail`, `cc-page-refresh`) |
+| `variant_qualifier_1` | The event name (e.g., `click`, `change`) |
+| `scope` | `LOCAL` for page-local action values (no `cc-` prefix); `SHARED` for `cc-` prefixed action values |
+| `source_file` | The file containing the row (route file or helper) |
+| `parent_function` | The PS function emitting the markup (when applicable) |
 
-The HTML populator does not validate that the function exists; it emits the USAGE row and lets the JS populator's DEFINITION rows resolve via `component_name` lookup. A handler calling a function that doesn't exist anywhere in the cataloged JS produces `source_file = '<undefined>'` — a queryable indicator of missing implementation.
+The `variant_type` and `variant_qualifier_1` columns let the populator emit per-action rows that are queryable in two natural ways: "find every `data-action-click="open-detail"` declaration" and "find every action attribute targeting the `click` event."
 
-### 6.6 Event handlers in helper-emitted HTML
+Each `data-action-<arg-name>` attribute produces a separate `HTML_DATA_ATTRIBUTE DEFINITION` row using the same column shape, with `component_name = data-action-<arg-name>` and `variant_type` carrying the value. The argument attribute does not have a `variant_qualifier_1` because it is not tied to a specific event — it carries data for whichever event(s) the element declares.
 
-Helper module functions that emit HTML fragments may include event handler attributes. These follow the same rules as route-file event handlers — function calls only, no inline expressions, naming per §6.2.
+### 6.6 Action attributes in helper-emitted HTML
 
-Helper-emitted event handlers must reference chrome functions only (functions defined in `cc-shared.js`). A helper emitting an event handler that calls a page-prefixed function (e.g., `Get-NavBarHtml` emitting `onclick="bsv_navHandler()"`) couples the helper to a specific page, defeating the purpose of having a helper. Drift code: `FORBIDDEN_HELPER_PAGE_FUNCTION_CALL`.
+Helper module functions emit only `cc-` prefixed action values. A helper emitting a page-local action value (one without `cc-` prefix) couples the helper to a specific page, defeating the purpose of having a helper. Drift code: `FORBIDDEN_HELPER_PAGE_ACTION`.
+
+Argument attributes (`data-action-<arg-name>`) in helper-emitted HTML are permitted when their values are static or come from helper parameters; an argument attribute with a page-specific meaning is drift. Drift code: `FORBIDDEN_HELPER_PAGE_ACTION_ARGUMENT`.
+
+---
+
 ## 7. data-* attribute conventions
 
 The `data-*` attribute family is HTML's standard mechanism for attaching custom data to elements. Values are read by JavaScript at runtime via `element.dataset.<name>` (or `element.getAttribute('data-<name>')`). In Control Center pages, `data-*` attributes carry filter values, view state, sort modes, and similar JS-readable parameters that don't belong in `class` or `id`.
@@ -616,8 +633,10 @@ A `data-*` attribute name follows the form `data-<name>` where `<name>` uses low
 <button data-filter="ALL">                           ← filter selector
 <button data-window="30">                            ← timeline window in minutes
 <div data-batch-id="12345">                          ← entity reference
-<button data-action="kill-spid" data-spid="42">      ← action with parameter
+<select data-priority="high">                        ← state indicator
 ```
+
+The `data-action-*` attribute family is governed by §6 (Action dispatch via data-action attributes), not by this section. This includes `data-action-<event>` attributes (action declarations) and `data-action-<arg-name>` attributes (action arguments). The generic `data-*` rules in §7.2 do not apply to those attributes; the more specific rules in §6.2 and §6.3.1 apply instead. All other `data-*` attributes (such as `data-filter`, `data-batch-id`, `data-window`) are governed by this section.
 
 ### 7.2 data-* attribute rules
 
@@ -654,6 +673,9 @@ Cross-population validation rules for `data-*` references in JavaScript are gove
 Helper module functions that emit HTML fragments may declare `data-*` attributes following the same rules as route files. Helper-emitted `data-*` attributes are catalogued with `scope = SHARED` since they apply to every page consuming the helper.
 
 A helper emitting a `data-*` attribute that's only meaningful on one specific page (e.g., a page-specific filter value) couples the helper to that page. Drift code: `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE`.
+
+---
+
 ## 8. Text content and entity references
 
 Text content is human-readable copy that appears in HTML markup — section titles, button labels, status messages, tooltip text, placeholder text. HTML entity references and direct Unicode characters are graphical glyphs (icons, special symbols) used as decorative or semantic content.
@@ -748,7 +770,7 @@ The categorical naming rule means cross-page comparison is direct:
 - "All tooltip text" → `WHERE component_name = 'attr-title'`
 - "All engine labels" → `WHERE component_name = 'span-engine-label'`
 
-#### 8.2.2 Text inside helper-emitted HTML
+#### 8.2.3 Text inside helper-emitted HTML
 
 Text content emitted by helper functions (e.g., the "Sorry, you don't have permission..." text in `Get-AccessDeniedHtml`) is catalogued the same way as route-emitted text, with `scope = SHARED`. This makes shared text content (which appears identically on every page) queryable as a distinct group.
 
@@ -818,6 +840,9 @@ The spec mandates few rules on text content because the catalog's purpose for te
 | `EMPTY_DISPLAY_TEXT` | A user-facing attribute (`title`, `placeholder`, `aria-label`, `alt`) is declared with an empty value (e.g., `title=""`). User-facing attributes exist to display text; a declared-but-empty value is treated as an authoring error. |
 
 These are the only text-content-specific drift codes. Cross-page consistency analysis happens via queries against the catalog, not via drift codes — the catalog model is the surfacing mechanism.
+
+---
+
 ## 9. Inline SVG
 
 Inline SVG is `<svg>...</svg>` markup embedded directly in HTML. SVG is used for icons, decorative graphics, and small diagrams that benefit from being part of the document rather than loaded as separate image files.
@@ -880,6 +905,9 @@ The HTML spec mandates few rules on SVG content because SVG is treated as opaque
 | `MALFORMED_SVG_INTERPOLATION` | An SVG's outer markup contains PowerShell variable interpolation that uses forbidden patterns from §5.2.3 (inline mixing, etc.) |
 
 This is the only SVG-specific drift code. Cross-page SVG consistency comparison happens via queries against `raw_text`.
+
+---
+
 ## 10. Comments
 
 HTML comments (`<!-- ... -->`) appear in route files as section dividers, structural annotations, and the purpose comments mandated for slideouts/modals/panels by §4.3.5. The HTML spec recognizes a small set of legitimate comment uses and catalogs them all.
@@ -932,7 +960,7 @@ Panel purpose comments are required by §4.3.5 for slideouts, modals, and slide-
 
 ```
 <!-- Slideout for displaying request details with comments and timeline -->
-<div id="bsv-slideout-request-overlay" class="slide-panel-overlay" onclick="..."></div>
+<div id="bsv-slideout-request-overlay" class="slide-panel-overlay" data-action-click="close-request-slideout"></div>
 <div id="bsv-slideout-request" class="slide-panel xwide">...</div>
 ```
 
@@ -984,6 +1012,10 @@ Comments inside `<script>` blocks (`//` or `/* */` style) are JavaScript comment
 Comments inside `<svg>` blocks are SVG-internal and are catalogued as part of the SVG's `raw_text` (§9.4), not as separate `HTML_COMMENT` rows.
 
 PowerShell-side comments (`#` and `<# ... #>`) inside the PS file containing the HTML are governed by the PowerShell spec, not this section. They are not part of HTML markup.
+
+
+---
+
 ## 11. Required patterns summary
 
 Every conforming HTML emission must satisfy these requirements. This section is a summary index; the authoritative rule for each item lives in the section cited.
@@ -993,9 +1025,9 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 1. Open with `<!DOCTYPE html>` (§1.2)
 2. Root element `<html>` with no attributes (§1.2)
 3. `<head>` contains exactly one `<title>$browserTitle</title>` and the mandated `<link>` tags, nothing else (§1.2, §3.1)
-4. `<body class="section-<sectionKey>">` opens body content (§1.2)
+4. `<body class="section-<sectionKey>" data-page="<slug>" data-prefix="<prefix>">` opens body content (§1.2)
 5. First content inside `<body>` is `$navHtml` substitution (§1.2)
-6. Last content inside `<body>` is the JS reference block (§1.2, §3.2)
+6. Last content inside `<body>` is the `<script>` tag (§1.2, §3.2)
 
 ### 11.2 Page chrome
 
@@ -1003,14 +1035,15 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 2. Header bar contains `$headerHtml` substitution and refresh-info block in mandated structure (§2.1, §2.2)
 3. Refresh info block contains live indicator, status line, last-update span, and refresh button in exact mandated markup (§2.2)
 4. Connection banner placeholder appears once per page as empty `<div>` (§1.4)
-5. Engine cards (when present) follow exact structure and registry-sourced slugs/labels (§2.3)
+5. Page error banner placeholder appears once per page as empty `<div>`, immediately after the connection banner placeholder (§1.4)
+6. Engine cards (when present) follow exact structure and registry-sourced slugs/labels (§2.3)
 
 ### 11.3 Asset references
 
 1. Exactly two CSS files referenced in `<head>`: page-specific then `cc-shared.css` (§3.1)
-2. Exactly two JS files referenced before `</body>`: page-specific then `cc-shared.js` (§3.2)
-3. JS reference block is the last content in `<body>` (§3.2)
-4. No `defer`, `async`, or other attributes on `<script>` tags (§3.2)
+2. Exactly one JS file referenced before `</body>`: `cc-shared.js` (§3.2)
+3. The single `<script>` tag is the last content in `<body>` (§3.2)
+4. No `defer`, `async`, or other attributes on the `<script>` tag (§3.2)
 
 ### 11.4 ID conventions
 
@@ -1029,13 +1062,13 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 3. Dynamic class assembly uses the array-join pattern only (§5.2.1)
 4. `class` attribute values containing PowerShell interpolation use a single fully-resolved variable (§5.2.2)
 
-### 11.6 Event handlers
+### 11.6 Action attributes
 
-1. Each event handler attribute contains exactly one function call (§6.1.1)
-2. Function names are chrome (cc-shared.js) or page-prefixed `<prefix>_<funcName>` (§6.2)
-3. Argument values are literals, `this`, or `this.<property>` (§6.4)
-4. String literal arguments use single quotes inside the double-quoted attribute (§6.4.2)
-5. Helpers may emit chrome function calls only — no page-prefixed function calls (§6.6)
+1. Every action attribute uses the form `data-action-<event>="<action-value>"` where `<event>` is in the closed set of recognized events from §6.4 (§6.1)
+2. Action values are unprefixed for page-local actions and `cc-` prefixed for shared chrome actions (§6.1, §6.2)
+3. Every action value has a matching entry in its event-scoped dispatch table — page-local in `<prefix>_<event>Actions`, shared in `shared<Event>Actions` (§6.2)
+4. Argument attributes use the form `data-action-<arg-name>="<value>"` and only appear on elements with at least one `data-action-<event>` attribute (§6.3)
+5. Helpers emit only `cc-` prefixed action values, never page-local action values (§6.6)
 
 ### 11.7 data-* attributes
 
@@ -1067,10 +1100,11 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 
 1. Helpers do not declare asset references (§3.5)
 2. Helpers emit only chrome IDs, never page-prefixed IDs (§4.5)
-3. Helpers emit only chrome function call event handlers, never page-prefixed function calls (§6.6)
+3. Helpers emit only `cc-` prefixed action values, never page-local action values (§6.6)
 4. Helpers emit only platform-shared `data-*` attributes (§7.5)
 
 ---
+
 ## 12. Forbidden patterns
 
 This section consolidates patterns that are forbidden by spec rules in §1–§10. Each row maps a pattern to its drift code and the rule that forbids it. Section 15 carries the full drift code reference with descriptions.
@@ -1084,12 +1118,17 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | `<head>` containing elements other than `<title>` and `<link>` | `MALFORMED_HEAD` | §1.2 |
 | `<title>` content hardcoded instead of `$browserTitle` substitution | `FORBIDDEN_HARDCODED_TITLE` | §1.2 |
 | `<body>` missing `class="section-<sectionKey>"` | `MISSING_BODY_SECTION_CLASS` | §1.2 |
+| `<body>` missing `data-page="<slug>"` attribute | `MISSING_DATA_PAGE` | §1.2 |
+| `<body>` missing `data-prefix="<prefix>"` attribute | `MISSING_DATA_PREFIX` | §1.2 |
 | First content inside `<body>` is not `$navHtml` | `MISSING_NAV_SUBSTITUTION` | §1.2 |
-| Content appears between JS reference block and `</body>` | `MALFORMED_BODY_CLOSE`, `JS_REFERENCE_NOT_LAST` | §1.2, §3.2 |
+| Content appears between the `<script>` tag and `</body>` | `MALFORMED_BODY_CLOSE`, `JS_REFERENCE_NOT_LAST` | §1.2, §3.2 |
 | Page header bar missing | `MISSING_HEADER_BAR` | §1.4 |
 | Page header hardcoded instead of `$headerHtml` substitution | `FORBIDDEN_HARDCODED_PAGE_HEADER` | §1.4 |
 | Connection banner placeholder missing | `MISSING_CONNECTION_BANNER` | §1.4 |
 | Connection banner placeholder contains content | `FORBIDDEN_BANNER_CONTENT` | §1.4 |
+| Page error banner placeholder missing | `MISSING_PAGE_ERROR_BANNER` | §1.4 |
+| Page error banner placeholder contains content | `FORBIDDEN_PAGE_ERROR_BANNER_CONTENT` | §1.4 |
+| Page error banner placeholder not immediately after connection banner placeholder | `PAGE_ERROR_BANNER_ORDER_VIOLATION` | §1.4 |
 
 ### 12.2 Page chrome forbidden patterns
 
@@ -1121,10 +1160,10 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | CSS references in wrong order | `CSS_REFERENCE_ORDER_VIOLATION` | §3.1 |
 | Unexpected number of CSS references | `UNEXPECTED_CSS_REFERENCE` | §3.1 |
 | Malformed `<script>` tag | `MALFORMED_JS_SCRIPT` | §3.2 |
-| Page-specific JS reference malformed | `MALFORMED_PAGE_JS_REFERENCE` | §3.2 |
-| Shared JS reference malformed | `MALFORMED_SHARED_JS_REFERENCE` | §3.2 |
-| JS references in wrong order | `JS_REFERENCE_ORDER_VIOLATION` | §3.2 |
-| Unexpected number of JS references | `UNEXPECTED_JS_REFERENCE` | §3.2 |
+| Page is missing the `cc-shared.js` `<script>` tag | `MISSING_SHARED_SCRIPT_TAG` | §3.2 |
+| Page has more than one `<script>` tag | `UNEXPECTED_SCRIPT_TAG` | §3.2 |
+| `<script>` tag's `src` value is not `/js/cc-shared.js` | `WRONG_SCRIPT_SOURCE` | §3.2 |
+| `<script>` tag is not the last content in `<body>` | `JS_REFERENCE_NOT_LAST` | §3.2 |
 | Helper emits `<link>` or `<script>` reference | `FORBIDDEN_HELPER_ASSET_REFERENCE` | §3.5 |
 
 ### 12.4 ID forbidden patterns
@@ -1154,26 +1193,19 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | `class="$a $b"` (multiple interpolations, neither using array-join) | `INLINE_CLASS_MULTI_INTERPOLATION` | §5.2.3 |
 | `class="${a}wide"` or `class="$($x)wide"` | `INLINE_CLASS_BRACED_INTERPOLATION` | §5.2.3 |
 
-### 12.6 Event handler forbidden patterns
+### 12.6 Action attribute forbidden patterns
 
 | Pattern | Drift code | Rule |
 |---|---|---|
-| Multiple statements in handler | `MULTIPLE_HANDLER_STATEMENTS` | §6.1 |
-| Inline expression instead of function call | `INLINE_HANDLER_EXPRESSION` | §6.1 |
-| Whitespace between function name and paren | `MALFORMED_HANDLER_CALL` | §6.1 |
-| Trailing semicolon in handler | `TRAILING_HANDLER_SEMICOLON` | §6.1 |
-| Revealing-module call (`Module.func()`) | `FORBIDDEN_REVEALING_MODULE_CALL` | §6.2 |
-| Built-in method call (e.g., `window.location.href = ...`) | `FORBIDDEN_BUILTIN_METHOD_CALL` | §6.2 |
-| Function name doesn't match prefix or chrome conventions | `HANDLER_FUNCTION_NAME_MISMATCH` | §6.2 |
-| `event.method()` call inline | `FORBIDDEN_EVENT_METHOD_CALL` | §6.3 |
-| Conditional in handler | `FORBIDDEN_HANDLER_CONDITIONAL` | §6.3 |
-| Inline DOM operation | `FORBIDDEN_INLINE_DOM_OPERATION` | §6.3 |
-| Inline assignment expression | `FORBIDDEN_INLINE_ASSIGNMENT` | §6.3 |
-| `javascript:` pseudo-protocol | `FORBIDDEN_JAVASCRIPT_PROTOCOL` | §6.3 |
-| Argument is an expression | `FORBIDDEN_ARGUMENT_EXPRESSION` | §6.4 |
-| String literal argument quoted incorrectly | `MALFORMED_ARGUMENT_QUOTING` | §6.4 |
-| Argument list malformed | `MALFORMED_ARGUMENT_LIST` | §6.4 |
-| Helper emits page-prefixed function call | `FORBIDDEN_HELPER_PAGE_FUNCTION_CALL` | §6.6 |
+| Unknown event in `data-action-<event>` attribute | `UNKNOWN_EVENT_TYPE` | §6.2, §6.4 |
+| Action value contains forbidden characters | `MALFORMED_ACTION_VALUE` | §6.2 |
+| Action value has no matching dispatch table entry | `UNRESOLVED_DATA_ACTION` | §6.2 |
+| `data-action-<arg-name>` attribute on element without `data-action-<event>` | `ORPHANED_ACTION_ARGUMENT` | §6.3.1 |
+| Argument attribute name matches an event name | `ARGUMENT_NAME_COLLIDES_WITH_EVENT` | §6.3.1 |
+| Argument attribute name contains forbidden characters | `MALFORMED_ACTION_ARGUMENT_NAME` | §6.3.1 |
+| Argument attribute value mixes static text with PowerShell interpolation | `FORBIDDEN_INLINE_ACTION_ARGUMENT_INTERPOLATION` | §6.3.1 |
+| Helper emits a page-local action value | `FORBIDDEN_HELPER_PAGE_ACTION` | §6.6 |
+| Helper emits an argument attribute with page-specific meaning | `FORBIDDEN_HELPER_PAGE_ACTION_ARGUMENT` | §6.6 |
 
 ### 12.7 data-* attribute forbidden patterns
 
@@ -1217,7 +1249,36 @@ A `<style>` block in any other location emits `FORBIDDEN_INLINE_STYLE_BLOCK`.
 
 Inline `<script>` blocks containing JavaScript code are forbidden in HTML markup. The only permitted form of `<script>` element is the asset reference form (`<script src="..."></script>`) per §3.2. A `<script>` element with body content (e.g., `<script>doSomething();</script>`) emits `FORBIDDEN_INLINE_SCRIPT_BLOCK`.
 
+### 12.13 Inline event handler attributes
+
+HTML attributes whose name begins with `on` followed by an event name (`onclick`, `onchange`, `onkeydown`, `onsubmit`, `onfocus`, `onblur`, etc.) — the inline event handler family — are forbidden in all HTML markup. User interaction in Control Center pages is wired through the `data-action-<event>` family (§6) and the bootloader-driven dispatch model.
+
+Any `on*` attribute on any element emits `FORBIDDEN_INLINE_EVENT_HANDLER`. Additional drift codes may also fire describing the specific shape of the violation:
+
+| Pattern | Drift code |
+|---|---|
+| Bare existence of any `on*` attribute on any element (always fires) | `FORBIDDEN_INLINE_EVENT_HANDLER` |
+| Multiple statements in handler value | `MULTIPLE_HANDLER_STATEMENTS` |
+| Handler value contains expressions other than a single function call | `INLINE_HANDLER_EXPRESSION` |
+| Whitespace between function name and opening parenthesis | `MALFORMED_HANDLER_CALL` |
+| Trailing semicolon in handler value | `TRAILING_HANDLER_SEMICOLON` |
+| Handler calls a function via dotted property access | `FORBIDDEN_REVEALING_MODULE_CALL` |
+| Handler calls a method on a built-in object | `FORBIDDEN_BUILTIN_METHOD_CALL` |
+| Handler function name is not a recognized chrome function and does not match the page's prefix | `HANDLER_FUNCTION_NAME_MISMATCH` |
+| Handler calls a method on the event object | `FORBIDDEN_EVENT_METHOD_CALL` |
+| Handler contains conditional logic | `FORBIDDEN_HANDLER_CONDITIONAL` |
+| Handler performs DOM manipulation inline | `FORBIDDEN_INLINE_DOM_OPERATION` |
+| Handler contains assignment expressions | `FORBIDDEN_INLINE_ASSIGNMENT` |
+| Handler uses the `javascript:` pseudo-protocol | `FORBIDDEN_JAVASCRIPT_PROTOCOL` |
+| Argument is an expression other than literal, `this`, or `this.<property>` | `FORBIDDEN_ARGUMENT_EXPRESSION` |
+| String literal argument uses double quotes (conflicting with surrounding attribute) | `MALFORMED_ARGUMENT_QUOTING` |
+| Multiple arguments not separated by `, ` | `MALFORMED_ARGUMENT_LIST` |
+| Helper module function emits an event handler calling a page-prefixed function | `FORBIDDEN_HELPER_PAGE_FUNCTION_CALL` |
+
+A single inline handler may carry the umbrella code plus one or more specific codes simultaneously. The umbrella ensures every inline handler is detected; the specifics describe the handler's content shape for refactor planning.
+
 ---
+
 ## 13. Catalog model
 
 The HTML populator emits rows into `dbo.Asset_Registry` representing every catalogable construct found in HTML markup. This section describes the catalog model as it relates to HTML rows.
@@ -1234,32 +1295,35 @@ The catalog is the authoritative answer to questions like: "where is the `bsv-mo
 |---|---|---|
 | `HTML_FILE` | The PS file containing HTML emission | One row per scanned PS file. The file-level anchor for §15.1 page-shell drift codes. Emitted by the HTML populator. (Note: distinct from `FILE_HEADER`, which is the PS populator's file-level anchor row. The two coexist when the PS populator has run, one for HTML concerns and one for PS concerns.) |
 | `HTML_ID` | `id="..."` attributes | One row per ID declaration. Resolved against `getElementById` calls in JS for cross-population linkage. |
-| `HTML_DATA_ATTRIBUTE` | `data-*` attributes | One row per data-* attribute declaration. Resolved against JS `dataset.foo` reads for cross-population linkage. |
+| `HTML_DATA_ATTRIBUTE` | `data-*` attributes (including `data-action-*`) | One row per data-* attribute declaration. Resolved against JS `dataset.foo` reads for cross-population linkage. Rows for `data-action-<event>` attributes additionally populate `variant_type` and `variant_qualifier_1` per §6.5. |
 | `HTML_TEXT` | Element text content and four user-facing attribute values (`title`, `placeholder`, `aria-label`, `alt`) | One row per text node or attribute value. Categorical naming per §8.2.2. |
 | `HTML_ENTITY` | HTML entity references (`&times;`, `&#9881;`) and direct Unicode characters | One row per entity or special character. Three forms catalogued per §8.3.1. |
 | `HTML_SVG` | Inline `<svg>` elements | One row per outer `<svg>` element. Internals stored in `raw_text` (§9.1). |
 | `HTML_COMMENT` | HTML comments | One row per recognized comment kind (§10.5.1). |
+| `HTML_EVENT_HANDLER` | `on<event>="..."` attributes (`onclick`, `onchange`, etc.) | One row per inline event handler attribute. Inline handlers are forbidden per §12.13; this component type exists to give §12.13's drift codes a row to attach to. |
 | `CSS_CLASS` | `class="..."` attribute values | One row per class name in the attribute. Resolves against CSS_CLASS DEFINITION rows (§5.6). |
-| `JS_FUNCTION` | Event handler attributes (`onclick="..."`, etc.) | One row per function call in the handler. Resolves against JS_FUNCTION DEFINITION rows (§6.5). |
 | `CSS_FILE` | `<link rel="stylesheet" href="...">` references | One row per CSS file reference. Resolves against CSS_FILE DEFINITION rows. |
-| `JS_FILE` | `<script src="...">` references | One row per JS file reference. Resolves against JS_FILE DEFINITION rows. |
+| `JS_FILE` | `<script src="...">` reference | One row per JS file reference. Resolves against JS_FILE DEFINITION rows. |
 
 The CSS_CLASS USAGE rows from HTML markup share the `component_type` value with CSS_CLASS DEFINITION rows from CSS files; the `reference_type` and `scope` columns distinguish them. The same pattern applies to CSS_FILE and JS_FILE.
+
 ### 13.3 reference_type values for HTML rows
 
-For HTML markup, every row is emitted as a DEFINITION:
+For HTML markup, most rows are emitted as DEFINITION:
 
 - `id="..."` declarations are HTML_ID DEFINITION rows (declarations of the ID)
-- `data-*` declarations are HTML_DATA_ATTRIBUTE DEFINITION rows
+- `data-*` declarations are HTML_DATA_ATTRIBUTE DEFINITION rows (including `data-action-*` rows)
 - text nodes are HTML_TEXT DEFINITION rows
 - comments are HTML_COMMENT DEFINITION rows
 - SVG elements are HTML_SVG DEFINITION rows
 - entity references are HTML_ENTITY DEFINITION rows
+- inline event handlers are HTML_EVENT_HANDLER DEFINITION rows (forbidden per §12.13; cataloged for drift detection)
 
-Two row types are USAGE rows because they reference constructs defined elsewhere:
+Three row types are USAGE rows because they reference constructs defined elsewhere:
 
 - `class="..."` produces CSS_CLASS USAGE rows (the class is *defined* in CSS files)
-- event handlers produce JS_FUNCTION USAGE rows (the function is *defined* in JS files)
+- `<link rel="stylesheet">` references produce CSS_FILE USAGE rows (the file is *defined* by the CSS populator's CSS_FILE anchor row)
+- `<script>` references produce JS_FILE USAGE rows (the file is *defined* by the JS populator's JS_FILE anchor row)
 
 ### 13.4 Drift recording
 
@@ -1280,15 +1344,19 @@ The HTML populator's emitted rows resolve their cross-populator references again
 
 - `CSS_CLASS USAGE` rows have `scope` and `source_file` resolved against `CSS_CLASS DEFINITION` rows already in the catalog at HTML-populator scan time. Per pipeline order CSS → HTML → JS → PS, CSS DEFINITION rows always exist when HTML scans.
 - `CSS_FILE USAGE` rows (from `<link rel="stylesheet">` references) have `scope` and `source_file` resolved against `CSS_FILE DEFINITION` rows already in the catalog. Same pipeline relationship.
-- `JS_FILE USAGE` rows (from `<script src="...">` references) have `scope` and `source_file` resolved against `JS_FILE DEFINITION` rows already in the catalog. Same pipeline relationship.
+- `JS_FILE USAGE` rows (from the single `<script src="/js/cc-shared.js">` reference) reference the `JS_FILE DEFINITION` row that the JS populator emits when it scans `cc-shared.js`. Because the JS populator runs after the HTML populator in the standard pipeline order, the HTML populator cannot resolve this reference at scan time; resolution is verified post-pipeline via SQL query joining the `JS_FILE USAGE` row's `component_name` against `JS_FILE DEFINITION` rows. In standalone runs of the HTML populator before JS has scanned, the reference resolves to `source_file = '<undefined>'`.
 - `HTML_ID DEFINITION` rows are produced by HTML and consumed by JS. Per pipeline order, JS scans after HTML, so JS USAGE rows resolve against HTML DEFINITION rows.
 - `HTML_DATA_ATTRIBUTE DEFINITION` rows are produced by HTML and consumed by JS. Same pipeline relationship.
+
+`data-action-<event>` attribute values are emitted as `HTML_DATA_ATTRIBUTE DEFINITION` rows by the HTML populator. These reference dispatch table entries cataloged as `JS_DISPATCH_ENTRY DEFINITION` rows by the JS populator. Because the JS populator runs after the HTML populator in the standard pipeline order, the HTML populator cannot resolve action values against dispatch table entries at scan time; resolution is verified post-pipeline via SQL query joining `HTML_DATA_ATTRIBUTE DEFINITION` rows (where `component_name LIKE 'data-action-%'` and the value is in `variant_type`) against `JS_DISPATCH_ENTRY DEFINITION` rows. The `UNRESOLVED_DATA_ACTION` drift code (§6.2) is attached at query time, not at HTML scan time. This is the same structural property as `JS_FILE USAGE` resolution. The exact column shape of `JS_DISPATCH_ENTRY` rows is governed by the JavaScript spec.
 
 The `parent_function` column on every HTML row is filled by the HTML populator itself at row-emit time, from the enclosing PowerShell function name observed during the populator's own PS-AST walk of the route or helper file. No other populator edits this column.
 
 When a populator runs standalone (out of pipeline order), unresolved cross-populator references resolve to `<undefined>` for `source_file` and `LOCAL` for `scope`. Standalone runs are valid for development and testing; production pipeline runs always follow the CSS → HTML → JS → PS order.
 
+
 ---
+
 ## 14. What the parser extracts
 
 This table maps source HTML constructs to the catalog rows the HTML populator emits. The populator walks HTML markup inside PS string tokens, identifies recognized constructs, and emits rows accordingly.
@@ -1296,7 +1364,12 @@ This table maps source HTML constructs to the catalog rows the HTML populator em
 | Source construct | Row type | Key columns |
 |---|---|---|
 | Route file containing HTML emission | `HTML_FILE DEFINITION` | `component_name` = the page route (e.g., `/server-health`), `scope` = `LOCAL`, `line_start` = 1, `line_end` = file's total line count. Anchor row for §15.1 page-shell drift codes. |
-| Helper file emitting HTML fragments | `HTML_FILE DEFINITION` | `component_name` = the helper function name (e.g., `Get-NavBarHtml`), `scope` = `SHARED`, `line_start` = 1, `line_end` = file's total line count. Helper files have one `HTML_FILE` row per file, not per emitting function — multiple helper functions in the same file share the row. || `data-*="..."` attribute on any element | `HTML_DATA_ATTRIBUTE DEFINITION` | `component_name` = the attribute name including `data-`, `signature` = the full attribute |
+| Helper file emitting HTML fragments | `HTML_FILE DEFINITION` | `component_name` = the helper function name (e.g., `Get-NavBarHtml`), `scope` = `SHARED`, `line_start` = 1, `line_end` = file's total line count. Helper files have one `HTML_FILE` row per file, not per emitting function — multiple helper functions in the same file share the row. |
+| `id="..."` attribute on any element | `HTML_ID DEFINITION` | `component_name` = the ID value, `signature` = the full attribute |
+| `data-*="..."` attribute on any element (non-action) | `HTML_DATA_ATTRIBUTE DEFINITION` | `component_name` = the attribute name including `data-`, `signature` = the full attribute |
+| `data-action-<event>="..."` attribute on any element | `HTML_DATA_ATTRIBUTE DEFINITION` | `component_name` = the attribute name including `data-` prefix (e.g., `data-action-click`), `variant_type` = the action value, `variant_qualifier_1` = the event name (e.g., `click`), `signature` = full attribute |
+| `data-action-<arg-name>="..."` attribute on any element | `HTML_DATA_ATTRIBUTE DEFINITION` | `component_name` = the attribute name including `data-` prefix (e.g., `data-action-batch-id`), `variant_type` = the value, `signature` = full attribute. No `variant_qualifier_1` (argument is not event-scoped). |
+| `on<event>="..."` attribute on any element (e.g., `onclick=`, `onchange=`) | `HTML_EVENT_HANDLER DEFINITION` | `component_name` = the attribute name (e.g., `onclick`), `signature` = full attribute, carries §12.13 drift codes (forbidden) |
 | Element text node (non-whitespace character data between opening and closing tags) | `HTML_TEXT DEFINITION` | `component_name` = categorical name per §8.2.2, `raw_text` = literal text |
 | `title="..."` attribute value | `HTML_TEXT DEFINITION` | `component_name` = `attr-title`, `raw_text` = literal value |
 | `placeholder="..."` attribute value | `HTML_TEXT DEFINITION` | `component_name` = `attr-placeholder`, `raw_text` = literal value |
@@ -1308,7 +1381,6 @@ This table maps source HTML constructs to the catalog rows the HTML populator em
 | `<svg>...</svg>` element | `HTML_SVG DEFINITION` | `component_name` = categorical name per §9.3, `raw_text` = full SVG markup |
 | HTML comment (`<!-- ... -->`) | `HTML_COMMENT DEFINITION` | `component_name` = categorical name per §10.5.1, `raw_text` = full comment text |
 | Each class name in `class="..."` (one row per class) | `CSS_CLASS USAGE` | `component_name` = the class name, `signature` = full attribute value, `has_dynamic_content` per §5.5 |
-| Each function call in event handler (`onclick="..."` etc.) | `JS_FUNCTION USAGE` | `component_name` = the function name, `signature` = full attribute |
 | `<link rel="stylesheet" href="...">` reference | `CSS_FILE USAGE` | `component_name` = the href value, resolved against CSS_FILE DEFINITION rows |
 | `<script src="..."></script>` reference | `JS_FILE USAGE` | `component_name` = the src value, resolved against JS_FILE DEFINITION rows |
 
@@ -1318,9 +1390,10 @@ The populator does not emit rows for:
 
 - Whitespace between elements (newlines, indentation spaces)
 - Element tag names themselves (the populator extracts attributes and text but does not catalog the tag as a separate row; tag context is preserved via categorical naming and `parent_function`)
-- Attribute names that are not in the catalogued attribute set (the populator catalogs `id`, `class`, `data-*`, the four user-facing attributes, asset reference attributes, and event handler attributes; other attributes like `width`, `height`, `viewBox` on SVG, or `type`, `name`, `disabled` on form fields are not emitted as rows but are stored as part of `raw_text` on parent rows)
+- Attribute names that are not in the catalogued attribute set (the populator catalogs `id`, `class`, `data-*`, the four user-facing attributes, asset reference attributes, and `on*` inline event handler attributes; other attributes like `width`, `height`, `viewBox` on SVG, or `type`, `name`, `disabled` on form fields are not emitted as rows but are stored as part of `raw_text` on parent rows)
 
 ---
+
 ## 15. Drift codes reference
 
 The HTML populator may emit any of the following drift codes on emitted rows. Codes are organized by spec section. For the full pattern-to-code mapping, see Section 12 (Forbidden patterns).
@@ -1336,12 +1409,17 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `MALFORMED_HEAD` | The `<head>` element contains constructs other than `<title>` and `<link>` (e.g., inline `<style>`, `<meta>`, `<script>`). |
 | `FORBIDDEN_HARDCODED_TITLE` | The `<title>` content is a hardcoded string instead of the `$browserTitle` PowerShell variable substitution. |
 | `MISSING_BODY_SECTION_CLASS` | The `<body>` element does not declare a `class="section-<sectionKey>"` attribute. |
+| `MISSING_DATA_PAGE` | The `<body>` element does not declare a `data-page="<slug>"` attribute. |
+| `MISSING_DATA_PREFIX` | The `<body>` element does not declare a `data-prefix="<prefix>"` attribute. |
 | `MISSING_NAV_SUBSTITUTION` | The first content inside `<body>` is not the `$navHtml` substitution. |
-| `MALFORMED_BODY_CLOSE` | Content appears between the JS reference block and `</body>`. |
+| `MALFORMED_BODY_CLOSE` | Content appears between the `<script>` tag and `</body>`. |
 | `MISSING_HEADER_BAR` | The page header bar is missing as the first content after `$navHtml`. |
 | `FORBIDDEN_HARDCODED_PAGE_HEADER` | The page header content is hardcoded instead of the `$headerHtml` PowerShell variable substitution. |
 | `MISSING_CONNECTION_BANNER` | The connection banner placeholder is missing. |
 | `FORBIDDEN_BANNER_CONTENT` | The connection banner placeholder contains content (it must be empty). |
+| `MISSING_PAGE_ERROR_BANNER` | The page error banner placeholder is missing. |
+| `FORBIDDEN_PAGE_ERROR_BANNER_CONTENT` | The page error banner placeholder contains content (it must be empty). |
+| `PAGE_ERROR_BANNER_ORDER_VIOLATION` | The page error banner placeholder is not immediately after the connection banner placeholder. |
 
 ### 15.2 Page chrome codes (§2)
 
@@ -1354,7 +1432,7 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `MALFORMED_REFRESH_INFO_CONTAINER` | The refresh info block's outer container is not `<div class="refresh-info">`. |
 | `MALFORMED_LIVE_INDICATOR` | The live indicator span is malformed; expected `<span class="live-indicator"></span>` exactly. |
 | `MALFORMED_LIVE_STATUS_LINE` | The live status line ("`Live | Updated:`") deviates from mandated form. |
-| `MALFORMED_REFRESH_BUTTON` | The page refresh button markup deviates from mandated form (class, onclick, title, or entity reference). |
+| `MALFORMED_REFRESH_BUTTON` | The page refresh button markup deviates from mandated form (class, `data-action-click`, title, or entity reference). |
 | `DUPLICATE_LAST_UPDATE_ID` | The `last-update` ID appears more than once on the page. |
 | `MALFORMED_ENGINE_ROW_CONTAINER` | The engine row's outer container is not `<div class="engine-row">`. |
 | `MALFORMED_ENGINE_ROW_CHILDREN` | The engine row contains children other than engine cards. |
@@ -1380,11 +1458,10 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `CSS_REFERENCE_ORDER_VIOLATION` | The page-specific CSS reference does not appear before the shared reference. |
 | `UNEXPECTED_CSS_REFERENCE` | A page references more or fewer than two CSS files in `<head>`. |
 | `MALFORMED_JS_SCRIPT` | A `<script>` element uses additional attributes (e.g., `defer`, `async`) or has body content. |
-| `MALFORMED_PAGE_JS_REFERENCE` | The page-specific JS reference's `src` doesn't match `/js/<page>.js` form. |
-| `MALFORMED_SHARED_JS_REFERENCE` | The shared JS reference is not exactly `<script src="/js/cc-shared.js"></script>`. |
-| `JS_REFERENCE_ORDER_VIOLATION` | The page-specific JS reference does not appear before the shared reference. |
-| `UNEXPECTED_JS_REFERENCE` | A page references more or fewer than two JS files in `<body>`. |
-| `JS_REFERENCE_NOT_LAST` | Content appears between the JS reference block and `</body>`. |
+| `MISSING_SHARED_SCRIPT_TAG` | The page is missing the `cc-shared.js` `<script>` tag before `</body>`. |
+| `UNEXPECTED_SCRIPT_TAG` | The page has more than one `<script>` tag. The single permitted `<script>` tag references `cc-shared.js`. |
+| `WRONG_SCRIPT_SOURCE` | The page's `<script>` tag has a `src` value other than `/js/cc-shared.js`. |
+| `JS_REFERENCE_NOT_LAST` | Content appears between the `<script>` tag and `</body>`. |
 | `FORBIDDEN_HELPER_ASSET_REFERENCE` | A helper module function emits a `<link>` or `<script>` element. |
 
 ### 15.4 ID codes (§4)
@@ -1416,26 +1493,19 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `INLINE_CLASS_MULTI_INTERPOLATION` | A class attribute uses multiple top-level interpolations without using the array-join pattern. |
 | `INLINE_CLASS_BRACED_INTERPOLATION` | A class attribute uses PowerShell `${...}` or `$(...)` form mixed with static text. |
 
-### 15.6 Event handler codes (§6)
+### 15.6 Action attribute codes (§6)
 
 | Code | Description |
 |---|---|
-| `MULTIPLE_HANDLER_STATEMENTS` | An event handler attribute contains multiple statements (e.g., `onclick="doA(); doB()"`). |
-| `INLINE_HANDLER_EXPRESSION` | An event handler attribute contains expressions other than a single function call. |
-| `MALFORMED_HANDLER_CALL` | An event handler's function call has whitespace between the function name and the opening parenthesis. |
-| `TRAILING_HANDLER_SEMICOLON` | An event handler attribute ends with a trailing semicolon. |
-| `FORBIDDEN_REVEALING_MODULE_CALL` | An event handler calls a function via dotted property access (e.g., `Module.func()`). |
-| `FORBIDDEN_BUILTIN_METHOD_CALL` | An event handler calls a method on a built-in object (e.g., `window.location.href = ...`). |
-| `HANDLER_FUNCTION_NAME_MISMATCH` | An event handler's function name is not registered as chrome and does not match the page's prefix. |
-| `FORBIDDEN_EVENT_METHOD_CALL` | An event handler calls a method on the event object (e.g., `event.stopPropagation()`). |
-| `FORBIDDEN_HANDLER_CONDITIONAL` | An event handler contains conditional logic (e.g., `if (event.key === 'Enter') ...`). |
-| `FORBIDDEN_INLINE_DOM_OPERATION` | An event handler performs DOM manipulation inline (e.g., `this.classList.toggle(...)`). |
-| `FORBIDDEN_INLINE_ASSIGNMENT` | An event handler contains assignment expressions (e.g., `this.value = ...`). |
-| `FORBIDDEN_JAVASCRIPT_PROTOCOL` | An event handler uses the `javascript:` pseudo-protocol. |
-| `FORBIDDEN_ARGUMENT_EXPRESSION` | An event handler argument is an expression other than a literal, `this`, or `this.<property>`. |
-| `MALFORMED_ARGUMENT_QUOTING` | A string literal argument uses double quotes (which conflict with the surrounding attribute value's quoting). |
-| `MALFORMED_ARGUMENT_LIST` | Multiple arguments are not separated by `, ` (comma followed by single space). |
-| `FORBIDDEN_HELPER_PAGE_FUNCTION_CALL` | A helper module function emits an event handler that calls a page-prefixed function. |
+| `UNKNOWN_EVENT_TYPE` | A `data-action-<event>` attribute uses an event name not in the §6.4 closed set. |
+| `MALFORMED_ACTION_VALUE` | An action value contains characters other than lowercase letters, digits, and hyphens. |
+| `UNRESOLVED_DATA_ACTION` | An action value has no matching entry in its event-scoped dispatch table. Attached at query time post-pipeline, not at HTML scan time. |
+| `ORPHANED_ACTION_ARGUMENT` | A `data-action-<arg-name>` attribute appears on an element that has no `data-action-<event>` attribute. |
+| `ARGUMENT_NAME_COLLIDES_WITH_EVENT` | An argument attribute's name matches an event name from §6.4 (collision between argument and event-type attribute). |
+| `MALFORMED_ACTION_ARGUMENT_NAME` | An argument attribute name contains characters other than lowercase letters, digits, and hyphens. |
+| `FORBIDDEN_INLINE_ACTION_ARGUMENT_INTERPOLATION` | An argument attribute value mixes static text with PowerShell interpolation. |
+| `FORBIDDEN_HELPER_PAGE_ACTION` | A helper module function emits a page-local (non-`cc-` prefixed) action value. |
+| `FORBIDDEN_HELPER_PAGE_ACTION_ARGUMENT` | A helper module function emits an argument attribute whose value carries page-specific meaning. |
 
 ### 15.7 data-* attribute codes (§7)
 
@@ -1473,7 +1543,31 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `FORBIDDEN_INLINE_STYLE_BLOCK` | A `<style>` block appears in HTML markup outside the §1.6 (access-denied page) and §9.5 (SVG-internal) carve-outs. |
 | `FORBIDDEN_INLINE_SCRIPT_BLOCK` | A `<script>` element contains body content (i.e., is not the asset reference form `<script src="..."></script>`). |
 
+### 15.13 Inline event handler codes (§12.13)
+
+| Code | Description |
+|---|---|
+| `FORBIDDEN_INLINE_EVENT_HANDLER` | An `on*` attribute is present on an element. Inline event handlers are forbidden regardless of content shape. This code fires on every inline handler. The dispatch model in §6 is the required replacement. |
+| `MULTIPLE_HANDLER_STATEMENTS` | An inline event handler attribute contains multiple statements. |
+| `INLINE_HANDLER_EXPRESSION` | An inline event handler attribute contains expressions other than a single function call. |
+| `MALFORMED_HANDLER_CALL` | An inline event handler's function call has whitespace between the function name and the opening parenthesis. |
+| `TRAILING_HANDLER_SEMICOLON` | An inline event handler attribute ends with a trailing semicolon. |
+| `FORBIDDEN_REVEALING_MODULE_CALL` | An inline event handler calls a function via dotted property access. |
+| `FORBIDDEN_BUILTIN_METHOD_CALL` | An inline event handler calls a method on a built-in object. |
+| `HANDLER_FUNCTION_NAME_MISMATCH` | An inline event handler's function name is not a recognized chrome function and does not match the page's prefix. |
+| `FORBIDDEN_EVENT_METHOD_CALL` | An inline event handler calls a method on the event object. |
+| `FORBIDDEN_HANDLER_CONDITIONAL` | An inline event handler contains conditional logic. |
+| `FORBIDDEN_INLINE_DOM_OPERATION` | An inline event handler performs DOM manipulation inline. |
+| `FORBIDDEN_INLINE_ASSIGNMENT` | An inline event handler contains assignment expressions. |
+| `FORBIDDEN_JAVASCRIPT_PROTOCOL` | An inline event handler uses the `javascript:` pseudo-protocol. |
+| `FORBIDDEN_ARGUMENT_EXPRESSION` | An inline event handler argument is an expression other than a literal, `this`, or `this.<property>`. |
+| `MALFORMED_ARGUMENT_QUOTING` | A string literal argument uses double quotes (conflicting with the surrounding attribute's quoting). |
+| `MALFORMED_ARGUMENT_LIST` | Multiple inline event handler arguments are not separated by `, ` (comma followed by single space). |
+| `FORBIDDEN_HELPER_PAGE_FUNCTION_CALL` | A helper module function emits an inline event handler that calls a page-prefixed function. |
+
+
 ---
+
 ## 16. Compliance queries
 
 Standard SQL queries against `dbo.Asset_Registry` for HTML compliance reporting. Each query is scoped to `WHERE file_type = 'HTML'` (or includes related cross-population scopes where indicated).
@@ -1615,7 +1709,7 @@ Q7 surfaces three-form inconsistencies — where the same conceptual icon (e.g.,
 
 ### 16.8 Q8 — Unresolved cross-population references
 
-Find every CSS_CLASS USAGE or JS_FUNCTION USAGE row from HTML where the referenced construct doesn't have a matching DEFINITION row.
+Find every USAGE row from HTML where the referenced construct doesn't have a matching DEFINITION row.
 
 ```sql
 SELECT
@@ -1632,7 +1726,7 @@ ORDER BY component_type, component_name, file_name;
 
 ### 16.9 Q9 — Helper coupling check
 
-Find any helper-emitted HTML that has page-prefixed IDs, page-prefixed function calls, or page-specific data-* attributes (all forbidden by helper rules).
+Find any helper-emitted HTML that has page-prefixed IDs, page-prefixed function calls, page-local action values, or page-specific data-* attributes (all forbidden by helper rules).
 
 ```sql
 SELECT
@@ -1665,7 +1759,124 @@ ORDER BY file_name, line_start;
 
 This query identifies places where the catalog's static analysis is incomplete by design, useful for distinguishing "the catalog has the full picture" from "the catalog has a partial picture."
 
+### 16.11 Q11 — HTML data-action with no JS dispatch entry
+
+Find `data-action-<event>` declarations in HTML that have no matching entry in the corresponding JS dispatch table. Column names for `JS_DISPATCH_ENTRY` rows are placeholders pending the JS populator update; if the JS spec lands on different column names, this query will need a small column-name adjustment.
+
+```sql
+WITH html_actions AS (
+    SELECT
+        file_name        AS html_file,
+        variant_qualifier_1 AS event_name,
+        variant_type     AS action_value,
+        line_start
+    FROM dbo.Asset_Registry
+    WHERE file_type      = 'HTML'
+      AND component_type = 'HTML_DATA_ATTRIBUTE'
+      AND component_name LIKE 'data-action-%'
+      AND variant_qualifier_1 IS NOT NULL  -- event-type rows, not arg rows
+),
+js_dispatch AS (
+    SELECT
+        file_name        AS js_file,
+        variant_qualifier_1 AS event_name,
+        component_name   AS action_value
+    FROM dbo.Asset_Registry
+    WHERE file_type      = 'JS'
+      AND component_type = 'JS_DISPATCH_ENTRY'
+)
+SELECT
+    h.html_file,
+    h.event_name,
+    h.action_value,
+    h.line_start,
+    'HTML declares action with no JS dispatch entry' AS issue
+FROM html_actions h
+LEFT JOIN js_dispatch j
+       ON j.event_name   = h.event_name
+      AND j.action_value = h.action_value
+WHERE j.action_value IS NULL
+ORDER BY h.html_file, h.event_name, h.action_value;
+```
+
+### 16.12 Q12 — JS dispatch entry with no HTML usage
+
+Find JS dispatch table entries with no HTML element declaring the action. Surfaces dead dispatch entries that no HTML element triggers.
+
+Caveat: this query can produce false positives for entries that are dispatched programmatically from other JS code (rather than from user events on HTML elements). Operator should review each row to distinguish dead code from programmatic dispatch. A future enhancement could exclude entries that have matching `JS_DISPATCH_LOOKUP USAGE` rows from JS code, but that requires JS populator support not yet present.
+
+```sql
+WITH js_dispatch AS (
+    SELECT
+        file_name        AS js_file,
+        variant_qualifier_1 AS event_name,
+        component_name   AS action_value
+    FROM dbo.Asset_Registry
+    WHERE file_type      = 'JS'
+      AND component_type = 'JS_DISPATCH_ENTRY'
+),
+html_actions AS (
+    SELECT
+        variant_qualifier_1 AS event_name,
+        variant_type     AS action_value
+    FROM dbo.Asset_Registry
+    WHERE file_type      = 'HTML'
+      AND component_type = 'HTML_DATA_ATTRIBUTE'
+      AND component_name LIKE 'data-action-%'
+      AND variant_qualifier_1 IS NOT NULL
+)
+SELECT
+    j.js_file,
+    j.event_name,
+    j.action_value,
+    'JS dispatch entry with no HTML element declaring this action' AS issue
+FROM js_dispatch j
+LEFT JOIN html_actions h
+       ON h.event_name   = j.event_name
+      AND h.action_value = j.action_value
+WHERE h.action_value IS NULL
+ORDER BY j.js_file, j.event_name, j.action_value;
+```
+
+### 16.13 Q13 — Inline event handler inventory
+
+Find every inline event handler in the HTML codebase, grouped by file. The umbrella code `FORBIDDEN_INLINE_EVENT_HANDLER` fires on every inline handler; additional drift codes describe the specific shape violations.
+
+```sql
+SELECT
+    file_name,
+    line_start,
+    component_name        AS attribute_name,
+    signature             AS full_attribute,
+    drift_codes
+FROM dbo.Asset_Registry
+WHERE file_type      = 'HTML'
+  AND component_type = 'HTML_EVENT_HANDLER'
+ORDER BY file_name, line_start;
+```
+
+### 16.14 Q14 — Inline event handler shape breakdown
+
+Distribution of inline-handler drift codes across the codebase. Helps distinguish handlers that need only mechanical conversion (umbrella code only) from handlers that need real JS refactoring (umbrella plus content-shape codes).
+
+```sql
+SELECT
+    TRIM(value)                    AS drift_code,
+    COUNT(*)                       AS occurrences,
+    COUNT(DISTINCT file_name)      AS files_affected
+FROM dbo.Asset_Registry
+CROSS APPLY STRING_SPLIT(drift_codes, ',')
+WHERE file_type      = 'HTML'
+  AND component_type = 'HTML_EVENT_HANDLER'
+  AND drift_codes    IS NOT NULL
+  AND TRIM(value)    <> ''
+GROUP BY TRIM(value)
+ORDER BY occurrences DESC;
+```
+
+
 ---
+
 ## 17. Examples
 
 ### 17.1 Minimal complete page emission
@@ -1680,7 +1891,7 @@ A small page demonstrating every required pattern. Real pages have more sections
     <link rel="stylesheet" href="/css/example.css">
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body class="section-platform">
+<body class="section-platform" data-page="example" data-prefix="exa">
 $navHtml
 
 <div class="header-bar">
@@ -1691,12 +1902,13 @@ $navHtml
         <div class="refresh-info">
             <span class="live-indicator"></span>
             <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-            <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>
+            <button class="page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
         </div>
     </div>
 </div>
 
 <div id="connection-banner" class="connection-banner"></div>
+<div id="page-error-banner" class="page-error-banner"></div>
 
 <div class="exa-page-grid">
     <div class="exa-status-card">
@@ -1705,7 +1917,6 @@ $navHtml
     </div>
 </div>
 
-<script src="/js/example.js"></script>
 <script src="/js/cc-shared.js"></script>
 </body>
 </html>
@@ -1715,10 +1926,11 @@ This emission produces these catalog rows (illustrative, not exhaustive):
 
 - 1 × `HTML_ID DEFINITION` for `last-update` (chrome ID)
 - 1 × `HTML_ID DEFINITION` for `connection-banner` (chrome ID)
+- 1 × `HTML_ID DEFINITION` for `page-error-banner` (chrome ID)
 - Multiple × `CSS_CLASS USAGE` rows resolving to either `cc-shared.css` (chrome classes) or `example.css` (page classes)
-- 2 × `JS_FUNCTION USAGE` rows for `pageRefresh()` (chrome) and any page-specific handlers
+- 1 × `HTML_DATA_ATTRIBUTE DEFINITION` for `data-action-click="cc-page-refresh"` on the refresh button, with `variant_type = cc-page-refresh`, `variant_qualifier_1 = click`, `scope = SHARED`
 - 2 × `CSS_FILE USAGE` rows for the two stylesheet references
-- 2 × `JS_FILE USAGE` rows for the two script references
+- 1 × `JS_FILE USAGE` row for the single script reference (`cc-shared.js`)
 - Several × `HTML_TEXT DEFINITION` rows: `attr-title` for the refresh button tooltip, `h2-section-title`, `p-message`, etc.
 - 1 × `HTML_ENTITY DEFINITION` for `&#8635;` with `signature = entity_numeric`
 
@@ -1775,11 +1987,11 @@ The flag indicates that the catalog's view of these class compositions is partia
 
 ```html
 <!-- Slideout for displaying request details with comments and timeline -->
-<div id="bsv-slideout-request-overlay" class="slide-panel-overlay" onclick="bsv_closeRequestSlideout()"></div>
+<div id="bsv-slideout-request-overlay" class="slide-panel-overlay" data-action-click="close-request-slideout"></div>
 <div id="bsv-slideout-request" class="slide-panel xwide">
     <div class="slide-panel-header">
         <h3 class="bsv-slideout-title">Request Details</h3>
-        <button class="slide-panel-close" onclick="bsv_closeRequestSlideout()" title="Close">×</button>
+        <button class="slide-panel-close" data-action-click="close-request-slideout" title="Close">×</button>
     </div>
     <div class="slide-panel-body" id="bsv-slideout-request-body"></div>
 </div>
@@ -1791,10 +2003,12 @@ Catalog rows emitted:
 - `HTML_ID DEFINITION` for `bsv-slideout-request-overlay`, `purpose_description` populated from comment
 - `HTML_ID DEFINITION` for `bsv-slideout-request`, `purpose_description` populated from comment
 - `HTML_ID DEFINITION` for `bsv-slideout-request-body`
-- `JS_FUNCTION USAGE` for `bsv_closeRequestSlideout()` (twice — overlay and close button)
+- 2 × `HTML_DATA_ATTRIBUTE DEFINITION` for `data-action-click="close-request-slideout"` (once on overlay, once on close button), with `variant_type = close-request-slideout`, `variant_qualifier_1 = click`, `scope = LOCAL`
 - `HTML_TEXT DEFINITION` for "Request Details" with `component_name = h3-slideout-title`
-- `HTML_TEXT DEFINITION` for "×" (the close glyph) — actually emitted as `HTML_ENTITY DEFINITION` with `signature = direct_unicode`
+- `HTML_ENTITY DEFINITION` for "×" (the close glyph) with `signature = direct_unicode`
 - `HTML_TEXT DEFINITION` for "Close" attribute value with `component_name = attr-title`
+
+JS-side (the page's `bsv_clickActions` table contains `'close-request-slideout': bsv_closeRequestSlideout`) is cataloged separately as a `JS_DISPATCH_ENTRY DEFINITION` row by the JS populator. The HTML populator's `data-action-click="close-request-slideout"` row resolves against that entry post-pipeline.
 
 ### 17.5 Anti-pattern: forbidden inline class composition
 
@@ -1819,7 +2033,7 @@ $cssClasses = ($classList -join ' ')
 
 The correct pattern produces clean catalog rows with no drift.
 
-### 17.6 Anti-pattern: inline event handler logic
+### 17.6 Anti-pattern: inline event handler
 
 Anti-pattern (forbidden):
 
@@ -1827,25 +2041,48 @@ Anti-pattern (forbidden):
 <button onclick="if(event.target.dataset.confirmed === 'true') deleteItem(123)">Delete</button>
 ```
 
-This emits `INLINE_HANDLER_EXPRESSION`, `FORBIDDEN_HANDLER_CONDITIONAL`, and `FORBIDDEN_EVENT_METHOD_CALL` (since `event.target.dataset` is method/property access on the event object).
+This emits these drift codes on the `HTML_EVENT_HANDLER DEFINITION` row:
 
-Correct pattern (per §6):
+- `FORBIDDEN_INLINE_EVENT_HANDLER` (umbrella — fires on every inline handler)
+- `INLINE_HANDLER_EXPRESSION` (the value contains expressions beyond a single function call)
+- `FORBIDDEN_HANDLER_CONDITIONAL` (the `if(...)` conditional logic)
+- `FORBIDDEN_EVENT_METHOD_CALL` (`event.target.dataset` is method/property access on the event object)
+
+Correct pattern (per §6 and §12.13):
 
 ```html
-<button onclick="bsv_deleteItemIfConfirmed(this, 123)">Delete</button>
+<button data-action-click="delete-item" data-action-item-id="123" data-action-confirm="true">Delete</button>
 ```
 
 ```javascript
-function bsv_deleteItemIfConfirmed(button, itemId) {
-    if (button.dataset.confirmed === 'true') {
-        bsv_deleteItem(itemId);
+const bsv_clickActions = {
+    'delete-item': bsv_deleteItem
+};
+
+function bsv_deleteItem(target, event) {
+    if (target.dataset.actionConfirm === 'true') {
+        const itemId = parseInt(target.dataset.actionItemId, 10);
+        bsv_performDelete(itemId);
     }
 }
 ```
 
-The conditional logic moves to the JS function; the HTML stays declarative.
+The handler:
+
+- Lives in the page's JS file, where logic belongs
+- Is registered in the dispatch table by action key (`delete-item`)
+- Reads arguments via `target.dataset.<arg>` per §6.3
+- Handles conditionals in JS, not in HTML
+
+Catalog rows emitted by HTML for the new pattern (zero drift):
+
+- 1 × `HTML_DATA_ATTRIBUTE DEFINITION` for `data-action-click="delete-item"` (`variant_type = delete-item`, `variant_qualifier_1 = click`)
+- 1 × `HTML_DATA_ATTRIBUTE DEFINITION` for `data-action-item-id="123"` (argument attribute, `variant_type = 123`, no `variant_qualifier_1`)
+- 1 × `HTML_DATA_ATTRIBUTE DEFINITION` for `data-action-confirm="true"` (argument attribute, `variant_type = true`, no `variant_qualifier_1`)
+- 1 × `HTML_TEXT DEFINITION` for "Delete" with `component_name = button-text`
 
 ---
+
 ## Appendix - Rationale
 
 This appendix explains why selected rules are what they are. Entries are keyed to body section numbers. Sections without entries here have no rationale beyond the rule itself.
@@ -1855,6 +2092,10 @@ This appendix explains why selected rules are what they are. Entries are keyed t
 The strict page shell shape (DOCTYPE, root, head, body, content order) is what lets the parser walk a route file's emitted HTML deterministically. Each emission has predictable phases the populator can recognize: file shell, chrome, content, asset references. Without a fixed shape, the populator would have to handle arbitrary structural variation, which inflates parser complexity for no platform benefit.
 
 The page shell substitutions (`$browserTitle`, `$navHtml`, `$headerHtml`, `$sectionKey`) preserve the platform's centralized control over chrome behavior. If pages hardcoded their titles, headers, or section keys, every platform-wide chrome change would require touching every page. The substitution pattern lets `Get-PageBrowserTitle`, `Get-NavBarHtml`, and `Get-PageHeaderHtml` evolve independently of page authoring.
+
+The two `<body>` attributes `data-page` and `data-prefix` exist to support the bootloader-driven JS module loading model (§6 and the JavaScript spec). The bootloader in `cc-shared.js` reads `data-page` to determine which page-specific JS file to load and `data-prefix` to determine the page's init function name (`<prefix>_init`). Carrying both attributes on `<body>` keeps the bootloader's logic simple: read two attributes, derive a file path and a function name. Surfacing the cc_prefix in the page-shell HTML also makes the prefix discipline visible at the top level of every page rather than implicit in identifier conventions throughout.
+
+The `#page-error-banner` placeholder gives the bootloader a DOM target for surfacing page-boot failures (script load errors, missing init functions, init function exceptions). Like the connection banner, it exists as an empty placeholder in markup and is populated at runtime by `cc-shared.js`. The placeholder's mandatory position (immediately after the connection banner) creates a predictable layout for users: connection state above the page, then any page-boot errors, then the page content below.
 
 ### A.2 Page chrome
 
@@ -1882,13 +2123,19 @@ The granular drift codes for forbidden interpolation patterns (§5.2.3) follow t
 
 The `has_dynamic_content` flag exists because static analysis cannot resolve parameter-passed class names. Without the flag, a catalog query like "what classes does `Get-NavBarHtml` apply to nav links?" returns an incomplete answer that looks complete. The flag makes incompleteness queryable: rows where the catalog knows there's more, but can't see it.
 
-### A.6 Event handler conventions
+### A.6 Action dispatch via data-action attributes
 
-The exactly-one-function-call rule expresses a separation of concerns: HTML is structural and declarative; JavaScript is behavioral and imperative. Inline expressions in handlers blur this line by putting JS-side logic into HTML-side markup. Forbidding the practice keeps the boundary clean: if a click should trigger conditional logic, the conditional lives in a JS function, not in the `onclick` attribute.
+The `data-action-<event>` family separates HTML's structural concern ("here's an element that triggers something") from JavaScript's behavioral concern ("here's what happens when something is triggered"). Under the old inline-event-handler model, HTML carried both: the markup contained the function name and call shape, coupling HTML markup directly to JavaScript function declarations. That coupling produced an asymmetric catalog (HTML emitted USAGE rows that JS DEFINITION rows had to resolve against in reverse pipeline order) and forced page authors to know JS function names while authoring HTML.
 
-The forbidden revealing-module pattern (`Module.func()`) is forbidden because the CC platform doesn't use revealing modules. Pages declare functions at the module-top level (function-statement form). A handler calling `Admin.openX()` implies a module structure that isn't there; the call resolves to undefined at runtime.
+Under the new dispatch model, HTML elements declare what should happen via an action key (`open-request-detail`, `cc-page-refresh`) without referencing any function name. The JavaScript file's dispatch table is the single point that maps action keys to handler functions. HTML can change its action keys, JavaScript can rename its functions, and the two can evolve independently as long as their dispatch table mediates between them.
 
-The page-prefixed function rule for handlers (§6.2) ensures the catalog can distinguish chrome calls (used everywhere) from page-local calls (used on one page). Without a naming convention, a handler `onclick="closeMenu()"` is ambiguous: is this chrome or page-local? With prefixes, `closeMenu()` is chrome and `bsv_closeMenu()` is BusinessServices-local.
+The hybrid prefix convention (`cc-` for shared chrome actions, unprefixed for page-local actions) is inverted from the convention used for IDs, classes, and JS top-level identifiers (where page-local has the prefix and shared is unprefixed). The inversion is intentional: the `cc-` prefix on `data-action` values is a dispatch-routing signal, not a categorization signal. The bootloader's shared dispatcher looks for `cc-` prefix to decide whether an event belongs to it; the page's local dispatcher handles everything else. Encoding the routing decision into the attribute's value rather than its name keeps the HTML readable (one attribute, one value, one routing decision) and the dispatcher logic simple (read the value's prefix to decide which table to look up).
+
+Action keys are scoped by event type rather than global to the page because the same action key may legitimately appear on multiple events with different handlers (e.g., `data-action-click="save"` triggers a confirm-and-save flow while `data-action-change="save"` triggers an auto-save flow). Treating action keys as per-event values keeps the catalog clean: each `<prefix>_<event>Actions` table is its own namespace, and the populator's `UNRESOLVED_DATA_ACTION` resolution is straightforward (look up the value in the corresponding event's table, not across all tables).
+
+The recognized event list (§6.4) is closed at 8 events: `click`, `change`, `input`, `submit`, `keydown`, `keyup`, `focus`, `blur`. Closed-list discipline serves the same purpose here as the chrome ID closed set (§4.1): adding a new event requires a spec amendment, a populator update, and (when the new event has a different shape than existing dispatchers handle) a bootloader update. The friction is intentional. The 8-event starting set covers the interactions Control Center pages typically wire up; new events are added as concrete needs surface during page conversions.
+
+The argument attribute pattern (`data-action-<arg-name>="<value>"`) gives the dispatch model a way to pass per-element data to the handler without resorting to per-element listener attachment. The handler receives a reference to the element via the dispatcher's `(target, event)` signature and reads arguments via `target.dataset.<arg>`. The argument name rule that arg names cannot collide with event names (§6.3.1's `ARGUMENT_NAME_COLLIDES_WITH_EVENT`) keeps the attribute name space unambiguous: looking at any `data-action-<word>` attribute, the populator can determine whether `<word>` is an event name (from the §6.4 closed set) or an argument name (anything else) without further context.
 
 ### A.7 data-* attribute conventions
 
@@ -1916,8 +2163,14 @@ The composite row identity (`component_type`, `component_name`, `reference_type`
 
 The cross-populator dependency model (CSS → HTML → JS → PS) preserves single-pass resolution. Each populator runs against a catalog state where its dependencies have already emitted their rows. JS resolves IDs against HTML's DEFINITION rows; HTML resolves classes against CSS's DEFINITION rows. Standalone runs out of order produce `<undefined>` resolution, surfaced via the `source_file` column rather than as drift codes.
 
+The `data-action` family introduces a forward reference from HTML to JS that the pipeline order does not satisfy at scan time. HTML emits `HTML_DATA_ATTRIBUTE DEFINITION` rows for `data-action-<event>` attributes before the JS populator has emitted any `JS_DISPATCH_ENTRY DEFINITION` rows. The `UNRESOLVED_DATA_ACTION` drift code (§6.2) therefore attaches at query time, post-pipeline, not at HTML scan time. The §16 compliance queries (Q11 and Q12) implement this resolution via SQL joins against rows emitted by both populators. The same structural property applies to the single `JS_FILE USAGE` row HTML emits for `<script src="/js/cc-shared.js">` — its resolution against the JS populator's `JS_FILE DEFINITION` row also waits for post-pipeline query.
+
+The `HTML_EVENT_HANDLER` component type exists as a catalog home for forbidden inline-handler attributes (§12.13). Inline handlers are forbidden by spec but may still appear in source code (legacy code pre-refactor, or new code introduced without spec discipline). The populator must catalog them so their `FORBIDDEN_INLINE_EVENT_HANDLER` umbrella code (and any applicable specific codes from §12.13's table) have a row to attach to. Without a dedicated component type, these violations would have nowhere to live in the catalog and would go undetected — exactly the failure mode the catalog exists to prevent.
+
 ### A.15 Drift codes — granularity
 
 The drift codes throughout the spec are granular by design — each describes one specific spec violation, not a general category. This mirrors the CSS spec's precedent (banner format codes, forbidden combinator codes) and serves the same purpose: precise refactor planning. A query for "every page with a malformed refresh button" returns rows with `MALFORMED_REFRESH_BUTTON`; a query for "every page with engine card label drift" returns rows with `ENGINE_LABEL_REGISTRY_MISMATCH`. The codes are the diagnostic vocabulary the catalog uses to describe what's wrong.
 
 A coarser approach (one drift code per section, e.g., `MALFORMED_PAGE_CHROME`) would conflate many distinct violations and make refactor work harder to triage. The granular approach trades a higher code count for queryability — and the spec is the catalog's vocabulary, so vocabulary richness is a feature.
+
+A small refinement to this pattern appears in §12.13 (inline event handlers). A single umbrella code (`FORBIDDEN_INLINE_EVENT_HANDLER`) fires on every inline handler regardless of content shape, paired with up to 16 specific codes that describe the handler's particular shape of badness. The umbrella ensures every inline handler is detected (a "clean" inline handler that violates no sub-rule still fires the umbrella). The specifics let refactor planning sort handlers by complexity. Both axes are queryable: the umbrella answers "is this an inline handler?" and the specifics answer "what is the inline handler doing that needs untangling?" This pattern fits naturally where a category-level prohibition coexists with content-level shape rules.
