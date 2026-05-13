@@ -18,7 +18,7 @@ Add-PodeRoute -Method Get -Path '/bootloader-test' -Authentication 'ADLogin' -Sc
     <title>Bootloader Test</title>
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body data-page="test">
+<body data-page="test" data-prefix="test">
 
     <div id="page-error-banner" class="page-error-banner"></div>
 
@@ -40,18 +40,18 @@ Add-PodeRoute -Method Get -Path '/bootloader-test' -Authentication 'ADLogin' -Sc
         <p>Click each button and watch the result area below.</p>
 
         <p>
-            <button type="button" data-action="cc-page-refresh"
+            <button type="button" data-action-click="cc-page-refresh"
                 style="padding: 8px 12px; margin-right: 8px;">
                 Shared action: cc-page-refresh
             </button>
 
-            <button type="button" data-action="run-test-action"
+            <button type="button" data-action-click="run-test-action"
                 data-action-message="page-local action fired correctly"
                 style="padding: 8px 12px; margin-right: 8px;">
                 Page-local action: run-test-action
             </button>
 
-            <button type="button" data-action="cc-bogus-action"
+            <button type="button" data-action-click="cc-bogus-action"
                 style="padding: 8px 12px;">
                 Unknown shared action: cc-bogus-action
             </button>
