@@ -22,6 +22,7 @@
 #     Get-NavRegistryEntry    - Returns the cached RBAC_NavRegistry row for a route
 #     Get-PageHeaderHtml      - Renders the H1+subtitle block from RBAC_NavRegistry
 #     Get-PageBrowserTitle    - Returns the browser tab title from RBAC_NavRegistry
+#     Get-PageScriptTagHtml   - Renders the cc-shared.js <script> tag for page footers
 #     Get-AccessDeniedHtml    - Styled 403 page matching Control Center theme
 #     Get-ActionDeniedResponse - Standardized 403 JSON for API endpoints
 #
@@ -1111,6 +1112,32 @@ function Get-PageBrowserTitle {
 
     $entry = Get-NavRegistryEntry -PageRoute $PageRoute
     return "$([string]$entry.display_title) - $Suffix"
+}
+
+function Get-PageScriptTagHtml {
+    <#
+    .SYNOPSIS
+        Returns the platform-wide script reference tag for embedding before
+        </body> in page routes.
+    .DESCRIPTION
+        Emits the single <script> tag that loads cc-shared.js -- the bootloader
+        that reads <body>'s data-page and data-prefix attributes, dynamically
+        injects the page's JS module, and invokes <prefix>_init. Per
+        CC_HTML_Spec.md section 3.2, this is the only <script> tag permitted
+        in HTML markup; the page-specific JS file is loaded dynamically by
+        the bootloader, not declared in markup.
+
+        Centralizing the tag in this helper produces one CSS_FILE USAGE
+        catalog row from a SHARED-scope helper instead of one row per
+        consuming page.
+    .RETURNS
+        The literal string '<script src="/js/cc-shared.js"></script>'.
+    .EXAMPLE
+        $scriptHtml = Get-PageScriptTagHtml
+        # Then substitute $scriptHtml into the page's HTML emission, immediately
+        # before </body>.
+    #>
+    return '<script src="/js/cc-shared.js"></script>'
 }
 
 # ----------------------------------------------------------------------------
