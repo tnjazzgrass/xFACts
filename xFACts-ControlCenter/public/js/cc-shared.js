@@ -20,6 +20,7 @@
    -----------------
    FOUNDATION: SHARED CONSTANTS
    STATE: ENGINE STATE
+   BOOTLOADER: PAGE BOOT AND ACTION DISPATCH
    CHROME: INITIALIZATION
    CHROME: WEBSOCKET CONNECTION
    CHROME: EVENT HANDLING
@@ -161,6 +162,119 @@ var engineIdlePaused = false;
 
 /* setInterval handle for the periodic idle-timeout check. */
 var engineIdleCheckTimer = null;
+
+/* ============================================================================
+   BOOTLOADER: PAGE BOOT AND ACTION DISPATCH
+   ----------------------------------------------------------------------------
+   Orchestrates page module discovery, loading, and lifecycle invocation. The
+   DOMContentLoaded handler reads the page's data-page attribute, injects the
+   page's JS module, invokes the page's <prefix>_init function, and registers
+   the shared chrome action dispatch listener. Failures populate the
+   page-error-banner placeholder when present and log to the console.
+   Prefix: (none)
+   ============================================================================ */
+
+/* Shared chrome action dispatch table. Maps cc-* data-action values to
+   handler functions exposed by other sections of this file. Grows as new
+   shared actions are introduced; entries are added one at a time as pages
+   are converted and surface concrete needs. */
+const sharedActions = {
+    'cc-page-refresh': pageRefresh,
+    'cc-reload-page':  reloadPage
+};
+
+/* Bootloader entry point. Fires once on DOMContentLoaded. Reads data-page
+   from <body>, loads the page's JS module, invokes <prefix>_init, and
+   registers the shared chrome action dispatch listener on document.body. */
+document.addEventListener('DOMContentLoaded', function() {
+    document.body.addEventListener('click', handleSharedAction);
+
+    const pageKey = document.body.dataset.page;
+    if (!pageKey) {
+        return;
+    }
+
+    loadPageModule(pageKey);
+});
+
+/* Injects the page's JS module via a <script> tag and wires success and
+   failure callbacks. On successful load, invokes <prefix>_init. On any
+   failure, logs to the console and populates the page-error-banner. */
+function loadPageModule(pageKey) {
+    const script = document.createElement('script');
+    script.src = '/js/' + pageKey + '.js';
+    script.onload = function() {
+        invokePageInit(pageKey);
+    };
+    script.onerror = function() {
+        renderPageError(pageKey, 'Page module failed to load.');
+        console.error('[cc-shared] Failed to load page module: /js/' + pageKey + '.js');
+    };
+    document.head.appendChild(script);
+}
+
+/* Looks up the page's <prefix>_init function on window and invokes it.
+   Logs to the console and populates the page-error-banner if the function
+   is missing or throws during execution. */
+function invokePageInit(pageKey) {
+    const initFnName = pageKey + '_init';
+    const initFn = window[initFnName];
+
+    if (typeof initFn !== 'function') {
+        renderPageError(pageKey, 'Page boot function not found.');
+        console.error('[cc-shared] Page module loaded but ' + initFnName + '() not found');
+        return;
+    }
+
+    try {
+        initFn();
+    } catch (err) {
+        renderPageError(pageKey, 'Page boot failed.');
+        console.error('[cc-shared] ' + initFnName + '() threw during execution:', err);
+    }
+}
+
+/* Populates the page-error-banner placeholder with a user-facing error
+   message and a refresh control. Falls back to console-only output when
+   the placeholder is absent from the page shell. */
+function renderPageError(pageKey, message) {
+    const banner = document.getElementById('page-error-banner');
+    if (!banner) {
+        return;
+    }
+
+    banner.innerHTML =
+        '<span class="page-error-banner-message">' + escapeHtml(message) + '</span>' +
+        ' <button type="button" class="page-error-banner-refresh" ' +
+        'data-action="cc-reload-page">Refresh</button>' +
+        ' <span class="page-error-banner-contact">If the problem continues, ' +
+        'contact the Applications &amp; Integration team.</span>';
+    banner.classList.add('page-error-banner-visible');
+}
+
+/* Delegated dispatcher for shared chrome actions. Routes data-action
+   values that begin with cc- to handlers in sharedActions. Page-local
+   actions (no cc- prefix) are ignored here and handled by the page's
+   own delegated listener registered in <prefix>_init. */
+function handleSharedAction(event) {
+    const target = event.target.closest('[data-action]');
+    if (!target) {
+        return;
+    }
+
+    const action = target.dataset.action;
+    if (!action || action.indexOf('cc-') !== 0) {
+        return;
+    }
+
+    const handler = sharedActions[action];
+    if (!handler) {
+        console.warn('[cc-shared] Unknown shared action: ' + action);
+        return;
+    }
+
+    handler(target, event);
+}
 
 /* ============================================================================
    CHROME: INITIALIZATION
