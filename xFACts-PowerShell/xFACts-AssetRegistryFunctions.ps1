@@ -9,17 +9,18 @@
 
     Common functions used by the Asset Registry populator family
     (Populate-AssetRegistry-CSS.ps1, Populate-AssetRegistry-HTML.ps1,
-    Populate-AssetRegistry-JS.ps1, and the future PS populator).
+    Populate-AssetRegistry-JS.ps1, Populate-AssetRegistry-PS.ps1).
 
     Centralizes:
     - Row construction and bulk-insert plumbing
     - Drift code attachment (master-table-validated, with optional context)
     - Banner detection and parsing (parameterized for valid section types)
-    - File-header parsing
+    - File-header parsing (CSS/JS shape via Get-FileHeaderInfo,
+      PS shape via Get-PSFileHeaderInfo)
     - Section list construction and line lookup
     - Object_Registry / Component_Registry loads
     - Comment-text cleanup
-    - Generic AST visitor walker
+    - Generic AST visitor walker (JS/CSS shape) and PS AST helpers
 
     Per-language logic (visitor scriptblock body, per-row emitters, selector
     decomposition, variant shape helpers, HTML attribute extraction, AST
@@ -46,6 +47,52 @@
 
     CHANGELOG
     ---------
+    2026-05-13  Defensive field truncation. Added Get-TruncatedFieldValue
+                helper and applied it inside New-AssetRegistryRow to every
+                bounded VARCHAR(N) column based on the live dbo.Asset_Registry
+                schema (FileName=200, ComponentName=500, VariantType=30,
+                VariantQualifier1=100, VariantQualifier2=500, SourceFile=200,
+                SourceSection=300, ParentFunction=200). Long values get a
+                trailing '...' marker so truncation is visible to anyone
+                querying the catalog. Unbounded VARCHAR(MAX) columns
+                (Signature, RawText, PurposeDescription, DriftText) are
+                left alone - they can carry arbitrary length. Closed-enum
+                columns (FileType, ComponentType, ReferenceType, Scope) are
+                left alone - they're validated against CK constraints and
+                their values come from finite vocabularies. Motivation:
+                pre-spec PowerShell files produce malformed banners whose
+                BannerName fallback grabs the entire first non-rule line
+                (potentially hundreds of characters), and Pode route paths
+                could pathologically exceed 500 chars. Both used to fail
+                SqlBulkCopy with "invalid column length". Architectural fix
+                in the universal row builder protects every populator
+                (CSS, HTML, JS, PS) without per-emitter code changes.
+    2026-05-13  PS populator support. Added two PS-specific helpers in a
+                separate "PS AST AND HEADER HELPERS" section at the end of
+                the file:
+                  - Get-PSFileHeaderInfo parses the PowerShell comment-based-
+                    help block (the .SYNOPSIS / .DESCRIPTION / .PARAMETER /
+                    .COMPONENT / .NOTES form) at line 1 of a .ps1/.psm1 file.
+                    Sibling to Get-FileHeaderInfo (which is CSS/JS-specific).
+                    Emits PS-specific drift codes including FORBIDDEN_CHANGELOG_IN_HEADER,
+                    FORBIDDEN_AUTHOR_IN_HEADER, FORBIDDEN_DATE_IN_HEADER,
+                    FORBIDDEN_VERSION_IN_HEADER, FORBIDDEN_FUNCTION_INVENTORY,
+                    FORBIDDEN_DEPLOYMENT_BLOCK, FORBIDDEN_INLINE_DIVIDER_IN_HEADER.
+                    Returns FILE ORGANIZATION list extracted from .NOTES,
+                    plus the .COMPONENT value for downstream validation against
+                    Component_Registry.
+                  - PS AST navigation helpers: Find-PSAstNodes (wrapper
+                    around .FindAll() with TopLevelOnly mode), Get-PSAstParentChain
+                    (walks .Parent up to root), Get-PSAstNodeLine /
+                    Get-PSAstNodeEndLine / Get-PSAstNodeColumn (.Extent-based
+                    position extractors), Test-IsTopLevelPSAst (top-of-file
+                    statement check), Test-IsConditionallyDefinedPSAst (inside
+                    if/while/try check). PS AST is a fundamentally different
+                    walking pattern than the JSON-from-subprocess JS/CSS shape
+                    that Invoke-AstWalk handles, so a separate helper set
+                    rather than trying to make Invoke-AstWalk polymorphic.
+                The existing helpers are unchanged. CSS / JS / HTML populator
+                behavior is unaffected.
     2026-05-11  Get-ObjectRegistryMap and Get-ComponentRegistryPrefixMap
                 -FileType parameter expanded to accept a string array and
                 four new alias values: 'Route', 'API', 'Module', 'Config'.
@@ -143,23 +190,36 @@ function New-AssetRegistryRow {
         [Nullable[bool]]$HasDynamicContent = $null
     )
 
+    # Bounded string columns get defensively truncated against their declared
+    # widths in dbo.Asset_Registry. This protects against SqlBulkCopy
+    # "invalid column length" errors when pre-spec source content produces
+    # unusually long values (e.g. a malformed banner whose first non-rule
+    # line becomes the BannerName fallback, or a deeply-nested route path).
+    # Truncated values get '...' appended so the truncation is visible. The
+    # unbounded VARCHAR(MAX) columns (Signature, RawText, PurposeDescription,
+    # DriftText) are left alone - they can carry arbitrary length.
+    #
+    # Closed-enum columns (FileType, ComponentType, ReferenceType, Scope)
+    # don't need truncation - their values come from finite vocabularies and
+    # are validated against CK constraints. They're left alone too.
+
     return [ordered]@{
-        FileName           = $FileName
+        FileName           = (Get-TruncatedFieldValue -Value $FileName          -MaxLength 200)
         FileType           = $FileType
         LineStart          = $LineStart
         LineEnd            = if ($LineEnd) { $LineEnd } else { $LineStart }
         ColumnStart        = $ColumnStart
         ComponentType      = $ComponentType
-        ComponentName      = $ComponentName
-        VariantType        = $VariantType
-        VariantQualifier1  = $VariantQualifier1
-        VariantQualifier2  = $VariantQualifier2
+        ComponentName      = (Get-TruncatedFieldValue -Value $ComponentName     -MaxLength 500)
+        VariantType        = (Get-TruncatedFieldValue -Value $VariantType       -MaxLength 30)
+        VariantQualifier1  = (Get-TruncatedFieldValue -Value $VariantQualifier1 -MaxLength 100)
+        VariantQualifier2  = (Get-TruncatedFieldValue -Value $VariantQualifier2 -MaxLength 500)
         ReferenceType      = $ReferenceType
         Scope              = $Scope
-        SourceFile         = $SourceFile
-        SourceSection      = $SourceSection
+        SourceFile         = (Get-TruncatedFieldValue -Value $SourceFile        -MaxLength 200)
+        SourceSection      = (Get-TruncatedFieldValue -Value $SourceSection     -MaxLength 300)
         Signature          = $Signature
-        ParentFunction     = $ParentFunction
+        ParentFunction     = (Get-TruncatedFieldValue -Value $ParentFunction    -MaxLength 200)
         RawText            = $RawText
         PurposeDescription = $PurposeDescription
         HasDynamicContent  = $HasDynamicContent
@@ -167,6 +227,23 @@ function New-AssetRegistryRow {
         DriftText          = $null
         OccurrenceIndex    = 1
     }
+}
+
+# Truncate a string value to a max length, appending '...' when truncation
+# happens. Returns $null for null/empty input. Used by New-AssetRegistryRow
+# to keep bounded VARCHAR(N) columns from overflowing during bulk insert.
+# Cap-with-marker is preferred to silent truncation because the catalog
+# stays usefully searchable on the prefix and the trailing '...' makes the
+# truncation visible to anyone querying the data.
+function Get-TruncatedFieldValue {
+    param(
+        [string]$Value,
+        [Parameter(Mandatory)][int]$MaxLength
+    )
+    if ([string]::IsNullOrEmpty($Value)) { return $Value }
+    if ($Value.Length -le $MaxLength) { return $Value }
+    if ($MaxLength -le 3) { return $Value.Substring(0, $MaxLength) }
+    return $Value.Substring(0, $MaxLength - 3) + '...'
 }
 
 
@@ -979,7 +1056,7 @@ function Test-PrefixValueIsValid {
 
 
 # ============================================================================
-# FILE HEADER PARSING
+# FILE HEADER PARSING (CSS / JS)
 # ============================================================================
 
 # Parse the file-header block comment (the leading /* ... */ block at line 1).
@@ -995,6 +1072,11 @@ function Test-PrefixValueIsValid {
 #   EndLine      - 1-based line where the header ends
 #   DriftCodes   - array of file-header drift codes (MALFORMED_FILE_HEADER,
 #                  FORBIDDEN_CHANGELOG_BLOCK)
+#
+# This function is CSS/JS-specific. The PowerShell file-header format is
+# fundamentally different (comment-based-help <# .SYNOPSIS .DESCRIPTION
+# #> with CHANGELOG allowed as a dedicated section) and is parsed by the
+# sibling function Get-PSFileHeaderInfo further down in this file.
 #
 # The -LocationRegex parameter validates the per-language Location: line
 # (e.g. '\\public\\css\\' for CSS, '\\public\\js\\' for JS). Currently this
@@ -1270,7 +1352,7 @@ function Test-FileOrgMatchesBanners {
 
 
 # ============================================================================
-# AST WALKING (GENERIC VISITOR)
+# AST WALKING (GENERIC VISITOR - JS / CSS SHAPE)
 # ============================================================================
 
 # Generic AST visitor walker. Visits every node in the tree depth-first and
@@ -1282,6 +1364,12 @@ function Test-FileOrgMatchesBanners {
 #                  - lets the visitor inspect actual parent nodes, not just
 #                    types (e.g. to find which VariableDeclarator a
 #                    FunctionExpression is the init of).
+#
+# This walker is for the JSON-from-subprocess JS (acorn) and CSS (PostCSS)
+# AST shapes - PSCustomObject trees with .type properties on every node.
+# It is NOT suitable for the PowerShell native AST (System.Management.
+# Automation.Language.Ast objects). The PS populator uses Find-PSAstNodes
+# and the other PS AST helpers further down in this file instead.
 #
 # The visitor may return the string 'SKIP_CHILDREN' to signal that the walker
 # should not recurse into this node's children. Used for structurally
@@ -1344,4 +1432,476 @@ function Invoke-AstWalk {
         }
         Invoke-AstWalk -Node $val -ParentChain $newChain -ParentNodes $newNodes -Visitor $Visitor
     }
+}
+
+
+# ============================================================================
+# PS AST AND HEADER HELPERS
+# ============================================================================
+#
+# These helpers serve the PowerShell populator (Populate-AssetRegistry-PS.ps1).
+# PowerShell's native AST is fundamentally different from the JSON-from-
+# subprocess AST shapes that JS (acorn) and CSS (PostCSS) produce:
+#
+#   - Real .NET objects with .GetType().Name discrimination
+#     (FunctionDefinitionAst, ParameterAst, CommandAst, etc.)
+#   - Child traversal via .FindAll({ predicate }, $searchNestedScriptBlocks)
+#     and .Find() - not by walking PSObject properties
+#   - Source positions via .Extent.StartLineNumber, .Extent.EndLineNumber,
+#     .Extent.StartColumnNumber - not .loc.start.line / .source.start.line
+#   - Parent references via .Parent (always populated by the parser)
+#
+# Rather than making the generic Invoke-AstWalk polymorphic, the PS populator
+# uses these targeted helpers that match the PS-native idiom: Find-PSAstNodes
+# wraps .FindAll() with a TopLevelOnly mode, Get-PSAstParentChain walks .Parent
+# refs, and the position helpers extract from .Extent with null safety.
+#
+# Get-PSFileHeaderInfo parses the PowerShell comment-based-help file header
+# (<# .SYNOPSIS .DESCRIPTION .PARAMETER .COMPONENT .NOTES #>). It is a
+# sibling to Get-FileHeaderInfo (CSS/JS-specific). The two formats are
+# different enough that one polymorphic function would be unclear; siblings
+# are cleaner.
+#
+# ============================================================================
+
+# Parse a PowerShell file-header comment-based-help block. Returns an ordered
+# hashtable:
+#   Synopsis     - .SYNOPSIS content (single line typical)
+#   Description  - .DESCRIPTION content (multi-line block)
+#   Parameters   - hashtable of @{ name -> description } from .PARAMETER tags
+#   Component    - .COMPONENT value (used to validate against Component_Registry)
+#   Notes        - .NOTES content (multi-line; contains FILE ORGANIZATION)
+#   FileOrgList  - array of banner titles declared in FILE ORGANIZATION inside
+#                  .NOTES, in declaration order
+#   HasChangelog - $true if a CHANGELOG block is present inside the header
+#                  (forbidden; CHANGELOG belongs in a dedicated section
+#                  outside the header)
+#   IsValid      - $true if the header is well-formed
+#   StartLine    - 1-based source line of the opening '<#'
+#   EndLine      - 1-based source line of the closing '#>'
+#   DriftCodes   - array of file-header drift codes for spec violations:
+#                    MALFORMED_FILE_HEADER
+#                    FORBIDDEN_CHANGELOG_IN_HEADER
+#                    FORBIDDEN_AUTHOR_IN_HEADER
+#                    FORBIDDEN_DATE_IN_HEADER
+#                    FORBIDDEN_VERSION_IN_HEADER
+#                    FORBIDDEN_FUNCTION_INVENTORY
+#                    FORBIDDEN_DEPLOYMENT_BLOCK
+#                    FORBIDDEN_INLINE_DIVIDER_IN_HEADER
+#                    MISSING_COMPONENT_DECLARATION (when -RequireComponent is set
+#                       and .COMPONENT is absent)
+#
+# Per CC_PS_Spec.md Sections 6 and 17.1, the canonical header form is:
+#
+#     <#
+#     .SYNOPSIS
+#         <Single-sentence summary.>
+#
+#     .DESCRIPTION
+#         <Multi-paragraph description.>
+#
+#     .PARAMETER <Name>
+#         <Parameter description.>
+#
+#     .COMPONENT
+#         <Component_Registry.component_name>
+#
+#     .NOTES
+#         FILE ORGANIZATION
+#             1. SECTION_TYPE: Section Name
+#             2. SECTION_TYPE: Section Name
+#             ...
+#     #>
+#
+# The function tolerates real-world variation (missing .NOTES, FILE
+# ORGANIZATION outside .NOTES, etc.) and emits drift codes rather than
+# rejecting outright. The caller emits the codes onto the FILE_HEADER row.
+#
+# -RequireComponent: when $true, missing .COMPONENT adds MISSING_COMPONENT_DECLARATION
+# to DriftCodes. Standalone scripts may not need .COMPONENT depending on
+# file role; the caller (populator) decides based on the file's role.
+function Get-PSFileHeaderInfo {
+    param(
+        [string]$RawText,
+        [int]$StartLine = 1,
+        [int]$EndLine   = 1,
+        [switch]$RequireComponent
+    )
+
+    $info = [ordered]@{
+        Synopsis      = $null
+        Description   = $null
+        Parameters    = @{}
+        Component     = $null
+        Notes         = $null
+        FileOrgList   = @()
+        HasChangelog  = $false
+        IsValid       = $false
+        StartLine     = $StartLine
+        EndLine       = $EndLine
+        DriftCodes    = @()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RawText)) {
+        $info.DriftCodes += 'MALFORMED_FILE_HEADER'
+        return $info
+    }
+
+    # Strip the <# and #> delimiters if present so we work on the body text.
+    # The PS parser hands these back to us either way depending on how the
+    # caller extracts the comment-based-help block, so be tolerant.
+    $body = $RawText
+    $body = $body -replace '^\s*<#\s*', ''
+    $body = $body -replace '\s*#>\s*$', ''
+
+    $crlf = "`r`n"; $cr = "`r"
+    $normalized = $body -replace $crlf, "`n" -replace $cr, "`n"
+    $lines = $normalized -split "`n"
+
+    # ---- Pass 1: locate every .KEYWORD tag and slice the body into tag blocks ----
+    # Each tag block is a hashtable @{ Tag = '<NAME>'; Param = '<param-name>';
+    # Lines = @( body lines ) }. Tag/Param are uppercased; Lines preserves the
+    # original line text (without the .TAG prefix) for the tag's content.
+    $tagRegex = '^\s*\.([A-Z]+)(?:\s+(\S.*?))?\s*$'
+
+    $blocks = New-Object System.Collections.Generic.List[object]
+    $currentBlock = $null
+
+    foreach ($line in $lines) {
+        if ($line -match $tagRegex) {
+            $currentBlock = [ordered]@{
+                Tag   = $matches[1].ToUpper()
+                Param = if ($matches[2]) { $matches[2].Trim() } else { $null }
+                Lines = New-Object System.Collections.Generic.List[string]
+            }
+            $blocks.Add($currentBlock)
+        }
+        elseif ($null -ne $currentBlock) {
+            $currentBlock.Lines.Add($line)
+        }
+        # Lines before the first tag are header preamble; ignored by spec.
+    }
+
+    if ($blocks.Count -eq 0) {
+        # No comment-based-help tags at all. Spec requires at least .SYNOPSIS
+        # and .DESCRIPTION. Treat as malformed.
+        $info.DriftCodes += 'MALFORMED_FILE_HEADER'
+    }
+
+    # ---- Pass 2: populate the structured fields from the tag blocks ----
+    $sawSynopsis    = $false
+    $sawDescription = $false
+
+    foreach ($block in $blocks) {
+        switch ($block.Tag) {
+            'SYNOPSIS' {
+                $sawSynopsis = $true
+                $info.Synopsis = (($block.Lines | ForEach-Object { $_.Trim() } |
+                                     Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' ').Trim()
+            }
+            'DESCRIPTION' {
+                $sawDescription = $true
+                $info.Description = ConvertTo-CleanCommentText -CommentText ($block.Lines -join "`n")
+            }
+            'PARAMETER' {
+                if (-not [string]::IsNullOrEmpty($block.Param)) {
+                    $info.Parameters[$block.Param] = ConvertTo-CleanCommentText -CommentText ($block.Lines -join "`n")
+                }
+            }
+            'COMPONENT' {
+                # .COMPONENT value is typically a single token on the same line
+                # as the tag OR on the next non-blank line. Prefer the inline
+                # form (block.Param); fall back to the first non-blank line of
+                # the block's content.
+                if (-not [string]::IsNullOrEmpty($block.Param)) {
+                    $info.Component = $block.Param.Trim()
+                } else {
+                    foreach ($l in $block.Lines) {
+                        $t = $l.Trim()
+                        if (-not [string]::IsNullOrEmpty($t)) {
+                            $info.Component = $t
+                            break
+                        }
+                    }
+                }
+            }
+            'NOTES' {
+                $info.Notes = ConvertTo-CleanCommentText -CommentText ($block.Lines -join "`n")
+            }
+        }
+    }
+
+    if (-not $sawSynopsis -or -not $sawDescription) {
+        if ($info.DriftCodes -notcontains 'MALFORMED_FILE_HEADER') {
+            $info.DriftCodes += 'MALFORMED_FILE_HEADER'
+        }
+    }
+
+    # ---- Pass 3: FILE ORGANIZATION extraction ----
+    # Look inside .NOTES content for a "FILE ORGANIZATION" line; collect
+    # subsequent indented or numbered entries until we hit a blank line or
+    # the end of the block. Spec form:
+    #     FILE ORGANIZATION
+    #         1. SECTION_TYPE: Section Name
+    #         2. SECTION_TYPE: Section Name
+    # Spec tolerates the un-numbered form too.
+    if ($info.Notes) {
+        $notesLines = $info.Notes -split "`n"
+        $fileOrgStart = -1
+        for ($i = 0; $i -lt $notesLines.Count; $i++) {
+            if ($notesLines[$i] -cmatch '^\s*FILE\s+ORGANIZATION\s*$') {
+                $fileOrgStart = $i
+                break
+            }
+        }
+        if ($fileOrgStart -ge 0) {
+            for ($i = $fileOrgStart + 1; $i -lt $notesLines.Count; $i++) {
+                $line = $notesLines[$i]
+                if ($line -match '^[-]{3,}\s*$') { continue }
+                if ($line -match '^[=]{5,}\s*$') { break }
+                if ([string]::IsNullOrWhiteSpace($line)) {
+                    # First blank after the list ends the FILE ORGANIZATION block.
+                    # We only stop if we've collected at least one entry; otherwise
+                    # keep scanning past initial padding.
+                    if ($info.FileOrgList.Count -gt 0) { break }
+                    continue
+                }
+                # Strip optional leading "1. " numbered prefix
+                $entry = $line -replace '^\s*\d+\.\s+', ''
+                # Strip trailing -- annotations
+                $entry = $entry -replace '\s+--.*$', ''
+                $entry = $entry.Trim()
+                if (-not [string]::IsNullOrEmpty($entry)) {
+                    $info.FileOrgList += $entry
+                }
+            }
+        }
+    }
+
+    # ---- Pass 4: forbidden-content scanning of the entire header body ----
+    # These checks run against the full body text. Each fires its own drift
+    # code; multiple can fire on the same header.
+    foreach ($line in $lines) {
+        # CHANGELOG keyword inside the header -> drift. CHANGELOG belongs in
+        # a dedicated section outside the header.
+        if ($line -cmatch '^\s*CHANGELOG\b') {
+            $info.HasChangelog = $true
+            if ($info.DriftCodes -notcontains 'FORBIDDEN_CHANGELOG_IN_HEADER') {
+                $info.DriftCodes += 'FORBIDDEN_CHANGELOG_IN_HEADER'
+            }
+        }
+
+        # Author/Date/Version bookkeeping lines -> drift. These belong in
+        # System_Metadata, not in source headers.
+        if ($line -cmatch '^\s*Author\s*:') {
+            if ($info.DriftCodes -notcontains 'FORBIDDEN_AUTHOR_IN_HEADER') {
+                $info.DriftCodes += 'FORBIDDEN_AUTHOR_IN_HEADER'
+            }
+        }
+        if ($line -cmatch '^\s*Date\s*:') {
+            if ($info.DriftCodes -notcontains 'FORBIDDEN_DATE_IN_HEADER') {
+                $info.DriftCodes += 'FORBIDDEN_DATE_IN_HEADER'
+            }
+        }
+        if ($line -cmatch '^\s*Version\s*:') {
+            # Allow the "Tracked in dbo.System_Metadata" form which other
+            # populators use as a documentation hint. Anything else is drift.
+            if ($line -notmatch 'Tracked in dbo\.System_Metadata') {
+                if ($info.DriftCodes -notcontains 'FORBIDDEN_VERSION_IN_HEADER') {
+                    $info.DriftCodes += 'FORBIDDEN_VERSION_IN_HEADER'
+                }
+            }
+        }
+
+        # Function Inventory blocks -> drift. The function list belongs in
+        # the FILE ORGANIZATION section, not as a separate enumeration.
+        if ($line -cmatch '^\s*FUNCTION\s+INVENTORY\s*$' -or
+            $line -cmatch '^\s*Functions?\s*:\s*$') {
+            if ($info.DriftCodes -notcontains 'FORBIDDEN_FUNCTION_INVENTORY') {
+                $info.DriftCodes += 'FORBIDDEN_FUNCTION_INVENTORY'
+            }
+        }
+
+        # Deployment / Deploy: blocks -> drift. Deployment info belongs in
+        # an external operational runbook, not in the source file header.
+        if ($line -cmatch '^\s*Deploy(?:ment)?\s*:') {
+            if ($info.DriftCodes -notcontains 'FORBIDDEN_DEPLOYMENT_BLOCK') {
+                $info.DriftCodes += 'FORBIDDEN_DEPLOYMENT_BLOCK'
+            }
+        }
+
+        # Inline divider rules of '=' or '-' INSIDE the header body
+        # (separate from the <# / #> delimiters which are the outer
+        # comment boundary). Spec uses .NOTES blocks and section banners
+        # for separation; inline rules inside the header are drift.
+        if ($line -match '^\s*[=]{5,}\s*$' -or $line -match '^\s*[-]{5,}\s*$') {
+            if ($info.DriftCodes -notcontains 'FORBIDDEN_INLINE_DIVIDER_IN_HEADER') {
+                $info.DriftCodes += 'FORBIDDEN_INLINE_DIVIDER_IN_HEADER'
+            }
+        }
+    }
+
+    # ---- Pass 5: .COMPONENT presence check (optional via -RequireComponent) ----
+    if ($RequireComponent -and [string]::IsNullOrEmpty($info.Component)) {
+        if ($info.DriftCodes -notcontains 'MISSING_COMPONENT_DECLARATION') {
+            $info.DriftCodes += 'MISSING_COMPONENT_DECLARATION'
+        }
+    }
+
+    # ---- Validity ----
+    # Valid only when no drift codes fired AND both .SYNOPSIS and .DESCRIPTION
+    # are present. The component check participates only when required.
+    $info.IsValid = ($info.DriftCodes.Count -eq 0 -and $sawSynopsis -and $sawDescription)
+
+    return $info
+}
+
+# Find AST nodes of a given type in a PowerShell AST. Wrapper around
+# Ast.FindAll() with two operating modes:
+#
+#   Normal mode: returns every descendant node of the requested type,
+#       searching into nested scriptblocks. Equivalent to FindAll({...}, $true).
+#
+#   -TopLevelOnly: returns only nodes that are direct children of the
+#       script's top-level statement block. Use this for "top-level
+#       functions only" checks (the spec's distinction between cataloged
+#       top-level functions and nested helper functions that aren't
+#       cataloged at the file level).
+#
+# The -AstType parameter is a [type] value (e.g.
+# [System.Management.Automation.Language.FunctionDefinitionAst]) rather
+# than a string, so the function can be called with the .NET type name
+# at the call site and we get static type validation.
+function Find-PSAstNodes {
+    param(
+        [Parameter(Mandatory)]$Ast,
+        [Parameter(Mandatory)][type]$AstType,
+        [switch]$TopLevelOnly
+    )
+
+    if ($null -eq $Ast) { return @() }
+
+    if (-not $TopLevelOnly) {
+        # Standard FindAll across the entire AST.
+        $results = $Ast.FindAll({ param($n) $n -is $AstType }.GetNewClosure(), $true)
+        return @($results)
+    }
+
+    # Top-level only: inspect the script's EndBlock statements directly.
+    # EndBlock is the implicit final block of a script - where top-level
+    # statements live in the absence of explicit Begin/Process/End blocks.
+    $endBlock = $null
+    if ($Ast -is [System.Management.Automation.Language.ScriptBlockAst]) {
+        $endBlock = $Ast.EndBlock
+    }
+    elseif ($Ast.PSObject.Properties.Name -contains 'ScriptBlock' -and
+            $Ast.ScriptBlock -is [System.Management.Automation.Language.ScriptBlockAst]) {
+        $endBlock = $Ast.ScriptBlock.EndBlock
+    }
+
+    if ($null -eq $endBlock -or $null -eq $endBlock.Statements) { return @() }
+
+    $results = New-Object System.Collections.Generic.List[object]
+    foreach ($stmt in $endBlock.Statements) {
+        if ($stmt -is $AstType) {
+            $results.Add($stmt)
+        }
+    }
+    return @($results.ToArray())
+}
+
+# Walk an AST node's .Parent chain to the root and return an array of
+# ancestor types (System.Type values). Used to test contextual properties:
+# whether a node is inside an if/while/try block, inside a function body,
+# at top level, etc.
+#
+# The returned array is ordered root-first (Program at index 0, immediate
+# parent at the end), mirroring the JS populator's ParentChain convention.
+function Get-PSAstParentChain {
+    param([Parameter(Mandatory)]$Node)
+
+    $chain = New-Object System.Collections.Generic.List[type]
+    $cursor = $Node.Parent
+    while ($null -ne $cursor) {
+        $chain.Insert(0, $cursor.GetType())
+        $cursor = $cursor.Parent
+    }
+    return @($chain.ToArray())
+}
+
+# 1-based source line where a PS AST node begins. Falls back to 1 when
+# .Extent is null (rare but possible with synthesized nodes).
+function Get-PSAstNodeLine {
+    param([Parameter(Mandatory)]$Node)
+    if ($null -eq $Node) { return 1 }
+    if ($Node.Extent -and $Node.Extent.StartLineNumber) { return [int]$Node.Extent.StartLineNumber }
+    return 1
+}
+
+# 1-based source line where a PS AST node ends.
+function Get-PSAstNodeEndLine {
+    param([Parameter(Mandatory)]$Node)
+    if ($null -eq $Node) { return 1 }
+    if ($Node.Extent -and $Node.Extent.EndLineNumber) { return [int]$Node.Extent.EndLineNumber }
+    return Get-PSAstNodeLine -Node $Node
+}
+
+# 1-based column where a PS AST node begins on its starting line.
+function Get-PSAstNodeColumn {
+    param([Parameter(Mandatory)]$Node)
+    if ($null -eq $Node) { return 1 }
+    if ($Node.Extent -and $Node.Extent.StartColumnNumber) { return [int]$Node.Extent.StartColumnNumber }
+    return 1
+}
+
+# Return $true if the node is a direct child of the script's top-level
+# statement block (the EndBlock of the root ScriptBlockAst). Used by
+# definition emitters to decide whether to emit a top-level row.
+#
+# Implementation walks .Parent up: a top-level statement's parent is
+# directly the EndBlock NamedBlockAst, whose parent is the root
+# ScriptBlockAst, whose parent is null.
+function Test-IsTopLevelPSAst {
+    param([Parameter(Mandatory)]$Node)
+    if ($null -eq $Node) { return $false }
+    $parent = $Node.Parent
+    if ($null -eq $parent) { return $false }
+    if ($parent -isnot [System.Management.Automation.Language.NamedBlockAst]) { return $false }
+    $grandparent = $parent.Parent
+    if ($null -eq $grandparent) { return $false }
+    if ($grandparent -isnot [System.Management.Automation.Language.ScriptBlockAst]) { return $false }
+    # Top-level only when the grandparent ScriptBlockAst has no parent
+    # (it is the root script block of the file, not a nested scriptblock
+    # inside a function or a hashtable literal etc.)
+    return ($null -eq $grandparent.Parent)
+}
+
+# Return $true if the node is inside an if/while/do/for/try/catch block
+# anywhere in its ancestry. Used by definition emitters to flag
+# FORBIDDEN_CONDITIONAL_DEFINITION drift on functions declared inside
+# control-flow blocks.
+function Test-IsConditionallyDefinedPSAst {
+    param([Parameter(Mandatory)]$Node)
+    if ($null -eq $Node) { return $false }
+
+    $forbiddenTypes = @(
+        [System.Management.Automation.Language.IfStatementAst]
+        [System.Management.Automation.Language.WhileStatementAst]
+        [System.Management.Automation.Language.DoWhileStatementAst]
+        [System.Management.Automation.Language.DoUntilStatementAst]
+        [System.Management.Automation.Language.ForStatementAst]
+        [System.Management.Automation.Language.ForEachStatementAst]
+        [System.Management.Automation.Language.TryStatementAst]
+        [System.Management.Automation.Language.CatchClauseAst]
+        [System.Management.Automation.Language.SwitchStatementAst]
+    )
+
+    $cursor = $Node.Parent
+    while ($null -ne $cursor) {
+        foreach ($t in $forbiddenTypes) {
+            if ($cursor -is $t) { return $true }
+        }
+        $cursor = $cursor.Parent
+    }
+    return $false
 }
