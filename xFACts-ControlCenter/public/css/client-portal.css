@@ -54,20 +54,18 @@ body {
     background: #1e1e1e;
     color: #d4d4d4;
     min-height: 100vh;
+	overflow-x: hidden;
 }
 
 /* --- Nav Bar (standard CC) --- */
 .nav-bar {
     display: flex;
-    align-items: center;
     background: #252526;
     border-bottom: 1px solid #404040;
     padding: 0 16px;
     height: 40px;
     font-size: 13px;
-    overflow-x: auto;
-    white-space: nowrap;
-    flex-wrap: nowrap;
+    align-items: stretch;
 }
 
 .nav-link {
@@ -75,6 +73,10 @@ body {
     text-decoration: none;
     padding: 8px 12px;
     transition: color 0.15s;
+    display: flex;
+    align-items: center;
+    text-align: center;
+    line-height: 1.2;
 }
 
 .nav-link:hover { color: #d4d4d4; }
