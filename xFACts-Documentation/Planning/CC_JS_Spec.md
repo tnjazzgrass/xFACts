@@ -88,7 +88,7 @@ Four section types, in fixed order:
 | Order | TYPE | Purpose | Multiple banners? |
 |-------|------|---------|-------------------|
 | 1 | `IMPORTS` | ES module imports or `require` statements. | No - single banner only. |
-| 2 | `CONSTANTS` | Module-scope `const` declarations of immutable values. | Yes - group by concept. |
+| 2 | `CONSTANTS` | Module-scope `const` declarations of immutable values. Includes per-event dispatch tables (§11.3). | Yes - group by concept. |
 | 3 | `STATE` | Module-scope `var` declarations of mutable values. | Yes - group by concept. |
 | 4 | `FUNCTIONS` | Everything else - data loading, rendering, event handlers, helpers, hooks, and the mandatory `<prefix>_init` page boot function (Section 11). | Yes. The banner for page lifecycle hooks has a fixed name (Section 8) and must be last. |
 
@@ -101,7 +101,7 @@ Five section types, in fixed order:
 | 1 | `IMPORTS` | ES module imports or `require` statements. Reserved for future use. | No. | Both. |
 | 2 | `FOUNDATION` | Platform-wide immutable constants and primitives. Holds `const` declarations only. | Yes - group by concept. | `cc-shared.js` only. |
 | 3 | `STATE` | Platform-wide mutable runtime state. Holds `var` declarations only. | Yes - group by concept. | Both. |
-| 4 | `BOOTLOADER` | Page-module discovery, loading, and lifecycle invocation. Holds the shared chrome action dispatch table and its delegated listener. | No - single banner only. | `cc-shared.js` only. |
+| 4 | `BOOTLOADER` | Page-module discovery, loading, and lifecycle invocation. Holds the `RECOGNIZED_EVENTS` constant, the eight `shared<Event>Actions` dispatch tables, the delegated event listener registration, and the page-module loader. | No - single banner only. | `cc-shared.js` only. |
 | 5 | `CHROME` | Universal page chrome and shared utilities. | Yes - group by concept. | `cc-shared.js` only. |
 
 `FOUNDATION` is `cc-shared.js`'s name for what page files call `CONSTANTS`; `CHROME` covers the universal chrome utilities pages consume after boot; `STATE` keeps the same name and meaning in both file kinds.
@@ -146,6 +146,21 @@ Each page's prefix is registered in `dbo.Component_Registry.cc_prefix` for the c
 - If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every page-prefixed section banner must declare `Prefix: X`. Sections that legitimately use `(none)` (the hooks banner, IMPORTS) are exempt from this check. A section whose banner declares a different prefix value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
 - Top-level identifiers (function names, top-level constants, top-level state variables, top-level classes, and revealing-module wrappers) must begin with the file's registered `cc_prefix` followed by an underscore. This rule applies independently of banners. Hooks and methods inside classes are exempt. Drift code: `PREFIX_MISSING`.
 - The registry is the source of truth. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
+
+### 5.5 Contract identifiers
+
+Contract identifiers are referenced by exact name from `cc-shared.js` and cannot carry the page prefix. The set is fixed:
+
+| Identifier | Kind | Required home banner |
+|---|---|---|
+| `ENGINE_PROCESSES` | Constant | `CONSTANTS: ENGINE PROCESSES` |
+| `onPageRefresh` | Hook function | `FUNCTIONS: PAGE LIFECYCLE HOOKS` |
+| `onPageResumed` | Hook function | `FUNCTIONS: PAGE LIFECYCLE HOOKS` |
+| `onSessionExpired` | Hook function | `FUNCTIONS: PAGE LIFECYCLE HOOKS` |
+| `onEngineProcessCompleted` | Hook function | `FUNCTIONS: PAGE LIFECYCLE HOOKS` |
+| `onEngineEventRaw` | Hook function | `FUNCTIONS: PAGE LIFECYCLE HOOKS` |
+
+Contract identifiers are exempt from `PREFIX_MISSING` and `PREFIX_MISMATCH`. Misplacement drift codes share the `_MISPLACED` suffix: `ENGINE_PROCESSES_MISPLACED` (§7.4.3), `HOOK_MISPLACED` (§8.5).
 
 ---
 
@@ -211,9 +226,35 @@ The case-distinction rule is conventional, not parser-enforced.
 
 ### 7.4 Engine processes contract banner
 
-The `ENGINE_PROCESSES` constant is a name contract with `cc-shared.js`: the identifier is read by exact name and cannot carry a page prefix. Pages that call `connectEngineEvents()` declare it in a fixed-form `CONSTANTS` banner with the name `ENGINE PROCESSES` and `Prefix: (none)`. The value is `{}` when the page has no collectors; the banner is still present.
+The `ENGINE_PROCESSES` constant is a name contract with `cc-shared.js`: the identifier is read by exact name and cannot carry a page prefix. Pages that have engine cards registered in `Orchestrator.ProcessRegistry` declare `ENGINE_PROCESSES` in a fixed-form `CONSTANTS` banner with the name `ENGINE PROCESSES` and `Prefix: (none)`.
+
+#### 7.4.1 ENGINE_PROCESSES shape
+
+```javascript
+const ENGINE_PROCESSES = {
+    '<process-name>': { slug: '<slug>' },
+    '<process-name>': { slug: '<slug>' }
+};
+```
+
+- Keys are process names matching `Orchestrator.ProcessRegistry.process_name`.
+- Values are object literals with at least a `slug` field. The slug must match `Orchestrator.ProcessRegistry.cc_engine_slug` for the corresponding process.
+- An empty `{}` is permitted when the page has no engine cards but the page still needs to declare the constant (e.g., to satisfy a future-state expectation). When the page has no engine cards registered in ProcessRegistry, the constant may be omitted entirely.
 
 When the banner exists, it precedes any page-prefixed `CONSTANTS` banner.
+
+#### 7.4.2 ENGINE_PROCESSES validation
+
+The parser cross-references the declared ENGINE_PROCESSES entries against `Orchestrator.ProcessRegistry` rows that have `cc_page_route` matching the page's route and `run_mode = 1`. Four drift codes apply:
+
+- `MISSING_ENGINE_PROCESSES_DECLARATION` — ProcessRegistry has one or more active scheduled processes (`run_mode = 1`) registered with `cc_page_route` matching this page, but the JS file does not declare an `ENGINE_PROCESSES` constant. Attached to the `JS_FILE` anchor row.
+- `ENGINE_PROCESS_PAGE_MISMATCH` — An ENGINE_PROCESSES entry references a process whose `cc_page_route` does not match the page hosting this JS file. Attached to the `JS_CONSTANT_VARIANT` row for `ENGINE_PROCESSES`.
+- `ENGINE_SLUG_JS_MISMATCH` — An ENGINE_PROCESSES entry's `slug` value does not match `cc_engine_slug` for the corresponding process in ProcessRegistry. Attached to the `JS_CONSTANT_VARIANT` row for `ENGINE_PROCESSES`.
+- `MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS` — ProcessRegistry has an active scheduled process (`run_mode = 1`) registered with `cc_page_route` matching this page, but the JS file's ENGINE_PROCESSES declaration does not include it. Attached to the `JS_FILE` anchor row.
+
+#### 7.4.3 ENGINE_PROCESSES placement
+
+`ENGINE_PROCESSES` must be declared inside the `CONSTANTS: ENGINE PROCESSES` banner. Declaration anywhere else in the file is not permitted. Drift code: `ENGINE_PROCESSES_MISPLACED`.
 
 ---
 
@@ -245,7 +286,11 @@ Functions inside the hooks banner produce `JS_HOOK DEFINITION` rows (or `JS_HOOK
 
 ### 8.4 Hook naming
 
-Hook names are the API contract with `cc-shared.js`. They cannot be renamed. The hooks banner declares `Prefix: (none)` so functions inside the banner do not trigger `PREFIX_MISMATCH` or `PREFIX_MISSING`. A function inside the banner whose name is not in the recognized set emits `UNKNOWN_HOOK_NAME`.
+Hook names are contract identifiers (§5.5) and cannot be renamed. A function inside the hooks banner whose name is not in the recognized set emits `UNKNOWN_HOOK_NAME`.
+
+### 8.5 Hook function placement
+
+A function whose name matches one of the five recognized hook names must be declared inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. Declaration anywhere else in the file is not permitted. Drift code: `HOOK_MISPLACED`.
 
 ---
 
@@ -273,9 +318,9 @@ Each import produces a `JS_IMPORT DEFINITION` row keyed on the imported binding 
 
 ---
 
-## 11. Page boot
+## 11. Page boot and action dispatch
 
-Every page file declares a single page boot function named `<prefix>_init`. The bootloader (§4.2) invokes it by computed name (`window[pageKey + '_init']()`) after the page's JS module loads.
+Every page file declares a single page boot function named `<prefix>_init`. The bootloader (§4.2) invokes it by computed name (`window[pageKey + '_init']()`) after the page's JS module loads. The page registers its own delegated event listeners inside `<prefix>_init` and exposes per-event dispatch tables (§11.3) that those listeners route into.
 
 ### 11.1 Form
 
@@ -285,11 +330,73 @@ Every page file declares a single page boot function named `<prefix>_init`. The 
 
 Functions called from `<prefix>_init` may invoke functions from anywhere else in the file. Other functions may not depend on `<prefix>_init` having completed beyond the constants and state being populated.
 
+### 11.3 Dispatch tables
+
+A page connects its `data-action-<event>` attributes (declared in HTML markup per CC_HTML_Spec.md §6) to handler functions via per-event dispatch tables. The tables are object literals declared as `const` in a `CONSTANTS` banner.
+
+#### 11.3.1 Page-side dispatch tables
+
+Page-side dispatch tables follow the naming pattern `<prefix>_<event>Actions` where `<event>` is lowercase and matches one of the recognized events from CC_HTML_Spec.md §6.4 (`click`, `change`, `input`, `submit`, `keydown`, `keyup`, `focus`, `blur`):
+
+```javascript
+const bch_clickActions = {
+    'open-batch-detail':     bch_openBatchDetail,
+    'close-detail-slideout': bch_closeDetailSlideout
+};
+
+const bch_changeActions = {
+    'filter-by-status': bch_filterByStatus
+};
+```
+
+- Keys are action values matching `data-action-<event>` attribute values in HTML. Keys use kebab-case (lowercase letters, digits, hyphens). The `cc-` prefix is reserved for shared chrome actions and must not appear on page-side dispatch keys.
+- Values are bare function identifier references. The referenced function must be defined elsewhere in the same file as a `JS_FUNCTION` or `JS_FUNCTION_VARIANT`.
+
+#### 11.3.2 Shared dispatch tables
+
+Shared dispatch tables live in `cc-shared.js`'s `BOOTLOADER` section and follow the naming pattern `shared<Event>Actions` where `<Event>` is capitalized (`sharedClickActions`, `sharedChangeActions`, etc.). One table per recognized event from CC_HTML_Spec.md §6.4. Tables are empty `{}` literals when no shared actions exist for that event.
+
+- Keys are action values prefixed with `cc-` (e.g., `'cc-page-refresh'`, `'cc-reload-page'`).
+- Values are bare function identifier references defined elsewhere in `cc-shared.js`.
+
+#### 11.3.3 Per-event delegated listener registration
+
+The page registers one delegated `addEventListener` per event for which it has a non-empty dispatch table. Each listener is attached to `document.body` (or another stable parent) inside `<prefix>_init`. The listener's handler examines `event.target.closest('[data-action-<event>]')`, looks up the action value in the corresponding dispatch table, and invokes the handler with `(target, event)`.
+
+```javascript
+function bch_init() {
+    document.body.addEventListener('click', bch_handleClickAction);
+    document.body.addEventListener('change', bch_handleChangeAction);
+}
+
+function bch_handleClickAction(event) {
+    const target = event.target.closest('[data-action-click]');
+    if (!target) return;
+    const action = target.getAttribute('data-action-click');
+    if (!action || action.indexOf('cc-') === 0) return;  /* shared actions handled by cc-shared.js */
+    const handler = bch_clickActions[action];
+    if (!handler) {
+        console.warn('[bch] Unknown page click action: ' + action);
+        return;
+    }
+    handler(target, event);
+}
+```
+
+#### 11.3.4 Dispatch table validation
+
+The parser cross-references dispatch table entries against HTML-side `data-action-<event>` attribute declarations cataloged by the HTML populator. Two drift codes apply at scan time:
+
+- `UNRESOLVED_DISPATCH_HANDLER` — A dispatch table entry references a handler function name that is not defined in the same file. Attached to the `JS_DISPATCH_ENTRY` row.
+- `MALFORMED_ACTION_KEY` — A dispatch table key contains characters other than lowercase letters, digits, and hyphens, or (for page-side tables) begins with `cc-`, or (for shared tables) does not begin with `cc-`. Attached to the `JS_DISPATCH_ENTRY` row.
+
+Cross-spec resolution against HTML rows (whether the dispatch entry has a matching HTML `data-action-<event>` usage) happens during the JS populator's scan-time cross-population check (see §17.6).
+
 ---
 
 ## 12. Event handler binding
 
-Event handlers are attached via `addEventListener`. The canonical form is event delegation.
+Event handlers are attached via `addEventListener`. The canonical form is event delegation, including the per-event delegated dispatchers registered inside `<prefix>_init` per §11.3.3.
 
 ### 12.1 Delegation pattern
 
@@ -418,6 +525,8 @@ Every JS file must:
 10. Use the page prefix on every top-level identifier in a page file, except hooks (Section 5).
 11. Use unprefixed identifiers in `cc-shared.js`, with `Prefix: (none)` declared (Sections 4.2, 5.2).
 12. Match the FILE ORGANIZATION list to banner titles verbatim, in order (Section 2).
+13. Declare a `<prefix>_init` top-level function as the page boot entry point (Section 11).
+14. Declare per-event dispatch tables in a CONSTANTS banner when the page has page-local actions (Section 11.3).
 
 ---
 
@@ -435,12 +544,12 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 
 | component_type | Meaning |
 |---|---|
-| `JS_FILE` | The file-level anchor row. One row per scanned `.js` file. Serves as the universal "this file was scanned" anchor and the host for file-overall drift codes (`EXCESS_BLANK_LINES`, `FORBIDDEN_COMMENT_STYLE`). Carries no `raw_text`, `purpose_description`, or `signature` — the row is purely structural. The same anchor-row pattern exists in the CSS, HTML, and (future) PS populators as `CSS_FILE`, `HTML_FILE`, and `PS_FILE`. |
+| `JS_FILE` | The file-level anchor row. One row per scanned `.js` file. Serves as the universal "this file was scanned" anchor and the host for file-overall drift codes (`EXCESS_BLANK_LINES`, `FORBIDDEN_COMMENT_STYLE`, `MISSING_ENGINE_PROCESSES_DECLARATION`, `MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS`). Carries no `raw_text`, `purpose_description`, or `signature` — the row is purely structural. The same anchor-row pattern exists in the CSS, HTML, and PS populators as `CSS_FILE`, `HTML_FILE`, and `PS_FILE`. |
 | `FILE_HEADER` | The parsed file-header block. One row per scanned file. Carries header-block-specific drift codes (`MALFORMED_FILE_HEADER`, `FORBIDDEN_CHANGELOG_BLOCK`, `FILE_ORG_MISMATCH`) and the header's `purpose_description`. |
 | `COMMENT_BANNER` | A section banner comment. One row per section. The section type lives in `signature`. |
 | `JS_IMPORT` | An ES `import` statement or Node `require` call. The imported binding name is `component_name`. The source module path is `variant_qualifier_2`. Always non-NULL `variant_type`. |
 | `JS_CONSTANT` | A `const` declaration of a primitive value in a `CONSTANTS` or `FOUNDATION` section. |
-| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. Also the row host for revealing-module wrappers (Section 15.2). |
+| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. Also the row host for revealing-module wrappers (Section 15.2) and for ENGINE_PROCESSES-level drift codes (`ENGINE_PROCESS_PAGE_MISMATCH`, `ENGINE_SLUG_JS_MISMATCH`). |
 | `JS_STATE` | A `var` declaration in a `STATE` section. No variants. Also the row host for revealing-module wrappers using `var` (Section 15.2). |
 | `JS_FUNCTION` | A regular `function name() {}` declaration. |
 | `JS_FUNCTION_VARIANT` | An `async function name()` or `function* name()` (generator) declaration. |
@@ -451,6 +560,7 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 | `JS_METHOD_VARIANT` | A static method, getter, setter, or async method inside a class body. |
 | `JS_TIMER` | A `setInterval` or `setTimeout` call assigned to a tracked handle. The handle name is `component_name`. Always non-NULL `variant_type`. |
 | `JS_EVENT` | An `addEventListener` event handler binding. The event name is `component_name`. No variants. Hosts `FORBIDDEN_PROPERTY_ASSIGN_EVENT` drift on element-property assignments and `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` drift on per-element listener loops. |
+| `JS_DISPATCH_ENTRY` | A single key-value entry within a per-event dispatch table (`<prefix>_<event>Actions` or `shared<Event>Actions`). The action value is `component_name`; the event name is `variant_qualifier_1`; the handler function name is `variant_qualifier_2`; the dispatch table variable name is `parent_function`. One row per entry. `variant_type` is NULL; the event name's placement in `variant_qualifier_1` mirrors the HTML populator's column placement for the same concept (CC_HTML_Spec.md §6.5) for cross-spec query symmetry. |
 | `JS_IIFE` | An IIFE at file scope. Exists solely to host `FORBIDDEN_IIFE` drift. |
 | `JS_EVAL` | An `eval(...)` call. Exists solely to host `FORBIDDEN_EVAL` drift. |
 | `JS_DOCUMENT_WRITE` | A `document.write(...)` call. Exists solely to host `FORBIDDEN_DOCUMENT_WRITE` drift. |
@@ -469,6 +579,7 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 - USAGE rows of functions: `SHARED` if the called function is defined in `cc-shared.js`; `LOCAL` if defined in the same page file. Calls to uncataloged identifiers do not produce rows.
 - CSS_CLASS USAGE rows: resolved against existing CSS_CLASS DEFINITION rows in the consumer's zone.
 - HTML_ID rows: always `LOCAL`.
+- JS_DISPATCH_ENTRY rows: `SHARED` when emitted from `cc-shared.js` (entries in `shared<Event>Actions` tables); `LOCAL` when emitted from page files (entries in `<prefix>_<event>Actions` tables).
 - Forbidden-pattern rows: scope follows the file's overall scope. The drift code is the action item; the scope value is informational.
 
 ### 17.4 Drift recording
@@ -488,6 +599,7 @@ Variant columns (`variant_type`, `variant_qualifier_1`, `variant_qualifier_2`) d
 
 - **Base + `_VARIANT` companion type** - a base case with alternative semantically-distinct forms. Examples: `JS_FUNCTION` / `JS_FUNCTION_VARIANT`.
 - **Single component type, always non-NULL `variant_type`** - every instance is a variant with no natural base. Examples: `JS_TIMER`, `JS_IMPORT`.
+- **Single component type, NULL `variant_type` with non-NULL qualifiers** - the discriminating value lives in `variant_qualifier_1` rather than `variant_type` because the populator must mirror the column placement of a related row type from another populator for cross-spec queryability. The current example is `JS_DISPATCH_ENTRY`, which mirrors the event-name placement of the HTML populator's `HTML_DATA_ATTRIBUTE` rows for `data-action-<event>`. Without this mirroring, every cross-spec join would have to remember which side stores the event name in which column. See Appendix A.17.
 
 #### JS_FUNCTION (base) and JS_FUNCTION_VARIANT (variant)
 
@@ -546,11 +658,37 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 
 `component_name` is the imported binding name.
 
+#### JS_DISPATCH_ENTRY (NULL variant_type, event name in qualifier_1)
+
+| component_type | variant_type | qualifier_1 | qualifier_2 | Source pattern |
+|---|---|---|---|---|
+| `JS_DISPATCH_ENTRY` | NULL | `click`   | handler fn name | `'open-detail': bch_openDetail` (in `bch_clickActions`) |
+| `JS_DISPATCH_ENTRY` | NULL | `change`  | handler fn name | `'filter-status': bch_filterStatus` (in `bch_changeActions`) |
+| `JS_DISPATCH_ENTRY` | NULL | `input`   | handler fn name | analogous |
+| `JS_DISPATCH_ENTRY` | NULL | `submit`  | handler fn name | analogous |
+| `JS_DISPATCH_ENTRY` | NULL | `keydown` | handler fn name | analogous |
+| `JS_DISPATCH_ENTRY` | NULL | `keyup`   | handler fn name | analogous |
+| `JS_DISPATCH_ENTRY` | NULL | `focus`   | handler fn name | analogous |
+| `JS_DISPATCH_ENTRY` | NULL | `blur`    | handler fn name | analogous |
+
+`component_name` is the action value (the kebab-case key from the dispatch table). `variant_qualifier_1` is the event name, derived from the dispatch table variable name (`<prefix>_<event>Actions` → lowercase event; `shared<Event>Actions` → lowercase event). `variant_qualifier_2` is the handler function name (the bare identifier referenced as the value). `parent_function` is the dispatch table variable name. The recognized event set matches CC_HTML_Spec.md §6.4. The event name is placed in `variant_qualifier_1` rather than `variant_type` to match the column placement used by the HTML populator's `HTML_DATA_ATTRIBUTE` rows for `data-action-<event>` (CC_HTML_Spec.md §6.5), keeping cross-spec join queries symmetric.
+
 #### Component types with no variants
 
 `FILE_HEADER`, `COMMENT_BANNER`, `JS_STATE`, `JS_CLASS`, `JS_EVENT`, `JS_IIFE`, `JS_EVAL`, `JS_DOCUMENT_WRITE`, `JS_WINDOW_ASSIGNMENT`, `JS_INLINE_STYLE`, `JS_INLINE_SCRIPT`, `JS_LINE_COMMENT` - variant columns are always NULL.
 
 `CSS_CLASS` and `HTML_ID` rows emitted by the JS populator do not carry variant_type values.
+
+### 17.6 Cross-populator dependencies
+
+The JS populator's emitted rows resolve their cross-populator references against existing catalog rows at scan time. The JS populator never edits rows emitted by other populators; it reads them.
+
+- `CSS_CLASS USAGE` rows have `scope` and `source_file` resolved against `CSS_CLASS DEFINITION` rows already in the catalog at JS-populator scan time. Per pipeline order CSS → HTML → JS → PS, CSS DEFINITION rows always exist when JS scans.
+- `HTML_ID USAGE` rows resolve against `HTML_ID DEFINITION` rows already in the catalog from the HTML populator's scan. Drift code `JS_HTML_ID_UNRESOLVED` is attached to USAGE rows that don't resolve. Drift code `JS_HTML_ID_MALFORMED` is attached when the ID-string referenced from JS contains characters other than lowercase letters, digits, and hyphens, or does not begin with the page's `cc_prefix` followed by a hyphen.
+- `JS_DISPATCH_ENTRY DEFINITION` rows resolve against `HTML_DATA_ATTRIBUTE DEFINITION` rows where `component_name LIKE 'data-action-%'`. Both sides store the event name in `variant_qualifier_1`; the action value lives in `component_name` on the JS side and in `variant_type` on the HTML side (the HTML side uses `component_name` for the attribute name itself). The match key for cross-spec joins is `(variant_qualifier_1, component_name)` on the JS side vs. `(variant_qualifier_1, variant_type)` on the HTML side. Unmatched JS dispatch entries do not emit drift at scan time — the entry may exist for a future HTML usage, and the HTML spec's queries (Q16.11/Q16.12) surface mismatches both directions.
+- ENGINE_PROCESSES validation runs against `Orchestrator.ProcessRegistry` directly (not against another populator's rows). The four drift codes from §7.4.2 attach as described.
+
+When the JS populator runs standalone (before the HTML populator has scanned, or against an empty Asset_Registry), HTML-side resolution lookups return empty. The populator emits a startup warning and continues; HTML_ID rows resolve to `source_file = '<undefined>'`, and dispatch entries simply don't carry HTML-cross-validation drift. Standalone runs are valid for development and testing; production pipeline runs always follow the CSS → HTML → JS → PS order.
 
 ---
 
@@ -558,21 +696,23 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 
 | Row type | Source | Notes |
 |----------|--------|-------|
-| `JS_FILE DEFINITION` | The file as a whole | One per scanned file. Universal anchor row. `component_name` = bare filename. No `raw_text` or `purpose_description`. Hosts file-overall drift codes. |
-| `FILE_HEADER DEFINITION` | The opening file header block | One per file. `purpose_description` carries the header's purpose paragraph. Hosts header-block-specific drift codes. || `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. |
+| `JS_FILE DEFINITION` | The file as a whole | One per scanned file. Universal anchor row. `component_name` = bare filename. No `raw_text` or `purpose_description`. Hosts file-overall drift codes including `MISSING_ENGINE_PROCESSES_DECLARATION` and `MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS`. |
+| `FILE_HEADER DEFINITION` | The opening file header block | One per file. `purpose_description` carries the header's purpose paragraph. Hosts header-block-specific drift codes. |
+| `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. |
 | `JS_IMPORT DEFINITION` | Each `import` statement or `require` call | One per imported binding. `variant_type` = import shape; `variant_qualifier_2` = source module path. |
-| `JS_CONSTANT DEFINITION` / `JS_CONSTANT_VARIANT DEFINITION` | Each `const` declaration in a `CONSTANTS` or `FOUNDATION` section | Base for primitive values; variant for objects, arrays, regexes, computed expressions. `purpose_description` = preceding purpose comment. |
+| `JS_CONSTANT DEFINITION` / `JS_CONSTANT_VARIANT DEFINITION` | Each `const` declaration in a `CONSTANTS` or `FOUNDATION` section | Base for primitive values; variant for objects, arrays, regexes, computed expressions. `purpose_description` = preceding purpose comment. The `ENGINE_PROCESSES` declaration produces a `JS_CONSTANT_VARIANT` row that also hosts `ENGINE_PROCESS_PAGE_MISMATCH` and `ENGINE_SLUG_JS_MISMATCH` drift codes. |
 | `JS_STATE DEFINITION` | Each `var` declaration in a `STATE` section | `purpose_description` = preceding purpose comment. |
 | `JS_FUNCTION DEFINITION` / `JS_FUNCTION_VARIANT DEFINITION` | Each top-level `function` declaration in a `FUNCTIONS` section other than `PAGE LIFECYCLE HOOKS` | Base for plain function declarations; variant for async and generator forms. `signature` = function signature with parameter names. |
 | `JS_HOOK DEFINITION` / `JS_HOOK_VARIANT DEFINITION` | Each `function` declaration in the hooks banner | Base for sync hooks; variant for async hooks. |
 | `JS_CLASS DEFINITION` | Each top-level class declaration | `purpose_description` = preceding purpose comment. |
 | `JS_METHOD DEFINITION` / `JS_METHOD_VARIANT DEFINITION` | Each method inside a class body | Base for regular methods; variant for static/getter/setter/async forms. `parent_function` = class name. |
 | `JS_TIMER DEFINITION` | Each `setInterval` / `setTimeout` call assigned to a tracked handle | `component_name` = handle name. |
+| `JS_DISPATCH_ENTRY DEFINITION` | Each key-value pair within a `<prefix>_<event>Actions` or `shared<Event>Actions` object literal | `component_name` = action value (kebab-case key). `variant_qualifier_1` = event name. `variant_qualifier_2` = handler function name. `variant_type` = NULL. `parent_function` = dispatch table variable name. `scope` = LOCAL for page-side, SHARED for cc-shared.js. |
 | `JS_FUNCTION USAGE` | Each call to a function defined in the same file or in `cc-shared.js` | Calls to unknown identifiers are not cataloged. |
 | `JS_EVENT USAGE` | Each `addEventListener('event', ...)` call | `component_name` = event name. Hosts `FORBIDDEN_PROPERTY_ASSIGN_EVENT` drift on element-property assignments and `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` drift on per-element listener loops. |
 | `CSS_CLASS USAGE` | Each class name in a template literal, classList call, or setAttribute('class', ...) | Resolved to SHARED or LOCAL via the CSS_CLASS DEFINITION map. |
 | `HTML_ID DEFINITION` | Each `id="..."` in a template/string literal or `setAttribute('id', ...)` or `el.id = '...'` | LOCAL scope. |
-| `HTML_ID USAGE` | Each `getElementById('...')` or `querySelector('#...')` argument | LOCAL scope. |
+| `HTML_ID USAGE` | Each `getElementById('...')` or `querySelector('#...')` argument | LOCAL scope. Hosts `JS_HTML_ID_UNRESOLVED` and `JS_HTML_ID_MALFORMED` drift codes per §17.6. |
 | `JS_IIFE DEFINITION` | Each IIFE at file scope | Always `FORBIDDEN_IIFE` drift. |
 | `JS_EVAL USAGE` | Each `eval(...)` call | Always `FORBIDDEN_EVAL` drift. |
 | `JS_DOCUMENT_WRITE USAGE` | Each `document.write(...)` call | Always `FORBIDDEN_DOCUMENT_WRITE` drift. |
@@ -593,6 +733,8 @@ For all JS_METHOD and JS_METHOD_VARIANT rows, `parent_function` carries the encl
 | `MALFORMED_FILE_HEADER` | The file's header block is missing, malformed, or contains required fields out of order. |
 | `FORBIDDEN_CHANGELOG_BLOCK` | The file header contains a CHANGELOG block. |
 | `FILE_ORG_MISMATCH` | The FILE ORGANIZATION list in the header does not exactly match the section banner titles in the file body. |
+| `MISSING_ENGINE_PROCESSES_DECLARATION` | A page that has engine cards registered in `Orchestrator.ProcessRegistry` (`run_mode = 1` with matching `cc_page_route`) lacks an `ENGINE_PROCESSES` constant declaration in its JS file. Attached to the `JS_FILE` anchor row. |
+| `MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS` | `Orchestrator.ProcessRegistry` has one or more active scheduled processes (`run_mode = 1`) registered with `cc_page_route` matching this page, but the JS file's `ENGINE_PROCESSES` declaration does not include them. Attached to the `JS_FILE` anchor row. |
 
 ### 19.2 Section-level codes
 
@@ -633,6 +775,14 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `WRONG_DECLARATION_KEYWORD` | A `var` declaration appears in a CONSTANTS or FOUNDATION section, or a `const` declaration appears in a STATE section. |
 | `SHADOWS_SHARED_FUNCTION` | A page file defines a function whose name matches a `cc-shared.js` export. |
 | `UNKNOWN_HOOK_NAME` | A function inside the hooks banner has a name not in the recognized hook set. |
+| `ENGINE_PROCESSES_MISPLACED` | The `ENGINE_PROCESSES` constant is declared outside its required `CONSTANTS: ENGINE PROCESSES` banner (§7.4.3). Attached to the declaration row (`JS_CONSTANT_VARIANT` or `JS_STATE` depending on the declaration keyword). |
+| `HOOK_MISPLACED` | A function whose name matches one of the five recognized hook names is declared outside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner (§8.5). Attached to the `JS_FUNCTION` row. |
+| `ENGINE_PROCESS_PAGE_MISMATCH` | An `ENGINE_PROCESSES` entry references a process whose `cc_page_route` does not match the page hosting this JS file. Attached to the `JS_CONSTANT_VARIANT` row for `ENGINE_PROCESSES`. |
+| `ENGINE_SLUG_JS_MISMATCH` | An `ENGINE_PROCESSES` entry's `slug` value does not match `cc_engine_slug` for the corresponding process in `Orchestrator.ProcessRegistry`. Attached to the `JS_CONSTANT_VARIANT` row for `ENGINE_PROCESSES`. |
+| `UNRESOLVED_DISPATCH_HANDLER` | A dispatch table entry references a handler function name that is not defined in the same file. Attached to the `JS_DISPATCH_ENTRY` row. |
+| `MALFORMED_ACTION_KEY` | A dispatch table key contains characters other than lowercase letters, digits, and hyphens; or a page-side table key begins with `cc-`; or a shared table key does not begin with `cc-`. Attached to the `JS_DISPATCH_ENTRY` row. |
+| `JS_HTML_ID_UNRESOLVED` | A `getElementById` or `querySelector('#...')` reference uses an ID-string argument that does not resolve to any `HTML_ID DEFINITION` row in the catalog at JS-populator scan time. Attached to the `HTML_ID USAGE` row. |
+| `JS_HTML_ID_MALFORMED` | An HTML ID string referenced from JS contains characters other than lowercase letters, digits, and hyphens, or does not begin with the page's `cc_prefix` followed by a hyphen. Attached to the `HTML_ID USAGE` row. |
 
 ### 19.4 Forbidden-pattern codes
 
@@ -781,13 +931,94 @@ WHERE file_type      = 'JS'
 ORDER BY file_name, line_start;
 ```
 
+### 20.7 Q7 - Dispatch entry inventory by page
+
+For one specific page, list every dispatch entry it defines, grouped by event.
+
+```sql
+SELECT
+    parent_function       AS dispatch_table,
+    variant_qualifier_1   AS event_name,
+    component_name        AS action_value,
+    variant_qualifier_2   AS handler_function,
+    line_start
+FROM dbo.Asset_Registry
+WHERE file_type      = 'JS'
+  AND file_name      = '<filename.js>'
+  AND component_type = 'JS_DISPATCH_ENTRY'
+  AND reference_type = 'DEFINITION'
+ORDER BY variant_qualifier_1, line_start;
+```
+
+### 20.8 Q8 - Dispatch entries with unresolved handlers
+
+Find every dispatch entry whose handler function name doesn't resolve to a function defined in the same file. Surfaces broken dispatch wiring.
+
+```sql
+SELECT
+    de.file_name,
+    de.parent_function       AS dispatch_table,
+    de.variant_qualifier_1   AS event_name,
+    de.component_name        AS action_value,
+    de.variant_qualifier_2   AS missing_handler,
+    de.line_start
+FROM dbo.Asset_Registry de
+LEFT JOIN dbo.Asset_Registry fn
+       ON  fn.file_name      = de.file_name
+       AND fn.component_name = de.variant_qualifier_2
+       AND fn.component_type IN ('JS_FUNCTION', 'JS_FUNCTION_VARIANT')
+       AND fn.reference_type = 'DEFINITION'
+WHERE de.file_type      = 'JS'
+  AND de.component_type = 'JS_DISPATCH_ENTRY'
+  AND de.reference_type = 'DEFINITION'
+  AND fn.component_name IS NULL
+ORDER BY de.file_name, de.line_start;
+```
+
+### 20.9 Q9 - ENGINE_PROCESSES vs. ProcessRegistry coverage
+
+Find pages where the JS-declared ENGINE_PROCESSES set differs from the ProcessRegistry-registered set. Surfaces engine card definitions that are out of sync between the two sources of truth.
+
+```sql
+WITH js_engine_processes AS (
+    SELECT
+        file_name,
+        CHARINDEX('-', file_name) AS first_dash,
+        file_name AS js_file
+    FROM dbo.Asset_Registry
+    WHERE file_type      = 'JS'
+      AND component_type = 'JS_CONSTANT_VARIANT'
+      AND component_name = 'ENGINE_PROCESSES'
+      AND reference_type = 'DEFINITION'
+),
+registry_processes AS (
+    SELECT
+        cc_page_route,
+        process_name,
+        cc_engine_slug,
+        cc_engine_label
+    FROM Orchestrator.ProcessRegistry
+    WHERE run_mode = 1
+      AND cc_page_route IS NOT NULL
+)
+SELECT
+    rp.cc_page_route,
+    rp.process_name,
+    rp.cc_engine_slug,
+    rp.cc_engine_label
+FROM registry_processes rp
+ORDER BY rp.cc_page_route, rp.process_name;
+```
+
+(The full reconciliation join — comparing each JS file's ENGINE_PROCESSES entries to the registry's process list for that page's route — is performed by the JS populator at scan time and emits the drift codes from §19.1 and §19.3.)
+
 ---
 
 ## 21. Examples
 
 ### 21.1 Minimal complete page file
 
-A small page demonstrating every required pattern. Real pages have more sections.
+A small page demonstrating every required pattern under the bootloader-driven model. Real pages have more sections.
 
 ```javascript
 /* ============================================================================
@@ -795,19 +1026,39 @@ A small page demonstrating every required pattern. Real pages have more sections
    Location: E:\xFACts-ControlCenter\public\js\example.js
    Version: Tracked in dbo.System_Metadata (component: ExampleModule.ExamplePage)
 
-   Page-specific JavaScript for the Example dashboard. Loads agent data,
-   renders status cards, and wires the page lifecycle hooks consumed by
-   cc-shared.js.
+   Page-specific JavaScript for the Example dashboard. Declares its
+   engine-processes contract with cc-shared.js, defines page-local
+   dispatch tables for delegated event routing, and registers the
+   mandatory <prefix>_init page boot function consumed by the
+   cc-shared.js bootloader.
 
    FILE ORGANIZATION
    -----------------
+   CONSTANTS: ENGINE PROCESSES
    CONSTANTS: PAGE CONFIGURATION
+   CONSTANTS: DISPATCH TABLES
    STATE: PAGE STATE
    FUNCTIONS: PAGE BOOT
    FUNCTIONS: DATA LOADING
    FUNCTIONS: RENDERING
+   FUNCTIONS: ACTION HANDLERS
    FUNCTIONS: PAGE LIFECYCLE HOOKS
    ============================================================================ */
+
+
+/* ============================================================================
+   CONSTANTS: ENGINE PROCESSES
+   ----------------------------------------------------------------------------
+   Name contract with cc-shared.js. Maps process names registered in
+   Orchestrator.ProcessRegistry to their engine card slugs. The identifier
+   is read by exact name by cc-shared.js and cannot carry a page prefix.
+   Prefix: (none)
+   ============================================================================ */
+
+/* Engine processes this page cares about, mapped to engine card slugs. */
+const ENGINE_PROCESSES = {
+    'Collect-ExampleStatus': { slug: 'example' }
+};
 
 
 /* ============================================================================
@@ -817,13 +1068,30 @@ A small page demonstrating every required pattern. Real pages have more sections
    Prefix: ex
    ============================================================================ */
 
-/* Engine processes this page cares about, mapped to engine card slugs. */
-const ex_ENGINE_PROCESSES = {
-    'Collect-ExampleStatus': { slug: 'example' }
-};
-
 /* Default polling interval in seconds; overridden by GlobalConfig on load. */
 const ex_DEFAULT_REFRESH_INTERVAL = 10;
+
+
+/* ============================================================================
+   CONSTANTS: DISPATCH TABLES
+   ----------------------------------------------------------------------------
+   Per-event dispatch tables consumed by the delegated event listeners
+   registered in ex_init. Each table maps page-local data-action-<event>
+   values to handler functions. Shared cc-* actions are handled by
+   cc-shared.js and never appear here.
+   Prefix: ex
+   ============================================================================ */
+
+/* Page-local click action dispatch table. */
+const ex_clickActions = {
+    'view-agent-detail': ex_viewAgentDetail,
+    'refresh-section':   ex_refreshSection
+};
+
+/* Page-local change action dispatch table. */
+const ex_changeActions = {
+    'filter-agents': ex_filterAgents
+};
 
 
 /* ============================================================================
@@ -843,29 +1111,24 @@ var ex_livePollingTimer = null;
 /* ============================================================================
    FUNCTIONS: PAGE BOOT
    ----------------------------------------------------------------------------
-   The mandatory <prefix>_init function called by the cc-shared.js bootloader
-   after this module loads. Performs one-time page setup.
+   The mandatory <prefix>_init function called by the cc-shared.js
+   bootloader after this module loads. Performs one-time page setup,
+   connects to the engine event stream, and registers per-event delegated
+   listeners that route page-local actions to the dispatch tables.
    Prefix: ex
    ============================================================================ */
 
 /* Page boot function. Called by the cc-shared.js bootloader after this
    module is loaded. Loads configuration, performs the initial render,
-   wires the engine subsystem, and binds delegated event listeners. */
+   wires the engine subsystem, and registers delegated event listeners. */
 async function ex_init() {
     await ex_loadConfig();
     ex_refreshAll();
     connectEngineEvents();
 
-    /* Delegated click handler on the agent grid. */
-    const agentGrid = document.getElementById('ex-agent-grid');
-    agentGrid.addEventListener('click', ex_onAgentGridClick);
-
-    /* Singleton refresh button. */
-    const refreshBtn = document.getElementById('ex-refresh-btn');
-    refreshBtn.addEventListener('click', ex_refreshAll);
-
-    /* Window resize listener. */
-    window.addEventListener('resize', ex_onWindowResize);
+    /* Delegated listeners for page-local actions. */
+    document.body.addEventListener('click', ex_handleClickAction);
+    document.body.addEventListener('change', ex_handleChangeAction);
 }
 
 
@@ -913,27 +1176,64 @@ function ex_renderAgents(agents) {
 
 /* Builds the HTML for a single agent card. */
 function ex_buildAgentCard(agent) {
-    return '<div class="ex-agent-card" data-agent-id="' + agent.id + '">' +
+    return '<div class="ex-agent-card" data-action-click="view-agent-detail" ' +
+           'data-action-agent-id="' + agent.id + '">' +
            '<span class="ex-agent-name">' + escapeHtml(agent.name) + '</span>' +
            '</div>';
 }
 
-/* Delegated handler for clicks inside the agent grid. */
-function ex_onAgentGridClick(event) {
-    const card = event.target.closest('.ex-agent-card');
-    if (!card) return;
-    const agentId = card.dataset.agentId;
-    ex_handleAgentClick(agentId);
+
+/* ============================================================================
+   FUNCTIONS: ACTION HANDLERS
+   ----------------------------------------------------------------------------
+   Delegated dispatchers for page-local data-action-<event> values plus
+   the handler functions referenced from the dispatch tables.
+   Prefix: ex
+   ============================================================================ */
+
+/* Delegated dispatcher for page-local click actions. */
+function ex_handleClickAction(event) {
+    const target = event.target.closest('[data-action-click]');
+    if (!target) return;
+    const action = target.getAttribute('data-action-click');
+    if (!action || action.indexOf('cc-') === 0) return;
+    const handler = ex_clickActions[action];
+    if (!handler) {
+        console.warn('[ex] Unknown page click action: ' + action);
+        return;
+    }
+    handler(target, event);
 }
 
-/* Acts on a click for a specific agent. */
-function ex_handleAgentClick(agentId) {
+/* Delegated dispatcher for page-local change actions. */
+function ex_handleChangeAction(event) {
+    const target = event.target.closest('[data-action-change]');
+    if (!target) return;
+    const action = target.getAttribute('data-action-change');
+    if (!action || action.indexOf('cc-') === 0) return;
+    const handler = ex_changeActions[action];
+    if (!handler) {
+        console.warn('[ex] Unknown page change action: ' + action);
+        return;
+    }
+    handler(target, event);
+}
+
+/* Handler for view-agent-detail clicks. Opens the agent detail slideout. */
+function ex_viewAgentDetail(target, event) {
+    const agentId = target.dataset.actionAgentId;
+    /* ... open slideout with agent details ... */
+}
+
+/* Handler for refresh-section clicks. Re-fetches data for a specific section. */
+function ex_refreshSection(target, event) {
     /* ... */
 }
 
-/* Window resize handler. */
-function ex_onWindowResize() {
-    /* ... */
+/* Handler for filter-agents changes. Updates the current filter and re-renders. */
+function ex_filterAgents(target, event) {
+    ex_currentFilter = target.value;
+    ex_refreshAll();
 }
 
 
@@ -960,14 +1260,16 @@ This file produces the following catalog rows when parsed:
 
 - 1 x `JS_FILE DEFINITION`
 - 1 x `FILE_HEADER DEFINITION`
-- 6 x `COMMENT_BANNER DEFINITION` (one per section)
-- 1 x `JS_CONSTANT_VARIANT DEFINITION` (`ex_ENGINE_PROCESSES`, variant_type='object')
+- 9 x `COMMENT_BANNER DEFINITION` (one per section)
+- 1 x `JS_CONSTANT_VARIANT DEFINITION` (`ENGINE_PROCESSES`, variant_type='object')
 - 1 x `JS_CONSTANT DEFINITION` (`ex_DEFAULT_REFRESH_INTERVAL`)
+- 2 x `JS_CONSTANT_VARIANT DEFINITION` (`ex_clickActions` and `ex_changeActions`, variant_type='object')
+- 3 x `JS_DISPATCH_ENTRY DEFINITION` (`view-agent-detail` and `refresh-section` under `ex_clickActions`; `filter-agents` under `ex_changeActions`)
 - 2 x `JS_STATE DEFINITION` (`ex_currentFilter`, `ex_livePollingTimer`)
 - 2 x `JS_FUNCTION_VARIANT DEFINITION` (`ex_init` and `ex_loadConfig`, both variant_type='async')
-- 7 x `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`, `ex_onAgentGridClick`, `ex_handleAgentClick`, `ex_onWindowResize`)
+- 8 x `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`, `ex_handleClickAction`, `ex_handleChangeAction`, `ex_viewAgentDetail`, `ex_refreshSection`, `ex_filterAgents`)
 - 2 x `JS_HOOK DEFINITION` (`onPageRefresh`, `onPageResumed`)
-- 3 x `JS_EVENT USAGE` (the agent-grid click delegation, the singleton refresh button, the window resize listener)
+- 2 x `JS_EVENT USAGE` (the delegated click listener and the delegated change listener)
 
 Zero drift rows expected.
 
@@ -995,6 +1297,22 @@ The registry validation rule (Section 5.4) makes `Component_Registry.cc_prefix` 
 
 The `PREFIX_MISSING` rule (Section 5.4 final bullet) extends the prefix discipline to identifiers themselves, independent of banners. Banner-anchored `PREFIX_MISMATCH` is silent on a file with no banners; `PREFIX_MISSING` closes that gap and ensures every top-level identifier is checked against the file's registered `cc_prefix` regardless of whether banners are in place.
 
+### A.5.5 Contract identifiers
+
+Contract identifiers (`ENGINE_PROCESSES` and the five hook function names) are referenced from `cc-shared.js` via `window[name]` lookups or equivalent. Renaming them or carrying a page prefix on them would silently break the shared-side dispatch — no parse error, no runtime error, just a hook that never fires. The contract identifier list is small, fixed, and centralized in §5.5 so changes have a single edit point.
+
+The exemption from `PREFIX_MISSING` / `PREFIX_MISMATCH` exists because applying the page-prefix rule to contract identifiers would create false-positive drift on the very identifiers that are intentionally page-prefix-free. Centralizing the exemption means a new contract identifier added later requires changing one list, not auditing every prefix-check site.
+
+The `_MISPLACED` suffix is shared across the family so a single catalog query (`WHERE drift_codes LIKE '%_MISPLACED%'`) finds every contract-identifier misplacement across the codebase. Each code carries the identifier name as its prefix so the catalog stays self-describing — a row's `drift_codes` column alone tells you which contract identifier is misplaced, without requiring a join to `drift_text`.
+
+`_MISPLACED` was chosen over `_SECTION_VIOLATION` and similar alternatives because the violation is about the identifier, not the section. The section is doing nothing wrong; the identifier is in the wrong place. Naming the code after the misplaced thing reads more naturally and matches how refactor work describes the issue.
+
+The placement check is by banner name match, not by section type alone. A `CONSTANTS` banner with a different name (e.g., `CONSTANTS: PAGE CONFIGURATION`) is not the required home for `ENGINE_PROCESSES`; a `FUNCTIONS` banner named anything other than `PAGE LIFECYCLE HOOKS` is not the required home for hook functions. Match is on the full `<TYPE>: <NAME>` banner identity.
+
+`ENGINE_PROCESSES_MISPLACED` is independent of `WRONG_DECLARATION_KEYWORD`. A file with `var ENGINE_PROCESSES` inside the correct banner fires `WRONG_DECLARATION_KEYWORD` but not `ENGINE_PROCESSES_MISPLACED`. A file with `const ENGINE_PROCESSES` in a STATE section fires `ENGINE_PROCESSES_MISPLACED` but not `WRONG_DECLARATION_KEYWORD`. Both fire together when the declaration is in the wrong section with the wrong keyword.
+
+Each misplaced hook fires its own row's drift code, so a file with three hooks declared outside the hooks banner produces three separate `HOOK_MISPLACED` firings on three separate `JS_FUNCTION` rows. Misplaced hook functions are catalogued as `JS_FUNCTION DEFINITION` (not `JS_HOOK DEFINITION`); only functions inside the hooks banner produce `JS_HOOK` rows. The catalog reflects what the file actually does; the drift code tells refactor work where the function should move.
+
 ### A.6 Function definitions
 
 The single-form rule for function declarations exists to make the catalog's function row count predictable. If functions could be declared as `const name = function() {}` or `const name = () => {}`, the parser would have to either treat those as JS_FUNCTION rows (conflating const declarations with function declarations) or as JS_CONSTANT_VARIANT rows (making "list all functions" require a JOIN between two component types). One form means one row type. The narrow callback exception preserves natural JS idioms (`addEventListener('click', function() { ... })`) without compromising the catalog's clarity.
@@ -1005,9 +1323,19 @@ The `const` vs `var` split by section reflects the semantic distinction. CONSTAN
 
 `let` is forbidden because it adds a third declaration kind without adding semantic value over `const` and `var`. The two-kind discipline keeps the spec's section-keyword mapping clean.
 
+### A.7.4 Engine processes validation
+
+The four ENGINE_PROCESSES drift codes (§7.4.2) cross between the JS file and `Orchestrator.ProcessRegistry`. The validation lives in the JS spec rather than the HTML spec because the JS file declares the contract — `ENGINE_PROCESSES` is a JS constant — and the drift attaches to JS rows (the `JS_FILE` anchor for declaration presence/coverage, the `JS_CONSTANT_VARIANT` row for entry-level mismatches). The HTML spec catalogs the on-page engine card markup separately (`HTML_ID` rows for `card-engine-<slug>` etc.) and has its own engine-card drift codes that validate against ProcessRegistry from the HTML side.
+
+Splitting the validation surface across the two specs reflects that engine cards have two anchors in the codebase — the JS contract declaration and the HTML chrome markup — and both can drift independently from the registry. Catching each from its own side surfaces precise refactor work: a `MISSING_ENGINE_PROCESSES_DECLARATION` says "fix the JS file"; a `MISSING_ENGINE_CARD_REGISTRATION` (HTML spec §2.3) says "fix ProcessRegistry."
+
 ### A.8 Page lifecycle hooks
 
-The hooks-banner-last rule produces a stable file-scanning experience. A reader looking for "this page's contract with cc-shared.js" knows exactly where to find it (last banner in the file). The `Prefix: (none)` declaration prevents the spec's prefix-matching from erroneously flagging hook names as PREFIX_MISMATCH violations.
+The hooks-banner-last rule produces a stable file-scanning experience. A reader looking for "this page's contract with cc-shared.js" knows exactly where to find it (last banner in the file).
+
+The five hook names are contract identifiers (§5.5) and are exempt from `PREFIX_MISMATCH` / `PREFIX_MISSING` for the same reason `ENGINE_PROCESSES` is: the shared-side code reads them by exact name. A page-prefix on `onPageRefresh` would silently break the shared-side dispatch.
+
+The `HOOK_MISPLACED` rule (§8.5) closes a gap that would otherwise hide behind `PREFIX_MISSING`. Before the contract-identifier carve-out, a hook function declared outside the hooks banner would fire `PREFIX_MISSING` (because `onPageRefresh` doesn't start with the page prefix), and refactor work could read that as "rename the function to fit the prefix" rather than "move the function into the right banner." With the carve-out, `PREFIX_MISSING` no longer fires on hook names; `HOOK_MISPLACED` carries the correct signal directly.
 
 ### A.11 Page boot
 
@@ -1016,6 +1344,16 @@ The `<prefix>_init` function exists as the single platform entry point each page
 The top-level `function` declaration requirement (rather than allowing `const ex_init = () => {}` or `var ex_init = function() {}`) exists because the bootloader looks the function up via `window[pageKey + '_init']`. Top-level `function` declarations attach to `window` automatically; `const` and `var` declarations do not. Allowing the arrow-expression form would break the bootloader silently — the page would load, no error would fire, but `<prefix>_init` would never run.
 
 Keeping `<prefix>_init` in the `FUNCTIONS` section (rather than giving it its own section type, mirroring the legacy `INITIALIZATION`) reflects that the page boot function is structurally just another function. It produces the same `JS_FUNCTION DEFINITION` or `JS_FUNCTION_VARIANT DEFINITION` row in the catalog as any other function; its specialness lives in the bootloader's runtime behavior, not in the file's structural anatomy.
+
+### A.11.3 Dispatch tables
+
+The per-event dispatch table pattern (§11.3) is the page-side half of the bootloader-driven event routing model. The HTML side declares actions on elements via `data-action-<event>` attributes; the JS side declares handlers in `<prefix>_<event>Actions` object literals; the bootloader's delegated listeners (in cc-shared.js for `cc-*` actions) and the page's own delegated listeners (registered in `<prefix>_init` for page-local actions) route at runtime.
+
+The event-name-per-table design (one table per event type rather than one table with event-keyed entries) reflects how the per-event delegated listeners need to look up handlers. A `click` event handler should examine only click-action mappings; it should never see `change` or `keydown` entries. Per-event tables make that scoping mechanical rather than requiring runtime filtering inside the dispatcher.
+
+The naming asymmetry between page-side (`<prefix>_<event>Actions`, lowercase event) and shared-side (`shared<Event>Actions`, capitalized event) follows JavaScript's conventional casing rules. Page identifiers carry their prefix as a snake-case-like prefix (`bch_`), so `bch_clickActions` reads as one snake-case identifier. Shared identifiers omit the prefix and use camelCase throughout, so `sharedClickActions` capitalizes the event word to maintain camelCase readability.
+
+The `cc-` reservation on action keys gives the runtime a structural test for routing: any `data-action-<event>` value starting with `cc-` belongs to the shared dispatcher; any other value belongs to the page's own dispatcher. The page-side dispatcher checks `action.indexOf('cc-') === 0` and returns early on a match, ensuring shared actions are never double-handled. This separation lets pages add page-local actions without worrying about colliding with future shared actions.
 
 ### A.12 Event handler binding
 
@@ -1037,6 +1375,30 @@ The carve-out rule is an authoring rule. The parser cannot in general distinguis
 The dedicated component_type rows for forbidden patterns (JS_IIFE, JS_EVAL, JS_DOCUMENT_WRITE, etc.) exist because these patterns have no natural declaration row to host the drift. An IIFE doesn't have a name; eval doesn't have a binding. The dedicated row gives every forbidden-pattern occurrence a queryable catalog presence regardless of where in the source it appears.
 
 The revealing-module pattern (`const X = (function(){...})()`) is treated as a forbidden wrapper rather than a forbidden construct because it does have a natural host — the const or var declaration that binds the IIFE result to a name. The wrapper row carries the drift; the inner functions are not cataloged because they have no spec-equivalent identity. This parallels how the top-level IIFE is handled, with the JS_IIFE row hosting the drift in that case. The two patterns share a common diagnosis: the file's design is structurally non-spec and requires rewriting, not in-place repair.
+
+### A.17 Catalog model — JS_DISPATCH_ENTRY
+
+The per-entry row design for dispatch tables (one `JS_DISPATCH_ENTRY` row per key-value pair, rather than one row per whole table) makes per-action queries directly answerable. "Which page handles `data-action-click="open-detail"`?" becomes `WHERE component_type = 'JS_DISPATCH_ENTRY' AND component_name = 'open-detail'`. "Show every dispatch entry that routes to `bch_openDetail`" becomes `WHERE variant_qualifier_2 = 'bch_openDetail'`. The whole-table-row alternative would have required parsing the row's `raw_text` or signature to answer those questions, which the catalog deliberately avoids.
+
+The column shape places the event name in `variant_qualifier_1` and leaves `variant_type` NULL. This is a deliberate departure from the variant-model patterns used by other always-non-NULL-`variant_type` types in the spec (JS_TIMER, JS_IMPORT). The departure exists because cross-spec query symmetry is more valuable here than intra-row variant-model tidiness.
+
+The HTML populator's `HTML_DATA_ATTRIBUTE` rows for `data-action-<event>` attributes already place the event name in `variant_qualifier_1` (CC_HTML_Spec.md §6.5). The HTML side has no choice in this — `variant_type` is already occupied by the action value, because the HTML side's `component_name` carries the attribute name itself (e.g., `data-action-click`), leaving `variant_type` as the only available column for the action value. The event name is forced into `variant_qualifier_1` as the remaining slot.
+
+On the JS side, both `component_name` and `variant_type` are theoretically available — the JS side catalogs a dispatch table entry where `component_name` naturally takes the action value (the kebab-case key) and the action value can't live in two places. Placing the event name in `variant_type` was the original choice for intra-row tidiness, but the result was that the same conceptual identifier (the event name) lived in different columns on the two sides, and every cross-spec join had to remember which side stores it where. Symmetric column placement — both sides put the event name in `variant_qualifier_1` — eliminates that asymmetry. Cross-spec joins read cleanly as `ON h.variant_qualifier_1 = j.variant_qualifier_1`.
+
+The action value's placement remains asymmetric — `component_name` on the JS side, `variant_type` on the HTML side — but that asymmetry is structurally unavoidable. The two populators catalog different source constructs (an object literal entry vs. an HTML attribute), and there is no way to fit the action value into the same column on both sides without misrepresenting one populator's natural row shape.
+
+`variant_qualifier_2` holds the handler function name to support reverse lookups — finding every action that targets a given handler. This is a frequently-needed query during refactoring (when renaming a handler, find every dispatch entry that references it). Storing the handler name on the entry row makes the lookup a direct equality check rather than a join through `raw_text` parsing.
+
+`parent_function` carries the dispatch table variable name (`bch_clickActions`, `sharedClickActions`) so queries can aggregate by table — "list every action in `bch_clickActions`" or "compare entries between `bch_clickActions` and `sharedClickActions`" become straightforward.
+
+### A.17.6 Cross-populator dependencies
+
+The cross-populator resolution model for JS rows mirrors the HTML populator's read-only model from CC_HTML_Spec.md §13.6. The JS populator reads from upstream populators' DEFINITION rows but never edits them. CSS_CLASS USAGE rows resolve against existing CSS_CLASS DEFINITION rows from the CSS populator; HTML_ID USAGE rows resolve against existing HTML_ID DEFINITION rows from the HTML populator.
+
+The JS_DISPATCH_ENTRY resolution is symmetric to the HTML-side `data-action-<event>` resolution: HTML emits `HTML_DATA_ATTRIBUTE DEFINITION` rows for each attribute; JS emits `JS_DISPATCH_ENTRY DEFINITION` rows for each table entry; cross-spec queries (HTML spec Q16.11/Q16.12) surface mismatches in both directions. Per the JS spec's scan-time-only resolution principle (no post-pipeline pass, no orchestrator sweep — see §17.6), the JS populator emits dispatch entry rows without attaching cross-spec drift codes; the HTML spec's queries do the cross-check at query time. This keeps the populator's responsibility crisp: each populator validates its own file against its spec; cross-spec consistency is observable via the catalog.
+
+The `JS_HTML_ID_UNRESOLVED` and `JS_HTML_ID_MALFORMED` drift codes are JS-spec-side because the violation is in the JS file's reference (the wrong string, the malformed ID format). They attach to the `HTML_ID USAGE` row at JS scan time when HTML DEFINITION rows are present in the catalog; in standalone JS-only runs, the validation suppresses and emits a startup warning, matching the same pattern the CSS resolution uses today.
 
 ### A.19 Drift codes — banner granularity
 
