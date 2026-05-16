@@ -26,6 +26,21 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 | Enhance | Extended property cleanup | Low | Remove legacy MS_Description extended properties from all objects. Object_Metadata is the sole documentation source. Properties are inert — cleanup is cosmetic but removes confusion about which system is authoritative. |
 | Enhance | Index_ table constraint and index rename | Low | Four ServerOps tables renamed to Index_ prefix but constraints/indexes still carry old names. Rename to match convention. Cosmetic only. |
 
+### RBAC
+| Type | Item | Priority | Notes |
+|------|------|----------|-------|
+| Design | Number of base platform roles | Low | PowerUser, StandardUser, ReadOnly are differentiated but the practical differences are marginal given ~90% of the site is naturally view-only and most write actions are admin-gated. Worth deciding whether 4 base levels is the right count or whether some can be collapsed. Not driven by any active issue. |
+| Design | Per-scope tool access (Pattern C) | Medium | Today's `RBAC_PermissionMapping` can't express "this scope of dept managers gets this page, others don't." For BDL specifically, BI and Apps/Int dept managers should have access but BS and CR should not. Currently mitigated by `show_in_nav=0` (no nav exposure) plus content filtering via `Tools.AccessConfig`, but URL-typing remains a loophole. Proper fix would be adding an `applies_to_scope` column on `RBAC_PermissionMapping` or similar mechanism. See snapshot doc section 9.2 for approaches considered. |
+| Design | RBAC vs content-filtering separation | Low | `Tools.AccessConfig` and `Tools.AccessFieldConfig` exist because RBAC couldn't express the granularity BDL needed. Worth deciding if this pattern should persist (each tool gets its own access tables) or if a more expressive RBAC model could subsume some of it. Field-level granularity may be too domain-specific for generic RBAC. |
+| Enhance | Endpoint protection standardization | Medium | Asset_Registry catalogs 245 route definitions, of which ~54 are mutating (POST/PUT/DELETE). Only 19 currently have RBAC_ActionRegistry rows. The remaining 35 use either manual `Get-UserAccess` calls (Pattern B) or no auth check at all (Pattern C). Codify a default rule: GET endpoints rely on page-level access; mutating endpoints must call `Test-ActionEndpoint` and have a registry row. Build a gap report from Asset_Registry to identify non-compliant endpoints. |
+
+---
+
+### BDLImport
+| Type | Item | Priority | Notes |
+|------|------|----------|-------|
+| Enhance | Endpoint authorization (Phase B) | High | `/api/bdl-import/execute` and related endpoints currently have no RBAC check at all — only AD authentication. A user with `/bdl-import` page access (any dept manager today) can craft direct POSTs that bypass the UI content filter. Add server-side validation that checks the requesting user's `department_scope` against `Tools.AccessConfig` and `Tools.AccessFieldConfig` before executing imports. This is the high-stakes endpoint gap from the 2026-05-15 RBAC audit. |
+
 ---
 
 ## ServerOps
@@ -121,6 +136,7 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 |------|------|----------|-------|
 | Build | Health & Usage Sub-Page | Medium | Platform diagnostics dashboard. Platform Pulse, CC Performance, Operational Volume, Usage Analytics. Consolidates concepts from Admin Section Plan and Self Monitoring Plan. Data collection infrastructure already deployed. |
 | Build | Alert Subscription Management Page | Medium | Self-service page for department leads to manage channel subscriptions. Apps team retains admin control over webhook creation. Dependent on RBAC. |
+| Enhance | DBNull handling pattern scan | Low | `ConvertFrom-DBNull` helper was added to `xFACts-Helpers.psm1` during the 2026-05-15 session and applied to `Get-UserPageTier` and `Get-UserContext`. The same DBNull-as-truthy pattern likely exists elsewhere in the codebase where DB-sourced values are evaluated in boolean contexts. Scan for `if (-not $row.X)`, `Where-Object { $_.X }`, `-not $_.X`, and similar patterns against any value sourced from `Invoke-XFActsQuery`. No known user-facing bugs from this — defensive cleanup only. |
 
 ### Shared
 
@@ -140,6 +156,7 @@ Open build, enhancement, and bug fix items across the xFACts platform. Organized
 | Enhance | Shared CC JS extraction | Low | Evaluate common JS patterns (modal open/close, slideout animation, refresh badge updates) for extraction into cc-engine-events.js. Consider rename if necessary. |
 | Enhance | Coverage gap-check refinement for wildcard-granted pages | Medium | /admin and /platform-monitoring show as false positives in NavRegistry vs PermissionMapping gap-check (rely on Admin wildcard `*` permission). Decide between query-side fix or schema-side fix (add requires_explicit_permission BIT to NavRegistry). |
 | Build | Doc-page RBAC integration | Medium | Apply RBAC + dynamic nav to /docs/pages/*. Currently unauthenticated. Requires: (1) auth on /docs static route in Start-ControlCenter.ps1, (2) doc_page_id → CC page route → permission lookup, (3) nav.js update for filtered registry. doc_page_id field in RBAC_NavRegistry is the join key. Dependent on Phase 3d completion. |
+| Investigate | Pode error logging silence | Medium | No Pode error logs have been written for approximately 3 months despite `New-PodeLoggingMethod -File -Name 'errors' ... | Enable-PodeErrorLogging` being configured correctly in `Start-ControlCenter.ps1`. Need to determine cause: log file permissions, directory cleanup job, log rotation, or the prevalent empty `catch { }` blocks throughout the codebase swallowing exceptions before Pode sees them. Restoring error visibility is important before production user expansion. |
 
 ---
 
