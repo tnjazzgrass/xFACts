@@ -30,7 +30,8 @@
     Group B - JS structural elements (spec-driven):
       * FILE_HEADER, COMMENT_BANNER, JS_IMPORT, JS_CONSTANT[_VARIANT],
         JS_STATE, JS_FUNCTION[_VARIANT], JS_HOOK[_VARIANT], JS_CLASS,
-        JS_METHOD[_VARIANT], JS_TIMER, JS_FUNCTION USAGE rows.
+        JS_METHOD[_VARIANT], JS_TIMER, JS_DISPATCH_ENTRY, JS_FUNCTION
+        USAGE rows.
 
     Group C - JS event bindings and forbidden patterns:
       * JS_EVENT USAGE rows for addEventListener calls and direct
@@ -57,6 +58,59 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-14  Bootloader / dispatch / ENGINE_PROCESSES support per the
+            CC_JS_Spec.md amendments. Adds JS_DISPATCH_ENTRY emission,
+            ENGINE_PROCESSES validation, MISSING_PAGE_INIT detection,
+            and HTML_ID cross-spec resolution. Page files now use the
+            taxonomy IMPORTS / CONSTANTS / STATE / FUNCTIONS (the legacy
+            INITIALIZATION section type is removed from
+            $ValidSectionTypes_Page); cc-shared.js gains a BOOTLOADER
+            section type before CHROME. The $SectionTypeOrder map adds a
+            BOOTLOADER = 4 slot; CHROME shifts to 5 to keep ordering
+            monotonic. $PrefixNoneAllowedSectionTypes drops INITIALIZATION
+            and adds CONSTANTS (so a page-side ENGINE_PROCESSES const
+            block can declare Prefix: (none)).
+            New drift codes (all added to the master table):
+              DUPLICATE_BOOTLOADER
+              MISSING_PAGE_INIT
+              MISSING_ENGINE_PROCESSES_DECLARATION
+              MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS
+              ENGINE_PROCESS_PAGE_MISMATCH
+              ENGINE_SLUG_JS_MISMATCH
+              UNRESOLVED_DISPATCH_HANDLER
+              MALFORMED_ACTION_KEY
+              JS_HTML_ID_UNRESOLVED
+              JS_HTML_ID_MALFORMED
+            UNKNOWN_SECTION_TYPE description updated to reflect the new
+            taxonomy.
+            JS_DISPATCH_ENTRY rows are emitted for each entry in a
+            top-level const named <prefix>_<event>Actions (page side)
+            or shared<Event>Actions (cc-shared.js side). component_name
+            is the action value (kebab-case key), variant_qualifier_1
+            is the event name, variant_qualifier_2 is the handler
+            function name, parent_function is the dispatch table
+            variable name, variant_type is NULL. The event name's
+            placement in variant_qualifier_1 mirrors the HTML
+            populator's column placement (CC_HTML_Spec.md Section 6.5)
+            so cross-spec joins are symmetric. UNRESOLVED_DISPATCH_HANDLER
+            and MALFORMED_ACTION_KEY fire on the JS_DISPATCH_ENTRY row.
+            ENGINE_PROCESSES validation cross-references each page
+            file's ENGINE_PROCESSES const against active scheduled
+            processes (run_mode=1) in Orchestrator.ProcessRegistry,
+            keyed by cc_page_route. The four registry codes attach to
+            either the JS_FILE row (file-level) or the
+            JS_CONSTANT_VARIANT row for ENGINE_PROCESSES.
+            MISSING_PAGE_INIT fires on the JS_FILE row when a page
+            file with a registered cc_prefix has no top-level
+            <prefix>_init function (declared either as a function
+            declaration or as a const initialized to an arrow/function
+            expression).
+            HTML_ID USAGE rows now resolve against HTML_ID DEFINITION
+            rows from the HTML populator. The cross-spec preload runs
+            alongside the existing CSS class preload; when the HTML
+            populator hasn't run yet (standalone JS-only invocation),
+            validation suppresses with a startup warning per the
+            existing CSS empty-result pattern.
 2026-05-11  Universal anchor-row refactor. Added JS_FILE as a pure-anchor
             row, emitted once per scanned .js file. The new row sits
             immediately before FILE_HEADER in the per-file emission order
@@ -286,25 +340,30 @@ $env:NODE_PATH = $NodeLibsPath
 # file-kind-appropriate list per file. A FOUNDATION banner in a page file
 # produces UNKNOWN_SECTION_TYPE drift via the helper; a CONSTANTS banner in
 # cc-shared.js does the same.
-$ValidSectionTypes_Page   = @('IMPORTS', 'CONSTANTS', 'STATE', 'INITIALIZATION', 'FUNCTIONS')
-$ValidSectionTypes_Shared = @('IMPORTS', 'FOUNDATION', 'STATE', 'CHROME')
+# Per the 2026-05-14 bootloader amendment: page files no longer have an
+# INITIALIZATION section (page init runs in <prefix>_init, declared inside
+# a regular FUNCTIONS section), and cc-shared.js gains a BOOTLOADER section
+# before CHROME for the page bootloader and the shared dispatch tables.
+$ValidSectionTypes_Page   = @('IMPORTS', 'CONSTANTS', 'STATE', 'FUNCTIONS')
+$ValidSectionTypes_Shared = @('IMPORTS', 'FOUNDATION', 'STATE', 'BOOTLOADER', 'CHROME')
 
 # Required ordering of section types. Page files use:
-#   IMPORTS -> CONSTANTS -> STATE -> INITIALIZATION -> FUNCTIONS
+#   IMPORTS -> CONSTANTS -> STATE -> FUNCTIONS
 # cc-shared.js uses:
-#   IMPORTS -> FOUNDATION -> STATE -> CHROME
+#   IMPORTS -> FOUNDATION -> STATE -> BOOTLOADER -> CHROME
 # FOUNDATION and CONSTANTS share slot 2 (parallel concepts in shared vs.
-# page files). CHROME and INITIALIZATION share slot 4 (CHROME = cc-shared.js's
-# INITIALIZATION+FUNCTIONS combined, per CC_JS_Spec.md Section 4.2). The hashtable
-# accommodates both file kinds without requiring two parallel arrays.
+# page files). BOOTLOADER sits at slot 4 in cc-shared.js. CHROME's slot
+# is 5 to keep ordering monotonic in cc-shared.js; on page files,
+# FUNCTIONS occupies slot 5 instead. The hashtable accommodates both
+# file kinds without requiring two parallel arrays.
 $SectionTypeOrder = @{
-    'IMPORTS'        = 1
-    'FOUNDATION'     = 2
-    'CONSTANTS'      = 2
-    'STATE'          = 3
-    'INITIALIZATION' = 4
-    'CHROME'         = 4
-    'FUNCTIONS'      = 5
+    'IMPORTS'    = 1
+    'FOUNDATION' = 2
+    'CONSTANTS'  = 2
+    'STATE'      = 3
+    'BOOTLOADER' = 4
+    'FUNCTIONS'  = 5
+    'CHROME'     = 5
 }
 
 # The fixed banner name for the page lifecycle hooks group. Per Section 8.1, the
@@ -313,9 +372,11 @@ $SectionTypeOrder = @{
 $HooksBannerName = 'PAGE LIFECYCLE HOOKS'
 
 # Section types whose banners may legitimately declare Prefix: (none) on a
-# page file (per CC_JS_Spec.md Section 5.2). These are the carve-outs the strict
-# (Option B) registry validation rule honors.
-$PrefixNoneAllowedSectionTypes = @('IMPORTS', 'INITIALIZATION')
+# page file (per CC_JS_Spec.md Section 5.2). Per the 2026-05-14 amendment,
+# INITIALIZATION is removed (no longer a valid page section type) and
+# CONSTANTS is added so the page-side ENGINE_PROCESSES const block can
+# declare Prefix: (none) when it sits in its own dedicated banner.
+$PrefixNoneAllowedSectionTypes = @('IMPORTS', 'CONSTANTS')
 
 # The five recognized hook function names (CC_JS_Spec.md Section 8). API contract
 # with cc-shared.js -- these names cannot be renamed.
@@ -326,6 +387,38 @@ $RecognizedHookNames = @(
     'onEngineProcessCompleted',
     'onEngineEventRaw'
 )
+
+# Contract identifiers per CC_JS_Spec.md Section 5.5. These names are read by
+# exact match from cc-shared.js and cannot carry the page prefix. Comprised of
+# ENGINE_PROCESSES plus the five hook names. Exempt from PREFIX_MISSING /
+# PREFIX_MISMATCH; misplacement is surfaced by the _MISPLACED family of drift
+# codes.
+$ContractIdentifiers = @('ENGINE_PROCESSES') + $RecognizedHookNames
+
+# Required home banner names for the contract identifiers that carry a
+# misplacement drift code. The TypeName is implicit (CONSTANTS for the
+# ENGINE_PROCESSES banner, FUNCTIONS for the hooks banner); the BannerName
+# is what's checked at row-emission time.
+$EngineProcessesBannerName = 'ENGINE PROCESSES'
+
+# Recognized event names for data-action-<event> attributes and the
+# corresponding JS-side dispatch table variable names. Per CC_HTML_Spec.md
+# Section 6.4 and CC_JS_Spec.md Section 11.3. The page-side dispatch tables
+# are named <prefix>_<event>Actions; the shared-side are shared<Event>Actions
+# in cc-shared.js. Keep this set in lockstep with the HTML populator's
+# recognized event list.
+$RecognizedEventNames = @(
+    'click',
+    'change',
+    'input',
+    'submit',
+    'keydown',
+    'keyup',
+    'focus',
+    'blur'
+)
+
+# Drift code -> human description mapping. Used by Add-DriftCode (helpers)
 
 # Drift code -> human description mapping. Used by Add-DriftCode (helpers)
 # to validate codes and to populate drift_text. Aligned with CC_JS_Spec.md
@@ -346,12 +439,13 @@ $DriftDescriptions = [ordered]@{
     'BANNER_INVALID_SEPARATOR_LENGTH'   = "A section banner's middle separator line is not exactly 76 '-' characters long."
     'BANNER_MALFORMED_TITLE_LINE'       = "A section banner has no recognizable title line in the form '<TYPE>: <NAME>'. The TYPE token must be uppercase letters and underscores only."
     'BANNER_MISSING_DESCRIPTION'        = "A section banner has no description content between the separator and the Prefix line. The description is required (1 to 5 sentences explaining what the section contains)."
-    'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not valid for the file kind. Page files allow IMPORTS, CONSTANTS, STATE, INITIALIZATION, FUNCTIONS. cc-shared.js allows IMPORTS, FOUNDATION, STATE, CHROME."
+    'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not valid for the file kind. Page files allow IMPORTS, CONSTANTS, STATE, FUNCTIONS. cc-shared.js allows IMPORTS, FOUNDATION, STATE, BOOTLOADER, CHROME."
     'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order for the file kind."
     'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
     'MALFORMED_PREFIX_VALUE'            = "A section banner's Prefix line declares anything other than a single 3-character lowercase prefix or (none)."
-    'PREFIX_REGISTRY_MISMATCH'          = "A section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component (with the spec's IMPORTS / INITIALIZATION / hooks-banner carve-outs honored)."
+    'PREFIX_REGISTRY_MISMATCH'          = "A section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component (with the spec's IMPORTS / CONSTANTS / hooks-banner carve-outs honored)."
     'DUPLICATE_FOUNDATION'              = "A FOUNDATION section appears in a JS file other than cc-shared.js (the anchor file). FOUNDATION sections live only in the anchor file."
+    'DUPLICATE_BOOTLOADER'              = "A BOOTLOADER section appears in a JS file other than cc-shared.js (the anchor file). BOOTLOADER sections live only in the anchor file."
     'DUPLICATE_CHROME'                  = "A CHROME section appears in a JS file other than cc-shared.js (the anchor file). CHROME sections live only in the anchor file."
     'HOOKS_BANNER_NOT_LAST'             = "A FUNCTIONS: PAGE LIFECYCLE HOOKS banner exists but is not the last banner in the file."
     # Definition-level (Section 18.3)
@@ -365,6 +459,17 @@ $DriftDescriptions = [ordered]@{
     'WRONG_DECLARATION_KEYWORD'         = "A var declaration appears in a CONSTANTS or FOUNDATION section, or a const declaration appears in a STATE section."
     'SHADOWS_SHARED_FUNCTION'           = "A page file defines a function whose name matches a cc-shared.js export."
     'UNKNOWN_HOOK_NAME'                 = "A function inside the hooks banner has a name not in the recognized hook set."
+    'ENGINE_PROCESSES_MISPLACED'        = "The ENGINE_PROCESSES constant is declared outside its required 'CONSTANTS: ENGINE PROCESSES' banner. Per spec Section 7.4.3, ENGINE_PROCESSES is a contract identifier (Section 5.5) and must live in its dedicated CONSTANTS banner."
+    'HOOK_MISPLACED'                    = "A function whose name matches one of the five recognized hook names is declared outside the 'FUNCTIONS: PAGE LIFECYCLE HOOKS' banner. Per spec Section 8.5, hook functions are contract identifiers (Section 5.5) and must live in the hooks banner."
+    'MISSING_PAGE_INIT'                 = "A page file with a registered cc_prefix does not declare a top-level <prefix>_init function. Per spec Section 11, every page file must declare an init function that the bootloader calls after the page DOM is ready."
+    'MISSING_ENGINE_PROCESSES_DECLARATION' = "Orchestrator.ProcessRegistry has at least one active process (run_mode=1) whose cc_page_route matches this file's page route, but the file does not declare a top-level ENGINE_PROCESSES constant. Page files that participate in the engine-card system must declare ENGINE_PROCESSES."
+    'MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS' = "Orchestrator.ProcessRegistry has an active process (run_mode=1) whose cc_page_route matches this file's page route, but the file's ENGINE_PROCESSES set does not include an entry for that process. Every registered engine-card process for this page must appear in ENGINE_PROCESSES."
+    'ENGINE_PROCESS_PAGE_MISMATCH'      = "An ENGINE_PROCESSES entry references a process whose cc_page_route in Orchestrator.ProcessRegistry does not match the current file's page route. Pages may only declare ENGINE_PROCESSES entries for their own page route."
+    'ENGINE_SLUG_JS_MISMATCH'           = "An ENGINE_PROCESSES entry's slug value does not match Orchestrator.ProcessRegistry.cc_engine_slug for the corresponding process. The slug declared in JS must match the slug registered in ProcessRegistry."
+    'UNRESOLVED_DISPATCH_HANDLER'       = "A dispatch table entry references a handler function name that does not resolve to a function defined in the same file (page-side dispatch) or in cc-shared.js (shared-side dispatch). The handler must exist or the dispatched action will fail at runtime."
+    'MALFORMED_ACTION_KEY'              = "A dispatch table key violates the action-value naming rules: page-side keys must be kebab-case (lowercase letters, digits, hyphens) and must NOT start with 'cc-' (which is reserved for shared chrome actions); shared-side keys MUST start with 'cc-'."
+    'JS_HTML_ID_UNRESOLVED'             = "A JS reference to an HTML ID (via getElementById, querySelector, etc.) does not resolve to any HTML_ID DEFINITION row in the catalog. Either the ID is not declared in any HTML route file, or the HTML populator has not yet run."
+    'JS_HTML_ID_MALFORMED'              = "A JS reference to an HTML ID uses a string that contains characters outside the spec's lowercase-letters/digits/hyphens set, or does not begin with the file's registered cc_prefix followed by a hyphen. Page-local IDs must match <prefix>-<purpose> form per CC_HTML_Spec.md Section 4.2."
     # Forbidden patterns (Section 18.4)
     'FORBIDDEN_LET'                     = "A let declaration appears anywhere in the file."
     'FORBIDDEN_MULTI_DECLARATION'       = "A single statement declares multiple variables. Each declaration gets its own statement."
@@ -403,6 +508,22 @@ $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 # host for whole-file concerns; FILE_HEADER continues to host header-
 # block-specific concerns.
 $script:jsFileRowByFile = @{}
+
+# Per-file ENGINE_PROCESSES JS_CONSTANT_VARIANT row reference. Captured by
+# the visitor when it emits the row for a `const ENGINE_PROCESSES = [...]`
+# at the top level. Used by the post-walk ENGINE_PROCESSES validation pass
+# to attach ENGINE_PROCESS_PAGE_MISMATCH and ENGINE_SLUG_JS_MISMATCH drift
+# codes to the row. Reset to $null at the top of each per-file iteration.
+$script:CurrentEngineProcessesRow = $null
+
+# Per-file ENGINE_PROCESSES extracted entries. The visitor captures each
+# entry's slug and pageRoute literal values from the ArrayExpression's
+# ObjectExpression elements when it emits the JS_CONSTANT_VARIANT row.
+# Used by the post-walk ENGINE_PROCESSES validation pass to compare
+# against Orchestrator.ProcessRegistry. Each entry is a hashtable:
+#   @{ Slug = '<value or null>'; PageRoute = '<value or null>'; Line = <int> }
+# Reset to an empty list at the top of each per-file iteration.
+$script:CurrentEngineProcessesEntries = $null
 
 # Per-file context used by the visitor and emitters during the AST walk.
 $script:CurrentFile               = $null
@@ -485,6 +606,24 @@ function Get-JsZone {
     param([string]$FullPath)
     if ($FullPath -match '\\public\\docs\\js\\') { return 'docs' }
     return 'cc'
+}
+
+# Derive the page route for a JS file. The route is the file's basename
+# minus the .js extension, prefixed with '/'. Used by the ENGINE_PROCESSES
+# validation pass to match the file against Orchestrator.ProcessRegistry
+# entries keyed by cc_page_route.
+#
+# For example: 'batch-monitoring.js' -> '/batch-monitoring'.
+#
+# cc-shared.js, engine-events.js, and the docs files have no meaningful
+# page route; the function returns $null for those.
+function Get-PageRouteForJsFile {
+    param([string]$FileName)
+    if ([string]::IsNullOrEmpty($FileName)) { return $null }
+    if ($SharedFiles -contains $FileName)   { return $null }
+    if ($FileName -notlike '*.js')          { return $null }
+    $base = $FileName -replace '\.js$', ''
+    return "/$base"
 }
 
 # Pull raw text from the source string by character range. Used to capture
@@ -578,6 +717,55 @@ function Split-ClassNames {
         $_ -and ($_ -notmatch '\$') -and ($_ -ne '')
     })
     return $tokens
+}
+
+
+# ============================================================================
+# DISPATCH TABLE NAME PARSING
+# ============================================================================
+
+# Parse a const declarator name to detect whether it names a dispatch table.
+# Returns @{ IsDispatchTable = $bool; Side = 'page'|'shared'|$null; EventName = '<event>' or $null }.
+#
+# Page-side pattern: <prefix>_<event>Actions, where <event> is one of the
+# recognized event names (click, change, input, submit, keydown, keyup,
+# focus, blur). The prefix match is not enforced here -- existing
+# PREFIX_MISSING / PREFIX_MISMATCH codes on the JS_CONSTANT row handle
+# prefix non-conformance.
+# Examples: bch_clickActions, bsv_changeActions.
+#
+# Shared-side pattern: shared<Event>Actions where <Event> capitalizes one of
+# the recognized event names. Only valid in cc-shared.js. Examples:
+# sharedClickActions, sharedChangeActions.
+function Get-DispatchTableInfo {
+    param([string]$Name)
+    $result = @{ IsDispatchTable = $false; Side = $null; EventName = $null }
+    if ([string]::IsNullOrEmpty($Name)) { return $result }
+
+    # Shared-side: shared<Event>Actions (only valid in cc-shared.js).
+    if ($Name -cmatch '^shared([A-Z][a-z]+)Actions$') {
+        $eventLower = $matches[1].ToLower()
+        if ($RecognizedEventNames -contains $eventLower) {
+            $result.IsDispatchTable = $true
+            $result.Side            = 'shared'
+            $result.EventName       = $eventLower
+        }
+        return $result
+    }
+
+    # Page-side: <prefix>_<event>Actions. The prefix is any lowercase identifier;
+    # the regular PREFIX_MISMATCH / PREFIX_MISSING checks on the surrounding
+    # JS_CONSTANT row enforce prefix conformance against Component_Registry.
+    if ($Name -cmatch '^([a-z]+)_([a-z]+)Actions$') {
+        $eventName = $matches[2]
+        if ($RecognizedEventNames -contains $eventName) {
+            $result.IsDispatchTable = $true
+            $result.Side            = 'page'
+            $result.EventName       = $eventName
+        }
+    }
+
+    return $result
 }
 
 
@@ -1280,6 +1468,129 @@ switch ($cssPreLoadState) {
 
 
 # ============================================================================
+# HTML_ID DEFINITION PRELOAD (cross-spec resolution)
+# ============================================================================
+# HTML_ID USAGE rows the JS populator emits (from getElementById /
+# querySelector / setAttribute('id', ...) / el.id = '...') are resolved
+# against HTML_ID DEFINITION rows from the HTML populator. The validation
+# fires JS_HTML_ID_UNRESOLVED on USAGE rows whose ID does not appear in
+# any HTML DEFINITION row, and JS_HTML_ID_MALFORMED on USAGE rows whose
+# ID string violates the spec's lowercase-letters/digits/hyphens rule
+# or whose ID does not begin with the file's registered cc_prefix + '-'.
+#
+# HTML populator runs before JS in the standard pipeline order. In
+# standalone runs (before HTML has populated), the query returns zero
+# rows; cross-spec validation suppresses with a startup warning so JS
+# rows still emit cleanly without spurious drift.
+
+Write-Log "Loading existing HTML_ID DEFINITION rows for cross-spec resolution..."
+
+$htmlIdDefs = Get-SqlData -Query @"
+SELECT component_name, file_name
+FROM dbo.Asset_Registry
+WHERE component_type = 'HTML_ID'
+  AND reference_type = 'DEFINITION'
+  AND file_type = 'HTML';
+"@
+
+$script:htmlIdDefinitionMap = @{}
+$htmlIdPreLoadState = 'QUERY_FAILED'
+
+if ($null -ne $htmlIdDefs) {
+    $defArray = @($htmlIdDefs)
+    if ($defArray.Count -eq 0) {
+        $htmlIdPreLoadState = 'EMPTY'
+    } else {
+        $htmlIdPreLoadState = 'OK'
+        foreach ($d in $defArray) {
+            $cn = $d.component_name
+            if ([string]::IsNullOrEmpty($cn)) { continue }
+            if (-not $script:htmlIdDefinitionMap.ContainsKey($cn)) {
+                $script:htmlIdDefinitionMap[$cn] = $d.file_name
+            }
+        }
+    }
+}
+
+switch ($htmlIdPreLoadState) {
+    'OK' {
+        Write-Log ("  HTML_ID DEFINITION rows loaded: {0}" -f $script:htmlIdDefinitionMap.Count)
+    }
+    'EMPTY' {
+        Write-Log "HTML_ID DEFINITION query returned zero rows. JS_HTML_ID_UNRESOLVED will not be emitted (HTML populator has not yet run, or no IDs are declared)." 'WARN'
+    }
+    'QUERY_FAILED' {
+        Write-Log "Could not load HTML_ID DEFINITION rows. JS_HTML_ID_UNRESOLVED will not be emitted (resolution skipped)." 'WARN'
+    }
+}
+
+
+# ============================================================================
+# PROCESS REGISTRY PRELOAD (ENGINE_PROCESSES validation)
+# ============================================================================
+# ENGINE_PROCESSES validation cross-checks each page file's ENGINE_PROCESSES
+# const declaration against the active engine-card processes registered in
+# Orchestrator.ProcessRegistry (cc_engine_slug, cc_page_route columns).
+#
+# The query selects every active scheduled process (run_mode=1) that carries
+# the cc-prefixed columns; queue processors (run_mode=2) and inactive
+# processes (run_mode=0) are excluded because they do not appear as engine
+# cards.
+#
+# Results are grouped by cc_page_route so the per-file validation pass can
+# look up "what processes does this page expect?" with a single map lookup.
+
+Write-Log "Loading Orchestrator.ProcessRegistry rows for ENGINE_PROCESSES validation..."
+
+$processRegistryRowsRaw = Get-SqlData -Query @"
+SELECT process_name, cc_engine_slug, cc_page_route, run_mode
+FROM Orchestrator.ProcessRegistry
+WHERE run_mode = 1
+  AND cc_engine_slug IS NOT NULL
+  AND cc_page_route  IS NOT NULL;
+"@
+
+# Map: cc_page_route -> List of @{ ProcessName; Slug; PageRoute; RunMode }
+$script:processRegistryByPageRoute = @{}
+$processRegPreLoadState = 'QUERY_FAILED'
+$processRegRowCount     = 0
+
+if ($null -ne $processRegistryRowsRaw) {
+    $rowArray = @($processRegistryRowsRaw)
+    $processRegRowCount = $rowArray.Count
+    if ($rowArray.Count -eq 0) {
+        $processRegPreLoadState = 'EMPTY'
+    } else {
+        $processRegPreLoadState = 'OK'
+        foreach ($r in $rowArray) {
+            $rec = @{
+                ProcessName = [string]$r.process_name
+                Slug        = [string]$r.cc_engine_slug
+                PageRoute   = [string]$r.cc_page_route
+                RunMode     = [int]$r.run_mode
+            }
+            if (-not $script:processRegistryByPageRoute.ContainsKey($rec.PageRoute)) {
+                $script:processRegistryByPageRoute[$rec.PageRoute] = New-Object System.Collections.Generic.List[object]
+            }
+            $script:processRegistryByPageRoute[$rec.PageRoute].Add($rec)
+        }
+    }
+}
+
+switch ($processRegPreLoadState) {
+    'OK' {
+        Write-Log ("  ProcessRegistry rows loaded: {0} across {1} page route(s)" -f $processRegRowCount, $script:processRegistryByPageRoute.Count)
+    }
+    'EMPTY' {
+        Write-Log "ProcessRegistry query returned zero active engine-card rows. ENGINE_PROCESSES validation will be skipped." 'WARN'
+    }
+    'QUERY_FAILED' {
+        Write-Log "Could not load ProcessRegistry rows. ENGINE_PROCESSES validation will be skipped." 'WARN'
+    }
+}
+
+
+# ============================================================================
 # REGISTRY LOADS
 # ============================================================================
 
@@ -1333,9 +1644,21 @@ function Get-ZoneSharedSourceFile {
     return $h
 }
 
+# Returns $true if the identifier is a contract identifier per spec Section 5.5
+# (ENGINE_PROCESSES plus the five hook function names). Contract identifiers
+# are referenced by exact name from cc-shared.js and are exempt from
+# PREFIX_MISSING / PREFIX_MISMATCH checks. Misplacement is surfaced by the
+# _MISPLACED drift code family instead.
+function Test-IsContractIdentifier {
+    param([string]$IdentifierName)
+    if ([string]::IsNullOrEmpty($IdentifierName)) { return $false }
+    return ($ContractIdentifiers -contains $IdentifierName)
+}
+
 # Returns $true if the file has a registered cc_prefix and the identifier
 # name does NOT begin with that prefix + underscore. Returns $false in any
 # of these cases:
+#   - The identifier is a contract identifier (Section 5.5 carve-out)
 #   - The file has no Component_Registry mapping (skip silently; the
 #     Object_Registry miss advisory flags missing registration separately)
 #   - The file's registered cc_prefix is null (e.g. cc-shared.js, hooks-only
@@ -1348,10 +1671,32 @@ function Get-ZoneSharedSourceFile {
 function Test-PrefixMissing {
     param([string]$IdentifierName)
     if ([string]::IsNullOrEmpty($IdentifierName)) { return $false }
+    if (Test-IsContractIdentifier -IdentifierName $IdentifierName) { return $false }
     if (-not $script:CurrentRegistryHasMapping)   { return $false }
     if ([string]::IsNullOrEmpty($script:CurrentRegistryPrefix)) { return $false }
     $expected = "$($script:CurrentRegistryPrefix)_"
     return -not $IdentifierName.StartsWith($expected)
+}
+
+# Returns $true if an HTML ID string is malformed: it contains characters
+# outside the spec's lowercase-letters/digits/hyphens set OR (when the file
+# has a registered cc_prefix) it does not begin with that prefix + '-'.
+# Returns $false in any of these cases:
+#   - The ID conforms to <prefix>-<purpose> with only the allowed chars
+#   - The file has no Component_Registry mapping (skip silently)
+#   - The file's registered cc_prefix is null (no prefix expected)
+# Used by Add-HtmlIdRow to fire JS_HTML_ID_MALFORMED on USAGE rows.
+# Per CC_HTML_Spec.md Section 4.2.
+function Test-HtmlIdMalformed {
+    param([string]$IdName)
+    if ([string]::IsNullOrEmpty($IdName)) { return $false }
+    # Character-class check: a-z, 0-9, '-' only.
+    if ($IdName -cnotmatch '^[a-z0-9-]+$') { return $true }
+    # Prefix check, only when the file has a registered cc_prefix.
+    if (-not $script:CurrentRegistryHasMapping)                  { return $false }
+    if ([string]::IsNullOrEmpty($script:CurrentRegistryPrefix)) { return $false }
+    $expected = "$($script:CurrentRegistryPrefix)-"
+    return -not $IdName.StartsWith($expected)
 }
 
 # ============================================================================
@@ -1524,14 +1869,17 @@ function Add-CommentBannerRow {
         }
     }
 
-    # ---- DUPLICATE_FOUNDATION / DUPLICATE_CHROME (anchor-file enforcement) ----
-    # Per the 2026-05-07 anchor-file generalization (CC_CSS_Spec.md Section 4.3 mirror,
-    # applied to JS): FOUNDATION/CHROME may appear ONLY in cc-shared.js. The
-    # drift code fires whenever they appear in any other file, regardless of
-    # whether more than one file declares them.
+    # ---- DUPLICATE_FOUNDATION / DUPLICATE_BOOTLOADER / DUPLICATE_CHROME ----
+    # Anchor-file enforcement: FOUNDATION, BOOTLOADER, and CHROME may appear
+    # ONLY in cc-shared.js. The drift code fires whenever they appear in
+    # any other file, regardless of whether more than one file declares them.
     if ($Section.TypeName -eq 'FOUNDATION' -and $script:CurrentFile -ne $script:CanonicalSharedFile) {
         Add-DriftCode -Row $row -Code 'DUPLICATE_FOUNDATION' `
             -Context "FOUNDATION section appears in '$($script:CurrentFile)'; FOUNDATION lives only in '$($script:CanonicalSharedFile)'."
+    }
+    if ($Section.TypeName -eq 'BOOTLOADER' -and $script:CurrentFile -ne $script:CanonicalSharedFile) {
+        Add-DriftCode -Row $row -Code 'DUPLICATE_BOOTLOADER' `
+            -Context "BOOTLOADER section appears in '$($script:CurrentFile)'; BOOTLOADER lives only in '$($script:CanonicalSharedFile)'."
     }
     if ($Section.TypeName -eq 'CHROME' -and $script:CurrentFile -ne $script:CanonicalSharedFile) {
         Add-DriftCode -Row $row -Code 'DUPLICATE_CHROME' `
@@ -1681,7 +2029,7 @@ function Add-HtmlIdRow {
     )
     if ([string]::IsNullOrWhiteSpace($IdName)) { return $null }
 
-    # Per CC_JS_Spec.md Section 16.3, HTML_ID rows are ALWAYS scope='LOCAL' regardless
+    # Per CC_JS_Spec.md Section 17.3, HTML_ID rows are ALWAYS scope='LOCAL' regardless
     # of whether the host file is shared. IDs are inherently page-specific.
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|HTML_ID|$IdName|$ReferenceType|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
@@ -1699,6 +2047,27 @@ function Add-HtmlIdRow {
         -ParentFunction $ParentFunction `
         -RawText        $RawText
     $script:rows.Add($row)
+
+    # JS_HTML_ID_MALFORMED applies to both DEFINITION and USAGE rows --
+    # an ill-formed ID written from JS is drift regardless of which side
+    # of the catalog it lives on.
+    if (Test-HtmlIdMalformed -IdName $IdName) {
+        Add-DriftCode -Row $row -Code 'JS_HTML_ID_MALFORMED' `
+            -Context "ID '$IdName' contains disallowed characters or does not begin with the file's registered cc_prefix + '-'."
+    }
+
+    # JS_HTML_ID_UNRESOLVED applies only to USAGE rows: a JS reference
+    # to an HTML ID that isn't declared anywhere in the HTML catalog.
+    # Suppressed entirely when the HTML preload didn't return any rows
+    # (standalone JS-only run), to avoid spurious drift while the HTML
+    # populator hasn't run yet.
+    if ($ReferenceType -eq 'USAGE' -and
+        $script:htmlIdDefinitionMap.Count -gt 0 -and
+        -not $script:htmlIdDefinitionMap.ContainsKey($IdName)) {
+        Add-DriftCode -Row $row -Code 'JS_HTML_ID_UNRESOLVED' `
+            -Context "ID '$IdName' has no matching HTML_ID DEFINITION row in the catalog."
+    }
+
     return $row
 }
 
@@ -1948,6 +2317,144 @@ function Add-JsLineCommentRow {
     return $row
 }
 
+# Emit JS_DISPATCH_ENTRY rows for each property in a dispatch table's
+# ObjectExpression. The caller supplies:
+#   - $TableName       = the dispatch table variable name (e.g., 'bch_clickActions')
+#   - $EventName       = the event name parsed from the table name ('click')
+#   - $Side            = 'page' or 'shared'
+#   - $ObjectNode      = the ObjectExpression AST node (decl.init)
+#
+# Per CC_JS_Spec.md Section 11.3 / 17.5:
+#   component_name      = action value (the key, a kebab-case string)
+#   variant_type        = NULL
+#   variant_qualifier_1 = event name (mirrors HTML_DATA_ATTRIBUTE placement)
+#   variant_qualifier_2 = handler function name (the value-side identifier)
+#   parent_function     = the dispatch table variable name
+#   scope               = LOCAL for page-side, SHARED for cc-shared.js
+#
+# Drift codes attached per-entry:
+#   MALFORMED_ACTION_KEY      - key fails kebab-case rules or shared/page
+#                               'cc-' prefix rule.
+#   UNRESOLVED_DISPATCH_HANDLER - handler name doesn't resolve to a local
+#                               function (page side) or to a cc-shared.js
+#                               function (shared side).
+function Add-JsDispatchEntryRows {
+    param(
+        [Parameter(Mandatory)][string]$TableName,
+        [Parameter(Mandatory)][string]$EventName,
+        [Parameter(Mandatory)][ValidateSet('page','shared')][string]$Side,
+        [Parameter(Mandatory)]$ObjectNode
+    )
+    if ($null -eq $ObjectNode -or $null -eq $ObjectNode.properties) { return }
+
+    $scope = if ($Side -eq 'shared') { 'SHARED' } else { 'LOCAL' }
+
+    foreach ($prop in $ObjectNode.properties) {
+        if ($null -eq $prop) { continue }
+        if ($prop.type -ne 'Property') { continue }
+        if ($prop.computed -eq $true)  { continue }
+
+        # Extract the action key (key must be a string Literal or an
+        # Identifier-shaped key; Identifier keys are extremely rare for
+        # kebab-case action values so the spec assumes Literal).
+        $actionKey = $null
+        if ($prop.key.type -eq 'Literal' -and $prop.key.value -is [string]) {
+            $actionKey = [string]$prop.key.value
+        }
+        elseif ($prop.key.type -eq 'Identifier' -and $prop.key.name) {
+            # Identifier-shaped key (rare). Still cataloged so drift is visible.
+            $actionKey = $prop.key.name
+        }
+        if ([string]::IsNullOrWhiteSpace($actionKey)) { continue }
+
+        # Extract the handler function name (value side).
+        $handlerName = $null
+        if ($prop.value.type -eq 'Identifier' -and $prop.value.name) {
+            $handlerName = $prop.value.name
+        }
+        # If the value is something more complex (a function expression
+        # inline, a member expression, etc.) leave $handlerName null and
+        # let UNRESOLVED_DISPATCH_HANDLER not fire -- but still emit the
+        # row so the entry is cataloged.
+
+        $entryLine = Get-NodeLine -Node $prop
+        $entryCol  = Get-NodeColumn -Node $prop
+        $entryEnd  = Get-NodeEndLine -Node $prop
+        $sig       = "'$actionKey': $handlerName"
+
+        $key = "$($script:CurrentFile)|$entryLine|$entryCol|JS_DISPATCH_ENTRY|$actionKey|DEFINITION|"
+        if (-not (Test-AddDedupeKey -Key $key)) { continue }
+
+        $section = Get-SectionForLine -Sections $script:CurrentSections -Line $entryLine
+        $sourceSection = if ($section) { $section.FullTitle } else { $null }
+
+        $row = New-JsRow `
+            -ComponentType      'JS_DISPATCH_ENTRY' `
+            -ComponentName      $actionKey `
+            -VariantType        $null `
+            -VariantQualifier1  $EventName `
+            -VariantQualifier2  $handlerName `
+            -ReferenceType      'DEFINITION' `
+            -Scope              $scope `
+            -SourceFile         $script:CurrentFile `
+            -SourceSection      $sourceSection `
+            -LineStart          $entryLine `
+            -LineEnd            $entryEnd `
+            -ColumnStart        $entryCol `
+            -Signature          $sig `
+            -ParentFunction     $TableName `
+            -RawText            $sig `
+            -SuppressSectionLookup
+        $script:rows.Add($row)
+
+        # ---- MALFORMED_ACTION_KEY ----
+        # Kebab-case base check: lowercase letters / digits / hyphens only.
+        $kebabOK = ($actionKey -cmatch '^[a-z0-9]+(-[a-z0-9]+)*$')
+        $sideOK  = $true
+        if ($kebabOK) {
+            if ($Side -eq 'page' -and $actionKey -like 'cc-*') {
+                $sideOK = $false
+            }
+            if ($Side -eq 'shared' -and -not ($actionKey -like 'cc-*')) {
+                $sideOK = $false
+            }
+        }
+        if (-not $kebabOK -or -not $sideOK) {
+            $reason = if (-not $kebabOK) {
+                "key '$actionKey' is not kebab-case (lowercase letters, digits, hyphens only)"
+            } elseif ($Side -eq 'page') {
+                "page-side key '$actionKey' starts with 'cc-' which is reserved for shared chrome actions"
+            } else {
+                "shared-side key '$actionKey' does not start with 'cc-' (required for shared actions)"
+            }
+            Add-DriftCode -Row $row -Code 'MALFORMED_ACTION_KEY' -Context $reason
+        }
+
+        # ---- UNRESOLVED_DISPATCH_HANDLER ----
+        # Page-side handlers must resolve in the local function set.
+        # Shared-side handlers must resolve in the cc-shared.js function set.
+        # If $handlerName is null (non-Identifier value), skip the check.
+        if (-not [string]::IsNullOrEmpty($handlerName)) {
+            $resolved = $false
+            if ($Side -eq 'page') {
+                if ($script:CurrentLocalFuncs -and $script:CurrentLocalFuncs.Contains($handlerName)) {
+                    $resolved = $true
+                }
+            } else {
+                # Shared side: must be in cc-zone shared functions.
+                if ($script:ccSharedFunctions -and $script:ccSharedFunctions.Contains($handlerName)) {
+                    $resolved = $true
+                }
+            }
+            if (-not $resolved) {
+                $whereLooked = if ($Side -eq 'page') { 'the same file' } else { 'cc-shared.js' }
+                Add-DriftCode -Row $row -Code 'UNRESOLVED_DISPATCH_HANDLER' `
+                    -Context "Handler '$handlerName' for action '$actionKey' does not resolve in $whereLooked."
+            }
+        }
+    }
+}
+
 
 # ============================================================================
 # LOCAL DEFINITION COLLECTION (per-file)
@@ -2098,7 +2605,8 @@ $JsVisitor = {
             }
             else {
                 $isHook = ($shape.ComponentType -eq 'JS_HOOK' -or $shape.ComponentType -eq 'JS_HOOK_VARIANT')
-                if (-not $isHook -and -not $section.IsPrefixNone) {
+                $isContractId = Test-IsContractIdentifier -IdentifierName $fnName
+                if (-not $isHook -and -not $isContractId -and -not $section.IsPrefixNone) {
                     $expectedPrefix = $section.PrefixValue
                     if (-not [string]::IsNullOrEmpty($expectedPrefix)) {
                         $expected = "$expectedPrefix" + "_"
@@ -2114,6 +2622,20 @@ $JsVisitor = {
                             -Context "Function '$fnName' is in the PAGE LIFECYCLE HOOKS banner but is not a recognized hook name."
                     }
                 }
+            }
+
+            # ---- HOOK_MISPLACED ----
+            # A function whose name matches a recognized hook name must be in
+            # the FUNCTIONS: PAGE LIFECYCLE HOOKS banner. Anywhere else fires
+            # the drift. Per CC_JS_Spec.md Section 8.5.
+            if ($script:RecognizedHookNames -contains $fnName -and -not $isInHooksBanner) {
+                $whereLocation = if ($null -eq $section) {
+                    'outside any section banner'
+                } else {
+                    "section '$($section.FullTitle)'"
+                }
+                Add-DriftCode -Row $row -Code 'HOOK_MISPLACED' `
+                    -Context "Hook function '$fnName' is declared in $whereLocation; required home is 'FUNCTIONS: PAGE LIFECYCLE HOOKS'."
             }
 
             # PREFIX_MISSING: registered cc_prefix vs identifier name.
@@ -2334,7 +2856,7 @@ $JsVisitor = {
                 if ($null -eq $section) {
                     Add-DriftCode -Row $row -Code 'MISSING_SECTION_BANNER' -Context "'$declName' appears outside any section banner."
                 }
-                elseif (-not $section.IsPrefixNone) {
+                elseif (-not (Test-IsContractIdentifier -IdentifierName $declName) -and -not $section.IsPrefixNone) {
                     $expectedPrefix = $section.PrefixValue
                     if (-not [string]::IsNullOrEmpty($expectedPrefix)) {
                         $expected = "$expectedPrefix" + "_"
@@ -2350,6 +2872,133 @@ $JsVisitor = {
                 if (Test-PrefixMissing -IdentifierName $declName) {
                     Add-DriftCode -Row $row -Code 'PREFIX_MISSING' `
                         -Context "'$declName' does not start with the file's registered prefix '$($script:CurrentRegistryPrefix)_'."
+                }
+
+                # ---- ENGINE_PROCESSES_MISPLACED ----
+                # ENGINE_PROCESSES must live in the CONSTANTS: ENGINE PROCESSES
+                # banner. Anywhere else (STATE banner, different CONSTANTS
+                # banner, no banner) fires the drift. Per CC_JS_Spec.md
+                # Section 7.4.3.
+                if ($declName -eq 'ENGINE_PROCESSES') {
+                    $isInRequiredBanner = ($null -ne $section -and
+                                           $section.TypeName -eq 'CONSTANTS' -and
+                                           $section.BannerName -eq $script:EngineProcessesBannerName)
+                    if (-not $isInRequiredBanner) {
+                        $whereLocation = if ($null -eq $section) {
+                            'outside any section banner'
+                        } else {
+                            "section '$($section.FullTitle)'"
+                        }
+                        Add-DriftCode -Row $row -Code 'ENGINE_PROCESSES_MISPLACED' `
+                            -Context "ENGINE_PROCESSES is declared in $whereLocation; required home is 'CONSTANTS: ENGINE PROCESSES'."
+                    }
+                }
+
+                # ---- ENGINE_PROCESSES capture ----
+                # When a top-level declarator named exactly ENGINE_PROCESSES is
+                # initialized to an ObjectExpression, record the row reference
+                # and extract each entry's process_name (from the key) and
+                # slug (from the value's slug property) for post-walk
+                # validation against Orchestrator.ProcessRegistry. Works for
+                # both `const ENGINE_PROCESSES = { ... }` and the legacy
+                # `var ENGINE_PROCESSES = { ... }` form.
+                #
+                # Expected shape:
+                #   {
+                #     'Process-Name':  { slug: 'slug-value' },
+                #     'Other-Process': { slug: 'other-slug' }
+                #   }
+                #
+                # The page route is not present in the JS entry; it comes
+                # only from the registry side. ENGINE_PROCESS_PAGE_MISMATCH
+                # is detected by looking up the process in ProcessRegistry
+                # and comparing its cc_page_route against this file's route.
+                #
+                # Only the first ENGINE_PROCESSES declaration in the file is
+                # captured; any later one is silently ignored.
+                if ($declName -eq 'ENGINE_PROCESSES' -and
+                    $init -and $init.type -eq 'ObjectExpression' -and
+                    $null -eq $script:CurrentEngineProcessesRow) {
+
+                    $script:CurrentEngineProcessesRow     = $row
+                    $script:CurrentEngineProcessesEntries = New-Object System.Collections.Generic.List[object]
+
+                    foreach ($entryProp in $init.properties) {
+                        if ($null -eq $entryProp -or $entryProp.type -ne 'Property') { continue }
+                        if ($entryProp.computed -eq $true) { continue }
+
+                        # The key is the process name (a string literal).
+                        $processName = $null
+                        if ($entryProp.key.type -eq 'Literal' -and $entryProp.key.value -is [string]) {
+                            $processName = [string]$entryProp.key.value
+                        }
+                        elseif ($entryProp.key.type -eq 'Identifier' -and $entryProp.key.name) {
+                            # Identifier-shaped key (rare for process names but
+                            # syntactically valid). Captured so downstream
+                            # validation can still detect drift.
+                            $processName = $entryProp.key.name
+                        }
+                        if ([string]::IsNullOrEmpty($processName)) { continue }
+
+                        # The value is an ObjectExpression containing the slug.
+                        $entrySlug = $null
+                        if ($entryProp.value.type -eq 'ObjectExpression') {
+                            foreach ($valueProp in $entryProp.value.properties) {
+                                if ($null -eq $valueProp -or $valueProp.type -ne 'Property') { continue }
+                                if ($valueProp.computed -eq $true) { continue }
+
+                                $valueKeyName = $null
+                                if ($valueProp.key.type -eq 'Identifier') {
+                                    $valueKeyName = $valueProp.key.name
+                                }
+                                elseif ($valueProp.key.type -eq 'Literal' -and $valueProp.key.value -is [string]) {
+                                    $valueKeyName = [string]$valueProp.key.value
+                                }
+
+                                if ($valueKeyName -eq 'slug' -and
+                                    $valueProp.value.type -eq 'Literal' -and
+                                    $valueProp.value.value -is [string]) {
+                                    $entrySlug = [string]$valueProp.value.value
+                                }
+                            }
+                        }
+
+                        $script:CurrentEngineProcessesEntries.Add(@{
+                            ProcessName = $processName
+                            Slug        = $entrySlug
+                            Line        = Get-NodeLine -Node $entryProp
+                        })
+                    }
+                }
+
+                # ---- JS_DISPATCH_ENTRY emission ----
+                # If this declarator names a dispatch table (page-side
+                # <prefix>_<event>Actions or shared-side sharedXxxActions in
+                # cc-shared.js) and its initializer is an ObjectExpression,
+                # emit one JS_DISPATCH_ENTRY row per property in the object.
+                # Suppressed when the file is under a forbidden wrapper -- the
+                # outer JS_CONSTANT_VARIANT row already exists above and
+                # carries the wrapper drift; entry rows underneath a non-spec
+                # wrapper would just be noise.
+                if (-not $script:CurrentSuppressDefinitions -and
+                    $init -and $init.type -eq 'ObjectExpression') {
+                    $dispatchInfo = Get-DispatchTableInfo -Name $declName
+                    if ($dispatchInfo.IsDispatchTable) {
+                        # Shared-side tables are only meaningful in cc-shared.js.
+                        # A shared<Event>Actions in any other file is treated
+                        # as if it were a regular const -- no dispatch rows
+                        # emitted -- the file-kind rules elsewhere already
+                        # flag the wrong-place declaration.
+                        $isSharedInWrongFile = ($dispatchInfo.Side -eq 'shared' -and
+                                                $script:CurrentFile -ne $script:CanonicalSharedFile)
+                        if (-not $isSharedInWrongFile) {
+                            Add-JsDispatchEntryRows `
+                                -TableName  $declName `
+                                -EventName  $dispatchInfo.EventName `
+                                -Side       $dispatchInfo.Side `
+                                -ObjectNode $init
+                        }
+                    }
                 }
             }
         }
@@ -2380,7 +3029,7 @@ $JsVisitor = {
             if ($null -eq $section) {
                 Add-DriftCode -Row $row -Code 'MISSING_SECTION_BANNER' -Context "Class '$clsName' appears outside any section banner."
             }
-            elseif (-not $section.IsPrefixNone) {
+            elseif (-not (Test-IsContractIdentifier -IdentifierName $clsName) -and -not $section.IsPrefixNone) {
                 $expectedPrefix = $section.PrefixValue
                 if (-not [string]::IsNullOrEmpty($expectedPrefix)) {
                     $expected = "$expectedPrefix" + "_"
@@ -2819,6 +3468,12 @@ foreach ($file in $JsFiles) {
     # forbidden wrapper.
     $script:CurrentSuppressDefinitions = $false
 
+    # Reset per-file ENGINE_PROCESSES capture state. The visitor populates
+    # these when it encounters a top-level const ENGINE_PROCESSES; the
+    # post-walk validation pass reads them.
+    $script:CurrentEngineProcessesRow     = $null
+    $script:CurrentEngineProcessesEntries = New-Object System.Collections.Generic.List[object]
+
     # File-kind-specific valid section types. cc-shared.js has its own
     # taxonomy (FOUNDATION / CHROME instead of CONSTANTS / INITIALIZATION /
     # FUNCTIONS); page files use the page-file taxonomy.
@@ -3042,10 +3697,147 @@ foreach ($file in $JsFiles) {
         }
     }
 
+    # ---- MISSING_PAGE_INIT ----
+    # Every page file with a registered cc_prefix must declare a top-level
+    # <prefix>_init function. The init function can be either a function
+    # declaration or a const initialized to an arrow/function expression
+    # (both forms enter $CurrentLocalFuncs in Pass 1 / per-file Pass 2).
+    # cc-shared.js, engine-events.js, and docs-zone files are exempt.
+    if ($script:CurrentRegistryHasMapping -and
+        -not [string]::IsNullOrEmpty($script:CurrentRegistryPrefix) -and
+        -not $script:CurrentFileIsShared -and
+        $jsFileRow) {
+        $expectedInitName = "$($script:CurrentRegistryPrefix)_init"
+        $hasInit = $script:CurrentLocalFuncs -and $script:CurrentLocalFuncs.Contains($expectedInitName)
+        if (-not $hasInit) {
+            Add-DriftCode -Row $jsFileRow -Code 'MISSING_PAGE_INIT' `
+                -Context "Page file does not declare a top-level '$expectedInitName' function."
+        }
+    }
+
+    # ---- ENGINE_PROCESSES validation ----
+    # Cross-check the file's ENGINE_PROCESSES declaration (if any) against
+    # active engine-card processes in Orchestrator.ProcessRegistry. The JS
+    # entry shape is `{ 'Process-Name': { slug: '...' } }`; process_name is
+    # the join key against ProcessRegistry.process_name. Four drift codes
+    # can fire:
+    #   MISSING_ENGINE_PROCESSES_DECLARATION (on JS_FILE row) -
+    #     ProcessRegistry has a matching process but the file has no
+    #     ENGINE_PROCESSES declaration.
+    #   MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS (on JS_FILE row) -
+    #     A registered process for this page isn't in the ENGINE_PROCESSES set.
+    #   ENGINE_PROCESS_PAGE_MISMATCH (on the ENGINE_PROCESSES row) -
+    #     An entry references a process whose registered cc_page_route
+    #     doesn't match this file's page route.
+    #   ENGINE_SLUG_JS_MISMATCH (on the ENGINE_PROCESSES row) -
+    #     An entry's slug doesn't match the registered cc_engine_slug for
+    #     that process.
+    #
+    # Per-page registry entries are looked up by page route (filtered set);
+    # per-entry mismatch checks need a global lookup by process_name so we
+    # can detect entries that reference a process registered on a DIFFERENT
+    # page. Build both views once before the entry loop.
+    #
+    # Validation is suppressed entirely when ProcessRegistry preload returned
+    # zero rows (the catalog side has nothing to compare against).
+    if ($script:processRegistryByPageRoute.Count -gt 0 -and
+        -not $script:CurrentFileIsShared -and $jsFileRow) {
+
+        $pageRoute = Get-PageRouteForJsFile -FileName $script:CurrentFile
+        if (-not [string]::IsNullOrEmpty($pageRoute)) {
+            $registryEntriesForThisPage = if ($script:processRegistryByPageRoute.ContainsKey($pageRoute)) {
+                $script:processRegistryByPageRoute[$pageRoute]
+            } else {
+                @()
+            }
+
+            # Build a global process_name -> registry record map for the
+            # per-entry mismatch checks. Used to detect ENGINE_PROCESS_PAGE_MISMATCH
+            # (entry references a process registered for a different page)
+            # and ENGINE_SLUG_JS_MISMATCH (entry's slug differs from registry).
+            $registryByProcessName = @{}
+            foreach ($pageKey in $script:processRegistryByPageRoute.Keys) {
+                foreach ($regRow in $script:processRegistryByPageRoute[$pageKey]) {
+                    if (-not [string]::IsNullOrEmpty($regRow.ProcessName)) {
+                        $registryByProcessName[$regRow.ProcessName] = $regRow
+                    }
+                }
+            }
+
+            # Case 1: registry has processes for this page but the file
+            # declared no ENGINE_PROCESSES at all.
+            if ($registryEntriesForThisPage.Count -gt 0 -and $null -eq $script:CurrentEngineProcessesRow) {
+                $processNames = ($registryEntriesForThisPage | ForEach-Object { $_.ProcessName }) -join ', '
+                Add-DriftCode -Row $jsFileRow -Code 'MISSING_ENGINE_PROCESSES_DECLARATION' `
+                    -Context "ProcessRegistry has active engine-card process(es) for page route '$pageRoute' ($processNames) but no ENGINE_PROCESSES declaration was found."
+            }
+
+            # Case 2: ENGINE_PROCESSES is declared. Validate each entry
+            # against ProcessRegistry, and detect any registered process
+            # missing from the declaration.
+            if ($null -ne $script:CurrentEngineProcessesRow) {
+                # Build a set of process names declared in JS for the
+                # "missing card" check.
+                $declaredProcessNames = New-Object 'System.Collections.Generic.HashSet[string]'
+                foreach ($entry in $script:CurrentEngineProcessesEntries) {
+                    if (-not [string]::IsNullOrEmpty($entry.ProcessName)) {
+                        [void]$declaredProcessNames.Add($entry.ProcessName)
+                    }
+                }
+
+                # Per-entry validation.
+                foreach ($entry in $script:CurrentEngineProcessesEntries) {
+                    if ([string]::IsNullOrEmpty($entry.ProcessName)) { continue }
+
+                    $regRow = if ($registryByProcessName.ContainsKey($entry.ProcessName)) {
+                        $registryByProcessName[$entry.ProcessName]
+                    } else {
+                        $null
+                    }
+
+                    if ($null -eq $regRow) {
+                        # Process not registered as an active engine-card
+                        # process anywhere. Surface as a slug mismatch
+                        # since the slug declared in JS can't be validated.
+                        Add-DriftCode -Row $script:CurrentEngineProcessesRow `
+                            -Code 'ENGINE_SLUG_JS_MISMATCH' `
+                            -Context "ENGINE_PROCESSES entry '$($entry.ProcessName)' at line $($entry.Line) has no matching active engine-card row in ProcessRegistry; the declared slug '$($entry.Slug)' cannot be validated."
+                        continue
+                    }
+
+                    # Page mismatch: process exists but is registered for
+                    # a different page.
+                    if ($regRow.PageRoute -ne $pageRoute) {
+                        Add-DriftCode -Row $script:CurrentEngineProcessesRow `
+                            -Code 'ENGINE_PROCESS_PAGE_MISMATCH' `
+                            -Context "ENGINE_PROCESSES entry '$($entry.ProcessName)' at line $($entry.Line) is registered in ProcessRegistry for page route '$($regRow.PageRoute)' but this file's page route is '$pageRoute'."
+                    }
+
+                    # Slug mismatch: process exists, but the slug declared
+                    # in JS doesn't match the registered cc_engine_slug.
+                    if (-not [string]::IsNullOrEmpty($entry.Slug) -and $entry.Slug -ne $regRow.Slug) {
+                        Add-DriftCode -Row $script:CurrentEngineProcessesRow `
+                            -Code 'ENGINE_SLUG_JS_MISMATCH' `
+                            -Context "ENGINE_PROCESSES entry '$($entry.ProcessName)' at line $($entry.Line) declares slug '$($entry.Slug)' but ProcessRegistry has cc_engine_slug '$($regRow.Slug)'."
+                    }
+                }
+
+                # Missing-card check: processes registered for this page
+                # that aren't in the JS declaration.
+                foreach ($regEntry in $registryEntriesForThisPage) {
+                    if (-not $declaredProcessNames.Contains($regEntry.ProcessName)) {
+                        Add-DriftCode -Row $jsFileRow `
+                            -Code 'MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS' `
+                            -Context "ProcessRegistry has process '$($regEntry.ProcessName)' (slug '$($regEntry.Slug)') registered for this page but ENGINE_PROCESSES does not include it."
+                    }
+                }
+            }
+        }
+    }
+
     $delta = $script:rows.Count - $startCount
     Write-Host ("    -> {0} rows" -f $delta) -ForegroundColor Green
 }
-
 
 # ============================================================================
 # PASS 3 - CROSS-FILE COMPLIANCE CHECKS
