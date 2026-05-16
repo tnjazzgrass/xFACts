@@ -103,6 +103,40 @@ The architectural change at the core: HTML stops referencing JS function names. 
 
 **Preliminary docs deleted** (per §4.12): `CC_PS_Module_Spec.md`, `CC_PS_Route_Spec.md`, `CC_PS_Spec_Notes.md`. Content fully consolidated into `CC_PS_Spec.md`.
 
+#### Session 4 — JS spec and populator amendments; strategic shift to per-page migration
+
+**JS spec amendments** (`CC_JS_Spec.md`) — shipped:
+- §5.5 added: "Contract identifiers" centralizes the concept. Identifies `ENGINE_PROCESSES` plus the five hook function names as contract identifiers that are read by exact name from `cc-shared.js`, cannot carry the page prefix, and live in fixed home banners. Lists the full set in tabular form.
+- §7.4.3 added: ENGINE_PROCESSES placement rule. Declaration outside `CONSTANTS: ENGINE PROCESSES` banner emits `ENGINE_PROCESSES_MISPLACED`.
+- §8.5 added: Hook function placement rule. Hook function declared outside `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner emits `HOOK_MISPLACED`.
+- §8.4 updated: References §5.5 contract identifier carve-out instead of relying on the `Prefix: (none)` banner declaration.
+- §19.3 updated: New drift codes `ENGINE_PROCESSES_MISPLACED` and `HOOK_MISPLACED` added to the definition-level codes table. Existing `JS_HTML_ID_UNRESOLVED`, `JS_HTML_ID_MALFORMED`, `UNRESOLVED_DISPATCH_HANDLER`, `MALFORMED_ACTION_KEY`, and the four ENGINE_PROCESSES validation codes (`MISSING_ENGINE_PROCESSES_DECLARATION`, `ENGINE_PROCESS_PAGE_MISMATCH`, `ENGINE_SLUG_JS_MISMATCH`, `MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS`) referenced consistently.
+- Appendix A.5.5 added: rationale for the contract identifier concept, the `_MISPLACED` suffix family, the prefix carve-out, and the banner-name-match check semantics. Appendix A.8 updated to reference §5.5.
+
+**JS populator updates** (`Populate-AssetRegistry-JS.ps1`) — shipped across two rounds in this session:
+
+*First round (bootloader / dispatch / ENGINE_PROCESSES baseline):*
+- BOOTLOADER section type recognized in cc-shared.js
+- INITIALIZATION removed from page-file allowed section types
+- `DUPLICATE_BOOTLOADER` detection added
+- `MISSING_PAGE_INIT` detection added
+- JS_DISPATCH_ENTRY emission added — one row per key-value pair in `<prefix>_<event>Actions` (page-side) or `shared<event>Actions` (cc-shared.js side)
+- ENGINE_PROCESSES capture and validation added against `Orchestrator.ProcessRegistry`
+- HTML_ID DEFINITION preload added for cross-spec resolution; `JS_HTML_ID_UNRESOLVED` and `JS_HTML_ID_MALFORMED` codes fire on HTML_ID USAGE rows
+
+*Second round (contract identifiers and bug fixes):*
+- Two bugs found during first test run and fixed: dispatch-table regex hardcoded 3-char prefix (now accepts variable-length lowercase prefix); ENGINE_PROCESSES capture only handled ArrayExpression and `const` (now handles ObjectExpression and works for both `const` and `var`)
+- `$ContractIdentifiers` constant added (ENGINE_PROCESSES + five hook names)
+- `Test-IsContractIdentifier` helper added
+- `Test-PrefixMissing` extended to short-circuit on contract identifiers — single fix covers all four PREFIX_MISSING call sites (function decl, var/const decl, class decl, revealing-module wrapper)
+- PREFIX_MISMATCH check at three call sites extended to exempt contract identifiers
+- `ENGINE_PROCESSES_MISPLACED` detection added at VariableDeclaration emission
+- `HOOK_MISPLACED` detection added at FunctionDeclaration emission
+
+**Strategic shift to per-page migration approach.** Mid-session, after the second JS populator round and full pipeline run, agreed to shift from "complete each populator before page conversion" to "bring HTML populator to parity in one pass, then convert pages one at a time to surface real-file drift." Rationale: specs and populators built without real refactored files have repeatedly surfaced gaps that only become visible against actual page content. Per-page conversion provides authoritative validation. Phase 1 (skeleton refactor only — no chrome consolidation, no behavior changes) defined as the operational pattern; full playbook captured in `CC_Migration_Phase1.md`.
+
+**JS populator performance.** First full-pipeline run (all four populators) surfaced a ~6x per-row slowdown in the JS populator vs the other three. ~7.5 minutes vs ~80 seconds for the next-slowest (PS). Investigation deferred until correctness work and at least one Phase 1 page conversion are complete; detailed measurements and investigation paths captured in `CC_Catalog_Pipeline_Working_Doc.md`.
+
 ### 2.2 What's deployable now
 
 - `cc-shared.js` with bootloader section: deployed and validated (Session 1)
@@ -112,6 +146,9 @@ The architectural change at the core: HTML stops referencing JS function names. 
 - `xFACts-Helpers.psm1` with `Get-PageScriptTagHtml` helper: deployed (Session 2)
 - `BootloaderTest.ps1` and `test.js`: deployed; will be deleted at the end of the initiative
 - `CC_PS_Spec.md`: published (Session 3)
+- `CC_JS_Spec.md` v3 with contract identifier framework, `_MISPLACED` family, §5.5 / §7.4.3 / §8.5 placement rules: published (Session 4)
+- `Populate-AssetRegistry-JS.ps1` v3 with BOOTLOADER section, MISSING_PAGE_INIT, JS_DISPATCH_ENTRY emission, ENGINE_PROCESSES validation against ProcessRegistry, contract identifier carve-outs, `_MISPLACED` detection: deployed (Session 4)
+- `CC_Migration_Phase1.md`: drafted (Session 4); operational starting point for the page migration phase
 
 ### 2.3 What's still running on the legacy model
 
@@ -193,29 +230,10 @@ The remaining work, organized by what's complete, what's actively running, and w
 | 4.2 | Bootloader implementation in cc-shared.js + cc-shared.css | Shipped Session 1 and validated end-to-end. |
 | 4.3 | HTML spec amendments | Shipped Session 2 as `CC_HTML_Spec.md`. |
 | 4.4 | HTML helper-function additions (partial) | `Get-PageScriptTagHtml` shipped Session 2. Other helper updates fold into per-page conversions in §4.10. |
+| 4.5 | JS populator update | Shipped Session 4 across two rounds. BOOTLOADER recognition, MISSING_PAGE_INIT, JS_DISPATCH_ENTRY emission, ENGINE_PROCESSES validation, contract identifier carve-outs, `_MISPLACED` family detection. See §2.1 Session 4. |
 | 4.7 | PS Spec drafted and finalized | Shipped Session 3 as `CC_PS_Spec.md`. Prelim docs deleted. |
 
-### Active and unblocked (can proceed in parallel)
-
-#### 4.5 JS populator update
-
-Aligns the JS populator with the amended JS spec.
-
-- Recognize `BOOTLOADER` as a valid section type in cc-shared.js
-- Remove `INITIALIZATION` from page-file allowed section types
-- Add `DUPLICATE_BOOTLOADER` detection (BOOTLOADER appearing in any file other than cc-shared.js)
-- Add `MISSING_PAGE_INIT` detection (page files lacking a top-level `<prefix>_init` function declaration, or having one declared as `const`/`var` arrow expression)
-- Update `UNKNOWN_SECTION_TYPE` enumeration to match the amended spec
-- Remove validation related to the deleted INITIALIZATION section
-- Add structural cataloging of dispatch tables (`<prefix>_clickActions`, `<prefix>_changeActions`, etc.): each key-value pair becomes its own catalog row
-
-After the populator updates, run a full catalog refresh and verify expected drift signal:
-- Every existing page file fires `MISSING_PAGE_INIT`
-- Every existing page file with an `INITIALIZATION` section fires `UNKNOWN_SECTION_TYPE`
-- cc-shared.js fires zero drift
-- BootloaderTest's `test.js` fires zero drift
-
-This work is relatively small and can slot in opportunistically between PS populator work or HTML populator work.
+### Active and unblocked
 
 #### 4.6 HTML populator update
 
@@ -235,11 +253,11 @@ Updates required for this initiative, now unblocked since the HTML spec amendmen
 - Cross-populator resolution: validate `data-action` values against `<prefix>_<event>Actions` / `shared<event>Actions` dispatch-table entries cataloged by the JS populator (clean lookup against rows, no more parsing source for case labels or function names)
 - Remove all Orchestrator.ProcessRegistry references from the populator's planned Wave 4
 
-These changes slot into the populator's wave plan. They can land as part of Wave 2.1 or as a dedicated Wave 5, depending on the populator author's preference at implementation time.
+These changes are folded together with all previously-planned wave items (Wave 2.1 drift attachment, Wave 3 HTML_TEXT/HTML_ENTITY/HTML_SVG/HTML_COMMENT extraction) into a single focused completion pass. The goal is "complete to current spec knowledge," matching the level the CSS/JS/PS populators are at: not exhaustively comprehensive, but covering everything the current specs define. No more staged waves.
 
 After the populator updates, run a full catalog refresh. Every existing page file fires expected drift codes (`MISSING_DATA_PAGE`, `MISSING_DATA_PREFIX`, `MISSING_PAGE_ERROR_BANNER`, the now-illegal `onclick=` patterns, the second `<script>` tag, etc.). BootloaderTest.ps1's HTML emission fires zero drift on the new rules (it's the reference shape).
 
-This is a multi-session effort — the populator is ~3,010 lines and the changes are substantial.
+This work is the prerequisite to §4.9 Phase 1 migrations. Once HTML populator is at parity, Phase 1 page conversion begins. Page conversions surface real-file drift; populator and spec amendments follow from that evidence rather than from speculation.
 
 #### 4.8 PS populator — build
 
@@ -258,36 +276,32 @@ The PS populator is smaller than the HTML populator because it doesn't deal with
 
 Pipeline ordering: PS populator runs after the HTML populator. The HTML populator's USAGE rows resolve against CSS/JS DEFINITION rows; the PS populator's USAGE rows (e.g., cross-component references in helper calls) resolve against existing CSS/JS/HTML DEFINITION rows. No circular dependencies.
 
-### Sequenced (depend on the above)
+### Sequenced
 
-#### 4.9 First page conversion
+#### 4.9 Phase 1 migrations — page-by-page skeleton refactor
 
-A single representative page conversion to validate the end-to-end model across all four populators. Suggested candidate: **BatchMonitoring** (smallest unresolved row count among non-departmental, non-Phase-1, non-mid-restructure pages).
+The migration of every Control Center page from the legacy architecture (engine-events shared files, inline event handlers, DOMContentLoaded boot, free-form file structure) onto the current spec is structured as a series of phases. Phase 1 is the skeleton refactor: the minimal change set that gets a page operating on the new shared infrastructure (`cc-shared.js`, `cc-shared.css`) without changing existing behavior. Everything that violates the spec but doesn't break the page is left in place and surfaces as drift in the catalog. Those drift codes are the input to Phase 2 and beyond.
 
-The conversion is a single coordinated update touching:
-- `BatchMonitoring.ps1` (page route file) — rewritten to the new PS spec; emits new HTML chrome shape; references only `cc-shared.css` and `cc-shared.js`
-- `BatchMonitoring-API.ps1` (API route file) — rewritten to the new PS spec; pure API rules
-- `batch-monitoring.js` — rewritten with `bch_init` function, `bch_clickActions` (and other event dispatch tables as needed), no `DOMContentLoaded` handler, no inline event handler bindings
-- `batch-monitoring.css` — already on the current CSS spec; verify no changes needed against the catalog
+The full Phase 1 playbook lives in `CC_Migration_Phase1.md`. It includes:
+- Scope rules (what's in scope, what's deferred)
+- A 16-item per-file checklist across the four files of each page (page route .ps1, API route .ps1, page JS, page CSS)
+- Conversion sequence per page (catalog snapshot → backup confirm → refactor → deploy → live validation → catalog refresh → drift review → record outcome)
+- Validation criteria (zero structural drift, all remaining drift in deferred categories)
+- Per-page outcomes tracker
+- Forward reference to Phase 2 (inline event handler migration to dispatch tables) and Phase 3+ (chrome consolidation)
 
-Verification step: catalog refresh after conversion. Expected outcome — BatchMonitoring fires zero drift; the catalog shows clean cross-population resolution between every HTML `data-action` value, the JS `bch_<event>Actions` entries, the CSS classes referenced, and the PS route paths.
+Page selection order is not predetermined. Pages will be chosen based on impact, complexity, and team availability at each conversion session. Tracker in the Phase 1 doc.
 
-If any drift unexpectedly appears, resolve it before proceeding. This is the moment to catch any subtle issue with the model before it propagates across the platform.
+Prerequisite: §4.6 (HTML populator completion to current spec knowledge).
 
-This step requires §4.5, §4.6, and §4.8 all to be complete.
+#### 4.10 Phase 2 onward
 
-#### 4.10 Roll out to remaining pages
+Each subsequent phase will be defined in its own `CC_Migration_PhaseN.md` document. Scope is determined by what the catalog surfaces after the prior phase. Tentative scope:
 
-Each remaining page gets the same coordinated conversion as BatchMonitoring. Order is flexible; departmental pages and the most-complex pages (Admin, BDLImport) probably go last so the model is well-exercised on simpler pages first.
+- **Phase 2:** Migrate inline `onclick`/event-handler patterns to `data-action-<event>` + dispatch table entries across each page. Populate the empty dispatch tables declared in Phase 1. Address related catalog drift.
+- **Phase 3+:** Chrome consolidation (remove duplicated local classes, helpers, keyframes; promote where appropriate; address `WRONG_DECLARATION_KEYWORD`, `FORBIDDEN_LET`, style drift). Scope finalized once Phases 1 and 2 are at meaningful per-page coverage.
 
-Conversion of each page is one self-contained session task:
-- Page route file rewrite (now consuming `Get-PageScriptTagHtml` for the script-tag emission)
-- API route file rewrite
-- JS file rewrite
-- CSS file review (usually unchanged)
-- Any remaining HTML helper updates that the per-page work makes necessary (e.g., adding the `#page-error-banner` placeholder emission to a header helper if we choose to centralize it)
-- Catalog verification (zero drift expected on completion)
-- Version bump in System_Metadata for each affected component
+Each phase has its own playbook, conversion sequence, validation criteria, and per-page tracker, mirroring the Phase 1 structure.
 
 #### 4.11 engine-events retirement (finish line)
 
@@ -337,6 +351,7 @@ Small items surfaced during the initiative that need attention at the next natur
 - **`cc-shared.css` `CHROME: CONNECTION BANNER` section description** — currently says the banner is driven by `updateConnectionBanner()` in engine-events.js. Update to "in cc-shared.js" when next touched.
 - **Multi-consumer principle** — capture in `xFACts_Development_Guidelines.md` as a permanent guideline. One short paragraph explaining the four consumers and the test.
 - **Page-error-banner emission helper** — currently each page would need to emit `<div id="page-error-banner" class="page-error-banner"></div>` directly inside its HTML. Consider whether the existing `Get-PageHeaderHtml` helper should be extended to emit it, or whether a new helper (`Get-PageErrorBannerHtml`?) is the cleaner shape. Decide during the first page conversion (§4.9) when the actual pattern is concrete.
+- **JS populator performance** — runtime is significantly higher per row than the other three populators (~6x vs PS, ~5x vs HTML, ~4.6x vs CSS based on the 2026-05-16 first-full-run measurements). Acceptable for current dev-cycle catalog builds; needs investigation and likely optimization before the Admin-tile control goes live (planned interactive operation, 3-4 invocations/day, screen-locked while running). Investigation paths and detailed measurements are captured in `CC_Catalog_Pipeline_Working_Doc.md` § JS populator performance investigation. Revisit once the bootloader/dispatch/contract-identifier work is fully validated and at least one Phase 1 page conversion has completed.
 
 ---
 
