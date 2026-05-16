@@ -360,6 +360,28 @@ function Confirm-RBACCache {
 }
 
 # ----------------------------------------------------------------------------
+# DBNull Normalization
+# ----------------------------------------------------------------------------
+# SQL NULL values returned from Invoke-XFActsQuery surface as
+# [System.DBNull]::Value, which PowerShell treats as TRUTHY in boolean
+# contexts. This causes silent bugs in conditionals -- e.g. a check like
+# `if ($_.department_scope)` evaluates to true for DBNull even when the
+# database column is NULL.
+#
+# Use this helper to normalize DB-sourced values to actual $null before
+# evaluating them in if statements, -not expressions, Where-Object filter
+# scriptblocks, or comparisons against $null.
+#
+# Example: if (ConvertFrom-DBNull $row.optional_field) { ... }
+# ----------------------------------------------------------------------------
+
+function ConvertFrom-DBNull {
+    param($Value)
+    if ($Value -is [System.DBNull]) { return $null }
+    return $Value
+}
+
+# ----------------------------------------------------------------------------
 # Tier Comparison Helpers
 # ----------------------------------------------------------------------------
 
@@ -453,6 +475,18 @@ function Get-UserPageTier {
         return $null
     }
 
+    # Look up the target page's section once. Used to determine whether the
+    # department-scope filter applies. Unregistered pages default to
+    # 'departmental' (fail-closed) -- a dept-scoped role will be filtered out
+    # unless the page route matches its dept page.
+    $targetSection = 'departmental'
+    if ($script:RBACCache.NavRegistry) {
+        $navEntry = $script:RBACCache.NavRegistry | Where-Object { $_.page_route -eq $PageRoute } | Select-Object -First 1
+        if ($navEntry) {
+            $targetSection = $navEntry.section_key
+        }
+    }
+
     $highestTier = $null
     $highestLevel = 0
 
@@ -466,13 +500,15 @@ function Get-UserPageTier {
         # Must match the page route (exact match or wildcard)
         if ($perm.page_route -ne '*' -and $perm.page_route -ne $PageRoute) { continue }
 
-        # For departmental roles, verify department scope matches the page
-        # UNLESS there is an explicit permission row for this role on this exact page
+        # For department-scoped roles accessing a page in the 'departmental' section,
+        # the page must match the user's department scope. Pages in other sections
+        # (platform, tools, admin) are not subject to dept-scope filtering -- those
+        # permissions apply to anyone holding the role regardless of scope.
         $role = $UserRoles | Where-Object { $_.role_id -eq $perm.role_id } | Select-Object -First 1
-        if ($role.department_scope -and $perm.page_route -eq '*') {
-            # Department-scoped role with wildcard permission -- only applies within that department
-            $deptPage = $script:RBACCache.DepartmentPages | Where-Object { $_.department_key -eq $role.department_scope }
-            if ($deptPage -and $PageRoute -ne $deptPage.page_route) { continue }
+        $deptScope = ConvertFrom-DBNull $role.department_scope
+        if ($deptScope -and $targetSection -eq 'departmental') {
+            $deptPage = $script:RBACCache.DepartmentPages | Where-Object { $_.department_key -eq $deptScope }
+            if (-not $deptPage -or $PageRoute -ne $deptPage.page_route) { continue }
         }
 
         $level = Get-TierLevel -Tier $perm.permission_tier
@@ -783,8 +819,13 @@ function Get-UserContext {
 
     $userRoles = Resolve-UserRoles -UserGroups $userGroups
     $roleNames = @($userRoles | ForEach-Object { $_.role_name } | Select-Object -Unique)
-    $hasPlatformRole = ($userRoles | Where-Object { -not $_.department_scope }) -as [bool]
-    $deptScopes = @($userRoles | Where-Object { $_.department_scope } | ForEach-Object { $_.department_scope } | Select-Object -Unique)
+    # Normalize DBNull -> $null so boolean checks and Where-Object filters
+    # behave correctly when department_scope is NULL in the database.
+    $hasPlatformRole = ($userRoles | Where-Object { -not (ConvertFrom-DBNull $_.department_scope) }) -as [bool]
+    $deptScopes = @($userRoles |
+        Where-Object { ConvertFrom-DBNull $_.department_scope } |
+        ForEach-Object { ConvertFrom-DBNull $_.department_scope } |
+        Select-Object -Unique)
     $isDeptOnly = (-not $hasPlatformRole) -and ($deptScopes.Count -gt 0)
     $isAdmin = $roleNames -contains 'Admin'
 
