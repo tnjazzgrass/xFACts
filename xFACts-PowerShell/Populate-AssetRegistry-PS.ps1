@@ -65,7 +65,7 @@
     (e.g., -FileFilter 'Collect-DMVMetrics.ps1' processes only that file).
 
 .COMPONENT
-    ControlCenter.AssetRegistry
+    Tools.Utilities
 
 .NOTES
     FILE ORGANIZATION
@@ -399,13 +399,6 @@ function Get-PSFileRole {
 
     # Modules: extension wins regardless of location
     if ($fileName -match '\.psm1$') { return 'module' }
-
-    # Data files (.psd1): module manifests and Pode server config. These
-    # are cataloged as a basic file inventory only (PS_FILE row, no AST
-    # walk). They're a restricted subset of PowerShell syntax and don't
-    # have functions, parameters, routes, or any of the other catalogable
-    # constructs Pass 2 looks for.
-    if ($fileName -match '\.psd1$') { return 'data-file' }
 
     # Shared libraries: explicit list lookup
     if ($SharedLibraryFiles -contains $fileName) { return 'shared-library' }
@@ -1854,7 +1847,14 @@ foreach ($root in $PSScanRoots) {
         Write-Log "Scan root not found, skipping: $root" 'WARN'
         continue
     }
-    $found = @(Get-ChildItem -Path $root -Include '*.ps1','*.psm1','*.psd1' -Recurse -File |
+    # .psd1 files (Pode server config, module manifests) are intentionally
+    # out of scope. They are configuration data, not source code: no
+    # functions, classes, or other catalogable constructs, and no spec to
+    # validate against. They live in Object_Registry (which captures file
+    # identity and ownership) and have no constructs for Asset_Registry to
+    # catalog. If a future spec covers .psd1 structure, scan them via a
+    # dedicated populator with its own file_type, not by re-extending PS.
+    $found = @(Get-ChildItem -Path $root -Include '*.ps1','*.psm1' -Recurse -File |
                  Select-Object -ExpandProperty FullName)
     foreach ($f in $found) {
         # De-duplicate: scan roots overlap (scripts\ contains routes\ and
@@ -1896,25 +1896,6 @@ $astCache = @{}
 foreach ($file in $PSFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     $role = Get-PSFileRole -FullPath $file
-
-    # Data files (.psd1) get cataloged with a PS_FILE anchor row only.
-    # No parse, no AST walk - they're not script files. We still cache a
-    # marker entry so Pass 2 emits the inventory row.
-    if ($role -eq 'data-file') {
-        Write-Host "  Inventorying $name (role=$role)... " -NoNewline
-        try {
-            $lineCount = (Get-Content -Path $file -Encoding UTF8 | Measure-Object -Line).Lines
-        } catch {
-            $lineCount = 1
-        }
-        $astCache[$file] = @{
-            Parsed = $null
-            Role   = $role
-            LineCount = $lineCount
-        }
-        Write-Host "ok" -ForegroundColor Green
-        continue
-    }
 
     Write-Host "  Parsing $name (role=$role)..." -NoNewline
     $parsed = Invoke-PSParse -FilePath $file
@@ -1982,33 +1963,6 @@ foreach ($file in $PSFiles) {
     $cacheEntry = $astCache[$file]
     $parsed = $cacheEntry.Parsed
     $role   = $cacheEntry.Role
-
-    # Data files (.psd1) get a basic file-inventory row only and skip the
-    # full AST walk. Set minimal per-file context, emit PS_FILE, move on.
-    if ($role -eq 'data-file') {
-        $script:CurrentFile               = $name
-        $script:CurrentFileFullPath       = $file
-        $script:CurrentFileRole           = $role
-        $script:CurrentFileIsShared       = $false
-        $script:CurrentFileSource         = $null
-        $script:CurrentAst                = $null
-        $script:CurrentTokens             = $null
-        $script:CurrentParseErrors        = $null
-        $script:CurrentValidSectionTypes  = @()
-        $script:CurrentRequiresComponent  = $false
-        $script:CurrentRegistryHasMapping = $componentPrefixMap.ContainsKey($name)
-        $script:CurrentRegistryPrefix     = if ($script:CurrentRegistryHasMapping) { $componentPrefixMap[$name] } else { $null }
-        $script:CurrentFileLineCount      = $cacheEntry.LineCount
-        $script:CurrentNormalizedComments = @()
-        $script:CurrentCommentIndex       = @()
-        $script:CurrentSections           = @()
-        $script:CurrentLocalFunctions     = New-Object 'System.Collections.Generic.HashSet[string]'
-
-        Write-Host ("  Inventorying {0} (data-file)..." -f $name) -ForegroundColor Cyan
-        [void](Add-PSFileRow -LineEnd $script:CurrentFileLineCount)
-        Write-Host "    -> 1 row (inventory only)" -ForegroundColor Green
-        continue
-    }
 
     # ---- Set per-file context ----
     $script:CurrentFile               = $name
