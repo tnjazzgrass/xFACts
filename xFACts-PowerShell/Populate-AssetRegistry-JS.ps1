@@ -856,6 +856,48 @@ function Test-LineInsideFunction {
     return $false
 }
 
+# Returns the maximum run of consecutive truly-blank lines (whitespace-only)
+# in the source text strictly between $StartLine and $EndLine (1-based,
+# exclusive on both ends). Used by EXCESS_BLANK_LINES and
+# BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE to count actual blank lines
+# rather than line-number differences. A comment line counts as content,
+# not blank, so a purpose comment preceding the next statement does not
+# inflate the blank count.
+#
+# StartLine and EndLine are typically the .loc.end.line of one statement
+# and the .loc.start.line of the next; the function examines lines
+# (StartLine + 1) through (EndLine - 1) in the source text.
+function Get-MaxConsecutiveBlankLines {
+    param([string]$Source, [int]$StartLine, [int]$EndLine)
+    if ([string]::IsNullOrEmpty($Source)) { return 0 }
+    if ($EndLine - $StartLine -le 1) { return 0 }
+
+    # Source split into 0-indexed lines. Source line N (1-based) is at
+    # index N-1. We examine lines (StartLine + 1) through (EndLine - 1)
+    # inclusive in 1-based terms, which is indices StartLine through
+    # EndLine - 2 in 0-based terms.
+    $lines = $Source -split "`n"
+    $firstIdx = $StartLine
+    $lastIdx  = $EndLine - 2
+    if ($firstIdx -lt 0) { $firstIdx = 0 }
+    if ($lastIdx -ge $lines.Count) { $lastIdx = $lines.Count - 1 }
+
+    $maxRun = 0
+    $curRun = 0
+    for ($i = $firstIdx; $i -le $lastIdx; $i++) {
+        $lineText = $lines[$i]
+        # Strip trailing \r from CRLF line endings before whitespace check.
+        if ($lineText.EndsWith("`r")) { $lineText = $lineText.Substring(0, $lineText.Length - 1) }
+        if ([string]::IsNullOrWhiteSpace($lineText)) {
+            $curRun++
+            if ($curRun -gt $maxRun) { $maxRun = $curRun }
+        } else {
+            $curRun = 0
+        }
+    }
+    return $maxRun
+}
+
 # Returns $true if the current node is inside a per-element listener loop --
 # i.e. inside a forEach callback (or map/some/every/find/filter callback,
 # all of which are array-iteration callbacks that take a per-element
@@ -2653,16 +2695,19 @@ $JsVisitor = {
             }
 
             # BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE: walk the function's
-            # body statements and detect gaps > 1 line between consecutive
-            # statements. Per JS spec Section 19.5, more than one blank line
-            # inside a function body is drift. The rule is intentionally
-            # scoped to top-level function declarations only (the rows this
-            # case emits); methods inside classes are out of scope. See the
-            # JS spec appendix entry for rationale.
+            # body statements and detect more than one consecutive blank
+            # line between them. Per JS spec Section 19.5, more than one
+            # consecutive blank line inside a function body is drift. The
+            # rule is intentionally scoped to top-level function
+            # declarations only (the rows this case emits); methods inside
+            # classes are out of scope. See the JS spec appendix entry for
+            # rationale.
             #
-            # Detection model mirrors EXCESS_BLANK_LINES: compare each
-            # statement's start line to the previous statement's end line.
-            # A gap of more than 2 means two or more blank lines.
+            # Detection uses the source text rather than line-number
+            # differences so comment lines between statements do not inflate
+            # the blank count. A purpose comment immediately preceding a
+            # statement should not trigger this drift just because the
+            # comment occupies several lines.
             if ($Node.body -and $Node.body.body -and $Node.body.body.Count -ge 2) {
                 $bodyStmts = $Node.body.body
                 for ($si = 1; $si -lt $bodyStmts.Count; $si++) {
@@ -2670,10 +2715,16 @@ $JsVisitor = {
                     $curStmt  = $bodyStmts[$si]
                     $prevEnd  = if ($prevStmt.loc -and $prevStmt.loc.end)   { [int]$prevStmt.loc.end.line   } else { 0 }
                     $curStart = if ($curStmt.loc  -and $curStmt.loc.start) { [int]$curStmt.loc.start.line } else { 0 }
-                    if ($prevEnd -gt 0 -and $curStart -gt 0 -and ($curStart - $prevEnd) -gt 2) {
-                        Add-DriftCode -Row $row -Code 'BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE' `
-                            -Context "Function '$fnName' has more than one blank line between body statements at line $curStart."
-                        break
+                    if ($prevEnd -gt 0 -and $curStart -gt 0) {
+                        $blankRun = Get-MaxConsecutiveBlankLines `
+                            -Source    $script:CurrentFileSource `
+                            -StartLine $prevEnd `
+                            -EndLine   $curStart
+                        if ($blankRun -gt 1) {
+                            Add-DriftCode -Row $row -Code 'BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE' `
+                                -Context "Function '$fnName' has more than one consecutive blank line between body statements at line $curStart."
+                            break
+                        }
                     }
                 }
             }
@@ -3417,14 +3468,16 @@ $JsVisitor = {
         }
 
         'ExpressionStatement' {
+            $isTopLevel = Test-IsTopLevel -ParentChain $ParentChain
+            if (-not $isTopLevel) { return }
+
             # Top-level IIFE detection. The IIFE emits a JS_IIFE row carrying
             # its full body in raw_text plus FORBIDDEN_IIFE drift. Definition
             # suppression then turns on so inner function / const / class
             # declarations are NOT cataloged (they have no reachability under
             # the wrapper). USAGE rows continue to fire so the cross-reference
             # catalog stays complete.
-            $isTopLevel = Test-IsTopLevel -ParentChain $ParentChain
-            if ($isTopLevel -and $Node.expression -and $Node.expression.type -eq 'CallExpression') {
+            if ($Node.expression -and $Node.expression.type -eq 'CallExpression') {
                 $iifeCallee = $Node.expression.callee
                 if ($iifeCallee -and ($iifeCallee.type -eq 'FunctionExpression' -or $iifeCallee.type -eq 'ArrowFunctionExpression')) {
                     $sig = if ($iifeCallee.type -eq 'ArrowFunctionExpression') { '(() => { ... })()' } else { '(function() { ... })()' }
@@ -3435,6 +3488,17 @@ $JsVisitor = {
                     return
                 }
             }
+
+            # Per JS spec Section 13 kind 3 (purpose comment), a /* ... */
+            # block immediately preceding a top-level expression statement
+            # that defines named behavior (e.g.,
+            # document.addEventListener('DOMContentLoaded', ...)) is an
+            # allowed purpose comment. Consume it via Get-PrecedingBlockComment
+            # so the FORBIDDEN_COMMENT_STYLE check below treats it as claimed.
+            # No row is emitted - the expression statement itself has no
+            # natural definition host. The side effect is the comment getting
+            # marked Used=true so the stray-comment check skips it.
+            [void](Get-PrecedingBlockComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $line)
         }
     }
 }
@@ -3614,11 +3678,36 @@ foreach ($file in $JsFiles) {
         continue
     }
 
+    # ---- Function-body range collection (used by both stray-comment and line-comment checks) ----
+    # Walk the AST once to collect every function/method body's line range.
+    # The result is used by:
+    #   - FORBIDDEN_COMMENT_STYLE detection below to recognize inline body
+    #     comments (Section 13 kind 5) as a valid kind
+    #   - FORBIDDEN_FILE_SCOPE_LINE_COMMENT detection further down to test
+    #     whether each // line comment falls inside any function body
+    # Computed once here so both checks share the same ranges.
+    $functionRanges = New-Object System.Collections.Generic.List[object]
+    $rangeVisitor = {
+        param($n, $pc, $pn)
+        if ($null -eq $n -or $null -eq $n.type) { return }
+        if ($n.type -eq 'FunctionDeclaration' -or
+            $n.type -eq 'FunctionExpression' -or
+            $n.type -eq 'ArrowFunctionExpression') {
+            if ($n.body) {
+                $bs = if ($n.body.loc -and $n.body.loc.start) { [int]$n.body.loc.start.line } else { 0 }
+                $be = if ($n.body.loc -and $n.body.loc.end)   { [int]$n.body.loc.end.line   } else { $bs }
+                if ($bs -gt 0) { $functionRanges.Add(@{ Start = $bs; End = $be }) }
+            }
+        }
+    }
+    Invoke-AstWalk -Node $parsed.Ast -Visitor $rangeVisitor
+
     # ---- FORBIDDEN_COMMENT_STYLE: stray block comments ----
-    # Per JS spec Section 13, only four kinds of block comments are
-    # permitted: file header, section banner, purpose comment preceding
-    # a definition, and sub-section marker (/* -- label -- */). Any
-    # block comment that doesn't match one of these kinds is stray.
+    # Per JS spec Section 13, five kinds of block comments are permitted:
+    # file header, section banner, purpose comment preceding a definition
+    # or top-level expression statement, sub-section marker, and inline
+    # body comment (a /* ... */ block inside a function body). Any block
+    # comment that doesn't match one of these kinds is stray.
     #
     # Detection: walk the normalized comment list. A block comment is
     # claimed if any of these hold:
@@ -3628,6 +3717,7 @@ foreach ($file in $JsFiles) {
     #     (it was consumed as a definition's preceding purpose comment by
     #     Get-PrecedingBlockComment during the AST walk)
     #   - Its trimmed text matches the sub-section marker pattern
+    #   - Its line falls inside any function body (inline body comment)
     # Line comments are handled separately (see below) and don't enter
     # this check.
     $strayLines = New-Object System.Collections.Generic.List[int]
@@ -3656,33 +3746,25 @@ foreach ($file in $JsFiles) {
         $trimmedText = if ($c.Text) { $c.Text.Trim() } else { '' }
         if ($trimmedText -match '^--.+--$') { continue }
 
+        # Inline body comment: any /* ... */ block whose start line falls
+        # inside any function body's line range. Section 13 kind 5.
+        if (Test-LineInsideFunction -Line ([int]$c.LineStart) -Ranges $functionRanges) {
+            continue
+        }
+
         # If we got here, it's a stray block comment.
         $strayLines.Add([int]$c.LineStart)
     }
     if ($strayLines.Count -gt 0 -and $jsFileRow) {
         $linesText = ($strayLines | Sort-Object) -join ', '
         Add-DriftCode -Row $jsFileRow -Code 'FORBIDDEN_COMMENT_STYLE' `
-            -Context "Stray block comments not matching any of the four allowed kinds (file header, banner, purpose comment, sub-section marker) at line(s): $linesText."
+            -Context "Stray block comments not matching any of the five allowed kinds (file header, banner, purpose comment, sub-section marker, inline body comment) at line(s): $linesText."
     }
 
     # ---- File-scope // line comments -> JS_LINE_COMMENT rows ----
     # acorn returns Line comments alongside Block comments. A line comment
     # outside any function body is a forbidden pattern under Section 12.1.
-    $functionRanges = New-Object System.Collections.Generic.List[object]
-    $rangeVisitor = {
-        param($n, $pc, $pn)
-        if ($null -eq $n -or $null -eq $n.type) { return }
-        if ($n.type -eq 'FunctionDeclaration' -or
-            $n.type -eq 'FunctionExpression' -or
-            $n.type -eq 'ArrowFunctionExpression') {
-            if ($n.body) {
-                $bs = if ($n.body.loc -and $n.body.loc.start) { [int]$n.body.loc.start.line } else { 0 }
-                $be = if ($n.body.loc -and $n.body.loc.end)   { [int]$n.body.loc.end.line   } else { $bs }
-                if ($bs -gt 0) { $functionRanges.Add(@{ Start = $bs; End = $be }) }
-            }
-        }
-    }
-    Invoke-AstWalk -Node $parsed.Ast -Visitor $rangeVisitor
+    # The $functionRanges list was computed earlier in this iteration.
 
     if ($parsed.Comments) {
         foreach ($c in $parsed.Comments) {
@@ -3845,15 +3927,18 @@ foreach ($file in $JsFiles) {
 
 Write-Log "Pass 3: cross-file compliance checks..."
 
-# EXCESS_BLANK_LINES: any file with blank-line gaps greater than 2 between
-# consecutive top-level statements gets the drift code attached to its
-# JS_FILE row. Mirrors the CSS populator's detection model. The check
-# uses each top-level node's source range: gap = curStart - prevEnd; gap
-# > 2 means 2+ blank lines.
+# EXCESS_BLANK_LINES: any file with more than one consecutive blank line
+# between top-level statements gets the drift code attached to its
+# JS_FILE row. Detection uses the source text rather than line-number
+# differences so comment lines between statements do not inflate the
+# blank count - a purpose comment preceding the next top-level statement
+# should not trigger this drift just because the comment occupies several
+# lines.
 foreach ($file in $JsFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     if (-not $astCache.ContainsKey($file)) { continue }
-    $ast = $astCache[$file].Ast
+    $cached = $astCache[$file]
+    $ast = $cached.Ast
     if ($null -eq $ast.body -or $ast.body.Count -lt 2) { continue }
 
     $excessFound = $false
@@ -3862,15 +3947,21 @@ foreach ($file in $JsFiles) {
         $cur  = $ast.body[$ni]
         $prevEnd  = if ($prev.loc -and $prev.loc.end)   { [int]$prev.loc.end.line   } else { 0 }
         $curStart = if ($cur.loc  -and $cur.loc.start) { [int]$cur.loc.start.line } else { 0 }
-        if ($prevEnd -gt 0 -and $curStart -gt 0 -and ($curStart - $prevEnd) -gt 2) {
-            $excessFound = $true
-            break
+        if ($prevEnd -gt 0 -and $curStart -gt 0) {
+            $blankRun = Get-MaxConsecutiveBlankLines `
+                -Source    $cached.Source `
+                -StartLine $prevEnd `
+                -EndLine   $curStart
+            if ($blankRun -gt 1) {
+                $excessFound = $true
+                break
+            }
         }
     }
 
     if ($excessFound -and $script:jsFileRowByFile.ContainsKey($name)) {
         Add-DriftCode -Row $script:jsFileRowByFile[$name] -Code 'EXCESS_BLANK_LINES' `
-            -Context "More than one blank line appears between top-level constructs in $name."
+            -Context "More than one consecutive blank line appears between top-level constructs in $name."
     }
 }
 
