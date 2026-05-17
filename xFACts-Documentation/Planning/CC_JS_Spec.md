@@ -420,26 +420,20 @@ Any binding case that fits neither §12.1 nor §12.2 is evaluated as a spec amen
 ---
 
 ## 13. Comments
-
-Comments serve four roles, and only four:
-
+Comments serve five roles, and only five:
 1. **File header** - a single block comment at line 1 (Section 2).
 2. **Section banners** - multi-line block comments enclosing a section's title, description, and prefix declaration (Section 3).
-3. **Purpose comments** - single block comment immediately preceding a function, class, method, constant, state variable, or hook.
+3. **Purpose comments** - single block comment immediately preceding a function, class, method, constant, state variable, hook, or top-level expression statement that introduces named behavior (e.g., `document.addEventListener('DOMContentLoaded', ...)`). Required for the named definitions in that list; optional for top-level expression statements where the author judges a comment helpful.
 4. **Sub-section markers** - inline block comment between definitions in a section, used as a lightweight visual divider. Format: `/* -- label -- */`. Optional.
-
-No other comment forms are recognized. Stray block comments at file scope are a parse error.
-
+5. **Inline body comments** - block comment appearing inside a function body, explaining the immediately-following statement or sub-group of statements. Always optional. Permitted only inside function bodies (not at file scope, not between class members).
+No other comment forms are recognized. Stray block comments outside the five allowed kinds emit `FORBIDDEN_COMMENT_STYLE` drift on the file's `JS_FILE` row.
 ### 13.1 Inline comments
-
 Inline `//` line comments are permitted inside function bodies for explaining specific lines or blocks of logic. They are not cataloged.
-
 Inline `//` line comments are forbidden at file scope. Each file-scope `//` comment emits a `JS_LINE_COMMENT` row at its own line with `FORBIDDEN_FILE_SCOPE_LINE_COMMENT` drift attached.
-
 ### 13.2 Comment content rules
-
 - Purpose comments are written in present-tense, descriptive style. They describe what the function/constant/state does, not why it does it.
 - Section banner descriptions may be 1-5 sentences. They explain what the section contains.
+- Inline body comments explain what the next statement or block of statements does. They are not required, and trivial or self-explanatory code should not carry them. Their presence is a judgment call by the author.
 
 ---
 
@@ -1369,6 +1363,16 @@ The form-input case is covered by delegation, not by a carve-out. A form is a st
 The `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` drift code targets the dominant anti-pattern: a `forEach` over rendered list/grid elements that calls `addEventListener` on each. This shape is mechanically detectable at the AST level — a loop containing an `addEventListener` call on a per-iteration element — and represents the most common authoring mistake delegation prevents. The drift fires on the JS_EVENT row inside the loop, with the `parent_function` column carrying the enclosing function name so the operator can locate the rebind site.
 
 The carve-out rule is an authoring rule. The parser cannot in general distinguish a legitimate singleton-element direct binding from a misapplied direct binding to an element that should have been delegated; both look identical at the AST level. This is the same shape as other authoring rules in the spec — §6.1 (function comment quality), §7.2 (case distinction in constant naming), §13 (sub-section marker vs new banner judgment), §14 (banner authoring discipline). The pattern is consistent: the spec sets the rule; the parser catches what it can; humans catch the rest. The catalog still surfaces useful signal — a high `JS_EVENT` row count on a page is a flag for review even when the populator cannot auto-classify each row.
+
+### A.13 Comments
+
+The five allowed comment kinds correspond to the spec's structural concerns at three levels:
+
+- The file (header), the sections that organize it (banners), and the definitions inside those sections (purpose comments) all have structural identity that the spec already enumerates. Comments at these levels serve a clear documentation role tied to the structural element they accompany.
+- Inside a function body, individual statements and sub-groups of statements are content the spec does not enumerate. Authors routinely need to explain "this block does X" or "the next three lines handle the Y case." Permitting inline body comments here acknowledges that function bodies are the content layer where author judgment about clarity matters, and that forbidding explanatory comments inside functions would degrade readability without serving any spec concern.
+- Top-level expression statements (the bootloader's `document.addEventListener('DOMContentLoaded', ...)` is the canonical case) do not have the same declaration shape as functions or constants but still introduce named platform behavior. A purpose comment immediately above such a statement is permitted on the same principle as for declarations: the author is documenting a structurally significant element.
+
+The five-kind taxonomy intentionally treats inline body comments as optional rather than required. A trivial three-line function does not need them; a 50-line function with five logical sub-operations clearly benefits from them. The choice belongs to the author.
 
 ### A.15 Forbidden patterns
 
