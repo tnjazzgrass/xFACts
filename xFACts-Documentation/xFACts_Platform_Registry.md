@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-17 06:22:50
+Generated: 2026-05-17 08:20:54
 
 ## Module Registry
 
@@ -66,7 +66,7 @@ Generated: 2026-05-17 06:22:50
 | B2B | SI_ExecutionTracking | Database | Table | B2B | Per-workflow execution tracking for IBM Sterling B2B Integrator FA_CLIENTS_MAIN runs. One row per WORKFLOW_ID with full ProcessData configuration, workflow tree linkage, sub-workflow invocation summary, and terminal status sourced from b2bi. |
 | B2B | SI_ScheduleRegistry | Database | Table | B2B | Master catalog of IBM Sterling B2B Integrator schedules sourced from b2bi.dbo.SCHEDULE. Stores one row per SCHEDULEID with parsed TIMINGXML structure for auditing, monitoring, and Control Center display. |
 | B2B | Collect-B2BExecution.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-B2BExecution.ps1 | B2B module collector. Runs two workloads each cycle: synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE (Block 1), and collects per-workflow execution tracking rows into B2B.SI_ExecutionTracking from b2bi.dbo.WF_INST_S and related tables for FA_CLIENTS_MAIN runs in the configured lookback window (Block 2). Uses an is_complete anti-join to skip terminal workflows on subsequent cycles. Runs under the xFACts orchestrator in FIRE_AND_FORGET mode. |
-| BatchOps | BDL_BatchTracking | Database | Table |  | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
+| BatchOps | BDL_BatchTracking | Database | Table | BatchOps | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
 | BatchOps | Status | Database | Table | BatchOps | Batch status code definitions |
@@ -237,7 +237,7 @@ Generated: 2026-05-17 06:22:50
 | Engine.SharedInfrastructure | ActionAuditLog | Database | Table | dbo | Audit trail for Control Center administrative actions |
 | Engine.SharedInfrastructure | API_RequestLog | Database | Table | dbo | HTTP request logging for Control Center API endpoints |
 | Engine.SharedInfrastructure | Asset_Registry | Database | Table | dbo | Catalog of every component (CSS class, JS function, HTML ID, API route, etc.) extracted from Control Center source files. One row per definition or usage instance, distinguishing local from shared scope and mapping consumption to definition. Populated by the Asset_Registry parser pipeline. Enables drift detection, consumption tracking, and naming-convention enforcement across the Control Center codebase. |
-| Engine.SharedInfrastructure | ClientHierarchy | Database | Table |  | Complete flattened DM creditor hierarchy for cross-module client resolution. |
+| Engine.SharedInfrastructure | ClientHierarchy | Database | Table | dbo | Complete flattened DM creditor hierarchy for cross-module client resolution. |
 | Engine.SharedInfrastructure | Component_Registry | Database | Table | dbo | Logical component grouping catalog |
 | Engine.SharedInfrastructure | Credentials | Database | Table | dbo | Encrypted credential storage for service accounts |
 | Engine.SharedInfrastructure | CredentialServices | Database | Table | dbo | Service-to-credential mapping |
@@ -409,7 +409,9 @@ Generated: 2026-05-17 06:22:50
 | Tools.Utilities | parse-css.js | PowerShell | Script | E:\xFACts-PowerShell\parse-css.js | Node.js helper script that parses CSS source into structured AST output. Reads CSS from stdin, uses PostCSS 8.5.12 with postcss-selector-parser 7.1.1 to produce JSON containing rules, at-rules, comments, and decomposed selector trees with line numbers. Invoked as a subprocess by Populate-AssetRegistry-CSS.ps1 during catalog refresh. |
 | Tools.Utilities | parse-js.js | PowerShell | Script | E:\xFACts-PowerShell\parse-js.js | Node.js helper script that parses JavaScript source into structured AST output. Reads JS from stdin, uses Acorn 8.16.0 with acorn-walk 8.3.5 to produce ESTree-format JSON with full source position information. Invoked as a subprocess by Populate-AssetRegistry-JS.ps1 during catalog refresh. |
 | Tools.Utilities | Populate-AssetRegistry-CSS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-CSS.ps1 | Asset_Registry parser pipeline component for CSS source files. Walks every CSS file in the Control Center codebase, parses each via the parse-css.js Node helper, and emits one Asset_Registry row per cataloged construct. Validates each row against CC_CSS_Spec.md rules and attaches drift codes for any deviation. |
+| Tools.Utilities | Populate-AssetRegistry-HTML.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-HTML.ps1 | Asset_Registry parser pipeline component for HTML markup embedded in PowerShell files. Walks every .ps1 and .psm1 file under the Control Center route and helper directories, identifies HTML-emitting constructs, and emits one Asset_Registry row per cataloged HTML construct. Validates each row against CC_HTML_Spec.md rules and attaches drift codes for any deviation. |
 | Tools.Utilities | Populate-AssetRegistry-JS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-JS.ps1 | Asset_Registry parser pipeline component for JavaScript source files. Walks every JS file in the Control Center codebase, parses each via the parse-js.js Node helper, and emits Asset_Registry rows for both JS code constructs and HTML markup found inside template strings. Validates each row against CC_JS_Spec.md rules and attaches drift codes for any deviation. |
+| Tools.Utilities | Populate-AssetRegistry-PS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-PS.ps1 | Asset_Registry parser pipeline component for PowerShell source files. Walks every .ps1 and .psm1 file under the xFACts PowerShell roots, parses each via the native PowerShell AST, and emits one Asset_Registry row per cataloged construct. Validates each row against CC_PS_Spec.md rules and attaches drift codes for any deviation. |
 | Tools.Utilities | xFACts-AssetRegistryFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-AssetRegistryFunctions.ps1 | Shared function library for the Asset_Registry parser pipeline. Dot-sourced by every populator in the family. Centralizes row construction, drift code attachment, occurrence-index computation, registry loads, bulk insert, banner detection and parsing, file-header parsing, pre-built section list construction, and the generic AST visitor walker. Per-language logic stays in each populator. |
 
 ## Global Configuration
