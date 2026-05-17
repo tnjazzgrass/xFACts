@@ -1,8 +1,8 @@
 # Session Summary - JS Populator Calibration and Comment Taxonomy Amendment
 
 **Date:** 2026-05-17
-**Focus:** JS populator drift calibration, CC_JS_Spec.md Section 13 amendment, cc-shared.js cleanup
-**Disposition:** All planned work landed and verified via post-rerun results. cc-shared.js drift dropped from 25 rows to 4 (all expected residuals). -spec files now show only architectural-migration drift. Ready for Phase 1 page migrations next session.
+**Focus:** JS populator drift calibration, CC_JS_Spec.md Section 13 amendment, cc-shared.js cleanup, Object_Registry + Object_Metadata baseline rows for HTML and PS populators, PS populator scope narrowed to exclude .psd1
+**Disposition:** All planned work landed and verified via post-rerun results. cc-shared.js drift dropped from 25 rows to 4 (all expected residuals). -spec files now show only architectural-migration drift. HTML and PS populators registered in Object_Registry with baseline Object_Metadata rows; full enrichment deferred. PS populator no longer scans .psd1 config files - they live in Object_Registry only, per the table-role distinction surfaced this session. Ready for Phase 1 page migrations next session.
 
 ---
 
@@ -231,13 +231,77 @@ These remain on the populator backlog from the prior section. Listed here for vi
 
 ## Backlog additions
 
-Three items added to the populator/platform backlog this session. None are blocking page migrations.
+Two items added to the populator/platform backlog this session. None are blocking page migrations.
 
 1. **HTML sniff over-detection in JS populator.** Currently fires on `JBossMonitoring-API.ps1` 6 times due to literal `<commit>`, `<show>`, `<jobs>` XML strings inside `$baseUrl` interpolations for Palo Alto firewall API calls. Detection should require an HTML-emission context (`Write-PodeHtmlResponse` wrapper, return-from-route shape, or function-name convention like `Get-*Html`) rather than substring matches on HTML-looking text.
 
 2. **Dynamic ID creation detection in JS populator.** Currently fires JS_HTML_ID_UNRESOLVED on `engine-popup` and `engine-idle-overlay` because they're created at runtime via `popup.id = 'engine-popup'` inside `showEnginePopup()` rather than declared in HTML. Populator should recognize `element.id = 'literal'` followed by `appendChild` as a JS-side ID definition, emit HTML_ID DEFINITION rows with scope=LOCAL and source_file=the JS file, and resolve USAGE rows against them.
 
-3. **Object_Registry registration gaps.** Three files still missing from `dbo.Object_Registry`: `Populate-AssetRegistry-HTML.ps1`, `Populate-AssetRegistry-PS.ps1`, `server.psd1`. Surfaces as Object_Registry miss advisories on each run.
+**Resolved this session:** The third backlog item from earlier in the session (Object_Registry registration gaps for `Populate-AssetRegistry-HTML.ps1`, `Populate-AssetRegistry-PS.ps1`) was closed by the Object_Registry and Object_Metadata baseline insert scripts. The related `server.psd1` registration miss was investigated and resolved by removing `.psd1` from the PS populator's scan scope rather than papering over the warning - see the dedicated section below for reasoning.
+
+---
+
+## Object_Registry and Object_Metadata baseline registration
+
+Closed out the populator registration gap. The CSS and JS populators had been registered in `dbo.Object_Registry` (registry_id 375, 376) and had their three baseline rows in `dbo.Object_Metadata` (metadata_id 5061-5066), but the HTML and PS populators were missing from both tables.
+
+**Object_Registry inserts** mirror the CSS/JS rows exactly: `module_name = 'Tools'`, `component_name = 'Tools.Utilities'`, `object_category = 'PowerShell'`, `object_type = 'Script'`. Descriptions follow the same three-sentence shape as the existing rows (Asset_Registry parser pipeline component for X / walks Y / validates against Z) and fit comfortably under the 500-char limit (366 chars for HTML, 328 for PS).
+
+**Object_Metadata baseline inserts** add the three required rows per script (description, module, category) so the populators appear in the JSON export and on reference pages. description text matches the Object_Registry description by convention. Six rows total across the two scripts.
+
+**Enrichment deferred.** Per OQ-INIT-3 in CC_Initiative.md, full enrichment (data_flow, design_note, etc.) waits until all four populators are stable and the orchestrator is in production. The baselines unlock the documentation surface without committing to enrichment text that may need rewriting once the populator family is finalized.
+
+Two SQL scripts produced this session for FA-SQLDBB:
+- `Add-PopulatorObjectRegistry.sql` - 2 inserts into `dbo.Object_Registry`
+- `Add-PopulatorObjectMetadata-Baselines.sql` - 6 inserts into `dbo.Object_Metadata`
+
+Both wrapped in transactions with verification SELECTs before the COMMIT.
+
+---
+
+## PS populator scope narrowed: .psd1 files removed
+
+While investigating an Object_Registry miss warning on `server.psd1`, surfaced a deeper table-role distinction worth recording:
+
+**Object_Registry** answers "what files exist in the platform?" - file-level identity, ownership, classification. One row per file. Captures every file related to xFACts.
+
+**Asset_Registry** answers "what's inside every file?" - element-level catalog with drift validation against language specs. Many rows per file, all about the constructs inside.
+
+The two tables share a purpose (platform self-documentation) but have distinct roles. The PS_FILE / CSS_FILE / JS_FILE / HTML_FILE anchor rows blur the line because they're file-level rows in Asset_Registry, but they exist as the attachment point for file-level drift codes and the catalog anchor that other Asset_Registry rows attribute back to. They serve Asset_Registry's purpose, not Object_Registry's.
+
+The test for whether a file belongs in Asset_Registry: **will it ever have constructs to catalog, or file-level drift to validate against a spec?** Source files (.ps1, .psm1, .css, .js, embedded HTML) pass. Configuration files like `server.psd1` fail - no functions or classes to catalog, no spec to validate against, no drift to detect. The PS_FILE anchor row for `server.psd1` was carrying nothing.
+
+**Decision:** remove `.psd1` from the PS populator's scan scope. The `'data-file'` role classification and its associated short-circuit branches in Pass 1 and Pass 2 were removed.
+
+Four targeted edits applied to `Populate-AssetRegistry-PS.ps1`:
+1. Remove `'*.psd1'` from the `Get-ChildItem -Include` filter in EXECUTION: FILE DISCOVERY (added an explanatory comment in its place)
+2. Remove the `.psd1` branch from `Get-PSFileRole`
+3. Remove the `'data-file'` short-circuit in EXECUTION: PASS 1
+4. Remove the `'data-file'` short-circuit in EXECUTION: PASS 2
+
+The `.SYNOPSIS` block's "Five file roles" enumeration was already correct - the `data-file` role was an implementation-only addition introduced later when `.psd1` discovery was bolted on, never listed in the canonical role set. No header edit needed.
+
+After this change: re-running the PS populator produces no PS_FILE row for `server.psd1` and no Object_Registry miss warning. The file remains in Object_Registry exactly as it should, fully categorized as a config file. The principle - "configuration data lives in Object_Registry only; code lives in both" - is documented and the populator behavior matches it.
+
+---
+
+## Deferred items (tracked for next session or beyond)
+
+Items surfaced or held over this session. None are blocking Phase 1 page migrations.
+
+**Documentation enrichment (deferred per OQ-INIT-3)**
+- HTML populator Object_Metadata enrichment (data_flow, design_note). Baselines in; full enrichment waits until the populator family is stable.
+- PS populator Object_Metadata enrichment. Same as above.
+- CSS and JS populators also need their data_flow and design_note rows when enrichment unblocks - their baselines have been in for some time.
+
+**Populator standardization audit (queued for after Phase 1)**
+
+Surfaced when investigating why PS warns on `server.psd1` and HTML doesn't. The four populators share concepts but each implements them independently, and they have already drifted apart in correctness. PS still has the same `($curStart - $prevEnd) -gt 2` bug in EXCESS_BLANK_LINES and BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE that we fixed in JS this session.
+
+- **Promote shared detectors to xFACts-AssetRegistryFunctions.ps1.** Same-concept detectors implemented per-populator are a long-term maintenance hazard. The `Get-MaxConsecutiveBlankLines` helper added to the JS populator this session should be promoted to shared infrastructure so PS picks it up automatically. Other candidates: blank-line counting machinery generally, line-comment-vs-content classification helpers.
+- **Backport the JS blank-line fixes to PS.** Once the helper is in shared infrastructure, PS can be updated to use it instead of its current flawed implementation.
+- **CSS populator review.** CSS likely has its own implementations of the same checks. Need to inspect and confirm whether it's correct or carries the same bug.
+- **Document the file-classification methodology divergence.** HTML uses Object_Registry-driven classification at processing time. PS uses path-based classification first, registry only for FK resolution at the end. Both are defensible but they're philosophically different. Pick a canonical approach or document both formally.
 
 ---
 
@@ -247,6 +311,10 @@ Three items added to the populator/platform backlog this session. None are block
 - `cc-shared.js` - Group 6 and Group 7 cleanups applied (1721 lines)
 - `Populate-AssetRegistry-HTML.ps1` - prior session's HTML item 9 work (still current)
 - `CC_HTML_Spec_Amendments.md` - prior session's HTML amendments (still current)
+- `Add-PopulatorObjectRegistry.sql` - 2 Object_Registry inserts (HTML + PS populators)
+- `Add-PopulatorObjectMetadata-Baselines.sql` - 6 Object_Metadata baseline inserts
+
+Plus an in-place edit to `Populate-AssetRegistry-PS.ps1` to remove `.psd1` from scan scope (four small drop-in edits applied by Dirk against his working copy; no full-file replacement produced this session).
 
 ---
 
@@ -267,14 +335,5 @@ Three items added to the populator/platform backlog this session. None are block
 7. Update Object_Registry, Component_Registry mappings if needed.
 8. Run JS populator scoped to the single file (`-FileFilter`) to verify drift is gone.
 
-**Verification step before migration begins:** Dirk re-runs the JS populator with the patched code, spec amendment, and updated cc-shared.js to confirm the residual drift on cc-shared.js drops to ~0 and the -spec files show only architectural drift (not populator noise). If the numbers don't match expectations, that's the priority before any migration begins.
-
----
-
-## Session protocol reminders
-
-- §13 amendment must be applied to CC_JS_Spec.md in GitHub before Dirk closes out this session's work
-- One System_Metadata bump entry for `ControlCenter.AssetRegistry` for the populator changes
-- One System_Metadata bump entry for `ControlCenter` for cc-shared.js (Groups 6 + 7)
-- Bump entries go in via Admin UI; not in this working document
+**Open TODO carried into next session:** Populator Object_Metadata enrichment (data_flow, design_note rows) for all four populators - CSS, HTML, JS, PS. Baselines are now in for all four; enrichment was deliberately deferred until the populator family is stable and the orchestrator is in production. When that unlocks, the enrichment is one coherent pass across all four populators rather than piecemeal.
 
