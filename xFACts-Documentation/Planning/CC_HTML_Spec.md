@@ -41,8 +41,7 @@ $navHtml
 
 ### 1.2 Page shell rules
 
-- The HTML document opens with `<!DOCTYPE html>` on its own line. The DOCTYPE token is lowercase `<!doctype html>` or uppercase `<!DOCTYPE html>`; mixed-case forms are forbidden. Drift code: `MALFORMED_DOCTYPE`.
-- The root element is `<html>` with no attributes. Drift code: `MALFORMED_HTML_ROOT`.
+- The HTML document opens with `<!DOCTYPE html>` on its own line. The DOCTYPE token is exactly `<!DOCTYPE html>` — uppercase keyword, lowercase tag name. All other casings (`<!doctype html>`, `<!Doctype html>`, `<!DOCTYPE HTML>`, etc.) are forbidden. Drift code: `MALFORMED_DOCTYPE`.- The root element is `<html>` with no attributes. Drift code: `MALFORMED_HTML_ROOT`.
 - The `<head>` contains exactly these elements, in this order: one `<title>` element, one or more `<link rel="stylesheet">` elements per Section 3, and nothing else. Drift code: `MALFORMED_HEAD`.
 - The `<title>` element's content is the value of the `$browserTitle` PowerShell variable, sourced from `Get-PageBrowserTitle`. Drift code: `FORBIDDEN_HARDCODED_TITLE`.
 - The `<body>` element opens with a `class="section-<sectionKey>"` attribute, where `<sectionKey>` matches the page's `RBAC_NavSection.section_key` value. Drift code: `MISSING_BODY_SECTION_CLASS`.
@@ -77,18 +76,9 @@ A helper module function that emits an HTML fragment for substitution into a pag
 
 ### 1.6 Access-denied page
 
-The 403 Access Denied response — emitted by `Get-AccessDeniedHtml` in `xFACts-Helpers.psm1` — is a complete HTML page that does not conform to the standard page shell defined in §1.1–1.4. It exists to render before authenticated page resources are reachable.
+The 403 Access Denied response — emitted by `Get-AccessDeniedHtml` in `xFACts-Helpers.psm1` — is a complete HTML page returned before authenticated page resources are reachable. It is subject to the same spec rules as every other emission. There are no rule carve-outs for the access-denied page; any drift its emission produces is real drift that should be resolved by bringing the page into compliance with the standard page shell, not by spec exemption.
 
-The access-denied page must conform to this rule set:
-
-- The document opens with `<!DOCTYPE html>` per §1.2.
-- The document uses an inline `<style>` block in `<head>` containing all visual styling for the page. This is the only HTML construct permitted to use an inline `<style>` block. Drift code: `FORBIDDEN_INLINE_STYLE_BLOCK` is suppressed for `Get-AccessDeniedHtml`.
-- The document does not load external CSS or JS files. Drift codes related to CSS and JS asset references in §3 (`MALFORMED_CSS_LINK`, `MALFORMED_PAGE_CSS_REFERENCE`, `MALFORMED_SHARED_CSS_REFERENCE`, `CSS_REFERENCE_ORDER_VIOLATION`, `UNEXPECTED_CSS_REFERENCE`, `MISSING_SHARED_SCRIPT_TAG`, `UNEXPECTED_SCRIPT_TAG`, `WRONG_SCRIPT_SOURCE`, `MALFORMED_JS_SCRIPT`) do not apply.
-- The document does not include `$navHtml`, `$headerHtml`, `$browserTitle` substitutions, or the connection banner placeholder. Drift codes `MISSING_NAV_SUBSTITUTION`, `MISSING_HEADER_BAR`, and `MISSING_CONNECTION_BANNER` do not apply.
-- The document does not declare `data-page` or `data-prefix` attributes on `<body>` and does not include the `#page-error-banner` placeholder. Drift codes `MISSING_DATA_PAGE`, `MISSING_DATA_PREFIX`, and `MISSING_PAGE_ERROR_BANNER` do not apply.
-- All other applicable spec rules apply normally — class attribute conventions (§5), forbidden inline expressions (§12), and the rules in §6 (the `data-action` family) apply only to elements that declare `data-action-*` attributes; the access-denied page does not declare such attributes and so §6 has no effect.
-
-The exemptions listed above apply exclusively to `Get-AccessDeniedHtml`. Any other helper or route file that emits a `<style>` block, omits external asset references, or skips the page-shell substitutions is in violation of the spec.
+The decision to remove access-denied carve-outs reflects a deliberate "no shortcuts, no half-measures" stance: a page that emits HTML must conform to the HTML spec. If the access-denied page needs to render before authenticated resources are reachable, it must do so within the same structural rules every other page follows.
 
 ---
 
@@ -192,8 +182,8 @@ The four cc-prefixed columns on ProcessRegistry govern engine card display:
 
 The `run_mode` column on ProcessRegistry determines whether the four cc-prefixed columns must be populated:
 
-- `run_mode = 1` (active scheduled process) → all four cc-prefixed columns must be populated. Drift code: `MISSING_ENGINE_CARD_REGISTRATION` if any are NULL.
-- `run_mode = 2` (active on-demand process / queue processor) → all four cc-prefixed columns must be NULL. Queue processors do not appear as engine cards. Drift code: `UNEXPECTED_ENGINE_CARD_REGISTRATION` if any are populated.
+- `run_mode = 1` (active scheduled process) → all four cc-prefixed columns must be populated. The HTML populator emits `MISSING_ENGINE_CARD_REGISTRATION` against the corresponding engine card if any are NULL.
+- `run_mode = 2` (active on-demand process / queue processor) → all four cc-prefixed columns must be NULL. Queue processors do not appear as engine cards, so they produce no HTML drift; a queue processor row with populated cc-prefixed columns is a registry-side data integrity violation surfaced by Q5 in §16, not by the HTML populator.
 - `run_mode = 0` (inactive) → either acceptable; inactive processes are not validated.
 
 #### 2.3.4 Slug validation rules
@@ -273,7 +263,7 @@ The single `<script src="/js/cc-shared.js">` reference resolves to the `JS_FILE 
 
 ### 3.4 Inline asset blocks
 
-The HTML spec forbids inline `<style>` blocks and inline `<script>` blocks containing code (script blocks with `src=` only are permitted per §3.2). These are enumerated in Section 12 (Forbidden patterns). The exception for `Get-AccessDeniedHtml` is governed by §1.6.
+The HTML spec forbids inline `<style>` blocks, inline `style="..."` attributes, and inline `<script>` blocks containing code (script blocks with `src=` only are permitted per §3.2). These are enumerated in Section 12 (Forbidden patterns).
 
 ### 3.5 Asset references in helper-emitted HTML
 
@@ -364,7 +354,37 @@ A slide-up panel consists of a backdrop element and a panel element:
 - A slide-up panel's backdrop and panel IDs both use the `<prefix>-slideup-<purpose>-*` form. Drift code: `MALFORMED_SLIDEUP_ID`.
 - A page that declares one half of a pair (overlay only, or panel only) without the other emits drift. Drift code: `INCOMPLETE_OVERLAY_PAIR`.
 
-#### 4.3.5 Purpose comments
+#### 4.3.5 Overlay panel contiguity
+
+Slideouts, modals, and slide-up panels are layered overlay constructs that float above the page's normal flow. They are not part of any specific page section — they sit outside the page's content layout and surface via JavaScript when triggered.
+
+A page that declares slideouts, modals, and/or slide-up panels groups all such declarations into a single contiguous block of markup. The block is the last content in the body before the `<script>` tag, after all page-specific section content. Non-overlay structural elements (page content cards, layout containers, form sections) do not interleave with overlay panel declarations.
+
+A page with two slideouts and one modal declares them as one block:
+
+```
+<!-- ... page content sections ... -->
+
+<!-- Slideout for request details -->
+<div id="bsv-slideout-request-overlay" ...></div>
+<div id="bsv-slideout-request" ...>...</div>
+
+<!-- Slideout for comment thread -->
+<div id="bsv-slideout-comments-overlay" ...></div>
+<div id="bsv-slideout-comments" ...>...</div>
+
+<!-- Modal for delete confirmation -->
+<div id="bsv-modal-delete-overlay" ...></div>
+<div id="bsv-modal-delete" ...>...</div>
+
+<script src="/js/cc-shared.js"></script>
+```
+
+If a slideout, modal, or slide-up panel declaration is interleaved with non-overlay structural content, drift fires on the constructs that break the contiguous run. Drift code: `OVERLAY_PANEL_NOT_CONTIGUOUS`.
+
+The rule serves catalog clarity: overlay panels are conceptually outside the page's normal content flow, and their grouping in markup mirrors that conceptual separation. It also makes the panel-purpose comment convention (§4.3.6) cleaner to author and read: a single block of overlay declarations with one purpose comment per pair is easier to scan than overlay declarations sprinkled throughout the page.
+
+#### 4.3.6 Purpose comments
 
 Every slideout, modal, and slide-up panel declaration must be preceded by an HTML comment describing the purpose of the construct. The comment immediately precedes the overlay (or backdrop) element and applies to both elements of the pair.
 
@@ -617,7 +637,9 @@ Each `data-action-<arg-name>` attribute produces a separate `HTML_DATA_ATTRIBUTE
 
 Helper module functions emit only `cc-` prefixed action values. A helper emitting a page-local action value (one without `cc-` prefix) couples the helper to a specific page, defeating the purpose of having a helper. Drift code: `FORBIDDEN_HELPER_PAGE_ACTION`.
 
-Argument attributes (`data-action-<arg-name>`) in helper-emitted HTML are permitted when their values are static or come from helper parameters; an argument attribute with a page-specific meaning is drift. Drift code: `FORBIDDEN_HELPER_PAGE_ACTION_ARGUMENT`.
+Argument attributes (`data-action-<arg-name>`) in helper-emitted HTML must derive their values entirely from data the helper received from its caller. Concretely, the value must be either a fully static string, or a string whose every PowerShell interpolation traces — at its root variable — to a parameter the helper declares (directly, or as the iterator over such a parameter via `foreach`).
+
+Argument attribute values that interpolate script-scope variables, module-level variables, function calls, or any other state the helper reached out to obtain are forbidden. Such values represent the helper coupling itself to context outside the caller's intent. A helper that needs additional state must receive it as a parameter so the caller controls what the helper sees. Drift code: `FORBIDDEN_HELPER_PAGE_ACTION_ARGUMENT`.
 
 ---
 
@@ -910,7 +932,7 @@ This is the only SVG-specific drift code. Cross-page SVG consistency comparison 
 
 ## 10. Comments
 
-HTML comments (`<!-- ... -->`) appear in route files as section dividers, structural annotations, and the purpose comments mandated for slideouts/modals/panels by §4.3.5. The HTML spec recognizes a small set of legitimate comment uses and catalogs them all.
+HTML comments (`<!-- ... -->`) appear in route files as section dividers, structural annotations, and the purpose comments mandated for slideouts/modals/panels by §4.3.6. The HTML spec recognizes a small set of legitimate comment uses and catalogs them all.
 
 ### 10.1 Recognized comment kinds
 
@@ -920,7 +942,7 @@ Three kinds of HTML comments are recognized by the spec:
 |---|---|---|
 | Section divider | Multi-line block of `<!-- ===== -->` style | Visual separation between major content blocks within a route file's HTML |
 | Inline annotation | Single-line `<!-- short text -->` | Brief contextual note on a specific element or block |
-| Panel purpose comment | Single-line `<!-- short text -->` immediately preceding a slideout, modal, or slide-up panel | Required by §4.3.5; describes the construct's purpose |
+| Panel purpose comment | Single-line `<!-- short text -->` immediately preceding a slideout, modal, or slide-up panel | Required by §4.3.6; describes the construct's purpose |
 
 ### 10.2 Section dividers
 
@@ -956,7 +978,7 @@ Inline annotations are optional and are not subject to a fixed format beyond sta
 
 ### 10.4 Panel purpose comments
 
-Panel purpose comments are required by §4.3.5 for slideouts, modals, and slide-up panels. They are inline annotations placed immediately before the overlay (or backdrop) element of the construct:
+Panel purpose comments are required by §4.3.6 for slideouts, modals, and slide-up panels. They are inline annotations placed immediately before the overlay (or backdrop) element of the construct:
 
 ```
 <!-- Slideout for displaying request details with comments and timeline -->
@@ -964,7 +986,7 @@ Panel purpose comments are required by §4.3.5 for slideouts, modals, and slide-
 <div id="bsv-slideout-request" class="slide-panel xwide">...</div>
 ```
 
-The HTML populator reads the comment text into the `purpose_description` column for both rows of the construct (overlay and panel). See §4.3.5 for the full rule.
+The HTML populator reads the comment text into the `purpose_description` column for both rows of the construct (overlay and panel). See §4.3.6 for the full rule.
 
 ### 10.5 Catalog rows for comments
 
@@ -991,7 +1013,7 @@ The HTML populator distinguishes between the three comment kinds based on shape 
 | `comment-panel-purpose` | Single-line comment immediately preceding a slideout overlay (`<prefix>-slideout-<purpose>-overlay`), modal overlay (`<prefix>-modal-<purpose>-overlay`), or slide-up backdrop (`<prefix>-slideup-<purpose>-backdrop`) per §4.3 |
 | `comment-inline` | Any other single-line comment |
 
-When a comment is categorized as `comment-panel-purpose`, its text is also written into the `purpose_description` column for both rows of the slideout/modal/panel construct it precedes (per §4.3.5). For `comment-inline` and `comment-section-divider` rows, `purpose_description` is not derived from the comment text.
+When a comment is categorized as `comment-panel-purpose`, its text is also written into the `purpose_description` column for both rows of the slideout/modal/panel construct it precedes (per §4.3.6). For `comment-inline` and `comment-section-divider` rows, `purpose_description` is not derived from the comment text.
 
 A comment whose text resembles a panel purpose comment but is not positioned immediately before a slideout/modal/panel construct is categorized as `comment-inline`. The populator's categorization is determined by structural context, not by comment content.
 
@@ -1052,8 +1074,9 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 3. Slideout IDs use `<prefix>-slideout-<purpose>-overlay` and `<prefix>-slideout-<purpose>` (§4.3.1)
 4. Modal IDs use `<prefix>-modal-<purpose>-overlay` and `<prefix>-modal-<purpose>` (§4.3.2)
 5. Slide-up panel IDs use `<prefix>-slideup-<purpose>-backdrop` and `<prefix>-slideup-<purpose>` (§4.3.3)
-6. Every slideout, modal, and slide-up panel is preceded by an HTML purpose comment (§4.3.5)
-7. JS references to page-local IDs use the same prefixed form as HTML declarations (§4.2.3)
+6. Slideouts, modals, and slide-up panels are declared in one contiguous block of markup (§4.3.5)
+7. Every slideout, modal, and slide-up panel is preceded by an HTML purpose comment (§4.3.6)
+8. JS references to page-local IDs use the same prefixed form as HTML declarations (§4.2.3)
 
 ### 11.5 Class attributes
 
@@ -1093,7 +1116,7 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 
 1. Recognized comment kinds: section divider, inline annotation, panel purpose comment (§10.1)
 2. Section dividers use 76-character `=` rule lines (§10.2.1)
-3. Panel purpose comments precede slideouts, modals, and slide-up panels per §4.3.5 (§10.4)
+3. Panel purpose comments precede slideouts, modals, and slide-up panels per §4.3.6 (§10.4)
 4. Comment categorization is determined by structural context, not comment content (§10.5.1)
 
 ### 11.11 Helper-emitted HTML
@@ -1113,7 +1136,7 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 
 | Pattern | Drift code | Rule |
 |---|---|---|
-| DOCTYPE missing or mixed-case | `MALFORMED_DOCTYPE` | §1.2 |
+| DOCTYPE missing or any casing other than `<!DOCTYPE html>` | `MALFORMED_DOCTYPE` | §1.2 |
 | `<html>` element with attributes | `MALFORMED_HTML_ROOT` | §1.2 |
 | `<head>` containing elements other than `<title>` and `<link>` | `MALFORMED_HEAD` | §1.2 |
 | `<title>` content hardcoded instead of `$browserTitle` substitution | `FORBIDDEN_HARDCODED_TITLE` | §1.2 |
@@ -1121,7 +1144,7 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | `<body>` missing `data-page="<slug>"` attribute | `MISSING_DATA_PAGE` | §1.2 |
 | `<body>` missing `data-prefix="<prefix>"` attribute | `MISSING_DATA_PREFIX` | §1.2 |
 | First content inside `<body>` is not `$navHtml` | `MISSING_NAV_SUBSTITUTION` | §1.2 |
-| Content appears between the `<script>` tag and `</body>` | `MALFORMED_BODY_CLOSE`, `JS_REFERENCE_NOT_LAST` | §1.2, §3.2 |
+| Content appears between the `<script>` tag and `</body>` | `MALFORMED_BODY_CLOSE` | §1.2, §3.2 |
 | Page header bar missing | `MISSING_HEADER_BAR` | §1.4 |
 | Page header hardcoded instead of `$headerHtml` substitution | `FORBIDDEN_HARDCODED_PAGE_HEADER` | §1.4 |
 | Connection banner placeholder missing | `MISSING_CONNECTION_BANNER` | §1.4 |
@@ -1145,7 +1168,6 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | Engine card structure deviates from mandated form | `MALFORMED_ENGINE_CARD`, `MALFORMED_ENGINE_CARD_ATTRIBUTES`, `MALFORMED_ENGINE_LABEL`, `MALFORMED_ENGINE_BAR`, `MALFORMED_ENGINE_COUNTDOWN` | §2.3 |
 | Engine card order doesn't match `cc_sort_order` | `ENGINE_CARD_ORDER_MISMATCH` | §2.3 |
 | Active scheduled process missing engine card registration | `MISSING_ENGINE_CARD_REGISTRATION` | §2.3 |
-| Queue processor process has engine card registration | `UNEXPECTED_ENGINE_CARD_REGISTRATION` | §2.3 |
 | Slug in card IDs doesn't match `cc_engine_slug` | `ENGINE_SLUG_REGISTRY_MISMATCH` | §2.3 |
 | Label text doesn't match `cc_engine_label` | `ENGINE_LABEL_REGISTRY_MISMATCH` | §2.3 |
 | Engine card on a page that doesn't match `cc_page_route` | `ENGINE_CARD_PAGE_MISMATCH` | §2.3 |
@@ -1163,7 +1185,6 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | Page is missing the `cc-shared.js` `<script>` tag | `MISSING_SHARED_SCRIPT_TAG` | §3.2 |
 | Page has more than one `<script>` tag | `UNEXPECTED_SCRIPT_TAG` | §3.2 |
 | `<script>` tag's `src` value is not `/js/cc-shared.js` | `WRONG_SCRIPT_SOURCE` | §3.2 |
-| `<script>` tag is not the last content in `<body>` | `JS_REFERENCE_NOT_LAST` | §3.2 |
 | Helper emits `<link>` or `<script>` reference | `FORBIDDEN_HELPER_ASSET_REFERENCE` | §3.5 |
 
 ### 12.4 ID forbidden patterns
@@ -1177,7 +1198,8 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | ID value contains forbidden characters | `MALFORMED_ID_VALUE` | §4.2 |
 | Slideout/modal/panel ID malformed | `MALFORMED_SLIDEOUT_ID`, `MALFORMED_MODAL_ID`, `MALFORMED_SLIDEUP_ID` | §4.3 |
 | Slideout/modal/panel pair incomplete | `INCOMPLETE_OVERLAY_PAIR` | §4.3 |
-| Slideout/modal/panel missing purpose comment | `MISSING_PANEL_PURPOSE_COMMENT` | §4.3.5 |
+| Slideout/modal/panel declarations interleaved with non-overlay content | `OVERLAY_PANEL_NOT_CONTIGUOUS` | §4.3.5 |
+| Slideout/modal/panel missing purpose comment | `MISSING_PANEL_PURPOSE_COMMENT` | §4.3.6 |
 | Helper emits page-prefixed ID | `FORBIDDEN_HELPER_PAGE_PREFIX_ID` | §4.5 |
 
 ### 12.5 Class attribute forbidden patterns
@@ -1236,14 +1258,16 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | Comment contains PowerShell variable interpolation | `FORBIDDEN_COMMENT_INTERPOLATION` | §10.6 |
 | Comment unclosed | `MALFORMED_COMMENT_UNCLOSED` | §10.6 |
 
-### 12.11 Inline `<style>` blocks
+### 12.11 Inline `<style>` blocks and `style` attributes
 
-Inline `<style>` blocks are forbidden in HTML markup with two exceptions:
+Inline `<style>` blocks and inline `style="..."` attributes are forbidden in HTML markup with one exception: SVG-internal `<style>` blocks (per §9.5) are SVG-scoped, not HTML-scoped, and are exempt.
 
-- `Get-AccessDeniedHtml` (per §1.6) — exempt because the page renders before authenticated resources are reachable
-- SVG-internal `<style>` (per §9.5) — exempt because it is SVG-scoped, not HTML-scoped
+| Pattern | Drift code |
+|---|---|
+| `<style>` block in HTML markup (outside SVG) | `FORBIDDEN_INLINE_STYLE_BLOCK` |
+| `style="..."` attribute on any element | `FORBIDDEN_INLINE_STYLE_ATTRIBUTE` |
 
-A `<style>` block in any other location emits `FORBIDDEN_INLINE_STYLE_BLOCK`.
+Styling lives in CSS files. Both block-level and attribute-level inline styling are forbidden uniformly, with no carve-outs for the access-denied page or any other special case.
 
 ### 12.12 Inline `<script>` blocks
 
@@ -1404,7 +1428,7 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 
 | Code | Description |
 |---|---|
-| `MALFORMED_DOCTYPE` | The HTML document does not open with `<!DOCTYPE html>` on its own line, or the DOCTYPE token uses mixed case. |
+| `MALFORMED_DOCTYPE` | The HTML document does not open with `<!DOCTYPE html>` on its own line in the canonical form (uppercase keyword, lowercase tag name). |
 | `MALFORMED_HTML_ROOT` | The root `<html>` element has attributes (e.g., `<html lang="en">`); attributes are not permitted on the root element. |
 | `MALFORMED_HEAD` | The `<head>` element contains constructs other than `<title>` and `<link>` (e.g., inline `<style>`, `<meta>`, `<script>`). |
 | `FORBIDDEN_HARDCODED_TITLE` | The `<title>` content is a hardcoded string instead of the `$browserTitle` PowerShell variable substitution. |
@@ -1422,6 +1446,8 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `PAGE_ERROR_BANNER_ORDER_VIOLATION` | The page error banner placeholder is not immediately after the connection banner placeholder. |
 
 ### 15.2 Page chrome codes (§2)
+
+The HTML populator emits the codes below by walking page markup and (where indicated) cross-referencing `Orchestrator.ProcessRegistry`. `UNEXPECTED_ENGINE_CARD_REGISTRATION` is a registry-side data integrity check (a queue processor row should not have cc-prefixed columns populated) surfaced by Q5 in §16, not by the HTML populator.
 
 | Code | Description |
 |---|---|
@@ -1443,7 +1469,6 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `MALFORMED_ENGINE_BAR` | An engine bar div is malformed (class or ID, or contains content). |
 | `MALFORMED_ENGINE_COUNTDOWN` | An engine countdown span is malformed (class, ID, or content). |
 | `MISSING_ENGINE_CARD_REGISTRATION` | An active scheduled process (`run_mode = 1`) has NULL values in `cc_engine_slug`, `cc_engine_label`, `cc_page_route`, or `cc_sort_order`. |
-| `UNEXPECTED_ENGINE_CARD_REGISTRATION` | A queue processor process (`run_mode = 2`) has populated values in `cc_engine_slug`, `cc_engine_label`, `cc_page_route`, or `cc_sort_order`. |
 | `ENGINE_SLUG_REGISTRY_MISMATCH` | The slug used in card IDs doesn't match `Orchestrator.ProcessRegistry.cc_engine_slug` for the corresponding process. |
 | `ENGINE_LABEL_REGISTRY_MISMATCH` | The label text in the engine label span doesn't match `Orchestrator.ProcessRegistry.cc_engine_label`. |
 | `ENGINE_CARD_PAGE_MISMATCH` | An engine card appears on a page whose route doesn't match `Orchestrator.ProcessRegistry.cc_page_route`. |
@@ -1461,7 +1486,6 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `MISSING_SHARED_SCRIPT_TAG` | The page is missing the `cc-shared.js` `<script>` tag before `</body>`. |
 | `UNEXPECTED_SCRIPT_TAG` | The page has more than one `<script>` tag. The single permitted `<script>` tag references `cc-shared.js`. |
 | `WRONG_SCRIPT_SOURCE` | The page's `<script>` tag has a `src` value other than `/js/cc-shared.js`. |
-| `JS_REFERENCE_NOT_LAST` | Content appears between the `<script>` tag and `</body>`. |
 | `FORBIDDEN_HELPER_ASSET_REFERENCE` | A helper module function emits a `<link>` or `<script>` element. |
 
 ### 15.4 ID codes (§4)
@@ -1477,6 +1501,7 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `MALFORMED_MODAL_ID` | A modal overlay or dialog ID does not follow `<prefix>-modal-<purpose>-*` form. |
 | `MALFORMED_SLIDEUP_ID` | A slide-up panel backdrop or panel ID does not follow `<prefix>-slideup-<purpose>-*` form. |
 | `INCOMPLETE_OVERLAY_PAIR` | A slideout, modal, or slide-up panel declares one half of the overlay/panel pair without the other. |
+| `OVERLAY_PANEL_NOT_CONTIGUOUS` | Slideout, modal, or slide-up panel declarations are interleaved with non-overlay structural content (per §4.3.5, overlay panel declarations must form one contiguous block). |
 | `MISSING_PANEL_PURPOSE_COMMENT` | A slideout, modal, or slide-up panel declaration is not preceded by an HTML purpose comment. |
 | `FORBIDDEN_HELPER_PAGE_PREFIX_ID` | A helper module function emits HTML with a page-prefixed ID. |
 
@@ -1536,14 +1561,15 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `FORBIDDEN_COMMENT_INTERPOLATION` | An HTML comment contains PowerShell variable interpolation. |
 | `MALFORMED_COMMENT_UNCLOSED` | An HTML comment's opening `<!--` does not have a matching closing `-->`. |
 
-### 15.11 Inline asset block codes (§12)
+### 15.11 Inline style and script block codes (§12)
 
 | Code | Description |
 |---|---|
-| `FORBIDDEN_INLINE_STYLE_BLOCK` | A `<style>` block appears in HTML markup outside the §1.6 (access-denied page) and §9.5 (SVG-internal) carve-outs. |
+| `FORBIDDEN_INLINE_STYLE_BLOCK` | A `<style>` block appears in HTML markup outside the §9.5 (SVG-internal) carve-out. |
+| `FORBIDDEN_INLINE_STYLE_ATTRIBUTE` | An element carries an inline `style="..."` attribute. All styling lives in CSS files. |
 | `FORBIDDEN_INLINE_SCRIPT_BLOCK` | A `<script>` element contains body content (i.e., is not the asset reference form `<script src="..."></script>`). |
 
-### 15.13 Inline event handler codes (§12.13)
+### 15.12 Inline event handler codes (§12.13)
 
 | Code | Description |
 |---|---|
@@ -1639,7 +1665,10 @@ ORDER BY component_name, file_name;
 
 ### 16.5 Q5 — Engine card registry validation
 
-Which active scheduled processes lack engine card registration, or are registered to non-existent pages?
+Which active scheduled processes lack engine card registration, or are registered to non-existent pages? This is a registry-side data integrity check covering both directions:
+
+- `run_mode = 1` (active scheduled) rows missing any of the four cc-prefixed columns
+- `run_mode = 2` (queue processor) rows with any of the four cc-prefixed columns populated (queue processors do not appear on CC pages, so populated values indicate dirty registry data)
 
 ```sql
 SELECT
@@ -2097,13 +2126,17 @@ The two `<body>` attributes `data-page` and `data-prefix` exist to support the b
 
 The `#page-error-banner` placeholder gives the bootloader a DOM target for surfacing page-boot failures (script load errors, missing init functions, init function exceptions). Like the connection banner, it exists as an empty placeholder in markup and is populated at runtime by `cc-shared.js`. The placeholder's mandatory position (immediately after the connection banner) creates a predictable layout for users: connection state above the page, then any page-boot errors, then the page content below.
 
+The DOCTYPE strict-casing rule (only `<!DOCTYPE html>` is permitted) reflects a "one way only" stance applied throughout the spec. HTML allows several casings of the DOCTYPE token, but a spec that allowed multiple forms produces a catalog full of stylistically inconsistent rows that say the same thing. Mandating exactly one form means: the catalog is uniform, the populator's detection logic is simple, and any deviation is real drift worth flagging.
+
+The decision to remove all access-denied page carve-outs (§1.6) follows the same "no shortcuts, no half-measures" stance. A page that emits HTML must conform to the HTML spec. The access-denied page's special rendering context (it renders before authenticated resources are reachable) is real, but the spec's job is to govern markup shape regardless of rendering context. Exemptions for specific pages would establish a precedent that any page with a sufficiently special context can carve itself out — eroding the spec's authority over time. Cleaning up the access-denied page to comply with the standard page shell is the right resolution, not exempting it.
+
 ### A.2 Page chrome
 
 The exact-markup mandate for chrome elements (refresh button entity reference, live indicator structure, engine card four-element block) is the spec's "design inconsistency surfacer" working as intended. Variations like "Refresh data" vs "Refresh all data" vs "Reload" are real inconsistencies that the catalog must distinguish between conforming and non-conforming. Loosening the rules to "any reasonable refresh button" defeats the purpose: the catalog can't surface variation it doesn't see as variation.
 
 The engine card slug-from-registry rule (§2.3.3) makes ProcessRegistry the single source of truth for engine card identification. Without it, the slug exists in three places (registry, JS file, HTML IDs) and can drift between any of them. Tying all three to the registry value via cross-population rules ensures drift is detectable.
 
-The `run_mode`-based validation rules (active scheduled processes must have card registration; queue processors must not) leverage existing schema columns rather than adding new ones. The discriminator already exists; the spec just makes the catalog enforce it.
+The `run_mode`-based validation rules split into two complementary checks. Active scheduled processes (run_mode = 1) without engine card registration produce `MISSING_ENGINE_CARD_REGISTRATION` drift attached to their corresponding engine card in the HTML populator's catalog rows. Queue processors (run_mode = 2) with populated cc-prefixed columns are not engine cards — they have no HTML representation — so the HTML populator cannot attach drift to them. That violation is surfaced by Q5 in §16, which queries ProcessRegistry directly. Splitting the check this way matches the populator's actual capability: it can only attach drift to HTML rows it emits, and only emits rows for things that appear in HTML.
 
 ### A.4 ID conventions
 
@@ -2112,6 +2145,8 @@ The closed set for chrome IDs (§4.1) is small by design. Chrome IDs represent p
 The role-first ordering for slideout/modal/panel IDs (`<prefix>-slideout-<purpose>-overlay` rather than `<prefix>-<purpose>-slideout-overlay`) supports cross-page consistency queries: `LIKE 'bsv-slideout-%'` returns every slideout on a page; without role-first ordering, this query would need leading wildcards or lookups against tag-context.
 
 Panel purpose comments (§4.3.5) exist because slideouts/modals/panels are the constructs that vary most in messaging across pages. Different pages have different request slideouts, different detail modals, different alert panels. Comparison queries against `purpose_description` for these constructs surface what each page actually does.
+
+The contiguity rule for overlay panel declarations (§4.3.5) recognizes that slideouts, modals, and slide-up panels are conceptually outside the page's normal content flow. They float above the page when triggered by JavaScript, and the page's body content layout does not include them. Allowing overlay declarations to be sprinkled among section cards, layout containers, and other structural content blurs the conceptual separation and makes the markup harder to scan. Grouping every overlay declaration into one contiguous block — last in the body before the `<script>` tag — mirrors the conceptual separation in the markup itself. It also makes the panel-purpose-comment convention cleaner: one block of overlay declarations with one purpose comment per pair reads as a single unit, rather than as scattered notes throughout the file.
 
 ### A.5 Class attribute conventions
 
@@ -2136,6 +2171,8 @@ Action keys are scoped by event type rather than global to the page because the 
 The recognized event list (§6.4) is closed at 8 events: `click`, `change`, `input`, `submit`, `keydown`, `keyup`, `focus`, `blur`. Closed-list discipline serves the same purpose here as the chrome ID closed set (§4.1): adding a new event requires a spec amendment, a populator update, and (when the new event has a different shape than existing dispatchers handle) a bootloader update. The friction is intentional. The 8-event starting set covers the interactions Control Center pages typically wire up; new events are added as concrete needs surface during page conversions.
 
 The argument attribute pattern (`data-action-<arg-name>="<value>"`) gives the dispatch model a way to pass per-element data to the handler without resorting to per-element listener attachment. The handler receives a reference to the element via the dispatcher's `(target, event)` signature and reads arguments via `target.dataset.<arg>`. The argument name rule that arg names cannot collide with event names (§6.3.1's `ARGUMENT_NAME_COLLIDES_WITH_EVENT`) keeps the attribute name space unambiguous: looking at any `data-action-<word>` attribute, the populator can determine whether `<word>` is an event name (from the §6.4 closed set) or an argument name (anything else) without further context.
+
+The structural rule for helper argument attributes (§6.6) draws a line at one place: data the caller gave the helper is allowed, data the helper went and got on its own is not. PowerShell exposes caller-given data through `param()` declarations, and the populator can see foreach iterators over those parameters as the same data taking a different shape inside the function body. The forbidden side — script-scope, module-level, ambient state — is exactly what page coupling looks like in practice: a helper named `Get-NavBarHtml` should not be reading `$script:CurrentPageRoute` to decide what to emit, it should receive the current page route as a parameter and let the caller choose.
 
 ### A.7 data-* attribute conventions
 
