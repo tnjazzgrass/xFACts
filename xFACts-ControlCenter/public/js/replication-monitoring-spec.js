@@ -30,7 +30,6 @@
    FUNCTIONS: PAGE LIFECYCLE HOOKS
    ============================================================================ */
 
-
 /* ============================================================================
    CONSTANTS: ENGINE PROCESSES
    ----------------------------------------------------------------------------
@@ -49,7 +48,6 @@
 const ENGINE_PROCESSES = {
     'Collect-ReplicationHealth': { slug: 'replication' }
 };
-
 
 /* ============================================================================
    CONSTANTS: SECTION INFO TEXT
@@ -169,7 +167,6 @@ const rpm_INFO_ICON_MAPPINGS = [
     { title: 'Event Log', key: 'event-log' }
 ];
 
-
 /* ============================================================================
    CONSTANTS: CHART COLORS
    ----------------------------------------------------------------------------
@@ -192,7 +189,6 @@ const rpm_CHART_COLORS = {
 /* Fallback color for any publication not in rpm_CHART_COLORS. */
 const rpm_CHART_COLOR_FALLBACK = { line: '#888', fill: 'rgba(136, 136, 136, 0.08)' };
 
-
 /* ============================================================================
    CONSTANTS: THRESHOLD DEFAULTS
    ----------------------------------------------------------------------------
@@ -211,7 +207,6 @@ const rpm_THRESHOLD_DEFAULTS = {
     replication_latency_warning_ms:       30000,
     replication_latency_critical_ms:      120000
 };
-
 
 /* ============================================================================
    STATE: PAGE STATE
@@ -280,7 +275,6 @@ var rpm_thresholds = {
     replication_latency_critical_ms:      rpm_THRESHOLD_DEFAULTS.replication_latency_critical_ms
 };
 
-
 /* ============================================================================
    INITIALIZATION: PAGE BOOT
    ----------------------------------------------------------------------------
@@ -310,7 +304,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.body.addEventListener('click', rpm_onTimeButtonClick);
     document.getElementById('event-agent-filter').addEventListener('click', rpm_onEventAgentFilterClick);
 });
-
 
 /* ============================================================================
    FUNCTIONS: REFRESH
@@ -356,7 +349,6 @@ function rpm_startAutoRefresh() {
         }
     }, 60000);
 }
-
 
 /* ============================================================================
    FUNCTIONS: INFO PANEL
@@ -433,7 +425,6 @@ function rpm_onInfoIconClick(event) {
     if (!icon) return;
     rpm_openInfoPanel(icon.dataset.section);
 }
-
 
 /* ============================================================================
    FUNCTIONS: AGENT STATUS
@@ -601,7 +592,6 @@ function rpm_renderAgentCards(agents) {
 
     container.innerHTML = html;
 }
-
 
 /* ============================================================================
    FUNCTIONS: CHARTS
@@ -937,7 +927,6 @@ function rpm_onTimeButtonClick(event) {
     }
 }
 
-
 /* ============================================================================
    FUNCTIONS: EVENT LOG
    ----------------------------------------------------------------------------
@@ -1095,7 +1084,6 @@ function rpm_buildEventRows(events) {
     return html;
 }
 
-
 /* ============================================================================
    FUNCTIONS: HELPERS
    ----------------------------------------------------------------------------
@@ -1213,7 +1201,6 @@ function rpm_clearError() {
     if (!el) return;
     el.classList.remove('visible');
 }
-
 
 /* ============================================================================
    FUNCTIONS: PAGE LIFECYCLE HOOKS
