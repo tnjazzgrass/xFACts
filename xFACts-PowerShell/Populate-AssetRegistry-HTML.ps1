@@ -81,7 +81,7 @@
 .NOTES
     File Name : Populate-AssetRegistry-HTML.ps1
     Location  : E:\xFACts-PowerShell
-    Version   : Tracked in dbo.System_Metadata (component: ControlCenter.AssetRegistry)
+    Version   : Tracked in dbo.System_Metadata (component: Tools.Utilities)
 #>
 
 [CmdletBinding()]
