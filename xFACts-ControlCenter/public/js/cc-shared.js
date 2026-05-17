@@ -185,21 +185,41 @@ var engineIdleCheckTimer = null;
 const RECOGNIZED_EVENTS = ['click', 'change', 'input', 'submit',
                            'keydown', 'keyup', 'focus', 'blur'];
 
-/* Shared chrome action dispatch tables, one per recognized event. Each
-   table maps cc-* data-action-<event> values to handler functions
-   exposed by other sections of this file. Tables grow as new shared
-   actions are introduced; entries are added one at a time as pages
-   surface concrete needs. */
+/* Shared chrome click-action dispatch table. Maps cc-* data-action-click
+   values to handler functions exposed by other sections of this file.
+   Entries are added one at a time as pages surface concrete needs. */
 const sharedClickActions = {
     'cc-page-refresh': pageRefresh,
     'cc-reload-page':  reloadPage
 };
+
+/* Shared chrome change-action dispatch table. Parallel to sharedClickActions
+   but routes data-action-change values. Currently empty; entries are added
+   one at a time as concrete needs surface. */
 const sharedChangeActions  = {};
+
+/* Shared chrome input-action dispatch table. Parallel to sharedClickActions
+   but routes data-action-input values. Currently empty. */
 const sharedInputActions   = {};
+
+/* Shared chrome submit-action dispatch table. Parallel to sharedClickActions
+   but routes data-action-submit values. Currently empty. */
 const sharedSubmitActions  = {};
+
+/* Shared chrome keydown-action dispatch table. Parallel to sharedClickActions
+   but routes data-action-keydown values. Currently empty. */
 const sharedKeydownActions = {};
+
+/* Shared chrome keyup-action dispatch table. Parallel to sharedClickActions
+   but routes data-action-keyup values. Currently empty. */
 const sharedKeyupActions   = {};
+
+/* Shared chrome focus-action dispatch table. Parallel to sharedClickActions
+   but routes data-action-focus values. Currently empty. */
 const sharedFocusActions   = {};
+
+/* Shared chrome blur-action dispatch table. Parallel to sharedClickActions
+   but routes data-action-blur values. Currently empty. */
 const sharedBlurActions    = {};
 
 /* Lookup of event name to its shared dispatch table. Used by
@@ -252,13 +272,13 @@ function registerSharedActionListeners() {
 function loadPageModule(pageKey, prefix) {
     const script = document.createElement('script');
     script.src = '/js/' + pageKey + '.js';
-    script.onload = function() {
+    script.addEventListener('load', function() {
         invokePageInit(pageKey, prefix);
-    };
-    script.onerror = function() {
+    });
+    script.addEventListener('error', function() {
         renderPageError('Page module failed to load.');
         console.error('[cc-shared] Failed to load page module: /js/' + pageKey + '.js');
-    };
+    });
     document.head.appendChild(script);
 }
 
