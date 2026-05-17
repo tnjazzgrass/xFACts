@@ -2493,8 +2493,20 @@
                         "category":  "Utilities"
                     },
                     {
+                        "name":  "Populate-AssetRegistry-HTML.ps1",
+                        "description":  "Asset_Registry parser pipeline component for HTML markup embedded in PowerShell files. Walks every .ps1 and .psm1 file under the Control Center route and helper directories, identifies HTML-emitting constructs, and emits one Asset_Registry row per cataloged HTML construct. Validates each row against CC_HTML_Spec.md rules and attaches drift codes for any deviation.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
                         "name":  "Populate-AssetRegistry-JS.ps1",
                         "description":  "Asset_Registry parser pipeline component for JavaScript source files. Walks every JS file in the Control Center codebase, parses each via the parse-js.js Node helper, and emits Asset_Registry rows for both JS code constructs and HTML markup found inside template strings. Validates each row against CC_JS_Spec.md rules and attaches drift codes for any deviation.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
+                        "name":  "Populate-AssetRegistry-PS.ps1",
+                        "description":  "Asset_Registry parser pipeline component for PowerShell source files. Walks every .ps1 and .psm1 file under the xFACts PowerShell roots, parses each via the native PowerShell AST, and emits one Asset_Registry row per cataloged construct. Validates each row against CC_PS_Spec.md rules and attaches drift codes for any deviation.",
                         "module":  "Tools",
                         "category":  "Utilities"
                     },
