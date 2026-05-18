@@ -6,6 +6,23 @@
 
 ---
 
+## Spec Authoring Conventions
+
+*This section governs how this spec is written. It applies to every section and every edit.*
+
+1. **Rules state what, not why.** Each rule is a short declarative statement of the requirement. No rationale, explanation, or background in the rule itself.
+2. **One rule per bullet, where possible.** Numbered or bulleted lists make rules scannable. Prose paragraphs are reserved for cases where a single rule genuinely requires more than a sentence.
+3. **No introductory framing.** Section headings introduce what the section governs; the section body goes straight to rules. Paragraphs like "This section addresses X because Y" or "The purpose of these rules is Z" do not belong in the body.
+4. **Rationale lives in the Appendix.** Where a rule's reasoning is worth recording, it goes in the Appendix at the corresponding section number. Most rules do not need a rationale entry.
+5. **Drift codes live in a consolidated reference at the end of the spec, not inline with rules.** Each rule states the requirement only. The drift codes section (§18) maps each code to its rule section and description in the format `Code | Section | Description`. A rule that has a drift code is implicitly enforceable; the code is documented in the reference.
+6. **Examples earn their place.** A code block illustrating a rule should be the shortest form that conveys the rule. Multi-example blocks belong in the spec's Examples section, not inline with rules.
+7. **No status, history, or progress information.** The spec describes rules. What the codebase does today, what was added when, and what is planned live elsewhere.
+8. **Inline SQL or script query blocks do not belong in the spec.** Operational queries live in Object_Metadata `common_queries` on the relevant script. The spec references the script; it does not contain executable queries.
+
+*New content added to this spec conforms to these conventions immediately. Existing sections may contain prose that predates these conventions and will be cleaned up in a dedicated pass.*
+
+---
+
 ## 1. Required structure
 
 A PowerShell file consists of three parts in this exact order:
@@ -157,7 +174,7 @@ When adding new content to a file, prefer creating a new banner over expanding a
 | `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list for the file role (Section 4). |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of the required order (Section 4.3). |
 | `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
-| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
+| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than the registered page prefix or `(none)`. |
 | `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
 
 ---
@@ -229,20 +246,20 @@ Every section banner declares a single prefix via the `Prefix:` line. Every top-
 
 ### 5.1 Prefix selection rules
 
-The prefix is a 3-character lowercase identifier and is the same prefix used by the file's component in `Component_Registry.cc_prefix`. The separator after the prefix is an underscore (`_`).
+The prefix is the value of `Component_Registry.cc_prefix` for the file's component. The separator after the prefix is an underscore (`_`). The registry is the source of truth for prefix shape — the spec does not constrain prefix length or character set.
 
-### 5.2 Special values
+### 5.2 Special value: `(none)`
 
-- `Prefix: (none)` — sentinel value. Declares the section has no prefix scoping. Used by:
-  - All sections in shared-library files (their component has `cc_prefix = NULL`)
-  - All sections in CC-shared module files (their component has `cc_prefix = NULL`)
-  - The `CHANGELOG`, `IMPORTS`, `PARAMETERS`, `INITIALIZATION`, `ROUTE`, and `EXPORTS` sections in any file role (these contain no prefixable identifiers)
+`Prefix: (none)` is a sentinel value declaring that the section contains no prefixable identifiers. The PS spec retains this sentinel because PowerShell has structural cases — unique to PS among the four file-format specs — where no identifier-prefix discipline applies:
 
-The `Prefix:` line itself is mandatory regardless of value. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
+- **Section types that contain no prefixable identifiers.** CHANGELOG entries are dates; IMPORTS are dot-source statements; PARAMETERS is a single `param()` block; INITIALIZATION is bootstrap calls; ROUTE registrations contain anonymous ScriptBlocks; EXPORTS is a single `Export-ModuleMember`. None of these contain top-level identifiers the spec validates. The Prefix line in these section types declares `(none)`.
+- **Files whose component has `cc_prefix = NULL`.** Shared-library files (`xFACts-*.ps1`) and shared-module files (the platform's `cc_prefix = NULL` components) contain PowerShell functions named according to the standard `Verb-Noun` convention (`Get-PageBrowserTitle`, `Initialize-XFActsScript`). These names follow PowerShell ecosystem rules, not the platform's prefix discipline. Every section in these files declares `Prefix: (none)`.
+
+The `Prefix:` line is mandatory regardless of value. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
 
 ### 5.3 Single prefix per banner
 
-Each banner declares exactly one prefix or `(none)`. Multiple comma-separated prefixes are not permitted. Drift code if a banner declares anything other than a single 3-character prefix or `(none)`: `MALFORMED_PREFIX_VALUE`.
+Each banner declares exactly one prefix or `(none)`. Multiple comma-separated prefixes are not permitted. Drift code if a banner declares anything other than the registered page prefix or `(none)`: `MALFORMED_PREFIX_VALUE`.
 
 ### 5.4 Registry validation
 
@@ -1078,7 +1095,7 @@ Each row may carry one or more drift codes in `drift_codes` (comma-delimited str
 | `DUPLICATE_SINGULAR_SECTION` | A section type that must appear exactly once appears multiple times. |
 | `MALFORMED_SINGULAR_NAME` | A singleton section's NAME differs from the required generic NAME for its role. |
 | `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
-| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
+| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than the registered page prefix or `(none)`. |
 | `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
 
 ### 18.3 CHANGELOG codes
@@ -1433,13 +1450,14 @@ Add-PodeRoute -Method Get -Path '/example' -Authentication 'ADLogin' -ScriptBloc
     <link rel="stylesheet" href="/css/example.css">
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body data-page="example" data-prefix="exa">
+<body class="cc-section-platform" data-cc-page="example" data-cc-prefix="exa">
 $navHtml
-    <div class="header-bar">
+    <div class="cc-header-bar">
         <div>$headerHtml</div>
     </div>
-    <div id="page-error-banner" class="page-error-banner"></div>
-    <div class="example-content">
+    <div id="cc-connection-banner" class="cc-connection-banner"></div>
+    <div id="cc-page-error-banner" class="cc-page-error-banner"></div>
+    <div class="exa-content">
         <!-- page content here -->
     </div>
     <script src="/js/cc-shared.js"></script>
@@ -1841,11 +1859,19 @@ The role of api-route receiving no CHANGELOG warrants explanation: api-routes ar
 
 ### A.5 Prefix
 
-The 3-character prefix length is shared with CSS and JS. Same component, same prefix value across all file types belonging to the component — a single discipline that makes class names, function names, and IDs immediately recognizable as belonging to their owning component.
+The prefix value comes from `Component_Registry.cc_prefix`. The same component carries the same prefix across all file types (CSS, HTML, JS, PS), making class names, function names, and IDs immediately recognizable as belonging to their owning component. The registry governs prefix shape — the spec does not constrain length or character set, since the registry is the single source of truth.
 
 The underscore separator (`<prefix>_<base>`) differs from CSS's hyphen separator (`<prefix>-<base>`). PowerShell identifiers cannot contain hyphens at the top level of an unquoted name, so the underscore is the natural choice — and it matches JS's underscore convention for the same reason.
 
-The registry validation rule (Section 5.4) makes `Component_Registry.cc_prefix` the source of truth for which prefix belongs to which component. The same mechanism is used by CSS and JS specs to detect drift between authored prefix values and the platform's registered understanding.
+The registry validation rule (§5.4) makes `Component_Registry.cc_prefix` the source of truth for which prefix belongs to which component. The same mechanism is used by CSS and JS specs to detect drift between authored prefix values and the platform's registered understanding.
+
+The PS spec retains the `(none)` sentinel even though the CSS and JS specs eliminated it. This is not an exemption; it reflects two genuine structural differences between PowerShell and the other three file types:
+
+First, PowerShell has section types whose contents are not prefixable identifiers. CHANGELOG entries are dates, IMPORTS are dot-sources, ROUTE registrations are anonymous ScriptBlocks, EXPORTS is a single `Export-ModuleMember` call. There is nothing to validate against a prefix in these sections, and the `(none)` sentinel marks the absence explicitly.
+
+Second, PowerShell has language-level naming conventions (Verb-Noun) that conflict with the platform's prefix model. Functions in shared-library files (`xFACts-*.ps1`) and CC-shared modules follow PowerShell ecosystem conventions — `Get-PageBrowserTitle`, `Initialize-XFActsScript` — because PowerShell tooling (tab completion, `Get-Command`, `Get-Verb` validation) depends on Verb-Noun. Renaming these to `cc_GetPageBrowserTitle` would break PowerShell idiom and tooling. The `(none)` sentinel marks files where the platform's prefix discipline yields to the language's own naming convention.
+
+Neither of these situations exists in CSS, HTML, or JS, where every identifier is custom-named by the author and the platform freely chooses the convention. The unified prefix model in those three file types fits naturally; in PS it would conflict with the language. The PS spec preserves PowerShell idiomatic naming for shared-library code, and uses `(none)` as the structural marker for both cases above.
 
 ### A.7 CHANGELOG section
 
