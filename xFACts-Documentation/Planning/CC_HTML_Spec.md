@@ -8,6 +8,23 @@
 
 ---
 
+## Spec Authoring Conventions
+
+*This section governs how this spec is written. It applies to every section and every edit.*
+
+1. **Rules state what, not why.** Each rule is a short declarative statement of the requirement. No rationale, explanation, or background in the rule itself.
+2. **One rule per bullet, where possible.** Numbered or bulleted lists make rules scannable. Prose paragraphs are reserved for cases where a single rule genuinely requires more than a sentence.
+3. **No introductory framing.** Section headings introduce what the section governs; the section body goes straight to rules. Paragraphs like "This section addresses X because Y" or "The purpose of these rules is Z" do not belong in the body.
+4. **Rationale lives in the Appendix.** Where a rule's reasoning is worth recording, it goes in the Appendix at the corresponding section number. Most rules do not need a rationale entry.
+5. **Drift codes live in a consolidated reference at the end of the spec, not inline with rules.** Each rule states the requirement only. The drift codes section (§15) maps each code to its rule section and description in the format `Code | Section | Description`. A rule that has a drift code is implicitly enforceable; the code is documented in the reference.
+6. **Examples earn their place.** A code block illustrating a rule should be the shortest form that conveys the rule. Multi-example blocks belong in the spec's Examples section, not inline with rules.
+7. **No status, history, or progress information.** The spec describes rules. What the codebase does today, what was added when, and what is planned live elsewhere.
+8. **Inline SQL or script query blocks do not belong in the spec.** Operational queries live in Object_Metadata `common_queries` on the relevant script. The spec references the script; it does not contain executable queries.
+
+*New content added to this spec conforms to these conventions immediately. Existing sections may contain prose that predates these conventions and will be cleaned up in a dedicated pass.*
+
+---
+
 ## 1. Required structure
 
 HTML in the Control Center is emitted from PowerShell route files (`*.ps1` in `scripts/routes/`) and from helper module functions (`*.psm1` in `scripts/modules/`). HTML does not exist as standalone `.html` files. Every HTML construct in the codebase appears inside a PowerShell string token — typically a here-string assigned to a `$html` variable that is then passed to `Write-PodeHtmlResponse`, or a string built up via `System.Text.StringBuilder` inside a helper function.
@@ -26,7 +43,7 @@ Every page route emits HTML conforming to this shape, in this exact order:
     <link rel="stylesheet" href="/css/<page>.css">
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body class="section-<sectionKey>" data-page="<slug>" data-prefix="<prefix>">
+<body class="cc-section-<sectionKey>" data-cc-page="<slug>" data-cc-prefix="<prefix>">
 $navHtml
 
     <!-- page header bar -->
@@ -44,9 +61,9 @@ $navHtml
 - The HTML document opens with `<!DOCTYPE html>` on its own line. The DOCTYPE token is exactly `<!DOCTYPE html>` — uppercase keyword, lowercase tag name. All other casings (`<!doctype html>`, `<!Doctype html>`, `<!DOCTYPE HTML>`, etc.) are forbidden. Drift code: `MALFORMED_DOCTYPE`.- The root element is `<html>` with no attributes. Drift code: `MALFORMED_HTML_ROOT`.
 - The `<head>` contains exactly these elements, in this order: one `<title>` element, one or more `<link rel="stylesheet">` elements per Section 3, and nothing else. Drift code: `MALFORMED_HEAD`.
 - The `<title>` element's content is the value of the `$browserTitle` PowerShell variable, sourced from `Get-PageBrowserTitle`. Drift code: `FORBIDDEN_HARDCODED_TITLE`.
-- The `<body>` element opens with a `class="section-<sectionKey>"` attribute, where `<sectionKey>` matches the page's `RBAC_NavSection.section_key` value. Drift code: `MISSING_BODY_SECTION_CLASS`.
-- The `<body>` element declares a `data-page="<slug>"` attribute, where `<slug>` matches the page's URL slug (lowercase, hyphen-separated, derived from the rightmost path segment of the page route). Drift code: `MISSING_DATA_PAGE`.
-- The `<body>` element declares a `data-prefix="<prefix>"` attribute, where `<prefix>` matches the page's `cc_prefix` from `Component_Registry`. Drift code: `MISSING_DATA_PREFIX`.
+- The `<body>` element opens with a `class="cc-section-<sectionKey>"` attribute, where `<sectionKey>` matches the page's `RBAC_NavSection.section_key` value. Drift code: `MISSING_BODY_SECTION_CLASS`.
+- The `<body>` element declares a `data-cc-page="<slug>"` attribute, where `<slug>` matches the page's URL slug (lowercase, hyphen-separated, derived from the rightmost path segment of the page route). Drift code: `MISSING_DATA_CC_PAGE`.
+- The `<body>` element declares a `data-cc-prefix="<prefix>"` attribute, where `<prefix>` matches the page's `cc_prefix` from `Component_Registry`. Drift code: `MISSING_DATA_CC_PREFIX`.
 - The first content inside `<body>` is the `$navHtml` substitution, sourced from `Get-NavBarHtml`. Drift code: `MISSING_NAV_SUBSTITUTION`.
 - The last content inside `<body>` before `</body>` is the `<script>` tag per Section 3. Drift code: `MALFORMED_BODY_CLOSE`.
 
@@ -55,17 +72,17 @@ $navHtml
 Between `$navHtml` and the `<script>` tag, the body contains page content in this implicit order:
 
 1. The page header bar — a single block containing the page title (via `$headerHtml` substitution) and refresh chrome (live indicator, last-updated timestamp, page refresh button, optional engine cards per Section 2).
-2. The connection banner placeholder — a single `<div id="connection-banner" class="connection-banner"></div>` element with no content.
-3. The page error banner placeholder — a single `<div id="page-error-banner" class="page-error-banner"></div>` element with no content.
+2. The connection banner placeholder — a single `<div id="cc-connection-banner" class="cc-connection-banner"></div>` element with no content.
+3. The page error banner placeholder — a single `<div id="cc-page-error-banner" class="cc-page-error-banner"></div>` element with no content.
 4. The page-specific content — any number of layout containers, sections, slideouts, modals, or other page-level constructs.
 
 ### 1.4 Body content rules
 
 - The page header bar is the first content element after `$navHtml`. Drift code: `MISSING_HEADER_BAR`.
 - The page header bar contains exactly one `$headerHtml` substitution, sourced from `Get-PageHeaderHtml`. Drift code: `FORBIDDEN_HARDCODED_PAGE_HEADER`.
-- The connection banner placeholder appears exactly once per page, with `id="connection-banner"` and `class="connection-banner"`. Drift code: `MISSING_CONNECTION_BANNER` if absent.
+- The connection banner placeholder appears exactly once per page, with `id="cc-connection-banner"` and `class="cc-connection-banner"`. Drift code: `MISSING_CONNECTION_BANNER` if absent.
 - The connection banner placeholder is empty — no content between the opening and closing tags. Drift code: `FORBIDDEN_BANNER_CONTENT`.
-- The page error banner placeholder appears exactly once per page, with `id="page-error-banner"` and `class="page-error-banner"`. Drift code: `MISSING_PAGE_ERROR_BANNER` if absent.
+- The page error banner placeholder appears exactly once per page, with `id="cc-page-error-banner"` and `class="cc-page-error-banner"`. Drift code: `MISSING_PAGE_ERROR_BANNER` if absent.
 - The page error banner placeholder is empty — no content between the opening and closing tags. Drift code: `FORBIDDEN_PAGE_ERROR_BANNER_CONTENT`.
 - The page error banner placeholder appears immediately after the connection banner placeholder. Drift code: `PAGE_ERROR_BANNER_ORDER_VIOLATION`.
 - Page-specific content begins after the page error banner placeholder.
@@ -93,23 +110,23 @@ The page header bar appears as the first content element after `$navHtml`. The h
 The header bar's outer structure is exactly:
 
 ```
-<div class="header-bar">
+<div class="cc-header-bar">
     <div>
         $headerHtml
     </div>
-    <div class="header-right">
-        <div class="refresh-info">...</div>
-        <div class="engine-row">...</div>     ← optional, see §2.3
+    <div class="cc-header-right">
+        <div class="cc-refresh-info">...</div>
+        <div class="cc-engine-row">...</div>     ← optional, see §2.3
     </div>
 </div>
 ```
 
 #### 2.1.1 Header bar rules
 
-- The outer container is exactly `<div class="header-bar">`. Drift code: `MALFORMED_HEADER_BAR_CONTAINER`.
-- The first child of `header-bar` is exactly `<div>` (no class) containing only the `$headerHtml` substitution. Drift code: `MALFORMED_HEADER_BAR_LEFT`.
-- The second child of `header-bar` is exactly `<div class="header-right">`. Drift code: `MALFORMED_HEADER_BAR_RIGHT`.
-- `header-right` contains exactly `<div class="refresh-info">` followed optionally by `<div class="engine-row">`. No other children are permitted. Drift code: `MALFORMED_HEADER_RIGHT_CHILDREN`.
+- The outer container is exactly `<div class="cc-header-bar">`. Drift code: `MALFORMED_HEADER_BAR_CONTAINER`.
+- The first child of `cc-header-bar` is exactly `<div>` (no class) containing only the `$headerHtml` substitution. Drift code: `MALFORMED_HEADER_BAR_LEFT`.
+- The second child of `cc-header-bar` is exactly `<div class="cc-header-right">`. Drift code: `MALFORMED_HEADER_BAR_RIGHT`.
+- `cc-header-right` contains exactly `<div class="cc-refresh-info">` followed optionally by `<div class="cc-engine-row">`. No other children are permitted. Drift code: `MALFORMED_HEADER_RIGHT_CHILDREN`.
 
 ### 2.2 Refresh info block
 
@@ -118,65 +135,67 @@ The refresh info block contains the live indicator dot, the live-update status l
 The refresh info block's markup is exactly:
 
 ```
-<div class="refresh-info">
-    <span class="live-indicator"></span>
-    <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-    <button class="page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
+<div class="cc-refresh-info">
+    <span class="cc-live-indicator"></span>
+    <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+    <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
 </div>
 ```
 
 #### 2.2.1 Refresh info rules
 
-- The outer container is exactly `<div class="refresh-info">`. Drift code: `MALFORMED_REFRESH_INFO_CONTAINER`.
-- The first child is exactly `<span class="live-indicator"></span>`. The element is empty (no content). Drift code: `MALFORMED_LIVE_INDICATOR`.
-- The status line is exactly `<span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>`. The literal text `| Updated: ` between the two spans is required. The `last-update` span's content is exactly the literal `-`. Drift code: `MALFORMED_LIVE_STATUS_LINE`.
-- The page refresh button is exactly `<button class="page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>`. Class, `data-action-click` value, title, and entity reference are mandated verbatim. Drift code: `MALFORMED_REFRESH_BUTTON`.
-- The `last-update` ID is the canonical chrome ID for the last-update timestamp. It appears exactly once per page. Drift code: `DUPLICATE_LAST_UPDATE_ID`.
+- The outer container is exactly `<div class="cc-refresh-info">`. Drift code: `MALFORMED_REFRESH_INFO_CONTAINER`.
+- The first child is exactly `<span class="cc-live-indicator"></span>`. The element is empty (no content). Drift code: `MALFORMED_LIVE_INDICATOR`.
+- The status line is exactly `<span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>`. The literal text `| Updated: ` between the two spans is required. The `cc-last-update` span's content is exactly the literal `-`. Drift code: `MALFORMED_LIVE_STATUS_LINE`.
+- The page refresh button is exactly `<button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>`. Class, `data-action-click` value, title, and entity reference are mandated verbatim. Drift code: `MALFORMED_REFRESH_BUTTON`.
+- The `cc-last-update` ID is the canonical chrome ID for the last-update timestamp. It appears exactly once per page. Drift code: `DUPLICATE_LAST_UPDATE_ID`.
 
 ### 2.3 Engine cards
 
-A page that consumes engine events from the orchestrator displays engine cards inside the header bar. Engine cards are optional — pages without orchestrator-driven content omit the entire `engine-row` block. Pages with engine cards must conform exactly to the rules in this section.
+A page that consumes engine events from the orchestrator displays engine cards inside the header bar. Engine cards are optional — pages without orchestrator-driven content omit the entire `cc-engine-row` block. Pages with engine cards must conform exactly to the rules in this section.
 
 The engine row's markup is exactly:
 
 ```
-<div class="engine-row">
-    <div class="engine-card" id="card-engine-<slug>">
-        <span class="engine-label">LABEL</span>
-        <div class="engine-bar disabled" id="engine-bar-<slug>"></div>
-        <span class="engine-countdown" id="engine-cd-<slug>">&nbsp;</span>
+<div class="cc-engine-row">
+    <div class="cc-engine-card" id="cc-card-engine-<slug>">
+        <span class="cc-engine-label">LABEL</span>
+        <div class="cc-engine-bar disabled" id="cc-engine-bar-<slug>"></div>
+        <span class="cc-engine-countdown" id="cc-engine-cd-<slug>">&nbsp;</span>
     </div>
-    <div class="engine-card" id="card-engine-<slug>">
+    <div class="cc-engine-card" id="cc-card-engine-<slug>">
         ...
     </div>
     ...
 </div>
 ```
 
+The `disabled` token on the bar element is a compound modifier class (defined in `cc-shared.css` only as `.cc-engine-bar.disabled`) and is exempt from the `cc-` prefix rule per §5.1.1. JavaScript toggles `disabled` on/off as engine state changes.
+
 #### 2.3.1 Engine row rules
 
-- The outer container is exactly `<div class="engine-row">`. Drift code: `MALFORMED_ENGINE_ROW_CONTAINER`.
-- The engine row contains one or more `engine-card` children, in declaration order matching `Orchestrator.ProcessRegistry.cc_sort_order` for the page's process set. Drift code: `ENGINE_CARD_ORDER_MISMATCH`.
+- The outer container is exactly `<div class="cc-engine-row">`. Drift code: `MALFORMED_ENGINE_ROW_CONTAINER`.
+- The engine row contains one or more `cc-engine-card` children, in declaration order matching `Orchestrator.ProcessRegistry.cc_sort_order` for the page's process set. Drift code: `ENGINE_CARD_ORDER_MISMATCH`.
 - The engine row contains no other children. Drift code: `MALFORMED_ENGINE_ROW_CHILDREN`.
 
 #### 2.3.2 Engine card rules
 
 - Each engine card's structure is exactly the four-element block shown above: card div, label span, bar div, countdown span. Drift code: `MALFORMED_ENGINE_CARD`.
-- The card div has exactly the classes `engine-card` (no others) and the ID `card-engine-<slug>`. Drift code: `MALFORMED_ENGINE_CARD_ATTRIBUTES`.
-- The label span has exactly the class `engine-label` and contains the engine label text from `Orchestrator.ProcessRegistry.cc_engine_label`. Drift code: `MALFORMED_ENGINE_LABEL`.
-- The bar div has exactly the classes `engine-bar disabled` and the ID `engine-bar-<slug>`. The element is empty (no content). Drift code: `MALFORMED_ENGINE_BAR`.
-- The countdown span has exactly the class `engine-countdown` and the ID `engine-cd-<slug>`. The element's content is exactly the entity reference `&nbsp;`. Drift code: `MALFORMED_ENGINE_COUNTDOWN`.
+- The card div has exactly the classes `cc-engine-card` (no others) and the ID `cc-card-engine-<slug>`. Drift code: `MALFORMED_ENGINE_CARD_ATTRIBUTES`.
+- The label span has exactly the class `cc-engine-label` and contains the engine label text from `Orchestrator.ProcessRegistry.cc_engine_label`. Drift code: `MALFORMED_ENGINE_LABEL`.
+- The bar div has exactly the classes `cc-engine-bar disabled` and the ID `cc-engine-bar-<slug>`. The element is empty (no content). Drift code: `MALFORMED_ENGINE_BAR`.
+- The countdown span has exactly the class `cc-engine-countdown` and the ID `cc-engine-cd-<slug>`. The element's content is exactly the entity reference `&nbsp;`. Drift code: `MALFORMED_ENGINE_COUNTDOWN`.
 
 #### 2.3.3 Engine slug registry sourcing
 
-The `<slug>` value used in the three IDs (`card-engine-<slug>`, `engine-bar-<slug>`, `engine-cd-<slug>`) is sourced from `Orchestrator.ProcessRegistry.cc_engine_slug` for the orchestrator process the card represents.
+The `<slug>` value used in the three IDs (`cc-card-engine-<slug>`, `cc-engine-bar-<slug>`, `cc-engine-cd-<slug>`) is sourced from `Orchestrator.ProcessRegistry.cc_engine_slug` for the orchestrator process the card represents.
 
 The four cc-prefixed columns on ProcessRegistry govern engine card display:
 
 | Column | Purpose |
 |---|---|
 | `cc_engine_slug` | The slug used in card IDs (e.g., `nb`, `pmt`, `collect`). |
-| `cc_engine_label` | The text shown in the `engine-label` span (e.g., `NB`, `PMT`, `Collect`). |
+| `cc_engine_label` | The text shown in the `cc-engine-label` span (e.g., `NB`, `PMT`, `Collect`). |
 | `cc_page_route` | The page route on which this process appears as an engine card. |
 | `cc_sort_order` | The display order of the card within the page's engine row. |
 
@@ -190,19 +209,19 @@ The `run_mode` column on ProcessRegistry determines whether the four cc-prefixed
 
 The HTML populator validates the slug used in engine card IDs against `Orchestrator.ProcessRegistry.cc_engine_slug` for the process the card represents.
 
-- The `<slug>` value in `card-engine-<slug>`, `engine-bar-<slug>`, and `engine-cd-<slug>` must match the `cc_engine_slug` registered for the corresponding process. Drift code: `ENGINE_SLUG_REGISTRY_MISMATCH`.
-- The label text inside the `engine-label` span must match the `cc_engine_label` registered for the corresponding process. Drift code: `ENGINE_LABEL_REGISTRY_MISMATCH`.
+- The `<slug>` value in `cc-card-engine-<slug>`, `cc-engine-bar-<slug>`, and `cc-engine-cd-<slug>` must match the `cc_engine_slug` registered for the corresponding process. Drift code: `ENGINE_SLUG_REGISTRY_MISMATCH`.
+- The label text inside the `cc-engine-label` span must match the `cc_engine_label` registered for the corresponding process. Drift code: `ENGINE_LABEL_REGISTRY_MISMATCH`.
 - The page emitting the engine card must match the process's `cc_page_route`. Drift code: `ENGINE_CARD_PAGE_MISMATCH`.
 
 Additional validations of the JS-side `ENGINE_PROCESSES` declaration against the registry are governed by the JavaScript spec, not this spec. Those drift codes are emitted by the JS populator on rows with `file_type = 'JS'`.
 
 ### 2.4 Connection banner placeholder
 
-The connection banner placeholder is governed by §1.4 (an empty `<div>` with `id="connection-banner"` and `class="connection-banner"`, appearing exactly once per page). The banner's content is rendered at runtime by `cc-shared.js` based on WebSocket connection state. The placeholder element exists only as a DOM target for the runtime.
+The connection banner placeholder is governed by §1.4 (an empty `<div>` with `id="cc-connection-banner"` and `class="cc-connection-banner"`, appearing exactly once per page). The banner's content is rendered at runtime by `cc-shared.js` based on WebSocket connection state. The placeholder element exists only as a DOM target for the runtime.
 
 ### 2.5 Page error banner placeholder
 
-The page error banner placeholder is governed by §1.4 (an empty `<div>` with `id="page-error-banner"` and `class="page-error-banner"`, appearing exactly once per page, immediately after the connection banner placeholder). The banner's content is rendered at runtime by `cc-shared.js` when page module loading or initialization fails. The placeholder element exists only as a DOM target for the runtime.
+The page error banner placeholder is governed by §1.4 (an empty `<div>` with `id="cc-page-error-banner"` and `class="cc-page-error-banner"`, appearing exactly once per page, immediately after the connection banner placeholder). The banner's content is rendered at runtime by `cc-shared.js` when page module loading or initialization fails. The placeholder element exists only as a DOM target for the runtime.
 
 ---
 
@@ -235,7 +254,7 @@ Exactly one JavaScript file is referenced in HTML markup, via a single `<script>
 <script src="/js/cc-shared.js"></script>
 ```
 
-The page-specific JS file (e.g., `/js/batch-monitoring.js`) is loaded dynamically by the bootloader in `cc-shared.js` based on the `data-page` attribute (§1.2). It does not appear in HTML markup as a `<script>` tag and is not catalogued as a `JS_FILE USAGE` row from HTML.
+The page-specific JS file (e.g., `/js/batch-monitoring.js`) is loaded dynamically by the bootloader in `cc-shared.js` based on the `data-cc-page` attribute (§1.2). It does not appear in HTML markup as a `<script>` tag and is not catalogued as a `JS_FILE USAGE` row from HTML.
 
 #### 3.2.1 JS reference rules
 
@@ -247,9 +266,9 @@ The page-specific JS file (e.g., `/js/batch-monitoring.js`) is loaded dynamicall
 
 ### 3.3 Asset path mapping
 
-The `<page>` placeholder in CSS reference paths and the `data-page` attribute value both match the page's URL slug:
+The `<page>` placeholder in CSS reference paths and the `data-cc-page` attribute value both match the page's URL slug:
 
-| Page route | CSS path | `data-page` value |
+| Page route | CSS path | `data-cc-page` value |
 |---|---|---|
 | `/batch-monitoring` | `/css/batch-monitoring.css` | `batch-monitoring` |
 | `/departmental/business-services` | `/css/business-services.css` | `business-services` |
@@ -273,7 +292,18 @@ Helper module functions that emit HTML fragments (e.g., `Get-NavBarHtml`, `Get-P
 
 ## 4. ID conventions
 
-Element IDs are unique identifiers assigned via the `id="..."` attribute. IDs serve as DOM lookup targets for JavaScript (`getElementById`), CSS hooks for chrome elements, and ARIA reference anchors. Every ID on a page falls into one of two categories: chrome IDs (mandated platform-wide identifiers) or page-local IDs (page-author-defined identifiers scoped to a single page).
+Element IDs are unique identifiers assigned via the `id="..."` attribute. IDs serve as DOM lookup targets for JavaScript (`getElementById`), CSS hooks for chrome elements, and ARIA reference anchors.
+
+### 4.0 Unified prefix rule
+
+Every identifier in xFACts HTML markup — every ID, every page-local CSS class name, and every page-emitted `data-*` attribute name — carries a prefix indicating its source. The prefix is either:
+
+- The page's `cc_prefix` from `Component_Registry` (e.g., `bkp`, `bsv`, `bch`) for page-local identifiers, or
+- The literal token `cc-` for platform-shared chrome identifiers.
+
+Every ID, class, and page-emitted data-attribute name begins with one of these two prefixes followed by a hyphen. An identifier with neither prefix is drift. Drift code: `MISSING_PREFIX_ID` (for IDs), `CLASS_PREFIX_MISMATCH` (for classes), `MALFORMED_DATA_ATTRIBUTE_NAME` (for data-* names without an accepted prefix).
+
+**Exemption: compound modifier classes.** A class token that is defined in CSS only as the rightmost component of a compound selector (e.g., `disabled` defined only as `.cc-engine-bar.disabled`) is a compound modifier. Compound modifiers are exempt from the prefix rule and are recognized by the CSS populator's compound-modifier resolution. Their validity in markup depends on the companion class on the same element being a registered compound base for that modifier. The CSS spec governs compound modifier definition and resolution.
 
 ### 4.1 Chrome IDs
 
@@ -281,17 +311,17 @@ Chrome IDs are platform-wide identifiers used by `cc-shared.js`, `cc-shared.css`
 
 | Chrome ID | Purpose | Defined in |
 |---|---|---|
-| `last-update` | Timestamp display target. Updated by `cc-shared.js` on each successful refresh. | §2.2 |
-| `connection-banner` | Connection state banner placeholder. Populated by `cc-shared.js` on WebSocket state change. | §1.4, §2.4 |
-| `page-error-banner` | Page boot error banner placeholder. Populated by `cc-shared.js` when page module loading or initialization fails. | §1.4, §2.5 |
-| `card-engine-<slug>` | Engine card outer container. Slug from `Orchestrator.ProcessRegistry.cc_engine_slug`. | §2.3 |
-| `engine-bar-<slug>` | Engine status bar element. Updated by WebSocket events. | §2.3 |
-| `engine-cd-<slug>` | Engine countdown text element. Updated by JS-side timer logic. | §2.3 |
+| `cc-last-update` | Timestamp display target. Updated by `cc-shared.js` on each successful refresh. | §2.2 |
+| `cc-connection-banner` | Connection state banner placeholder. Populated by `cc-shared.js` on WebSocket state change. | §1.4, §2.4 |
+| `cc-page-error-banner` | Page boot error banner placeholder. Populated by `cc-shared.js` when page module loading or initialization fails. | §1.4, §2.5 |
+| `cc-card-engine-<slug>` | Engine card outer container. Slug from `Orchestrator.ProcessRegistry.cc_engine_slug`. | §2.3 |
+| `cc-engine-bar-<slug>` | Engine status bar element. Updated by WebSocket events. | §2.3 |
+| `cc-engine-cd-<slug>` | Engine countdown text element. Updated by JS-side timer logic. | §2.3 |
 
 #### 4.1.1 Chrome ID rules
 
 - A page must declare each chrome ID exactly when its associated chrome element is present. Chrome ID declaration is governed by the rules in the section that defines the element (§1.4 for connection banner and page error banner, §2.2 for last-update, §2.3 for engine card IDs).
-- Chrome IDs are never used as page-local IDs. A page-local element may not be assigned `id="last-update"` or any other chrome ID. Drift code: `CHROME_ID_REUSED_AS_LOCAL`.
+- Chrome IDs are never used as page-local IDs. A page-local element may not be assigned `id="cc-last-update"` or any other chrome ID. Drift code: `CHROME_ID_REUSED_AS_LOCAL`.
 - Chrome IDs are never used in CSS selectors. The CSS spec forbids ID selectors entirely (§13 of CSS spec, drift code `FORBIDDEN_ID_SELECTOR`); chrome IDs exist solely for JS DOM lookups. This is enforced by the CSS spec.
 
 ### 4.2 Page-local IDs
@@ -335,10 +365,13 @@ Example: a request-detail slideout on the BusinessServices page would use `bsv-s
 
 #### 4.3.2 Modal ID convention
 
-A modal consists of an overlay element and a dialog element:
+A modal is a single construct identified by one ID on its outermost `.xf-modal-overlay` element. The modal's structure is a `.xf-modal-overlay` containing a nested `.xf-modal`, which contains the modal's header, body, and action elements.
 
-- Overlay: `<prefix>-modal-<purpose>-overlay`
-- Dialog: `<prefix>-modal-<purpose>`
+- Outer element ID: `<prefix>-modal-<purpose>`
+
+The nested `.xf-modal` element carries no ID. Sub-elements inside the modal (header title text, body content slot, action buttons) may carry their own page-local IDs for content-update purposes; those IDs follow the standard page-local ID format in §4.2.1.
+
+Example: a delete-confirmation modal on the BusinessServices page uses `bsv-modal-delete` on the outer overlay element.
 
 #### 4.3.3 Slide-up panel ID convention
 
@@ -350,9 +383,10 @@ A slide-up panel consists of a backdrop element and a panel element:
 #### 4.3.4 Slideout, modal, and panel rules
 
 - A slideout's overlay and panel IDs both use the `<prefix>-slideout-<purpose>-*` form. Drift code: `MALFORMED_SLIDEOUT_ID`.
-- A modal's overlay and dialog IDs both use the `<prefix>-modal-<purpose>-*` form. Drift code: `MALFORMED_MODAL_ID`.
+- A modal's outer element ID uses the `<prefix>-modal-<purpose>` form. Drift code: `MALFORMED_MODAL_ID`.
 - A slide-up panel's backdrop and panel IDs both use the `<prefix>-slideup-<purpose>-*` form. Drift code: `MALFORMED_SLIDEUP_ID`.
-- A page that declares one half of a pair (overlay only, or panel only) without the other emits drift. Drift code: `INCOMPLETE_OVERLAY_PAIR`.
+- A slideout that declares one half of the overlay/panel pair without the other emits drift. Drift code: `INCOMPLETE_OVERLAY_PAIR`. The same rule applies to slide-up panels (backdrop and panel both required). Modals are single-element constructs and are not subject to this rule.
+- A modal's outer element has class `xf-modal-overlay` and contains exactly one direct child with class `xf-modal`. A modal missing the nested `.xf-modal` child emits drift. Drift code: `MALFORMED_MODAL_STRUCTURE`.
 
 #### 4.3.5 Overlay panel contiguity
 
@@ -374,8 +408,13 @@ A page with two slideouts and one modal declares them as one block:
 <div id="bsv-slideout-comments" ...>...</div>
 
 <!-- Modal for delete confirmation -->
-<div id="bsv-modal-delete-overlay" ...></div>
-<div id="bsv-modal-delete" ...>...</div>
+<div id="bsv-modal-delete" class="xf-modal-overlay hidden">
+    <div class="xf-modal">
+        <div class="xf-modal-header">...</div>
+        <div class="xf-modal-body">...</div>
+        <div class="xf-modal-actions">...</div>
+    </div>
+</div>
 
 <script src="/js/cc-shared.js"></script>
 ```
@@ -386,7 +425,7 @@ The rule serves catalog clarity: overlay panels are conceptually outside the pag
 
 #### 4.3.6 Purpose comments
 
-Every slideout, modal, and slide-up panel declaration must be preceded by an HTML comment describing the purpose of the construct. The comment immediately precedes the overlay (or backdrop) element and applies to both elements of the pair.
+Every slideout, modal, and slide-up panel declaration must be preceded by an HTML comment describing the purpose of the construct. The comment immediately precedes the construct's outermost element.
 
 ```
 <!-- Slideout for displaying request details with comments and timeline -->
@@ -394,7 +433,14 @@ Every slideout, modal, and slide-up panel declaration must be preceded by an HTM
 <div id="bsv-slideout-request" class="slide-panel xwide">...</div>
 ```
 
-The comment text is read by the HTML populator into the `purpose_description` column for both rows of the pair (overlay and panel).
+```
+<!-- Modal for confirming the delete operation -->
+<div id="bsv-modal-delete" class="xf-modal-overlay hidden">
+    <div class="xf-modal">...</div>
+</div>
+```
+
+The comment text is read by the HTML populator into the `purpose_description` column of the row(s) for the construct. For slideouts and slide-up panels, the purpose text is written to both rows of the pair. For modals (single-element constructs), the purpose text is written to the single row.
 
 Drift code: `MISSING_PANEL_PURPOSE_COMMENT` if a slideout, modal, or slide-up panel declaration is not preceded by an HTML comment.
 
@@ -431,7 +477,8 @@ A static class value is a literal string with no PowerShell variable interpolati
 - A class attribute value contains zero or more class names separated by single spaces. Multiple consecutive spaces, leading or trailing whitespace, and tabs within the value emit drift. Drift code: `MALFORMED_CLASS_VALUE_WHITESPACE`.
 - Each class name in the value uses lowercase letters, digits, and hyphens only. Other characters (uppercase, underscores, periods) emit drift on the row for that class. Drift code: `MALFORMED_CLASS_NAME`.
 - Each class name is unique within the value. Duplicate class names in the same attribute (e.g., `class="card card"`) emit drift. Drift code: `DUPLICATE_CLASS_IN_VALUE`.
-- A class name that does not begin with the page's `cc_prefix` and is not defined in `cc-shared.css` emits drift. Drift code: `CLASS_PREFIX_MISMATCH`. Shared classes (defined in `cc-shared.css`) are scope-resolved at populator runtime and exempt from prefix matching; page-local classes must match the page's prefix.
+- Every class name begins with the page's `cc_prefix` (page-local) or with `cc-` (shared chrome), per the unified prefix rule in §4.0. A class name that satisfies neither prefix and is not a recognized compound modifier emits drift. Drift code: `CLASS_PREFIX_MISMATCH`.
+- A compound modifier class (one defined in CSS only as the rightmost component of a compound selector — e.g., `disabled` defined only as `.cc-engine-bar.disabled`) is exempt from the prefix rule. A compound modifier appearing on an element whose companion class is not a registered compound base for that modifier emits drift. Drift code: `INVALID_MODIFIER_CONTEXT`. The CSS spec governs compound modifier definition and resolution.
 
 ### 5.2 Dynamic class values
 
@@ -559,6 +606,8 @@ Action values fall into two categories:
 - **Page-local actions** are unprefixed (e.g., `open-request-detail`, `filter-by-status`). They dispatch through the page's own dispatch table (`<prefix>_<event>Actions`, defined in the page's JS file).
 - **Shared chrome actions** are `cc-` prefixed (e.g., `cc-page-refresh`, `cc-reload-page`). They dispatch through `sharedClickActions`, `sharedChangeActions`, etc., defined in `cc-shared.js`.
 
+Action values occupy their own resolution namespace and are not subject to the unified prefix rule in §4.0 (which governs IDs, classes, and page-emitted `data-*` attribute names). The `data-action-` attribute name itself is the chrome prefix; the value space distinguishes page-local from shared by the presence or absence of the `cc-` value prefix.
+
 ```
 <button data-action-click="open-request-detail">View</button>
 <button data-action-click="cc-page-refresh">Refresh</button>
@@ -649,23 +698,24 @@ The `data-*` attribute family is HTML's standard mechanism for attaching custom 
 
 ### 7.1 data-* attribute format
 
-A `data-*` attribute name follows the form `data-<name>` where `<name>` uses lowercase letters, digits, and hyphens only. The HTML standard mandates this lowercase-and-hyphen form; the spec restates it for completeness.
+A `data-*` attribute name follows the form `data-<prefix>-<name>` where `<prefix>` is either the page's `cc_prefix` (for page-emitted attributes) or `cc` (for helper-emitted/chrome attributes), and `<name>` uses lowercase letters, digits, and hyphens only. The unified prefix rule in §4.0 applies to `data-*` attribute names just as it applies to IDs and classes.
 
 ```
-<button data-filter="ALL">                           ← filter selector
-<button data-window="30">                            ← timeline window in minutes
-<div data-batch-id="12345">                          ← entity reference
-<select data-priority="high">                        ← state indicator
+<button data-bkp-filter="ALL">                       ← page-emitted (backup page, prefix bkp)
+<button data-bsv-window="30">                        ← page-emitted (business services page)
+<div data-bch-batch-id="12345">                      ← page-emitted (batch monitoring page)
+<select data-cc-priority="high">                     ← helper-emitted / chrome
 ```
 
-The `data-action-*` attribute family is governed by §6 (Action dispatch via data-action attributes), not by this section. This includes `data-action-<event>` attributes (action declarations) and `data-action-<arg-name>` attributes (action arguments). The generic `data-*` rules in §7.2 do not apply to those attributes; the more specific rules in §6.2 and §6.3.1 apply instead. All other `data-*` attributes (such as `data-filter`, `data-batch-id`, `data-window`) are governed by this section.
+The `data-action-*` attribute family is governed by §6 (Action dispatch via data-action attributes), not by this section. This includes `data-action-<event>` attributes (action declarations) and `data-action-<arg-name>` attributes (action arguments). The `data-action-` attribute name is itself a recognized chrome prefix and is exempt from the unified prefix rule in §4.0; the generic `data-*` rules in §7.2 do not apply to those attributes. The more specific rules in §6.2 and §6.3.1 apply instead. All other `data-*` attributes (such as `data-bkp-filter`, `data-bch-batch-id`, `data-cc-window`) are governed by this section.
 
 ### 7.2 data-* attribute rules
 
-- Attribute names use lowercase letters, digits, and hyphens only after the `data-` prefix. Drift code: `MALFORMED_DATA_ATTRIBUTE_NAME`. (Uppercase is forbidden by the HTML standard; the spec rejects it as well.)
+- Attribute names use lowercase letters, digits, and hyphens only after the `data-` prefix. Drift code: `MALFORMED_DATA_ATTRIBUTE_NAME`.
+- Page-emitted `data-*` attribute names begin with `data-<page_prefix>-` where `<page_prefix>` is the page's `cc_prefix` from `Component_Registry`. Helper-emitted `data-*` attribute names begin with `data-cc-`. A name that satisfies neither and is not in the `data-action-*` family emits drift. Drift code: `MALFORMED_DATA_ATTRIBUTE_NAME`.
 - Attribute values are static strings. PowerShell variable interpolation in `data-*` values is forbidden except via the same rules as class attributes — values must come from a fully-resolved variable, not mixed inline. Drift code: `FORBIDDEN_INLINE_DATA_INTERPOLATION` for any attribute value containing both static text and `$` interpolation.
-- A page-author may use any `data-*` attribute name. There is no closed set; the catalog tracks every distinct name.
-- `data-*` values are treated as opaque strings by the spec. The spec does not validate value content (e.g., does not require `data-spid` values be integer-shaped).
+- A page-author may use any `<name>` portion within their prefix's namespace. There is no closed set; the catalog tracks every distinct name.
+- `data-*` values are treated as opaque strings by the spec. The spec does not validate value content.
 
 ### 7.3 Catalog rows for data-* attributes
 
@@ -674,27 +724,25 @@ Each `data-*` attribute on each element produces one `HTML_DATA_ATTRIBUTE DEFINI
 | Column | Value |
 |---|---|
 | `component_type` | `HTML_DATA_ATTRIBUTE` |
-| `component_name` | The attribute name including the `data-` prefix (e.g., `data-filter`, `data-batch-id`) |
+| `component_name` | The attribute name including the `data-` prefix (e.g., `data-bkp-filter`, `data-bch-batch-id`, `data-cc-priority`) |
 | `reference_type` | `DEFINITION` |
-| `signature` | The full attribute (e.g., `data-filter="ALL"`) |
-| `scope` | `LOCAL` for page-author-defined attributes; `SHARED` for chrome-related attributes (currently none) |
+| `signature` | The full attribute (e.g., `data-bkp-filter="ALL"`) |
+| `scope` | `LOCAL` for page-emitted (page-prefixed) attributes; `SHARED` for helper-emitted (`cc-` prefixed) attributes |
 | `source_file` | The file containing the row (route file or helper) |
 | `parent_function` | The PS function emitting the markup (when applicable) |
 | `has_dynamic_content` | TRUE when value composition involves runtime data; FALSE when fully static |
 
-The `signature` carries the full attribute including the value, which makes value-comparison queries possible — "find every page where `data-filter='ALL'` appears" is a single signature pattern match.
+The `signature` carries the full attribute including the value, which makes value-comparison queries possible.
 
 ### 7.4 data-* attributes referenced from JavaScript
 
-JavaScript code that reads `data-*` attributes (via `element.dataset.batchId` or `element.getAttribute('data-batch-id')`) produces `HTML_DATA_ATTRIBUTE USAGE` rows in the JS populator. These rows resolve against the HTML populator's DEFINITION rows via `component_name`, mirroring the same pattern as ID and class resolution.
+JavaScript code that reads `data-*` attributes (via `element.dataset.bkpFilter` or `element.getAttribute('data-bkp-filter')`) produces `HTML_DATA_ATTRIBUTE USAGE` rows in the JS populator. These rows resolve against the HTML populator's DEFINITION rows via `component_name`, mirroring the same pattern as ID and class resolution.
 
 Cross-population validation rules for `data-*` references in JavaScript are governed by the JavaScript spec.
 
 ### 7.5 data-* attributes in helper-emitted HTML
 
-Helper module functions that emit HTML fragments may declare `data-*` attributes following the same rules as route files. Helper-emitted `data-*` attributes are catalogued with `scope = SHARED` since they apply to every page consuming the helper.
-
-A helper emitting a `data-*` attribute that's only meaningful on one specific page (e.g., a page-specific filter value) couples the helper to that page. Drift code: `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE`.
+Helper module functions emit only `data-cc-*` prefixed attributes. A helper emitting a `data-*` attribute with a page prefix (e.g., `data-bsv-filter`) couples the helper to a specific page. Drift code: `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE`.
 
 ---
 
@@ -771,17 +819,17 @@ The HTML populator constructs `component_name` for each `HTML_TEXT` row by inspe
 | Text inside an element with no class | `<tag>-text` |
 | Value of a user-facing attribute (`title`, `placeholder`, `aria-label`, `alt`) | `attr-<attribute-name>` |
 
-The page prefix is recognized by lookup against `Component_Registry.cc_prefix` for the page that contains the row. When a class begins with the page's prefix followed by a hyphen, the prefix and hyphen are removed before the leading class token is taken. When a class does not begin with the page's prefix (e.g., it is a shared class from `cc-shared.css`), the leading class token is taken as-is.
+The page prefix or the `cc-` chrome prefix is recognized and stripped from the leading class token. For page-local classes, the page's `cc_prefix` from `Component_Registry` is looked up. For shared chrome classes, the `cc-` prefix is stripped. The remaining token after prefix-stripping is used in `component_name`.
 
 Examples:
 
 | Source markup | component_name |
 |---|---|
 | `<h2 class="bsv-section-title">Live Activity</h2>` | `h2-section-title` |
-| `<h2 class="section-title">Live Activity</h2>` (shared class) | `h2-section-title` |
+| `<h2 class="cc-section-title">Live Activity</h2>` (shared chrome class) | `h2-section-title` |
 | `<h2>No Title Class</h2>` | `h2-text` |
-| `<button class="page-refresh-btn" title="Refresh all data">↻</button>` (text node `↻`) | `button-page-refresh-btn` |
-| `<span class="bsv-engine-label">NB</span>` | `span-engine-label` |
+| `<button class="cc-page-refresh-btn" title="Refresh all data">↻</button>` (text node `↻`) | `button-page-refresh-btn` |
+| `<span class="cc-engine-label">NB</span>` | `span-engine-label` |
 | `<input placeholder="Search...">` (no text node, but the placeholder value is text) | `attr-placeholder` |
 | `<button title="Refresh all data">↻</button>` (the title attribute value) | `attr-title` |
 
@@ -903,10 +951,10 @@ The above produces one row. The `<path>` element inside is not catalogued separa
 | Source | component_name |
 |---|---|
 | `<svg class="bsv-icon-warning">...` | `svg-icon-warning` |
-| `<svg class="icon-success">...` (shared class) | `svg-icon-success` |
+| `<svg class="cc-icon-success">...` (shared chrome class) | `svg-icon-success` |
 | `<svg>...` (no class) | `svg-untagged` |
 
-The page prefix is stripped from the leading class token by the same lookup as §8.2.2.
+The page prefix or `cc-` chrome prefix is stripped from the leading class token by the same lookup as §8.2.2.
 
 ### 9.4 SVG content rules
 
@@ -978,7 +1026,7 @@ Inline annotations are optional and are not subject to a fixed format beyond sta
 
 ### 10.4 Panel purpose comments
 
-Panel purpose comments are required by §4.3.6 for slideouts, modals, and slide-up panels. They are inline annotations placed immediately before the overlay (or backdrop) element of the construct:
+Panel purpose comments are required by §4.3.6 for slideouts, modals, and slide-up panels. They are inline annotations placed immediately before the construct's outermost element:
 
 ```
 <!-- Slideout for displaying request details with comments and timeline -->
@@ -986,7 +1034,14 @@ Panel purpose comments are required by §4.3.6 for slideouts, modals, and slide-
 <div id="bsv-slideout-request" class="slide-panel xwide">...</div>
 ```
 
-The HTML populator reads the comment text into the `purpose_description` column for both rows of the construct (overlay and panel). See §4.3.6 for the full rule.
+```
+<!-- Modal for confirming the delete operation -->
+<div id="bsv-modal-delete" class="xf-modal-overlay hidden">
+    <div class="xf-modal">...</div>
+</div>
+```
+
+The HTML populator reads the comment text into the `purpose_description` column for the row(s) of the construct. For slideouts and slide-up panels, the text is written to both rows of the pair. For modals (single-element constructs), the text is written to the single row. See §4.3.6 for the full rule.
 
 ### 10.5 Catalog rows for comments
 
@@ -1010,10 +1065,10 @@ The HTML populator distinguishes between the three comment kinds based on shape 
 | Categorical name | Trigger |
 |---|---|
 | `comment-section-divider` | Multi-line block comment whose body contains rule lines (76-character `=` runs) per §10.2 |
-| `comment-panel-purpose` | Single-line comment immediately preceding a slideout overlay (`<prefix>-slideout-<purpose>-overlay`), modal overlay (`<prefix>-modal-<purpose>-overlay`), or slide-up backdrop (`<prefix>-slideup-<purpose>-backdrop`) per §4.3 |
+| `comment-panel-purpose` | Single-line comment immediately preceding a slideout overlay (`<prefix>-slideout-<purpose>-overlay`), a modal outer element (`<prefix>-modal-<purpose>`), or a slide-up backdrop (`<prefix>-slideup-<purpose>-backdrop`) per §4.3 |
 | `comment-inline` | Any other single-line comment |
 
-When a comment is categorized as `comment-panel-purpose`, its text is also written into the `purpose_description` column for both rows of the slideout/modal/panel construct it precedes (per §4.3.6). For `comment-inline` and `comment-section-divider` rows, `purpose_description` is not derived from the comment text.
+When a comment is categorized as `comment-panel-purpose`, its text is also written into the `purpose_description` column for the row(s) of the slideout/modal/panel construct it precedes (per §4.3.6). For `comment-inline` and `comment-section-divider` rows, `purpose_description` is not derived from the comment text.
 
 A comment whose text resembles a panel purpose comment but is not positioned immediately before a slideout/modal/panel construct is categorized as `comment-inline`. The populator's categorization is determined by structural context, not by comment content.
 
@@ -1047,7 +1102,7 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 1. Open with `<!DOCTYPE html>` (§1.2)
 2. Root element `<html>` with no attributes (§1.2)
 3. `<head>` contains exactly one `<title>$browserTitle</title>` and the mandated `<link>` tags, nothing else (§1.2, §3.1)
-4. `<body class="section-<sectionKey>" data-page="<slug>" data-prefix="<prefix>">` opens body content (§1.2)
+4. `<body class="cc-section-<sectionKey>" data-cc-page="<slug>" data-cc-prefix="<prefix>">` opens body content (§1.2)
 5. First content inside `<body>` is `$navHtml` substitution (§1.2)
 6. Last content inside `<body>` is the `<script>` tag (§1.2, §3.2)
 
@@ -1069,19 +1124,20 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 
 ### 11.4 ID conventions
 
-1. Chrome IDs come from the closed set in §4.1; new chrome IDs require spec amendment
-2. Page-local IDs use `<prefix>-<purpose>` form where prefix matches `Component_Registry.cc_prefix` (§4.2)
-3. Slideout IDs use `<prefix>-slideout-<purpose>-overlay` and `<prefix>-slideout-<purpose>` (§4.3.1)
-4. Modal IDs use `<prefix>-modal-<purpose>-overlay` and `<prefix>-modal-<purpose>` (§4.3.2)
-5. Slide-up panel IDs use `<prefix>-slideup-<purpose>-backdrop` and `<prefix>-slideup-<purpose>` (§4.3.3)
-6. Slideouts, modals, and slide-up panels are declared in one contiguous block of markup (§4.3.5)
-7. Every slideout, modal, and slide-up panel is preceded by an HTML purpose comment (§4.3.6)
-8. JS references to page-local IDs use the same prefixed form as HTML declarations (§4.2.3)
+1. Every identifier in HTML markup uses the page's `cc_prefix` (page-local) or `cc-` (shared chrome); compound modifier classes are exempt (§4.0)
+2. Chrome IDs come from the closed set in §4.1; new chrome IDs require spec amendment
+3. Page-local IDs use `<prefix>-<purpose>` form where prefix matches `Component_Registry.cc_prefix` (§4.2)
+4. Slideout IDs use `<prefix>-slideout-<purpose>-overlay` and `<prefix>-slideout-<purpose>` (§4.3.1)
+5. Modal IDs use `<prefix>-modal-<purpose>` on the outermost `.xf-modal-overlay` element; the nested `.xf-modal` carries no ID (§4.3.2)
+6. Slide-up panel IDs use `<prefix>-slideup-<purpose>-backdrop` and `<prefix>-slideup-<purpose>` (§4.3.3)
+7. Slideouts, modals, and slide-up panels are declared in one contiguous block of markup (§4.3.5)
+8. Every slideout, modal, and slide-up panel is preceded by an HTML purpose comment (§4.3.6)
+9. JS references to page-local IDs use the same prefixed form as HTML declarations (§4.2.3)
 
 ### 11.5 Class attributes
 
 1. Static class values use space-separated lowercase tokens (§5.1)
-2. Page-local classes match the page's `cc_prefix`; shared classes are recognized via cross-population lookup (§5.1.1)
+2. Every class name begins with the page's `cc_prefix` or with `cc-`; compound modifier classes are exempt (§4.0, §5.1.1)
 3. Dynamic class assembly uses the array-join pattern only (§5.2.1)
 4. `class` attribute values containing PowerShell interpolation use a single fully-resolved variable (§5.2.2)
 
@@ -1095,9 +1151,9 @@ Every conforming HTML emission must satisfy these requirements. This section is 
 
 ### 11.7 data-* attributes
 
-1. Names use lowercase letters, digits, and hyphens after the `data-` prefix (§7.2)
+1. Page-emitted `data-*` attribute names begin with `data-<page_prefix>-`; helper-emitted `data-*` names begin with `data-cc-`; the `data-action-*` family is governed separately by §6 (§7.2)
 2. Values are static strings or fully-resolved variables; no inline interpolation mixing (§7.2)
-3. Helpers emit only platform-shared `data-*` attributes; page-specific data-* in helpers is forbidden (§7.5)
+3. Helpers emit only `data-cc-*` attributes; helper-emitted `data-<page_prefix>-*` attributes are forbidden (§7.5)
 
 ### 11.8 Text content and entities
 
@@ -1140,9 +1196,9 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | `<html>` element with attributes | `MALFORMED_HTML_ROOT` | §1.2 |
 | `<head>` containing elements other than `<title>` and `<link>` | `MALFORMED_HEAD` | §1.2 |
 | `<title>` content hardcoded instead of `$browserTitle` substitution | `FORBIDDEN_HARDCODED_TITLE` | §1.2 |
-| `<body>` missing `class="section-<sectionKey>"` | `MISSING_BODY_SECTION_CLASS` | §1.2 |
-| `<body>` missing `data-page="<slug>"` attribute | `MISSING_DATA_PAGE` | §1.2 |
-| `<body>` missing `data-prefix="<prefix>"` attribute | `MISSING_DATA_PREFIX` | §1.2 |
+| `<body>` missing `class="cc-section-<sectionKey>"` | `MISSING_BODY_SECTION_CLASS` | §1.2 |
+| `<body>` missing `data-cc-page="<slug>"` attribute | `MISSING_DATA_CC_PAGE` | §1.2 |
+| `<body>` missing `data-cc-prefix="<prefix>"` attribute | `MISSING_DATA_CC_PREFIX` | §1.2 |
 | First content inside `<body>` is not `$navHtml` | `MISSING_NAV_SUBSTITUTION` | §1.2 |
 | Content appears between the `<script>` tag and `</body>` | `MALFORMED_BODY_CLOSE` | §1.2, §3.2 |
 | Page header bar missing | `MISSING_HEADER_BAR` | §1.4 |
@@ -1163,7 +1219,7 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | Live indicator span malformed | `MALFORMED_LIVE_INDICATOR` | §2.2 |
 | Live status line malformed | `MALFORMED_LIVE_STATUS_LINE` | §2.2 |
 | Page refresh button markup deviates from mandated form | `MALFORMED_REFRESH_BUTTON` | §2.2 |
-| `last-update` ID declared more than once | `DUPLICATE_LAST_UPDATE_ID` | §2.2 |
+| `cc-last-update` ID declared more than once | `DUPLICATE_LAST_UPDATE_ID` | §2.2 |
 | Engine row container malformed | `MALFORMED_ENGINE_ROW_CONTAINER`, `MALFORMED_ENGINE_ROW_CHILDREN` | §2.3 |
 | Engine card structure deviates from mandated form | `MALFORMED_ENGINE_CARD`, `MALFORMED_ENGINE_CARD_ATTRIBUTES`, `MALFORMED_ENGINE_LABEL`, `MALFORMED_ENGINE_BAR`, `MALFORMED_ENGINE_COUNTDOWN` | §2.3 |
 | Engine card order doesn't match `cc_sort_order` | `ENGINE_CARD_ORDER_MISMATCH` | §2.3 |
@@ -1197,7 +1253,8 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | Same ID declared twice on a page | `DUPLICATE_ID_DECLARATION` | §4.2 |
 | ID value contains forbidden characters | `MALFORMED_ID_VALUE` | §4.2 |
 | Slideout/modal/panel ID malformed | `MALFORMED_SLIDEOUT_ID`, `MALFORMED_MODAL_ID`, `MALFORMED_SLIDEUP_ID` | §4.3 |
-| Slideout/modal/panel pair incomplete | `INCOMPLETE_OVERLAY_PAIR` | §4.3 |
+| Slideout or slide-up panel pair incomplete | `INCOMPLETE_OVERLAY_PAIR` | §4.3.4 |
+| Modal missing nested `.xf-modal` child element | `MALFORMED_MODAL_STRUCTURE` | §4.3.4 |
 | Slideout/modal/panel declarations interleaved with non-overlay content | `OVERLAY_PANEL_NOT_CONTIGUOUS` | §4.3.5 |
 | Slideout/modal/panel missing purpose comment | `MISSING_PANEL_PURPOSE_COMMENT` | §4.3.6 |
 | Helper emits page-prefixed ID | `FORBIDDEN_HELPER_PAGE_PREFIX_ID` | §4.5 |
@@ -1209,7 +1266,8 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 | Class value contains malformed whitespace | `MALFORMED_CLASS_VALUE_WHITESPACE` | §5.1 |
 | Class name contains forbidden characters | `MALFORMED_CLASS_NAME` | §5.1 |
 | Duplicate class in same attribute | `DUPLICATE_CLASS_IN_VALUE` | §5.1 |
-| Class doesn't match page prefix or shared definitions | `CLASS_PREFIX_MISMATCH` | §5.1 |
+| Class doesn't satisfy unified prefix rule and is not a compound modifier | `CLASS_PREFIX_MISMATCH` | §4.0, §5.1.1 |
+| Compound modifier appears on element without registered companion class | `INVALID_MODIFIER_CONTEXT` | §5.1.1 |
 | `class="nav-link$accent"` (interpolation appended to static text) | `INLINE_CLASS_CONCATENATION` | §5.2.3 |
 | `class="$type wide"` (interpolation followed/preceded by static text) | `INLINE_CLASS_PREFIX_MIX` | §5.2.3 |
 | `class="$a $b"` (multiple interpolations, neither using array-join) | `INLINE_CLASS_MULTI_INTERPOLATION` | §5.2.3 |
@@ -1233,9 +1291,9 @@ This section consolidates patterns that are forbidden by spec rules in §1–§1
 
 | Pattern | Drift code | Rule |
 |---|---|---|
-| `data-*` attribute name uses forbidden characters | `MALFORMED_DATA_ATTRIBUTE_NAME` | §7.2 |
+| `data-*` attribute name uses forbidden characters or doesn't satisfy unified prefix rule | `MALFORMED_DATA_ATTRIBUTE_NAME` | §4.0, §7.2 |
 | `data-*` value mixes static text with PS interpolation | `FORBIDDEN_INLINE_DATA_INTERPOLATION` | §7.2 |
-| Helper emits page-specific `data-*` attribute | `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE` | §7.5 |
+| Helper emits a page-prefixed `data-*` attribute (i.e., not `data-cc-*`) | `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE` | §7.5 |
 
 ### 12.8 Text content forbidden patterns
 
@@ -1432,9 +1490,9 @@ Page shell drift codes attach to the file's `HTML_FILE DEFINITION` row per §13.
 | `MALFORMED_HTML_ROOT` | The root `<html>` element has attributes (e.g., `<html lang="en">`); attributes are not permitted on the root element. |
 | `MALFORMED_HEAD` | The `<head>` element contains constructs other than `<title>` and `<link>` (e.g., inline `<style>`, `<meta>`, `<script>`). |
 | `FORBIDDEN_HARDCODED_TITLE` | The `<title>` content is a hardcoded string instead of the `$browserTitle` PowerShell variable substitution. |
-| `MISSING_BODY_SECTION_CLASS` | The `<body>` element does not declare a `class="section-<sectionKey>"` attribute. |
-| `MISSING_DATA_PAGE` | The `<body>` element does not declare a `data-page="<slug>"` attribute. |
-| `MISSING_DATA_PREFIX` | The `<body>` element does not declare a `data-prefix="<prefix>"` attribute. |
+| `MISSING_BODY_SECTION_CLASS` | The `<body>` element does not declare a `class="cc-section-<sectionKey>"` attribute. |
+| `MISSING_DATA_CC_PAGE` | The `<body>` element does not declare a `data-cc-page="<slug>"` attribute. |
+| `MISSING_DATA_CC_PREFIX` | The `<body>` element does not declare a `data-cc-prefix="<prefix>"` attribute. |
 | `MISSING_NAV_SUBSTITUTION` | The first content inside `<body>` is not the `$navHtml` substitution. |
 | `MALFORMED_BODY_CLOSE` | Content appears between the `<script>` tag and `</body>`. |
 | `MISSING_HEADER_BAR` | The page header bar is missing as the first content after `$navHtml`. |
@@ -1451,16 +1509,16 @@ The HTML populator emits the codes below by walking page markup and (where indic
 
 | Code | Description |
 |---|---|
-| `MALFORMED_HEADER_BAR_CONTAINER` | The header bar's outer container is not `<div class="header-bar">`. |
-| `MALFORMED_HEADER_BAR_LEFT` | The first child of `header-bar` is not the unattributed `<div>` containing the `$headerHtml` substitution. |
-| `MALFORMED_HEADER_BAR_RIGHT` | The second child of `header-bar` is not `<div class="header-right">`. |
-| `MALFORMED_HEADER_RIGHT_CHILDREN` | The `header-right` element contains children other than `refresh-info` and optional `engine-row`. |
-| `MALFORMED_REFRESH_INFO_CONTAINER` | The refresh info block's outer container is not `<div class="refresh-info">`. |
-| `MALFORMED_LIVE_INDICATOR` | The live indicator span is malformed; expected `<span class="live-indicator"></span>` exactly. |
+| `MALFORMED_HEADER_BAR_CONTAINER` | The header bar's outer container is not `<div class="cc-header-bar">`. |
+| `MALFORMED_HEADER_BAR_LEFT` | The first child of `cc-header-bar` is not the unattributed `<div>` containing the `$headerHtml` substitution. |
+| `MALFORMED_HEADER_BAR_RIGHT` | The second child of `cc-header-bar` is not `<div class="cc-header-right">`. |
+| `MALFORMED_HEADER_RIGHT_CHILDREN` | The `cc-header-right` element contains children other than `cc-refresh-info` and optional `cc-engine-row`. |
+| `MALFORMED_REFRESH_INFO_CONTAINER` | The refresh info block's outer container is not `<div class="cc-refresh-info">`. |
+| `MALFORMED_LIVE_INDICATOR` | The live indicator span is malformed; expected `<span class="cc-live-indicator"></span>` exactly. |
 | `MALFORMED_LIVE_STATUS_LINE` | The live status line ("`Live | Updated:`") deviates from mandated form. |
 | `MALFORMED_REFRESH_BUTTON` | The page refresh button markup deviates from mandated form (class, `data-action-click`, title, or entity reference). |
-| `DUPLICATE_LAST_UPDATE_ID` | The `last-update` ID appears more than once on the page. |
-| `MALFORMED_ENGINE_ROW_CONTAINER` | The engine row's outer container is not `<div class="engine-row">`. |
+| `DUPLICATE_LAST_UPDATE_ID` | The `cc-last-update` ID appears more than once on the page. |
+| `MALFORMED_ENGINE_ROW_CONTAINER` | The engine row's outer container is not `<div class="cc-engine-row">`. |
 | `MALFORMED_ENGINE_ROW_CHILDREN` | The engine row contains children other than engine cards. |
 | `ENGINE_CARD_ORDER_MISMATCH` | Engine cards are not in declaration order matching `cc_sort_order`. |
 | `MALFORMED_ENGINE_CARD` | An engine card's structure deviates from the mandated four-element block. |
@@ -1492,15 +1550,16 @@ The HTML populator emits the codes below by walking page markup and (where indic
 
 | Code | Description |
 |---|---|
-| `CHROME_ID_REUSED_AS_LOCAL` | A page-local element is assigned a chrome ID (e.g., `id="last-update"` on a non-chrome element). |
+| `CHROME_ID_REUSED_AS_LOCAL` | A page-local element is assigned a chrome ID (e.g., `id="cc-last-update"` on a non-chrome element). |
 | `MISSING_PREFIX_ID` | A page-local ID does not begin with the page's `cc_prefix` followed by a hyphen. |
 | `CROSS_PAGE_PREFIX_COLLISION` | A page-local ID begins with another page's prefix. |
 | `DUPLICATE_ID_DECLARATION` | The same ID value is declared more than once on a page. |
 | `MALFORMED_ID_VALUE` | An ID value contains characters other than lowercase letters, digits, and hyphens. |
 | `MALFORMED_SLIDEOUT_ID` | A slideout overlay or panel ID does not follow `<prefix>-slideout-<purpose>-*` form. |
-| `MALFORMED_MODAL_ID` | A modal overlay or dialog ID does not follow `<prefix>-modal-<purpose>-*` form. |
+| `MALFORMED_MODAL_ID` | A modal's outer element ID does not follow `<prefix>-modal-<purpose>` form (no `-overlay` suffix; the construct is single-element, not a pair). |
+| `MALFORMED_MODAL_STRUCTURE` | A modal's outer `.xf-modal-overlay` element is missing the nested `.xf-modal` direct child. |
 | `MALFORMED_SLIDEUP_ID` | A slide-up panel backdrop or panel ID does not follow `<prefix>-slideup-<purpose>-*` form. |
-| `INCOMPLETE_OVERLAY_PAIR` | A slideout, modal, or slide-up panel declares one half of the overlay/panel pair without the other. |
+| `INCOMPLETE_OVERLAY_PAIR` | A slideout or slide-up panel declares one half of the overlay/panel pair without the other. Does not apply to modals (which are single-element constructs). |
 | `OVERLAY_PANEL_NOT_CONTIGUOUS` | Slideout, modal, or slide-up panel declarations are interleaved with non-overlay structural content (per §4.3.5, overlay panel declarations must form one contiguous block). |
 | `MISSING_PANEL_PURPOSE_COMMENT` | A slideout, modal, or slide-up panel declaration is not preceded by an HTML purpose comment. |
 | `FORBIDDEN_HELPER_PAGE_PREFIX_ID` | A helper module function emits HTML with a page-prefixed ID. |
@@ -1512,7 +1571,8 @@ The HTML populator emits the codes below by walking page markup and (where indic
 | `MALFORMED_CLASS_VALUE_WHITESPACE` | A class attribute value contains multiple consecutive spaces, leading/trailing whitespace, or tabs. |
 | `MALFORMED_CLASS_NAME` | A class name contains characters other than lowercase letters, digits, and hyphens. |
 | `DUPLICATE_CLASS_IN_VALUE` | The same class name appears more than once in the same `class` attribute. |
-| `CLASS_PREFIX_MISMATCH` | A class name doesn't begin with the page's `cc_prefix` and is not defined in `cc-shared.css`. |
+| `CLASS_PREFIX_MISMATCH` | A class name does not begin with the page's `cc_prefix` or with `cc-`, and is not a recognized compound modifier (per §4.0 unified prefix rule). |
+| `INVALID_MODIFIER_CONTEXT` | A compound modifier class appears on an element whose companion class is not a registered compound base for that modifier (per §5.1.1). |
 | `INLINE_CLASS_CONCATENATION` | A class attribute uses inline interpolation appended to static text (e.g., `class="nav-link$accent"`). |
 | `INLINE_CLASS_PREFIX_MIX` | A class attribute uses inline interpolation followed or preceded by static text (e.g., `class="$type wide"`). |
 | `INLINE_CLASS_MULTI_INTERPOLATION` | A class attribute uses multiple top-level interpolations without using the array-join pattern. |
@@ -1536,9 +1596,9 @@ The HTML populator emits the codes below by walking page markup and (where indic
 
 | Code | Description |
 |---|---|
-| `MALFORMED_DATA_ATTRIBUTE_NAME` | A `data-*` attribute name contains characters other than lowercase letters, digits, and hyphens after the `data-` prefix. |
+| `MALFORMED_DATA_ATTRIBUTE_NAME` | A `data-*` attribute name contains forbidden characters, or does not begin with `data-<page_prefix>-` (page-emitted) or `data-cc-` (helper-emitted), and is not in the `data-action-*` family. |
 | `FORBIDDEN_INLINE_DATA_INTERPOLATION` | A `data-*` attribute value mixes static text with PowerShell interpolation. |
-| `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE` | A helper module function emits a `data-*` attribute that is page-specific. |
+| `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE` | A helper module function emits a `data-*` attribute with a page prefix (helpers must use only `data-cc-*`). |
 
 ### 15.8 Text content codes (§8)
 
@@ -1920,24 +1980,24 @@ A small page demonstrating every required pattern. Real pages have more sections
     <link rel="stylesheet" href="/css/example.css">
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body class="section-platform" data-page="example" data-prefix="exa">
+<body class="cc-section-platform" data-cc-page="example" data-cc-prefix="exa">
 $navHtml
 
-<div class="header-bar">
+<div class="cc-header-bar">
     <div>
         $headerHtml
     </div>
-    <div class="header-right">
-        <div class="refresh-info">
-            <span class="live-indicator"></span>
-            <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-            <button class="page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
+    <div class="cc-header-right">
+        <div class="cc-refresh-info">
+            <span class="cc-live-indicator"></span>
+            <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+            <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
         </div>
     </div>
 </div>
 
-<div id="connection-banner" class="connection-banner"></div>
-<div id="page-error-banner" class="page-error-banner"></div>
+<div id="cc-connection-banner" class="cc-connection-banner"></div>
+<div id="cc-page-error-banner" class="cc-page-error-banner"></div>
 
 <div class="exa-page-grid">
     <div class="exa-status-card">
@@ -1953,9 +2013,9 @@ $navHtml
 
 This emission produces these catalog rows (illustrative, not exhaustive):
 
-- 1 × `HTML_ID DEFINITION` for `last-update` (chrome ID)
-- 1 × `HTML_ID DEFINITION` for `connection-banner` (chrome ID)
-- 1 × `HTML_ID DEFINITION` for `page-error-banner` (chrome ID)
+- 1 × `HTML_ID DEFINITION` for `cc-last-update` (chrome ID)
+- 1 × `HTML_ID DEFINITION` for `cc-connection-banner` (chrome ID)
+- 1 × `HTML_ID DEFINITION` for `cc-page-error-banner` (chrome ID)
 - Multiple × `CSS_CLASS USAGE` rows resolving to either `cc-shared.css` (chrome classes) or `example.css` (page classes)
 - 1 × `HTML_DATA_ATTRIBUTE DEFINITION` for `data-action-click="cc-page-refresh"` on the refresh button, with `variant_type = cc-page-refresh`, `variant_qualifier_1 = click`, `scope = SHARED`
 - 2 × `CSS_FILE USAGE` rows for the two stylesheet references
@@ -1970,21 +2030,21 @@ Zero drift rows expected when the page conforms.
 Three engine cards on a page that consumes orchestrator events:
 
 ```html
-<div class="engine-row">
-    <div class="engine-card" id="card-engine-nb">
-        <span class="engine-label">NB</span>
-        <div class="engine-bar disabled" id="engine-bar-nb"></div>
-        <span class="engine-countdown" id="engine-cd-nb">&nbsp;</span>
+<div class="cc-engine-row">
+    <div class="cc-engine-card" id="cc-card-engine-nb">
+        <span class="cc-engine-label">NB</span>
+        <div class="cc-engine-bar disabled" id="cc-engine-bar-nb"></div>
+        <span class="cc-engine-countdown" id="cc-engine-cd-nb">&nbsp;</span>
     </div>
-    <div class="engine-card" id="card-engine-pmt">
-        <span class="engine-label">PMT</span>
-        <div class="engine-bar disabled" id="engine-bar-pmt"></div>
-        <span class="engine-countdown" id="engine-cd-pmt">&nbsp;</span>
+    <div class="cc-engine-card" id="cc-card-engine-pmt">
+        <span class="cc-engine-label">PMT</span>
+        <div class="cc-engine-bar disabled" id="cc-engine-bar-pmt"></div>
+        <span class="cc-engine-countdown" id="cc-engine-cd-pmt">&nbsp;</span>
     </div>
-    <div class="engine-card" id="card-engine-bdl">
-        <span class="engine-label">BDL</span>
-        <div class="engine-bar disabled" id="engine-bar-bdl"></div>
-        <span class="engine-countdown" id="engine-cd-bdl">&nbsp;</span>
+    <div class="cc-engine-card" id="cc-card-engine-bdl">
+        <span class="cc-engine-label">BDL</span>
+        <div class="cc-engine-bar disabled" id="cc-engine-bar-bdl"></div>
+        <span class="cc-engine-countdown" id="cc-engine-cd-bdl">&nbsp;</span>
     </div>
 </div>
 ```
@@ -2122,9 +2182,9 @@ The strict page shell shape (DOCTYPE, root, head, body, content order) is what l
 
 The page shell substitutions (`$browserTitle`, `$navHtml`, `$headerHtml`, `$sectionKey`) preserve the platform's centralized control over chrome behavior. If pages hardcoded their titles, headers, or section keys, every platform-wide chrome change would require touching every page. The substitution pattern lets `Get-PageBrowserTitle`, `Get-NavBarHtml`, and `Get-PageHeaderHtml` evolve independently of page authoring.
 
-The two `<body>` attributes `data-page` and `data-prefix` exist to support the bootloader-driven JS module loading model (§6 and the JavaScript spec). The bootloader in `cc-shared.js` reads `data-page` to determine which page-specific JS file to load and `data-prefix` to determine the page's init function name (`<prefix>_init`). Carrying both attributes on `<body>` keeps the bootloader's logic simple: read two attributes, derive a file path and a function name. Surfacing the cc_prefix in the page-shell HTML also makes the prefix discipline visible at the top level of every page rather than implicit in identifier conventions throughout.
+The two `<body>` attributes `data-cc-page` and `data-cc-prefix` exist to support the bootloader-driven JS module loading model (§6 and the JavaScript spec). The bootloader in `cc-shared.js` reads `data-cc-page` to determine which page-specific JS file to load and `data-cc-prefix` to determine the page's init function name (`<prefix>_init`). Carrying both attributes on `<body>` keeps the bootloader's logic simple: read two attributes, derive a file path and a function name. Surfacing the cc_prefix in the page-shell HTML also makes the prefix discipline visible at the top level of every page rather than implicit in identifier conventions throughout.
 
-The `#page-error-banner` placeholder gives the bootloader a DOM target for surfacing page-boot failures (script load errors, missing init functions, init function exceptions). Like the connection banner, it exists as an empty placeholder in markup and is populated at runtime by `cc-shared.js`. The placeholder's mandatory position (immediately after the connection banner) creates a predictable layout for users: connection state above the page, then any page-boot errors, then the page content below.
+The `#cc-page-error-banner` placeholder gives the bootloader a DOM target for surfacing page-boot failures (script load errors, missing init functions, init function exceptions). Like the connection banner, it exists as an empty placeholder in markup and is populated at runtime by `cc-shared.js`. The placeholder's mandatory position (immediately after the connection banner) creates a predictable layout for users: connection state above the page, then any page-boot errors, then the page content below.
 
 The DOCTYPE strict-casing rule (only `<!DOCTYPE html>` is permitted) reflects a "one way only" stance applied throughout the spec. HTML allows several casings of the DOCTYPE token, but a spec that allowed multiple forms produces a catalog full of stylistically inconsistent rows that say the same thing. Mandating exactly one form means: the catalog is uniform, the populator's detection logic is simple, and any deviation is real drift worth flagging.
 
