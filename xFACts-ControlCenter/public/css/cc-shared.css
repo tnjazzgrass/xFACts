@@ -9,13 +9,21 @@
    connection banner, back link, section containers, slide panels, modals,
    and feedback overlays. Page-specific CSS files contain page-specific
    content rules only and consume the building blocks defined here via
-   shared classes (e.g., .section, .slide-panel, .xf-modal) and the custom
-   property tokens in :root (e.g., var(--color-bg-card), var(--size-radius-default)).
+   shared classes (e.g., .cc-section, .cc-slide-panel, .cc-modal) and the
+   custom property tokens in :root (e.g., var(--color-bg-card),
+   var(--size-radius-default)).
 
    This file replaces the legacy engine-events.css as the canonical shared
    resource. During the page-by-page migration both files coexist; once
    the last page has migrated to consume cc-shared.css, engine-events.css
    is deleted.
+
+   Per CC_CSS_Spec.md Section 5, every chrome class definition uses the
+   cc- prefix and every section banner declares Prefix: cc. Compound
+   modifier classes (e.g., .disabled, .wide, .active, .open, .hidden,
+   .section-platform, .has-center) stay unprefixed because they have no
+   standalone definitions; their validity is established by their pairing
+   with a registered cc- base class.
 
    FILE ORGANIZATION
    -----------------
@@ -43,7 +51,7 @@
    of animation utility classes pages can apply directly. Element-only,
    universal, and pseudo-element selectors are spec-permitted in this
    section only because that's how CSS resets work.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 :root {
@@ -148,7 +156,7 @@
 
     /* -- Size tokens: modal widths -- */
     --size-modal-width-default: 460px;
-	--size-modal-width-medium:  600px;
+    --size-modal-width-medium:  600px;
     --size-modal-width-wide:    800px;
 
     /* -- Size tokens: scrollbar -- */
@@ -244,7 +252,7 @@ a { color: var(--color-text-link); }
     100% { transform: rotate(360deg); }
 }
 
-@keyframes xfModalFadeIn {
+@keyframes ccModalFadeIn {
     from { opacity: 0; }
     to   { opacity: 1; }
 }
@@ -264,14 +272,14 @@ a { color: var(--color-text-link); }
    CHROME: NAV BAR
    ----------------------------------------------------------------------------
    Fixed nav bar at the top of every page, rendered by Get-NavBarHtml in
-   xFACts-Helpers.psm1. Contains Home + section links + admin gear (admins
+   xFACts-CCShared.psm1. Contains Home + section links + admin gear (admins
    only). Section accent classes are applied based on RBAC_NavSection data
    and visually pair with the page H1 color.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The fixed nav bar container at the top of every page. */
-.nav-bar {
+.cc-nav-bar {
     position: fixed;
     top: 0;
     left: 0;
@@ -287,7 +295,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Individual nav link in the nav bar. */
-.nav-link {
+.cc-nav-link {
     color: var(--color-text-muted);
     text-decoration: none;
     padding: 10px var(--size-spacing-xl);
@@ -299,21 +307,21 @@ a { color: var(--color-text-link); }
     align-items: center;
 }
 
-.nav-link:hover { /* hover state for any nav link */
+.cc-nav-link:hover { /* hover state for any nav link */
     color: var(--color-text-primary);
     background: var(--color-bg-card-hover);
 }
 
-.nav-link.active { /* active state for the current page's nav link (default accent) */
+.cc-nav-link.active { /* active state for the current page's nav link (default accent) */
     color: var(--color-accent-shared);
     border-bottom-color: var(--color-accent-shared);
 }
 
 /* Nav bar flexible spacer that pushes admin gear to the right. */
-.nav-spacer { flex: 1; }
+.cc-nav-spacer { flex: 1; }
 
 /* Admin gear icon link, rendered for admins only at the right of the nav bar. */
-.nav-admin {
+.cc-nav-admin {
     font-size: 20px;
     opacity: 0.45;
     color: var(--color-accent-platform) !important;
@@ -322,49 +330,49 @@ a { color: var(--color-text-link); }
     line-height: 1;
 }
 
-.nav-admin:hover { /* hover state for the admin gear */
+.cc-nav-admin:hover { /* hover state for the admin gear */
     opacity: 1;
 }
 
 /* Visual divider between nav links and the admin gear. */
-.nav-separator {
+.cc-nav-separator {
     color: var(--color-border-default);
     padding: 0 var(--size-spacing-xs);
     font-size: var(--font-size-content-lg);
 }
 
 /* Platform-section accent: blue on hover and active state. */
-.nav-link.nav-section-platform:hover { /* hover state for platform-section nav links */
+.cc-nav-link.cc-nav-section-platform:hover { /* hover state for platform-section nav links */
     color: var(--color-accent-platform);
 }
 
-.nav-section-platform.active { /* active state for platform-section nav links */
+.cc-nav-section-platform.active { /* active state for platform-section nav links */
     color: var(--color-accent-platform);
     border-bottom-color: var(--color-accent-platform);
 }
 
 /* Departmental-section accent: yellow on hover and active state. */
-.nav-link.nav-section-departmental:hover { /* hover state for departmental-section nav links */
+.cc-nav-link.cc-nav-section-departmental:hover { /* hover state for departmental-section nav links */
     color: var(--color-accent-departmental);
 }
 
-.nav-section-departmental.active { /* active state for departmental-section nav links */
+.cc-nav-section-departmental.active { /* active state for departmental-section nav links */
     color: var(--color-accent-departmental);
     border-bottom-color: var(--color-accent-departmental);
 }
 
 /* Tools-section accent: soft blue on hover and active state. */
-.nav-link.nav-section-tools:hover { /* hover state for tools-section nav links */
+.cc-nav-link.cc-nav-section-tools:hover { /* hover state for tools-section nav links */
     color: var(--color-accent-tools);
 }
 
-.nav-section-tools.active { /* active state for tools-section nav links */
+.cc-nav-section-tools.active { /* active state for tools-section nav links */
     color: var(--color-accent-tools);
     border-bottom-color: var(--color-accent-tools);
 }
 
 /* Admin-section guard: never rendered as a nav link (gear-only access). Defensive rule that hides the link if a future code change accidentally emits one. */
-.nav-section-admin { /* admin-section nav link guard (always hidden) */
+.cc-nav-section-admin { /* admin-section nav link guard (always hidden) */
     display: none;
 }
 
@@ -380,56 +388,56 @@ a { color: var(--color-text-link); }
    h1 color in their own CSS, and the body.section-* selectors live in
    FOUNDATION's reset family. We localize h1 styling to the page-title
    chrome by giving it a class wrapper.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The H1 element wrapped in a page-title container. */
-.page-h1 {
+.cc-page-h1 {
     color: var(--color-accent-platform);
     margin: 0 0 2px 0;
     font-size: var(--font-size-h1);
 }
 
-.page-h1.section-platform { /* H1 color when page belongs to the platform section */
+.cc-page-h1.section-platform { /* H1 color when page belongs to the platform section */
     color: var(--color-accent-platform);
 }
 
-.page-h1.section-departmental { /* H1 color when page belongs to the departmental section */
+.cc-page-h1.section-departmental { /* H1 color when page belongs to the departmental section */
     color: var(--color-accent-departmental);
 }
 
-.page-h1.section-tools { /* H1 color when page belongs to the tools section */
+.cc-page-h1.section-tools { /* H1 color when page belongs to the tools section */
     color: var(--color-accent-tools);
 }
 
-.page-h1.section-admin { /* H1 color when page is an admin-only page */
+.cc-page-h1.section-admin { /* H1 color when page is an admin-only page */
     color: var(--color-accent-platform);
 }
 
 /* Help-link styling for H1 anchors (opens docs in new tab). */
-.page-h1-link {
+.cc-page-h1-link {
     color: inherit;
     text-decoration: none;
     transition: color var(--duration-fast) ease;
 }
 
-.page-h1-link:hover { /* hover state for the H1 help link */
+.cc-page-h1-link:hover { /* hover state for the H1 help link */
     color: var(--color-text-link);
 }
 
 /* Page subtitle line below the H1. */
-.page-subtitle {
+.cc-page-subtitle {
     color: var(--color-text-muted);
     font-size: var(--font-size-heading-sm);
     margin: 0;
 }
 
-.page-subtitle:empty { /* collapse empty subtitle to avoid extra vertical space */
+.cc-page-subtitle:empty { /* collapse empty subtitle to avoid extra vertical space */
     display: none;
 }
 
 /* The flex container that holds H1+subtitle on the left and refresh info on the right. */
-.header-bar {
+.cc-header-bar {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -439,12 +447,12 @@ a { color: var(--color-text-link); }
     flex-shrink: 0;
 }
 
-.header-bar.has-center { /* enables the absolute-positioned center column variant */
+.cc-header-bar.has-center { /* enables the absolute-positioned center column variant */
     position: relative;
 }
 
 /* The right-column container in the header bar. */
-.header-right {
+.cc-header-right {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -452,7 +460,7 @@ a { color: var(--color-text-link); }
 }
 
 /* The center column for pages opting into a center-positioned control (e.g., Server Health server selector). */
-.header-center {
+.cc-header-center {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
@@ -468,11 +476,11 @@ a { color: var(--color-text-link); }
    each section's refresh behavior. Pages with no auto-refresh logic still
    display this row with the page-load timestamp; the live dot still
    pulses to indicate the UI is responsive.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The refresh info row layout container. */
-.refresh-info {
+.cc-refresh-info {
     display: flex;
     align-items: center;
     gap: var(--size-spacing-md);
@@ -481,7 +489,7 @@ a { color: var(--color-text-link); }
 }
 
 /* The pulsing dot indicating UI responsiveness. */
-.live-indicator {
+.cc-live-indicator {
     display: inline-block;
     width: var(--size-spacing-md);
     height: var(--size-spacing-md);
@@ -492,12 +500,12 @@ a { color: var(--color-text-link); }
 }
 
 /* The "Updated: <timestamp>" text in the refresh info row. */
-.last-updated {
+.cc-last-updated {
     color: var(--color-accent-shared);
 }
 
 /* The manual refresh button (circular arrow) on every page. */
-.page-refresh-btn {
+.cc-page-refresh-btn {
     background: transparent;
     border: var(--size-border-thin) solid var(--color-border-strong);
     color: var(--color-text-muted);
@@ -511,13 +519,13 @@ a { color: var(--color-text-link); }
     vertical-align: middle;
 }
 
-.page-refresh-btn:hover { /* hover state for the manual refresh button */
+.cc-page-refresh-btn:hover { /* hover state for the manual refresh button */
     background: var(--color-border-divider);
     color: var(--color-text-primary);
     border-color: var(--color-text-subtle);
 }
 
-.page-refresh-btn.spinning { /* state when refresh is actively running (briefly post-click) */
+.cc-page-refresh-btn.spinning { /* state when refresh is actively running (briefly post-click) */
     animation: page-refresh-spin var(--duration-slow) ease-in-out;
     border-color: var(--color-accent-shared);
     color: var(--color-accent-shared);
@@ -525,7 +533,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Section-header refresh badge: event-driven (yellow accent, no animation). */
-.refresh-badge-event {
+.cc-refresh-badge-event {
     font-size: var(--font-size-default);
     padding: 1px var(--size-spacing-xs);
     border-radius: var(--size-radius-sm);
@@ -536,7 +544,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Section-header refresh badge: live polling (teal accent with pulsing dot). */
-.refresh-badge-live {
+.cc-refresh-badge-live {
     font-size: var(--font-size-default);
     padding: 1px var(--size-spacing-xs);
     border-radius: var(--size-radius-sm);
@@ -549,8 +557,8 @@ a { color: var(--color-text-link); }
     background: transparent;
 }
 
-/* The pulsing dot inside .refresh-badge-live. */
-.refresh-badge-dot {
+/* The pulsing dot inside .cc-refresh-badge-live. */
+.cc-refresh-badge-dot {
     width: var(--size-spacing-md);
     height: var(--size-spacing-md);
     background: var(--color-accent-shared);
@@ -558,13 +566,13 @@ a { color: var(--color-text-link); }
     animation: pulse var(--duration-pulse) infinite;
 }
 
-.refresh-badge-dot.idle { /* dimmed, non-animating state when polling is paused */
+.cc-refresh-badge-dot.idle { /* dimmed, non-animating state when polling is paused */
     animation: none;
     opacity: 0.4;
 }
 
 /* Section-header refresh badge: static (gray, no refresh behavior). */
-.refresh-badge-static {
+.cc-refresh-badge-static {
     font-size: var(--font-size-default);
     padding: 1px var(--size-spacing-xs);
     border-radius: var(--size-radius-sm);
@@ -575,7 +583,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Section-header refresh badge: action-driven (blue, refreshes on user action). */
-.refresh-badge-action {
+.cc-refresh-badge-action {
     font-size: var(--font-size-default);
     padding: 1px var(--size-spacing-xs);
     border-radius: var(--size-radius-sm);
@@ -588,20 +596,20 @@ a { color: var(--color-text-link); }
 /* ============================================================================
    CHROME: ENGINE CARDS
    ----------------------------------------------------------------------------
-   Real-time engine indicator cards driven by engine-events.js. Each card
+   Real-time engine indicator cards driven by cc-shared.js. Each card
    reflects one orchestrator-managed process via WebSocket events. Cards
    sit below the refresh info row in the header bar's right column. Pages
    without orchestrator-driven processes have no engine cards.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The horizontal row container that holds engine cards side by side. */
-.engine-row {
+.cc-engine-row {
     display: flex;
     gap: 5px;
 }
 
-.engine-row.ws-disconnected { /* visual state when the WebSocket connection is dropped */
+.cc-engine-row.ws-disconnected { /* visual state when the WebSocket connection is dropped */
     border: 1px dashed var(--color-text-subtle);
     border-radius: var(--size-radius-default);
     padding: var(--size-radius-sm);
@@ -609,7 +617,7 @@ a { color: var(--color-text-link); }
 
 /* A single engine indicator card. Always clickable when present (the
    document-level click handler in cc-shared.js opens the popup). */
-.engine-card {
+.cc-engine-card {
     width: 68px;
     display: flex;
     flex-direction: column;
@@ -622,18 +630,18 @@ a { color: var(--color-text-link); }
     cursor: pointer;
 }
 
-.engine-card.card-warning { /* warning frame coloring (overdue) */
+.cc-engine-card.card-warning { /* warning frame coloring (overdue) */
     border-color: var(--color-accent-departmental);
     background: var(--color-tint-warning);
 }
 
-.engine-card.card-critical { /* critical frame coloring */
+.cc-engine-card.card-critical { /* critical frame coloring */
     border-color: var(--color-status-critical);
     background: var(--color-tint-critical);
 }
 
 /* Engine card label (the engine's short name above the status bar). */
-.engine-label {
+.cc-engine-label {
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
     font-weight: 600;
@@ -643,40 +651,40 @@ a { color: var(--color-text-link); }
 }
 
 /* Engine status bar (the colored bar that reflects engine state). */
-.engine-bar {
+.cc-engine-bar {
     width: 100%;
     height: 10px;
     border-radius: var(--size-radius-xs);
     transition: background-color var(--duration-default), box-shadow var(--duration-default);
 }
 
-.engine-bar.idle { /* engine is idle (last run successful, awaiting next trigger) */
+.cc-engine-bar.idle { /* engine is idle (last run successful, awaiting next trigger) */
     background: var(--color-status-idle);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-idle);
 }
 
-.engine-bar.running { /* engine is actively running */
+.cc-engine-bar.running { /* engine is actively running */
     background: var(--color-status-running);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-running);
 }
 
-.engine-bar.overdue { /* engine has missed its expected next-run time */
+.cc-engine-bar.overdue { /* engine has missed its expected next-run time */
     background: var(--color-status-overdue);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-overdue);
 }
 
-.engine-bar.critical { /* engine's last run failed or is severely overdue */
+.cc-engine-bar.critical { /* engine's last run failed or is severely overdue */
     background: var(--color-status-critical);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-critical);
 }
 
-.engine-bar.disabled { /* engine is administratively disabled */
+.cc-engine-bar.disabled { /* engine is administratively disabled */
     background: var(--color-status-disabled);
     box-shadow: none;
 }
 
 /* Engine countdown text (small text below the bar showing time-to-next-run). */
-.engine-countdown {
+.cc-engine-countdown {
     font-size: var(--font-size-xs);
     color: var(--color-text-primary);
     font-variant-numeric: tabular-nums;
@@ -684,12 +692,12 @@ a { color: var(--color-text-link); }
     line-height: 10px;
 }
 
-.engine-countdown.cd-overdue { /* countdown text styling when engine is overdue */
+.cc-engine-countdown.cd-overdue { /* countdown text styling when engine is overdue */
     color: var(--color-status-critical);
 }
 
 /* Click-popup that appears when an engine card is clicked, showing last run details. */
-.engine-popup {
+.cc-engine-popup {
     background: var(--color-bg-card);
     border: var(--size-border-thin) solid var(--color-accent-platform);
     border-radius: var(--size-radius-lg);
@@ -702,7 +710,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Header row inside the engine popup (title + close button). */
-.engine-popup-header {
+.cc-engine-popup-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -711,14 +719,14 @@ a { color: var(--color-text-link); }
 }
 
 /* The popup title text. */
-.engine-popup-title {
+.cc-engine-popup-title {
     font-weight: 600;
     color: var(--color-accent-platform);
     font-size: var(--font-size-content-lg);
 }
 
 /* Close button (X) inside the engine popup. */
-.engine-popup-close {
+.cc-engine-popup-close {
     cursor: pointer;
     color: var(--color-text-muted);
     font-size: 18px;
@@ -726,43 +734,43 @@ a { color: var(--color-text-link); }
     padding: 0 2px;
 }
 
-.engine-popup-close:hover { /* hover state for the popup close button */
+.cc-engine-popup-close:hover { /* hover state for the popup close button */
     color: var(--color-text-primary);
 }
 
 /* A single key/value row inside the engine popup. */
-.engine-popup-row {
+.cc-engine-popup-row {
     display: flex;
     justify-content: space-between;
     padding: 5px 14px;
     border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.engine-popup-row.last { /* last row in the popup (no bottom border) */
+.cc-engine-popup-row.last { /* last row in the popup (no bottom border) */
     border-bottom: none;
 }
 
 /* Label (left side) of an engine popup row. */
-.engine-popup-label {
+.cc-engine-popup-label {
     color: var(--color-text-muted);
     font-size: var(--font-size-content);
 }
 
 /* Value (right side) of an engine popup row. */
-.engine-popup-value {
+.cc-engine-popup-value {
     color: var(--color-text-primary);
     font-size: var(--font-size-content);
     text-align: right;
 }
 
 /* Container for the optional output preview block at the bottom of the popup. */
-.engine-popup-output {
+.cc-engine-popup-output {
     padding: var(--size-spacing-md) 14px;
     border-top: var(--size-border-thin) solid var(--color-border-default);
 }
 
 /* Pre-formatted output block (used for stdout/stderr previews). */
-.engine-popup-pre {
+.cc-engine-popup-pre {
     background: var(--color-bg-pre);
     border: var(--size-border-thin) solid var(--color-border-divider);
     border-radius: var(--size-radius-sm);
@@ -778,7 +786,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Footer row of the engine popup (small caption text). */
-.engine-popup-footer {
+.cc-engine-popup-footer {
     padding: var(--size-spacing-sm) 14px;
     border-top: var(--size-border-thin) solid var(--color-border-divider);
     color: var(--color-text-subtle);
@@ -789,16 +797,16 @@ a { color: var(--color-text-link); }
 /* ============================================================================
    CHROME: CONNECTION BANNER
    ----------------------------------------------------------------------------
-   State-aware connection status display, driven by updateConnectionBanner()
-   in engine-events.js. The placeholder element <div class="connection-banner">
+   State-aware connection status display, driven by cc_updateConnectionBanner()
+   in cc-shared.js. The placeholder element <div class="cc-connection-banner">
    sits between the header bar and the content area; it stays hidden until a
    connection event sets a state class. JS toggles between four states:
    reconnecting, disconnected, session-expired, and reloading.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The connection banner container (hidden until a state class is applied). */
-.connection-banner {
+.cc-connection-banner {
     display: none;
     padding: var(--size-spacing-md) var(--size-page-padding-y);
     font-size: var(--font-size-content);
@@ -808,28 +816,28 @@ a { color: var(--color-text-link); }
     flex-shrink: 0;
 }
 
-.connection-banner.reconnecting { /* attempting to reconnect (blue) */
+.cc-connection-banner.reconnecting { /* attempting to reconnect (blue) */
     display: block;
     background: var(--color-banner-reconnecting-bg);
     border: var(--size-border-thin) solid var(--color-banner-reconnecting-border);
     color: var(--color-accent-platform);
 }
 
-.connection-banner.disconnected { /* connection lost (red-orange) */
+.cc-connection-banner.disconnected { /* connection lost (red-orange) */
     display: block;
     background: var(--color-banner-disconnected-bg);
     border: var(--size-border-thin) solid var(--color-banner-disconnected-border);
     color: var(--color-status-critical);
 }
 
-.connection-banner.session-expired { /* user session has expired (yellow) */
+.cc-connection-banner.session-expired { /* user session has expired (yellow) */
     display: block;
     background: var(--color-banner-session-bg);
     border: var(--size-border-thin) solid var(--color-banner-session-border);
     color: var(--color-accent-departmental);
 }
 
-.connection-banner.reloading { /* page is about to reload (teal) */
+.cc-connection-banner.reloading { /* page is about to reload (teal) */
     display: block;
     background: var(--color-banner-reloading-bg);
     border: var(--size-border-thin) solid var(--color-banner-reloading-border);
@@ -837,13 +845,13 @@ a { color: var(--color-text-link); }
 }
 
 /* Inline link inside the connection banner (e.g., "Sign In" on session-expired). */
-.banner-link {
+.cc-banner-link {
     color: inherit;
     font-weight: 600;
     text-decoration: underline;
 }
 
-.banner-link:hover { /* hover state for the inline banner link */
+.cc-banner-link:hover { /* hover state for the inline banner link */
     color: var(--color-text-on-primary);
 }
 
@@ -853,14 +861,14 @@ a { color: var(--color-text-link); }
    Visible page-load error display, populated by the bootloader in
    cc-shared.js when the page module fails to load, the <prefix>_init
    function is missing, or <prefix>_init throws during execution. The
-   placeholder element <div id="page-error-banner"> sits between the header
-   bar and the content area and stays hidden until the bootloader adds the
-   page-error-banner-visible class.
-   Prefix: (none)
+   placeholder element <div id="cc-page-error-banner"> sits between the
+   header bar and the content area and stays hidden until the bootloader
+   adds the page-error-banner-visible class.
+   Prefix: cc
    ============================================================================ */
 
 /* The page error banner container (hidden until the visible class is applied). */
-.page-error-banner {
+.cc-page-error-banner {
     display: none;
     padding: var(--size-spacing-md) var(--size-page-padding-y);
     font-size: var(--font-size-content);
@@ -873,18 +881,18 @@ a { color: var(--color-text-link); }
     flex-shrink: 0;
 }
 
-.page-error-banner.page-error-banner-visible { /* bootloader-populated state */
+.cc-page-error-banner.page-error-banner-visible { /* bootloader-populated state */
     display: block;
 }
 
 /* Primary message - the short headline explaining what failed. */
-.page-error-banner-message {
+.cc-page-error-banner-message {
     font-weight: 600;
     margin-right: var(--size-spacing-sm);
 }
 
 /* Refresh button - reuses the cc-reload-page shared action. */
-.page-error-banner-refresh {
+.cc-page-error-banner-refresh {
     background: transparent;
     color: inherit;
     border: var(--size-border-thin) solid currentColor;
@@ -896,12 +904,12 @@ a { color: var(--color-text-link); }
     margin-right: var(--size-spacing-sm);
 }
 
-.page-error-banner-refresh:hover { /* hover state for the refresh button */
+.cc-page-error-banner-refresh:hover { /* hover state for the refresh button */
     background: rgba(255, 255, 255, 0.08);
 }
 
 /* Contact-team trailing text. */
-.page-error-banner-contact {
+.cc-page-error-banner-contact {
     opacity: 0.85;
 }
 
@@ -912,11 +920,11 @@ a { color: var(--color-text-link); }
    PlatformMonitoring, future dept-only tools). The link sits below the
    page header and resolves its target via /api/nav-registry/label. Subtle
    by design: muted gray so it doesn't compete with page content.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The back-link element shown on tool pages outside the main nav. */
-.back-link {
+.cc-back-link {
     display: inline-block;
     margin-top: var(--size-spacing-sm);
     font-size: var(--font-size-content);
@@ -925,7 +933,7 @@ a { color: var(--color-text-link); }
     transition: color var(--duration-instant) ease;
 }
 
-.back-link:hover { /* hover state for the back link */
+.cc-back-link:hover { /* hover state for the back link */
     color: var(--color-text-link);
 }
 
@@ -933,14 +941,14 @@ a { color: var(--color-text-link); }
    CONTENT: SECTIONS
    ----------------------------------------------------------------------------
    Standard panel structure used inside the content area below the chrome.
-   Every page composes its content from .section containers. Each section
-   has a header with a title on the left and optional controls + refresh
-   badge on the right.
-   Prefix: (none)
+   Every page composes its content from .cc-section containers. Each
+   section has a header with a title on the left and optional controls +
+   refresh badge on the right.
+   Prefix: cc
    ============================================================================ */
 
 /* The section container — every page composes its content from these. */
-.section {
+.cc-section {
     background: var(--color-bg-card);
     border: var(--size-border-thin) solid var(--color-border-default);
     border-radius: var(--size-radius-lg);
@@ -951,7 +959,7 @@ a { color: var(--color-text-link); }
     overflow: hidden;
 }
 
-.section.fill { /* section consumes remaining vertical space and scrolls internally */
+.cc-section.fill { /* section consumes remaining vertical space and scrolls internally */
     flex: 1;
     flex-shrink: 1;
     min-height: 0;
@@ -959,7 +967,7 @@ a { color: var(--color-text-link); }
 }
 
 /* The section header (title left, controls + badges right). */
-.section-header {
+.cc-section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -970,7 +978,7 @@ a { color: var(--color-text-link); }
 }
 
 /* The section title text (uppercase, teal, letter-spaced). */
-.section-title {
+.cc-section-title {
     font-size: var(--font-size-heading-sm);
     font-weight: 600;
     color: var(--color-accent-shared);
@@ -980,7 +988,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Right-side container for section controls + refresh badge. */
-.section-header-right {
+.cc-section-header-right {
     display: flex;
     align-items: center;
     gap: var(--size-spacing-md);
@@ -991,17 +999,17 @@ a { color: var(--color-text-link); }
    ----------------------------------------------------------------------------
    Reusable slide-from-right panel system with overlay, header, scrollable
    body, and a small library of standard sub-components for common layouts
-   (summary stats, tables, sections, accordions, empty states). 
+   (summary stats, tables, sections, accordions, empty states).
 
    Width tiers:
      default  600px  -- single-column detail views
      .wide    800px  -- tabular detail with multiple columns
      .xwide   1000px -- wide multi-column tables
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The full-viewport overlay behind an open slide panel. */
-.slide-overlay {
+.cc-slide-overlay {
     display: none;
     position: fixed;
     top: 0;
@@ -1012,12 +1020,12 @@ a { color: var(--color-text-link); }
     z-index: var(--z-panel-overlay);
 }
 
-.slide-overlay.open { /* state when the overlay is visible (panel is open) */
+.cc-slide-overlay.open { /* state when the overlay is visible (panel is open) */
     display: block;
 }
 
 /* The slide panel itself (hidden offscreen until .open). */
-.slide-panel {
+.cc-slide-panel {
     position: fixed;
     top: 0;
     right: var(--size-panel-offset-default);
@@ -1031,21 +1039,21 @@ a { color: var(--color-text-link); }
     transition: right var(--duration-default) ease;
 }
 
-.slide-panel.wide { /* wider panel for tabular detail content */
+.cc-slide-panel.wide { /* wider panel for tabular detail content */
     width: var(--size-panel-width-wide);
     right: var(--size-panel-offset-wide);
 }
 
-.slide-panel.xwide { /* widest panel for wide multi-column tables */
+.cc-slide-panel.xwide { /* widest panel for wide multi-column tables */
     width: var(--size-panel-width-xwide);
     right: var(--size-panel-offset-xwide);
 }
 
-.slide-panel.open { /* state when the panel is visible (slid into view) */
+.cc-slide-panel.open { /* state when the panel is visible (slid into view) */
     right: 0;
 }
 
-.slide-panel.slide-auto-height { /* vertically-centered panel that sizes to content (compact dialogs) */
+.cc-slide-panel.slide-auto-height { /* vertically-centered panel that sizes to content (compact dialogs) */
     height: auto;
     max-height: 90vh;
     top: 50%;
@@ -1059,7 +1067,7 @@ a { color: var(--color-text-link); }
 }
 
 /* The slide panel header (title left, close button right). */
-.slide-panel-header {
+.cc-slide-panel-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1069,7 +1077,7 @@ a { color: var(--color-text-link); }
 }
 
 /* The title text inside the slide panel header. */
-.slide-panel-title {
+.cc-slide-panel-title {
     margin: 0;
     color: var(--color-accent-shared);
     font-size: var(--font-size-heading-lg);
@@ -1077,14 +1085,14 @@ a { color: var(--color-text-link); }
 }
 
 /* The scrollable body container for slide panel content. */
-.slide-panel-body {
+.cc-slide-panel-body {
     flex: 1;
     overflow-y: auto;
     padding: var(--size-spacing-xl) var(--size-page-padding-y);
 }
 
 /* Slide panel sub-component: summary stat grid (small key/value cards in a grid). */
-.slide-summary {
+.cc-slide-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
     gap: var(--size-spacing-lg);
@@ -1092,7 +1100,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Single summary stat card. */
-.slide-stat {
+.cc-slide-stat {
     background: var(--color-bg-card-hover);
     border-radius: var(--size-radius-lg);
     padding: 10px;
@@ -1100,28 +1108,28 @@ a { color: var(--color-text-link); }
 }
 
 /* Value (large number/text) inside a slide-stat card. */
-.slide-stat-value {
+.cc-slide-stat-value {
     font-size: 18px;
     font-weight: 600;
     color: var(--color-accent-shared);
 }
 
 /* Label (small caption) below the value in a slide-stat card. */
-.slide-stat-label {
+.cc-slide-stat-label {
     font-size: var(--font-size-body);
     color: var(--color-text-muted);
     margin-top: var(--size-spacing-xs);
 }
 
 /* Slide panel sub-component: data table (sticky header, dark rows). */
-.slide-table {
+.cc-slide-table {
     width: 100%;
     border-collapse: collapse;
     font-size: var(--font-size-content);
 }
 
 /* Slide-table header cell (sticky to top of scrollable body). */
-.slide-table-th {
+.cc-slide-table-th {
     text-align: left;
     padding: var(--size-spacing-md) 10px;
     border-bottom: var(--size-border-thin) solid var(--color-border-default);
@@ -1134,29 +1142,29 @@ a { color: var(--color-text-link); }
 }
 
 /* Slide-table data cell. */
-.slide-table-td {
+.cc-slide-table-td {
     padding: var(--size-spacing-sm) 10px;
     border-bottom: var(--size-border-thin) solid var(--color-border-divider);
     color: var(--color-text-primary);
     white-space: nowrap;
 }
 
-.slide-table-td.align-right { /* right-aligned numeric/timestamp cells */
+.cc-slide-table-td.align-right { /* right-aligned numeric/timestamp cells */
     text-align: right;
 }
 
 /* Hover row state for the slide table. */
-.slide-table-row:hover { /* hover state for any data row in the slide table */
+.cc-slide-table-row:hover { /* hover state for any data row in the slide table */
     background: var(--color-bg-card-hover);
 }
 
 /* Slide panel sub-component: in-panel section divider (for grouping content within a panel). */
-.slide-section {
+.cc-slide-section {
     margin-bottom: var(--size-spacing-2xl);
 }
 
 /* Title text for an in-panel section. */
-.slide-section-title {
+.cc-slide-section-title {
     font-size: var(--font-size-content-lg);
     font-weight: 600;
     color: var(--color-accent-platform);
@@ -1166,7 +1174,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Slide panel sub-component: accordion header (clickable to expand/collapse). */
-.slide-accordion-header {
+.cc-slide-accordion-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1179,19 +1187,19 @@ a { color: var(--color-text-link); }
     transition: background var(--duration-instant) ease;
 }
 
-.slide-accordion-header:hover { /* hover state for the accordion header */
+.cc-slide-accordion-header:hover { /* hover state for the accordion header */
     background: var(--color-border-divider);
 }
 
 /* Label text inside an accordion header. */
-.slide-accordion-label {
+.cc-slide-accordion-label {
     font-size: var(--font-size-content-lg);
     color: var(--color-text-primary);
     font-weight: 500;
 }
 
 /* Stats text shown to the right of the label in an accordion header. */
-.slide-accordion-stats {
+.cc-slide-accordion-stats {
     font-size: var(--font-size-content);
     color: var(--color-text-muted);
     margin-left: auto;
@@ -1199,28 +1207,28 @@ a { color: var(--color-text-link); }
 }
 
 /* Chevron indicator in an accordion header (rotates when expanded). */
-.slide-accordion-chevron {
+.cc-slide-accordion-chevron {
     font-size: var(--font-size-body);
     color: var(--color-text-muted);
     transition: transform var(--duration-fast) ease;
 }
 
-.slide-accordion-chevron.expanded { /* rotated 90deg when the accordion is open */
+.cc-slide-accordion-chevron.expanded { /* rotated 90deg when the accordion is open */
     transform: rotate(90deg);
 }
 
 /* The collapsible body content of an accordion. */
-.slide-accordion-body {
+.cc-slide-accordion-body {
     display: none;
     padding: var(--size-spacing-md) 0 var(--size-spacing-md) var(--size-spacing-xl);
 }
 
-.slide-accordion-body.expanded { /* visible state when the accordion is open */
+.cc-slide-accordion-body.expanded { /* visible state when the accordion is open */
     display: block;
 }
 
 /* Caption shown when accordion body content is truncated. */
-.slide-accordion-cutoff {
+.cc-slide-accordion-cutoff {
     font-size: var(--font-size-body);
     color: var(--color-text-muted);
     padding: var(--size-spacing-xs) var(--size-spacing-lg) var(--size-spacing-md);
@@ -1228,7 +1236,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Empty-state placeholder shown when a slide panel has no content to display. */
-.slide-empty {
+.cc-slide-empty {
     color: var(--color-text-muted);
     font-size: var(--font-size-content-lg);
     padding: var(--size-spacing-2xl);
@@ -1238,21 +1246,21 @@ a { color: var(--color-text-link); }
 /* ============================================================================
    CONTENT: MODAL SYSTEM
    ----------------------------------------------------------------------------
-   The xf-modal-* class set replaces native alert() and confirm() across
-   all Control Center pages. Used by showAlert() and showConfirm() in
-   engine-events.js, which dynamically create and remove the overlay
-   element. Pages can also declare an xf-modal-overlay statically in HTML
+   The cc-modal-* class set replaces native alert() and confirm() across
+   all Control Center pages. Used by cc_showAlert() and cc_showConfirm()
+   in cc-shared.js, which dynamically create and remove the overlay
+   element. Pages can also declare a cc-modal-overlay statically in HTML
    and toggle visibility via the .hidden class for async-content modals.
 
-   The .xf-modal-close button is shared with slide panel headers (a single
-   close-button class works in both contexts).
+   The .cc-modal-close button is shared with slide panel headers (a
+   single close-button class works in both contexts).
 
-   uses @keyframes xfModalFadeIn from FOUNDATION
-   Prefix: (none)
+   uses @keyframes ccModalFadeIn from FOUNDATION
+   Prefix: cc
    ============================================================================ */
 
 /* The full-viewport overlay behind an open modal. */
-.xf-modal-overlay {
+.cc-modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -1263,36 +1271,36 @@ a { color: var(--color-text-link); }
     display: flex;
     align-items: center;
     justify-content: center;
-    animation: xfModalFadeIn var(--duration-fast) ease;
+    animation: ccModalFadeIn var(--duration-fast) ease;
 }
 
-.xf-modal-overlay.hidden { /* hidden initial state for statically-declared modals */
+.cc-modal-overlay.hidden { /* hidden initial state for statically-declared modals */
     display: none;
 }
 
 /* The modal container itself (centered in the overlay). */
-.xf-modal {
+.cc-modal {
     background: var(--color-bg-card);
     border: var(--size-border-thin) solid var(--color-border-default);
     border-radius: var(--size-radius-xl);
     width: var(--size-modal-width-default);
     max-width: 90vw;
-	max-height: 90vh;
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
     box-shadow: var(--shadow-modal);
 }
 
-.xf-modal.medium { /* medium-width modal for typical detail views */
+.cc-modal.medium { /* medium-width modal for typical detail views */
     width: var(--size-modal-width-medium);
 }
 
-.xf-modal.wide { /* wider modal for tabular content or detail views */
+.cc-modal.wide { /* wider modal for tabular content or detail views */
     width: var(--size-modal-width-wide);
 }
 
 /* The modal header (icon + title + close button). */
-.xf-modal-header {
+.cc-modal-header {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1306,7 +1314,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Title text inside the modal header (flex-1 pushes the close button to the right). */
-.xf-modal-title {
+.cc-modal-title {
     flex: 1;
     margin: 0;
     color: var(--color-accent-shared);
@@ -1315,36 +1323,36 @@ a { color: var(--color-text-link); }
 }
 
 /* Optional icon glyph at the left of the modal header. */
-.xf-modal-icon {
+.cc-modal-icon {
     font-size: 20px;
 }
 
 /* The modal body (main content area). Scrolls internally when modal content exceeds max height. */
-.xf-modal-body {
+.cc-modal-body {
     padding: var(--size-page-padding-y);
-	overflow-y: auto;
+    overflow-y: auto;
     flex: 1;
 }
 
 /* Paragraph styling inside the modal body. */
-.xf-modal-paragraph {
+.cc-modal-paragraph {
     color: var(--color-text-secondary);
     font-size: var(--font-size-content-lg);
     line-height: 1.6;
     margin: 0 0 10px 0;
 }
 
-.xf-modal-paragraph.last { /* last paragraph in the body (no bottom margin) */
+.cc-modal-paragraph.last { /* last paragraph in the body (no bottom margin) */
     margin-bottom: 0;
 }
 
 /* Strong/emphasized text inside the modal body. */
-.xf-modal-strong {
+.cc-modal-strong {
     color: var(--color-accent-shared);
 }
 
 /* The modal action button row at the bottom (footer). */
-.xf-modal-actions {
+.cc-modal-actions {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
@@ -1353,7 +1361,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Cancel/secondary button inside the modal actions row. */
-.xf-modal-btn-cancel {
+.cc-modal-btn-cancel {
     padding: var(--size-spacing-md) var(--size-page-padding-y);
     background: var(--color-bg-card-hover);
     border: var(--size-border-thin) solid var(--color-border-default);
@@ -1364,13 +1372,13 @@ a { color: var(--color-text-link); }
     transition: all var(--duration-instant);
 }
 
-.xf-modal-btn-cancel:hover { /* hover state for the cancel button */
+.cc-modal-btn-cancel:hover { /* hover state for the cancel button */
     background: var(--color-border-divider);
     border-color: var(--color-text-muted);
 }
 
 /* Primary action button inside the modal actions row. */
-.xf-modal-btn-primary {
+.cc-modal-btn-primary {
     padding: var(--size-spacing-md) var(--size-page-padding-y);
     background: var(--color-button-primary-bg);
     border: var(--size-border-thin) solid var(--color-button-primary-bg);
@@ -1382,13 +1390,13 @@ a { color: var(--color-text-link); }
     transition: all var(--duration-instant);
 }
 
-.xf-modal-btn-primary:hover { /* hover state for the primary button */
+.cc-modal-btn-primary:hover { /* hover state for the primary button */
     background: var(--color-button-primary-bg-hover);
     border-color: var(--color-button-primary-bg-hover);
 }
 
 /* Danger/destructive action button inside the modal actions row. */
-.xf-modal-btn-danger {
+.cc-modal-btn-danger {
     padding: var(--size-spacing-md) var(--size-page-padding-y);
     background: var(--color-button-danger-bg);
     border: var(--size-border-thin) solid var(--color-button-danger-border);
@@ -1400,13 +1408,13 @@ a { color: var(--color-text-link); }
     transition: all var(--duration-instant);
 }
 
-.xf-modal-btn-danger:hover { /* hover state for the danger button */
+.cc-modal-btn-danger:hover { /* hover state for the danger button */
     background: var(--color-button-danger-bg-hover);
     border-color: var(--color-button-danger-border-hover);
 }
 
 /* Shared close button (X) used in both modal headers and slide panel headers. */
-.xf-modal-close {
+.cc-modal-close {
     background: none;
     border: none;
     color: var(--color-text-muted);
@@ -1417,7 +1425,7 @@ a { color: var(--color-text-link); }
     transition: color var(--duration-instant);
 }
 
-.xf-modal-close:hover { /* hover state for the close button */
+.cc-modal-close:hover { /* hover state for the close button */
     color: var(--color-text-primary);
 }
 
@@ -1427,11 +1435,11 @@ a { color: var(--color-text-link); }
    Full-viewport overlay shown when user inactivity exceeds the configured
    timeout. Polling pauses underneath; a single move/keypress dismisses
    the overlay and resumes activity.
-   Prefix: (none)
+   Prefix: cc
    ============================================================================ */
 
 /* The full-viewport idle overlay container. */
-.idle-overlay {
+.cc-idle-overlay {
     position: fixed;
     inset: 0;
     background: var(--color-bg-overlay-idle);
@@ -1443,7 +1451,7 @@ a { color: var(--color-text-link); }
 }
 
 /* The centered idle message box on top of the overlay. */
-.idle-message {
+.cc-idle-message {
     background: var(--color-bg-card);
     border: var(--size-border-thin) solid var(--color-border-strong);
     border-radius: var(--size-radius-xl);
