@@ -12,6 +12,29 @@
    active backup/copy/upload tables, the storage gauges, and the
    pipeline and queue detail modals.
 
+   CHANGELOG
+   ---------
+   2026-05-18  CC File Format Standardization (Phase 1, §11.2.4 unified
+               prefix rename): adopted the bkp_ prefix on the page-side
+               contract surface that cc-shared.js resolves via
+               window[cc_pagePrefix + '_<name>'] — ENGINE_PROCESSES is now
+               bkp_ENGINE_PROCESSES, and the four lifecycle hooks
+               (onPageRefresh, onPageResumed, onSessionExpired,
+               onEngineProcessCompleted) are now bkp_-prefixed. Updated
+               every call into cc-shared.js to the new cc_ identifiers:
+               connectEngineEvents → cc_connectEngineEvents, engineFetch
+               → cc_engineFetch, escapeHtml → cc_escapeHtml,
+               enginePageHidden → cc_enginePageHidden,
+               engineSessionExpired → cc_engineSessionExpired. The single
+               chrome DOM ID reference (last-update) is now cc-last-update
+               to match Backup.ps1's renamed emission. All page-local
+               bkp_* identifiers, bkp- DOM IDs, and compound modifier
+               class names (hidden, open, expanded) are unchanged. Two
+               sections that previously declared Prefix: (none)
+               (CONSTANTS: ENGINE PROCESSES, FUNCTIONS: PAGE LIFECYCLE
+               HOOKS) now declare Prefix: bkp because their contents are
+               bkp_-prefixed.
+
    FILE ORGANIZATION
    -----------------
    CONSTANTS: ENGINE PROCESSES
@@ -36,16 +59,18 @@
    CONSTANTS: ENGINE PROCESSES
    ----------------------------------------------------------------------------
    Name contract with cc-shared.js. Maps process names registered in
-   Orchestrator.ProcessRegistry to their engine card slugs. The identifier
-   is read by exact name and cannot carry a page prefix.
-   Prefix: (none)
+   Orchestrator.ProcessRegistry to their engine card slugs. The
+   identifier is bkp_ENGINE_PROCESSES so cc-shared.js can resolve it via
+   window[cc_pagePrefix + '_ENGINE_PROCESSES'] using the data-cc-prefix
+   value declared on <body>.
+   Prefix: bkp
    ============================================================================ */
 
 /* Maps orchestrator process names to engine card slugs. cc-shared.js
    reads this at startup; each entry binds a process to a card on the
    page. Card refreshes for the bound process happen automatically via
-   onEngineProcessCompleted. */
-const ENGINE_PROCESSES = {
+   bkp_onEngineProcessCompleted. */
+const bkp_ENGINE_PROCESSES = {
     'Collect-BackupStatus':      { slug: 'collection' },
     'Process-BackupNetworkCopy': { slug: 'networkcopy' },
     'Process-BackupAWSUpload':   { slug: 'awsupload' },
@@ -151,7 +176,7 @@ async function bkp_init() {
     await bkp_loadAllData();
     await bkp_loadActiveOperations();
     bkp_startAutoRefresh();
-    connectEngineEvents();
+    cc_connectEngineEvents();
     bkp_startLivePolling();
 
     document.body.addEventListener('click', bkp_handleClickAction);
@@ -173,7 +198,7 @@ async function bkp_init() {
    the API is unavailable. */
 async function bkp_loadRefreshInterval() {
     try {
-        var data = await engineFetch('/api/config/refresh-interval?page=backup');
+        var data = await cc_engineFetch('/api/config/refresh-interval?page=backup');
         if (data) {
             bkp_pageRefreshInterval = data.interval || bkp_PAGE_REFRESH_INTERVAL_DEFAULT;
         }
@@ -195,7 +220,7 @@ async function bkp_loadAllData() {
 
 /* Starts the midnight-rollover check. Lightweight 60-second timer that
    reloads the page when the date changes. All operational data refresh
-   is event-driven via onEngineProcessCompleted. */
+   is event-driven via bkp_onEngineProcessCompleted. */
 function bkp_startAutoRefresh() {
     bkp_refreshTimer = setInterval(function() {
         var today = new Date().toDateString();
@@ -207,16 +232,16 @@ function bkp_startAutoRefresh() {
 
 /* Starts the live-polling timer for the active-operations section.
    Skips polling when the tab is hidden or the session is expired so we
-   do not burn fetches that engineFetch would short-circuit anyway. */
+   do not burn fetches that cc_engineFetch would short-circuit anyway. */
 function bkp_startLivePolling() {
     if (bkp_livePollingTimer) clearInterval(bkp_livePollingTimer);
     bkp_livePollingTimer = setInterval(function() {
-        if (enginePageHidden || engineSessionExpired) return;
+        if (cc_enginePageHidden || cc_engineSessionExpired) return;
         bkp_refreshLiveSections();
     }, bkp_pageRefreshInterval * 1000);
 }
 
-/* Stops live polling. Called by the onSessionExpired hook when
+/* Stops live polling. Called by the bkp_onSessionExpired hook when
    cc-shared.js detects the session has expired so we do not keep firing
    fetches that will be short-circuited. */
 function bkp_stopLivePolling() {
@@ -241,9 +266,9 @@ async function bkp_loadLiveData() {
 }
 
 /* Refreshes everything on the page. Called by the manual refresh button
-   (via the onPageRefresh hook), by the onPageResumed hook on tab
-   resume, and by onEngineProcessCompleted when an orchestrator process
-   finishes. */
+   (via the bkp_onPageRefresh hook), by the bkp_onPageResumed hook on tab
+   resume, and by bkp_onEngineProcessCompleted when an orchestrator
+   process finishes. */
 function bkp_refreshAll() {
     bkp_loadAllData();
     bkp_loadActiveOperations();
@@ -263,7 +288,7 @@ function bkp_refreshAll() {
 /* Loads the active-operations data and re-renders the table. Updates
    the page timestamp on success. */
 function bkp_loadActiveOperations() {
-    return engineFetch('/api/backup/active-operations')
+    return cc_engineFetch('/api/backup/active-operations')
         .then(function(data) {
             if (!data) return;
             if (data.error) { console.error('Active operations:', data.error); return; }
@@ -277,7 +302,7 @@ function bkp_loadActiveOperations() {
    Caches the retention scheduled time used by the retention card's
    schedule note, then re-renders retention so the note picks up. */
 function bkp_loadPipelineStatus() {
-    return engineFetch('/api/backup/pipeline-status')
+    return cc_engineFetch('/api/backup/pipeline-status')
         .then(function(data) {
             if (!data) return;
             if (data.error) { console.error('Pipeline status:', data.error); return; }
@@ -294,7 +319,7 @@ function bkp_loadPipelineStatus() {
    Caches pending-retention totals used by the retention cards, then
    re-renders retention so the counts pick up. */
 function bkp_loadStorageStatus() {
-    return engineFetch('/api/backup/storage-status')
+    return cc_engineFetch('/api/backup/storage-status')
         .then(function(data) {
             if (!data) return;
             if (data.error) { console.error('Storage status:', data.error); return; }
@@ -311,7 +336,7 @@ function bkp_loadStorageStatus() {
    the response into bkp_queueData so re-renders without a fresh fetch
    can use it. */
 function bkp_loadQueueStatus() {
-    return engineFetch('/api/backup/queue-status')
+    return cc_engineFetch('/api/backup/queue-status')
         .then(function(data) {
             if (!data) return;
             if (data.error) { console.error('Queue status:', data.error); return; }
@@ -351,7 +376,7 @@ function bkp_renderPipelineStatus(processes) {
         var timeClass = 'bkp-pipeline-time';
         if (statusClass) timeClass += ' ' + statusClass;
 
-        html += '<div class="' + cardClass + '" data-action-click="open-pipeline-detail" data-process-name="' + escapeHtml(proc.process_name) + '">';
+        html += '<div class="' + cardClass + '" data-action-click="open-pipeline-detail" data-process-name="' + cc_escapeHtml(proc.process_name) + '">';
         html += '<div class="bkp-pipeline-card-header">';
         html += '<span class="bkp-pipeline-name">' + bkp_formatProcessName(proc.process_name) + '</span>';
         html += '<span class="bkp-pipeline-status-badge ' + badge.badgeClass + '">' + badge.label + '</span>';
@@ -427,14 +452,14 @@ function bkp_openPipelineDetail(target) {
         return;
     }
 
-    engineFetch('/api/backup/pipeline-detail?process=' + processName)
+    cc_engineFetch('/api/backup/pipeline-detail?process=' + processName)
         .then(function(data) {
             if (!data) { body.innerHTML = '<div class="bkp-detail-empty">Failed to load data</div>'; return; }
-            if (data.error) { body.innerHTML = '<div class="bkp-detail-empty">Error: ' + escapeHtml(data.error) + '</div>'; return; }
+            if (data.error) { body.innerHTML = '<div class="bkp-detail-empty">Error: ' + cc_escapeHtml(data.error) + '</div>'; return; }
             bkp_renderPipelineModal(body, data);
         })
         .catch(function(err) {
-            body.innerHTML = '<div class="bkp-detail-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
+            body.innerHTML = '<div class="bkp-detail-empty">Failed to load: ' + cc_escapeHtml(err.message) + '</div>';
         });
 }
 
@@ -462,7 +487,7 @@ function bkp_renderPipelineModal(container, data) {
         html += '</div>';
 
         if (s.last_error_message) {
-            html += '<div class="bkp-detail-error-caption">' + escapeHtml(s.last_error_message) + '</div>';
+            html += '<div class="bkp-detail-error-caption">' + cc_escapeHtml(s.last_error_message) + '</div>';
         }
     }
 
@@ -481,15 +506,15 @@ function bkp_renderPipelineModal(container, data) {
         data.files.forEach(function(f) {
             var statusCss = f.status === 'SUCCESS' ? 'status-success' : 'status-failed';
             html += '<tr class="bkp-detail-table-row">';
-            html += '<td class="bkp-detail-table-td ' + statusCss + '">' + escapeHtml(f.status) + '</td>';
-            html += '<td class="bkp-detail-table-td">' + escapeHtml(f.server_name || '-') + '</td>';
-            html += '<td class="bkp-detail-table-td">' + escapeHtml(f.database_name || '-') + '</td>';
-            html += '<td class="bkp-detail-table-td">' + escapeHtml(f.file_name || '-') + '</td>';
+            html += '<td class="bkp-detail-table-td ' + statusCss + '">' + cc_escapeHtml(f.status) + '</td>';
+            html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.server_name || '-') + '</td>';
+            html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.database_name || '-') + '</td>';
+            html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.file_name || '-') + '</td>';
             html += '<td class="bkp-detail-table-td align-right">' + (f.bytes_processed > 0 ? bkp_formatBytesShort(f.bytes_processed) : '-') + '</td>';
             html += '<td class="bkp-detail-table-td align-right">' + bkp_formatDurationMs(f.duration_ms) + '</td>';
             html += '</tr>';
             if (f.error_message) {
-                html += '<tr><td colspan="6" class="bkp-detail-error-caption">' + escapeHtml(f.error_message) + '</td></tr>';
+                html += '<tr><td colspan="6" class="bkp-detail-error-caption">' + cc_escapeHtml(f.error_message) + '</td></tr>';
             }
         });
         html += '</tbody></table>';
@@ -552,14 +577,14 @@ function bkp_openQueueDetail(target) {
     var body = document.getElementById('bkp-detail-body');
     body.innerHTML = '<div class="bkp-loading">Loading...</div>';
 
-    engineFetch('/api/backup/queue-detail?type=' + type)
+    cc_engineFetch('/api/backup/queue-detail?type=' + type)
         .then(function(data) {
             if (!data) { body.innerHTML = '<div class="bkp-detail-empty">Failed to load data</div>'; return; }
-            if (data.error) { body.innerHTML = '<div class="bkp-detail-empty">Error: ' + escapeHtml(data.error) + '</div>'; return; }
+            if (data.error) { body.innerHTML = '<div class="bkp-detail-empty">Error: ' + cc_escapeHtml(data.error) + '</div>'; return; }
             bkp_renderQueueModal(body, data);
         })
         .catch(function(err) {
-            body.innerHTML = '<div class="bkp-detail-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
+            body.innerHTML = '<div class="bkp-detail-empty">Failed to load: ' + cc_escapeHtml(err.message) + '</div>';
         });
 }
 
@@ -589,10 +614,10 @@ function bkp_renderQueueModal(container, data) {
     html += '</tr></thead><tbody>';
     data.files.forEach(function(f) {
         html += '<tr class="bkp-detail-table-row">';
-        html += '<td class="bkp-detail-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + escapeHtml(f.backup_type) + '</span></td>';
-        html += '<td class="bkp-detail-table-td">' + escapeHtml(f.server_name) + '</td>';
-        html += '<td class="bkp-detail-table-td">' + escapeHtml(f.database_name) + '</td>';
-        html += '<td class="bkp-detail-table-td">' + escapeHtml(f.file_name) + '</td>';
+        html += '<td class="bkp-detail-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
+        html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.server_name) + '</td>';
+        html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.database_name) + '</td>';
+        html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.file_name) + '</td>';
         html += '<td class="bkp-detail-table-td">' + bkp_formatDateTime(f.backup_finish_dttm) + '</td>';
         html += '<td class="bkp-detail-table-td align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
         html += '</tr>';
@@ -668,14 +693,14 @@ function bkp_openRetentionDetail(target) {
     var body = document.getElementById(bodyId);
     body.innerHTML = '<div class="bkp-loading">Loading retention candidates...</div>';
 
-    engineFetch('/api/backup/retention-candidates?type=' + type)
+    cc_engineFetch('/api/backup/retention-candidates?type=' + type)
         .then(function(data) {
             if (!data) { body.innerHTML = '<div class="slide-empty">Failed to load data</div>'; return; }
-            if (data.error) { body.innerHTML = '<div class="slide-empty">Error: ' + escapeHtml(data.error) + '</div>'; return; }
+            if (data.error) { body.innerHTML = '<div class="slide-empty">Error: ' + cc_escapeHtml(data.error) + '</div>'; return; }
             bkp_renderRetentionSlideout(body, data, type);
         })
         .catch(function(err) {
-            body.innerHTML = '<div class="slide-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
+            body.innerHTML = '<div class="slide-empty">Failed to load: ' + cc_escapeHtml(err.message) + '</div>';
         });
 }
 
@@ -733,7 +758,7 @@ function bkp_renderRetentionSlideout(container, data, type) {
         var serverId = 'bkp-ret-srv-' + type + '-' + serverName.replace(/[^a-zA-Z0-9]/g, '_');
 
         html += '<div class="slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + serverId + '" id="' + serverId + '-header">';
-        html += '<span class="slide-accordion-label">' + escapeHtml(serverName) + '</span>';
+        html += '<span class="slide-accordion-label">' + cc_escapeHtml(serverName) + '</span>';
         html += '<span class="slide-accordion-stats">' + server.files.length + ' files &middot; ' + bkp_formatBytesShort(server.bytes) + '</span>';
         html += '<span class="slide-accordion-chevron" id="' + serverId + '-chevron">&#9654;</span>';
         html += '</div>';
@@ -745,7 +770,7 @@ function bkp_renderRetentionSlideout(container, data, type) {
             var dbId = serverId + '-' + dbName.replace(/[^a-zA-Z0-9]/g, '_');
 
             html += '<div class="slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + dbId + '" id="' + dbId + '-header">';
-            html += '<span class="slide-accordion-label">' + escapeHtml(dbName) + '</span>';
+            html += '<span class="slide-accordion-label">' + cc_escapeHtml(dbName) + '</span>';
             html += '<span class="slide-accordion-stats">' + db.files.length + ' files &middot; ' + bkp_formatBytesShort(db.bytes) + '</span>';
             html += '<span class="slide-accordion-chevron" id="' + dbId + '-chevron">&#9654;</span>';
             html += '</div>';
@@ -762,8 +787,8 @@ function bkp_renderRetentionSlideout(container, data, type) {
             html += '</tr></thead><tbody>';
             db.files.forEach(function(f) {
                 html += '<tr class="slide-table-row">';
-                html += '<td class="slide-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + escapeHtml(f.backup_type) + '</span></td>';
-                html += '<td class="slide-table-td">' + escapeHtml(f.file_name) + '</td>';
+                html += '<td class="slide-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
+                html += '<td class="slide-table-td">' + cc_escapeHtml(f.file_name) + '</td>';
                 html += '<td class="slide-table-td">' + bkp_formatDateTime(f.backup_finish_dttm) + '</td>';
                 html += '<td class="slide-table-td align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
                 html += '</tr>';
@@ -835,9 +860,9 @@ function bkp_renderBackupsInProgress(backups) {
         backups.forEach(function(backup) {
             var commandType = backup.command.replace('BACKUP ', '').replace('RESTORE ', 'R:');
             html += '<tr class="bkp-operation-table-row">';
-            html += '<td class="bkp-operation-table-td">' + escapeHtml(backup.server_name) + '</td>';
-            html += '<td class="bkp-operation-table-td">' + escapeHtml(backup.database_name || '-') + '</td>';
-            html += '<td class="bkp-operation-table-td">' + escapeHtml(commandType) + '</td>';
+            html += '<td class="bkp-operation-table-td">' + cc_escapeHtml(backup.server_name) + '</td>';
+            html += '<td class="bkp-operation-table-td">' + cc_escapeHtml(backup.database_name || '-') + '</td>';
+            html += '<td class="bkp-operation-table-td">' + cc_escapeHtml(commandType) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_renderProgressBar(backup.percent_complete, false) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_formatMinutes(backup.elapsed_minutes) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_formatMinutes(backup.eta_minutes) + '</td>';
@@ -873,9 +898,9 @@ function bkp_renderNetworkCopiesInProgress(copies) {
 
         copies.forEach(function(file) {
             html += '<tr class="bkp-operation-table-row">';
-            html += '<td class="bkp-operation-table-td">' + escapeHtml(file.server_name) + '</td>';
-            html += '<td class="bkp-operation-table-td">' + escapeHtml(file.database_name) + '</td>';
-            html += '<td class="bkp-operation-table-td bkp-operation-file-name">' + escapeHtml(file.file_name) + '</td>';
+            html += '<td class="bkp-operation-table-td">' + cc_escapeHtml(file.server_name) + '</td>';
+            html += '<td class="bkp-operation-table-td">' + cc_escapeHtml(file.database_name) + '</td>';
+            html += '<td class="bkp-operation-table-td bkp-operation-file-name">' + cc_escapeHtml(file.file_name) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_formatBytes(file.file_size_bytes) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_renderProgressBar(file.percent_complete, true) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_formatMinutes(file.elapsed_minutes) + '</td>';
@@ -911,9 +936,9 @@ function bkp_renderAwsUploadsInProgress(uploads) {
 
         uploads.forEach(function(file) {
             html += '<tr class="bkp-operation-table-row">';
-            html += '<td class="bkp-operation-table-td">' + escapeHtml(file.server_name) + '</td>';
-            html += '<td class="bkp-operation-table-td">' + escapeHtml(file.database_name) + '</td>';
-            html += '<td class="bkp-operation-table-td bkp-operation-file-name">' + escapeHtml(file.file_name) + '</td>';
+            html += '<td class="bkp-operation-table-td">' + cc_escapeHtml(file.server_name) + '</td>';
+            html += '<td class="bkp-operation-table-td">' + cc_escapeHtml(file.database_name) + '</td>';
+            html += '<td class="bkp-operation-table-td bkp-operation-file-name">' + cc_escapeHtml(file.file_name) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_formatBytes(file.file_size_bytes) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_renderProgressBar(file.percent_complete, true) + '</td>';
             html += '<td class="bkp-operation-table-td">' + bkp_formatMinutes(file.elapsed_minutes) + '</td>';
@@ -988,7 +1013,7 @@ function bkp_renderLocalDriveRow(drive) {
 
     var html = '<div class="bkp-storage-drive">';
     html += '<div class="bkp-drive-header">';
-    html += '<span class="' + labelClass + '">' + escapeHtml(drive.server_name) + ' ' + drive.drive_letter + ':</span>';
+    html += '<span class="' + labelClass + '">' + cc_escapeHtml(drive.server_name) + ' ' + drive.drive_letter + ':</span>';
     html += '<span class="bkp-drive-stats">' + bkp_formatMB(drive.free_space_mb) + ' free (' + drive.percent_free.toFixed(0) + '%)</span>';
     html += '</div>';
     html += bkp_renderSegmentGauge(usedPercent, statusClass, 80);
@@ -1008,9 +1033,9 @@ function bkp_renderNetworkStorageRow(storage) {
     if (storage.error) {
         var html = '<div class="bkp-storage-drive">';
         html += '<div class="bkp-drive-header">';
-        html += '<span class="bkp-drive-label">' + escapeHtml(storage.path) + '</span>';
+        html += '<span class="bkp-drive-label">' + cc_escapeHtml(storage.path) + '</span>';
         html += '</div>';
-        html += '<div class="bkp-storage-error">' + escapeHtml(storage.error) + '</div>';
+        html += '<div class="bkp-storage-error">' + cc_escapeHtml(storage.error) + '</div>';
         html += '</div>';
         return html;
     }
@@ -1021,7 +1046,7 @@ function bkp_renderNetworkStorageRow(storage) {
 
     var rowHtml = '<div class="bkp-storage-drive">';
     rowHtml += '<div class="bkp-drive-header">';
-    rowHtml += '<span class="' + labelClass + '">' + escapeHtml(storage.path) + '</span>';
+    rowHtml += '<span class="' + labelClass + '">' + cc_escapeHtml(storage.path) + '</span>';
     rowHtml += '<span class="bkp-drive-stats">' + bkp_formatMB(storage.free_space_mb) + ' free (' + storage.percent_free.toFixed(0) + '%)</span>';
     rowHtml += '</div>';
     rowHtml += bkp_renderSegmentGauge(usedPercent, statusClass, 80);
@@ -1125,8 +1150,8 @@ function bkp_handleClickAction(event) {
    ----------------------------------------------------------------------------
    Page-local display formatters: timestamp display, scheduled-time
    parsing, byte/MB sizing, duration / minutes rendering, and the
-   process-name lookup. The standard escapeHtml from cc-shared.js handles
-   HTML attribute and content escaping; these helpers handle the
+   process-name lookup. The standard cc_escapeHtml from cc-shared.js
+   handles HTML attribute and content escaping; these helpers handle the
    per-page display formats not covered by cc-shared.
    Prefix: bkp
    ============================================================================ */
@@ -1135,7 +1160,7 @@ function bkp_handleClickAction(event) {
    header. */
 function bkp_updateTimestamp() {
     var now = new Date();
-    document.getElementById('last-update').textContent = now.toLocaleTimeString();
+    document.getElementById('cc-last-update').textContent = now.toLocaleTimeString();
 }
 
 /* Maps an internal process name to its display label. */
@@ -1250,38 +1275,39 @@ function bkp_formatDateTime(dateTimeStr) {
 /* ============================================================================
    FUNCTIONS: PAGE LIFECYCLE HOOKS
    ----------------------------------------------------------------------------
-   Hooks invoked by cc-shared.js. The shared module probes for these via
-   typeof === 'function' and calls them at the appropriate moment in the
-   page lifecycle, so they are not prefixed (the shared module reads them
-   by name).
-   Prefix: (none)
+   Hooks invoked by cc-shared.js. The shared module resolves these via
+   window[cc_pagePrefix + '_<name>'] at runtime, using the data-cc-prefix
+   value declared on <body>. Each hook is bkp_-prefixed and exposed at
+   the page-local namespace so the shared module's lookup pattern finds
+   it.
+   Prefix: bkp
    ============================================================================ */
 
 /* Called by cc-shared.js when the user clicks the page refresh button.
    cc-shared.js drives the spin animation; this hook does the actual
    data reload. */
-function onPageRefresh() {
+function bkp_onPageRefresh() {
     bkp_refreshAll();
 }
 
 /* Called by cc-shared.js when the page becomes visible again after
    being hidden. cc-shared.js drives the spin animation; this hook does
    the actual data reload so the user sees current data. */
-function onPageResumed() {
+function bkp_onPageResumed() {
     bkp_refreshAll();
 }
 
 /* Called by cc-shared.js when the session is detected as expired.
    Stops the live-polling timer so we do not keep firing fetches that
-   engineFetch will short-circuit. */
-function onSessionExpired() {
+   cc_engineFetch will short-circuit. */
+function bkp_onSessionExpired() {
     bkp_stopLivePolling();
 }
 
 /* Called by cc-shared.js when an orchestrator process listed in
-   ENGINE_PROCESSES completes. Refreshes the event-driven sections
+   bkp_ENGINE_PROCESSES completes. Refreshes the event-driven sections
    (pipeline, queue, retention, storage) since fresh data is now
    available. */
-function onEngineProcessCompleted(processName, event) {
+function bkp_onEngineProcessCompleted(processName, event) {
     bkp_refreshAll();
 }
