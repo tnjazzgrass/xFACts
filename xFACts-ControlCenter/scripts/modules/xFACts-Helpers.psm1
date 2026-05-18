@@ -1118,13 +1118,18 @@ function Get-PageHeaderHtml {
 
     if ($entry.doc_page_id -and -not [string]::IsNullOrWhiteSpace([string]$entry.doc_page_id)) {
         $docSlug = [System.Web.HttpUtility]::HtmlEncode([string]$entry.doc_page_id)
-        $h1Inner = "<a href=`"/docs/pages/$docSlug.html`" target=`"_blank`">$title</a>"
+        $h1Inner = "<a href=`"/docs/pages/$docSlug.html`" target=`"_blank`" class=`"page-h1-link`">$title</a>"
     }
     else {
         $h1Inner = $title
     }
 
-    return "<h1>$h1Inner</h1>`n<p class=`"page-subtitle`">$description</p>"
+    # Emit the section-{key} modifier so cc-shared.css's color-routing rules
+    # match; falls back to bare .page-h1 when section_key is missing.
+    $sectionKey = ConvertFrom-DBNull $entry.section_key
+    $sectionClass = if ($sectionKey) { " section-$sectionKey" } else { '' }
+
+    return "<h1 class=`"page-h1$sectionClass`">$h1Inner</h1>`n<p class=`"page-subtitle`">$description</p>"
 }
 
 function Get-PageBrowserTitle {
