@@ -6,6 +6,23 @@
 
 ---
 
+## Spec Authoring Conventions
+
+*This section governs how this spec is written. It applies to every section and every edit.*
+
+1. **Rules state what, not why.** Each rule is a short declarative statement of the requirement. No rationale, explanation, or background in the rule itself.
+2. **One rule per bullet, where possible.** Numbered or bulleted lists make rules scannable. Prose paragraphs are reserved for cases where a single rule genuinely requires more than a sentence.
+3. **No introductory framing.** Section headings introduce what the section governs; the section body goes straight to rules. Paragraphs like "This section addresses X because Y" or "The purpose of these rules is Z" do not belong in the body.
+4. **Rationale lives in the Appendix.** Where a rule's reasoning is worth recording, it goes in the Appendix at the corresponding section number. Most rules do not need a rationale entry.
+5. **Drift codes live in a consolidated reference at the end of the spec, not inline with rules.** Each rule states the requirement only. The drift codes section (§16) maps each code to its rule section and description in the format `Code | Section | Description`. A rule that has a drift code is implicitly enforceable; the code is documented in the reference.
+6. **Examples earn their place.** A code block illustrating a rule should be the shortest form that conveys the rule. Multi-example blocks belong in the spec's Examples section, not inline with rules.
+7. **No status, history, or progress information.** The spec describes rules. What the codebase does today, what was added when, and what is planned live elsewhere.
+8. **Inline SQL or script query blocks do not belong in the spec.** Operational queries live in Object_Metadata `common_queries` on the relevant script. The spec references the script; it does not contain executable queries.
+
+*New content added to this spec conforms to these conventions immediately. Existing sections may contain prose that predates these conventions and will be cleaned up in a dedicated pass.*
+
+---
+
 ## 1. Required structure
 
 A CSS file consists of three parts in this exact order:
@@ -69,7 +86,7 @@ The opening and closing rule lines are exactly 76 `=` characters. The inner sepa
 - `<TYPE>` must be one of the six recognized section types (Section 4). The TYPE token is uppercase letters and underscores only.
 - `<NAME>` is human-readable and may contain spaces, commas, and other punctuation.
 - The description block is 1-5 sentences explaining what the section contains. Required.
-- The `Prefix:` line declares the page prefix that scopes class names in this section (Section 5). Required, singular.
+- The `Prefix:` line declares the prefix that scopes class names in this section (Section 5). Required, singular.
 
 ### 3.2 Banner authoring discipline
 
@@ -117,31 +134,25 @@ The single-source-of-truth principle is preserved per-component: tokens, keyfram
 
 ## 5. Prefix
 
-Every section banner declares a single page prefix via the `Prefix:` line. Every base class definition in that section must have a leftmost class name that begins with the declared prefix (followed by a `-`). Drift code: `PREFIX_MISMATCH`.
+Every section banner declares one prefix via the `Prefix:` line. The prefix scopes class names within the section: every base class definition in that section must have a leftmost class-name token that begins with the declared prefix followed by a `-`. Drift code: `PREFIX_MISMATCH`.
 
-### 5.1 Special values
+### 5.1 Two prefix forms
 
-- `Prefix: (none)` - sentinel value. Declares the section has no class definitions, so prefix-matching is intentionally disabled. Used by anchor file sections (which contain platform-wide chrome and tokens, not page-prefixed content) and by FOUNDATION sections containing only reset rules, keyframes, and custom properties (which are not classes). The line itself is still required as a structural marker.
-- The `Prefix:` line is mandatory. Drift code if absent: `MISSING_PREFIX_DECLARATION`.
+The prefix system has exactly two forms. No other forms are valid.
 
-### 5.2 Prefix selection rules
+- **Page prefix** — the value of `Component_Registry.cc_prefix` for the file's component. Declared in LAYOUT, CONTENT, OVERRIDES, and FEEDBACK_OVERLAYS sections of page files. Example: `Prefix: bkp`.
+- **Chrome prefix** — the literal token `cc`. Declared in FOUNDATION and CHROME sections of anchor files.
 
-1. **3 characters, fixed.** Prefix length is exactly three characters platform-wide. Not 2, not 4.
-2. **Lowercase letters only.** No digits, no underscores, no hyphens. The hyphen separates the prefix from the rest of the class name.
-3. **No collisions.** No two pages may share a prefix.
-4. **No platform-token collisions.** Prefixes must not start with strings reserved for platform tokens (`color`, `size`, `font`, `duration`, `shadow`, `z`, `gradient`).
+### 5.2 Prefix declaration rules
 
-### 5.3 Single prefix per banner
+- The `Prefix:` line is mandatory in every section banner. Drift code: `MISSING_PREFIX_DECLARATION`.
+- A page-file section (LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS in a page file) declares the page prefix from `Component_Registry.cc_prefix`. A different value emits `PREFIX_REGISTRY_MISMATCH`.
+- An anchor-file section (FOUNDATION, CHROME, or FEEDBACK_OVERLAYS in an anchor file) declares `Prefix: cc`. A different value emits `ANCHOR_SECTION_INVALID_PREFIX`.
+- The `Prefix:` line declares exactly one value. Multiple comma-separated values are not permitted. A banner declaring anything other than a single page prefix or `cc` emits `MALFORMED_PREFIX_VALUE`.
 
-Each banner declares exactly one prefix or `(none)`. Multiple comma-separated prefixes are not permitted. A file represents one CC page (or the shared resource), and that page has a single registered prefix; every section in the file uses that same prefix. Drift code if a banner declares anything other than a single 3-character prefix or `(none)`: `MALFORMED_PREFIX_VALUE`.
+### 5.3 Registry as source of truth
 
-### 5.4 Registry validation
-
-Each page's prefix is registered in `dbo.Component_Registry.cc_prefix` for the component that owns the page's CSS file. The parser cross-references each banner's declared prefix against the registry and emits drift on disagreement.
-
-- If a file's component has `cc_prefix = NULL` (a shared or infrastructure component, e.g., `ControlCenter.Shared`, `Documentation.Site`), every section banner in the file must declare `Prefix: (none)`. A non-`(none)` declaration emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
-- If a file's component has `cc_prefix = X` (e.g., `bkp` for `ServerOps.Backup`), every section banner in the file must declare `Prefix: X`. A different value emits `PREFIX_REGISTRY_MISMATCH` on the banner row.
-- The registry is the source of truth. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
+`Component_Registry.cc_prefix` is the source of truth for which prefix belongs to which component. The parser cross-references each banner's declared prefix against the registry and emits drift on disagreement. When a declared prefix and the registry disagree, the file is wrong and the file is updated.
 
 ---
 
@@ -192,6 +203,28 @@ When an element's appearance depends on a state (warning, critical, active, disa
 The HTML places the state class on the styled element directly. JavaScript that toggles state operates on the element directly, with no parent-class coordination needed.
 
 When a refactor surfaces a `.foo:not(:disabled)` guard, a `.parent.state .child` descendant, or a `.foo.bar.baz` depth-3 compound, the resolution is almost always state-on-element form. See Section 18 for examples.
+
+### 7.4 Compound modifier classes
+
+A **compound modifier class** is a class-name token that exists in CSS definitions only as the rightmost component of a compound selector — never as a standalone class definition. Compound modifiers carry no prefix and gain their meaning entirely from the companion class they appear with.
+
+Examples of compound modifier names: `disabled`, `hidden`, `wide`, `xwide`, `active`, `warning`, `critical`, `success`, `medium`.
+
+#### 7.4.1 Compound modifier definition rules
+
+- A compound modifier is defined exclusively in compound selectors (e.g., `.cc-engine-bar.disabled`, `.cc-button.disabled`, `.bkp-card.warning`). It has no standalone `.disabled { ... }` rule anywhere in the codebase.
+- A class token that has any standalone definition is not a compound modifier — it is a standalone class subject to the unified prefix rule from §5.
+- The set of compound modifiers is open. Authors define new compound modifiers by writing new compound selectors. The CSS populator recognizes a token as a compound modifier by observing that no standalone definition exists.
+
+#### 7.4.2 Exemption from the prefix rule
+
+Compound modifiers are exempt from the section's `Prefix:` declaration. A compound selector `.cc-engine-bar.disabled` does not emit `PREFIX_MISMATCH` for the `disabled` token; only the leftmost (base) class is prefix-checked.
+
+#### 7.4.3 Companion validity (HTML side)
+
+The set of `<companion-class>.<modifier>` pairs registered in CSS defines the valid companion contexts for each modifier. In HTML markup, a compound modifier is valid on an element only when the element also carries a companion class for which `<companion>.<modifier>` is a registered compound. HTML markup using a compound modifier outside its registered companion contexts emits `INVALID_MODIFIER_CONTEXT` (HTML spec §5.1.1).
+
+Compound modifier validity is enforced at the HTML populator's USAGE-resolution step, not at the CSS populator's DEFINITION step. The CSS populator records every `<companion>.<modifier>` compound as a `CSS_VARIANT DEFINITION` row per §7.1; the HTML populator queries those rows to resolve validity.
 
 ---
 
@@ -320,8 +353,9 @@ Every CSS file must:
 | Blank line inside a class definition (except inside `:root`) | `BLANK_LINE_INSIDE_RULE` |
 | More than one blank line between top-level constructs | `EXCESS_BLANK_LINES` |
 | Comment style not matching the four allowed kinds | `FORBIDDEN_COMMENT_STYLE` |
-| Banner declares anything other than a single 3-char prefix or `(none)` | `MALFORMED_PREFIX_VALUE` |
-| Banner's declared prefix disagrees with `Component_Registry.cc_prefix` | `PREFIX_REGISTRY_MISMATCH` |
+| Banner declares anything other than the registered page prefix or `cc` | `MALFORMED_PREFIX_VALUE` |
+| Page-file section banner's declared prefix disagrees with `Component_Registry.cc_prefix` | `PREFIX_REGISTRY_MISMATCH` |
+| Anchor-file section (FOUNDATION, CHROME, or anchor-file FEEDBACK_OVERLAYS) declares a prefix other than `cc` | `ANCHOR_SECTION_INVALID_PREFIX` |
 
 `@media` is permitted in any section. Wrapped rules are subject to all other spec rules. The wrapping `@media` expression is captured in the catalog's `parent_function` column.
 
@@ -419,8 +453,9 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `UNKNOWN_SECTION_TYPE` | A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS). |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of the required order. |
 | `MISSING_PREFIX_DECLARATION` | A section banner is missing the mandatory `Prefix:` line. |
-| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than a single 3-character prefix or `(none)`. |
-| `PREFIX_REGISTRY_MISMATCH` | A section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
+| `MALFORMED_PREFIX_VALUE` | A section banner's `Prefix:` line declares anything other than the registered page prefix or `cc`. |
+| `PREFIX_REGISTRY_MISMATCH` | A page-file section banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. |
+| `ANCHOR_SECTION_INVALID_PREFIX` | A FOUNDATION, CHROME, or anchor-file FEEDBACK_OVERLAYS section declares a prefix other than `cc`. |
 | `DUPLICATE_FOUNDATION` | A FOUNDATION section appears in a file that is not the component's anchor file. |
 | `DUPLICATE_CHROME` | A CHROME section appears in a file that is not the component's anchor file. |
 
@@ -428,7 +463,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 
 | Code | Description |
 |---|---|
-| `PREFIX_MISMATCH` | A class name does not begin with the prefix declared in its containing section's banner. |
+| `PREFIX_MISMATCH` | A class name's leftmost (base) token does not begin with the prefix declared in its containing section's banner. Compound modifier tokens (the rightmost component of a compound selector, per §7.4) are exempt from this check. |
 | `MISSING_PURPOSE_COMMENT` | A base class definition is not preceded by a single-line purpose comment. Pseudo-element rules attached to a class are cataloged as base CSS_CLASS rows by the parser and therefore require a preceding purpose comment, not the trailing inline comment used for variants. |
 | `MISSING_VARIANT_COMMENT` | A class variant does not carry a trailing inline comment after the opening brace. |
 
@@ -781,21 +816,21 @@ When toast notifications are added later, the right pattern is two banners of th
 /* ============================================================================
    FEEDBACK_OVERLAYS: IDLE OVERLAY
    ...
-   Prefix: idle
+   Prefix: cc
    ============================================================================ */
-.idle-overlay { ... }
-.idle-message { ... }
+.cc-idle-overlay { ... }
+.cc-idle-message { ... }
 
 /* ============================================================================
    FEEDBACK_OVERLAYS: TOAST NOTIFICATIONS
    ...
-   Prefix: toast
+   Prefix: cc
    ============================================================================ */
-.toast { ... }
-.toast.success { ... }
+.cc-toast { ... }
+.cc-toast.success { ... }
 ```
 
-Each banner has its own description and prefix declaration. The FILE ORGANIZATION list gets a new entry. The catalog's prefix-matching enforces that toast classes don't accidentally end up in the idle overlay banner.
+Each banner has its own description and lives in the anchor file's FEEDBACK_OVERLAYS region. The FILE ORGANIZATION list gets a new entry for each. Banner separation supports catalog clarity (each `COMMENT_BANNER` row is distinct) and authoring discipline (one banner per concept).
 
 ---
 
@@ -825,13 +860,13 @@ The anchor-file rule (§4.3) — that FOUNDATION and CHROME live in exactly one 
 
 ### A.5 Prefix
 
-Three-character prefix length is fixed platform-wide because the fixed length keeps class names predictable and makes the prefix visually distinct from the rest of the class name. `.bkp-pipeline-card` reads cleanly; `.bk-pipeline-card` and `.bkpe-pipeline-card` do not.
+The two-form prefix system (page prefix or `cc`) makes the source of every class identifiable from its name alone. Reading `.bkp-pipeline-card` immediately tells the reader the class belongs to the backup page; reading `.cc-engine-bar` immediately tells the reader the class is shared chrome. There is no third source; there is no ambiguous case.
 
-The single-prefix-per-file rule reflects that a file represents one CC page (or the shared resource), and each page has exactly one registered prefix. Multiple comma-separated values in the `Prefixes:` line was a legacy form that conflated section-grouping commentary with prefix declaration; the singular form removes that ambiguity.
+The single-prefix-per-banner rule reflects that a section's class definitions form one coherent group. Multiple comma-separated values in the `Prefix:` line was a legacy form that conflated section-grouping commentary with prefix declaration; the singular form removes that ambiguity.
 
-The platform-token collision rule prevents authorial confusion when reading a class like `.color-primary-card` - "color" is a reserved category, and seeing it as a prefix would create ambiguity about whether "color" is a prefix or a category.
+The registry validation rule (§5.3) makes `Component_Registry.cc_prefix` the source of truth for which prefix belongs to which page. Before the registry existed, the prefix was declared only in the file header and could drift from the platform's understanding silently. Pinning each file's prefix to its component row in the registry surfaces drift as queryable catalog rows. The spec does not constrain prefix shape (length, character set) — those concerns live with whoever assigns prefixes in the registry. The spec only enforces that what the file declares matches what the registry holds.
 
-The registry validation rule (Section 5.4) makes `Component_Registry.cc_prefix` the source of truth for which prefix belongs to which page. Before the registry existed, the prefix was declared only in the file header and could drift from the platform's understanding silently. Pinning each file's prefix to its component row in the registry surfaces drift as queryable catalog rows.
+The elimination of the `(none)` sentinel reflects that "this section has no prefix" is not a meaningful structural concept under the unified prefix model. Every section's class definitions belong to either a page or to platform chrome, and the `Prefix:` declaration says which. The chrome prefix `cc` fills the role `(none)` previously filled, but with a real value that participates in prefix-matching rather than disabling it.
 
 ### A.6 Class definitions
 
@@ -846,6 +881,8 @@ The trailing-comment-only rule for variants reflects that a variant is a state o
 The compound-depth limit and stacked-pseudo prohibition share a root cause: both express "this state AND that state" patterns that almost always indicate a state should be promoted to the styled element directly. The cap forces this discipline.
 
 The state-on-element pattern produces three measurable benefits: a glance at HTML markup tells you exactly which elements are in which state with no need to mentally trace ancestor classes; the state is queryable through the catalog by exact class name rather than by inferred descendant relationships; and JavaScript that toggles state operates on the element directly with no parent-class coordination. The principle is broader than just compliance with the no-descendants rule - it produces clearer HTML, more inspectable state, and better catalog queryability.
+
+The compound modifier class exemption from the prefix rule (§7.4.2) preserves the unified prefix discipline without forcing artificial prefixes onto modifiers whose meaning is purely positional. A modifier token like `disabled` carries no source-identity information of its own — its meaning derives from the companion class it appears with. Prefixing it as `cc-disabled` or `bkp-disabled` would add noise without information, and would make the same conceptual modifier (`.bkp-card.disabled` vs `.cc-engine-bar.disabled`) appear as two distinct catalog rows when they represent one modifier applied in two contexts. The compound-only requirement (§7.4.1) — no standalone definition anywhere — is what distinguishes a true modifier from a class that happens to also appear in compounds. A class with a standalone definition is a standalone class whose existence in compounds is a styling refinement; a class with only compound definitions is purely a modifier and carries the modifier exemption.
 
 ### A.10 Custom property tokens
 
