@@ -194,8 +194,7 @@
 /* -- Box-sizing reset -- */
 * { box-sizing: border-box; }
 
-/* -- Body: viewport-constrained flex column -- */
-/* The page never causes browser-level scroll. Chrome takes natural height; content area fills remaining space and manages its own internal scroll. */
+/* -- Body: natural document flow with min-height -- */
 body {
     font-family: var(--font-family-default);
     margin: 0;
@@ -203,8 +202,7 @@ body {
     padding-top: var(--size-page-padding-top);
     background: var(--color-bg-page);
     color: var(--color-text-primary);
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
@@ -424,6 +422,10 @@ a { color: var(--color-text-link); }
     color: var(--color-text-muted);
     font-size: var(--font-size-heading-sm);
     margin: 0;
+}
+
+.page-subtitle:empty { /* collapse empty subtitle to avoid extra vertical space */
+    display: none;
 }
 
 /* The flex container that holds H1+subtitle on the left and refresh info on the right. */
@@ -858,7 +860,7 @@ a { color: var(--color-text-link); }
    ============================================================================ */
 
 /* The page error banner container (hidden until the visible class is applied). */
-#page-error-banner {
+.page-error-banner {
     display: none;
     padding: var(--size-spacing-md) var(--size-page-padding-y);
     font-size: var(--font-size-content);
@@ -871,7 +873,7 @@ a { color: var(--color-text-link); }
     flex-shrink: 0;
 }
 
-#page-error-banner.page-error-banner-visible { /* bootloader-populated state */
+.page-error-banner.page-error-banner-visible { /* bootloader-populated state */
     display: block;
 }
 
@@ -1275,6 +1277,9 @@ a { color: var(--color-text-link); }
     border-radius: var(--size-radius-xl);
     width: var(--size-modal-width-default);
     max-width: 90vw;
+	max-height: 90vh;
+    display: flex;
+    flex-direction: column;
     box-shadow: var(--shadow-modal);
 }
 
@@ -1314,9 +1319,11 @@ a { color: var(--color-text-link); }
     font-size: 20px;
 }
 
-/* The modal body (main content area). */
+/* The modal body (main content area). Scrolls internally when modal content exceeds max height. */
 .xf-modal-body {
     padding: var(--size-page-padding-y);
+	overflow-y: auto;
+    flex: 1;
 }
 
 /* Paragraph styling inside the modal body. */
