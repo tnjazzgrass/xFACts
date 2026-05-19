@@ -207,7 +207,7 @@ Module-scope declarations split into two kinds based on the section they live in
 - **`CONSTANTS` and `FOUNDATION` sections**: declarations are `const`. Primitive values produce `JS_CONSTANT DEFINITION` rows; compound values (objects, arrays, regexes, computed expressions) produce `JS_CONSTANT_VARIANT DEFINITION` rows. See Section 17.5.
 - **`STATE` sections**: declarations are `var`. They produce `JS_STATE DEFINITION` rows.
 
-Drift code if `var` appears in a `CONSTANTS` or `FOUNDATION` section, or `const` in a `STATE` section: `WRONG_DECLARATION_KEYWORD`.
+Drift code if `var` appears in a `CONSTANTS` or `FOUNDATION` section, or `const` in a `STATE` section: `WRONG_DECLARATION_KEYWORD`. One exception: the `<prefix>_ENGINE_PROCESSES` declaration in a `CONSTANTS: ENGINE PROCESSES` banner is `var`, not `const`. See §7.4.4.
 
 `let` is forbidden anywhere in the codebase. Drift code: `FORBIDDEN_LET`.
 
@@ -234,7 +234,7 @@ Pages that have engine cards registered in `Orchestrator.ProcessRegistry` declar
 #### 7.4.1 ENGINE_PROCESSES shape
 
 ```javascript
-const bch_ENGINE_PROCESSES = {
+var bch_ENGINE_PROCESSES = {
     '<process-name>': { slug: '<slug>' },
     '<process-name>': { slug: '<slug>' }
 };
@@ -258,6 +258,10 @@ The parser cross-references the declared `<prefix>_ENGINE_PROCESSES` entries aga
 #### 7.4.3 ENGINE_PROCESSES placement
 
 `<prefix>_ENGINE_PROCESSES` must be declared inside the `CONSTANTS: ENGINE PROCESSES` banner. Declaration anywhere else in the file is not permitted. Drift code: `ENGINE_PROCESSES_MISPLACED`.
+
+#### 7.4.4 ENGINE_PROCESSES declaration keyword
+
+`<prefix>_ENGINE_PROCESSES` is declared with `var`, not `const`. This is the sole exception to §7's CONSTANTS-section-uses-const rule. The exception is exempt from `WRONG_DECLARATION_KEYWORD` (§19.3). No other identifier in a CONSTANTS or FOUNDATION section is exempt.
 
 ---
 
@@ -546,8 +550,8 @@ A row's identity is the combination of `component_type`, `component_name`, `refe
 | `COMMENT_BANNER` | A section banner comment. One row per section. The section type lives in `signature`. |
 | `JS_IMPORT` | An ES `import` statement or Node `require` call. The imported binding name is `component_name`. The source module path is `variant_qualifier_2`. Always non-NULL `variant_type`. |
 | `JS_CONSTANT` | A `const` declaration of a primitive value in a `CONSTANTS` or `FOUNDATION` section. |
-| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. Also the row host for revealing-module wrappers (Section 15.2) and for ENGINE_PROCESSES-level drift codes (`ENGINE_PROCESS_PAGE_MISMATCH`, `ENGINE_SLUG_JS_MISMATCH`). |
-| `JS_STATE` | A `var` declaration in a `STATE` section. No variants. Also the row host for revealing-module wrappers using `var` (Section 15.2). |
+| `JS_CONSTANT_VARIANT` | A `const` declaration of a compound or computed value in a `CONSTANTS` or `FOUNDATION` section. Also the row host for revealing-module wrappers (Section 15.2). |
+| `JS_STATE` | A `var` declaration in a `STATE` section, or the `<prefix>_ENGINE_PROCESSES` declaration in a `CONSTANTS: ENGINE PROCESSES` banner (§7.4.4). No variants. Also the row host for revealing-module wrappers using `var` (Section 15.2) and for ENGINE_PROCESSES-level drift codes (`ENGINE_PROCESS_PAGE_MISMATCH`, `ENGINE_SLUG_JS_MISMATCH`). |
 | `JS_FUNCTION` | A regular `function name() {}` declaration. |
 | `JS_FUNCTION_VARIANT` | An `async function name()` or `function* name()` (generator) declaration. |
 | `JS_HOOK` | A regular sync function inside the `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner. |
@@ -697,8 +701,8 @@ When the JS populator runs standalone (before the HTML populator has scanned, or
 | `FILE_HEADER DEFINITION` | The opening file header block | One per file. `purpose_description` carries the header's purpose paragraph. Hosts header-block-specific drift codes. |
 | `COMMENT_BANNER DEFINITION` | Each section banner | `signature` = TYPE, `component_name` = NAME, `purpose_description` = description block. |
 | `JS_IMPORT DEFINITION` | Each `import` statement or `require` call | One per imported binding. `variant_type` = import shape; `variant_qualifier_2` = source module path. |
-| `JS_CONSTANT DEFINITION` / `JS_CONSTANT_VARIANT DEFINITION` | Each `const` declaration in a `CONSTANTS` or `FOUNDATION` section | Base for primitive values; variant for objects, arrays, regexes, computed expressions. `purpose_description` = preceding purpose comment. The `ENGINE_PROCESSES` declaration produces a `JS_CONSTANT_VARIANT` row that also hosts `ENGINE_PROCESS_PAGE_MISMATCH` and `ENGINE_SLUG_JS_MISMATCH` drift codes. |
-| `JS_STATE DEFINITION` | Each `var` declaration in a `STATE` section | `purpose_description` = preceding purpose comment. |
+| `JS_CONSTANT DEFINITION` / `JS_CONSTANT_VARIANT DEFINITION` | Each `const` declaration in a `CONSTANTS` or `FOUNDATION` section | Base for primitive values; variant for objects, arrays, regexes, computed expressions. `purpose_description` = preceding purpose comment. |
+| `JS_STATE DEFINITION` | Each `var` declaration in a `STATE` section, and the `<prefix>_ENGINE_PROCESSES` declaration in a `CONSTANTS: ENGINE PROCESSES` banner (§7.4.4) | `purpose_description` = preceding purpose comment. The `<prefix>_ENGINE_PROCESSES` row hosts `ENGINE_PROCESS_PAGE_MISMATCH` and `ENGINE_SLUG_JS_MISMATCH` drift codes. |
 | `JS_FUNCTION DEFINITION` / `JS_FUNCTION_VARIANT DEFINITION` | Each top-level `function` declaration in a `FUNCTIONS` section other than `PAGE LIFECYCLE HOOKS` | Base for plain function declarations; variant for async and generator forms. `signature` = function signature with parameter names. |
 | `JS_HOOK DEFINITION` / `JS_HOOK_VARIANT DEFINITION` | Each `function` declaration in the hooks banner | Base for sync hooks; variant for async hooks. |
 | `JS_CLASS DEFINITION` | Each top-level class declaration | `purpose_description` = preceding purpose comment. |
@@ -770,7 +774,7 @@ The banner format defined in Section 3 is enforced via granular drift codes — 
 | `MISSING_STATE_COMMENT` | A `var` declaration in a STATE section is not preceded by a single block comment. |
 | `MISSING_CLASS_COMMENT` | A class declaration is not preceded by a single block comment. |
 | `MISSING_METHOD_COMMENT` | A method inside a class body is not preceded by a single block comment. |
-| `WRONG_DECLARATION_KEYWORD` | A `var` declaration appears in a CONSTANTS or FOUNDATION section, or a `const` declaration appears in a STATE section. |
+| `WRONG_DECLARATION_KEYWORD` | A `var` declaration appears in a CONSTANTS or FOUNDATION section, or a `const` declaration appears in a STATE section. The `<prefix>_ENGINE_PROCESSES` declaration in a `CONSTANTS: ENGINE PROCESSES` banner is exempt per §7.4.4. |
 | `SHADOWS_SHARED_FUNCTION` | A page file defines a function whose name matches a `cc-shared.js` export. |
 | `UNKNOWN_HOOK_NAME` | A function inside the hooks banner has a suffix (the part after `<prefix>_`) not in the recognized hook set (`onPageRefresh`, `onPageResumed`, `onSessionExpired`, `onEngineProcessCompleted`, `onEngineEventRaw`). |
 | `ENGINE_PROCESSES_MISPLACED` | The `<prefix>_ENGINE_PROCESSES` constant is declared outside its required `CONSTANTS: ENGINE PROCESSES` banner (§7.4.3). Attached to the declaration row (`JS_CONSTANT_VARIANT` or `JS_STATE` depending on the declaration keyword). |
@@ -1054,7 +1058,7 @@ A small page demonstrating every required pattern under the bootloader-driven mo
    ============================================================================ */
 
 /* Engine processes this page cares about, mapped to engine card slugs. */
-const ex_ENGINE_PROCESSES = {
+var ex_ENGINE_PROCESSES = {
     'Collect-ExampleStatus': { slug: 'example' }
 };
 
@@ -1260,11 +1264,10 @@ This file produces the following catalog rows when parsed:
 - 1 x `JS_FILE DEFINITION`
 - 1 x `FILE_HEADER DEFINITION`
 - 9 x `COMMENT_BANNER DEFINITION` (one per section)
-- 1 x `JS_CONSTANT_VARIANT DEFINITION` (`ex_ENGINE_PROCESSES`, variant_type='object')
 - 1 x `JS_CONSTANT DEFINITION` (`ex_DEFAULT_REFRESH_INTERVAL`)
 - 2 x `JS_CONSTANT_VARIANT DEFINITION` (`ex_clickActions` and `ex_changeActions`, variant_type='object')
 - 3 x `JS_DISPATCH_ENTRY DEFINITION` (`view-agent-detail` and `refresh-section` under `ex_clickActions`; `filter-agents` under `ex_changeActions`)
-- 2 x `JS_STATE DEFINITION` (`ex_currentFilter`, `ex_livePollingTimer`)
+- 3 x `JS_STATE DEFINITION` (`ex_ENGINE_PROCESSES`, `ex_currentFilter`, `ex_livePollingTimer`)
 - 2 x `JS_FUNCTION_VARIANT DEFINITION` (`ex_init` and `ex_loadConfig`, both variant_type='async')
 - 8 x `JS_FUNCTION DEFINITION` (`ex_refreshAll`, `ex_loadAgents`, `ex_renderAgents`, `ex_buildAgentCard`, `ex_handleClickAction`, `ex_handleChangeAction`, `ex_viewAgentDetail`, `ex_refreshSection`, `ex_filterAgents`)
 - 2 x `JS_HOOK DEFINITION` (`ex_onPageRefresh`, `ex_onPageResumed`)
@@ -1310,7 +1313,7 @@ Third, the spec has no exemption list to maintain. Future hooks or platform-reco
 
 The `_MISPLACED` drift codes (`ENGINE_PROCESSES_MISPLACED`, `HOOK_MISPLACED`) survive the unified-prefix change because they validate banner placement, not identifier naming. A hook function whose name is `bch_onPageRefresh` is correctly named regardless of which banner it sits in; the `HOOK_MISPLACED` code fires when the hook is in the wrong banner. The placement check is by full `<TYPE>: <NAME>` banner identity.
 
-The placement codes are independent of `WRONG_DECLARATION_KEYWORD`. A file with `var bch_ENGINE_PROCESSES` inside the correct banner fires `WRONG_DECLARATION_KEYWORD` but not `ENGINE_PROCESSES_MISPLACED`. A file with `const bch_ENGINE_PROCESSES` in a STATE section fires `ENGINE_PROCESSES_MISPLACED` but not `WRONG_DECLARATION_KEYWORD`. Both fire together when the declaration is in the wrong section with the wrong keyword.
+The placement codes are independent of `WRONG_DECLARATION_KEYWORD`. A file with `var bch_ENGINE_PROCESSES` inside the correct banner is spec-compliant (§7.4.4) and fires neither code. A file with `const bch_ENGINE_PROCESSES` inside the correct banner fires `WRONG_DECLARATION_KEYWORD` but not `ENGINE_PROCESSES_MISPLACED`. A file with `var bch_ENGINE_PROCESSES` in a STATE section fires `ENGINE_PROCESSES_MISPLACED` but not `WRONG_DECLARATION_KEYWORD` (the keyword is correct under §7.4.4; the placement is wrong).
 
 Each misplaced hook fires its own row's drift code, so a file with three hooks declared outside the hooks banner produces three separate `HOOK_MISPLACED` firings on three separate `JS_FUNCTION` rows. Misplaced hook functions are catalogued as `JS_FUNCTION DEFINITION` (not `JS_HOOK DEFINITION`); only functions inside the hooks banner produce `JS_HOOK` rows. The catalog reflects what the file actually does; the drift code tells refactor work where the function should move.
 
@@ -1323,6 +1326,8 @@ The single-form rule for function declarations exists to make the catalog's func
 The `const` vs `var` split by section reflects the semantic distinction. CONSTANTS are immutable; STATE mutates over the page's lifetime. Forcing the keyword to match the section makes the file's structure self-documenting: a reader skimming the STATE section knows everything in it can change at runtime; everything in CONSTANTS or FOUNDATION cannot.
 
 `let` is forbidden because it adds a third declaration kind without adding semantic value over `const` and `var`. The two-kind discipline keeps the spec's section-keyword mapping clean.
+
+The `<prefix>_ENGINE_PROCESSES` exception (§7.4.4) exists because `cc-shared.js` resolves the binding at runtime via `window[cc_pagePrefix + '_ENGINE_PROCESSES']` — a cross-script lookup through the global object. In classic scripts (which is what every Control Center page JS file is), top-level `var` and `function` declarations populate the global object; top-level `const` and `let` declarations do not. A `const <prefix>_ENGINE_PROCESSES` is invisible to cc-shared.js's cross-script lookup; a `var <prefix>_ENGINE_PROCESSES` is the binding the runtime can see. The exception is narrow by design: it applies only to `<prefix>_ENGINE_PROCESSES`. The page lifecycle hooks (§8) need no analogous exception because `function` declarations also populate the global object. The page-side dispatch tables (§11.3) need no exception because cc-shared.js does not look them up — the page's own delegated handler reads them lexically within the same script. Any future page-local identifier added to the contract surface that cc-shared.js resolves by computed name requires an explicit equivalent exception in this spec.
 
 ### A.7.4 Engine processes validation
 
