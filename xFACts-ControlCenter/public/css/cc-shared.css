@@ -1053,7 +1053,7 @@ a { color: var(--color-text-link); }
     right: 0;
 }
 
-.cc-slide-panel.slide-auto-height { /* vertically-centered panel that sizes to content (compact dialogs) */
+.cc-slide-panel.cc-slide-auto-height { /* vertically-centered panel that sizes to content (compact dialogs) */
     height: auto;
     max-height: 90vh;
     top: 50%;
@@ -1062,7 +1062,7 @@ a { color: var(--color-text-link); }
     border: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.slide-auto-height.open { /* offset the auto-height panel slightly from the right edge */
+.cc-slide-auto-height.open { /* offset the auto-height panel slightly from the right edge */
     right: var(--size-page-padding-y);
 }
 
