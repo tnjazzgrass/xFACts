@@ -604,7 +604,7 @@ Every action attribute uses the form `data-action-<event>="<action-value>"` wher
 Action values fall into two categories:
 
 - **Page-local actions** are unprefixed (e.g., `open-request-detail`, `filter-by-status`). They dispatch through the page's own dispatch table (`<prefix>_<event>Actions`, defined in the page's JS file).
-- **Shared chrome actions** are `cc-` prefixed (e.g., `cc-page-refresh`, `cc-reload-page`). They dispatch through `sharedClickActions`, `sharedChangeActions`, etc., defined in `cc-shared.js`.
+- **Shared chrome actions** are `cc-` prefixed (e.g., `cc-page-refresh`, `cc-reload-page`). They dispatch through `cc_clickActions`, `cc_changeActions`, etc., defined in `cc-shared.js`. See CC_JS_Spec.md §11.3.2 for the chrome dispatch table naming and structure.
 
 Action values occupy their own resolution namespace and are not subject to the unified prefix rule in §4.0 (which governs IDs, classes, and page-emitted `data-*` attribute names). The `data-action-` attribute name itself is the chrome prefix; the value space distinguishes page-local from shared by the presence or absence of the `cc-` value prefix.
 
@@ -620,7 +620,7 @@ Action values occupy their own resolution namespace and are not subject to the u
 - Every action attribute name is exactly `data-action-<event>` where `<event>` is in the closed set from §6.4. Drift code: `UNKNOWN_EVENT_TYPE`.
 - Every action value uses lowercase letters, digits, and hyphens only. Other characters emit drift. Drift code: `MALFORMED_ACTION_VALUE`.
 - Page-local action values are unprefixed. Shared action values use the `cc-` prefix exactly. Action values that begin with `cc-` resolve against the shared dispatch table; action values without `cc-` resolve against the page's local dispatch table.
-- An action value (page-local or shared) must have a matching entry in the corresponding dispatch table. If no match exists, drift code: `UNRESOLVED_DATA_ACTION`. Resolution is event-type-scoped: a `data-action-click="save"` resolves against `<prefix>_clickActions['save']` or `sharedClickActions['save']`, not against any other event's dispatch table.
+- An action value (page-local or shared) must have a matching entry in the corresponding dispatch table. If no match exists, drift code: `UNRESOLVED_DATA_ACTION`. Resolution is event-type-scoped: a `data-action-click="save"` resolves against `<prefix>_clickActions['save']` or `cc_clickActions['save']`, not against any other event's dispatch table.
 
 ### 6.3 Action argument attributes
 
