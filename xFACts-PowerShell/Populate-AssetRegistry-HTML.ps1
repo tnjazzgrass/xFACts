@@ -1963,7 +1963,7 @@ function Get-HandlerFunctionName {
 #         variant_qualifier_1 = event name
 #
 #   data-action-<arg-name>="<value>"       (argument attribute, Section 6.3)
-#     - <arg-name> is any kebab-case identifier that is NOT in §6.4
+#     - <arg-name> is any kebab-case identifier that is NOT in Section 6.4
 #     - Only valid when the same element also declares >=1 event attribute
 #     - Emits HTML_DATA_ATTRIBUTE DEFINITION with:
 #         variant_type        = value
@@ -1971,10 +1971,10 @@ function Get-HandlerFunctionName {
 #
 # Drift codes emitted here:
 #   Event-attribute path:
-#     UNKNOWN_EVENT_TYPE     - event name not in §6.4 set
+#     UNKNOWN_EVENT_TYPE     - event name not in Section 6.4 set
 #     MALFORMED_ACTION_VALUE - value contains chars outside [a-z0-9-]
 #   Argument-attribute path:
-#     ARGUMENT_NAME_COLLIDES_WITH_EVENT - arg name matches a §6.4 event
+#     ARGUMENT_NAME_COLLIDES_WITH_EVENT - arg name matches a Section 6.4 event
 #     MALFORMED_ACTION_ARGUMENT_NAME    - arg name has chars outside [a-z0-9-]
 #     FORBIDDEN_INLINE_ACTION_ARGUMENT_INTERPOLATION
 #                                      - value mixes static text + $interp
@@ -2060,7 +2060,7 @@ function Get-DataActionEventValidationCodes {
 
 # Argument-attribute validation. The suffix must be a well-formed kebab
 # identifier and must not collide with any recognized event name. Value
-# interpolation rules match the data-* family in §7.2.
+# interpolation rules match the data-* family in Section 7.2.
 function Get-DataActionArgumentValidationCodes {
     param(
         [string]$AttrName,
@@ -3348,7 +3348,7 @@ function Invoke-HtmlTokenWalk {
             $body = $t.Body
             $bodyTrim = if ($null -ne $body) { $body.Trim() } else { '' }
 
-            # Classify the comment per CC_HTML_Spec.md §10.5.1. Kinds:
+            # Classify the comment per CC_HTML_Spec.md Section 10.5.1. Kinds:
             #   comment-section-divider  - structural divider banners
             #   comment-panel-purpose    - immediately precedes an overlay
             #                              panel construct (slideout/modal/slideup)
@@ -3403,7 +3403,7 @@ function Invoke-HtmlTokenWalk {
         if ($t.Kind -eq 'Entity') {
             # Map tokenizer Form ('Named' / 'Numeric' / 'Hex') to spec form
             # name ('entity_named' / 'entity_numeric'). Both decimal and hex
-            # numeric entities are 'entity_numeric' per CC_HTML_Spec.md §8.3.1.
+            # numeric entities are 'entity_numeric' per CC_HTML_Spec.md Section 8.3.1.
             $specForm = switch ($t.Form) {
                 'Named'   { 'entity_named' }
                 'Numeric' { 'entity_numeric' }
