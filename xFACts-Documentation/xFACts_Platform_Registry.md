@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-18 15:35:32
+Generated: 2026-05-19 05:47:21
 
 ## Module Registry
 
@@ -96,6 +96,7 @@ Generated: 2026-05-18 15:35:32
 | ControlCenter.Platform | platform-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\platform-monitoring.js | Platform Monitoring CC client-side logic |
 | ControlCenter.Platform | PlatformMonitoring.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1 | Platform Monitoring CC page route |
 | ControlCenter.Shared | server.psd1 | PowerShell | Config | E:\xFACts-ControlCenter\scripts\server.psd1 | Pode server configuration. Sets request timeout to 180 seconds for long-running API operations (e.g., DM App Server firewall commit). |
+| ControlCenter.Shared | xFACts-CCShared.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1 | Shared helper functions module for all CC pages |
 | ControlCenter.Shared | xFACts-Helpers.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\scripts\modules\xFACts-Helpers.psm1 | Shared helper functions module for all CC pages |
 | ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1 | Control Center Pode server entry point |
 | ControlCenter.Shared | engine-events-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\engine-events-API.ps1 | Shared API Endpoints |
