@@ -742,13 +742,17 @@ function Get-DispatchTableInfo {
     $result = @{ IsDispatchTable = $false; Side = $null; EventName = $null }
     if ([string]::IsNullOrEmpty($Name)) { return $result }
 
-    # Shared-side: shared<Event>Actions (only valid in cc-shared.js).
-    if ($Name -cmatch '^shared([A-Z][a-z]+)Actions$') {
-        $eventLower = $matches[1].ToLower()
-        if ($RecognizedEventNames -contains $eventLower) {
+# Shared-side pattern: cc_<event>Actions (per CC_JS_Spec.md Section 11.3.2; only
+# valid in cc-shared.js). The chrome prefix 'cc_' aligns these table
+# names with Section 11.2.4's unified prefix rule for chrome identifiers. The
+# pre-Section 11.2.4 naming was sharedXxxActions but no longer applies.
+# Examples: cc_clickActions, cc_changeActions.
+    if ($Name -cmatch '^cc_([a-z]+)Actions$') {
+        $eventName = $matches[1]
+        if ($RecognizedEventNames -contains $eventName) {
             $result.IsDispatchTable = $true
             $result.Side            = 'shared'
-            $result.EventName       = $eventLower
+            $result.EventName       = $eventName
         }
         return $result
     }
@@ -767,7 +771,6 @@ function Get-DispatchTableInfo {
 
     return $result
 }
-
 
 # ============================================================================
 # AST POSITION / CONTEXT HELPERS
@@ -1741,6 +1744,37 @@ function Test-HtmlIdMalformed {
     return -not $IdName.StartsWith($expected)
 }
 
+# Derive the hook suffix from a function name by stripping the file's
+# registered prefix plus underscore. Per CC_JS_Spec.md Section 19.3, the
+# UNKNOWN_HOOK_NAME and HOOK_MISPLACED checks compare against the bare
+# hook suffix ('onPageRefresh'), not the prefixed identifier
+# ('bkp_onPageRefresh'). When the file has no registered prefix (shared
+# files, unregistered files), returns the full function name so callers
+# fall back to whole-name matching.
+function Get-HookSuffix {
+    param([string]$FunctionName)
+    if ([string]::IsNullOrEmpty($FunctionName)) { return $FunctionName }
+    if (-not $script:CurrentRegistryHasMapping)                  { return $FunctionName }
+    if ([string]::IsNullOrEmpty($script:CurrentRegistryPrefix)) { return $FunctionName }
+    $expected = "$($script:CurrentRegistryPrefix)_"
+    if ($FunctionName.StartsWith($expected)) {
+        return $FunctionName.Substring($expected.Length)
+    }
+    return $FunctionName
+}
+
+# Test whether an identifier name is the ENGINE_PROCESSES contract
+# identifier in either the bare form ('ENGINE_PROCESSES') or the prefixed
+# form ('<prefix>_ENGINE_PROCESSES'). Per CC_JS_Spec.md Section 7.4.4
+# (post-unified-prefix), page files declare the prefixed form; the bare
+# form remains valid for the legacy/spec-example shape.
+function Test-IsEngineProcessesName {
+    param([string]$IdentifierName)
+    if ([string]::IsNullOrEmpty($IdentifierName)) { return $false }
+    if ($IdentifierName -eq 'ENGINE_PROCESSES') { return $true }
+    return $IdentifierName.EndsWith('_ENGINE_PROCESSES')
+}
+
 # ============================================================================
 # JS-SPECIFIC ROW EMITTERS
 # ============================================================================
@@ -1943,19 +1977,26 @@ function Add-CommentBannerRow {
             -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a 3-char lowercase prefix nor (none)."
     }
 
-    # ---- PREFIX_REGISTRY_MISMATCH (JS strict-with-carve-outs / Option B) ----
+    # ---- PREFIX_REGISTRY_MISMATCH (JS strict-with-carve-outs / Option B + chrome-anchor) ----
     # Per CC_JS_Spec.md Section 5.4:
-    #   - File has registry mapping with cc_prefix = NULL  -> banner must be (none).
-    #     Any non-(none) value is a mismatch.
+    #   - File has registry mapping with cc_prefix = NULL AND is the
+    #     chrome anchor file (cc-shared.js) -> banner must declare cc.
+    #     Any other value (including (none)) is a mismatch.
+    #   - File has registry mapping with cc_prefix = NULL AND is NOT the
+    #     chrome anchor -> banner must declare (none). Any non-(none)
+    #     value (including cc) is a mismatch.
     #   - File has registry mapping with cc_prefix = X     -> banner must be X,
-    #     EXCEPT for the hooks banner, IMPORTS, and INITIALIZATION sections
-    #     which may declare (none) per Section 5.2. A different value is always a mismatch.
+    #     EXCEPT for the hooks banner, IMPORTS, and CONSTANTS sections
+    #     which may declare (none) per Section 5.2. Any other value
+    #     (including cc) is a mismatch.
     #   - File has no registry mapping at all              -> skip validation;
     #     missing Object_Registry row is reported by the miss advisory.
     if ($script:CurrentRegistryHasMapping -and $Section.Prefix -and (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
-        $bannerVal = Get-BannerPrefixValue -Prefix $Section.Prefix    # '' for (none)
-        $isNone    = Test-IsPrefixNone -Prefix $Section.Prefix
-        $regVal    = $script:CurrentRegistryPrefix                    # $null or 'xxx'
+        $bannerVal    = Get-BannerPrefixValue -Prefix $Section.Prefix    # '' for (none), 'cc' for chrome, 'xxx' for a page prefix
+        $isNone       = Test-IsPrefixNone -Prefix $Section.Prefix
+        $isCc         = ($bannerVal -eq 'cc')
+        $regVal       = $script:CurrentRegistryPrefix                    # $null or 'xxx'
+        $isAnchorFile = ($script:CurrentFile -eq $CanonicalSharedFile)
 
         # Determine if this section is allowed to declare (none) on a
         # page file (registry value present). Hooks banner OR section
@@ -1965,12 +2006,21 @@ function Add-CommentBannerRow {
 
         $mismatch = $false
         if ($null -eq $regVal) {
-            # Registry says (none); banner must declare (none) too.
-            if (-not $isNone) { $mismatch = $true }
+            # Component has no page prefix (shared or chrome-anchor file).
+            if ($isAnchorFile) {
+                # Chrome anchor: banner must declare cc.
+                if (-not $isCc) { $mismatch = $true }
+            } else {
+                # Non-anchor shared file: banner must declare (none).
+                if (-not $isNone) { $mismatch = $true }
+            }
         } else {
             # Registry says X. Banner must declare X unless this section
-            # is one of the carve-outs and declares (none).
-            if ($isNone) {
+            # is one of the carve-outs and declares (none). cc is never
+            # valid on a page file.
+            if ($isCc) {
+                $mismatch = $true
+            } elseif ($isNone) {
                 if (-not $noneAllowedHere) { $mismatch = $true }
             } else {
                 if ($bannerVal -ne $regVal) { $mismatch = $true }
@@ -1978,10 +2028,12 @@ function Add-CommentBannerRow {
         }
 
         if ($mismatch) {
-            $regDisplay    = if ($null -eq $regVal) { '(none)' } else { $regVal }
+            $regDisplay = if ($null -eq $regVal) {
+                if ($isAnchorFile) { 'cc (chrome anchor)' } else { '(none)' }
+            } else { $regVal }
             $bannerDisplay = if ($isNone) { '(none)' } else { $bannerVal }
             Add-DriftCode -Row $row -Code 'PREFIX_REGISTRY_MISMATCH' `
-                -Context "Banner declares Prefix '$bannerDisplay' but Component_Registry says cc_prefix = '$regDisplay' for this file."
+                -Context "Banner declares Prefix '$bannerDisplay' but the expected value for this file is '$regDisplay'."
         }
     }
 
@@ -2659,18 +2711,29 @@ $JsVisitor = {
                     }
                 }
                 elseif ($isHook) {
-                    if ($script:RecognizedHookNames -notcontains $fnName) {
+                    # Per CC_JS_Spec.md Section 19.3 (post-unified-prefix
+                    # amendment), hook function names carry the page prefix
+                    # (e.g., 'bkp_onPageRefresh'); the recognized-hook set
+                    # holds bare suffixes ('onPageRefresh'). Strip the
+                    # registered prefix plus underscore before matching.
+                    # When the file has no registered prefix, fall back to
+                    # full-identifier match so non-page files still validate.
+                    $hookSuffix = Get-HookSuffix -FunctionName $fnName
+                    if ($script:RecognizedHookNames -notcontains $hookSuffix) {
                         Add-DriftCode -Row $row -Code 'UNKNOWN_HOOK_NAME' `
-                            -Context "Function '$fnName' is in the PAGE LIFECYCLE HOOKS banner but is not a recognized hook name."
+                            -Context "Function '$fnName' is in the PAGE LIFECYCLE HOOKS banner but its suffix '$hookSuffix' is not a recognized hook name."
                     }
                 }
             }
 
             # ---- HOOK_MISPLACED ----
-            # A function whose name matches a recognized hook name must be in
-            # the FUNCTIONS: PAGE LIFECYCLE HOOKS banner. Anywhere else fires
-            # the drift. Per CC_JS_Spec.md Section 8.5.
-            if ($script:RecognizedHookNames -contains $fnName -and -not $isInHooksBanner) {
+            # A function whose suffix matches a recognized hook name must be
+            # in the FUNCTIONS: PAGE LIFECYCLE HOOKS banner. Anywhere else
+            # fires the drift. Per CC_JS_Spec.md Section 8.5. Like
+            # UNKNOWN_HOOK_NAME, the match is by suffix after stripping the
+            # registered prefix.
+            $hookSuffixForMisplaced = Get-HookSuffix -FunctionName $fnName
+            if ($script:RecognizedHookNames -contains $hookSuffixForMisplaced -and -not $isInHooksBanner) {
                 $whereLocation = if ($null -eq $section) {
                     'outside any section banner'
                 } else {
@@ -2848,12 +2911,32 @@ $JsVisitor = {
                 $isConstantSection = ($section -and ($section.TypeName -eq 'CONSTANTS' -or $section.TypeName -eq 'FOUNDATION'))
                 $isStateSection    = ($section -and $section.TypeName -eq 'STATE')
 
-                # Component type derivation: section-context first, fall back to keyword.
+                # ENGINE_PROCESSES carve-out per CC_JS_Spec.md Section 7.4.4:
+                # the contract identifier (bare 'ENGINE_PROCESSES' or
+                # prefixed '<prefix>_ENGINE_PROCESSES') declared with var
+                # in a 'CONSTANTS: ENGINE PROCESSES' banner is
+                # spec-compliant. The row is emitted as JS_STATE (not
+                # JS_CONSTANT_VARIANT) per Section 15.4 / Section 17.6, and the keyword
+                # carve-out below skips WRONG_DECLARATION_KEYWORD for the
+                # same shape. Used by three sites: row-type derivation here,
+                # WRONG_DECLARATION_KEYWORD a few lines down, and the
+                # ENGINE_PROCESSES capture site further on.
+                $isEngineProcessesName = Test-IsEngineProcessesName -IdentifierName $declName
+                $isInEngineProcessesBanner = ($section -and
+                                              $section.TypeName -eq 'CONSTANTS' -and
+                                              $section.BannerName -eq $EngineProcessesBannerName)
+                $isEngineProcessesCarveOut = ($isEngineProcessesName -and
+                                              $Node.kind -eq 'var' -and
+                                              $isInEngineProcessesBanner)
+
+                # Component type derivation: ENGINE_PROCESSES carve-out
+                # first, then section-context, fall back to keyword.
                 $isStateComponent = $false
-                if ($isStateSection)         { $isStateComponent = $true }
-                elseif ($isConstantSection)  { $isStateComponent = $false }
-                elseif ($Node.kind -eq 'var'){ $isStateComponent = $true }
-                else                         { $isStateComponent = $false }
+                if ($isEngineProcessesCarveOut) { $isStateComponent = $true }
+                elseif ($isStateSection)        { $isStateComponent = $true }
+                elseif ($isConstantSection)     { $isStateComponent = $false }
+                elseif ($Node.kind -eq 'var')   { $isStateComponent = $true }
+                else                            { $isStateComponent = $false }
 
                 if ($isStateComponent) {
                     $shape = @{ ComponentType = 'JS_STATE'; VariantType = $null; VariantQualifier1 = $null; VariantQualifier2 = $null }
@@ -2887,7 +2970,13 @@ $JsVisitor = {
                         -Context "$declName is assigned a $shapeWord; spec mandates the 'function name() {}' form for function definitions."
                 }
 
-                if ($isConstantSection -and $Node.kind -ne 'const') {
+                # WRONG_DECLARATION_KEYWORD with ENGINE_PROCESSES carve-out.
+                # Per Section 7.4.4, <prefix>_ENGINE_PROCESSES is the sole permitted
+                # 'var' declaration in a CONSTANTS section.
+                if ($isEngineProcessesCarveOut) {
+                    # Spec-compliant per Section 7.4.4; no drift.
+                }
+                elseif ($isConstantSection -and $Node.kind -ne 'const') {
                     Add-DriftCode -Row $row -Code 'WRONG_DECLARATION_KEYWORD' `
                         -Context "'$declName' uses '$($Node.kind)' in a CONSTANTS-style section; spec requires 'const'."
                 }
@@ -2926,11 +3015,12 @@ $JsVisitor = {
                 }
 
                 # ---- ENGINE_PROCESSES_MISPLACED ----
-                # ENGINE_PROCESSES must live in the CONSTANTS: ENGINE PROCESSES
-                # banner. Anywhere else (STATE banner, different CONSTANTS
-                # banner, no banner) fires the drift. Per CC_JS_Spec.md
-                # Section 7.4.3.
-                if ($declName -eq 'ENGINE_PROCESSES') {
+                # The ENGINE_PROCESSES contract identifier (bare or
+                # <prefix>_ENGINE_PROCESSES form) must live in the
+                # CONSTANTS: ENGINE PROCESSES banner. Anywhere else
+                # (STATE banner, different CONSTANTS banner, no banner)
+                # fires the drift. Per CC_JS_Spec.md Section 7.4.3.
+                if ($isEngineProcessesName) {
                     $isInRequiredBanner = ($null -ne $section -and
                                            $section.TypeName -eq 'CONSTANTS' -and
                                            $section.BannerName -eq $script:EngineProcessesBannerName)
@@ -2941,7 +3031,7 @@ $JsVisitor = {
                             "section '$($section.FullTitle)'"
                         }
                         Add-DriftCode -Row $row -Code 'ENGINE_PROCESSES_MISPLACED' `
-                            -Context "ENGINE_PROCESSES is declared in $whereLocation; required home is 'CONSTANTS: ENGINE PROCESSES'."
+                            -Context "'$declName' is declared in $whereLocation; required home is 'CONSTANTS: ENGINE PROCESSES'."
                     }
                 }
 
@@ -2967,7 +3057,7 @@ $JsVisitor = {
                 #
                 # Only the first ENGINE_PROCESSES declaration in the file is
                 # captured; any later one is silently ignored.
-                if ($declName -eq 'ENGINE_PROCESSES' -and
+                if ($isEngineProcessesName -and
                     $init -and $init.type -eq 'ObjectExpression' -and
                     $null -eq $script:CurrentEngineProcessesRow) {
 
