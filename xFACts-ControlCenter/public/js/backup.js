@@ -12,29 +12,6 @@
    active backup/copy/upload tables, the storage gauges, and the
    pipeline and queue detail modals.
 
-   CHANGELOG
-   ---------
-   2026-05-18  CC File Format Standardization (Phase 1, §11.2.4 unified
-               prefix rename): adopted the bkp_ prefix on the page-side
-               contract surface that cc-shared.js resolves via
-               window[cc_pagePrefix + '_<name>'] — ENGINE_PROCESSES is now
-               bkp_ENGINE_PROCESSES, and the four lifecycle hooks
-               (onPageRefresh, onPageResumed, onSessionExpired,
-               onEngineProcessCompleted) are now bkp_-prefixed. Updated
-               every call into cc-shared.js to the new cc_ identifiers:
-               connectEngineEvents → cc_connectEngineEvents, engineFetch
-               → cc_engineFetch, escapeHtml → cc_escapeHtml,
-               enginePageHidden → cc_enginePageHidden,
-               engineSessionExpired → cc_engineSessionExpired. The single
-               chrome DOM ID reference (last-update) is now cc-last-update
-               to match Backup.ps1's renamed emission. All page-local
-               bkp_* identifiers, bkp- DOM IDs, and compound modifier
-               class names (hidden, open, expanded) are unchanged. Two
-               sections that previously declared Prefix: (none)
-               (CONSTANTS: ENGINE PROCESSES, FUNCTIONS: PAGE LIFECYCLE
-               HOOKS) now declare Prefix: bkp because their contents are
-               bkp_-prefixed.
-
    FILE ORGANIZATION
    -----------------
    CONSTANTS: ENGINE PROCESSES
@@ -67,10 +44,14 @@
    ============================================================================ */
 
 /* Maps orchestrator process names to engine card slugs. cc-shared.js
-   reads this at startup; each entry binds a process to a card on the
-   page. Card refreshes for the bound process happen automatically via
+   reads this from a separate script at startup via
+   window[cc_pagePrefix + '_ENGINE_PROCESSES']. Top-level const and let
+   declarations in classic scripts do NOT add to window -- only var
+   declarations and function declarations do -- so this MUST use var,
+   not const, even though the value is never reassigned. Card refreshes
+   for the bound process happen automatically via
    bkp_onEngineProcessCompleted. */
-const bkp_ENGINE_PROCESSES = {
+var bkp_ENGINE_PROCESSES = {
     'Collect-BackupStatus':      { slug: 'collection' },
     'Process-BackupNetworkCopy': { slug: 'networkcopy' },
     'Process-BackupAWSUpload':   { slug: 'awsupload' },
@@ -695,12 +676,12 @@ function bkp_openRetentionDetail(target) {
 
     cc_engineFetch('/api/backup/retention-candidates?type=' + type)
         .then(function(data) {
-            if (!data) { body.innerHTML = '<div class="slide-empty">Failed to load data</div>'; return; }
-            if (data.error) { body.innerHTML = '<div class="slide-empty">Error: ' + cc_escapeHtml(data.error) + '</div>'; return; }
+            if (!data) { body.innerHTML = '<div class="cc-slide-empty">Failed to load data</div>'; return; }
+            if (data.error) { body.innerHTML = '<div class="cc-slide-empty">Error: ' + cc_escapeHtml(data.error) + '</div>'; return; }
             bkp_renderRetentionSlideout(body, data, type);
         })
         .catch(function(err) {
-            body.innerHTML = '<div class="slide-empty">Failed to load: ' + cc_escapeHtml(err.message) + '</div>';
+            body.innerHTML = '<div class="cc-slide-empty">Failed to load: ' + cc_escapeHtml(err.message) + '</div>';
         });
 }
 
@@ -721,19 +702,19 @@ function bkp_closeRetentionSlideout(target) {
    tree where each leaf is a file table grouped by backup type. */
 function bkp_renderRetentionSlideout(container, data, type) {
     if (!data.files || data.files.length === 0) {
-        container.innerHTML = '<div class="slide-empty">No retention candidates</div>';
+        container.innerHTML = '<div class="cc-slide-empty">No retention candidates</div>';
         return;
     }
 
     var html = '';
 
-    html += '<div class="slide-summary">';
-    html += '<div class="slide-stat"><div class="slide-stat-value">' + data.total_count + '</div><div class="slide-stat-label">Files</div></div>';
-    html += '<div class="slide-stat"><div class="slide-stat-value">' + bkp_formatBytesShort(data.total_bytes) + '</div><div class="slide-stat-label">Total Size</div></div>';
+    html += '<div class="cc-slide-summary">';
+    html += '<div class="cc-slide-stat"><div class="cc-slide-stat-value">' + data.total_count + '</div><div class="cc-slide-stat-label">Files</div></div>';
+    html += '<div class="cc-slide-stat"><div class="cc-slide-stat-value">' + bkp_formatBytesShort(data.total_bytes) + '</div><div class="cc-slide-stat-label">Total Size</div></div>';
 
     var dbSet = {};
     data.files.forEach(function(f) { dbSet[f.server_name + '|' + f.database_name] = true; });
-    html += '<div class="slide-stat"><div class="slide-stat-value">' + Object.keys(dbSet).length + '</div><div class="slide-stat-label">Databases</div></div>';
+    html += '<div class="cc-slide-stat"><div class="cc-slide-stat-value">' + Object.keys(dbSet).length + '</div><div class="cc-slide-stat-label">Databases</div></div>';
     html += '</div>';
 
     /* Group by server, then by database. */
@@ -757,40 +738,40 @@ function bkp_renderRetentionSlideout(container, data, type) {
         var server = servers[serverName];
         var serverId = 'bkp-ret-srv-' + type + '-' + serverName.replace(/[^a-zA-Z0-9]/g, '_');
 
-        html += '<div class="slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + serverId + '" id="' + serverId + '-header">';
-        html += '<span class="slide-accordion-label">' + cc_escapeHtml(serverName) + '</span>';
-        html += '<span class="slide-accordion-stats">' + server.files.length + ' files &middot; ' + bkp_formatBytesShort(server.bytes) + '</span>';
-        html += '<span class="slide-accordion-chevron" id="' + serverId + '-chevron">&#9654;</span>';
+        html += '<div class="cc-slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + serverId + '" id="' + serverId + '-header">';
+        html += '<span class="cc-slide-accordion-label">' + cc_escapeHtml(serverName) + '</span>';
+        html += '<span class="cc-slide-accordion-stats">' + server.files.length + ' files &middot; ' + bkp_formatBytesShort(server.bytes) + '</span>';
+        html += '<span class="cc-slide-accordion-chevron" id="' + serverId + '-chevron">&#9654;</span>';
         html += '</div>';
-        html += '<div class="slide-accordion-body" id="' + serverId + '-body">';
+        html += '<div class="cc-slide-accordion-body" id="' + serverId + '-body">';
 
         var dbNames = Object.keys(server.databases).sort();
         dbNames.forEach(function(dbName) {
             var db = server.databases[dbName];
             var dbId = serverId + '-' + dbName.replace(/[^a-zA-Z0-9]/g, '_');
 
-            html += '<div class="slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + dbId + '" id="' + dbId + '-header">';
-            html += '<span class="slide-accordion-label">' + cc_escapeHtml(dbName) + '</span>';
-            html += '<span class="slide-accordion-stats">' + db.files.length + ' files &middot; ' + bkp_formatBytesShort(db.bytes) + '</span>';
-            html += '<span class="slide-accordion-chevron" id="' + dbId + '-chevron">&#9654;</span>';
+            html += '<div class="cc-slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + dbId + '" id="' + dbId + '-header">';
+            html += '<span class="cc-slide-accordion-label">' + cc_escapeHtml(dbName) + '</span>';
+            html += '<span class="cc-slide-accordion-stats">' + db.files.length + ' files &middot; ' + bkp_formatBytesShort(db.bytes) + '</span>';
+            html += '<span class="cc-slide-accordion-chevron" id="' + dbId + '-chevron">&#9654;</span>';
             html += '</div>';
-            html += '<div class="slide-accordion-body" id="' + dbId + '-body">';
+            html += '<div class="cc-slide-accordion-body" id="' + dbId + '-body">';
 
-            html += '<div class="slide-accordion-cutoff">Keeping ' + db.chain_count + ' newest FULL chain(s) &mdash; cutoff: ' + bkp_formatDateTime(db.cutoff_dttm) + '</div>';
+            html += '<div class="cc-slide-accordion-cutoff">Keeping ' + db.chain_count + ' newest FULL chain(s) &mdash; cutoff: ' + bkp_formatDateTime(db.cutoff_dttm) + '</div>';
 
-            html += '<table class="slide-table">';
+            html += '<table class="cc-slide-table">';
             html += '<thead><tr>';
-            html += '<th class="slide-table-th">Type</th>';
-            html += '<th class="slide-table-th">File</th>';
-            html += '<th class="slide-table-th">Backup Date</th>';
-            html += '<th class="slide-table-th align-right">Size</th>';
+            html += '<th class="cc-slide-table-th">Type</th>';
+            html += '<th class="cc-slide-table-th">File</th>';
+            html += '<th class="cc-slide-table-th">Backup Date</th>';
+            html += '<th class="cc-slide-table-th align-right">Size</th>';
             html += '</tr></thead><tbody>';
             db.files.forEach(function(f) {
-                html += '<tr class="slide-table-row">';
-                html += '<td class="slide-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
-                html += '<td class="slide-table-td">' + cc_escapeHtml(f.file_name) + '</td>';
-                html += '<td class="slide-table-td">' + bkp_formatDateTime(f.backup_finish_dttm) + '</td>';
-                html += '<td class="slide-table-td align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
+                html += '<tr class="cc-slide-table-row">';
+                html += '<td class="cc-slide-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
+                html += '<td class="cc-slide-table-td">' + cc_escapeHtml(f.file_name) + '</td>';
+                html += '<td class="cc-slide-table-td">' + bkp_formatDateTime(f.backup_finish_dttm) + '</td>';
+                html += '<td class="cc-slide-table-td align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
                 html += '</tr>';
             });
             html += '</tbody></table>';
