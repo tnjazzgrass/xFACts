@@ -170,6 +170,18 @@ $DocsSharedFiles = @(
 )
 $SharedFiles = $CcSharedFiles + $DocsSharedFiles
 
+# Per-component chrome-anchor file (CC_CSS_Spec.md Section 4.3). The anchor
+# file is the sole legitimate carrier of FOUNDATION and CHROME sections
+# for its component, and the only file whose banners may declare
+# Prefix: cc. Used by the PREFIX_REGISTRY_MISMATCH check to validate cc
+# banners against the file's identity. Note: $CcSharedFiles above lists
+# both cc-shared.css and engine-events.css for USAGE resolution during
+# the migration window; only cc-shared.css is the chrome anchor.
+# $DocsAnchorCssFile follows when the docs-base.css -> docs-shared.css
+# migration begins.
+$CcAnchorCssFile   = 'cc-shared.css'
+$DocsAnchorCssFile = 'docs-base.css'
+
 $env:NODE_PATH = $NodeLibsPath
 
 # ============================================================================
@@ -1011,34 +1023,52 @@ function Add-CommentBannerRow {
             -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a 3-char lowercase prefix nor (none)."
     }
 
-    # PREFIX_REGISTRY_MISMATCH (CSS strict / Option B):
-    #   - File has registry mapping with cc_prefix = NULL  -> banner must be (none).
-    #     Any non-(none) value is a mismatch.
+    # PREFIX_REGISTRY_MISMATCH (CSS strict / Option B with chrome-anchor carve-out):
+    #   - File has registry mapping with cc_prefix = NULL AND is the chrome
+    #     anchor file (cc-shared.css, docs-base.css) -> banner must declare
+    #     cc. Any other value (including (none)) is a mismatch.
+    #   - File has registry mapping with cc_prefix = NULL AND is NOT the
+    #     chrome anchor -> banner must be (none). Any non-(none) value
+    #     (including cc) is a mismatch.
     #   - File has registry mapping with cc_prefix = X     -> banner must be X.
-    #     Any other value (including (none)) is a mismatch.
-    #   - File has no registry mapping at all              -> we cannot validate.
-    #     Skip this check; the file's missing Object_Registry row will be
-    #     reported separately by the miss advisory.
+    #     Any other value (including (none) and cc) is a mismatch.
+    #   - File has no registry mapping at all              -> we cannot
+    #     validate. Skip this check; the file's missing Object_Registry row
+    #     will be reported separately by the miss advisory.
     if ($script:CurrentRegistryHasMapping -and $Section.Prefix) {
         # Only check when the prefix value is well-formed; malformed values
         # already carry their own drift code.
         if (Test-PrefixValueIsValid -Prefix $Section.Prefix) {
-            $bannerVal = Get-BannerPrefixValue -Prefix $Section.Prefix   # '' for (none)
-            $isNone    = Test-IsPrefixNone -Prefix $Section.Prefix
-            $regVal    = $script:CurrentRegistryPrefix                    # $null or 'xxx'
+            $bannerVal    = Get-BannerPrefixValue -Prefix $Section.Prefix   # '' for (none), 'cc' for chrome, 'xxx' for a page prefix
+            $isNone       = Test-IsPrefixNone -Prefix $Section.Prefix
+            $isCc         = ($bannerVal -eq 'cc')
+            $regVal       = $script:CurrentRegistryPrefix                    # $null or 'xxx'
+            $isAnchorFile = ($script:CurrentFile -eq $CcAnchorCssFile -or
+                             $script:CurrentFile -eq $DocsAnchorCssFile)
 
             $mismatch = $false
             if ($null -eq $regVal) {
-                if (-not $isNone) { $mismatch = $true }
+                # Component has no page prefix (shared or chrome-anchor file).
+                if ($isAnchorFile) {
+                    # Chrome anchor: banner must declare cc.
+                    if (-not $isCc) { $mismatch = $true }
+                } else {
+                    # Non-anchor shared file: banner must declare (none).
+                    if (-not $isNone) { $mismatch = $true }
+                }
             } else {
-                if ($isNone -or $bannerVal -ne $regVal) { $mismatch = $true }
+                # Component has a page prefix. Banner must declare it; neither
+                # (none) nor cc is valid in a page-file banner.
+                if ($isNone -or $isCc -or $bannerVal -ne $regVal) { $mismatch = $true }
             }
 
             if ($mismatch) {
-                $regDisplay = if ($null -eq $regVal) { '(none)' } else { $regVal }
+                $regDisplay = if ($null -eq $regVal) {
+                    if ($isAnchorFile) { 'cc (chrome anchor)' } else { '(none)' }
+                } else { $regVal }
                 $bannerDisplay = if ($isNone) { '(none)' } else { $bannerVal }
                 Add-DriftCode -Row $row -Code 'PREFIX_REGISTRY_MISMATCH' `
-                    -Context "Banner declares Prefix '$bannerDisplay' but Component_Registry says cc_prefix = '$regDisplay' for this file."
+                    -Context "Banner declares Prefix '$bannerDisplay' but the expected value for this file is '$regDisplay'."
             }
         }
     }
