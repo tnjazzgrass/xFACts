@@ -210,17 +210,27 @@ A **compound modifier class** is a class-name token that exists in CSS definitio
 
 Examples of compound modifier names: `disabled`, `hidden`, `wide`, `xwide`, `active`, `warning`, `critical`, `success`, `medium`.
 
-#### 7.4.1 Compound modifier definition rules
+#### 7.4.1 Compound modifier qualification criteria
+
+A class-name token qualifies as a compound modifier only when ALL of the following are true:
+
+- The token is a generic adjective describing state, size, or layout behavior. Generic adjectives include state words (`disabled`, `active`, `hidden`, `open`, `expanded`, `warning`, `critical`, `success`) and generic size or layout adjectives (`wide`, `xwide`, `medium`, `compact`).
+- The token is or could reasonably be applied to multiple base classes across the codebase. A token applied to a single base today qualifies only when its adjective form is generic enough that a future base could reasonably adopt it.
+- The token's meaning is consistent regardless of the base it modifies. `disabled` means "this element is disabled" whether it's on `.cc-engine-bar.disabled` or `.cc-button.disabled`; the styling implementation differs but the meaning does not.
+
+A class-name token that fails any of these criteria is not a compound modifier. Such a token must be a standalone class subject to the unified prefix rule from §5, defined either as a base class or as a proper sibling chrome class that participates in compound selectors with its companion. Domain-specific layout variants of a single base (e.g., a slide-panel-specific layout described by its function rather than a generic adjective) must carry the chrome prefix as a proper sibling class.
+
+#### 7.4.2 Compound modifier definition rules
 
 - A compound modifier is defined exclusively in compound selectors (e.g., `.cc-engine-bar.disabled`, `.cc-button.disabled`, `.bkp-card.warning`). It has no standalone `.disabled { ... }` rule anywhere in the codebase.
 - A class token that has any standalone definition is not a compound modifier — it is a standalone class subject to the unified prefix rule from §5.
-- The set of compound modifiers is open. Authors define new compound modifiers by writing new compound selectors. The CSS populator recognizes a token as a compound modifier by observing that no standalone definition exists.
+- The set of compound modifiers is open. Authors define new compound modifiers by writing new compound selectors that satisfy §7.4.1. The CSS populator recognizes a token as a compound modifier by observing that no standalone definition exists.
 
-#### 7.4.2 Exemption from the prefix rule
+#### 7.4.3 Exemption from the prefix rule
 
 Compound modifiers are exempt from the section's `Prefix:` declaration. A compound selector `.cc-engine-bar.disabled` does not emit `PREFIX_MISMATCH` for the `disabled` token; only the leftmost (base) class is prefix-checked.
 
-#### 7.4.3 Companion validity (HTML side)
+#### 7.4.4 Companion validity (HTML side)
 
 The set of `<companion-class>.<modifier>` pairs registered in CSS defines the valid companion contexts for each modifier. In HTML markup, a compound modifier is valid on an element only when the element also carries a companion class for which `<companion>.<modifier>` is a registered compound. HTML markup using a compound modifier outside its registered companion contexts emits `INVALID_MODIFIER_CONTEXT` (HTML spec §5.1.1).
 
@@ -882,7 +892,9 @@ The compound-depth limit and stacked-pseudo prohibition share a root cause: both
 
 The state-on-element pattern produces three measurable benefits: a glance at HTML markup tells you exactly which elements are in which state with no need to mentally trace ancestor classes; the state is queryable through the catalog by exact class name rather than by inferred descendant relationships; and JavaScript that toggles state operates on the element directly with no parent-class coordination. The principle is broader than just compliance with the no-descendants rule - it produces clearer HTML, more inspectable state, and better catalog queryability.
 
-The compound modifier class exemption from the prefix rule (§7.4.2) preserves the unified prefix discipline without forcing artificial prefixes onto modifiers whose meaning is purely positional. A modifier token like `disabled` carries no source-identity information of its own — its meaning derives from the companion class it appears with. Prefixing it as `cc-disabled` or `bkp-disabled` would add noise without information, and would make the same conceptual modifier (`.bkp-card.disabled` vs `.cc-engine-bar.disabled`) appear as two distinct catalog rows when they represent one modifier applied in two contexts. The compound-only requirement (§7.4.1) — no standalone definition anywhere — is what distinguishes a true modifier from a class that happens to also appear in compounds. A class with a standalone definition is a standalone class whose existence in compounds is a styling refinement; a class with only compound definitions is purely a modifier and carries the modifier exemption.
+The compound modifier class exemption from the prefix rule (§7.4.3) preserves the unified prefix discipline without forcing artificial prefixes onto modifiers whose meaning is purely positional. A modifier token like `disabled` carries no source-identity information of its own — its meaning derives from the companion class it appears with. Prefixing it as `cc-disabled` or `bkp-disabled` would add noise without information, and would make the same conceptual modifier (`.bkp-card.disabled` vs `.cc-engine-bar.disabled`) appear as two distinct catalog rows when they represent one modifier applied in two contexts. The compound-only requirement (§7.4.2) — no standalone definition anywhere — is what distinguishes a true modifier from a class that happens to also appear in compounds. A class with a standalone definition is a standalone class whose existence in compounds is a styling refinement; a class with only compound definitions is purely a modifier and carries the modifier exemption.
+
+The qualification criteria in §7.4.1 close a loophole left by the compound-only requirement alone: a class can be defined exclusively in compound selectors and still not be a true modifier in the conceptual sense the exemption was designed for. The compound-only requirement is structural (no standalone rule anywhere); the qualification criteria are semantic (is this token a generic adjective with consistent meaning across bases?). Both must hold for the exemption to apply. Without the semantic criteria, an author could write a single domain-specific class as a compound selector and have it be silently exempted from prefixing — defeating the unified prefix discipline that §5 establishes. With the criteria, the test is explicit: a class that only modifies one base and whose name describes a function rather than a state, size, or layout adjective is not a modifier and must carry the chrome prefix as a proper sibling.
 
 ### A.10 Custom property tokens
 
