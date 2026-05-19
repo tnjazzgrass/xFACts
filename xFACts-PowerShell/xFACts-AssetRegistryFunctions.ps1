@@ -1042,15 +1042,21 @@ function Get-BannerPrefixValue {
     return $val.Trim()
 }
 
-# Test whether a banner-declared Prefix value is well-formed. The post-
-# standardization spec requires a single 3-character lowercase token (e.g.
-# "bkp", "bsv") OR the (none) sentinel. Returns $true if the value is
-# acceptable; $false signals MALFORMED_PREFIX_VALUE drift.
+# Test whether a banner-declared Prefix value is well-formed. Three forms
+# are accepted: a 3-character lowercase page prefix (e.g. "bkp", "bsv"),
+# the literal chrome prefix "cc" (per CC_CSS_Spec.md and CC_JS_Spec.md
+# Section 5.1), or the (none) sentinel. Returns $true if the value is
+# acceptable; $false signals MALFORMED_PREFIX_VALUE drift. Whether a given
+# well-formed value is correct for the section it appears in (page prefix
+# in page-file sections, "cc" in anchor-file chrome sections, (none) where
+# permitted) is the PREFIX_REGISTRY_MISMATCH check's responsibility, not
+# this function's.
 function Test-PrefixValueIsValid {
     param([string]$Prefix)
     if ($null -eq $Prefix) { return $false }
     if (Test-IsPrefixNone -Prefix $Prefix) { return $true }
     $val = Get-BannerPrefixValue -Prefix $Prefix
+    if ($val -eq 'cc')                   { return $true }
     return ($val -match '^[a-z]{3}$')
 }
 
