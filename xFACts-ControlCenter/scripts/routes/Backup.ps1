@@ -23,8 +23,8 @@
 
 .NOTES
     FILE ORGANIZATION
-        1. CHANGELOG
-        2. ROUTE: PAGE PATH
+        CHANGELOG
+        ROUTE: PAGE PATH
 #>
 
 # ============================================================================
