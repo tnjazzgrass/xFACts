@@ -1725,19 +1725,24 @@ function Test-PrefixMissing {
 
 # Returns $true if an HTML ID string is malformed: it contains characters
 # outside the spec's lowercase-letters/digits/hyphens set OR (when the file
-# has a registered cc_prefix) it does not begin with that prefix + '-'.
+# has a registered cc_prefix) it does not begin with EITHER the file's
+# prefix + '-' OR the chrome prefix 'cc-'. Per CC_HTML_Spec.md Section 4.0
+# (unified prefix rule), every ID carries either the page's prefix or the
+# 'cc-' chrome prefix; an ID with neither is drift.
 # Returns $false in any of these cases:
 #   - The ID conforms to <prefix>-<purpose> with only the allowed chars
+#   - The ID is a chrome ID beginning with 'cc-'
 #   - The file has no Component_Registry mapping (skip silently)
 #   - The file's registered cc_prefix is null (no prefix expected)
 # Used by Add-HtmlIdRow to fire JS_HTML_ID_MALFORMED on USAGE rows.
-# Per CC_HTML_Spec.md Section 4.2.
 function Test-HtmlIdMalformed {
     param([string]$IdName)
     if ([string]::IsNullOrEmpty($IdName)) { return $false }
     # Character-class check: a-z, 0-9, '-' only.
     if ($IdName -cnotmatch '^[a-z0-9-]+$') { return $true }
-    # Prefix check, only when the file has a registered cc_prefix.
+    # Chrome IDs are universally valid per the unified prefix rule.
+    if ($IdName.StartsWith('cc-')) { return $false }
+    # Page-prefix check, only when the file has a registered cc_prefix.
     if (-not $script:CurrentRegistryHasMapping)                  { return $false }
     if ([string]::IsNullOrEmpty($script:CurrentRegistryPrefix)) { return $false }
     $expected = "$($script:CurrentRegistryPrefix)-"
@@ -2147,7 +2152,7 @@ function Add-HtmlIdRow {
     # of the catalog it lives on.
     if (Test-HtmlIdMalformed -IdName $IdName) {
         Add-DriftCode -Row $row -Code 'JS_HTML_ID_MALFORMED' `
-            -Context "ID '$IdName' contains disallowed characters or does not begin with the file's registered cc_prefix + '-'."
+            -Context "ID '$IdName' contains disallowed characters or does not begin with the file's registered cc_prefix + '-' or the chrome prefix 'cc-'."
     }
 
     # JS_HTML_ID_UNRESOLVED applies only to USAGE rows: a JS reference
