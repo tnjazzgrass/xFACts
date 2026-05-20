@@ -161,8 +161,8 @@ $DriftDescriptions = [ordered]@{
     'MALFORMED_HEAD'                    = "The <head> element contains constructs other than <title> and <link> (e.g., inline <style>, <meta>, <script>)."
     'FORBIDDEN_HARDCODED_TITLE'         = "The <title> content is a hardcoded string instead of the `$browserTitle PowerShell variable substitution."
     'MISSING_BODY_SECTION_CLASS'        = "The <body> element does not declare a class=`"section-<sectionKey>`" attribute."
-    'MISSING_DATA_PAGE'                 = "The <body> element does not declare a data-page=`"<slug>`" attribute required by the bootloader."
-    'MISSING_DATA_PREFIX'               = "The <body> element does not declare a data-prefix=`"<prefix>`" attribute required by the bootloader."
+    'MISSING_DATA_CC_PAGE'              = "The <body> element does not declare a data-cc-page=`"<slug>`" attribute required by the bootloader."
+    'MISSING_DATA_CC_PREFIX'            = "The <body> element does not declare a data-cc-prefix=`"<prefix>`" attribute required by the bootloader."
     'MISSING_NAV_SUBSTITUTION'          = "The first content inside <body> is not the `$navHtml substitution."
     'MISSING_HEADER_BAR'                = "The page header bar is missing as the first content after `$navHtml."
     'FORBIDDEN_HARDCODED_PAGE_HEADER'   = "The page header content is hardcoded instead of the `$headerHtml PowerShell variable substitution."
@@ -174,16 +174,15 @@ $DriftDescriptions = [ordered]@{
     'MALFORMED_BODY_CLOSE'              = "Content appears between the shared script reference and </body>."
 
     # ---- Section 15.2: Page chrome codes ----
-    'MALFORMED_HEADER_BAR_CONTAINER'    = "The header bar's outer container is not <div class=`"header-bar`">."
-    'MALFORMED_HEADER_BAR_LEFT'         = "The first child of header-bar is not the unattributed <div> containing the `$headerHtml substitution."
-    'MALFORMED_HEADER_BAR_RIGHT'        = "The second child of header-bar is not <div class=`"header-right`">."
-    'MALFORMED_HEADER_RIGHT_CHILDREN'   = "The header-right element contains children other than refresh-info and optional engine-row."
-    'MALFORMED_REFRESH_INFO_CONTAINER'  = "The refresh info block's outer container is not <div class=`"refresh-info`">."
-    'MALFORMED_LIVE_INDICATOR'          = "The live indicator span is malformed; expected <span class=`"live-indicator`"></span> exactly."
+    'MALFORMED_HEADER_BAR_CONTAINER'    = "The header bar's outer container is not <div class=`"cc-header-bar`">."
+    'MALFORMED_HEADER_BAR_LEFT'         = "The first child of cc-header-bar is not the unattributed <div> containing the `$headerHtml substitution."
+    'MALFORMED_HEADER_BAR_RIGHT'        = "The second child of cc-header-bar is not <div class=`"cc-header-right`">."
+    'MALFORMED_HEADER_RIGHT_CHILDREN'   = "The cc-header-right element contains children other than cc-refresh-info and optional cc-engine-row."
+    'MALFORMED_REFRESH_INFO_CONTAINER'  = "The refresh info block's outer container is not <div class=`"cc-refresh-info`">."
+    'MALFORMED_LIVE_INDICATOR'          = "The live indicator span is malformed; expected <span class=`"cc-live-indicator`"></span> exactly."
     'MALFORMED_LIVE_STATUS_LINE'        = "The live status line deviates from the mandated 'Live | Updated:' form."
     'MALFORMED_REFRESH_BUTTON'          = "The page refresh button markup deviates from the mandated form (class, data-action-click, title, or entity reference)."
-    'DUPLICATE_LAST_UPDATE_ID'          = "The last-update ID appears more than once on the page."
-    'MALFORMED_ENGINE_ROW_CONTAINER'    = "The engine row's outer container is not <div class=`"engine-row`">."
+    'MALFORMED_ENGINE_ROW_CONTAINER'    = "The engine row's outer container is not <div class=`"cc-engine-row`">."
     'MALFORMED_ENGINE_ROW_CHILDREN'     = "The engine row contains children other than engine cards."
     'ENGINE_CARD_ORDER_MISMATCH'        = "Engine cards are not in declaration order matching Orchestrator.ProcessRegistry.cc_sort_order."
     'MALFORMED_ENGINE_CARD'             = "An engine card's structure deviates from the mandated four-element block."
@@ -210,7 +209,7 @@ $DriftDescriptions = [ordered]@{
 
     # ---- Section 15.4: ID codes ----
     'CHROME_ID_REUSED_AS_LOCAL'         = "A page-local element is assigned a chrome ID (e.g., id=`"last-update`" on a non-chrome element)."
-    'MISSING_PREFIX_ID'                 = "A page-local ID does not begin with the page's cc_prefix followed by a hyphen."
+    'MISSING_PREFIX_ID'                 = "A page-local ID does not begin with the page's cc_prefix followed by a hyphen, and is not a chrome ID prefixed with 'cc-'."
     'CROSS_PAGE_PREFIX_COLLISION'       = "A page-local ID begins with another page's prefix."
     'DUPLICATE_ID_DECLARATION'          = "The same ID value is declared more than once on a page."
     'MALFORMED_ID_VALUE'                = "An ID value contains characters other than lowercase letters, digits, and hyphens."
@@ -1582,29 +1581,16 @@ function Get-ClassValueDriftCodes {
 # ID VALIDATION
 # ============================================================================
 #
-# Per CC_HTML_Spec.md Section 4, IDs are either:
-#   - Chrome IDs: a small fixed set (last-update, connection-banner,
-#     page-error-banner, card-engine-<slug>, engine-bar-<slug>,
-#     engine-cd-<slug>). These have known names and may appear on multiple
-#     pages.
-#   - Page-local IDs: must start with the page's cc_prefix followed by '-'.
+# Per CC_HTML_Spec.md Section 4.0 (unified prefix rule), every ID carries
+# one of two prefixes followed by a hyphen:
+#   - The page's cc_prefix from Component_Registry (page-local IDs)
+#   - The literal 'cc-' chrome prefix (platform-shared chrome IDs)
+# An ID with neither prefix is drift.
 #
-# Chrome ID set is fixed at the spec level. Engine card IDs have variable
-# slugs but match the prefixes 'card-engine-', 'engine-bar-', 'engine-cd-'.
-
-$ChromeIdLiterals = @('last-update','connection-banner','page-error-banner')
-$ChromeIdPrefixes = @('card-engine-','engine-bar-','engine-cd-')
-
-# Test whether an ID value is a chrome ID per the spec.
-function Test-IsChromeId {
-    param([string]$IdValue)
-    if ([string]::IsNullOrEmpty($IdValue)) { return $false }
-    if ($ChromeIdLiterals -contains $IdValue) { return $true }
-    foreach ($p in $ChromeIdPrefixes) {
-        if ($IdValue.StartsWith($p)) { return $true }
-    }
-    return $false
-}
+# The set of valid chrome IDs is closed and defined in CC_HTML_Spec.md
+# Section 4.1. Validation here only checks that the prefix shape is one
+# of the two accepted forms; whether a 'cc-' prefixed ID is in the
+# spec's chrome set is enforced elsewhere.
 
 # Validate ID value shape and prefix membership. Returns drift code array.
 function Get-IdValueDriftCodes {
@@ -1621,37 +1607,37 @@ function Get-IdValueDriftCodes {
         [void]$codes.Add('MALFORMED_ID_VALUE')
     }
 
-    $isChrome = Test-IsChromeId -IdValue $IdValue
+    # Chrome IDs (prefixed with 'cc-') are universally valid per the
+    # unified prefix rule. Skip all further prefix checks.
+    if ($IdValue.StartsWith('cc-')) {
+        return @($codes.ToArray())
+    }
 
-    if ($isChrome) {
-        # Chrome IDs are fine as-is. No prefix check applies.
+    if ($IsHelperEmission) {
+        # Helper module functions emit SHARED HTML. If they produce a
+        # page-prefixed ID, that couples shared code to a page.
+        if (-not [string]::IsNullOrEmpty($PagePrefix) -and $IdValue.StartsWith("$PagePrefix-")) {
+            [void]$codes.Add('FORBIDDEN_HELPER_PAGE_PREFIX_ID')
+        }
+        # Helper IDs that aren't chrome and don't have a page prefix at
+        # all are tolerated here; the helper is shared code and may emit
+        # bare IDs intentionally.
     } else {
-        if ($IsHelperEmission) {
-            # Helper module functions emit SHARED HTML. If they produce a
-            # page-prefixed ID, that couples shared code to a page.
-            if (-not [string]::IsNullOrEmpty($PagePrefix) -and $IdValue.StartsWith("$PagePrefix-")) {
-                [void]$codes.Add('FORBIDDEN_HELPER_PAGE_PREFIX_ID')
-            }
-            # Helper IDs that aren't chrome and don't have a prefix at all
-            # are tolerated here; the helper is shared code and may emit
-            # bare IDs intentionally.
+        # Page-local emission: must start with the page's cc_prefix + '-'.
+        if ([string]::IsNullOrEmpty($PagePrefix)) {
+            # No prefix on file - flag any non-chrome ID.
+            [void]$codes.Add('MISSING_PREFIX_ID')
         } else {
-            # Page-local emission: must start with the page's cc_prefix + '-'.
-            if ([string]::IsNullOrEmpty($PagePrefix)) {
-                # No prefix on file - flag if id doesn't look chrome-like.
+            $expected = "$PagePrefix-"
+            if (-not $IdValue.StartsWith($expected)) {
                 [void]$codes.Add('MISSING_PREFIX_ID')
-            } else {
-                $expected = "$PagePrefix-"
-                if (-not $IdValue.StartsWith($expected)) {
-                    [void]$codes.Add('MISSING_PREFIX_ID')
-                    # Cross-page collision: ID starts with a DIFFERENT
-                    # registered page prefix.
-                    foreach ($otherPrefix in $script:knownPagePrefixes) {
-                        if ($otherPrefix -eq $PagePrefix) { continue }
-                        if ($IdValue.StartsWith("$otherPrefix-")) {
-                            [void]$codes.Add('CROSS_PAGE_PREFIX_COLLISION')
-                            break
-                        }
+                # Cross-page collision: ID starts with a DIFFERENT
+                # registered page prefix.
+                foreach ($otherPrefix in $script:knownPagePrefixes) {
+                    if ($otherPrefix -eq $PagePrefix) { continue }
+                    if ($IdValue.StartsWith("$otherPrefix-")) {
+                        [void]$codes.Add('CROSS_PAGE_PREFIX_COLLISION')
+                        break
                     }
                 }
             }
@@ -2910,6 +2896,38 @@ function Find-NextSignificantToken {
     return -1
 }
 
+# Find the EndTag token that closes the StartTag at $StartTagIdx, accounting
+# for same-name nested elements. Walks forward tracking depth: same-name
+# StartTags increment depth, same-name EndTags decrement. Returns the index
+# of the EndTag that brings depth back to zero. SelfClose tokens don't
+# affect depth (they self-balance). Returns -1 if no matching close found
+# or if $StartTagIdx doesn't point to a StartTag.
+#
+# This replaces the naive pattern of calling Find-TokenIndex with -Kind
+# 'EndTag' which returns the FIRST matching EndTag regardless of nesting -
+# a bug for any container tag that can nest inside itself (notably <div>).
+function Find-MatchingClose {
+    param(
+        [Parameter(Mandatory)]$Tokens,
+        [Parameter(Mandatory)][int]$StartTagIdx
+    )
+    if ($StartTagIdx -lt 0 -or $StartTagIdx -ge $Tokens.Count) { return -1 }
+    $startTok = $Tokens[$StartTagIdx]
+    if ($startTok.Kind -ne 'StartTag') { return -1 }
+    $tagName = $startTok.TagName
+    $depth = 1
+    for ($i = $StartTagIdx + 1; $i -lt $Tokens.Count; $i++) {
+        $t = $Tokens[$i]
+        if ($t.TagName -ne $tagName) { continue }
+        if ($t.Kind -eq 'StartTag') { $depth++; continue }
+        if ($t.Kind -eq 'EndTag') {
+            $depth--
+            if ($depth -eq 0) { return $i }
+        }
+    }
+    return -1
+}
+
 # Test whether a token's StartTag attribute text contains a specific
 # attribute=value match using a regex pattern.
 function Test-AttrTextMatches {
@@ -3062,14 +3080,14 @@ function Get-PageShellDrift {
             -Predicate { param($t) $t.TagName -eq 'body' } `
             -StartAt $bodyStartIdx
         $bodyAttrs = $Tokens[$bodyStartIdx].AttrText
-        if (-not (Test-AttrTextMatches -AttrText $bodyAttrs -Pattern 'class\s*=\s*["'']section-[a-z0-9\-_]+["'']')) {
+        if (-not (Test-AttrTextMatches -AttrText $bodyAttrs -Pattern 'class\s*=\s*["'']cc-section-[a-z0-9\-_]+["'']')) {
             [void]$codes.Add('MISSING_BODY_SECTION_CLASS')
         }
-        if (-not (Test-AttrTextMatches -AttrText $bodyAttrs -Pattern 'data-page\s*=\s*["''][^"'']+["'']')) {
-            [void]$codes.Add('MISSING_DATA_PAGE')
+        if (-not (Test-AttrTextMatches -AttrText $bodyAttrs -Pattern 'data-cc-page\s*=\s*["''][^"'']+["'']')) {
+            [void]$codes.Add('MISSING_DATA_CC_PAGE')
         }
-        if (-not (Test-AttrTextMatches -AttrText $bodyAttrs -Pattern 'data-prefix\s*=\s*["''][^"'']+["'']')) {
-            [void]$codes.Add('MISSING_DATA_PREFIX')
+        if (-not (Test-AttrTextMatches -AttrText $bodyAttrs -Pattern 'data-cc-prefix\s*=\s*["''][^"'']+["'']')) {
+            [void]$codes.Add('MISSING_DATA_CC_PREFIX')
         }
     }
 
@@ -3089,7 +3107,7 @@ function Get-PageShellDrift {
         }
     }
 
-    # ---- Page header bar: first content after $navHtml must be header-bar ----
+    # ---- Page header bar: first content after $navHtml must be cc-header-bar ----
     $headerBarFound = $false
     $hardcodedPageHeader = $false
     if ($bodyStartIdx -ge 0) {
@@ -3107,11 +3125,10 @@ function Get-PageShellDrift {
         if ($afterNav -ge 0) {
             $tt = $Tokens[$afterNav]
             if ($tt.Kind -eq 'StartTag' -and $tt.TagName -eq 'div' -and
-                (Test-AttrTextMatches -AttrText $tt.AttrText -Pattern 'class\s*=\s*["'']header-bar["'']')) {
+                (Test-AttrTextMatches -AttrText $tt.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']')) {
                 $headerBarFound = $true
                 $hbStart = $afterNav
-                $hbEnd = Find-TokenIndex -Tokens $Tokens -Kind 'EndTag' `
-                    -Predicate { param($x) $x.TagName -eq 'div' } -StartAt $hbStart
+                $hbEnd = Find-MatchingClose -Tokens $Tokens -StartTagIdx $hbStart
                 $hasHeaderInterp = $false
                 if ($hbEnd -gt $hbStart) {
                     for ($k = $hbStart + 1; $k -lt $hbEnd; $k++) {
@@ -3142,7 +3159,7 @@ function Get-PageShellDrift {
         $t = $Tokens[$k]
         if ($t.Kind -ne 'StartTag' -and $t.Kind -ne 'SelfClose') { continue }
         if ($t.TagName -ne 'div') { continue }
-        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']connection-banner["'']') {
+        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-connection-banner["'']') {
             $connectionBanners += $k
         }
     }
@@ -3151,8 +3168,7 @@ function Get-PageShellDrift {
     } else {
         foreach ($bIdx in $connectionBanners) {
             if ($Tokens[$bIdx].Kind -eq 'SelfClose') { continue }
-            $closeIdx = Find-TokenIndex -Tokens $Tokens -Kind 'EndTag' `
-                -Predicate { param($x) $x.TagName -eq 'div' } -StartAt $bIdx
+            $closeIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $bIdx
             if ($closeIdx -le $bIdx) { continue }
             $hasContent = $false
             for ($k = $bIdx + 1; $k -lt $closeIdx; $k++) {
@@ -3174,7 +3190,7 @@ function Get-PageShellDrift {
         $t = $Tokens[$k]
         if ($t.Kind -ne 'StartTag' -and $t.Kind -ne 'SelfClose') { continue }
         if ($t.TagName -ne 'div') { continue }
-        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']page-error-banner["'']') {
+        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-page-error-banner["'']') {
             $pageErrorBanners += $k
         }
     }
@@ -3183,8 +3199,7 @@ function Get-PageShellDrift {
     } else {
         foreach ($bIdx in $pageErrorBanners) {
             if ($Tokens[$bIdx].Kind -eq 'SelfClose') { continue }
-            $closeIdx = Find-TokenIndex -Tokens $Tokens -Kind 'EndTag' `
-                -Predicate { param($x) $x.TagName -eq 'div' } -StartAt $bIdx
+            $closeIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $bIdx
             if ($closeIdx -le $bIdx) { continue }
             $hasContent = $false
             for ($k = $bIdx + 1; $k -lt $closeIdx; $k++) {
@@ -3987,8 +4002,7 @@ function Invoke-OverlayPostWalkValidation {
         $startTag = $Tokens[$startIdx]
         $endIdx = $startIdx
         if ($startTag.Kind -eq 'StartTag') {
-            $endIdx = Find-TokenIndex -Tokens $Tokens -Kind 'EndTag' `
-                -Predicate { param($x) $x.TagName -eq $startTag.TagName } -StartAt $startIdx
+            $endIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $startIdx
             if ($endIdx -lt 0) { $endIdx = $startIdx }
         }
         $overlayRanges += @{ Start = $startIdx; End = $endIdx; Construct = $c }
@@ -4102,7 +4116,9 @@ function Invoke-EngineCardValidation {
     if ($null -eq $script:processRegistryRows -or $script:processRegistryRows.Count -eq 0) { return }
     if ($null -eq $RoutePaths -or $RoutePaths.Count -eq 0) { return }
 
-    # Find all engine cards in this file by scanning for card-engine-* IDs
+    # Find all engine cards in this file by scanning for cc-card-engine-* IDs.
+    # The card's outer <div> has id="cc-card-engine-<slug>" per CC_HTML_Spec.md
+    # Section 2.3.
     $cardsOnPage = @()
     for ($i = 0; $i -lt $Tokens.Count; $i++) {
         $t = $Tokens[$i]
@@ -4111,26 +4127,25 @@ function Invoke-EngineCardValidation {
         $attrs = Get-AttributesFromToken -AttrText $t.AttrText
         $idAttr = Get-AttributeByName -Attrs $attrs -Name 'id'
         if (-not $idAttr -or [string]::IsNullOrEmpty($idAttr.Value)) { continue }
-        if ($idAttr.Value -match '^card-engine-(.+)$') {
+        if ($idAttr.Value -match '^cc-card-engine-(.+)$') {
             $cardsOnPage += [ordered]@{
-                Slug      = $matches[1]
-                TokenIdx  = $i
-                AbsLine   = $FileLine0 + $t.LineOffset
-                IdRowKey  = $idAttr.Value
+                Slug       = $matches[1]
+                TokenIdx   = $i
+                AbsLine    = $FileLine0 + $t.LineOffset
+                IdRowKey   = $idAttr.Value
+                TagName    = $t.TagName
+                Attributes = $attrs
             }
         }
     }
 
     if ($cardsOnPage.Count -eq 0) { return }
 
-    # For each card, look up ProcessRegistry by slug and validate.
+    # For each card, locate its HTML_ID row (drift attaches there), validate
+    # its outer attributes, walk its body for the mandated four-element block,
+    # and cross-reference Orchestrator.ProcessRegistry.
     foreach ($card in $cardsOnPage) {
-        $proc = $null
-        foreach ($p in $script:processRegistryRows) {
-            if ([string]$p.cc_engine_slug -eq $card.Slug) { $proc = $p; break }
-        }
-
-        # Find the HTML_ID row for the card so drift can attach to it
+        # Find the HTML_ID row for the card so drift can attach to it.
         $cardRow = $null
         foreach ($r in $script:rows) {
             if ($r.FileName -eq $script:CurrentFile -and
@@ -4142,6 +4157,219 @@ function Invoke-EngineCardValidation {
             }
         }
         if ($null -eq $cardRow) { continue }
+
+        # ---- Card outer-element validation ----
+        # The card's outer element is a <div> carrying exactly two attributes:
+        # class="cc-engine-card" and id="cc-card-engine-<slug>". Any deviation
+        # in tag name, missing/extra attributes, or class value mismatch is
+        # MALFORMED_ENGINE_CARD_ATTRIBUTES.
+        if ($card.TagName -ne 'div') {
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_CARD_ATTRIBUTES' `
+                -Context "Card outer element is <$($card.TagName)>; expected <div>."
+        }
+        $classAttr = Get-AttributeByName -Attrs $card.Attributes -Name 'class'
+        if ($null -eq $classAttr -or $classAttr.Value -ne 'cc-engine-card') {
+            $actual = if ($null -eq $classAttr) { '<missing>' } else { $classAttr.Value }
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_CARD_ATTRIBUTES' `
+                -Context "Card class is '$actual'; expected exactly 'cc-engine-card'."
+        }
+        # Verify no extra attributes beyond class and id.
+        foreach ($a in $card.Attributes) {
+            if ($a.Name -ne 'class' -and $a.Name -ne 'id') {
+                Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_CARD_ATTRIBUTES' `
+                    -Context "Card carries unexpected attribute '$($a.Name)'."
+            }
+        }
+
+        # ---- Card body structural validation ----
+        # The card body contains exactly three child elements per CC_HTML_Spec.md
+        # Section 2.3:
+        #   1. <span class="cc-engine-label">label text</span>
+        #   2. <div  class="cc-engine-bar"  id="cc-engine-bar-<slug>"></div>
+        #   3. <span class="cc-engine-countdown" id="cc-engine-cd-<slug>"></span>
+        # Any deviation in the count or ordering of these children fires
+        # MALFORMED_ENGINE_CARD. Per-child malformations fire the matching
+        # MALFORMED_ENGINE_LABEL / MALFORMED_ENGINE_BAR / MALFORMED_ENGINE_COUNTDOWN.
+        $cardEndIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $card.TokenIdx
+        if ($cardEndIdx -le $card.TokenIdx) {
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_CARD' `
+                -Context "Card outer <div> has no matching closing tag."
+            continue
+        }
+
+        # Collect the immediate child StartTag/SelfClose tokens (skipping
+        # whitespace text, entities, and PS interpolation that aren't elements).
+        # A child's "scope" is the range from its StartTag to its matching EndTag;
+        # we skip past that range to find the next sibling.
+        $childIdxs = @()
+        $cursor = $card.TokenIdx + 1
+        while ($cursor -lt $cardEndIdx) {
+            $tt = $Tokens[$cursor]
+            if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+            if ($tt.Kind -eq 'Comment') { $cursor++; continue }
+            if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+            if ($tt.Kind -eq 'Entity') { $cursor++; continue }
+            if ($tt.Kind -eq 'EndTag') { $cursor++; continue }
+            if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+                $childIdxs += $cursor
+                if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+                $childIdxs += $cursor
+                if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+                # Skip past the matching close.
+                $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+                if ($childClose -lt 0 -or $childClose -ge $cardEndIdx) {
+                    $cursor = $cardEndIdx
+                } else {
+                    $cursor = $childClose + 1
+                }
+                continue
+            }
+            # Plain text content (non-whitespace) inside the card body but
+            # outside any child element is structurally invalid - the spec's
+            # four-element block does not permit bare text.
+            if ($tt.Kind -eq 'Text') {
+                Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_CARD' `
+                    -Context "Card body contains bare text outside the mandated child elements."
+            }
+            $cursor++
+        }
+
+        if ($childIdxs.Count -ne 3) {
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_CARD' `
+                -Context "Card body has $($childIdxs.Count) immediate child element(s); expected exactly 3 (cc-engine-label span, cc-engine-bar div, cc-engine-countdown span)."
+            # Continue to the next card; per-child checks below assume the
+            # three-child shape.
+            continue
+        }
+
+        # ---- Child 1: <span class="cc-engine-label">label text</span> ----
+        $labelTok = $Tokens[$childIdxs[0]]
+        $labelAttrs = if (-not [string]::IsNullOrWhiteSpace($labelTok.AttrText)) {
+            Get-AttributesFromToken -AttrText $labelTok.AttrText
+        } else { @() }
+        $labelClass = Get-AttributeByName -Attrs $labelAttrs -Name 'class'
+        if ($labelTok.TagName -ne 'span') {
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_LABEL' `
+                -Context "First child is <$($labelTok.TagName)>; expected <span>."
+        } elseif ($null -eq $labelClass -or $labelClass.Value -ne 'cc-engine-label') {
+            $actual = if ($null -eq $labelClass) { '<missing>' } else { $labelClass.Value }
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_LABEL' `
+                -Context "First child span class is '$actual'; expected exactly 'cc-engine-label'."
+        } else {
+            # No attributes beyond class.
+            foreach ($a in $labelAttrs) {
+                if ($a.Name -ne 'class') {
+                    Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_LABEL' `
+                        -Context "cc-engine-label span carries unexpected attribute '$($a.Name)'."
+                }
+            }
+            # Capture the label text content for the registry-mismatch check below.
+            $labelClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $childIdxs[0]
+            if ($labelClose -gt $childIdxs[0]) {
+                $sbText = New-Object System.Text.StringBuilder
+                $labelHasInterp = $false
+                for ($m = $childIdxs[0] + 1; $m -lt $labelClose; $m++) {
+                    $bt = $Tokens[$m]
+                    if ($bt.Kind -eq 'Text') { [void]$sbText.Append($bt.Raw) }
+                    elseif ($bt.Kind -eq 'PsInterp') { $labelHasInterp = $true }
+                }
+                $labelText = $sbText.ToString().Trim()
+                if ($labelHasInterp) {
+                    Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_LABEL' `
+                        -Context "cc-engine-label span content contains PowerShell interpolation; spec requires static text."
+                } elseif ([string]::IsNullOrEmpty($labelText)) {
+                    Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_LABEL' `
+                        -Context "cc-engine-label span is empty; spec requires label text."
+                }
+            }
+        }
+
+        # ---- Child 2: <div class="cc-engine-bar" id="cc-engine-bar-<slug>"></div> ----
+        $barTok = $Tokens[$childIdxs[1]]
+        $barAttrs = if (-not [string]::IsNullOrWhiteSpace($barTok.AttrText)) {
+            Get-AttributesFromToken -AttrText $barTok.AttrText
+        } else { @() }
+        $barClass = Get-AttributeByName -Attrs $barAttrs -Name 'class'
+        $barId    = Get-AttributeByName -Attrs $barAttrs -Name 'id'
+        $expectedBarId = "cc-engine-bar-$($card.Slug)"
+        if ($barTok.TagName -ne 'div') {
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_BAR' `
+                -Context "Second child is <$($barTok.TagName)>; expected <div>."
+        } else {
+            if ($null -eq $barClass -or $barClass.Value -ne 'cc-engine-bar') {
+                $actual = if ($null -eq $barClass) { '<missing>' } else { $barClass.Value }
+                Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_BAR' `
+                    -Context "cc-engine-bar div class is '$actual'; expected exactly 'cc-engine-bar'."
+            }
+            if ($null -eq $barId -or $barId.Value -ne $expectedBarId) {
+                $actual = if ($null -eq $barId) { '<missing>' } else { $barId.Value }
+                Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_BAR' `
+                    -Context "cc-engine-bar div id is '$actual'; expected '$expectedBarId'."
+            }
+            foreach ($a in $barAttrs) {
+                if ($a.Name -ne 'class' -and $a.Name -ne 'id') {
+                    Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_BAR' `
+                        -Context "cc-engine-bar div carries unexpected attribute '$($a.Name)'."
+                }
+            }
+            # Body must be empty.
+            $barClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $childIdxs[1]
+            if ($barClose -gt $childIdxs[1]) {
+                for ($m = $childIdxs[1] + 1; $m -lt $barClose; $m++) {
+                    $bt = $Tokens[$m]
+                    if ($bt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($bt.Raw)) { continue }
+                    Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_BAR' `
+                        -Context "cc-engine-bar div contains content; spec requires the element be empty."
+                    break
+                }
+            }
+        }
+
+        # ---- Child 3: <span class="cc-engine-countdown" id="cc-engine-cd-<slug>"></span> ----
+        $cdTok = $Tokens[$childIdxs[2]]
+        $cdAttrs = if (-not [string]::IsNullOrWhiteSpace($cdTok.AttrText)) {
+            Get-AttributesFromToken -AttrText $cdTok.AttrText
+        } else { @() }
+        $cdClass = Get-AttributeByName -Attrs $cdAttrs -Name 'class'
+        $cdId    = Get-AttributeByName -Attrs $cdAttrs -Name 'id'
+        $expectedCdId = "cc-engine-cd-$($card.Slug)"
+        if ($cdTok.TagName -ne 'span') {
+            Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_COUNTDOWN' `
+                -Context "Third child is <$($cdTok.TagName)>; expected <span>."
+        } else {
+            if ($null -eq $cdClass -or $cdClass.Value -ne 'cc-engine-countdown') {
+                $actual = if ($null -eq $cdClass) { '<missing>' } else { $cdClass.Value }
+                Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_COUNTDOWN' `
+                    -Context "cc-engine-countdown span class is '$actual'; expected exactly 'cc-engine-countdown'."
+            }
+            if ($null -eq $cdId -or $cdId.Value -ne $expectedCdId) {
+                $actual = if ($null -eq $cdId) { '<missing>' } else { $cdId.Value }
+                Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_COUNTDOWN' `
+                    -Context "cc-engine-countdown span id is '$actual'; expected '$expectedCdId'."
+            }
+            foreach ($a in $cdAttrs) {
+                if ($a.Name -ne 'class' -and $a.Name -ne 'id') {
+                    Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_COUNTDOWN' `
+                        -Context "cc-engine-countdown span carries unexpected attribute '$($a.Name)'."
+                }
+            }
+            $cdClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $childIdxs[2]
+            if ($cdClose -gt $childIdxs[2]) {
+                for ($m = $childIdxs[2] + 1; $m -lt $cdClose; $m++) {
+                    $bt = $Tokens[$m]
+                    if ($bt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($bt.Raw)) { continue }
+                    Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_COUNTDOWN' `
+                        -Context "cc-engine-countdown span contains content; spec requires the element be empty."
+                    break
+                }
+            }
+        }
+
+        # ---- Registry cross-reference checks ----
+        $proc = $null
+        foreach ($p in $script:processRegistryRows) {
+            if ([string]$p.cc_engine_slug -eq $card.Slug) { $proc = $p; break }
+        }
 
         if ($null -eq $proc) {
             Add-DriftCode -Row $cardRow -Code 'ENGINE_SLUG_REGISTRY_MISMATCH' `
@@ -4156,8 +4384,8 @@ function Invoke-EngineCardValidation {
                 -Context "Card on routes $($RoutePaths -join ', '); ProcessRegistry.cc_page_route is '$procPageRoute'."
         }
 
-        # Every loaded ProcessRegistry row is run_mode = 1 (active scheduled),
-        # so registration completeness check applies unconditionally.
+        # Registration completeness (every loaded ProcessRegistry row is
+        # run_mode = 1, so this check applies unconditionally).
         $missingFields = @()
         if ([string]::IsNullOrEmpty([string]$proc.cc_engine_slug))  { $missingFields += 'cc_engine_slug' }
         if ([string]::IsNullOrEmpty([string]$proc.cc_engine_label)) { $missingFields += 'cc_engine_label' }
@@ -4168,21 +4396,17 @@ function Invoke-EngineCardValidation {
                 -Context "ProcessRegistry row for slug '$($card.Slug)' has NULL in: $($missingFields -join ', ')."
         }
 
-        # Label text mismatch: find the engine-label span inside the card
+        # Label text mismatch: find the cc-engine-label span inside the card
         # and compare its text to cc_engine_label.
         $cardTokenIdx = $card.TokenIdx
-        $cardEndIdx = Find-TokenIndex -Tokens $Tokens -Kind 'EndTag' `
-            -Predicate { param($x) $x.TagName -eq 'div' } -StartAt $cardTokenIdx
         if ($cardEndIdx -gt $cardTokenIdx) {
             $labelText = $null
             for ($k = $cardTokenIdx + 1; $k -lt $cardEndIdx; $k++) {
                 $tt = $Tokens[$k]
                 if ($tt.Kind -ne 'StartTag') { continue }
                 if ($tt.TagName -ne 'span') { continue }
-                if (Test-AttrTextMatches -AttrText $tt.AttrText -Pattern 'class\s*=\s*["'']engine-label["'']') {
-                    # Find matching close and capture text content
-                    $spanEnd = Find-TokenIndex -Tokens $Tokens -Kind 'EndTag' `
-                        -Predicate { param($x) $x.TagName -eq 'span' } -StartAt $k
+                if (Test-AttrTextMatches -AttrText $tt.AttrText -Pattern 'class\s*=\s*["'']cc-engine-label["'']') {
+                    $spanEnd = Find-MatchingClose -Tokens $Tokens -StartTagIdx $k
                     if ($spanEnd -gt $k) {
                         $sbText = New-Object System.Text.StringBuilder
                         for ($m = $k + 1; $m -lt $spanEnd; $m++) {
@@ -4205,7 +4429,8 @@ function Invoke-EngineCardValidation {
         }
     }
 
-    # Card ordering: cards should appear in cc_sort_order ascending.
+    # ---- Card ordering ----
+    # Cards should appear in cc_sort_order ascending.
     $orderedCards = @($cardsOnPage | Sort-Object { $_.TokenIdx })
     $expectedOrder = @($orderedCards | ForEach-Object {
         $slug = $_.Slug
@@ -4231,6 +4456,650 @@ function Invoke-EngineCardValidation {
             -Context "Engine cards on page appear in different order than Orchestrator.ProcessRegistry.cc_sort_order."
     }
 }
+
+# ============================================================================
+# PAGE CHROME VALIDATION
+# ============================================================================
+#
+# Per CC_HTML_Spec.md Section 2, every page route renders the following
+# chrome shell between the navigation bar and the page-specific content:
+#
+#   <div class="cc-header-bar">
+#       <div>
+#           $headerHtml
+#       </div>
+#       <div class="cc-header-right">
+#           <div class="cc-refresh-info">
+#               <span class="cc-live-indicator"></span>
+#               <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+#               <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
+#           </div>
+#           <div class="cc-engine-row">...</div>     <- optional, only on engine pages
+#       </div>
+#   </div>
+#
+# This function validates the structural shape of that shell on Route files.
+# Engine card internals (the content of cc-engine-row) are validated by
+# Invoke-EngineCardValidation; this function validates only the cc-engine-row
+# container itself and its position inside cc-header-right.
+#
+# All drift codes attach to the file's HTML_FILE row (chrome shell is a
+# page-level concern). The function is called from the per-file walk
+# alongside Get-PageShellDrift and Invoke-EngineCardValidation, on Route
+# files only.
+
+function Invoke-PageChromeValidation {
+    param(
+        [Parameter(Mandatory)]$Tokens
+    )
+
+    if ($null -eq $Tokens -or $Tokens.Count -eq 0) { return }
+    if (-not $script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) { return }
+    $fileRow = $script:htmlFileRowByFile[$script:CurrentFile]
+
+    # ---- Locate the cc-header-bar element ----
+    # The cc-header-bar is the first significant content after $navHtml per
+    # spec Section 2.1. If absent, Get-PageShellDrift has already attached
+    # MISSING_HEADER_BAR; we have nothing structural to validate here.
+    $headerBarIdx = -1
+    for ($i = 0; $i -lt $Tokens.Count; $i++) {
+        $t = $Tokens[$i]
+        if ($t.Kind -ne 'StartTag') { continue }
+        if ($t.TagName -ne 'div') { continue }
+        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']') {
+            $headerBarIdx = $i
+            break
+        }
+    }
+    if ($headerBarIdx -lt 0) { return }  # Get-PageShellDrift handles the missing case
+
+    # Validate cc-header-bar's outer-element attributes: class is exactly
+    # "cc-header-bar" and no other attributes.
+    $hbAttrs = Get-AttributesFromToken -AttrText $Tokens[$headerBarIdx].AttrText
+    $hbClass = Get-AttributeByName -Attrs $hbAttrs -Name 'class'
+    if ($null -eq $hbClass -or $hbClass.Value -ne 'cc-header-bar') {
+        $actual = if ($null -eq $hbClass) { '<missing>' } else { $hbClass.Value }
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_CONTAINER' `
+            -Context "cc-header-bar class is '$actual'; expected exactly 'cc-header-bar'."
+    }
+    foreach ($a in $hbAttrs) {
+        if ($a.Name -ne 'class') {
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_CONTAINER' `
+                -Context "cc-header-bar carries unexpected attribute '$($a.Name)'."
+        }
+    }
+
+    # Find the cc-header-bar's matching closing tag.
+    $headerBarEndIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $headerBarIdx
+    if ($headerBarEndIdx -le $headerBarIdx) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_CONTAINER' `
+            -Context "cc-header-bar <div> has no matching closing tag."
+        return
+    }
+
+    # ---- Collect the immediate children of cc-header-bar ----
+    # Two children expected per spec Section 2.1:
+    #   1. <div> (unattributed, contains $headerHtml)
+    #   2. <div class="cc-header-right">
+    $hbChildren = @()
+    $cursor = $headerBarIdx + 1
+    while ($cursor -lt $headerBarEndIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment') { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag') { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity') { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $hbChildren += $cursor
+            if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+            $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+            if ($childClose -lt 0 -or $childClose -ge $headerBarEndIdx) {
+                $cursor = $headerBarEndIdx
+            } else {
+                $cursor = $childClose + 1
+            }
+            continue
+        }
+        $cursor++
+    }
+
+    # ---- Validate first child: unattributed <div> containing $headerHtml ----
+    if ($hbChildren.Count -lt 1) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_LEFT' `
+            -Context "cc-header-bar has no children; expected unattributed <div> wrapping `$headerHtml as the first child."
+        return
+    }
+    $leftIdx = $hbChildren[0]
+    $leftTok = $Tokens[$leftIdx]
+    if ($leftTok.TagName -ne 'div') {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_LEFT' `
+            -Context "cc-header-bar first child is <$($leftTok.TagName)>; expected <div>."
+    } else {
+        $leftAttrs = if (-not [string]::IsNullOrWhiteSpace($leftTok.AttrText)) {
+            Get-AttributesFromToken -AttrText $leftTok.AttrText
+        } else { @() }
+        $leftClass = Get-AttributeByName -Attrs $leftAttrs -Name 'class'
+        $leftId    = Get-AttributeByName -Attrs $leftAttrs -Name 'id'
+        if ($null -ne $leftClass) {
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_LEFT' `
+                -Context "cc-header-bar first child <div> carries a class attribute; spec requires the element be unattributed."
+        }
+        if ($null -ne $leftId) {
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_LEFT' `
+                -Context "cc-header-bar first child <div> carries an id attribute; spec requires the element be unattributed."
+        }
+        # Confirm the body contains $headerHtml.
+        $leftClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $leftIdx
+        $hasHeaderInterp = $false
+        if ($leftClose -gt $leftIdx) {
+            for ($m = $leftIdx + 1; $m -lt $leftClose; $m++) {
+                $bt = $Tokens[$m]
+                if ($bt.Kind -eq 'PsInterp' -and
+                    ($bt.Raw -eq '$headerHtml' -or $bt.Raw -eq '${headerHtml}')) {
+                    $hasHeaderInterp = $true
+                    break
+                }
+            }
+        }
+        if (-not $hasHeaderInterp) {
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_LEFT' `
+                -Context "cc-header-bar first child <div> does not contain the `$headerHtml substitution."
+        }
+    }
+
+    # ---- Validate second child: <div class="cc-header-right"> ----
+    if ($hbChildren.Count -lt 2) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_RIGHT' `
+            -Context "cc-header-bar is missing its second child; expected <div class=`"cc-header-right`">."
+        return
+    }
+    if ($hbChildren.Count -gt 2) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_RIGHT' `
+            -Context "cc-header-bar has $($hbChildren.Count) immediate children; expected exactly 2."
+    }
+    $rightIdx = $hbChildren[1]
+    $rightTok = $Tokens[$rightIdx]
+    if ($rightTok.TagName -ne 'div') {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_RIGHT' `
+            -Context "cc-header-bar second child is <$($rightTok.TagName)>; expected <div>."
+        return
+    }
+    $rightAttrs = if (-not [string]::IsNullOrWhiteSpace($rightTok.AttrText)) {
+        Get-AttributesFromToken -AttrText $rightTok.AttrText
+    } else { @() }
+    $rightClass = Get-AttributeByName -Attrs $rightAttrs -Name 'class'
+    if ($null -eq $rightClass -or $rightClass.Value -ne 'cc-header-right') {
+        $actual = if ($null -eq $rightClass) { '<missing>' } else { $rightClass.Value }
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_RIGHT' `
+            -Context "cc-header-bar second child class is '$actual'; expected exactly 'cc-header-right'."
+        return
+    }
+    foreach ($a in $rightAttrs) {
+        if ($a.Name -ne 'class') {
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_RIGHT' `
+                -Context "cc-header-right carries unexpected attribute '$($a.Name)'."
+        }
+    }
+
+    # ---- Collect children of cc-header-right ----
+    # Per spec Section 2.1: exactly cc-refresh-info followed optionally by
+    # cc-engine-row. No other children permitted.
+    $rightEndIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $rightIdx
+    if ($rightEndIdx -le $rightIdx) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_RIGHT' `
+            -Context "cc-header-right <div> has no matching closing tag."
+        return
+    }
+    $hrChildren = @()
+    $cursor = $rightIdx + 1
+    while ($cursor -lt $rightEndIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment') { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag') { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity') { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $hrChildren += $cursor
+            if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+            $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+            if ($childClose -lt 0 -or $childClose -ge $rightEndIdx) {
+                $cursor = $rightEndIdx
+            } else {
+                $cursor = $childClose + 1
+            }
+            continue
+        }
+        $cursor++
+    }
+
+    # ---- Validate first cc-header-right child: cc-refresh-info ----
+    $refreshInfoIdx = -1
+    $engineRowIdx = -1
+    if ($hrChildren.Count -lt 1) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_RIGHT_CHILDREN' `
+            -Context "cc-header-right has no children; expected cc-refresh-info as the first child."
+    } else {
+        $firstHrTok = $Tokens[$hrChildren[0]]
+        $firstHrAttrs = if (-not [string]::IsNullOrWhiteSpace($firstHrTok.AttrText)) {
+            Get-AttributesFromToken -AttrText $firstHrTok.AttrText
+        } else { @() }
+        $firstHrClass = Get-AttributeByName -Attrs $firstHrAttrs -Name 'class'
+        if ($firstHrTok.TagName -eq 'div' -and $null -ne $firstHrClass -and $firstHrClass.Value -eq 'cc-refresh-info') {
+            $refreshInfoIdx = $hrChildren[0]
+        } else {
+            $actualClass = if ($null -eq $firstHrClass) { '<missing>' } else { $firstHrClass.Value }
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_RIGHT_CHILDREN' `
+                -Context "cc-header-right first child is <$($firstHrTok.TagName) class='$actualClass'>; expected <div class=`"cc-refresh-info`">."
+        }
+
+        # Second child (if any) must be cc-engine-row.
+        if ($hrChildren.Count -ge 2) {
+            $secondHrTok = $Tokens[$hrChildren[1]]
+            $secondHrAttrs = if (-not [string]::IsNullOrWhiteSpace($secondHrTok.AttrText)) {
+                Get-AttributesFromToken -AttrText $secondHrTok.AttrText
+            } else { @() }
+            $secondHrClass = Get-AttributeByName -Attrs $secondHrAttrs -Name 'class'
+            if ($secondHrTok.TagName -eq 'div' -and $null -ne $secondHrClass -and $secondHrClass.Value -eq 'cc-engine-row') {
+                $engineRowIdx = $hrChildren[1]
+            } else {
+                $actualClass = if ($null -eq $secondHrClass) { '<missing>' } else { $secondHrClass.Value }
+                Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_RIGHT_CHILDREN' `
+                    -Context "cc-header-right second child is <$($secondHrTok.TagName) class='$actualClass'>; expected optional <div class=`"cc-engine-row`"> or no further child."
+            }
+        }
+
+        # Any child beyond the second is unconditionally drift.
+        if ($hrChildren.Count -gt 2) {
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_RIGHT_CHILDREN' `
+                -Context "cc-header-right has $($hrChildren.Count) immediate children; expected at most 2 (cc-refresh-info, optional cc-engine-row)."
+        }
+    }
+
+    # ---- Validate cc-refresh-info block ----
+    if ($refreshInfoIdx -ge 0) {
+        Test-RefreshInfoBlock -Tokens $Tokens -RefreshInfoIdx $refreshInfoIdx -FileRow $fileRow
+    }
+
+    # ---- Validate cc-engine-row container ----
+    if ($engineRowIdx -ge 0) {
+        Test-EngineRowContainer -Tokens $Tokens -EngineRowIdx $engineRowIdx -FileRow $fileRow
+    }
+}
+
+# ----------------------------------------------------------------------------
+# Test-RefreshInfoBlock - validate cc-refresh-info structure
+# ----------------------------------------------------------------------------
+# Per CC_HTML_Spec.md Section 2.2, cc-refresh-info contains exactly:
+#   <span class="cc-live-indicator"></span>
+#   <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+#   <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
+#
+# Validation is strict: the literal text "Live", " | Updated: ", and "-" must
+# appear as static text (no PowerShell interpolation), and the elements must
+# carry exactly the attributes the spec mandates.
+function Test-RefreshInfoBlock {
+    param(
+        [Parameter(Mandatory)]$Tokens,
+        [Parameter(Mandatory)][int]$RefreshInfoIdx,
+        [Parameter(Mandatory)]$FileRow
+    )
+
+    # Validate cc-refresh-info's outer element: class is exactly
+    # "cc-refresh-info" and no other attributes.
+    $riTok = $Tokens[$RefreshInfoIdx]
+    $riAttrs = if (-not [string]::IsNullOrWhiteSpace($riTok.AttrText)) {
+        Get-AttributesFromToken -AttrText $riTok.AttrText
+    } else { @() }
+    $riClass = Get-AttributeByName -Attrs $riAttrs -Name 'class'
+    if ($null -eq $riClass -or $riClass.Value -ne 'cc-refresh-info') {
+        $actual = if ($null -eq $riClass) { '<missing>' } else { $riClass.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_CONTAINER' `
+            -Context "cc-refresh-info class is '$actual'; expected exactly 'cc-refresh-info'."
+    }
+    foreach ($a in $riAttrs) {
+        if ($a.Name -ne 'class') {
+            Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_CONTAINER' `
+                -Context "cc-refresh-info carries unexpected attribute '$($a.Name)'."
+        }
+    }
+
+    $riEndIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $RefreshInfoIdx
+    if ($riEndIdx -le $RefreshInfoIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_CONTAINER' `
+            -Context "cc-refresh-info <div> has no matching closing tag."
+        return
+    }
+
+    # Walk the cc-refresh-info body and validate the four-element sequence:
+    #   1. <span class="cc-live-indicator"></span>  (strict adjacency, empty)
+    #   2. <span>Live</span>
+    #   3. literal text " | Updated: "
+    #   4. <span id="cc-last-update" class="cc-last-updated">-</span>
+    #   5. <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
+    #
+    # Whitespace between elements is tolerated. The literal " | Updated: " is
+    # not whitespace-tolerant on its non-whitespace characters.
+
+    # --- Step 1: cc-live-indicator ---
+    $step1Idx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($RefreshInfoIdx + 1)
+    $liveIndicatorClose = -1
+    if ($step1Idx -lt 0 -or $step1Idx -ge $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_INDICATOR' `
+            -Context "cc-refresh-info has no children; expected <span class=`"cc-live-indicator`"></span> as the first child."
+        return
+    }
+    $liTok = $Tokens[$step1Idx]
+    if ($liTok.Kind -ne 'StartTag' -or $liTok.TagName -ne 'span') {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_INDICATOR' `
+            -Context "cc-refresh-info first child is not <span>; expected <span class=`"cc-live-indicator`"></span>."
+        return
+    }
+    $liAttrs = if (-not [string]::IsNullOrWhiteSpace($liTok.AttrText)) {
+        Get-AttributesFromToken -AttrText $liTok.AttrText
+    } else { @() }
+    $liClass = Get-AttributeByName -Attrs $liAttrs -Name 'class'
+    if ($null -eq $liClass -or $liClass.Value -ne 'cc-live-indicator') {
+        $actual = if ($null -eq $liClass) { '<missing>' } else { $liClass.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_INDICATOR' `
+            -Context "Live indicator span class is '$actual'; expected exactly 'cc-live-indicator'."
+    }
+    foreach ($a in $liAttrs) {
+        if ($a.Name -ne 'class') {
+            Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_INDICATOR' `
+                -Context "Live indicator span carries unexpected attribute '$($a.Name)'."
+        }
+    }
+    # Strict adjacency: the next token after the StartTag must be the matching
+    # EndTag. Any content between them (including whitespace) is drift.
+    $nextAfterLi = $step1Idx + 1
+    if ($nextAfterLi -ge $Tokens.Count -or
+        $Tokens[$nextAfterLi].Kind -ne 'EndTag' -or
+        $Tokens[$nextAfterLi].TagName -ne 'span') {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_INDICATOR' `
+            -Context "Live indicator span is not empty; spec requires <span class=`"cc-live-indicator`"></span> with no content between the tags."
+        $liveIndicatorClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $step1Idx
+    } else {
+        $liveIndicatorClose = $nextAfterLi
+    }
+    if ($liveIndicatorClose -lt 0) { return }
+
+    # --- Step 2: <span>Live</span> ---
+    $step2Idx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($liveIndicatorClose + 1)
+    if ($step2Idx -lt 0 -or $step2Idx -ge $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "cc-refresh-info is missing the <span>Live</span> element."
+        return
+    }
+    $liveSpanTok = $Tokens[$step2Idx]
+    $liveSpanCloseIdx = -1
+    if ($liveSpanTok.Kind -ne 'StartTag' -or $liveSpanTok.TagName -ne 'span') {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Expected <span>Live</span>; found a different element."
+        return
+    }
+    if (-not [string]::IsNullOrWhiteSpace($liveSpanTok.AttrText)) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "The <span> wrapping 'Live' carries attributes; spec requires the element be unattributed."
+    }
+    $liveSpanCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $step2Idx
+    if ($liveSpanCloseIdx -le $step2Idx -or $liveSpanCloseIdx -ge $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "The <span> wrapping 'Live' has no matching closing tag inside cc-refresh-info."
+        return
+    }
+    # Body must be exactly the text "Live" with no interpolation.
+    $liveTextBuilder = New-Object System.Text.StringBuilder
+    $liveSpanHasInterp = $false
+    for ($m = $step2Idx + 1; $m -lt $liveSpanCloseIdx; $m++) {
+        $bt = $Tokens[$m]
+        if ($bt.Kind -eq 'Text') { [void]$liveTextBuilder.Append($bt.Raw) }
+        elseif ($bt.Kind -eq 'PsInterp') { $liveSpanHasInterp = $true }
+        else { $liveSpanHasInterp = $true }
+    }
+    if ($liveSpanHasInterp) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "The 'Live' span body contains PowerShell interpolation or non-text content; spec requires the literal text 'Live'."
+    } elseif ($liveTextBuilder.ToString() -ne 'Live') {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "The 'Live' span body is '$($liveTextBuilder.ToString())'; spec requires the literal text 'Live'."
+    }
+
+    # --- Step 3: literal text " | Updated: " between </span> and the next span ---
+    $step3CursorIdx = $liveSpanCloseIdx + 1
+    $literalTextBuilder = New-Object System.Text.StringBuilder
+    $literalHasInterp = $false
+    $cursor = $step3CursorIdx
+    while ($cursor -lt $riEndIdx) {
+        $bt = $Tokens[$cursor]
+        if ($bt.Kind -eq 'Text') {
+            [void]$literalTextBuilder.Append($bt.Raw)
+            $cursor++
+            continue
+        }
+        if ($bt.Kind -eq 'PsInterp') {
+            $literalHasInterp = $true
+            $cursor++
+            continue
+        }
+        if ($bt.Kind -eq 'StartTag' -or $bt.Kind -eq 'SelfClose') { break }
+        $cursor++
+    }
+    $step4Idx = $cursor
+    if ($literalHasInterp) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Status line literal text between Live and last-update spans contains PowerShell interpolation; spec requires the literal text ' | Updated: '."
+    } else {
+        $literalText = $literalTextBuilder.ToString()
+        if ($literalText -ne ' | Updated: ') {
+            Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+                -Context "Status line literal text between Live and last-update spans is '$literalText'; spec requires exactly ' | Updated: '."
+        }
+    }
+
+    # --- Step 4: <span id="cc-last-update" class="cc-last-updated">-</span> ---
+    if ($step4Idx -ge $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "cc-refresh-info is missing the <span id=`"cc-last-update`" class=`"cc-last-updated`"> element."
+        return
+    }
+    $lastUpdateTok = $Tokens[$step4Idx]
+    if ($lastUpdateTok.Kind -ne 'StartTag' -or $lastUpdateTok.TagName -ne 'span') {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Expected <span id=`"cc-last-update`"...>; found a different element."
+        return
+    }
+    $luAttrs = if (-not [string]::IsNullOrWhiteSpace($lastUpdateTok.AttrText)) {
+        Get-AttributesFromToken -AttrText $lastUpdateTok.AttrText
+    } else { @() }
+    $luId    = Get-AttributeByName -Attrs $luAttrs -Name 'id'
+    $luClass = Get-AttributeByName -Attrs $luAttrs -Name 'class'
+    if ($null -eq $luId -or $luId.Value -ne 'cc-last-update') {
+        $actual = if ($null -eq $luId) { '<missing>' } else { $luId.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Last-update span id is '$actual'; expected exactly 'cc-last-update'."
+    }
+    if ($null -eq $luClass -or $luClass.Value -ne 'cc-last-updated') {
+        $actual = if ($null -eq $luClass) { '<missing>' } else { $luClass.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Last-update span class is '$actual'; expected exactly 'cc-last-updated'."
+    }
+    foreach ($a in $luAttrs) {
+        if ($a.Name -ne 'id' -and $a.Name -ne 'class') {
+            Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+                -Context "Last-update span carries unexpected attribute '$($a.Name)'."
+        }
+    }
+    $lastUpdateCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $step4Idx
+    if ($lastUpdateCloseIdx -le $step4Idx -or $lastUpdateCloseIdx -ge $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Last-update span has no matching closing tag inside cc-refresh-info."
+        return
+    }
+    # Body must be exactly the literal "-" with no interpolation.
+    $luTextBuilder = New-Object System.Text.StringBuilder
+    $luHasInterp = $false
+    for ($m = $step4Idx + 1; $m -lt $lastUpdateCloseIdx; $m++) {
+        $bt = $Tokens[$m]
+        if ($bt.Kind -eq 'Text') { [void]$luTextBuilder.Append($bt.Raw) }
+        elseif ($bt.Kind -eq 'PsInterp') { $luHasInterp = $true }
+        else { $luHasInterp = $true }
+    }
+    if ($luHasInterp) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Last-update span body contains PowerShell interpolation or non-text content; spec requires the literal text '-'."
+    } elseif ($luTextBuilder.ToString() -ne '-') {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_LIVE_STATUS_LINE' `
+            -Context "Last-update span body is '$($luTextBuilder.ToString())'; spec requires the literal text '-'."
+    }
+
+    # --- Step 5: refresh button ---
+    $step5Idx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($lastUpdateCloseIdx + 1)
+    if ($step5Idx -lt 0 -or $step5Idx -ge $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+            -Context "cc-refresh-info is missing the refresh button."
+        return
+    }
+    $btnTok = $Tokens[$step5Idx]
+    if ($btnTok.Kind -ne 'StartTag' -or $btnTok.TagName -ne 'button') {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+            -Context "Expected <button class=`"cc-page-refresh-btn`" ...>; found <$($btnTok.TagName)>."
+        return
+    }
+    $btnAttrs = if (-not [string]::IsNullOrWhiteSpace($btnTok.AttrText)) {
+        Get-AttributesFromToken -AttrText $btnTok.AttrText
+    } else { @() }
+    $btnClass = Get-AttributeByName -Attrs $btnAttrs -Name 'class'
+    $btnData  = Get-AttributeByName -Attrs $btnAttrs -Name 'data-action-click'
+    $btnTitle = Get-AttributeByName -Attrs $btnAttrs -Name 'title'
+    if ($null -eq $btnClass -or $btnClass.Value -ne 'cc-page-refresh-btn') {
+        $actual = if ($null -eq $btnClass) { '<missing>' } else { $btnClass.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+            -Context "Refresh button class is '$actual'; expected exactly 'cc-page-refresh-btn'."
+    }
+    if ($null -eq $btnData -or $btnData.Value -ne 'cc-page-refresh') {
+        $actual = if ($null -eq $btnData) { '<missing>' } else { $btnData.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+            -Context "Refresh button data-action-click is '$actual'; expected exactly 'cc-page-refresh'."
+    }
+    if ($null -eq $btnTitle -or $btnTitle.Value -ne 'Refresh all data') {
+        $actual = if ($null -eq $btnTitle) { '<missing>' } else { $btnTitle.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+            -Context "Refresh button title is '$actual'; expected exactly 'Refresh all data'."
+    }
+    foreach ($a in $btnAttrs) {
+        if ($a.Name -ne 'class' -and $a.Name -ne 'data-action-click' -and $a.Name -ne 'title') {
+            Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+                -Context "Refresh button carries unexpected attribute '$($a.Name)'."
+        }
+    }
+    # Body must be exactly the entity reference &#8635; (the refresh arrow).
+    $btnCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $step5Idx
+    if ($btnCloseIdx -le $step5Idx -or $btnCloseIdx -ge $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+            -Context "Refresh button has no matching closing tag inside cc-refresh-info."
+        return
+    }
+    $btnEntityFound = $false
+    $btnHasOtherContent = $false
+    for ($m = $step5Idx + 1; $m -lt $btnCloseIdx; $m++) {
+        $bt = $Tokens[$m]
+        if ($bt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($bt.Raw)) { continue }
+        if ($bt.Kind -eq 'Entity' -and $bt.Raw -eq '&#8635;') { $btnEntityFound = $true; continue }
+        $btnHasOtherContent = $true
+        break
+    }
+    if (-not $btnEntityFound -or $btnHasOtherContent) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_BUTTON' `
+            -Context "Refresh button body is not exactly the entity reference '&#8635;'."
+    }
+
+    # ---- After the button, there should be nothing significant remaining ----
+    $afterBtnIdx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($btnCloseIdx + 1)
+    if ($afterBtnIdx -ge 0 -and $afterBtnIdx -lt $riEndIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_CONTAINER' `
+            -Context "cc-refresh-info contains content after the refresh button; spec requires the button be the last child."
+    }
+}
+
+# ----------------------------------------------------------------------------
+# Test-EngineRowContainer - validate cc-engine-row container shape
+# ----------------------------------------------------------------------------
+# Per CC_HTML_Spec.md Section 2.3, cc-engine-row's outer container is exactly
+# <div class="cc-engine-row"> with no other attributes, and its only
+# permitted children are engine cards (validated separately by
+# Invoke-EngineCardValidation - this function does not re-validate card
+# internals).
+function Test-EngineRowContainer {
+    param(
+        [Parameter(Mandatory)]$Tokens,
+        [Parameter(Mandatory)][int]$EngineRowIdx,
+        [Parameter(Mandatory)]$FileRow
+    )
+
+    $erTok = $Tokens[$EngineRowIdx]
+    $erAttrs = if (-not [string]::IsNullOrWhiteSpace($erTok.AttrText)) {
+        Get-AttributesFromToken -AttrText $erTok.AttrText
+    } else { @() }
+    $erClass = Get-AttributeByName -Attrs $erAttrs -Name 'class'
+    if ($null -eq $erClass -or $erClass.Value -ne 'cc-engine-row') {
+        $actual = if ($null -eq $erClass) { '<missing>' } else { $erClass.Value }
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_ENGINE_ROW_CONTAINER' `
+            -Context "cc-engine-row class is '$actual'; expected exactly 'cc-engine-row'."
+    }
+    foreach ($a in $erAttrs) {
+        if ($a.Name -ne 'class') {
+            Add-DriftCode -Row $FileRow -Code 'MALFORMED_ENGINE_ROW_CONTAINER' `
+                -Context "cc-engine-row carries unexpected attribute '$($a.Name)'."
+        }
+    }
+
+    $erEndIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $EngineRowIdx
+    if ($erEndIdx -le $EngineRowIdx) {
+        Add-DriftCode -Row $FileRow -Code 'MALFORMED_ENGINE_ROW_CONTAINER' `
+            -Context "cc-engine-row <div> has no matching closing tag."
+        return
+    }
+
+    # Validate children. Each immediate child must be a <div> with
+    # id="cc-card-engine-<slug>" (card outer element). Per-card internal
+    # structure is validated by Invoke-EngineCardValidation; this check
+    # only enforces that nothing other than engine cards appears here.
+    $cursor = $EngineRowIdx + 1
+    while ($cursor -lt $erEndIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment') { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag') { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity') { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $isCard = $false
+            if ($tt.TagName -eq 'div' -and -not [string]::IsNullOrWhiteSpace($tt.AttrText)) {
+                $childAttrs = Get-AttributesFromToken -AttrText $tt.AttrText
+                $childId = Get-AttributeByName -Attrs $childAttrs -Name 'id'
+                if ($null -ne $childId -and $childId.Value -match '^cc-card-engine-') {
+                    $isCard = $true
+                }
+            }
+            if (-not $isCard) {
+                Add-DriftCode -Row $FileRow -Code 'MALFORMED_ENGINE_ROW_CHILDREN' `
+                    -Context "cc-engine-row contains a non-engine-card child: <$($tt.TagName)>."
+            }
+            if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+            $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+            if ($childClose -lt 0 -or $childClose -ge $erEndIdx) {
+                $cursor = $erEndIdx
+            } else {
+                $cursor = $childClose + 1
+            }
+            continue
+        }
+        $cursor++
+    }
+}
+
 # ============================================================================
 # FILE DISCOVERY
 # ============================================================================
@@ -4577,6 +5446,10 @@ foreach ($fileRec in $psFiles) {
             foreach ($code in $shellDrift) {
                 Add-DriftCode -Row $row -Code $code
             }
+
+            # Page chrome structural validation (Section 2: header bar,
+            # refresh info block, engine row container).
+            Invoke-PageChromeValidation -Tokens $tokens
 
             # Engine card validation
             $firstEmissionLine = if ($emissions.Count -gt 0) { $emissions[0].StartLine } else { 1 }
