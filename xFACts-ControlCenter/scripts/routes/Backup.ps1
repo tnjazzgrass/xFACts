@@ -130,7 +130,7 @@ Add-PodeRoute -Method Get -Path '/backup' -Authentication 'ADLogin' -ScriptBlock
     <link rel="stylesheet" href="/css/backup.css">
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body class="section-platform" data-cc-page="backup" data-cc-prefix="bkp">
+<body class="cc-section-platform" data-cc-page="backup" data-cc-prefix="bkp">
 $navHtml
 
     <div class="cc-header-bar">
