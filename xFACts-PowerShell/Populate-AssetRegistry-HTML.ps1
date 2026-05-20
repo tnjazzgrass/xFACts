@@ -4212,8 +4212,6 @@ function Invoke-EngineCardValidation {
             if ($tt.Kind -eq 'EndTag') { $cursor++; continue }
             if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
                 $childIdxs += $cursor
-                if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
-                $childIdxs += $cursor
                 if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
                 # Skip past the matching close.
                 $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
@@ -5099,7 +5097,6 @@ function Test-EngineRowContainer {
         $cursor++
     }
 }
-
 # ============================================================================
 # FILE DISCOVERY
 # ============================================================================
