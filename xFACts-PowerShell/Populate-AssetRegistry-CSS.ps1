@@ -14,8 +14,7 @@
     bulk insert, banner detection / parsing, file-header parsing, section
     list construction, registry loads, and the generic AST visitor walker.
     Per-language logic (PostCSS comment-shape adapter, selector decomposition,
-    variant shape helpers, per-row emitters, the visitor scriptblock body)
-    lives here.
+    per-row emitters, the visitor scriptblock body) lives here.
 
 .PARAMETER Execute
     Required to actually delete the CSS rows from Asset_Registry and write
@@ -29,6 +28,83 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-22  Spec alignment - class-on-class compounds and prefix discipline.
+            Four structural changes to align with the rewritten CC_CSS_Spec.md.
+            - Class-on-class compounds emit USAGE rows. Per the spec's
+              definition vocabulary (section 6.1: a class definition is a
+              single-class rule; section 7.1: a variant is a single class
+              plus a pseudo-class), a class-on-class compound rule is
+              NOT a definition of either participating class. Each class
+              is a class in its own right and must be defined by a
+              separate standalone rule somewhere. The compound rule
+              USES those classes together to apply combined styling.
+              Each class token in a compound now emits a USAGE row, not
+              a DEFINITION row. Single-class rules (the standalone base,
+              and single-class plus pseudo-class variants) continue to
+              emit DEFINITION rows. Descendant compounds already emitted
+              USAGE; their behavior is unchanged. variant_type='class'
+              and variant_type='compound_pseudo' stop being emitted
+              entirely; existing rows with those values drain out on
+              the next run. The compound shape is preserved in the
+              signature column so downstream queries can identify which
+              classes participated.
+            - PREFIX_MISMATCH on every class token. The prefix check now
+              validates every class token in every compound against the
+              section's declared prefix, not just the leftmost. Per the
+              new spec section 5 and section 7.1, every class token in
+              a compound selector carries its section's declared prefix.
+              Selectors like `.cc-engine-bar.disabled` now surface
+              PREFIX_MISMATCH on the `disabled` token (it doesn't start
+              with the section prefix), restoring the discipline the old
+              compound-modifier exemption silently bypassed. The prefix
+              check fires on every class participation row regardless of
+              reference type - definitions and usages alike.
+            - ANCHOR_SECTION_INVALID_PREFIX. The new spec separates the
+              anchor-file prefix-validation case from the page-file case.
+              FOUNDATION, CHROME, and anchor-file FEEDBACK_OVERLAYS
+              sections must declare `cc`; anything else fires
+              ANCHOR_SECTION_INVALID_PREFIX. Page-file banners declaring
+              the wrong page prefix continue to fire PREFIX_REGISTRY_MISMATCH.
+              MALFORMED_PREFIX_VALUE's description was tightened to match
+              the new spec wording (no more (none) reference; comma-
+              separated values now explicitly called out).
+            - UNDEFINED_CLASS_USAGE (new code). Because compound rule
+              participation no longer emits DEFINITION rows, a class
+              that only appears in compounds has no DEFINITION row in
+              the catalog. The spec requires every class to have a
+              standalone definition (section 6.1). To surface that
+              requirement in the catalog, a new drift code
+              UNDEFINED_CLASS_USAGE fires on USAGE rows whose component
+              has no corresponding DEFINITION row in the appropriate
+              scope. Scope resolution honors the zone-shared maps:
+              SHARED-scope USAGE rows are pre-resolved during emission
+              and skip the check; LOCAL-scope USAGE rows require a
+              same-file DEFINITION. The check runs as the last Pass 3
+              step after all per-file rows are collected.
+              The new code closes the gap that arose from moving
+              compound rules from DEFINITION to USAGE - a properly-
+              prefixed-but-undefined modifier class would otherwise
+              pass silently because PREFIX_MISMATCH doesn't fire on
+              it. UNDEFINED_CLASS_USAGE catches that scenario.
+              Comment-presence drift codes (MISSING_PURPOSE_COMMENT,
+              MISSING_VARIANT_COMMENT) no longer fire on compound USAGE
+              rows. Per spec sections 6.1 and 7.1, those codes apply to
+              definitions, not usages. A compound rule itself does not
+              require a purpose or variant comment because it is neither
+              a base class definition nor a variant per the spec.
+            Shared helper changes that participate here:
+              - Get-FileOrgList (new). FILE ORGANIZATION list now parsed
+                verbatim. Trailing "-- annotation" and numbered "1. "
+                prefixes no longer silently stripped. Drift surfaces as
+                FILE_ORG_MISMATCH downstream.
+              - Get-BannerPrefixValue. Trailing "-- annotation" and
+                "(parenthetical)" text on the Prefix line no longer
+                silently stripped. Drift surfaces as MALFORMED_PREFIX_VALUE.
+              - Test-PrefixValueIsValid. No longer constrains page-prefix
+                shape to 3 lowercase letters (the registry's CK constraint
+                does that). No longer accepts the (none) sentinel for CSS
+                callers; only `cc` or a non-empty single token. PS callers
+                opt into (none) acceptance via -AllowNoneSentinel.
 2026-05-11  Universal anchor-row refactor. Added CSS_FILE as a pure-anchor
             row, emitted once per scanned .css file. The new row sits
             immediately before FILE_HEADER in the per-file emission order
@@ -170,11 +246,11 @@ $DocsSharedFiles = @(
 )
 $SharedFiles = $CcSharedFiles + $DocsSharedFiles
 
-# Per-component chrome-anchor file (CC_CSS_Spec.md Section 4.3). The anchor
+# Per-component chrome-anchor file (CC_CSS_Spec.md Section 4.2). The anchor
 # file is the sole legitimate carrier of FOUNDATION and CHROME sections
 # for its component, and the only file whose banners may declare
-# Prefix: cc. Used by the PREFIX_REGISTRY_MISMATCH check to validate cc
-# banners against the file's identity. Note: $CcSharedFiles above lists
+# Prefix: cc. Used by the ANCHOR_SECTION_INVALID_PREFIX check to validate
+# cc banners against the file's identity. Note: $CcSharedFiles above lists
 # both cc-shared.css and engine-events.css for USAGE resolution during
 # the migration window; only cc-shared.css is the chrome anchor.
 # $DocsAnchorCssFile follows when the docs-base.css -> docs-shared.css
@@ -192,15 +268,23 @@ $env:NODE_PATH = $NodeLibsPath
 $SectionTypeOrder  = @('FOUNDATION', 'CHROME', 'LAYOUT', 'CONTENT', 'OVERRIDES', 'FEEDBACK_OVERLAYS')
 $ValidSectionTypes = $SectionTypeOrder
 
+# Anchor-file-only section types per CC_CSS_Spec.md Section 5.1: these
+# section types must declare the chrome prefix `cc` in an anchor file.
+# FOUNDATION and CHROME are anchor-file-only by section 4.1 (any other file
+# carrying them is DUPLICATE_FOUNDATION / DUPLICATE_CHROME drift).
+# FEEDBACK_OVERLAYS may appear in either anchor or page files; when in
+# an anchor file it also declares `cc`.
+$AnchorSectionTypes = @('FOUNDATION', 'CHROME', 'FEEDBACK_OVERLAYS')
+
 # Drift code -> human description mapping. Used by Add-DriftCode (helpers)
 # to validate codes and to populate drift_text. Keep aligned with CC_CSS_Spec.md
-# Section 16. Codes the spec defines but which are detected in Pass 3 still
+# Section 14. Codes the spec defines but which are detected in Pass 3 still
 # appear here so attachment doesn't fail on the master-table check.
 $DriftDescriptions = [ordered]@{
     # File header
     'MALFORMED_FILE_HEADER'             = "The file's header block is missing, malformed, or contains required fields out of order."
     'FORBIDDEN_CHANGELOG_BLOCK'         = "The file header contains a CHANGELOG block. CHANGELOG blocks are not allowed in CSS file headers."
-    'FILE_ORG_MISMATCH'                 = "The FILE ORGANIZATION list in the header does not exactly match the section banner titles in the file body, by content or by order."
+    'FILE_ORG_MISMATCH'                 = "The FILE ORGANIZATION list in the header does not match the section banner titles verbatim, in order."
     # Section banners
     'MISSING_SECTION_BANNER'            = "A class definition (or other catalogable construct) appears outside any banner -- no section banner precedes it in the file."
     'BANNER_INLINE_SHAPE'               = "A section banner uses the single-line ===== Title ===== form. The spec requires a multi-line banner with bracketing rule lines, title line, separator, description block, and Prefix line."
@@ -213,14 +297,16 @@ $DriftDescriptions = [ordered]@{
     'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, OVERRIDES, FEEDBACK_OVERLAYS)."
     'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order (FOUNDATION -> CHROME -> LAYOUT -> CONTENT -> OVERRIDES -> FEEDBACK_OVERLAYS)."
     'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
-    'MALFORMED_PREFIX_VALUE'            = "A section banner's Prefix line declares anything other than a single 3-character lowercase prefix or (none)."
-    'PREFIX_REGISTRY_MISMATCH'          = "A section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component."
+    'MALFORMED_PREFIX_VALUE'            = "A section banner declares a Prefix value that is neither a page prefix nor 'cc', or declares multiple comma-separated values."
+    'PREFIX_REGISTRY_MISMATCH'          = "A page-file section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component."
+    'ANCHOR_SECTION_INVALID_PREFIX'     = "A FOUNDATION, CHROME, or anchor-file FEEDBACK_OVERLAYS section declares a prefix other than 'cc'."
     'DUPLICATE_FOUNDATION'              = "More than one CSS file in the codebase contains a FOUNDATION section."
     'DUPLICATE_CHROME'                  = "More than one CSS file in the codebase contains a CHROME section."
     # Class definitions
-    'PREFIX_MISMATCH'                   = "A class name does not begin with the prefix declared in its containing section's banner."
+    'PREFIX_MISMATCH'                   = "A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked."
     'MISSING_PURPOSE_COMMENT'           = "A base class definition is not preceded by a single-line purpose comment."
     'MISSING_VARIANT_COMMENT'           = "A class variant does not carry a trailing inline comment after the opening brace."
+    'UNDEFINED_CLASS_USAGE'             = "A class is used in a compound or descendant selector but has no standalone definition in scope. Every class participating in a compound or descendant rule must be defined by a separate single-class rule somewhere in the same file (or, for usages of shared classes, in the zone's shared files)."
     # Forbidden selectors
     'FORBIDDEN_ELEMENT_SELECTOR'        = "A rule's selector is an element selector (e.g., body, h1, a). Element-only styling must move to FOUNDATION."
     'FORBIDDEN_UNIVERSAL_SELECTOR'      = "A rule uses the universal selector (*). Reset rules must move to FOUNDATION."
@@ -281,6 +367,7 @@ $script:CurrentFileLineCount = 0
 $script:CurrentSections      = $null    # output of New-SectionList
 $script:CurrentRegistryPrefix = $null   # cc_prefix value from Component_Registry for this file
 $script:CurrentRegistryHasMapping = $false  # whether the file has any Component_Registry row at all
+$script:CurrentFileIsAnchor   = $false  # whether the file is the zone's chrome anchor
 $script:CurrentNormalizedComments = $null   # output of Convert-PostCssCommentsToNormalized
 $script:CurrentUsedCommentLines = $null     # HashSet[int] of comment LineStart values consumed by rules
 
@@ -586,13 +673,16 @@ foreach ($file in $CssFiles) {
             foreach ($sel in $node.selectorTree.nodes) {
                 if ($sel.type -ne 'selector') { continue }
                 $compounds = Get-CompoundList -SelectorChildren $sel.nodes
+                # Record every class token from every compound as defined
+                # in this shared file. Under the new spec each class is a
+                # real class in its own right, so a class-on-class compound
+                # like .foo.bar registers both `foo` and `bar` (first
+                # occurrence wins).
                 foreach ($cmp in $compounds) {
-                    if ($cmp.Classes.Count -gt 0) {
-                        $primaryClass = $cmp.Classes[0]
-                        if (-not $classMap.ContainsKey($primaryClass)) {
-                            $classMap[$primaryClass] = $name
+                    foreach ($cls in $cmp.Classes) {
+                        if (-not $classMap.ContainsKey($cls)) {
+                            $classMap[$cls] = $name
                         }
-                        break
                     }
                 }
             }
@@ -799,21 +889,33 @@ function Add-CssRuleRow {
     return $row
 }
 
-function Add-CssClassOrVariantRow {
+# Emit a CSS_CLASS or CSS_VARIANT row for a single class token. Under the
+# new spec model, each class token in a compound is its own row. When the
+# compound carries a pseudo-class, the row is a CSS_VARIANT with
+# variant_type=pseudo and the pseudo name in qualifier_2; otherwise it
+# is a plain CSS_CLASS row. variant_qualifier_1 is never set under the
+# new model - the old "class modifier" qualifier is gone.
+function Add-CssClassRow {
     param(
-        [string]$ComponentName,
-        [string]$VariantType,
-        [string]$VariantQualifier1,
-        [string]$VariantQualifier2,
-        [string]$ReferenceType,
-        [int]$LineStart, [int]$LineEnd, [int]$ColumnStart,
-        [string]$Signature, [string]$ParentAtrule, [string]$RawText,
-        [string]$PurposeDescription
+        [Parameter(Mandatory)] [string]$ClassName,
+        [string]$PseudoClass,          # bare pseudo name (e.g. 'hover') or $null
+        [Parameter(Mandatory)] [string]$ReferenceType,
+        [Parameter(Mandatory)] [int]$LineStart,
+        [Parameter(Mandatory)] [int]$LineEnd,
+        [Parameter(Mandatory)] [int]$ColumnStart,
+        [string]$Signature,
+        [string]$ParentAtrule,
+        [string]$RawText,
+        [string]$PurposeDescription,
+        [int]$TokenIndex = 0           # ordinal position within the compound (for dedupe key uniqueness)
     )
 
-    if ([string]::IsNullOrWhiteSpace($ComponentName)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($ClassName)) { return $null }
 
-    $componentType = if ($VariantType) { 'CSS_VARIANT' } else { 'CSS_CLASS' }
+    $isVariant     = -not [string]::IsNullOrEmpty($PseudoClass)
+    $componentType = if ($isVariant) { 'CSS_VARIANT' } else { 'CSS_CLASS' }
+    $variantType   = if ($isVariant) { 'pseudo' } else { $null }
+    $q2            = if ($isVariant) { $PseudoClass } else { $null }
 
     $scope = $null
     $sourceFile = $null
@@ -821,22 +923,23 @@ function Add-CssClassOrVariantRow {
         $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
         $sourceFile = $script:CurrentFile
     } else {
-        $resolved = Resolve-ClassScope -ClassName $ComponentName
+        $resolved = Resolve-ClassScope -ClassName $ClassName
         $scope = $resolved.Scope
         $sourceFile = $resolved.SourceFile
     }
 
-    $vq1Key = if ($VariantQualifier1) { $VariantQualifier1 } else { '' }
-    $vq2Key = if ($VariantQualifier2) { $VariantQualifier2 } else { '' }
-    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|$componentType|$ComponentName|$ReferenceType|$vq1Key|$vq2Key"
+    # Dedupe key includes TokenIndex so two classes in the same compound
+    # (e.g. .foo.bar) at the same line / column / variant qualifier do
+    # not collide.
+    $q2Key = if ($q2) { $q2 } else { '' }
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|$componentType|$ClassName|$ReferenceType|$TokenIndex|$q2Key"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
     $row = New-CssRow `
         -ComponentType      $componentType `
-        -ComponentName      $ComponentName `
-        -VariantType        $VariantType `
-        -VariantQualifier1  $VariantQualifier1 `
-        -VariantQualifier2  $VariantQualifier2 `
+        -ComponentName      $ClassName `
+        -VariantType        $variantType `
+        -VariantQualifier2  $q2 `
         -ReferenceType      $ReferenceType `
         -Scope              $scope `
         -SourceFile         $sourceFile `
@@ -960,13 +1063,11 @@ function Add-CssKeyframeRow {
 }
 
 # Emit a COMMENT_BANNER row from a Section entry produced by New-SectionList.
-# Banner-level drift codes from Get-BannerInfo (BANNER_INLINE_SHAPE,
-# BANNER_INVALID_RULE_CHAR, BANNER_INVALID_RULE_LENGTH, BANNER_INVALID_SEPARATOR_CHAR,
-# BANNER_INVALID_SEPARATOR_LENGTH, BANNER_MALFORMED_TITLE_LINE, BANNER_MISSING_DESCRIPTION,
-# UNKNOWN_SECTION_TYPE, MISSING_PREFIX_DECLARATION) come pre-populated on the
+# Banner-level drift codes from Get-BannerInfo come pre-populated on the
 # section's BannerDriftCodes array. SECTION_TYPE_ORDER_VIOLATION,
-# MALFORMED_PREFIX_VALUE, and PREFIX_REGISTRY_MISMATCH are added here based on
-# cross-section / cross-registry information.
+# MALFORMED_PREFIX_VALUE, PREFIX_REGISTRY_MISMATCH, and
+# ANCHOR_SECTION_INVALID_PREFIX are added here based on cross-section /
+# cross-registry information.
 function Add-CommentBannerRow {
     param([Parameter(Mandatory)] $Section, [Parameter(Mandatory)] [int] $PreviousSectionTypeOrderIdx)
 
@@ -993,16 +1094,7 @@ function Add-CommentBannerRow {
         -SuppressSectionLookup
     $script:rows.Add($row)
 
-    # Carry over per-banner drift accumulated by Get-BannerInfo / New-SectionList
-    # (BANNER_INLINE_SHAPE, BANNER_INVALID_RULE_CHAR, BANNER_INVALID_RULE_LENGTH,
-    # BANNER_INVALID_SEPARATOR_CHAR, BANNER_INVALID_SEPARATOR_LENGTH,
-    # BANNER_MALFORMED_TITLE_LINE, BANNER_MISSING_DESCRIPTION,
-    # UNKNOWN_SECTION_TYPE, MISSING_PREFIX_DECLARATION).
-    # Get-BannerInfo distinguishes these granularly - the helper emits
-    # UNKNOWN_SECTION_TYPE only when the title shape is correct but the
-    # TYPE token is not in the enum, and BANNER_MALFORMED_TITLE_LINE when
-    # no TYPE: NAME shape exists at all. The populator does not need to
-    # re-derive UNKNOWN_SECTION_TYPE from a null TypeName.
+    # Carry over per-banner drift accumulated by Get-BannerInfo / New-SectionList.
     foreach ($code in $Section.BannerDriftCodes) {
         Add-DriftCode -Row $row -Code $code
     }
@@ -1016,60 +1108,56 @@ function Add-CommentBannerRow {
         }
     }
 
-    # MALFORMED_PREFIX_VALUE: Prefix line declared something that isn't a
-    # 3-char lowercase token or (none).
+    # MALFORMED_PREFIX_VALUE: Prefix line declares something that is neither
+    # a page prefix nor 'cc', or declares multiple comma-separated values.
+    # CSS callers do NOT pass -AllowNoneSentinel, so the (none) sentinel is
+    # invalid here per the new spec.
     if ($Section.Prefix -and -not (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
         Add-DriftCode -Row $row -Code 'MALFORMED_PREFIX_VALUE' `
-            -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a 3-char lowercase prefix nor (none)."
+            -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a page prefix nor 'cc'."
     }
 
-    # PREFIX_REGISTRY_MISMATCH (CSS strict / Option B with chrome-anchor carve-out):
-    #   - File has registry mapping with cc_prefix = NULL AND is the chrome
-    #     anchor file (cc-shared.css, docs-base.css) -> banner must declare
-    #     cc. Any other value (including (none)) is a mismatch.
-    #   - File has registry mapping with cc_prefix = NULL AND is NOT the
-    #     chrome anchor -> banner must be (none). Any non-(none) value
-    #     (including cc) is a mismatch.
-    #   - File has registry mapping with cc_prefix = X     -> banner must be X.
-    #     Any other value (including (none) and cc) is a mismatch.
-    #   - File has no registry mapping at all              -> we cannot
-    #     validate. Skip this check; the file's missing Object_Registry row
-    #     will be reported separately by the miss advisory.
-    if ($script:CurrentRegistryHasMapping -and $Section.Prefix) {
-        # Only check when the prefix value is well-formed; malformed values
-        # already carry their own drift code.
-        if (Test-PrefixValueIsValid -Prefix $Section.Prefix) {
-            $bannerVal    = Get-BannerPrefixValue -Prefix $Section.Prefix   # '' for (none), 'cc' for chrome, 'xxx' for a page prefix
-            $isNone       = Test-IsPrefixNone -Prefix $Section.Prefix
-            $isCc         = ($bannerVal -eq 'cc')
-            $regVal       = $script:CurrentRegistryPrefix                    # $null or 'xxx'
-            $isAnchorFile = ($script:CurrentFile -eq $CcAnchorCssFile -or
-                             $script:CurrentFile -eq $DocsAnchorCssFile)
+    # Prefix registry validation (CC_CSS_Spec.md Section 5.2).
+    # Two distinct failure modes, two distinct drift codes:
+    #   ANCHOR_SECTION_INVALID_PREFIX -- section is FOUNDATION/CHROME/
+    #     anchor-file FEEDBACK_OVERLAYS but the banner declares a value
+    #     other than 'cc'. Applies in anchor files; non-anchor files
+    #     carrying FOUNDATION or CHROME already fire DUPLICATE_FOUNDATION
+    #     or DUPLICATE_CHROME from Pass 3 and don't double-fire here.
+    #   PREFIX_REGISTRY_MISMATCH -- page-file banner declares something
+    #     other than the file's registered cc_prefix.
+    #
+    # Skip both checks if the banner's prefix value is malformed (that's
+    # already flagged), if there's no Prefix line at all (already flagged
+    # as MISSING_PREFIX_DECLARATION), or if the file has no Component_Registry
+    # mapping (no source of truth to compare against; the missing registration
+    # surfaces in the miss advisory).
+    if ($Section.Prefix -and (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
+        $bannerVal = Get-BannerPrefixValue -Prefix $Section.Prefix
+        $isCc      = ($bannerVal -eq 'cc')
 
-            $mismatch = $false
-            if ($null -eq $regVal) {
-                # Component has no page prefix (shared or chrome-anchor file).
-                if ($isAnchorFile) {
-                    # Chrome anchor: banner must declare cc.
-                    if (-not $isCc) { $mismatch = $true }
-                } else {
-                    # Non-anchor shared file: banner must declare (none).
-                    if (-not $isNone) { $mismatch = $true }
+        # ANCHOR_SECTION_INVALID_PREFIX: anchor-file-only section type must
+        # declare 'cc' in an anchor file. Checked first because it depends
+        # only on section type and file identity, not the registry.
+        if ($script:CurrentFileIsAnchor -and ($Section.TypeName -in $AnchorSectionTypes)) {
+            if (-not $isCc) {
+                Add-DriftCode -Row $row -Code 'ANCHOR_SECTION_INVALID_PREFIX' `
+                    -Context "Section type '$($Section.TypeName)' in anchor file must declare Prefix 'cc'; banner declares '$bannerVal'."
+            }
+        }
+        elseif ($script:CurrentRegistryHasMapping) {
+            # Page-file banner. Must declare the registered page prefix.
+            $regVal = $script:CurrentRegistryPrefix
+            if (-not [string]::IsNullOrEmpty($regVal)) {
+                if ($bannerVal -ne $regVal) {
+                    Add-DriftCode -Row $row -Code 'PREFIX_REGISTRY_MISMATCH' `
+                        -Context "Page-file banner declares Prefix '$bannerVal' but Component_Registry.cc_prefix for this file is '$regVal'."
                 }
-            } else {
-                # Component has a page prefix. Banner must declare it; neither
-                # (none) nor cc is valid in a page-file banner.
-                if ($isNone -or $isCc -or $bannerVal -ne $regVal) { $mismatch = $true }
             }
-
-            if ($mismatch) {
-                $regDisplay = if ($null -eq $regVal) {
-                    if ($isAnchorFile) { 'cc (chrome anchor)' } else { '(none)' }
-                } else { $regVal }
-                $bannerDisplay = if ($isNone) { '(none)' } else { $bannerVal }
-                Add-DriftCode -Row $row -Code 'PREFIX_REGISTRY_MISMATCH' `
-                    -Context "Banner declares Prefix '$bannerDisplay' but the expected value for this file is '$regDisplay'."
-            }
+            # If regVal is null but the file is not the anchor, this is a
+            # registry data gap, not a file drift. The missing registration
+            # surfaces in the miss advisory; we cannot validate the file's
+            # banner without a source of truth.
         }
     }
 
@@ -1077,94 +1165,15 @@ function Add-CommentBannerRow {
 }
 
 # ============================================================================
-# PER-COMPOUND DRIFT ATTRIBUTION
-# ============================================================================
-
-# Apply every per-compound drift check to a row. Single source of truth for
-# "what's wrong with this compound", so primary and descendant emission paths
-# produce identical drift coverage.
-function Add-CompoundDriftCodes {
-    param(
-        [Parameter(Mandatory)] $Row,
-        [Parameter(Mandatory)] $Compound,
-        [Parameter(Mandatory)] [int]$ExtraClassCount,
-        [bool]$IsPartOfGroup = $false,
-        [bool]$InDescendant = $false
-    )
-
-    if ($ExtraClassCount -ge 2)        { Add-DriftCode -Row $Row -Code 'COMPOUND_DEPTH_3PLUS' }
-    if ($Compound.PseudoInterleaved)   { Add-DriftCode -Row $Row -Code 'PSEUDO_INTERLEAVED' }
-    if ($Compound.Pseudos.Count -ge 2) { Add-DriftCode -Row $Row -Code 'FORBIDDEN_STACKED_PSEUDO' }
-    if ($Compound.Pseudos -contains 'not') { Add-DriftCode -Row $Row -Code 'FORBIDDEN_NOT_PSEUDO' }
-    if ($Compound.Ids.Count -gt 0)     { Add-DriftCode -Row $Row -Code 'FORBIDDEN_ID_SELECTOR' }
-
-    # Element / universal / attribute selectors are forbidden EXCEPT in
-    # FOUNDATION sections. Look up the active section for this row's line.
-    $sec = Get-SectionForLine -Sections $script:CurrentSections -Line $Row.LineStart
-    $inFoundation = ($sec -and $sec.TypeName -eq 'FOUNDATION')
-
-    if ($Compound.AttrCount -gt 0 -and -not $inFoundation) {
-        Add-DriftCode -Row $Row -Code 'FORBIDDEN_ATTRIBUTE_SELECTOR'
-    }
-    if ($Compound.HasTag -and -not $inFoundation) {
-        Add-DriftCode -Row $Row -Code 'FORBIDDEN_ELEMENT_SELECTOR'
-    }
-    if ($IsPartOfGroup) {
-        Add-DriftCode -Row $Row -Code 'FORBIDDEN_GROUP_SELECTOR'
-    }
-    if ($InDescendant) {
-        # Distinguish combinator types from CombinatorBefore for finer-grained drift.
-        switch ($Compound.CombinatorBefore) {
-            '>' { Add-DriftCode -Row $Row -Code 'FORBIDDEN_CHILD_COMBINATOR' }
-            '+' { Add-DriftCode -Row $Row -Code 'FORBIDDEN_ADJACENT_SIBLING' }
-            '~' { Add-DriftCode -Row $Row -Code 'FORBIDDEN_GENERAL_SIBLING' }
-            default { Add-DriftCode -Row $Row -Code 'FORBIDDEN_DESCENDANT' }
-        }
-    }
-}
-
-# Compute (variant_type, variant_qualifier_1, variant_qualifier_2) from a
-# compound's class and pseudo collections.
-function Get-VariantShape {
-    param([Parameter(Mandatory)] $Compound)
-
-    $extraClasses = if ($Compound.Classes.Count -gt 1) { $Compound.Classes[1..($Compound.Classes.Count-1)] } else { @() }
-    $extraPseudos = $Compound.Pseudos
-
-    $variantType = $null; $q1 = $null; $q2 = $null
-
-    if ($extraClasses.Count -eq 0 -and $extraPseudos.Count -eq 0) {
-        $variantType = $null
-    }
-    elseif ($extraClasses.Count -ge 1 -and $extraPseudos.Count -eq 0) {
-        $variantType = 'class'
-        $q1 = ($extraClasses -join '.')
-    }
-    elseif ($extraClasses.Count -eq 0 -and $extraPseudos.Count -ge 1) {
-        $variantType = 'pseudo'
-        $q2 = ($extraPseudos -join ':')
-    }
-    else {
-        $variantType = 'compound_pseudo'
-        $q1 = ($extraClasses -join '.')
-        $q2 = ($extraPseudos -join ':')
-    }
-
-    return @{
-        VariantType        = $variantType
-        VariantQualifier1  = $q1
-        VariantQualifier2  = $q2
-        ExtraClassCount    = $extraClasses.Count
-    }
-}
-
-# ============================================================================
 # PER-SELECTOR ROW GENERATION
 # ============================================================================
 
 # Decompose a selector into compounds (classes / ids / pseudos), then emit
-# one or more catalog rows. If any forbidden constructs are present, the
-# emitted rows carry the appropriate drift codes.
+# one or more catalog rows. Under the new spec each class token in every
+# compound is a class in its own right and emits its own row. When the
+# compound carries a pseudo-class, every class row in that compound becomes
+# a CSS_VARIANT (variant_type=pseudo). Forbidden constructs attach the
+# appropriate drift codes to each emitted row.
 function Add-RowsForSelector {
     param(
         [Parameter(Mandatory)] $SelectorNode,
@@ -1195,7 +1204,7 @@ function Add-RowsForSelector {
 
     # Look up the active section once per selector.
     $activeSection = Get-SectionForLine -Sections $script:CurrentSections -Line $LineStart
-    $inFoundation = ($activeSection -and $activeSection.TypeName -eq 'FOUNDATION')
+    $inFoundation  = ($activeSection -and $activeSection.TypeName -eq 'FOUNDATION')
 
     # ---- Selector with no class and no id (element / universal / attribute / pseudo-element only) ----
     if ($primaryIdx -lt 0) {
@@ -1218,7 +1227,6 @@ function Add-RowsForSelector {
             }
             if ($IsPartOfGroup)        { Add-DriftCode -Row $row -Code 'FORBIDDEN_GROUP_SELECTOR' }
             if ($hasMultipleCompounds) {
-                # Use combinator from the second compound for finer-grained drift.
                 switch ($compounds[1].CombinatorBefore) {
                     '>' { Add-DriftCode -Row $row -Code 'FORBIDDEN_CHILD_COMBINATOR' }
                     '+' { Add-DriftCode -Row $row -Code 'FORBIDDEN_ADJACENT_SIBLING' }
@@ -1233,71 +1241,143 @@ function Add-RowsForSelector {
 
     $primary = $compounds[$primaryIdx]
 
-    # ---- PRIMARY: class side ----
-    if ($primary.Classes.Count -gt 0) {
-        $primaryName = $primary.Classes[0]
-        $shape = Get-VariantShape -Compound $primary
+    # Classify the rule:
+    #   - A single-token rule (one class OR one id in the primary compound,
+    #     optionally with a pseudo-class) is a definition per spec sections
+    #     6.1 / 7.1. A single class is CSS_CLASS DEFINITION; a single class
+    #     plus pseudo-class is CSS_VARIANT DEFINITION; a single id is
+    #     HTML_ID DEFINITION (forbidden in CSS, but a definitional shape).
+    #   - A compound rule (two or more tokens of any kind: class+class,
+    #     class+id, id+id) is NOT a definition of any participating token.
+    #     Each participating token is a class/id in its own right and must
+    #     be defined by a separate standalone rule somewhere. The compound
+    #     rule USES those tokens together to apply combined styling;
+    #     the emitted rows are USAGE.
+    # "Token" here means a real selector token (class or id). Pseudo-classes
+    # and pseudo-elements aren't tokens for this count - they're qualifiers
+    # on a token.
+    $primaryTokenCount     = $primary.Classes.Count + $primary.Ids.Count
+    $primaryIsCompound     = ($primaryTokenCount -ge 2)
+    $primaryHasPseudoClass = ($primary.Pseudos.Count -gt 0)
 
-        # Variants take the trailing inline comment; bases take the preceding.
-        $purposeDesc = if ($shape.VariantType) { $TrailingInlineCommentText } else { $PrecedingCommentText }
+    # variant_type / variant_qualifier_2 are set when the primary compound
+    # carries a pseudo-class (whether the rule is a definition or a usage).
+    # Stacked pseudos are joined with ':' for the qualifier; the drift code
+    # FORBIDDEN_STACKED_PSEUDO is emitted separately when count >= 2.
+    $primaryPseudo = if ($primaryHasPseudoClass) { ($primary.Pseudos -join ':') } else { $null }
 
-        $primaryRow = Add-CssClassOrVariantRow `
-            -ComponentName     $primaryName `
-            -VariantType       $shape.VariantType `
-            -VariantQualifier1 $shape.VariantQualifier1 `
-            -VariantQualifier2 $shape.VariantQualifier2 `
-            -ReferenceType     'DEFINITION' `
-            -LineStart         $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
-            -Signature         $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText `
-            -PurposeDescription $purposeDesc
+    # Reference type for primary-compound rows: DEFINITION for single-class
+    # rules (base or variant), USAGE for class-on-class compounds.
+    $primaryReferenceType = if ($primaryIsCompound) { 'USAGE' } else { 'DEFINITION' }
 
-        if ($primaryRow) {
-            Add-CompoundDriftCodes -Row $primaryRow -Compound $primary `
-                -ExtraClassCount $shape.ExtraClassCount `
-                -IsPartOfGroup $IsPartOfGroup -InDescendant $false
-
-            # The primary participates in a descendant-combinator selector when
-            # there are additional compounds; flag it with the combinator-aware
-            # drift code derived from the next compound's CombinatorBefore.
-            if ($hasMultipleCompounds) {
-                switch ($compounds[$primaryIdx + 1].CombinatorBefore) {
-                    '>' { Add-DriftCode -Row $primaryRow -Code 'FORBIDDEN_CHILD_COMBINATOR' }
-                    '+' { Add-DriftCode -Row $primaryRow -Code 'FORBIDDEN_ADJACENT_SIBLING' }
-                    '~' { Add-DriftCode -Row $primaryRow -Code 'FORBIDDEN_GENERAL_SIBLING' }
-                    default { Add-DriftCode -Row $primaryRow -Code 'FORBIDDEN_DESCENDANT' }
-                }
-            }
-
-            # Comment-presence drift
-            if ($shape.VariantType -and -not $HasTrailingInlineComment) {
-                Add-DriftCode -Row $primaryRow -Code 'MISSING_VARIANT_COMMENT'
-            }
-            elseif (-not $shape.VariantType -and -not $HasPrecedingComment) {
-                Add-DriftCode -Row $primaryRow -Code 'MISSING_PURPOSE_COMMENT'
-            }
-
-            # Section context drift
-            if (-not $activeSection) {
-                Add-DriftCode -Row $primaryRow -Code 'MISSING_SECTION_BANNER'
-            }
-            elseif ($activeSection.PrefixValue) {
-                # PREFIX_MISMATCH: when the active section declares a real
-                # prefix (not (none)), the class name must start with that
-                # prefix followed by '-' (or be exactly the prefix).
-                $pfx = $activeSection.PrefixValue
-                $matched = ($primaryName -ceq $pfx) -or
-                           ($primaryName.StartsWith("$pfx-", [System.StringComparison]::Ordinal))
-                if (-not $matched) {
-                    Add-DriftCode -Row $primaryRow -Code 'PREFIX_MISMATCH'
-                }
-            }
+    # Comment expectations apply only to definition rules:
+    #   - Base definition (single-class, no pseudo)     -> preceding purpose comment
+    #   - Variant definition (single-class, pseudo)     -> trailing inline comment
+    #   - Compound (class-on-class) USAGE               -> no comment expectation
+    # Per spec, purpose comments are required for base class definitions
+    # (section 6.1) and trailing comments are required for variants
+    # (section 7.1). Compound rules are neither, so no comment-presence
+    # drift fires on their rows. The "missing standalone definition"
+    # signal is surfaced separately by UNDEFINED_CLASS_USAGE in Pass 3.
+    $purposeDesc      = $null
+    $commentDriftCode = $null
+    $hasComment       = $true
+    if (-not $primaryIsCompound) {
+        if ($primaryHasPseudoClass) {
+            $purposeDesc      = $TrailingInlineCommentText
+            $commentDriftCode = 'MISSING_VARIANT_COMMENT'
+            $hasComment       = $HasTrailingInlineComment
+        } else {
+            $purposeDesc      = $PrecedingCommentText
+            $commentDriftCode = 'MISSING_PURPOSE_COMMENT'
+            $hasComment       = $HasPrecedingComment
         }
     }
 
-    # ---- PRIMARY: id side ----
+    # ---- PRIMARY: emit one row per class token ----
+    for ($ci = 0; $ci -lt $primary.Classes.Count; $ci++) {
+        $className = $primary.Classes[$ci]
+
+        $row = Add-CssClassRow `
+            -ClassName          $className `
+            -PseudoClass        $primaryPseudo `
+            -ReferenceType      $primaryReferenceType `
+            -LineStart          $LineStart `
+            -LineEnd            $LineEnd `
+            -ColumnStart        $ColumnStart `
+            -Signature          $RuleSelectorText `
+            -ParentAtrule       $ParentAtrule `
+            -RawText            $RuleBodyText `
+            -PurposeDescription $purposeDesc `
+            -TokenIndex         $ci
+        if (-not $row) { continue }
+
+        # Per-class drift: prefix check against the section's declared prefix.
+        # Applies to every class token in every compound regardless of
+        # reference type. A class participating in a rule must satisfy the
+        # section's prefix discipline whether the rule defines it or uses it.
+        if ($activeSection -and $activeSection.PrefixValue) {
+            $pfx = $activeSection.PrefixValue
+            $matched = ($className -ceq $pfx) -or
+                       ($className.StartsWith("$pfx-", [System.StringComparison]::Ordinal))
+            if (-not $matched) {
+                Add-DriftCode -Row $row -Code 'PREFIX_MISMATCH' `
+                    -Context "Class token '$className' does not begin with the section prefix '$pfx-'."
+            }
+        }
+
+        # Per-class drift: comment-presence (definition rules only).
+        # Compound USAGE rows do not carry comment-presence drift; the spec
+        # requires comments on definitions, not on usages.
+        if (-not $primaryIsCompound -and -not $hasComment) {
+            Add-DriftCode -Row $row -Code $commentDriftCode
+        }
+
+        # Compound-shape drift (applied identically to every class row in
+        # the primary compound). These reflect properties of the rule's
+        # selector shape and apply whether the rule is a definition or a
+        # usage.
+        if ($primary.Classes.Count -ge 3)    { Add-DriftCode -Row $row -Code 'COMPOUND_DEPTH_3PLUS' }
+        if ($primary.PseudoInterleaved)      { Add-DriftCode -Row $row -Code 'PSEUDO_INTERLEAVED' }
+        if ($primary.Pseudos.Count -ge 2)    { Add-DriftCode -Row $row -Code 'FORBIDDEN_STACKED_PSEUDO' }
+        if ($primary.Pseudos -contains 'not'){ Add-DriftCode -Row $row -Code 'FORBIDDEN_NOT_PSEUDO' }
+        if ($primary.Ids.Count -gt 0)        { Add-DriftCode -Row $row -Code 'FORBIDDEN_ID_SELECTOR' }
+        if ($primary.AttrCount -gt 0 -and -not $inFoundation) {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_ATTRIBUTE_SELECTOR'
+        }
+        if ($primary.HasTag -and -not $inFoundation) {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_ELEMENT_SELECTOR'
+        }
+        # Pseudo-element rules attached to a class are base class definitions
+        # per spec section 6.1, so no FORBIDDEN_PSEUDO_ELEMENT_LOCATION fires
+        # here. That code only applies to unattached pseudo-elements (handled
+        # in the primary-less branch above).
+
+        # Selector-shape drift that comes from group / descendant context.
+        if ($IsPartOfGroup) { Add-DriftCode -Row $row -Code 'FORBIDDEN_GROUP_SELECTOR' }
+        if ($hasMultipleCompounds) {
+            switch ($compounds[$primaryIdx + 1].CombinatorBefore) {
+                '>' { Add-DriftCode -Row $row -Code 'FORBIDDEN_CHILD_COMBINATOR' }
+                '+' { Add-DriftCode -Row $row -Code 'FORBIDDEN_ADJACENT_SIBLING' }
+                '~' { Add-DriftCode -Row $row -Code 'FORBIDDEN_GENERAL_SIBLING' }
+                default { Add-DriftCode -Row $row -Code 'FORBIDDEN_DESCENDANT' }
+            }
+        }
+
+        # Section context drift.
+        if (-not $activeSection) {
+            Add-DriftCode -Row $row -Code 'MISSING_SECTION_BANNER'
+        }
+    }
+
+    # ---- PRIMARY: id side (each id emits a single HTML_ID row) ----
+    # IDs in compounds inherit the primary reference type: single-token ID
+    # rules are HTML_ID DEFINITION; ID participating in a compound (e.g.
+    # `#foo.bar`) is HTML_ID USAGE under the same logic that makes the
+    # class side USAGE - the compound isn't a definition of either token.
     if ($primary.Ids.Count -gt 0) {
         foreach ($idName in $primary.Ids) {
-            $idRow = Add-HtmlIdRow -IdName $idName -ReferenceType 'DEFINITION' `
+            $idRow = Add-HtmlIdRow -IdName $idName -ReferenceType $primaryReferenceType `
                 -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
                 -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
             if ($idRow) {
@@ -1311,34 +1391,56 @@ function Add-RowsForSelector {
                         default { Add-DriftCode -Row $idRow -Code 'FORBIDDEN_DESCENDANT' }
                     }
                 }
-                if (-not $activeSection)   { Add-DriftCode -Row $idRow -Code 'MISSING_SECTION_BANNER' }
+                if (-not $activeSection) { Add-DriftCode -Row $idRow -Code 'MISSING_SECTION_BANNER' }
             }
         }
     }
 
-    # ---- DESCENDANT compounds (USAGE rows for class-side, plus id-side) ----
+    # ---- DESCENDANT compounds: one USAGE row per class token, plus id-side ----
     for ($i = $primaryIdx + 1; $i -lt $compounds.Count; $i++) {
         $cmp = $compounds[$i]
 
-        if ($cmp.Classes.Count -gt 0) {
-            $usageName = $cmp.Classes[0]
-            $shape = Get-VariantShape -Compound $cmp
+        # A descendant compound with a pseudo-class makes its class tokens
+        # CSS_VARIANT rows (variant_type=pseudo). No pseudo -> plain CSS_CLASS
+        # USAGE rows.
+        $descPseudo = if ($cmp.Pseudos.Count -gt 0) { ($cmp.Pseudos -join ':') } else { $null }
 
-            $usageRow = Add-CssClassOrVariantRow `
-                -ComponentName     $usageName `
-                -VariantType       $shape.VariantType `
-                -VariantQualifier1 $shape.VariantQualifier1 `
-                -VariantQualifier2 $shape.VariantQualifier2 `
-                -ReferenceType     'USAGE' `
-                -LineStart         $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
-                -Signature         $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText `
-                -PurposeDescription $null
+        for ($ci = 0; $ci -lt $cmp.Classes.Count; $ci++) {
+            $className = $cmp.Classes[$ci]
 
-            if ($usageRow) {
-                Add-CompoundDriftCodes -Row $usageRow -Compound $cmp `
-                    -ExtraClassCount $shape.ExtraClassCount `
-                    -IsPartOfGroup $IsPartOfGroup -InDescendant $true
+            $row = Add-CssClassRow `
+                -ClassName          $className `
+                -PseudoClass        $descPseudo `
+                -ReferenceType      'USAGE' `
+                -LineStart          $LineStart `
+                -LineEnd            $LineEnd `
+                -ColumnStart        $ColumnStart `
+                -Signature          $RuleSelectorText `
+                -ParentAtrule       $ParentAtrule `
+                -RawText            $RuleBodyText `
+                -TokenIndex         ($i * 100 + $ci)
+            if (-not $row) { continue }
+
+            # Combinator-driven drift on the descendant.
+            switch ($cmp.CombinatorBefore) {
+                '>' { Add-DriftCode -Row $row -Code 'FORBIDDEN_CHILD_COMBINATOR' }
+                '+' { Add-DriftCode -Row $row -Code 'FORBIDDEN_ADJACENT_SIBLING' }
+                '~' { Add-DriftCode -Row $row -Code 'FORBIDDEN_GENERAL_SIBLING' }
+                default { Add-DriftCode -Row $row -Code 'FORBIDDEN_DESCENDANT' }
             }
+
+            # Compound-shape drift inside the descendant compound.
+            if ($cmp.Classes.Count -ge 3)    { Add-DriftCode -Row $row -Code 'COMPOUND_DEPTH_3PLUS' }
+            if ($cmp.PseudoInterleaved)      { Add-DriftCode -Row $row -Code 'PSEUDO_INTERLEAVED' }
+            if ($cmp.Pseudos.Count -ge 2)    { Add-DriftCode -Row $row -Code 'FORBIDDEN_STACKED_PSEUDO' }
+            if ($cmp.Pseudos -contains 'not'){ Add-DriftCode -Row $row -Code 'FORBIDDEN_NOT_PSEUDO' }
+            if ($cmp.AttrCount -gt 0 -and -not $inFoundation) {
+                Add-DriftCode -Row $row -Code 'FORBIDDEN_ATTRIBUTE_SELECTOR'
+            }
+            if ($cmp.HasTag -and -not $inFoundation) {
+                Add-DriftCode -Row $row -Code 'FORBIDDEN_ELEMENT_SELECTOR'
+            }
+            if ($IsPartOfGroup) { Add-DriftCode -Row $row -Code 'FORBIDDEN_GROUP_SELECTOR' }
         }
 
         if ($cmp.Ids.Count -gt 0) {
@@ -1553,8 +1655,6 @@ $CssVisitor = {
             }
 
             # FORBIDDEN_COMPOUND_DECLARATION: two declarations on the same line.
-            # If any line appears more than once in $declLines, the rule has a
-            # compound-declaration violation. Attach to the rule's primary row(s).
             $declLineCounts = @{}
             foreach ($dl in $declLines) {
                 if (-not $declLineCounts.ContainsKey($dl)) { $declLineCounts[$dl] = 0 }
@@ -1562,9 +1662,6 @@ $CssVisitor = {
             }
             $hasCompoundDecl = @($declLineCounts.Values | Where-Object { $_ -gt 1 }).Count -gt 0
             if ($hasCompoundDecl) {
-                # Attach to every row this rule emitted (CSS_CLASS / CSS_VARIANT
-                # / CSS_RULE / HTML_ID rows). We iterate just the rule-scoped
-                # slice of $script:rows captured before selector emission.
                 for ($ri = $ruleRowsStartIdx; $ri -lt $script:rows.Count; $ri++) {
                     $r = $script:rows[$ri]
                     if ($r.ComponentType -in @('CSS_CLASS','CSS_VARIANT','CSS_RULE','HTML_ID')) {
@@ -1573,23 +1670,14 @@ $CssVisitor = {
                 }
             }
 
-            # BLANK_LINE_INSIDE_RULE: a blank line appears inside the rule body
-            # when there's a gap between consecutive decls' source ranges that
-            # is more than 1 line, OR when the first decl starts more than 1
-            # line after the rule's opening line, OR when the rule's closing
-            # line is more than 1 line after the last decl's end.
-            # Using each decl's actual end line (not just start line) avoids
-            # false positives on multi-line declarations.
+            # BLANK_LINE_INSIDE_RULE: a blank line appears inside the rule body.
             $hasBlankInside = $false
             if ($declSpans.Count -gt 0) {
-                # Sort spans by Start in case PostCSS ever delivers them out of order.
                 $sortedSpans = @($declSpans | Sort-Object { $_.Start })
 
-                # Gap before first decl: opening line $line, first decl on >= $line + 2 means blank.
                 if ($sortedSpans[0].Start -gt ($line + 1)) {
                     $hasBlankInside = $true
                 }
-                # Gaps between consecutive decls.
                 for ($si = 1; $si -lt $sortedSpans.Count; $si++) {
                     $prevEnd = $sortedSpans[$si - 1].End
                     $curStart = $sortedSpans[$si].Start
@@ -1598,7 +1686,6 @@ $CssVisitor = {
                         break
                     }
                 }
-                # Gap after last decl: closing line $endLine, last decl ending at <= $endLine - 2 means blank.
                 if (-not $hasBlankInside) {
                     $lastEnd = $sortedSpans[$sortedSpans.Count - 1].End
                     if ($endLine - $lastEnd -gt 1) {
@@ -1671,12 +1758,6 @@ $CssVisitor = {
         }
 
         default {
-            # 'root', 'decl', and any unknown node types fall through to the
-            # walker's default recursion. 'decl' nodes are processed inline
-            # by their parent rule above (and skipped in the walker's skip
-            # list via 'prop','important','value'); decls outside a rule
-            # (which would be a parse error in valid CSS) reach this branch
-            # but produce no row.
             return
         }
     }
@@ -1707,6 +1788,7 @@ foreach ($file in $CssFiles) {
     $script:CurrentFileLineCount      = if ($astCache[$file].sourceLength) { [int]$astCache[$file].sourceLength } else { 0 }
     $script:CurrentRegistryHasMapping = $componentPrefixMap.ContainsKey($name)
     $script:CurrentRegistryPrefix     = if ($script:CurrentRegistryHasMapping) { $componentPrefixMap[$name] } else { $null }
+    $script:CurrentFileIsAnchor       = ($name -eq $CcAnchorCssFile -or $name -eq $DocsAnchorCssFile)
     $script:CurrentUsedCommentLines   = New-Object 'System.Collections.Generic.HashSet[int]'
 
     $script:fileMeta[$name] = @{
@@ -1757,10 +1839,6 @@ foreach ($file in $CssFiles) {
     Write-Host ("  Walking {0} ({1}, zone={2})..." -f $name, $scopeLabel, $zone) -ForegroundColor Cyan
 
     # ---- Emit CSS_FILE anchor row ----
-    # The CSS_FILE row precedes FILE_HEADER and serves as the universal
-    # file-level anchor. It is purely structural - no content, no drift
-    # by default. Pass 3 attaches file-overall drift codes
-    # (EXCESS_BLANK_LINES) to this row.
     $cssFileRow = Add-CssFileRow -LineEnd $script:CurrentFileLineCount
 
     # ---- Emit FILE_HEADER row ----
@@ -1827,20 +1905,12 @@ foreach ($file in $CssFiles) {
     }
 
     # ---- FORBIDDEN_COMMENT_STYLE: scan for stray comments ----
-    # A stray comment is a block comment that is none of:
-    #   - The file header (line 1)
-    #   - A section banner (in $script:CurrentSections)
-    #   - A sub-section marker (text matches /^\s*--.+--\s*$/)
-    #   - Used as a preceding comment for a rule (recorded in CurrentUsedCommentLines)
-    #   - Used as a trailing inline comment for a rule (recorded in CurrentUsedCommentLines)
     $strayLines = New-Object System.Collections.Generic.List[int]
     foreach ($c in $script:CurrentNormalizedComments) {
         if ($c.Type -ne 'Block') { continue }
         if ($script:CurrentUsedCommentLines.Contains([int]$c.LineStart)) { continue }
-        # Sub-section marker: trim the comment text and check the marker shape.
         $trimmedText = if ($c.Text) { $c.Text.Trim() } else { '' }
         if ($trimmedText -match '^--.+--$') { continue }
-        # If we got here, it's a stray block comment.
         $strayLines.Add([int]$c.LineStart)
     }
     if ($strayLines.Count -gt 0 -and $cssFileRow) {
@@ -1860,14 +1930,8 @@ foreach ($file in $CssFiles) {
 Write-Log "Pass 3: codebase-level drift checks..."
 
 # --- One-time row indexes ---
-# Pass 3 was nested-looping $script:rows from inside per-file / per-literal
-# loops, producing O(files x literals x rows) iterations. With several
-# thousand rows and hundreds of literals per file, that runs into millions
-# of comparisons in interpreted PowerShell. Build two indexes once, up
-# front, and look up directly. Each section below uses whichever index
-# fits its access pattern.
-$rowsByFile = @{}             # filename -> List[row]
-$rowsByFileLineType = @{}     # "filename|line|componentType" -> List[row]
+$rowsByFile = @{}
+$rowsByFileLineType = @{}
 foreach ($r in $script:rows) {
     if (-not $rowsByFile.ContainsKey($r.FileName)) {
         $rowsByFile[$r.FileName] = New-Object System.Collections.Generic.List[object]
@@ -1925,14 +1989,10 @@ foreach ($fname in $fileMeta.Keys) {
 }
 
 # --- DRIFT_HEX_LITERAL ---
-# Heuristic: any hex literal in a non-FOUNDATION-bearing file's class
-# declaration is flagged when the consumer's zone has at least one shared
-# variable defined. Custom-property values are mostly colors, so this catches
-# the meaningful pattern; some false positives possible on non-color hex.
 foreach ($fname in $fileMeta.Keys) {
     $meta = $fileMeta[$fname]
     if ($null -eq $meta.HexLiterals -or $meta.HexLiterals.Count -eq 0) { continue }
-    if ($meta.FoundationLine) { continue }   # FOUNDATION-bearing file's hex literals are tokens
+    if ($meta.FoundationLine) { continue }
 
     $sampleFullPath = $CssFiles | Where-Object { [System.IO.Path]::GetFileName($_) -eq $fname } | Select-Object -First 1
     if (-not $sampleFullPath) { continue }
@@ -1953,10 +2013,6 @@ foreach ($fname in $fileMeta.Keys) {
 }
 
 # --- DRIFT_PX_LITERAL ---
-# Same heuristic shape as DRIFT_HEX_LITERAL but filtered against --size-*
-# tokens specifically. If the consumer's zone has any size tokens defined,
-# every px literal in a non-FOUNDATION-bearing file's class declaration is
-# flagged.
 foreach ($fname in $fileMeta.Keys) {
     $meta = $fileMeta[$fname]
     if ($null -eq $meta.PxLiterals -or $meta.PxLiterals.Count -eq 0) { continue }
@@ -1984,12 +2040,6 @@ foreach ($fname in $fileMeta.Keys) {
 }
 
 # --- EXCESS_BLANK_LINES ---
-# Any file with blank lines beyond the single blank that the spec permits
-# between top-level constructs gets the code on its FILE_HEADER row.
-# We don't have direct access to the source file's lines from the AST, so
-# the detection compares each top-level node's start line to the previous
-# node's end line; a gap of more than 2 means there are 2+ blank lines
-# between them.
 foreach ($file in $CssFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     if (-not $astCache.ContainsKey($file)) { continue }
@@ -2015,6 +2065,52 @@ foreach ($file in $CssFiles) {
                 break
             }
         }
+    }
+}
+
+# --- UNDEFINED_CLASS_USAGE ---
+# A class participating in a compound or descendant selector must be defined
+# by a separate standalone rule. The populator surfaces a USAGE row for each
+# class participation (per spec section 7 amended); if no DEFINITION row
+# exists for the class in the appropriate scope, the USAGE is undefined.
+#
+# Scope rules:
+#   - USAGE row with Scope='SHARED' resolved to a shared file during row
+#     emission, which means a definition exists in the zone's shared map.
+#     No check needed.
+#   - USAGE row with Scope='LOCAL' fell through to the current file. We
+#     require a CSS_CLASS DEFINITION or CSS_VARIANT DEFINITION row in the
+#     same file with the same component_name. Pseudo-element rules attached
+#     to a class are CSS_CLASS DEFINITION rows per spec section 6.1 and
+#     satisfy this check. A CSS_VARIANT DEFINITION for the same class
+#     (e.g. .foo:hover) also satisfies it - the class exists in the file's
+#     vocabulary.
+#
+# Build a per-file definitions map by walking the row collection, then walk
+# every USAGE row once more to check.
+$definedByFile = @{}
+foreach ($r in $script:rows) {
+    if ($r.ReferenceType -ne 'DEFINITION') { continue }
+    if ($r.ComponentType -notin @('CSS_CLASS','CSS_VARIANT')) { continue }
+    if ([string]::IsNullOrEmpty($r.ComponentName)) { continue }
+    if (-not $definedByFile.ContainsKey($r.FileName)) {
+        $definedByFile[$r.FileName] = New-Object System.Collections.Generic.HashSet[string]
+    }
+    [void]$definedByFile[$r.FileName].Add($r.ComponentName)
+}
+
+foreach ($r in $script:rows) {
+    if ($r.ReferenceType -ne 'USAGE') { continue }
+    if ($r.ComponentType -notin @('CSS_CLASS','CSS_VARIANT')) { continue }
+    if ([string]::IsNullOrEmpty($r.ComponentName)) { continue }
+    # Shared-resolved usages already found a definition during emission.
+    if ($r.Scope -eq 'SHARED') { continue }
+    # Local-scope usages must have a same-file definition.
+    $hasDef = $definedByFile.ContainsKey($r.FileName) -and
+              $definedByFile[$r.FileName].Contains($r.ComponentName)
+    if (-not $hasDef) {
+        Add-DriftCode -Row $r -Code 'UNDEFINED_CLASS_USAGE' `
+            -Context "Class '$($r.ComponentName)' is used in a compound or descendant selector but has no standalone definition in this file."
     }
 }
 
