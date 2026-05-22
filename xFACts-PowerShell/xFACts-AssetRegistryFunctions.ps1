@@ -17,6 +17,8 @@
     - Banner detection and parsing (parameterized for valid section types)
     - File-header parsing (CSS/JS shape via Get-FileHeaderInfo,
       PS shape via Get-PSFileHeaderInfo)
+    - FILE ORGANIZATION list parsing (Get-FileOrgList - shared across all
+      three header parsers)
     - Section list construction and line lookup
     - Object_Registry / Component_Registry loads
     - Comment-text cleanup
@@ -47,6 +49,34 @@
 
     CHANGELOG
     ---------
+    2026-05-22  Populator alignment - shared FILE ORG list parser and strict
+                prefix-value validation. Three changes:
+                  - New shared helper Get-FileOrgList. Both Get-FileHeaderInfo
+                    (CSS / JS) and Get-PSFileHeaderInfo (PS) now delegate
+                    FILE ORGANIZATION list extraction to this single helper.
+                    The helper enforces verbatim banner-title entries per the
+                    new specs (CSS / JS / PS section 2.1): no numbered prefix
+                    stripping, no trailing "-- annotation" stripping. Any
+                    deviation surfaces as FILE_ORG_MISMATCH on the FILE_HEADER
+                    row downstream. One place to change the rule, three
+                    populators benefit.
+                  - Get-BannerPrefixValue no longer silently strips trailing
+                    "-- text" or "(parenthetical)" annotations from the Prefix
+                    line. The new specs (CSS / JS section 5) say the Prefix
+                    line declares exactly one value; anything else is drift.
+                    Stripped accommodations let MALFORMED_PREFIX_VALUE catch
+                    real authoring drift instead of hiding it.
+                  - Test-PrefixValueIsValid drops the hardcoded 3-character
+                    lowercase shape constraint. The new CSS / JS specs do
+                    not constrain page-prefix shape; that belongs to the
+                    registry's CK constraint. The validator now accepts
+                    'cc' or any non-empty token containing no whitespace
+                    or commas. New optional -AllowNoneSentinel switch
+                    preserves the (none) sentinel for PS callers (the PS
+                    spec keeps (none) for shared-library files); CSS / JS
+                    callers omit the switch and (none) becomes invalid.
+                The shared helpers stay shared; PS-specific behavior is
+                opt-in via the switch.
     2026-05-13  Defensive field truncation. Added Get-TruncatedFieldValue
                 helper and applied it inside New-AssetRegistryRow to every
                 bounded VARCHAR(N) column based on the live dbo.Asset_Registry
@@ -451,7 +481,9 @@ WHERE object_type IN ($inList)
 #
 # Used by the prefix registry validation work: every page-file banner declares
 # a Prefix value, which is validated against this map's value for the file.
-# The (none) sentinel is always accepted regardless of the registry value.
+# The (none) sentinel is always accepted regardless of the registry value
+# (PS callers only; CSS / JS callers do not pass -AllowNoneSentinel to
+# Test-PrefixValueIsValid so (none) is invalid there).
 function Get-ComponentRegistryPrefixMap {
     param(
         [Parameter(Mandatory)][string]$ServerInstance,
@@ -1028,36 +1060,126 @@ function Test-IsPrefixNone {
     return ($trimmed -eq 'none' -or $trimmed -eq '')
 }
 
-# Extract the bare prefix value from a Prefix declaration. Strips trailing
-# annotations like "  -- the business services prefix" and parenthetical
-# comments. Returns the empty string for the (none) sentinel; returns the
-# trimmed token otherwise. The result is what gets compared against
-# Component_Registry.cc_prefix and against identifier prefixes.
+# Extract the bare prefix value from a Prefix declaration. Returns the
+# trimmed value exactly as written (whitespace boundaries removed) with
+# one exception: the (none) sentinel is normalized to the empty string so
+# callers can branch on Test-IsPrefixNone without re-tokenizing.
+#
+# Per the new CSS / JS specs (section 5), the Prefix line declares exactly
+# one value. Trailing "-- annotation" text or "(parenthetical)" comments
+# are NOT part of the value - they used to be silently stripped here, but
+# silent stripping hides authoring drift. Anything beyond the trimmed
+# single token falls through to Test-PrefixValueIsValid, which fires
+# MALFORMED_PREFIX_VALUE on multi-token or annotated declarations.
 function Get-BannerPrefixValue {
     param([string]$Prefix)
     if ($null -eq $Prefix) { return '' }
     if (Test-IsPrefixNone -Prefix $Prefix) { return '' }
-    $val = $Prefix -replace '\s+--.*$', ''
-    $val = $val -replace '\s*\(.*\)\s*$', ''
-    return $val.Trim()
+    return $Prefix.Trim()
 }
 
-# Test whether a banner-declared Prefix value is well-formed. Three forms
-# are accepted: a 3-character lowercase page prefix (e.g. "bkp", "bsv"),
-# the literal chrome prefix "cc" (per CC_CSS_Spec.md and CC_JS_Spec.md
-# Section 5.1), or the (none) sentinel. Returns $true if the value is
-# acceptable; $false signals MALFORMED_PREFIX_VALUE drift. Whether a given
-# well-formed value is correct for the section it appears in (page prefix
-# in page-file sections, "cc" in anchor-file chrome sections, (none) where
-# permitted) is the PREFIX_REGISTRY_MISMATCH check's responsibility, not
-# this function's.
+# Test whether a banner-declared Prefix value is well-formed. A value is
+# well-formed when it is the chrome prefix 'cc' or a page-prefix-shaped
+# single token. The validator does not enforce a length or character-set
+# constraint on the page-prefix token (the registry's CK constraint on
+# Component_Registry.cc_prefix does that); it only enforces that the value
+# is a single token with no embedded whitespace, no comma-separated
+# alternatives, and no trailing "-- annotation" or "(parenthetical)" text.
+#
+# When -AllowNoneSentinel is passed, the (none) sentinel is also accepted.
+# This switch is for PS callers only; the PS spec keeps (none) for shared-
+# library files. CSS and JS callers omit the switch so (none) is invalid
+# and surfaces as MALFORMED_PREFIX_VALUE drift per the new specs.
+#
+# Whether a given well-formed value is correct for the section it appears
+# in (page prefix in page-file sections, 'cc' in anchor-file chrome
+# sections) is the PREFIX_REGISTRY_MISMATCH / ANCHOR_SECTION_INVALID_PREFIX
+# checks' responsibility, not this function's.
 function Test-PrefixValueIsValid {
-    param([string]$Prefix)
+    param(
+        [string]$Prefix,
+        [switch]$AllowNoneSentinel
+    )
     if ($null -eq $Prefix) { return $false }
-    if (Test-IsPrefixNone -Prefix $Prefix) { return $true }
+    if (Test-IsPrefixNone -Prefix $Prefix) {
+        return [bool]$AllowNoneSentinel
+    }
     $val = Get-BannerPrefixValue -Prefix $Prefix
-    if ($val -eq 'cc')                   { return $true }
-    return ($val -match '^[a-z]{3}$')
+    # Reject multi-token forms: any embedded whitespace or comma is drift.
+    if ($val -match '[\s,]') { return $false }
+    if ([string]::IsNullOrEmpty($val)) { return $false }
+    if ($val -eq 'cc') { return $true }
+    # Page-prefix shape: any non-empty single token survives here. The
+    # registry's CK constraint enforces the actual shape (3 lowercase
+    # ASCII letters as of 2026-05-22); this validator just enforces
+    # single-token-ness.
+    return $true
+}
+
+
+# ============================================================================
+# FILE ORGANIZATION LIST PARSING (shared across CSS / JS / PS headers)
+# ============================================================================
+
+# Parse the FILE ORGANIZATION list out of an array of body lines, starting
+# at $StartIndex (the first line AFTER the "FILE ORGANIZATION" header
+# line). Returns the array of banner-title entries in declaration order,
+# exactly as written - no stripping of numbered prefixes, no stripping of
+# trailing "-- annotation" text. The new CSS / JS / PS specs all mandate
+# verbatim entries; any deviation surfaces downstream as FILE_ORG_MISMATCH
+# on the FILE_HEADER row when the populator cross-validates against the
+# actual section banner titles.
+#
+# Termination rules:
+#   - A line of 5+ '=' characters ends the list (closing rule of the file
+#     header block).
+#   - For CSS / JS, blank lines and 3+ '-' separator lines are skipped
+#     (the helpers strip these from the comment body before passing them
+#     in, but skipping is harmless if any remain).
+#   - For PS, the first blank line after at least one entry ends the list
+#     (the .NOTES block is structured differently). Callers that need this
+#     behavior pass -StopOnFirstBlankAfterEntry.
+#
+# This is the single source of truth for the verbatim-entries rule. When
+# the rule changes, change it here.
+function Get-FileOrgList {
+    param(
+        # NOTE: $Lines is intentionally NOT marked [Parameter(Mandatory)].
+        # PowerShell's mandatory-parameter binder applies the "not empty"
+        # rule element-by-element for [string[]] arguments, which rejects
+        # any input array containing a blank line - and the header body
+        # routinely contains blank lines. AllowEmptyCollection / AllowNull
+        # cover the array itself but not its elements; the cleanest fix is
+        # to omit Mandatory on the array parameter.
+        [string[]]$Lines,
+        [int]$StartIndex = 0,
+        [switch]$StopOnFirstBlankAfterEntry
+    )
+
+    $entries = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $Lines -or $Lines.Count -eq 0) { return @() }
+
+    for ($i = $StartIndex; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+
+        # Closing rule of the file header block ends the list.
+        if ($line -match '^[=]{5,}\s*$') { break }
+
+        # Skip separator lines made of '-' (3+).
+        if ($line -match '^[-]{3,}\s*$') { continue }
+
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            if ($StopOnFirstBlankAfterEntry -and $entries.Count -gt 0) { break }
+            continue
+        }
+
+        $entry = $line.Trim()
+        if (-not [string]::IsNullOrEmpty($entry)) {
+            [void]$entries.Add($entry)
+        }
+    }
+
+    return @($entries.ToArray())
 }
 
 
@@ -1070,7 +1192,9 @@ function Test-PrefixValueIsValid {
 #   Description  - purpose paragraph (everything between the title block and
 #                  the FILE ORGANIZATION list, with bookkeeping fields stripped)
 #   FileOrgList  - array of banner titles declared in the FILE ORGANIZATION
-#                  list, in declaration order
+#                  list, in declaration order, verbatim. Parsed by the shared
+#                  Get-FileOrgList helper - any deviation from the strict
+#                  spec form surfaces as FILE_ORG_MISMATCH downstream.
 #   HasChangelog - $true if a CHANGELOG block is present (forbidden in source
 #                  files; FORBIDDEN_CHANGELOG_BLOCK is added to DriftCodes)
 #   IsValid      - $true if the header is well-formed
@@ -1163,7 +1287,7 @@ function Get-FileHeaderInfo {
         }
     }
 
-    # FILE ORGANIZATION list
+    # FILE ORGANIZATION list - delegated to the shared Get-FileOrgList helper.
     $fileOrgStart = -1
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -cmatch '^FILE\s+ORGANIZATION\s*$') {
@@ -1173,21 +1297,7 @@ function Get-FileHeaderInfo {
     }
 
     if ($fileOrgStart -ge 0) {
-        $listStart = $fileOrgStart + 1
-        for ($i = $listStart; $i -lt $lines.Count; $i++) {
-            $line = $lines[$i]
-            if ($line -match '^[-]{3,}\s*$') { continue }
-            if ($line -match '^[=]{5,}\s*$') { break }
-            if ([string]::IsNullOrWhiteSpace($line)) { continue }
-            # Strip optional leading "1. " numbered prefix (legacy form)
-            $entry = $line -replace '^\s*\d+\.\s+', ''
-            # Strip trailing -- annotations
-            $entry = $entry -replace '\s+--.*$', ''
-            $entry = $entry.Trim()
-            if (-not [string]::IsNullOrEmpty($entry)) {
-                $info.FileOrgList += $entry
-            }
-        }
+        $info.FileOrgList = Get-FileOrgList -Lines $lines -StartIndex ($fileOrgStart + 1)
     }
 
     # Description = everything up to FILE ORGANIZATION, minus rule lines and
@@ -1466,7 +1576,9 @@ function Invoke-AstWalk {
 # (<# .SYNOPSIS .DESCRIPTION .PARAMETER .COMPONENT .NOTES #>). It is a
 # sibling to Get-FileHeaderInfo (CSS/JS-specific). The two formats are
 # different enough that one polymorphic function would be unclear; siblings
-# are cleaner.
+# are cleaner. The FILE ORGANIZATION list parsing inside both functions
+# delegates to the shared Get-FileOrgList helper so the verbatim-entries
+# rule lives in one place.
 #
 # ============================================================================
 
@@ -1478,7 +1590,8 @@ function Invoke-AstWalk {
 #   Component    - .COMPONENT value (used to validate against Component_Registry)
 #   Notes        - .NOTES content (multi-line; contains FILE ORGANIZATION)
 #   FileOrgList  - array of banner titles declared in FILE ORGANIZATION inside
-#                  .NOTES, in declaration order
+#                  .NOTES, in declaration order, verbatim. Parsed by the shared
+#                  Get-FileOrgList helper.
 #   HasChangelog - $true if a CHANGELOG block is present inside the header
 #                  (forbidden; CHANGELOG belongs in a dedicated section
 #                  outside the header)
@@ -1514,8 +1627,8 @@ function Invoke-AstWalk {
 #
 #     .NOTES
 #         FILE ORGANIZATION
-#             1. SECTION_TYPE: Section Name
-#             2. SECTION_TYPE: Section Name
+#             SECTION_TYPE: Section Name
+#             SECTION_TYPE: Section Name
 #             ...
 #     #>
 #
@@ -1644,13 +1757,11 @@ function Get-PSFileHeaderInfo {
     }
 
     # ---- Pass 3: FILE ORGANIZATION extraction ----
-    # Look inside .NOTES content for a "FILE ORGANIZATION" line; collect
-    # subsequent indented or numbered entries until we hit a blank line or
-    # the end of the block. Spec form:
-    #     FILE ORGANIZATION
-    #         1. SECTION_TYPE: Section Name
-    #         2. SECTION_TYPE: Section Name
-    # Spec tolerates the un-numbered form too.
+    # Look inside .NOTES content for a "FILE ORGANIZATION" line; the shared
+    # Get-FileOrgList helper handles the actual list parsing. The PS form
+    # ends on the first blank line after entries (the .NOTES block is
+    # structured differently from CSS / JS block comments), so we pass
+    # -StopOnFirstBlankAfterEntry.
     if ($info.Notes) {
         $notesLines = $info.Notes -split "`n"
         $fileOrgStart = -1
@@ -1661,26 +1772,9 @@ function Get-PSFileHeaderInfo {
             }
         }
         if ($fileOrgStart -ge 0) {
-            for ($i = $fileOrgStart + 1; $i -lt $notesLines.Count; $i++) {
-                $line = $notesLines[$i]
-                if ($line -match '^[-]{3,}\s*$') { continue }
-                if ($line -match '^[=]{5,}\s*$') { break }
-                if ([string]::IsNullOrWhiteSpace($line)) {
-                    # First blank after the list ends the FILE ORGANIZATION block.
-                    # We only stop if we've collected at least one entry; otherwise
-                    # keep scanning past initial padding.
-                    if ($info.FileOrgList.Count -gt 0) { break }
-                    continue
-                }
-                # Strip optional leading "1. " numbered prefix
-                $entry = $line -replace '^\s*\d+\.\s+', ''
-                # Strip trailing -- annotations
-                $entry = $entry -replace '\s+--.*$', ''
-                $entry = $entry.Trim()
-                if (-not [string]::IsNullOrEmpty($entry)) {
-                    $info.FileOrgList += $entry
-                }
-            }
+            $info.FileOrgList = Get-FileOrgList -Lines $notesLines `
+                -StartIndex ($fileOrgStart + 1) `
+                -StopOnFirstBlankAfterEntry
         }
     }
 
