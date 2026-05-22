@@ -17,17 +17,19 @@ Nothing else may appear at file scope.
 The header is a single block comment at the top of the file, opening at line 1 and followed by exactly one blank line before the first section banner. Required content, in order:
 
 ```
-xFACts Control Center - <Component Description> (<filename>)
-Location: <absolute path>
-Version: Tracked in dbo.System_Metadata (component: <Component>)
+/* ============================================================================
+   xFACts Control Center - <Component Description> (<filename>)
+   Location: E:\xFACts-ControlCenter\public\css\<filename>
+   Version: Tracked in dbo.System_Metadata (component: <Component>)
 
-<Purpose paragraph, 1-5 sentences.>
+   <Purpose paragraph: 1 to 5 sentences describing what this file is.>
 
-FILE ORGANIZATION
------------------
-<Banner title 1>
-<Banner title 2>
-<Banner title N>
+   FILE ORGANIZATION
+   -----------------
+   <Section banner title 1>
+   <Section banner title 2>
+   <Section banner title N>
+   ============================================================================ */
 ```
 
 ### 2.1 Rules
@@ -44,16 +46,17 @@ FILE ORGANIZATION
 Each section opens with a multi-line block comment:
 
 ```
-<TYPE>: <NAME>
-----------------------------------------------------------------------------
-<Description, 1-5 sentences.>
-Prefix: <prefix>
+/* ============================================================================
+   <TYPE>: <NAME>
+   ----------------------------------------------------------------------------
+   <Description: 1 to 5 sentences describing what's in this section.>
+   Prefix: <prefix>
+   ============================================================================ */
 ```
 
 ### 3.1 Rules
 
-- The opening and closing rule lines are each exactly 76 `=` characters.
-- The middle separator is exactly 76 `-` characters.
+- The file header (§2) and every section banner use the same comment shape: `/*` followed by a space and exactly 76 `=` characters on line 1; interior lines indented three spaces; closing line of three spaces followed by exactly 76 `=` characters, a space, and `*/`. Section banners additionally include an interior separator line of three spaces and exactly 76 `-` characters between the title line and the description block.
 - `<TYPE>` is one of the recognized section types (§4), uppercase letters and underscores only.
 - `<NAME>` is human-readable text.
 - The description block is required.
@@ -77,8 +80,9 @@ Six section types are recognized:
 
 ### 4.1 Rules
 
-- Section types appear in the order shown.
 - `FOUNDATION` and `CHROME` sections live in exactly one file per component — the component's anchor file. Any other file containing a FOUNDATION or CHROME section is drift.
+- Section types appear in the order shown.
+- Multiple sections of the same type may appear in any author-chosen order. The type-order rule governs ordering between different types only.
 
 ### 4.2 Anchor files
 
@@ -123,24 +127,30 @@ A class definition is a CSS rule whose selector is a single class or a single cl
 
 ---
 
-## 7. Variants and modifiers
+## 7. Variants
 
-A variant is a rule whose selector extends a base class with additional qualifiers. Three shapes are recognized:
+A variant is a rule whose selector extends a base class with a pseudo-class state:
 
-| variant_type | Shape | Example |
-|--------------|-------|---------|
-| `class` | `.base.modifier` | `.bkp-pipeline-card.bkp-status-warning` |
-| `pseudo` | `.base:pseudo` | `.bkp-status-card:hover` |
-| `compound_pseudo` | `.base.modifier:pseudo` | `.bkp-status-card.bkp-clickable:hover` |
+| variant_type | Shape           | Example                  |
+|--------------|-----------------|--------------------------|
+| `pseudo`     | `.base:pseudo`  | `.bkp-status-card:hover` |
+
+Pseudo-class is the only recognized variant shape.
+
+A class-on-class compound (`.foo.bar`) is not a variant. It is a rule that styles elements carrying both classes; each class is a class in its own right, subject to §5 and §6.
 
 ### 7.1 Rules
 
 - A variant follows its base class's purpose comment in the file. It does not carry its own purpose comment.
-- Every variant carries a trailing inline comment on the same line as the opening `{`, describing the state or context: `.foo.bar { /* state or context */ ... }`.
-- A variant adheres to the same prefix rule as its base class. Every class token in a compound selector carries the declared prefix.
+- A class-on-class compound rule is neither a class definition nor a variant. It does not carry a purpose comment or a trailing inline comment. Each class token in the compound must be defined by a separate single-class rule in scope; when no such definition exists, the populator emits `UNDEFINED_CLASS_USAGE` on the compound's USAGE rows.
+- A base class definition precedes its pseudo-element rules, which precede its pseudo-class variants. A pseudo-element rule appearing before its base, or after a variant on the same class, is drift (`PSEUDO_ELEMENT_OUT_OF_ORDER`). A variant appearing before its base class definition is drift (`VARIANT_BEFORE_BASE`).
+- A class-on-class compound rule is neither a class definition nor a variant. It does not carry a purpose comment or a trailing inline comment. Each class token in the compound must be defined by a separate single-class rule in scope; when no such definition exists, the populator emits `UNDEFINED_CLASS_USAGE` on the compound's USAGE rows.
+- Every variant carries a trailing inline comment on the same line as the opening `{`, describing the state: `.foo:hover { /* state */ ... }`.
+- Every class token in a compound selector carries its section's declared prefix (§5).
 - Compound depth is capped at two class tokens. `.foo.bar.baz` and deeper compounds are forbidden.
 - Stacked pseudo-classes (`.foo:hover:focus`) are forbidden.
 - `:not(...)` is forbidden in any form.
+- A pseudo-class appearing between class tokens (`.a:hover.b`) is forbidden.
 
 ### 7.2 State-on-element pattern
 
@@ -192,17 +202,43 @@ Tokens follow the form `--<category>-<role>-<modifier>`, where:
 - Tokens are defined once, in the component's anchor file FOUNDATION section. Page files do not redeclare or override tokens locally.
 - A value used in two or more places in the codebase is a token. Single-use values may remain literals.
 - Pages reference tokens via `var(--token-name)` only. Hex literals or pixel literals where a token exists are drift.
+- Exactly one `:root` block per file. Multiple `:root` blocks are drift (`DUPLICATE_ROOT_BLOCK`).
+- The `:root` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`.
+- Sub-section markers are permitted inside `:root` as group labels.
 - Within `:root`, blank lines may separate token groups. This is the only location where blank lines inside a rule body are permitted.
 
 ---
 
 ## 11. @keyframes
 
-`@keyframes` definitions are permitted only in the FOUNDATION section of the component's anchor file (§4.2). Pages consume keyframes via `animation: <keyframe-name> ...` references but do not define new keyframes.
+`@keyframes` definitions are permitted only in the FOUNDATION section of the component's anchor file (§4.2). Every `@keyframes` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`. Pages consume keyframes via `animation: <keyframe-name> ...` references but do not define new keyframes.
 
 ---
 
-## 12. Forbidden patterns
+## 12. @media
+
+`@media` blocks may appear inside any section. Rules wrapped by `@media` are subject to all other spec rules.
+
+### 12.1 Rules
+
+- Every `@media` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`.
+- An `@media` block is a top-level construct subject to the blank-line rule (§13).
+
+---
+
+## 13. File-level discipline
+
+Rules that apply to the file as a whole.
+
+### 13.1 Rules
+
+- Every two adjacent top-level constructs are separated by exactly one blank line. Zero is drift (`MISSING_BLANK_LINE_SEPARATOR`); two or more is drift (`EXCESS_BLANK_LINES`). Top-level constructs are: the file header, every section banner, every class definition, every variant, every pseudo-element rule, every sub-section marker, every `@media` block, every `@keyframes` block, and the `:root` block.
+- Every section banner is followed by at least one cataloguable construct before the next banner or end-of-file. An empty section is drift (`EMPTY_SECTION`).
+- The file ends with `}` followed by exactly one newline (`\n`). Missing trailing newline is drift (`MISSING_TRAILING_NEWLINE`).
+
+---
+
+## 14. Forbidden patterns
 
 | Pattern | Notes |
 |---------|-------|
@@ -237,7 +273,7 @@ Tokens follow the form `--<category>-<role>-<modifier>`, where:
 
 ---
 
-## 13. Drift code reference
+## 15. Drift code reference
 
 The populator emits a drift code on every spec violation. Each code maps to a single rule. This table is the contract between the spec and the populator.
 
@@ -263,8 +299,12 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `PREFIX_REGISTRY_MISMATCH` | A page-file banner's declared prefix does not match `Component_Registry.cc_prefix`. | §5.2 |
 | `ANCHOR_SECTION_INVALID_PREFIX` | A FOUNDATION, CHROME, or anchor-file FEEDBACK_OVERLAYS section declares a prefix other than `cc`. | §5.2 |
 | `PREFIX_MISMATCH` | A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked. | §5, §6.1, §7.1 |
-| `MISSING_PURPOSE_COMMENT` | A base class definition is not preceded by a purpose comment. | §6.1 |
+| `UNDEFINED_CLASS_USAGE` | A class participating in a compound or descendant rule has no standalone single-class definition in scope. | §7.1 |
+| `PSEUDO_ELEMENT_OUT_OF_ORDER` | A pseudo-element rule appears before its base class or after a variant on the same class. | §7.1 |
+| `VARIANT_BEFORE_BASE` | A class variant appears before its base class definition in the file. | §7.1 |
+| `MISSING_PURPOSE_COMMENT` | A class definition, `:root` block, `@keyframes` block, or `@media` block is not preceded by a single-line purpose comment. | §6.1, §10.2, §11, §12.1 |
 | `MISSING_VARIANT_COMMENT` | A variant does not carry a trailing inline comment. | §7.1 |
+| `DUPLICATE_ROOT_BLOCK` | A file contains more than one `:root` block. | §10.2 |
 | `FORBIDDEN_ELEMENT_SELECTOR` | Element selector outside FOUNDATION. | §12 |
 | `FORBIDDEN_UNIVERSAL_SELECTOR` | Universal selector outside FOUNDATION. | §12 |
 | `FORBIDDEN_ATTRIBUTE_SELECTOR` | Attribute selector outside FOUNDATION. | §12 |
@@ -290,3 +330,6 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `BLANK_LINE_INSIDE_RULE` | Blank line inside a class definition outside `:root`. | §10.2, §12 |
 | `EXCESS_BLANK_LINES` | More than one blank line between top-level constructs. | §12 |
 | `FORBIDDEN_COMMENT_STYLE` | Comment does not match one of the four recognized forms. | §8, §12 |
+| `MISSING_BLANK_LINE_SEPARATOR` | Two adjacent top-level constructs have no blank line between them. | §13.1 |
+| `EMPTY_SECTION` | A section banner is not followed by any cataloguable construct before the next banner or end-of-file. | §13.1 |
+| `MISSING_TRAILING_NEWLINE` | The file does not end with a single trailing newline. | §13.1 |
