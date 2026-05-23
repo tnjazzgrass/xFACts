@@ -54,6 +54,7 @@
    Prefix: cc
    ============================================================================ */
 
+/* Declares every custom property token consumed across the platform. */
 :root {
 
     /* -- Color tokens: page and surface backgrounds -- */
@@ -218,23 +219,27 @@ body {
 /* -- Global link color -- */
 a { color: var(--color-text-link); }
 
-/* -- Dark scrollbars (WebKit) -- */
+/* WebKit scrollbar dimensions (width and height of the scrollbar gutter). */
 ::-webkit-scrollbar {
     width: var(--size-scrollbar-width);
     height: var(--size-scrollbar-width);
 }
 
-/* -- WebKit scrollbar track. -- */
-::-webkit-scrollbar-track    { background: transparent; }
+/* WebKit scrollbar track (the channel the thumb moves through). */
+::-webkit-scrollbar-track {
+    background: transparent;
+}
 
-/* -- WebKit scrollbar thumb. -- */
+/* WebKit scrollbar thumb (the draggable bar that indicates scroll position). */
 ::-webkit-scrollbar-thumb {
     background: var(--color-status-disabled);
     border-radius: var(--size-radius-default);
 }
 
-/* -- WebKit scrollbar thumb hover state. -- */
-::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
+/* WebKit scrollbar thumb hover state (lighter shade for visual feedback). */
+::-webkit-scrollbar-thumb:hover {
+    background: var(--color-border-strong);
+}
 
 /* -- Dark scrollbars (Firefox) -- */
 * {
@@ -242,22 +247,25 @@ a { color: var(--color-text-link); }
     scrollbar-color: var(--color-status-disabled) transparent;
 }
 
-/* -- Keyframes (consumed by rules throughout this file) -- */
+/* Pulses opacity between full and half to create a soft heartbeat effect. */
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.5; }
 }
 
+/* Rotates the element a full 360 degrees clockwise. */
 @keyframes spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
 }
 
+/* Rotates the page refresh button a full 360 degrees on click. */
 @keyframes page-refresh-spin {
     0%   { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
 
+/* Fades the modal overlay from invisible to fully opaque on open. */
 @keyframes ccModalFadeIn {
     from { opacity: 0; }
     to   { opacity: 1; }
