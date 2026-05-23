@@ -223,11 +223,17 @@ a { color: var(--color-text-link); }
     width: var(--size-scrollbar-width);
     height: var(--size-scrollbar-width);
 }
+
+/* -- WebKit scrollbar track. -- */
 ::-webkit-scrollbar-track    { background: transparent; }
+
+/* -- WebKit scrollbar thumb. -- */
 ::-webkit-scrollbar-thumb {
     background: var(--color-status-disabled);
     border-radius: var(--size-radius-default);
 }
+
+/* -- WebKit scrollbar thumb hover state. -- */
 ::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
 
 /* -- Dark scrollbars (Firefox) -- */
