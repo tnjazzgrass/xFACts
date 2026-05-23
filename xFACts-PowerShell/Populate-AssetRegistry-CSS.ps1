@@ -28,6 +28,67 @@
 ================================================================================
 CHANGELOG
 ================================================================================
+2026-05-22  File-level discipline and construct-specific rules.
+            Seven new checks landed in one delivery, aligning with the
+            §12-§13 amendments to CC_CSS_Spec.md and broadening
+            MISSING_PURPOSE_COMMENT scope. Also fixed during this round:
+            MISSING_BLANK_LINE_SEPARATOR initially fired on every
+            compliant purpose-comment + construct pair, because the
+            check treated each comment node as a standalone top-level
+            construct. Per spec section 6.1, a purpose comment must
+            "immediately precede" its construct (no blank line). The
+            fix groups a non-banner comment + following construct into
+            one logical unit when the gap between them is exactly one
+            line; the blank-line rule is then applied between logical
+            units, not between every pair of raw AST nodes. Banner
+            comments remain their own units.
+            - MISSING_BLANK_LINE_SEPARATOR (new). Pass 3 fires on the
+              CSS_FILE row when two adjacent top-level constructs have
+              no blank line between them (gap == 1 line). Complements
+              the existing EXCESS_BLANK_LINES (gap >= 3 lines). Per spec
+              section 13.1, exactly one blank line is required between
+              every two adjacent top-level constructs.
+            - EMPTY_SECTION (new). Pass 3 fires on the COMMENT_BANNER
+              row when its section's body contains no cataloguable
+              construct. Per spec section 13.1, every section banner
+              must be followed by at least one cataloguable construct
+              before the next banner or end-of-file.
+            - MISSING_TRAILING_NEWLINE (new). Pass 3 reads the file's
+              final byte and fires on the CSS_FILE row when the byte
+              is not 0x0A (LF). Per spec section 13.1, the file must
+              end with `}` followed by exactly one newline.
+            - PSEUDO_ELEMENT_OUT_OF_ORDER (new). Pass 3 builds a per-
+              class map of base / pseudo-element / variant row lines
+              and fires on any pseudo-element row whose line precedes
+              the base class or follows any variant. Per spec section
+              7.1, the required order is base -> pseudo-elements ->
+              variants.
+            - VARIANT_BEFORE_BASE (new). Same per-class map. Fires on
+              any variant row whose line precedes the base class
+              definition.
+            - DUPLICATE_ROOT_BLOCK (new). The rule visitor tracks per-
+              file :root count via $script:fileMeta[file].RootLines.
+              The second and subsequent :root rules fire the code on
+              their CSS_RULE rows. Per spec section 10.2, exactly one
+              :root block per file is permitted.
+            - MISSING_PURPOSE_COMMENT scope broadened. The code now
+              fires not only on class definitions but also on :root
+              blocks (section 10.2), @keyframes blocks (section 11),
+              and @media blocks (section 12.1). One umbrella code
+              covers all four constructs. The drift description text
+              was broadened accordingly.
+            - @media now emits a CSS_RULE row. Previously @media was a
+              transparent walker pass-through; the @media block itself
+              produced no row. The new behavior emits one CSS_RULE row
+              per @media block to host the new MISSING_PURPOSE_COMMENT
+              check. Wrapped rules continue to emit their own rows
+              independently. The new row's signature is "@media <params>"
+              and its parent_function is the at-rule label.
+            New helper: Test-HasPrecedingPurposeComment. Centralizes
+            the "is the comment immediately preceding line N a real
+            purpose comment (not a banner)" check that is now used by
+            class rule emission, :root, @keyframes, and @media.
+
 2026-05-22  Spec alignment - class-on-class compounds and prefix discipline.
             Four structural changes to align with the rewritten CC_CSS_Spec.md.
             - Class-on-class compounds emit USAGE rows. Per the spec's
@@ -278,8 +339,9 @@ $AnchorSectionTypes = @('FOUNDATION', 'CHROME', 'FEEDBACK_OVERLAYS')
 
 # Drift code -> human description mapping. Used by Add-DriftCode (helpers)
 # to validate codes and to populate drift_text. Keep aligned with CC_CSS_Spec.md
-# Section 14. Codes the spec defines but which are detected in Pass 3 still
-# appear here so attachment doesn't fail on the master-table check.
+# Section 15 (drift code reference). Codes the spec defines but which are
+# detected in Pass 3 still appear here so attachment doesn't fail on the
+# master-table check.
 $DriftDescriptions = [ordered]@{
     # File header
     'MALFORMED_FILE_HEADER'             = "The file's header block is missing, malformed, or contains required fields out of order."
@@ -302,11 +364,14 @@ $DriftDescriptions = [ordered]@{
     'ANCHOR_SECTION_INVALID_PREFIX'     = "A FOUNDATION, CHROME, or anchor-file FEEDBACK_OVERLAYS section declares a prefix other than 'cc'."
     'DUPLICATE_FOUNDATION'              = "More than one CSS file in the codebase contains a FOUNDATION section."
     'DUPLICATE_CHROME'                  = "More than one CSS file in the codebase contains a CHROME section."
-    # Class definitions
+    # Class definitions, variants, and ordering
     'PREFIX_MISMATCH'                   = "A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked."
-    'MISSING_PURPOSE_COMMENT'           = "A base class definition is not preceded by a single-line purpose comment."
+    'MISSING_PURPOSE_COMMENT'           = "A class definition, :root block, @keyframes block, or @media block is not preceded by a single-line purpose comment."
     'MISSING_VARIANT_COMMENT'           = "A class variant does not carry a trailing inline comment after the opening brace."
     'UNDEFINED_CLASS_USAGE'             = "A class is used in a compound or descendant selector but has no standalone definition in scope. Every class participating in a compound or descendant rule must be defined by a separate single-class rule somewhere in the same file (or, for usages of shared classes, in the zone's shared files)."
+    'PSEUDO_ELEMENT_OUT_OF_ORDER'       = "A pseudo-element rule appears before its base class or after a variant on the same class. The required order is base class -> pseudo-element rules -> pseudo-class variants."
+    'VARIANT_BEFORE_BASE'               = "A class variant appears before its base class definition in the file. A variant must follow its base."
+    'DUPLICATE_ROOT_BLOCK'              = "A file contains more than one :root block. Exactly one :root block per file is permitted."
     # Forbidden selectors
     'FORBIDDEN_ELEMENT_SELECTOR'        = "A rule's selector is an element selector (e.g., body, h1, a). Element-only styling must move to FOUNDATION."
     'FORBIDDEN_UNIVERSAL_SELECTOR'      = "A rule uses the universal selector (*). Reset rules must move to FOUNDATION."
@@ -331,11 +396,14 @@ $DriftDescriptions = [ordered]@{
     # Drift annotations
     'DRIFT_HEX_LITERAL'                 = "A hex color literal appears in a class declaration's value where a custom property has been defined for that color."
     'DRIFT_PX_LITERAL'                  = "A pixel literal appears in a class declaration's value where a size token has been defined for that size."
-    # Comment / formatting
+    # Comment / formatting / file-level
     'FORBIDDEN_COMMENT_STYLE'           = "A comment exists that is not one of the allowed kinds (file header, section banner, per-class purpose comment, trailing variant comment, sub-section marker)."
     'FORBIDDEN_COMPOUND_DECLARATION'    = "Two or more declarations appear on the same line. Each declaration must be on its own line."
     'BLANK_LINE_INSIDE_RULE'            = "A blank line appears inside a class definition (between the opening { and the closing })."
     'EXCESS_BLANK_LINES'                = "More than one blank line appears between top-level constructs."
+    'MISSING_BLANK_LINE_SEPARATOR'      = "Two adjacent top-level constructs have no blank line between them. Every two adjacent top-level constructs must be separated by exactly one blank line."
+    'EMPTY_SECTION'                     = "A section banner is not followed by any cataloguable construct before the next banner or end-of-file. Empty sections are not permitted."
+    'MISSING_TRAILING_NEWLINE'          = "The file does not end with a single trailing newline. The file must end with the last '}' followed by exactly one newline character."
 }
 
 # ============================================================================
@@ -528,6 +596,29 @@ function Get-PxLiterals {
 # ============================================================================
 # SELECTOR DECOMPOSITION
 # ============================================================================
+
+# Look up the comment immediately preceding a construct at line $Line, in
+# the normalized comment list. Returns $true / $false (presence) plus the
+# clean comment text. A "preceding comment" is one whose LineEnd is exactly
+# $Line - 1 and which is NOT a banner-shaped comment. Marks the comment's
+# line as consumed in $script:CurrentUsedCommentLines so it does not later
+# count as a stray comment.
+function Test-HasPrecedingPurposeComment {
+    param([int]$Line)
+
+    foreach ($c in $script:CurrentNormalizedComments) {
+        if ($c.LineEnd -eq ($Line - 1)) {
+            if (-not (Test-IsBannerComment -CommentText $c.Text -ValidSectionTypes $script:ValidSectionTypes)) {
+                [void]$script:CurrentUsedCommentLines.Add([int]$c.LineStart)
+                return @{
+                    Present = $true
+                    Text    = (ConvertTo-CleanCommentText -CommentText $c.Text)
+                }
+            }
+        }
+    }
+    return @{ Present = $false; Text = $null }
+}
 
 # Walk a selector's children, splitting at combinator boundaries. Returns
 # array of compound objects describing what each compound contains: classes,
@@ -1509,20 +1600,12 @@ $CssVisitor = {
                        } else { 1 }
 
             # Find the comment immediately preceding this rule (if any) in the
-            # normalized comment list, by line position. A "preceding comment"
-            # is one whose LineEnd is exactly $line - 1 and which is NOT a banner.
-            $hasPrecedingComment = $false
-            $precedingCommentText = $null
-            foreach ($c in $script:CurrentNormalizedComments) {
-                if ($c.LineEnd -eq ($line - 1)) {
-                    if (-not (Test-IsBannerComment -CommentText $c.Text -ValidSectionTypes $script:ValidSectionTypes)) {
-                        $hasPrecedingComment   = $true
-                        $precedingCommentText  = ConvertTo-CleanCommentText -CommentText $c.Text
-                        [void]$script:CurrentUsedCommentLines.Add([int]$c.LineStart)
-                    }
-                    break
-                }
-            }
+            # normalized comment list. The helper handles banner-shape exclusion
+            # and tracks consumed comment lines so they don't later count as
+            # stray comments.
+            $cmt = Test-HasPrecedingPurposeComment -Line $line
+            $hasPrecedingComment  = $cmt.Present
+            $precedingCommentText = $cmt.Text
 
             # Detect trailing inline comment (PostCSS represents it as the
             # first child node of the rule, with the same source line as the
@@ -1564,6 +1647,37 @@ $CssVisitor = {
                         -PrecedingCommentText $precedingCommentText `
                         -TrailingInlineCommentText $trailingInlineCommentText `
                         -IsPartOfGroup $isGroup
+                }
+            }
+
+            # :root checks (CC_CSS_Spec.md Section 10.2). The :root rule
+            # produces a CSS_RULE row via the primary-less branch of
+            # Add-RowsForSelector. Per the spec :root must be preceded by a
+            # purpose comment and only one :root may exist per file.
+            $selectorIsRoot = ($Node.selector -and $Node.selector.Trim() -eq ':root')
+            if ($selectorIsRoot) {
+                # Locate the CSS_RULE row we just emitted for :root (the
+                # first row added during this rule's selector emission).
+                $rootRow = $null
+                for ($ri = $ruleRowsStartIdx; $ri -lt $script:rows.Count; $ri++) {
+                    if ($script:rows[$ri].ComponentType -eq 'CSS_RULE') {
+                        $rootRow = $script:rows[$ri]
+                        break
+                    }
+                }
+                if ($rootRow) {
+                    if (-not $hasPrecedingComment) {
+                        Add-DriftCode -Row $rootRow -Code 'MISSING_PURPOSE_COMMENT'
+                    }
+                    # Per-file :root count tracking. The first :root in a file
+                    # is allowed; subsequent ones fire DUPLICATE_ROOT_BLOCK.
+                    if (-not $script:fileMeta[$script:CurrentFile].ContainsKey('RootLines')) {
+                        $script:fileMeta[$script:CurrentFile].RootLines = New-Object System.Collections.Generic.List[int]
+                    }
+                    $script:fileMeta[$script:CurrentFile].RootLines.Add($line)
+                    if ($script:fileMeta[$script:CurrentFile].RootLines.Count -gt 1) {
+                        Add-DriftCode -Row $rootRow -Code 'DUPLICATE_ROOT_BLOCK'
+                    }
                 }
             }
 
@@ -1728,6 +1842,13 @@ $CssVisitor = {
                     if ((-not $sec) -or ($sec.TypeName -ne 'FOUNDATION')) {
                         Add-DriftCode -Row $kfRow -Code 'FORBIDDEN_KEYFRAMES_LOCATION'
                     }
+                    # Purpose comment (CC_CSS_Spec.md Section 11). Every
+                    # @keyframes block is preceded by a single-line purpose
+                    # comment.
+                    $kfCmt = Test-HasPrecedingPurposeComment -Line $line
+                    if (-not $kfCmt.Present) {
+                        Add-DriftCode -Row $kfRow -Code 'MISSING_PURPOSE_COMMENT'
+                    }
                 }
                 return 'SKIP_CHILDREN'
             }
@@ -1751,9 +1872,33 @@ $CssVisitor = {
                 return 'SKIP_CHILDREN'
             }
 
-            # Other at-rules (notably @media): let the walker recurse so child
-            # rules are processed in the at-rule's context. The rule handler
-            # above looks up parent atrule via $ParentNodes.
+            # @media: emit a CSS_RULE row representing the @media block
+            # itself, then let the walker recurse so wrapped rules are
+            # processed in the at-rule's context. The row is the host for
+            # MISSING_PURPOSE_COMMENT (CC_CSS_Spec.md Section 12.1) and any
+            # future @media-specific drift codes. Wrapped rules continue to
+            # produce their own CSS_CLASS / CSS_VARIANT / CSS_RULE rows
+            # independently.
+            if ($Node.name -eq 'media') {
+                $mediaLabel = "@media"
+                if ($Node.params) { $mediaLabel = "$mediaLabel $($Node.params)" }
+                $mediaLabel = $mediaLabel.Trim()
+
+                $mediaRow = Add-CssRuleRow -LineStart $line -LineEnd $endLine `
+                    -ColumnStart $col -Signature $mediaLabel -ParentAtrule $parentAtrule `
+                    -RawText $mediaLabel
+                if ($mediaRow) {
+                    $mediaCmt = Test-HasPrecedingPurposeComment -Line $line
+                    if (-not $mediaCmt.Present) {
+                        Add-DriftCode -Row $mediaRow -Code 'MISSING_PURPOSE_COMMENT'
+                    }
+                }
+                return
+            }
+
+            # Other at-rules: let the walker recurse so child rules are
+            # processed in the at-rule's context. The rule handler above
+            # looks up parent atrule via $ParentNodes.
             return
         }
 
@@ -2039,30 +2184,239 @@ foreach ($fname in $fileMeta.Keys) {
     }
 }
 
-# --- EXCESS_BLANK_LINES ---
+# --- EXCESS_BLANK_LINES and MISSING_BLANK_LINE_SEPARATOR ---
+# Two complementary checks share the same iteration over adjacent top-level
+# constructs. The spec mandates exactly one blank line between every two
+# adjacent top-level constructs (CC_CSS_Spec.md Section 13.1):
+#   - Zero blank lines (gap == 1 line)              -> MISSING_BLANK_LINE_SEPARATOR
+#   - More than one blank line (gap > 2 lines)      -> EXCESS_BLANK_LINES
+#
+# A purpose comment is part of the construct it introduces, not a standalone
+# top-level construct. A non-banner comment immediately preceding a rule,
+# at-rule, or :root (with no blank line between them) is bound to that
+# construct; the comment + construct form one logical unit for blank-line
+# discipline. Banner comments are their own units (banners themselves are
+# top-level constructs per the spec).
+#
+# Implementation: walk $ast.nodes to build a list of logical-unit boundaries
+# (UnitStart / UnitEnd pairs), then compare gaps between consecutive units.
 foreach ($file in $CssFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     if (-not $astCache.ContainsKey($file)) { continue }
     $ast = $astCache[$file].ast
     if ($null -eq $ast.nodes -or $ast.nodes.Count -lt 2) { continue }
 
-    $excessFound = $false
-    for ($ni = 1; $ni -lt $ast.nodes.Count; $ni++) {
-        $prev = $ast.nodes[$ni - 1]
-        $cur  = $ast.nodes[$ni]
-        $prevEnd = if ($prev.source -and $prev.source.end) { [int]$prev.source.end.line } else { 0 }
-        $curStart = if ($cur.source -and $cur.source.start) { [int]$cur.source.start.line } else { 0 }
-        if ($prevEnd -gt 0 -and $curStart -gt 0 -and ($curStart - $prevEnd) -gt 2) {
-            $excessFound = $true
-            break
+    # Build the list of logical units. Each unit covers either a single
+    # standalone construct or a purpose-comment + construct pair.
+    $units = New-Object System.Collections.Generic.List[object]
+    $ni = 0
+    while ($ni -lt $ast.nodes.Count) {
+        $n = $ast.nodes[$ni]
+        $nStart = if ($n.source -and $n.source.start) { [int]$n.source.start.line } else { 0 }
+        $nEnd   = if ($n.source -and $n.source.end)   { [int]$n.source.end.line   } else { $nStart }
+
+        # If this is a non-banner comment and the next sibling sits exactly
+        # one line below (no blank line), treat the pair as one unit. The
+        # banner check uses Test-IsBannerComment so multi-line banner
+        # comments are NOT collapsed with their following content.
+        $isComment = ($n.type -eq 'comment')
+        $isBanner  = $false
+        if ($isComment) {
+            $isBanner = Test-IsBannerComment -CommentText $n.text -ValidSectionTypes $script:ValidSectionTypes
+        }
+
+        if ($isComment -and -not $isBanner -and ($ni + 1) -lt $ast.nodes.Count) {
+            $next = $ast.nodes[$ni + 1]
+            $nextStart = if ($next.source -and $next.source.start) { [int]$next.source.start.line } else { 0 }
+            $nextEnd   = if ($next.source -and $next.source.end)   { [int]$next.source.end.line   } else { $nextStart }
+            if ($nStart -gt 0 -and $nextStart -gt 0 -and ($nextStart - $nEnd) -eq 1) {
+                # Purpose comment + construct = one logical unit.
+                $units.Add([pscustomobject]@{ UnitStart = $nStart; UnitEnd = $nextEnd })
+                $ni += 2
+                continue
+            }
+        }
+
+        # Standalone unit (rule, at-rule, banner, or comment that is not
+        # bound to a following construct).
+        if ($nStart -gt 0) {
+            $units.Add([pscustomobject]@{ UnitStart = $nStart; UnitEnd = $nEnd })
+        }
+        $ni++
+    }
+
+    # Compare gaps between consecutive logical units.
+    $excessFound  = $false
+    $missingFound = $false
+    for ($ui = 1; $ui -lt $units.Count; $ui++) {
+        $prevEnd  = $units[$ui - 1].UnitEnd
+        $curStart = $units[$ui].UnitStart
+        if ($prevEnd -gt 0 -and $curStart -gt 0) {
+            $gap = $curStart - $prevEnd
+            if ($gap -gt 2) { $excessFound = $true }
+            if ($gap -eq 1) { $missingFound = $true }
+            if ($excessFound -and $missingFound) { break }
         }
     }
 
-    if ($excessFound -and $rowsByFile.ContainsKey($name)) {
+    if (($excessFound -or $missingFound) -and $rowsByFile.ContainsKey($name)) {
         foreach ($r in $rowsByFile[$name]) {
             if ($r.ComponentType -eq 'CSS_FILE') {
-                Add-DriftCode -Row $r -Code 'EXCESS_BLANK_LINES'
+                if ($excessFound)  { Add-DriftCode -Row $r -Code 'EXCESS_BLANK_LINES' }
+                if ($missingFound) { Add-DriftCode -Row $r -Code 'MISSING_BLANK_LINE_SEPARATOR' }
                 break
+            }
+        }
+    }
+}
+
+# --- EMPTY_SECTION ---
+# A section banner must be followed by at least one cataloguable construct
+# before the next banner or end-of-file (CC_CSS_Spec.md Section 13.1).
+# The section list already records each section's body line range; if no
+# row in the file falls within that range (other than the COMMENT_BANNER
+# row itself), the section is empty.
+foreach ($fname in $fileMeta.Keys) {
+    $meta = $fileMeta[$fname]
+    if (-not $meta.Sections) { continue }
+    if (-not $rowsByFile.ContainsKey($fname)) { continue }
+
+    foreach ($s in $meta.Sections) {
+        # The section object's BodyStartLine and BodyEndLine define the
+        # range of lines between this banner and the next banner (or
+        # end-of-file). Built by New-SectionList.
+        $bodyStart = $s.BodyStartLine
+        $bodyEnd   = $s.BodyEndLine
+        if ($null -eq $bodyStart -or $null -eq $bodyEnd) { continue }
+        if ($bodyEnd -lt $bodyStart) { continue }
+
+        $hasContent = $false
+        foreach ($r in $rowsByFile[$fname]) {
+            if ($r.ComponentType -eq 'COMMENT_BANNER')           { continue }
+            if ($r.ComponentType -eq 'CSS_FILE')                 { continue }
+            if ($r.ComponentType -eq 'FILE_HEADER')              { continue }
+            if ($r.LineStart -ge $bodyStart -and $r.LineStart -le $bodyEnd) {
+                $hasContent = $true
+                break
+            }
+        }
+        if (-not $hasContent) {
+            # Find this section's COMMENT_BANNER row to attach the drift.
+            foreach ($r in $rowsByFile[$fname]) {
+                if ($r.ComponentType -eq 'COMMENT_BANNER' -and $r.LineStart -eq $s.BannerStartLine) {
+                    Add-DriftCode -Row $r -Code 'EMPTY_SECTION'
+                    break
+                }
+            }
+        }
+    }
+}
+
+# --- MISSING_TRAILING_NEWLINE ---
+# The file must end with `}` followed by exactly one newline (CC_CSS_Spec.md
+# Section 13.1). Drift attaches to the CSS_FILE row.
+foreach ($file in $CssFiles) {
+    $name = [System.IO.Path]::GetFileName($file)
+    if (-not $rowsByFile.ContainsKey($name)) { continue }
+
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($file)
+        if ($bytes.Length -eq 0) { continue }
+        $lastByte = $bytes[$bytes.Length - 1]
+        # Accept LF (0x0A) only. CRLF files end with 0x0A as the final byte
+        # so this naturally covers both LF and CRLF line endings.
+        if ($lastByte -ne 0x0A) {
+            foreach ($r in $rowsByFile[$name]) {
+                if ($r.ComponentType -eq 'CSS_FILE') {
+                    Add-DriftCode -Row $r -Code 'MISSING_TRAILING_NEWLINE'
+                    break
+                }
+            }
+        }
+    } catch {
+        Write-Log "Could not read trailing byte of ${file}: $($_.Exception.Message)" 'WARN'
+    }
+}
+
+# --- PSEUDO_ELEMENT_OUT_OF_ORDER and VARIANT_BEFORE_BASE ---
+# Per CC_CSS_Spec.md Section 7.1, for each class:
+#   base class definition < pseudo-element rule(s) < pseudo-class variant(s)
+# A pseudo-element appearing before its base, or after a variant on the same
+# class, is drift. A variant appearing before its base is also drift.
+#
+# Detection:
+#   - "Base class definition" = CSS_CLASS DEFINITION row with variant_type
+#     IS NULL AND signature NOT containing '::' (excludes pseudo-element
+#     rules which are also CSS_CLASS DEFINITION).
+#   - "Pseudo-element rule" = CSS_CLASS DEFINITION row whose signature
+#     contains '::'.
+#   - "Variant" = CSS_VARIANT DEFINITION row with variant_type='pseudo'.
+# All comparisons are within a single file, scoped by component_name.
+foreach ($fname in $fileMeta.Keys) {
+    if (-not $rowsByFile.ContainsKey($fname)) { continue }
+
+    # Group rows by class component_name, classifying each row's role.
+    $classInfo = @{}
+    foreach ($r in $rowsByFile[$fname]) {
+        if ($r.ReferenceType -ne 'DEFINITION') { continue }
+        if ($r.ComponentType -notin @('CSS_CLASS','CSS_VARIANT')) { continue }
+        if ([string]::IsNullOrEmpty($r.ComponentName)) { continue }
+
+        $cname = $r.ComponentName
+        if (-not $classInfo.ContainsKey($cname)) {
+            $classInfo[$cname] = @{
+                BaseLine      = $null
+                PseudoElements = New-Object System.Collections.Generic.List[object]
+                Variants       = New-Object System.Collections.Generic.List[object]
+            }
+        }
+
+        $sigHasPseudoElement = ($r.Signature -and $r.Signature -match '::')
+        if ($r.ComponentType -eq 'CSS_CLASS' -and -not $sigHasPseudoElement) {
+            # Base class definition. If multiple, keep the earliest line as
+            # the canonical "base" for ordering comparisons.
+            if ($null -eq $classInfo[$cname].BaseLine -or $r.LineStart -lt $classInfo[$cname].BaseLine) {
+                $classInfo[$cname].BaseLine = $r.LineStart
+            }
+        } elseif ($r.ComponentType -eq 'CSS_CLASS' -and $sigHasPseudoElement) {
+            $classInfo[$cname].PseudoElements.Add($r)
+        } elseif ($r.ComponentType -eq 'CSS_VARIANT') {
+            $classInfo[$cname].Variants.Add($r)
+        }
+    }
+
+    foreach ($cname in $classInfo.Keys) {
+        $info = $classInfo[$cname]
+        $baseLine = $info.BaseLine
+
+        # VARIANT_BEFORE_BASE: any variant whose line is less than the base.
+        # If there is no base, the variant is also "before" a non-existent
+        # base - UNDEFINED_CLASS_USAGE covers that case via a different
+        # signal, so we only fire VARIANT_BEFORE_BASE when a base exists.
+        if ($null -ne $baseLine) {
+            foreach ($v in $info.Variants) {
+                if ($v.LineStart -lt $baseLine) {
+                    Add-DriftCode -Row $v -Code 'VARIANT_BEFORE_BASE'
+                }
+            }
+        }
+
+        # PSEUDO_ELEMENT_OUT_OF_ORDER: a pseudo-element row appears
+        # (a) before its base, OR
+        # (b) after any variant on the same class.
+        if ($info.PseudoElements.Count -gt 0) {
+            $earliestVariantLine = $null
+            foreach ($v in $info.Variants) {
+                if ($null -eq $earliestVariantLine -or $v.LineStart -lt $earliestVariantLine) {
+                    $earliestVariantLine = $v.LineStart
+                }
+            }
+            foreach ($pe in $info.PseudoElements) {
+                $beforeBase = ($null -ne $baseLine -and $pe.LineStart -lt $baseLine)
+                $afterVariant = ($null -ne $earliestVariantLine -and $pe.LineStart -gt $earliestVariantLine)
+                if ($beforeBase -or $afterVariant) {
+                    Add-DriftCode -Row $pe -Code 'PSEUDO_ELEMENT_OUT_OF_ORDER'
+                }
             }
         }
     }
