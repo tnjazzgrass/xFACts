@@ -57,6 +57,7 @@
     min-width: 0;
 }
 
+/* Collapses the two-column layout to a single vertical stack at narrow viewport widths. */
 @media (max-width: 1200px) {
     /* Stacks the two-column layout vertically on narrower viewports. */
     .bkp-two-column-layout {
