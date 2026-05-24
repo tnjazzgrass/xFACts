@@ -49,6 +49,23 @@
 
     CHANGELOG
     ---------
+    2026-05-23  Add-DriftCode behavior change. The function used to be
+                fully idempotent on the code: a second call with the same
+                code on the same row early-returned, silently dropping any
+                caller-supplied Context. This hid multi-occurrence drift
+                detail (e.g., a single MALFORMED_PAGE_SHELL_WHITESPACE
+                violation could fire on five page-shell pairs but only the
+                first context survived in drift_text). The function now
+                still dedupes the drift_codes column (the code itself never
+                appears twice in the comma list) but appends caller-supplied
+                Context strings unconditionally. When no Context is supplied
+                the generic master-table description is appended only on
+                first attachment (repeating the generic description would
+                be noise). Pre-existing callers that use the aggregate-
+                then-fire pattern (PS / JS / CSS populators for
+                FORBIDDEN_COMMENT_STYLE) are unaffected: they call
+                Add-DriftCode exactly once per code per row, so the new
+                accumulation path never triggers for them.
     2026-05-22  Populator alignment - shared FILE ORG list parser and strict
                 prefix-value validation. Three changes:
                   - New shared helper Get-FileOrgList. Both Get-FileHeaderInfo
@@ -300,14 +317,22 @@ function Test-AddDedupeKey {
 # Attach a drift code to a row using the hybrid model:
 #   - Code is validated against the populator's master $script:DriftDescriptions
 #     ordered hashtable. Unknown codes are refused with a warning.
-#   - drift_codes column accumulates comma-separated codes (deduped).
+#   - drift_codes column accumulates comma-separated codes (deduped). The
+#     code itself never appears twice in the comma list.
 #   - drift_text column accumulates pipe-separated descriptions. The default
 #     description comes from $script:DriftDescriptions[$Code]; callers can
 #     override with the optional -Context parameter to add row-specific detail
 #     (e.g. "Function 'bkp_loadData' does not start with section prefix 'bkp_'").
 #
-# Idempotent on the code: attaching the same code twice is a no-op (the
-# description is not appended a second time either).
+# Context-append behavior:
+#   - When the caller supplies a -Context string, it is ALWAYS appended to
+#     drift_text, even if the same code has already been attached. This
+#     captures multiple violation sites for the same code on the same row
+#     (e.g., several MALFORMED_ENGINE_CARD sub-issues on one card row,
+#     several MALFORMED_PAGE_SHELL_WHITESPACE violations on one file row).
+#   - When the caller does NOT supply a -Context, the generic master-table
+#     description is appended ONLY on the first attachment of that code.
+#     Repeating the generic description would be noise.
 function Add-DriftCode {
     param(
         [Parameter(Mandatory)]$Row,
@@ -322,18 +347,26 @@ function Add-DriftCode {
         return
     }
 
-    # Codes column: dedupe before appending
+    # Codes column: dedupe before appending. Same code attached twice does
+    # not produce a duplicate in DriftCodes.
     $existing = if ($Row.DriftCodes) { @($Row.DriftCodes -split ',\s*') } else { @() }
-    if ($existing -contains $Code) { return }
+    $codeAlreadyAttached = $existing -contains $Code
+    if (-not $codeAlreadyAttached) {
+        $existing = @($existing) + $Code
+        $Row.DriftCodes = ($existing -join ', ')
+    }
 
-    $existing = @($existing) + $Code
-    $Row.DriftCodes = ($existing -join ', ')
-
-    # Text column: prefer caller-supplied context, fall back to master description
-    $appendText = if ([string]::IsNullOrWhiteSpace($Context)) {
-        $script:DriftDescriptions[$Code]
+    # Text column: behavior depends on whether the caller supplied a Context.
+    #   - Caller-supplied Context: always append, even if the code is already
+    #     attached. This captures multiple violation sites for the same code
+    #     on the same row.
+    #   - No caller Context: append the master description ONLY when the code
+    #     is first attached. Repeating the generic description would be noise.
+    if ([string]::IsNullOrWhiteSpace($Context)) {
+        if ($codeAlreadyAttached) { return }
+        $appendText = $script:DriftDescriptions[$Code]
     } else {
-        $Context
+        $appendText = $Context
     }
 
     if ([string]::IsNullOrEmpty($Row.DriftText)) {
