@@ -17,21 +17,24 @@ Nothing else may appear at file scope.
 The header is a single block comment at the top of the file, opening at line 1 and followed by exactly one blank line before the first section banner. Required content, in order:
 
 ```
-xFACts Control Center - <Component Description> (<filename>)
-Location: <absolute path>
-Version: Tracked in dbo.System_Metadata (component: <Component>)
+/* ============================================================================
+   xFACts Control Center - <Component Description> (<filename>)
+   Location: E:\xFACts-ControlCenter\public\js\<filename>
+   Version: Tracked in dbo.System_Metadata (component: <Component>)
 
-<Purpose paragraph, 1-5 sentences.>
+   <Purpose paragraph: 1 to 5 sentences describing what this file is.>
 
-FILE ORGANIZATION
------------------
-<Banner title 1>
-<Banner title 2>
-<Banner title N>
+   FILE ORGANIZATION
+   -----------------
+   <Section banner title 1>
+   <Section banner title 2>
+   <Section banner title N>
+   ============================================================================ */
 ```
 
 ### 2.1 Rules
 
+- The file header (§2) and every section banner (§3) use the same comment shape: `/*` followed by a space and exactly 76 `=` characters on line 1; interior lines indented three spaces; closing line of three spaces followed by exactly 76 `=` characters, a space, and `*/`. Section banners additionally include an interior separator line of three spaces and exactly 76 `-` characters between the title line and the description block.
 - Component Description, filename, path, and Component are sourced from `dbo.Component_Registry` and `dbo.System_Metadata`.
 - The header is the only construct permitted before the first banner.
 - The FILE ORGANIZATION list contains exactly the `<TYPE>: <NAME>` of each section banner, verbatim, in order. No numbering. No trailing description text.
@@ -44,16 +47,17 @@ FILE ORGANIZATION
 Each section opens with a multi-line block comment:
 
 ```
-<TYPE>: <NAME>
-----------------------------------------------------------------------------
-<Description, 1-5 sentences.>
-Prefix: <prefix>
+/* ============================================================================
+   <TYPE>: <NAME>
+   ----------------------------------------------------------------------------
+   <Description: 1 to 5 sentences describing what's in this section.>
+   Prefix: <prefix>
+   ============================================================================ */
 ```
 
 ### 3.1 Rules
 
-- The opening and closing rule lines are each exactly 76 `=` characters.
-- The middle separator is exactly 76 `-` characters.
+- Banner shape follows §2.1.
 - `<TYPE>` is one of the recognized section types (§4), uppercase letters and underscores only.
 - `<NAME>` is human-readable text.
 - The description block is required.
@@ -73,9 +77,9 @@ Four section types, in fixed order:
 | Order | TYPE | Purpose | Multiple banners? |
 |-------|------|---------|-------------------|
 | 1 | `IMPORTS` | ES module imports or `require` statements. | No — single banner only. |
-| 2 | `CONSTANTS` | Module-scope `const` declarations of immutable values. Includes per-event dispatch tables (§11). | Yes — group by concept. |
+| 2 | `CONSTANTS` | Module-scope `const` declarations of immutable values. Includes per-event dispatch tables (§11) and the `<prefix>_ENGINE_PROCESSES` constant (§7.2). | Yes — group by concept. |
 | 3 | `STATE` | Module-scope `var` declarations of mutable values. | Yes — group by concept. |
-| 4 | `FUNCTIONS` | Function declarations, including the mandatory `<prefix>_init` page boot function (§11) and the page lifecycle hooks banner (§8). | Yes. The hooks banner has a fixed name (§8) and is last. |
+| 4 | `FUNCTIONS` | Function declarations. | Yes. Two banners have fixed names: `INITIALIZATION` (first FUNCTIONS banner, contains only `<prefix>_init` per §11.1) and `PAGE LIFECYCLE HOOKS` (last FUNCTIONS banner, contains only hooks per §8). Zero or more named FUNCTIONS banners appear between them. |
 
 ### 4.2 The shared file `cc-shared.js`
 
@@ -115,7 +119,7 @@ Two forms, no others:
 - The `Prefix:` line declares exactly one value. Comma-separated values are not permitted.
 - `Component_Registry.cc_prefix` is the source of truth. When the file and registry disagree, the file is wrong.
 - Every top-level identifier in a JS file begins with the file's prefix followed by an underscore. There are no exemptions: hooks, ENGINE_PROCESSES, dispatch tables, and every other top-level identifier all follow this rule.
-- Methods inside classes are exempt — they are namespaced within the class itself.
+- Methods inside classes are exempt.
 
 ---
 
@@ -132,7 +136,7 @@ function name() { ... }
 - Every function definition is preceded immediately by a single block comment describing its purpose in present tense. JSDoc-format parameter and return documentation is permitted but not mandatory.
 - Top-level function names follow the prefix discipline in §5.
 - `async` and `generator` function declarations are permitted forms.
-- The only permitted anonymous function form is a callback argument passed to another call (e.g., `addEventListener('click', function() {...})`, `array.forEach(function(item) {...})`, `promise.then(function(result) {...})`). Anonymous functions assigned to const/var, returned from another function, or used as object property values are forbidden.
+- The only permitted anonymous function form is a callback argument passed to another call (e.g., `addEventListener('click', function() {...})`, `array.forEach(function(item) {...})`, `promise.then(function(result) {...})`).
 
 ---
 
@@ -140,15 +144,16 @@ function name() { ... }
 
 Module-scope declarations split into two kinds based on the section they live in:
 
-- **`CONSTANTS` and `FOUNDATION` sections** — declarations use `const`.
-- **`STATE` sections** — declarations use `var`.
+- **`FOUNDATION` sections** — all declarations must use `const`.
+- **`CONSTANTS` sections** — all declarations must use `const` *except for* `<prefix>_ENGINE_PROCESSES` which must use `var`.
+- **`STATE` sections** — all declarations must use `var`.
 
 `let` is forbidden anywhere in any JS file.
 
 ### 7.1 Rules
 
 - Every constant or state declaration is preceded immediately by a single block comment describing its purpose.
-- A `var` declaration in a `CONSTANTS` or `FOUNDATION` section is drift. A `const` declaration in a `STATE` section is drift.
+- Declarations in `CONSTANTS` and `FOUNDATION` sections use `const`, with one exception: `<prefix>_ENGINE_PROCESSES` uses `var` per §7.2.1. Declarations in `STATE` sections use `var`. The reverse in either direction is drift.
 - One declaration per statement. `var a, b, c;` and `const a = 1, b = 2;` are forbidden.
 - Constants holding primitive literals (numbers, strings, booleans) use SCREAMING_SNAKE_CASE after the prefix. Constants holding objects, arrays, or computed values use camelCase after the prefix. State variables use camelCase after the prefix.
 
@@ -167,7 +172,7 @@ var <prefix>_ENGINE_PROCESSES = {
 
 - The banner declaring `<prefix>_ENGINE_PROCESSES` has the fixed name `ENGINE PROCESSES`. Declaration in any other banner is drift.
 - Keys match `Orchestrator.ProcessRegistry.process_name`. Slug values match `Orchestrator.ProcessRegistry.cc_engine_slug` for the corresponding process.
-- `<prefix>_ENGINE_PROCESSES` is declared with `var`, not `const`. This is the sole exception to the CONSTANTS-section-uses-const rule and exists because `cc-shared.js` resolves the binding via `window[pageKey + '_ENGINE_PROCESSES']`, and in classic scripts only `var` and `function` declarations populate `window`.
+- `<prefix>_ENGINE_PROCESSES` is declared with `var`. Every other declaration in a `CONSTANTS` section uses `const`.
 
 ---
 
@@ -183,7 +188,7 @@ Page lifecycle hooks are named callbacks that `cc-shared.js` invokes when releva
 | `onEngineProcessCompleted` | An orchestrator process this page cares about finished. |
 | `onEngineEventRaw` | Every WebSocket event before filtering (Admin only). |
 
-A page defines only the hooks it uses. `cc-shared.js` probes for each via `typeof window[pageKey + '_<suffix>'] === 'function'` before calling.
+A page defines only the hooks it uses.
 
 ### 8.1 Rules
 
@@ -217,7 +222,9 @@ Every page file declares a single page boot function named `<prefix>_init`. The 
 
 ### 11.1 Page boot function
 
-- `<prefix>_init` is a top-level `function` declaration in a `FUNCTIONS` section. `const` or `var` arrow-expression forms are forbidden — the bootloader resolves the function via `window[pageKey + '_init']`, and only `function` declarations populate `window` in classic scripts.
+- `<prefix>_init` is a top-level `function` declaration in a `FUNCTIONS` banner named `INITIALIZATION`.
+- The `INITIALIZATION` banner contains only `<prefix>_init`. Declaration of `<prefix>_init` in any other banner is drift. Declaration of any other function inside the `INITIALIZATION` banner is drift.
+- The `INITIALIZATION` banner is the first `FUNCTIONS` banner in the file.
 - Functions called from `<prefix>_init` may invoke functions from anywhere else in the file.
 
 ### 11.2 Dispatch tables
@@ -252,7 +259,7 @@ Chrome dispatch tables live in `cc-shared.js`'s `BOOTLOADER` section, named `cc_
 
 ### 11.3 Delegated listener registration
 
-The page registers one delegated `addEventListener` per event for which it has a non-empty dispatch table. Each listener is attached to `document.body` inside `<prefix>_init`. The listener's handler examines `event.target.closest('[data-action-<event>]')`, looks up the action value in the corresponding dispatch table, and invokes the handler with `(target, event)`.
+Each event with a non-empty page-side dispatch table is registered as a single delegated `addEventListener` on `document.body` inside `<prefix>_init`.
 
 ### 11.4 Rules
 
@@ -272,8 +279,6 @@ A delegation binding has three parts:
 1. A stable parent — an element that exists in the page's static markup or is rendered exactly once and not replaced.
 2. A single `addEventListener` call on that parent, registered during page boot inside the `<prefix>_init` function.
 3. A handler that dispatches by examining `event.target` via `event.target.matches(selector)` or `event.target.closest(selector)`.
-
-Per-row context (record IDs, group IDs, tracking IDs, etc.) is carried on rendered elements via `data-*` attributes and read by the handler via `event.target.dataset.<name>` or `event.target.closest('.<row-class>').dataset.<name>`.
 
 ### 12.2 Permitted direct-binding cases
 
@@ -328,7 +333,8 @@ When a section's content grows, choose between a new banner or a sub-section mar
 | Anonymous function or arrow expression outside the callback exception | §6.1 |
 | `el.on<event> = handler` event binding | §12.3 |
 | `addEventListener` bound to per-iteration elements inside a loop | §12.3 |
-| Top-level wrapper pattern (IIFE or revealing-module `const X = (function(){})()`) | — |
+| Bare top-level IIFE (`(function(){...})()`) | §6 |
+| Revealing-module wrapper (`const X = (function(){...})();` or `var X = (function(){...})();`) | §6 |
 | `eval(...)` call | — |
 | `document.write(...)` call | — |
 | `window.<name> = ...` assignment outside `cc-shared.js` | — |
@@ -406,10 +412,15 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `MISSING_STATE_COMMENT` | State variable declaration not preceded by a purpose comment. | §7.1 |
 | `MISSING_CLASS_COMMENT` | Class declaration not preceded by a purpose comment. | §9.1 |
 | `MISSING_METHOD_COMMENT` | Method declaration not preceded by a purpose comment. | §9.1 |
-| `MISSING_PAGE_INIT` | Page file does not declare `<prefix>_init` as a top-level function declaration. | §11.1 |
+| `MISSING_PAGE_INIT` | Page file does not declare `<prefix>_init` as a top-level function declaration in the `FUNCTIONS: INITIALIZATION` banner. | §11.1 |
+| `INIT_MISPLACED` | `<prefix>_init` is declared outside the `FUNCTIONS: INITIALIZATION` banner, or the `INITIALIZATION` banner contains a function other than `<prefix>_init`. | §11.1 |
 | `WRONG_DECLARATION_KEYWORD` | `var` in CONSTANTS/FOUNDATION, or `const` in STATE. `<prefix>_ENGINE_PROCESSES` in its required banner is exempt. | §7.1, §7.2.1 |
 | `FORBIDDEN_MULTI_DECLARATION` | Single statement declares multiple variables. | §7.1 |
 | `ENGINE_PROCESSES_MISPLACED` | `<prefix>_ENGINE_PROCESSES` declared outside its required `CONSTANTS: ENGINE PROCESSES` banner. | §7.2.1 |
+| `MISSING_ENGINE_PROCESSES_DECLARATION` | `Orchestrator.ProcessRegistry` has at least one active engine-card process registered for this file's page route, but the file declares no `<prefix>_ENGINE_PROCESSES` constant. | §7.2 |
+| `MISSING_ENGINE_CARD_FOR_REGISTERED_PROCESS` | A process registered for this page in `Orchestrator.ProcessRegistry` is not present in `<prefix>_ENGINE_PROCESSES`. | §7.2 |
+| `ENGINE_PROCESS_PAGE_MISMATCH` | `<prefix>_ENGINE_PROCESSES` entry references a process whose page route does not match this page. | §7.2.1 |
+| `ENGINE_SLUG_JS_MISMATCH` | `<prefix>_ENGINE_PROCESSES` entry's slug does not match `Orchestrator.ProcessRegistry.cc_engine_slug`. | §7.2.1 |
 | `HOOKS_BANNER_NOT_LAST` | `FUNCTIONS: PAGE LIFECYCLE HOOKS` banner exists but is not the last banner. | §8.1 |
 | `UNKNOWN_HOOK_NAME` | Function inside the hooks banner has a suffix not in the recognized hook set. | §8.1 |
 | `HOOK_MISPLACED` | Function whose suffix matches a recognized hook name is declared outside the hooks banner. | §8.1 |
@@ -420,7 +431,8 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `UNRESOLVED_DISPATCH_HANDLER` | Dispatch table entry references a handler function name not defined in the same file. | §11.4 |
 | `FORBIDDEN_PROPERTY_ASSIGN_EVENT` | Event bound via `el.on<event> = handler` instead of `addEventListener`. | §12.3 |
 | `FORBIDDEN_PER_ELEMENT_LISTENER_LOOP` | `addEventListener` bound to per-iteration element inside a loop. | §12.3 |
-| `FORBIDDEN_TOP_LEVEL_WRAPPER` | Top-level IIFE or revealing-module wrapper at file scope. | §15 |
+| `FORBIDDEN_IIFE` | A bare `(function(){...})()` IIFE appears at file scope. | §15 |
+| `FORBIDDEN_REVEALING_MODULE` | A `const X = (function(){...})();` or `var X = (function(){...})();` revealing-module wrapper appears at file scope. | §15 |
 | `FORBIDDEN_EVAL` | `eval(...)` call in the file. | §15 |
 | `FORBIDDEN_DOCUMENT_WRITE` | `document.write(...)` call in the file. | §15 |
 | `FORBIDDEN_WINDOW_ASSIGNMENT` | `window.<name> = ...` assignment outside `cc-shared.js`. | §15 |
@@ -431,8 +443,6 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `FORBIDDEN_COMMENT_STYLE` | Comment does not match one of the five recognized forms. | §13.1 |
 | `BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE` | More than one consecutive blank line inside a top-level function body. | §15 |
 | `EXCESS_BLANK_LINES` | More than one blank line between top-level constructs. | §15 |
-| `ENGINE_PROCESS_PAGE_MISMATCH` | `<prefix>_ENGINE_PROCESSES` entry references a process whose page route does not match this page. | §7.2.1 |
-| `ENGINE_SLUG_JS_MISMATCH` | `<prefix>_ENGINE_PROCESSES` entry's slug does not match `Orchestrator.ProcessRegistry.cc_engine_slug`. | §7.2.1 |
 | `JS_HTML_ID_UNRESOLVED` | `getElementById` or `querySelector('#...')` references an ID that does not resolve to any HTML `id` declaration in the catalog. | §11 |
 | `JS_HTML_ID_MALFORMED` | HTML ID string referenced from JS contains characters other than lowercase letters, digits, and hyphens, or does not begin with the page's prefix or `cc-`. | §11 |
 | `SHADOWS_SHARED_FUNCTION` | Page file defines a function whose name matches a `cc-shared.js` export. | §5 |
