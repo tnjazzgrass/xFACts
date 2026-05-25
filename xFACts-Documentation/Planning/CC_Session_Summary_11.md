@@ -92,6 +92,16 @@ Carry-over item from earlier sessions. JS populator runtime degraded after the v
 
 This work is independent of the PS populator changes and can proceed in parallel or in the next session.
 
+### Additional JS populator cleanup (discovered late session 11)
+
+The JS populator has the same FILE_HEADER phantom-row pattern that was just fixed on the PS side. Verification query (`SELECT COUNT(*) FROM dbo.Asset_Registry WHERE component_type = 'FILE_HEADER' AND raw_text IS NULL`) returned 5 rows after the PS fix, all from JS files. The fix is mechanically identical to the PS fix:
+
+- Locate the JS populator's "no header found" branch (likely emits an `Add-JSFileHeaderRow` call with NULL raw_text)
+- Replace with drift attachment to the JS_FILE anchor row instead
+- Use whatever drift code corresponds to MALFORMED_FILE_HEADER on the JS side
+
+Worth folding into the JS perf work since both touch the same file.
+
 ---
 
 ## After populator/spec stabilization: Backup page alignment
