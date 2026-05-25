@@ -49,6 +49,27 @@
 
     CHANGELOG
     ---------
+    2026-05-25  Performance pass for the JS populator hot paths. Two changes
+                in Invoke-AstWalk and one in Get-SectionForLine:
+                  - Get-SectionForLine: linear scan replaced with binary
+                    search. New-SectionList already returns sections sorted
+                    by banner start line (and bodies don't overlap), so the
+                    body-range lookup runs in O(log N) instead of O(N).
+                    Called ~10K times per JS file.
+                  - Invoke-AstWalk: replaced
+                    `$Node.PSObject.Properties.Name -contains 'type'` with
+                    `$null -ne $Node.type`. Same semantics on well-formed
+                    AST nodes (every JS/CSS AST node has .type) but avoids
+                    enumerating the PSObject property name array on every
+                    node visit.
+                  - Invoke-AstWalk: -Visitor parameter loosened from
+                    [scriptblock] to untyped so callers can pass either a
+                    scriptblock (legacy) or a string holding a function
+                    name. PowerShell's `&` operator dispatches both
+                    identically, so the call site is unchanged. Existing
+                    scriptblock callers continue to work; callers that
+                    switch to function-name dispatch get materially faster
+                    invocation on the hot path.
     2026-05-23  Add-DriftCode behavior change. The function used to be
                 fully idempotent on the code: a second call with the same
                 code on the same row early-returned, silently dropping any
@@ -1518,12 +1539,28 @@ function Get-SectionForLine {
         $Sections,
         [Parameter(Mandatory)][int]$Line
     )
-    if ($null -eq $Sections) { return $null }
-    foreach ($s in $Sections) {
-        if ($Line -ge $s.BodyStartLine -and $Line -le $s.BodyEndLine) {
-            return $s
+    if ($null -eq $Sections -or $Sections.Count -eq 0) { return $null }
+
+    # Binary search: New-SectionList returns sections sorted by BannerStartLine
+    # (which is monotonic with BodyStartLine since bodies don't overlap), so
+    # we can locate the candidate section in O(log N) instead of O(N). Hot
+    # path - called once per row emission, ~10K calls per JS file.
+    $lo = 0
+    $hi = $Sections.Count - 1
+    $found = -1
+    while ($lo -le $hi) {
+        $mid = [int](($lo + $hi) / 2)
+        if ($Line -lt [int]$Sections[$mid].BodyStartLine) {
+            $hi = $mid - 1
+        } else {
+            $found = $mid
+            $lo = $mid + 1
         }
     }
+    if ($found -lt 0) { return $null }
+
+    $candidate = $Sections[$found]
+    if ($Line -le [int]$candidate.BodyEndLine) { return $candidate }
     return $null
 }
 
@@ -1592,7 +1629,12 @@ function Invoke-AstWalk {
         $Node,
         [array]$ParentChain = @(),
         [array]$ParentNodes = @(),
-        [Parameter(Mandatory)][scriptblock]$Visitor
+        # Accepts either a [scriptblock] (legacy) or a [string] holding a
+        # function name. Function-name dispatch (called via the call operator
+        # `&` with a string) is materially faster than scriptblock invocation
+        # in the hot AST-walk path. The two branches are functionally
+        # identical from the caller's perspective.
+        [Parameter(Mandatory)]$Visitor
     )
 
     if ($null -eq $Node) { return }
@@ -1605,7 +1647,7 @@ function Invoke-AstWalk {
     }
 
     if ($Node -isnot [System.Management.Automation.PSCustomObject]) { return }
-    if (-not ($Node.PSObject.Properties.Name -contains 'type')) { return }
+    if ($null -eq $Node.type) { return }
 
     $visitorResult = & $Visitor $Node $ParentChain $ParentNodes
     if ($null -ne $visitorResult -and ($visitorResult -contains 'SKIP_CHILDREN')) {
