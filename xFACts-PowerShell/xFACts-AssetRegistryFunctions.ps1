@@ -572,6 +572,37 @@ WHERE o.object_type IN ($inList)
     return $map
 }
 
+# Return a HashSet of all active component_name values from Component_Registry.
+# Used by populators to validate a file header's .COMPONENT declaration:
+# if the value isn't in this set, INVALID_COMPONENT_VALUE drift fires.
+# Returns an empty HashSet on query failure (validation is skipped).
+function Get-ComponentRegistryNameSet {
+    param(
+        [Parameter(Mandatory)][string]$ServerInstance,
+        [Parameter(Mandatory)][string]$Database
+    )
+
+    $set = New-Object 'System.Collections.Generic.HashSet[string]'
+    $query = "SELECT DISTINCT component_name FROM dbo.Component_Registry WHERE is_active = 1"
+    try {
+        $results = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database `
+                                 -Query $query -QueryTimeout 30 `
+                                 -ApplicationName $script:XFActsAppName `
+                                 -ErrorAction Stop `
+                                 -SuppressProviderContextWarning -TrustServerCertificate
+        foreach ($row in $results) {
+            if (-not [string]::IsNullOrWhiteSpace($row.component_name)) {
+                [void]$set.Add([string]$row.component_name)
+            }
+        }
+    }
+    catch {
+        Write-Log "Get-ComponentRegistryNameSet query failed: $($_.Exception.Message)" 'WARN'
+    }
+
+    return $set
+}
+
 
 # ============================================================================
 # BULK INSERT
@@ -950,6 +981,7 @@ function Get-BannerInfo {
     # whether TOKEN is in the enum.
     $titleLineIdx     = -1
     $unknownTypeFound = $false
+    $bareTypeFound    = $false
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -cmatch '^([A-Z_]+)\s*:\s*(.+)$') {
             $candidateType = $matches[1]
@@ -970,6 +1002,22 @@ function Get-BannerInfo {
                 }
             }
         }
+        # BANNER_MISSING_NAME: TYPE: with nothing after the colon.
+        # Captures the case where the TYPE token is recognizable but the
+        # NAME portion is absent. Distinct from BANNER_MALFORMED_TITLE_LINE
+        # (no TYPE: shape found at all).
+        elseif ($lines[$i] -cmatch '^([A-Z_]+)\s*:\s*$') {
+            $candidateType = $matches[1]
+            if (-not $bareTypeFound -and $titleLineIdx -lt 0) {
+                $bareTypeFound = $true
+                $titleLineIdx  = $i
+                if ($candidateType -in $ValidSectionTypes) {
+                    $info.TypeName = $candidateType
+                } else {
+                    $unknownTypeFound = $true
+                }
+            }
+        }
     }
 
     if ($titleLineIdx -lt 0) {
@@ -982,6 +1030,11 @@ function Get-BannerInfo {
             if ($line -match '^([=\-\.])\1{4,}\s*$') { continue }
             $info.BannerName = $line.Trim()
             break
+        }
+    } elseif ($bareTypeFound) {
+        $info.DriftCodes += 'BANNER_MISSING_NAME'
+        if ($unknownTypeFound -and -not $info.TypeName) {
+            $info.DriftCodes += 'UNKNOWN_SECTION_TYPE'
         }
     } elseif ($unknownTypeFound -and -not $info.TypeName) {
         $info.DriftCodes += 'UNKNOWN_SECTION_TYPE'
@@ -1870,6 +1923,62 @@ function Get-PSFileHeaderInfo {
         if ($line -match '^\s*[=]{5,}\s*$' -or $line -match '^\s*[-]{5,}\s*$') {
             if ($info.DriftCodes -notcontains 'FORBIDDEN_INLINE_DIVIDER_IN_HEADER') {
                 $info.DriftCodes += 'FORBIDDEN_INLINE_DIVIDER_IN_HEADER'
+            }
+        }
+    }
+
+    # ---- Pass 4a: forbidden comment-based-help keywords ----
+    # Per spec §2.1, only .SYNOPSIS, .DESCRIPTION, .PARAMETER, .COMPONENT,
+    # and .NOTES are recognized. Any other .KEYWORD is FORBIDDEN_HEADER_KEYWORD.
+    $allowedHeaderTags = @('SYNOPSIS', 'DESCRIPTION', 'PARAMETER', 'COMPONENT', 'NOTES')
+    foreach ($block in $blocks) {
+        if ($block.Tag -notin $allowedHeaderTags) {
+            if ($info.DriftCodes -notcontains 'FORBIDDEN_HEADER_KEYWORD') {
+                $info.DriftCodes += 'FORBIDDEN_HEADER_KEYWORD'
+            }
+        }
+    }
+
+    # ---- Pass 4b: .NOTES field structure validation ----
+    # Per spec §2.1, .NOTES contains exactly three fields in this order:
+    # File Name, Location, FILE ORGANIZATION list. Two checks:
+    #   MALFORMED_NOTES_FIELD - missing required fields or unexpected fields.
+    #   NOTES_FIELD_ORDER_VIOLATION - fields present but out of canonical order.
+    if ($info.Notes) {
+        $notesLines = $info.Notes -split "`n"
+        $sawFileName = $false
+        $sawLocation = $false
+        $sawFileOrg  = $false
+        $fileNameLineIdx = -1
+        $locationLineIdx = -1
+        $fileOrgLineIdx  = -1
+        for ($i = 0; $i -lt $notesLines.Count; $i++) {
+            $ln = $notesLines[$i]
+            if ($ln -match '^\s*File\s+Name\s*:') {
+                $sawFileName = $true
+                if ($fileNameLineIdx -lt 0) { $fileNameLineIdx = $i }
+            }
+            elseif ($ln -match '^\s*Location\s*:') {
+                $sawLocation = $true
+                if ($locationLineIdx -lt 0) { $locationLineIdx = $i }
+            }
+            elseif ($ln -cmatch '^\s*FILE\s+ORGANIZATION\s*$') {
+                $sawFileOrg = $true
+                if ($fileOrgLineIdx -lt 0) { $fileOrgLineIdx = $i }
+            }
+        }
+        if (-not $sawFileName -or -not $sawLocation -or -not $sawFileOrg) {
+            if ($info.DriftCodes -notcontains 'MALFORMED_NOTES_FIELD') {
+                $info.DriftCodes += 'MALFORMED_NOTES_FIELD'
+            }
+        }
+        else {
+            # All three present; check order: File Name < Location < FILE ORGANIZATION.
+            if (-not ($fileNameLineIdx -lt $locationLineIdx -and
+                      $locationLineIdx -lt $fileOrgLineIdx)) {
+                if ($info.DriftCodes -notcontains 'NOTES_FIELD_ORDER_VIOLATION') {
+                    $info.DriftCodes += 'NOTES_FIELD_ORDER_VIOLATION'
+                }
             }
         }
     }
