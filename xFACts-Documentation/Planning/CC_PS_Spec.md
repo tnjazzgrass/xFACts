@@ -2,8 +2,6 @@
 
 ## 1. File structure
 
-PowerShell files in the Control Center include page-route handlers, API-route handlers, helper modules, standalone scripts, and shared libraries. Route handlers and some helper modules also emit HTML inside here-strings; that HTML is governed by `CC_HTML_Spec.md` and cataloged by the HTML populator, not by this spec. The PS populator and HTML populator scan the same files but emit non-overlapping row sets.
-
 A PowerShell file consists of, in this exact order:
 
 1. A file header (§2).
@@ -60,22 +58,21 @@ The header is a single comment-based-help block at the top of the file, opening 
 Each section opens with a single block comment (`<# ... #>`):
 
 ```
-<#
-============================================================================
-<TYPE>: <NAME>
-----------------------------------------------------------------------------
-<Description, 1-5 sentences.>
-Prefix: <prefix>
-============================================================================
-#>
+<# ============================================================================
+   <TYPE>: <NAME>
+   ----------------------------------------------------------------------------
+   <Description: 1 to 5 sentences explaining what the section contains.>
+   Prefix: <prefix>
+   ============================================================================ #>
 ```
 
 ### 3.1 Rules
 
 - The banner is one `<# ... #>` block comment, not a run of `#` line comments.
-- The opening `<#` appears on its own line. The closing `#>` appears on its own line.
-- The opening and closing rule lines inside the block each consist of 76 `=` characters.
-- The middle separator is 76 `-` characters.
+- Line 1 is `<#`, a single space, and exactly 76 `=` characters. The opening `<#` shares the line with the opening rule.
+- The closing line is three spaces, exactly 76 `=` characters, a single space, and `#>`. The closing `#>` shares the line with the closing rule.
+- Interior content lines (the title line, the `-` separator, the description, and the `Prefix:` line) are indented three spaces and contain no `#` prefix.
+- The interior separator between the title line and the description is exactly 76 `-` characters (preceded by the three-space indent).
 - `<TYPE>` is one of the recognized section types (§4), uppercase letters and underscores only.
 - `<NAME>` is required and human-readable. Bare `<TYPE>` or `<TYPE>:` titles with no NAME are not permitted. Singleton sections use the fixed NAMEs from §4.4; multi-banner types (CONSTANTS, VARIABLES, FUNCTIONS) use author-chosen NAMEs describing the section's grouping.
 - The description block is required.
@@ -91,7 +88,7 @@ PowerShell's `<# ... #>` block-comment syntax is reserved for the three structur
 - Section banners (§3).
 - Function docblocks (§8.1).
 
-All other commentary uses `#` line comments. A `<# ... #>` block comment that is not one of the three structural forms is drift (`FORBIDDEN_FREESTANDING_COMMENT_BLOCK`). A `#` line-comment divider that mimics a banner shape (e.g., `# ====` or `# ----`) is drift (`FORBIDDEN_INLINE_BANNER`).
+All other commentary uses `#` line comments.
 
 ---
 
@@ -285,9 +282,9 @@ function Verb-Noun {
 - Function declarations are forbidden inside page-route and api-route files. Helpers belong in modules.
 - Function declarations are forbidden inside another function's body.
 - Function declarations are forbidden inside conditional or loop blocks (`if`, `else`, `while`, `do`, `for`, `foreach`, `switch`, `try`, `catch`, `finally`).
-- Function names in non-shared files must not match the name of any function defined in a shared-library file. Such collisions shadow the shared function at runtime and are drift.
-- The same function name must not be declared by more than one PS file across the codebase. Cross-file duplicates resolve unpredictably at runtime.
-- Function calls referencing a name not defined in any cataloged PS file are flagged for review. External-module calls that don't import the source module are common causes.
+- Function names in non-shared files must not match the name of any function defined in a shared-library file.
+- The same function name must not be declared by more than one PS file across the codebase.
+- Function calls reference names defined in a cataloged PS file or in an imported external module.
 - `[OutputType()]` is permitted but not required.
 
 ---
@@ -369,7 +366,7 @@ $results = Invoke-XFActsQuery -Query @"
 
 ### 12.2 Rules
 
-- Multi-line SQL queries use the `@"..."@` here-string form. Single-line string literals containing SQL are drift.
+- Multi-line SQL queries use the `@"..."@` here-string form.
 - `Invoke-Sqlcmd` calls include `-TrustServerCertificate`.
 - `Invoke-Sqlcmd` calls include `-ApplicationName` for DMV attribution.
 - Queries referencing `@parameter` placeholders are parameterized via `-Parameters @{...}` rather than constructed via string concatenation.
@@ -395,7 +392,7 @@ No other comment forms are recognized. `<# ... #>` block-comment syntax is reser
 - Headstone comments describing removed code.
 - Sub-section markers (any inline divider comment not matching one of the four recognized forms).
 - Free-standing block comments outside the file header, a section banner, or a function docblock.
-- **Trailing comments** — a `#` comment at the end of a code line. Comments must lead the line they describe, not trail on it. `$foo = 5  # explanation` is drift; the explanation moves to a preceding `# ` line comment.
+- **Trailing comments** — a `#` comment at the end of a code line is forbidden. Comments lead the line they describe; they do not trail on it.
 
 ---
 
@@ -406,8 +403,8 @@ Module files declare exactly one `EXPORTS` section containing one or more `Expor
 ### 14.1 Rules
 
 - `Export-ModuleMember -Function *` (wildcard) is forbidden. Exports are enumerated explicitly.
-- Every function named in an `Export-ModuleMember` call must be declared in the file. References to undefined functions are drift.
-- Every function declared in a module file should appear in some `Export-ModuleMember` call. A defined function not exported is drift.
+- Every function named in an `Export-ModuleMember` call is declared in the file.
+- Every function declared in a module file appears in some `Export-ModuleMember` call.
 
 ---
 
@@ -417,7 +414,7 @@ Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-
 
 ### 15.1 Rules
 
-- `Write-Host` calls in standalone or shared-library files are drift. Exempt files are enumerated below; amendments to this list require a spec amendment.
+- Standalone and shared-library files use `Write-Log` for operator output. `Write-Host` calls are forbidden in these roles. Exempt files are enumerated below; amendments to this list require a spec amendment.
 
 | Exempt file | Reason |
 |---|---|
@@ -476,7 +473,7 @@ Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-
 
 ### 16.1 Whitespace discipline
 
-- Top-level constructs (sections, functions, declarations) are separated by exactly one blank line. More than one blank line between top-level constructs is drift.
+- Top-level constructs (sections, functions, declarations) are separated by exactly one blank line.
 - Lines do not end with trailing whitespace.
 
 ---
@@ -502,11 +499,11 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `FILE_ORG_MISMATCH` | FILE ORGANIZATION list does not match section banner titles verbatim, in order. | §2.1 |
 | `FORBIDDEN_CHANGELOG_IN_HEADER` | CHANGELOG content appears in the file header instead of the dedicated section. | §2.1 |
 | `MISSING_SECTION_BANNER` | A top-level construct appears outside any banner. | §3 |
-| `BANNER_INVALID_RULE_CHAR` | Banner opening or closing rule line is not `#` plus `=` characters. | §3.1 |
-| `BANNER_INVALID_RULE_LENGTH` | Banner opening or closing rule line is not exactly `#` plus 76 `=`. | §3.1 |
-| `BANNER_INVALID_SEPARATOR_CHAR` | Banner middle separator is not `#` plus `-` characters. | §3.1 |
-| `BANNER_INVALID_SEPARATOR_LENGTH` | Banner middle separator is not exactly `#` plus 76 `-`. | §3.1 |
-| `BANNER_MALFORMED_TITLE_LINE` | Banner title line does not parse as `# <TYPE>: <NAME>`. | §3.1 |
+| `BANNER_INVALID_RULE_CHAR` | Banner opening or closing rule line is not composed entirely of `=` characters. | §3.1 |
+| `BANNER_INVALID_RULE_LENGTH` | Banner opening or closing rule line is not exactly 76 `=` characters. | §3.1 |
+| `BANNER_INVALID_SEPARATOR_CHAR` | Banner middle separator is not composed entirely of `-` characters. | §3.1 |
+| `BANNER_INVALID_SEPARATOR_LENGTH` | Banner middle separator is not exactly 76 `-` characters. | §3.1 |
+| `BANNER_MALFORMED_TITLE_LINE` | Banner title line does not parse as `<TYPE>: <NAME>`. | §3.1 |
 | `BANNER_MISSING_DESCRIPTION` | Banner has no description text. | §3.1 |
 | `BANNER_MISSING_NAME` | Banner declares a bare `<TYPE>` or `<TYPE>:` with no NAME. | §3.1 |
 | `DUPLICATE_BANNER_NAME` | Two banners in the same file share a `<TYPE>: <NAME>` combination. | §3.1 |
