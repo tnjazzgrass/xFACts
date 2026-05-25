@@ -422,7 +422,7 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_INLINE_BANNER'           = "A '# ---' mini-banner appears in the file. Section banners are the only permitted divider form."
     'FORBIDDEN_BOX_DRAWING_BANNER'      = "A '# --' box-drawing banner appears in the file (Unicode line-drawing characters). Section banners are the only permitted divider form."
     'FORBIDDEN_REMOVED_CODE_COMMENT'    = "A comment indicates removed or deleted code (e.g., '# Removed:', '# Was:', '# Deleted:'). Removed code should be deleted entirely; the git history preserves it if needed."
-    'FORBIDDEN_SUBSECTION_MARKER'       = "A sub-section marker comment appears in the file. Section banners are the only permitted divider form."
+    'MALFORMED_SUBSECTION_MARKER'       = "A comment uses the sub-section marker shape but violates the spec §13.2 rules: wrong dash count, missing label, inside a '#' comment run, or missing the required blank line before or after the marker."
     'FORBIDDEN_FREESTANDING_COMMENT_BLOCK' = "A free-standing block comment exists that does not match any of the allowed kinds (file header, section banner, docblock)."
     'FORBIDDEN_TRAILING_COMMENT'        = "A '#' comment appears at the end of a code line. Comments must lead the line they describe, not trail on it."
 
@@ -2099,6 +2099,7 @@ function Add-PSFunctionCallRow {
 
     $scope = $null
     $sourceFile = $null
+    $isOrphan = $false
 
     if ($script:sharedFunctions.Contains($fnName)) {
         $scope = 'SHARED'
@@ -2107,6 +2108,16 @@ function Add-PSFunctionCallRow {
     elseif ($script:CurrentLocalFunctions -and $script:CurrentLocalFunctions.Contains($fnName)) {
         $scope = 'LOCAL'
         $sourceFile = $script:CurrentFile
+    }
+    elseif ($fnName -cmatch '^[A-Z][a-zA-Z]+-[a-z][a-z0-9]*_[A-Za-z]') {
+        # xFACts-shaped name (Verb-prefix_Noun per spec §8.1) that does not
+        # resolve to any cataloged function. Emit a row carrying
+        # ORPHAN_FUNCTION_CALL drift so the catalog flags the missing target.
+        # Bare-Verb-Noun uncataloged calls remain silently skipped because
+        # they're indistinguishable from external-module / built-in calls.
+        $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+        $sourceFile = $null
+        $isOrphan = $true
     }
     else {
         return $null
@@ -2144,6 +2155,12 @@ function Add-PSFunctionCallRow {
         -Signature      $sig `
         -RawText        $sig
     $script:rows.Add($row)
+
+    if ($isOrphan) {
+        Add-DriftCode -Row $row -Code 'ORPHAN_FUNCTION_CALL' `
+            -Context "Call to '$fnName' at line $line resolves to no cataloged function definition (xFACts-shaped name with no matching definition in any scanned PS file)."
+    }
+
     return $row
 }
 
@@ -2226,8 +2243,9 @@ function Add-PSInlineBannerRow {
                 -Context "Box-drawing banner at line $LineStart (Unicode line-drawing characters)."
         }
         'subsection-marker' {
-            Add-DriftCode -Row $row -Code 'FORBIDDEN_SUBSECTION_MARKER' `
-                -Context "Sub-section marker comment at line $LineStart."
+            # Sub-section markers are a permitted comment form per spec §13.2.
+            # The caller is responsible for firing MALFORMED_SUBSECTION_MARKER
+            # when the shape or surrounding-blank-line rules are violated.
         }
         default {
             Add-DriftCode -Row $row -Code 'FORBIDDEN_INLINE_BANNER' `
@@ -3157,23 +3175,129 @@ foreach ($file in $PSFiles) {
                 -Variant     'trailing' | Out-Null
         }
 
-        # ---- Leading line comments: coalesce runs and dispatch ----
+        # ---- Leading line comments: extract sub-section markers, then coalesce runs ----
         # A run is a maximal sequence of leading line comments on consecutive
         # source lines (no gap). The "next" line must immediately follow the
         # previous (LineStart difference of 1) and must also be a leading line
         # comment. Any blank line or code line breaks the run.
+        #
+        # Sub-section markers (spec §13.2) are extracted BEFORE run-grouping
+        # so they cannot be silently absorbed into a multi-line `#` comment
+        # run. A marker-shaped line (strict `# -- <Label> -- ` shape, plus a
+        # marker-looking but not-quite "almost" shape) gets pulled out of the
+        # leading array and emitted as a PS_INLINE_BANNER row in its own
+        # right. The remaining leading entries proceed through the standard
+        # run-grouping logic. This guarantees that a marker which violates
+        # any spec §13.2 rule (wrong shape, missing surrounding blank, inside
+        # a run) surfaces as MALFORMED_SUBSECTION_MARKER drift instead of
+        # disappearing into a comment-run row.
         $leading = @($lineComments | Where-Object { -not $_.IsTrailing } |
                      ForEach-Object { $_.Comment } |
                      Sort-Object LineStart)
 
+        # First pass: identify markers, emit their banner rows with drift as
+        # appropriate, collect the line numbers we've consumed so the run
+        # builder can skip them.
+        $markerConsumedLines = New-Object 'System.Collections.Generic.HashSet[int]'
+
+        # Strict marker shape: '#' has been stripped by Convert-PSCommentsToNormalized,
+        # so $text starts with '--'. Pattern:
+        #   ^--      exactly two dashes at start
+        #   \s       exactly one space
+        #   \S       at least one non-space (label start)
+        #   .*?      non-greedy any
+        #   \S       label ends in non-space (no trailing inner space)
+        #   \s       exactly one space
+        #   --$      exactly two dashes at end (no trailing whitespace)
+        $strictMarkerRe = '^--\s\S(.*?\S)?\s--$'
+        # "Almost-marker" shape: starts with --, ends with --, but didn't pass
+        # the strict regex. Used to catch authoring attempts with wrong dash
+        # counts, missing spaces, etc.
+        $almostMarkerRe = '^-{2,}.*-{2,}$'
+
+        foreach ($entry in $leading) {
+            $entryText = $entry.Text
+            $isStrict = ($entryText -match $strictMarkerRe) -and ($entryText -match '[A-Za-z]')
+            $isAlmost = (-not $isStrict) -and ($entryText -match $almostMarkerRe)
+
+            if (-not ($isStrict -or $isAlmost)) { continue }
+
+            # This entry is a marker (strict) or marker-shaped (almost).
+            # Extract it from the run-building pool and emit its banner row.
+            [void]$markerConsumedLines.Add($entry.LineStart)
+
+            $markerRow = Add-PSInlineBannerRow `
+                -LineStart   $entry.LineStart `
+                -ColumnStart $entry.ColumnStart `
+                -RawText     $entry.OriginalToken.Text `
+                -Style       'subsection-marker'
+            if ($null -eq $markerRow) { continue }
+
+            # Drift attribution per spec §13.2.
+            $driftReasons = New-Object System.Collections.Generic.List[string]
+
+            if ($isAlmost) {
+                $driftReasons.Add("comment uses sub-section marker shape but does not match the strict '# -- <Label> --' form")
+            }
+
+            # Adjacency-to-`#`-comment check (the marker must not be part
+            # of a `#` comment run). Use the leading-comments collection
+            # itself rather than the raw source: a previous/next line is a
+            # `#` comment iff there's an entry at LineStart-1 or LineStart+1.
+            $hasCommentAbove = $leading | Where-Object { $_.LineStart -eq ($entry.LineStart - 1) }
+            $hasCommentBelow = $leading | Where-Object { $_.LineStart -eq ($entry.LineStart + 1) }
+            if ($hasCommentAbove) {
+                $driftReasons.Add("marker is preceded by a '#' comment on the immediately previous line (markers must stand alone)")
+            }
+            if ($hasCommentBelow) {
+                $driftReasons.Add("marker is followed by a '#' comment on the immediately next line (markers must stand alone)")
+            }
+
+            # Surrounding-blank-line check (spec §13.2). Look at the raw
+            # source lines. The line above the marker must be blank OR be
+            # the closing line of a section banner (a banner's closing '#>'
+            # line is followed by exactly one blank line per spec §3, so
+            # the marker's leading-blank rule is satisfied transitively).
+            # The line below the marker must be blank.
+            if ($srcLines.Count -gt 0) {
+                $lineIdx = $entry.LineStart - 1  # 0-based source index
+
+                # Leading check
+                if ($lineIdx -gt 0 -and -not $hasCommentAbove) {
+                    $prevText = $srcLines[$lineIdx - 1]
+                    if (-not [string]::IsNullOrWhiteSpace($prevText)) {
+                        $driftReasons.Add("marker is not preceded by a blank line")
+                    }
+                }
+
+                # Trailing check (skip if marker is on the last line of file)
+                if (($lineIdx + 1) -lt $srcLines.Count -and -not $hasCommentBelow) {
+                    $nextText = $srcLines[$lineIdx + 1]
+                    if (-not [string]::IsNullOrWhiteSpace($nextText)) {
+                        $driftReasons.Add("marker is not followed by a blank line")
+                    }
+                }
+            }
+
+            if ($driftReasons.Count -gt 0) {
+                $reasonText = $driftReasons -join '; '
+                Add-DriftCode -Row $markerRow -Code 'MALFORMED_SUBSECTION_MARKER' `
+                    -Context "Sub-section marker at line $($entry.LineStart): $reasonText."
+            }
+        }
+
+        # Second pass: standard run-grouping over the leading entries that
+        # weren't consumed as markers.
+        $remaining = @($leading | Where-Object { -not $markerConsumedLines.Contains($_.LineStart) })
+
         $i = 0
-        while ($i -lt $leading.Count) {
+        while ($i -lt $remaining.Count) {
             # Build the run starting at $i.
             $runStart = $i
             $runEnd   = $i
-            for ($j = $i + 1; $j -lt $leading.Count; $j++) {
-                $prev = $leading[$j - 1]
-                $cur  = $leading[$j]
+            for ($j = $i + 1; $j -lt $remaining.Count; $j++) {
+                $prev = $remaining[$j - 1]
+                $cur  = $remaining[$j]
                 if ($cur.LineStart -eq ($prev.LineStart + 1)) {
                     $runEnd = $j
                 } else {
@@ -3182,8 +3306,8 @@ foreach ($file in $PSFiles) {
             }
 
             $runLength = $runEnd - $runStart + 1
-            $firstComment = $leading[$runStart]
-            $lastComment  = $leading[$runEnd]
+            $firstComment = $remaining[$runStart]
+            $lastComment  = $remaining[$runEnd]
 
             if ($runLength -eq 1) {
                 # Single-line run. Check for special drift-emitting patterns first.
@@ -3229,7 +3353,7 @@ foreach ($file in $PSFiles) {
                 # so the catalog preserves the developer's text verbatim.
                 $rawParts = @()
                 for ($k = $runStart; $k -le $runEnd; $k++) {
-                    $rawParts += $leading[$k].OriginalToken.Text
+                    $rawParts += $remaining[$k].OriginalToken.Text
                 }
                 $rawJoined = $rawParts -join "`n"
 
@@ -3451,6 +3575,34 @@ foreach ($row in $shadowCandidates) {
         $shadowSrc = if ($script:sharedSourceFile.ContainsKey($row.ComponentName)) { $script:sharedSourceFile[$row.ComponentName] } else { '<shared>' }
         Add-DriftCode -Row $row -Code 'SHADOWS_SHARED_FUNCTION' `
             -Context "Function '$($row.ComponentName)' shadows the shared definition in '$shadowSrc'."
+    }
+}
+
+# DUPLICATE_FUNCTION_DEFINITION: the same function name declared by more than
+# one PS file across the codebase. Group all PS_FUNCTION / PS_FUNCTION_VARIANT
+# DEFINITION rows by ComponentName; any group spanning two or more distinct
+# files gets the drift code attached to every row in that group, with context
+# naming the other files involved.
+$allFunctionDefRows = @($script:rows | Where-Object {
+    ($_.ComponentType -eq 'PS_FUNCTION' -or $_.ComponentType -eq 'PS_FUNCTION_VARIANT') -and
+    $_.ReferenceType -eq 'DEFINITION'
+})
+$functionDefsByName = @{}
+foreach ($row in $allFunctionDefRows) {
+    if (-not $functionDefsByName.ContainsKey($row.ComponentName)) {
+        $functionDefsByName[$row.ComponentName] = New-Object System.Collections.Generic.List[object]
+    }
+    [void]$functionDefsByName[$row.ComponentName].Add($row)
+}
+foreach ($fnName in $functionDefsByName.Keys) {
+    $defRows = $functionDefsByName[$fnName]
+    $distinctFiles = @($defRows | ForEach-Object { $_.FileName } | Sort-Object -Unique)
+    if ($distinctFiles.Count -lt 2) { continue }
+    foreach ($defRow in $defRows) {
+        $otherFiles = @($distinctFiles | Where-Object { $_ -ne $defRow.FileName })
+        $otherList  = $otherFiles -join ', '
+        Add-DriftCode -Row $defRow -Code 'DUPLICATE_FUNCTION_DEFINITION' `
+            -Context "Function '$fnName' is also defined in: $otherList. Cross-file duplicate definitions resolve unpredictably at runtime."
     }
 }
 
