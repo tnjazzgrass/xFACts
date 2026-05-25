@@ -144,9 +144,13 @@ $SharedLibraryFiles = @(
 
 # Module files (.psm1) exporting cataloged helpers. The CC route handlers
 # import these and call their exported functions. Same treatment as shared
-# libraries for USAGE resolution.
+# libraries for USAGE resolution. Two entries during the migration window:
+# xFACts-Helpers.psm1 is the legacy module consumed by unmigrated pages;
+# xFACts-CCShared.psm1 is the target module. The list shrinks naturally as
+# pages migrate and xFACts-Helpers.psm1 is retired.
 $SharedModuleFiles = @(
-    'xFACts-Helpers.psm1'
+    'xFACts-Helpers.psm1',
+    'xFACts-CCShared.psm1'
 )
 
 # Path-based standalone exceptions: files that live in a routes-style
@@ -204,23 +208,59 @@ $SectionTypeOrder = @{
 
 # Per-role valid section types. A banner whose type is not in the role's
 # allowed list produces UNKNOWN_SECTION_TYPE drift via Get-BannerInfo.
-# Per CC_PS_Spec.md Section 4.2:
-#   page-route     - CHANGELOG, IMPORTS, INITIALIZATION, CONSTANTS,
-#                    VARIABLES, FUNCTIONS, ROUTE
-#   api-route      - CHANGELOG, IMPORTS, INITIALIZATION, CONSTANTS,
-#                    VARIABLES, FUNCTIONS, ROUTE
+# Per CC_PS_Spec.md Section 4.1:
+#   page-route     - CHANGELOG, ROUTE
+#   api-route      - ROUTE
 #   module         - CHANGELOG, IMPORTS, CONSTANTS, VARIABLES,
 #                    FUNCTIONS, EXPORTS
 #   standalone     - CHANGELOG, IMPORTS, PARAMETERS, INITIALIZATION,
 #                    CONSTANTS, VARIABLES, FUNCTIONS, EXECUTION
 #   shared-library - CHANGELOG, IMPORTS, CONSTANTS, VARIABLES,
 #                    FUNCTIONS, EXPORTS
+# Route files are restricted because their one job is to register a Pode
+# route; helpers, constants, and initialization belong in modules or
+# standalone scripts. A legacy route file with extra sections gets
+# FORBIDDEN_SECTION_TYPE on the banner row plus cataloging of inner
+# constructs as normal.
 $ValidSectionTypesByRole = @{
-    'page-route'     = @('CHANGELOG','IMPORTS','INITIALIZATION','CONSTANTS','VARIABLES','FUNCTIONS','ROUTE')
-    'api-route'      = @('CHANGELOG','IMPORTS','INITIALIZATION','CONSTANTS','VARIABLES','FUNCTIONS','ROUTE')
+    'page-route'     = @('CHANGELOG','ROUTE')
+    'api-route'      = @('ROUTE')
     'module'         = @('CHANGELOG','IMPORTS','CONSTANTS','VARIABLES','FUNCTIONS','EXPORTS')
     'standalone'     = @('CHANGELOG','IMPORTS','PARAMETERS','INITIALIZATION','CONSTANTS','VARIABLES','FUNCTIONS','EXECUTION')
     'shared-library' = @('CHANGELOG','IMPORTS','CONSTANTS','VARIABLES','FUNCTIONS','EXPORTS')
+}
+
+# Section types that appear exactly once per file. Used to detect
+# DUPLICATE_SINGULAR_SECTION drift. CONSTANTS, VARIABLES, FUNCTIONS may
+# appear multiple times (grouped by purpose), but everything else
+# is a singleton.
+$SingletonSectionTypes = @(
+    'CHANGELOG','IMPORTS','PARAMETERS','INITIALIZATION','EXPORTS',
+    'EXECUTION','ROUTE'
+)
+
+# Canonical banner NAMEs for singleton section types per spec §4.4.
+# A singleton banner whose NAME doesn't match the canonical value
+# fires MALFORMED_SINGLETON_NAME. ROUTE has two valid NAMEs based
+# on role: 'PAGE PATH' for page-route, 'API ENDPOINTS' for api-route.
+$SingletonSectionCanonicalNames = @{
+    'CHANGELOG'      = @('CHANGE HISTORY')
+    'IMPORTS'        = @('SCRIPT DEPENDENCIES')
+    'PARAMETERS'     = @('SCRIPT PARAMETERS')
+    'INITIALIZATION' = @('SCRIPT INITIALIZATION')
+    'EXPORTS'        = @('MODULE EXPORTS')
+    'EXECUTION'      = @('SCRIPT EXECUTION')
+    'ROUTE'          = @('PAGE PATH','API ENDPOINTS')
+}
+
+# Sections required to be present per role. Files missing a required
+# section get MISSING_REQUIRED_SECTION on the PS_FILE anchor row.
+$RequiredSectionsByRole = @{
+    'page-route'     = @('ROUTE')
+    'api-route'      = @('ROUTE')
+    'module'         = @('FUNCTIONS','EXPORTS')
+    'standalone'     = @('EXECUTION')
+    'shared-library' = @('FUNCTIONS')
 }
 
 # Roles for which .COMPONENT in the file header is required (rather than
@@ -269,69 +309,135 @@ $GlobalConfigFunctions = @(
 # Master table of every drift code the populator can emit. Used by
 # Add-DriftCode (from helpers) to validate codes before attachment.
 # Aligned with CC_PS_Spec.md Section 17.
+#
+# Codes are grouped by category: file header, section banners, section types,
+# prefix, CHANGELOG, function definitions, parameters, variables/constants,
+# imports, routes, SQL, comments, module exports, logging, whitespace.
 
 $DriftDescriptions = [ordered]@{
-    # ---- File header (Section 17.1) ----
+    # ---- File header ----
     'MALFORMED_FILE_HEADER'             = "The file's header block is missing, malformed, or contains required fields out of order."
+    'FORBIDDEN_HEADER_KEYWORD'          = "The file header contains a forbidden comment-based-help keyword (.EXAMPLE, .INPUTS, .OUTPUTS, .LINK, .ROLE, .FUNCTIONALITY, .FORWARDHELPTARGETNAME, .REMOTEHELPRUNSPACE, or .EXTERNALHELP)."
+    'MALFORMED_NOTES_FIELD'             = "The .NOTES block is missing required fields (File Name, Location, FILE ORGANIZATION) or contains extra fields."
+    'NOTES_FIELD_ORDER_VIOLATION'       = "The .NOTES block's fields appear out of canonical order. The required order is File Name, Location, FILE ORGANIZATION list."
+    'PARAMETER_DOC_ORDER_VIOLATION'     = "The .PARAMETER blocks do not appear in the same order as the parameters in the param() block. Applies to both file-header docblocks and function docblocks."
+    'MISSING_COMPONENT_DECLARATION'     = "The file header is missing a .COMPONENT declaration. Every file must declare which Component_Registry component it belongs to."
+    'INVALID_COMPONENT_VALUE'           = "The file header's .COMPONENT value does not match any active row in Component_Registry."
     'FORBIDDEN_CHANGELOG_IN_HEADER'     = "The file header contains a CHANGELOG block. CHANGELOG belongs in a dedicated section outside the header, not inside the comment-based-help block."
     'FORBIDDEN_AUTHOR_IN_HEADER'        = "The file header contains an Author: bookkeeping line. Authorship belongs in System_Metadata, not in source headers."
-    'FORBIDDEN_DATE_IN_HEADER'          = "The file header contains a Date: bookkeeping line. Dates belong in System_Metadata, not in source headers."
-    'FORBIDDEN_VERSION_IN_HEADER'       = "The file header contains a Version: line with content other than 'Tracked in dbo.System_Metadata'. Version numbers belong in System_Metadata only."
+    'FORBIDDEN_DATE_IN_HEADER'          = "The file header contains a Date: or Last Modified bookkeeping line. Dates belong in System_Metadata, not in source headers."
+    'FORBIDDEN_VERSION_IN_HEADER'       = "The file header contains a Version: line. Version numbers belong in System_Metadata only."
     'FORBIDDEN_FUNCTION_INVENTORY'      = "The file header contains a Function Inventory block. The function list belongs in the FILE ORGANIZATION section, not as a separate enumeration."
     'FORBIDDEN_DEPLOYMENT_BLOCK'        = "The file header contains a Deployment: block. Deployment instructions belong in an external runbook, not in the source file header."
-    'FORBIDDEN_INLINE_DIVIDER_IN_HEADER' = "The file header contains inline divider rules of '=' or '-' characters. Use .NOTES blocks or section banners for separation; inline rules inside the header are not part of the comment-based-help spec."
-    'MISSING_COMPONENT_DECLARATION'     = "The file header is missing a .COMPONENT declaration. Files in this role must declare which Component_Registry component they belong to."
-    'INVALID_COMPONENT_VALUE'           = "The file header's .COMPONENT value does not match any active row in Component_Registry."
+    'FORBIDDEN_INLINE_DIVIDER_IN_HEADER' = "The file header contains inline divider rules of '=' or '-' characters outside the .NOTES block's FILE ORGANIZATION separator. Inline rules inside the header are not part of the comment-based-help spec."
     'FILE_ORG_MISMATCH'                 = "The FILE ORGANIZATION list inside .NOTES does not exactly match the section banner titles in the file body, by content or by order."
 
-    # ---- Section banners (Section 17.2) ----
+    # ---- Section banners ----
     'MISSING_SECTION_BANNER'            = "A function definition (or other catalogable construct) appears outside any banner -- no section banner precedes it in the file."
     'BANNER_INLINE_SHAPE'               = "A section banner uses the single-line ===== Title ===== form. The spec requires a multi-line banner with bracketing rule lines, title line, separator, description block, and Prefix line."
-    'BANNER_INVALID_RULE_CHAR'          = "A section banner's opening or closing bracketing line is not composed entirely of '=' characters. Both bracket lines must be all '='."
-    'BANNER_INVALID_RULE_LENGTH'        = "A section banner's opening or closing bracketing line is composed of '=' characters but is not exactly 76 characters long."
-    'BANNER_INVALID_SEPARATOR_CHAR'     = "A section banner's middle separator line is missing or is not composed entirely of '-' characters. The separator must be all '-'."
-    'BANNER_INVALID_SEPARATOR_LENGTH'   = "A section banner's middle separator line is not exactly 76 '-' characters long."
+    'BANNER_INVALID_RULE_CHAR'          = "A section banner's opening or closing bracketing line is not composed entirely of '=' characters."
+    'BANNER_INVALID_RULE_LENGTH'        = "A section banner's opening or closing bracketing line is not exactly 76 '=' characters."
+    'BANNER_INVALID_SEPARATOR_CHAR'     = "A section banner's middle separator line is missing or is not composed entirely of '-' characters."
+    'BANNER_INVALID_SEPARATOR_LENGTH'   = "A section banner's middle separator line is not exactly 76 '-' characters."
     'BANNER_MALFORMED_TITLE_LINE'       = "A section banner has no recognizable title line in the form '<TYPE>: <NAME>'. The TYPE token must be uppercase letters and underscores only."
     'BANNER_MISSING_DESCRIPTION'        = "A section banner has no description content between the separator and the Prefix line. The description is required (1 to 5 sentences explaining what the section contains)."
-    'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not valid for the file's role. Each role has its own permitted section-type set per CC_PS_Spec.md Section 4.2."
-    'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order for the file role."
-    'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
-    'MALFORMED_PREFIX_VALUE'            = "A section banner's Prefix line declares anything other than a single 3-character lowercase prefix or (none)."
-    'PREFIX_REGISTRY_MISMATCH'          = "A section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component."
+    'BANNER_MISSING_NAME'               = "A section banner declares a bare <TYPE> or <TYPE>: with no NAME. Every banner requires a human-readable NAME; singletons use the fixed NAMEs from spec Section 4.4."
     'DUPLICATE_BANNER_NAME'             = "Two or more section banners with the same TYPE and NAME appear in the file. Each banner must be unique within a file."
 
-    # ---- Function definitions (Section 17.3) ----
-    'MISSING_DOCBLOCK'                  = "A function definition is not preceded by a comment-based-help block (<# .SYNOPSIS ... #>). Every function must carry a docblock."
-    'MISSING_CMDLETBINDING'             = "A function definition is missing the [CmdletBinding()] attribute. Per spec, all functions must declare CmdletBinding."
-    'PREFIX_MISMATCH'                   = "A function name does not begin with the prefix declared in its containing section's banner followed by '-'."
-    'PREFIX_MISSING'                    = "A top-level function does not start with the file's registered prefix. Component_Registry declares a cc_prefix for the file but the function name does not match. Fires independently of banners; surfaces prefix non-conformance in pre-spec files."
-    'SHADOWS_SHARED_FUNCTION'           = "A non-shared file defines a function whose name matches a shared-library export."
-    'FORBIDDEN_CONDITIONAL_DEFINITION'  = "A function is declared inside an if/while/do/for/try/catch/switch block. Functions must be defined unconditionally at top level."
-    'NESTED_FUNCTION_DEFINITION'        = "A function is defined inside another function's body. Helper logic should be a separate top-level function with its own prefix."
+    # ---- Section types ----
+    'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not valid for the file's role. Each role has its own permitted section-type set per spec Section 4.1."
+    'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order for the file role."
+    'FORBIDDEN_SECTION_TYPE'            = "A section type appears in a file role that forbids it (e.g., INITIALIZATION in a page-route file)."
+    'MISSING_REQUIRED_SECTION'          = "A section type required for this role is absent from the file (e.g., a module file with no EXPORTS section)."
+    'DUPLICATE_SINGULAR_SECTION'        = "A section type marked 'exactly one' appears more than once in the file."
+    'MALFORMED_SINGLETON_NAME'          = "A singleton section's banner title does not match the fixed value from spec Section 4.4."
 
-    # ---- Parameters (Section 17.4) ----
+    # ---- Prefix ----
+    'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
+    'MALFORMED_PREFIX_VALUE'            = "A section banner's Prefix line declares a value that is neither the registered page prefix, 'cc', nor '(none)'."
+    'PREFIX_REGISTRY_MISMATCH'          = "A section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component."
+    'PREFIX_MISSING'                    = "A top-level identifier does not start with the file's registered prefix. Component_Registry declares a cc_prefix for the file but the identifier name does not match. Fires independently of banners; surfaces prefix non-conformance in pre-spec files."
+    'PREFIX_MISMATCH'                   = "A top-level identifier name does not begin with the prefix declared in its containing section's banner followed by an underscore."
+
+    # ---- CHANGELOG ----
+    'MALFORMED_CHANGELOG_ENTRY'         = "A CHANGELOG entry does not begin with '# YYYY-MM-DD  ' (ISO date, two spaces, then description)."
+    'MALFORMED_CHANGELOG_DATE'          = "A CHANGELOG entry's date is not in ISO YYYY-MM-DD format."
+    'CHANGELOG_ORDER_VIOLATION'         = "CHANGELOG entries appear out of most-recent-first order."
+    'FORBIDDEN_VERSION_IN_CHANGELOG'    = "A CHANGELOG entry contains a version literal. Versions are tracked in System_Metadata, not in CHANGELOG entries."
+
+    # ---- Function definitions ----
+    'MISSING_DOCBLOCK'                  = "A function definition is not preceded by a comment-based-help block (<# .SYNOPSIS ... #>). Every function must carry a docblock."
+    'MISSING_CMDLETBINDING'             = "A function definition is missing the [CmdletBinding()] attribute. Per spec, every function must declare CmdletBinding."
+    'MISSING_PARAM_BLOCK'               = "A function is missing a param() block. Every function declares a param() block even if empty."
+    'MALFORMED_DOCBLOCK'                = "A function docblock is missing required elements (.SYNOPSIS, .DESCRIPTION) or has them in wrong order."
+    'MISSING_SYNOPSIS'                  = "A function docblock is missing the .SYNOPSIS field."
+    'MISSING_DESCRIPTION'               = "A function docblock is missing the .DESCRIPTION field."
+    'FORBIDDEN_DOCBLOCK_KEYWORD'        = "A function docblock contains a forbidden keyword (.COMPONENT, .NOTES, .EXAMPLE, etc.). Function docblocks only allow .SYNOPSIS, .DESCRIPTION, and .PARAMETER blocks."
+    'MALFORMED_FUNCTION_NAME'           = "A function name does not follow the Verb-Noun convention."
+    'UNAPPROVED_VERB'                   = "A function uses a verb not in PowerShell's approved verb list (Get-Verb)."
+    'FORBIDDEN_FUNCTION_IN_ROUTE'       = "A function is declared in a page-route file. Helpers belong in modules, not route files."
+    'FORBIDDEN_FUNCTION_IN_API_ROUTE'   = "A function is declared in an api-route file. Helpers belong in modules, not route files."
+    'FORBIDDEN_CONDITIONAL_DEFINITION'  = "A function is declared inside a conditional or loop block (if/else/while/do/for/foreach/switch/try/catch/finally). Functions must be defined unconditionally at top level."
+    'FORBIDDEN_NESTED_FUNCTION'         = "A function is defined inside another function's body. Helper logic should be a separate top-level function."
+    'FORBIDDEN_FILTER_FUNCTION'         = "A function is declared with the 'filter' keyword. The 'filter' keyword form is forbidden; use 'function' with an explicit process { ... } block for pipeline processing."
+    'SHADOWS_SHARED_FUNCTION'           = "A non-shared file defines a function whose name matches a shared-library export. Such collisions shadow the shared function at runtime."
+    'DUPLICATE_FUNCTION_DEFINITION'     = "The same function name is declared by more than one PS file across the codebase. Cross-file duplicates resolve unpredictably at runtime."
+    'ORPHAN_FUNCTION_CALL'              = "A function call references a name not defined in any cataloged PS file. External-module calls that don't import the source module are common causes."
+
+    # ---- Parameters ----
     'MISSING_PARAMETER_DOC'             = "A function parameter lacks a corresponding .PARAMETER tag in the docblock. Every parameter must be documented."
     'EXTRA_PARAMETER_DOC'               = "The docblock contains a .PARAMETER tag for a parameter the function does not define."
 
-    # ---- Constants and variables (Section 17.5) ----
+    # ---- Variables and constants ----
+    'FORBIDDEN_SCOPE_QUALIFIER'         = "A top-level declaration uses '`$Script:' (capital S) or another non-'`$script:' scope qualifier. Only '`$script:' (lowercase) is permitted."
+    'FORBIDDEN_GLOBAL_VARIABLE'         = "A declaration uses the '`$global:' scope qualifier. '`$global:' is forbidden anywhere in the file."
+    'FORBIDDEN_AUTOVAR_REASSIGNMENT'    = "Assignment to a PowerShell automatic variable (`$args, `$_, `$matches, `$input, `$PSScriptRoot, etc.) is forbidden."
+    'FORBIDDEN_MULTI_DECLARATION'       = "Chained variable assignment in a single statement (`$a = `$b = `$c = 0). Each declaration gets its own statement."
+    'MISSING_CONSTANT_COMMENT'          = "A constant declaration is not preceded by a single-line purpose comment."
+    'MISSING_VARIABLE_COMMENT'          = "A variable declaration is not preceded by a single-line purpose comment."
+    'MISSING_PURPOSE_COMMENT'           = "A constant or variable declaration is not preceded by a single-line purpose comment. (Legacy code; new emissions should use MISSING_CONSTANT_COMMENT or MISSING_VARIABLE_COMMENT.)"
+    'MISPLACED_DECLARATION'             = "A '`$script:' declaration appears outside a CONSTANTS or VARIABLES section."
     'WRONG_DECLARATION_SECTION'         = "An assignment statement appears in a section type that disallows it (e.g., a constant in a VARIABLES section)."
-    'MISSING_PURPOSE_COMMENT'           = "A constant or variable declaration is not preceded by a single-line purpose comment."
 
-    # ---- Pode infrastructure (Section 17.6) ----
+    # ---- Imports ----
+    'MISPLACED_IMPORT'                  = "An import statement (dot-source or Import-Module) appears outside the IMPORTS section."
+
+    # ---- Routes ----
     'ROUTE_OUTSIDE_ROUTE_SECTION'       = "An Add-PodeRoute call appears outside a ROUTE section."
     'MIDDLEWARE_OUTSIDE_INIT_SECTION'   = "An Add-PodeMiddleware call appears outside an INITIALIZATION section."
+    'MISSING_AUTHENTICATION'            = "An Add-PodeRoute call lacks -Authentication 'ADLogin'."
+    'MISSING_RBAC_CHECK_PAGE'           = "A page route scriptblock does not call Get-UserAccess as the first statement."
+    'MISSING_RBAC_CHECK_API'            = "An API route scriptblock does not call Test-ActionEndpoint anywhere in the scriptblock."
+    'MISSING_RESPONSE_WRITE_PAGE'       = "A page route scriptblock does not end with Write-PodeHtmlResponse."
+    'MISSING_RESPONSE_WRITE_API'        = "An API route scriptblock does not end with Write-PodeJsonResponse."
 
-    # ---- Forbidden patterns (Section 17.7) ----
-    'FORBIDDEN_WRITE_HOST'              = "A Write-Host call appears in the file. Use Write-Log or the appropriate orchestrator output function instead."
-    'FORBIDDEN_INLINE_DIVIDER'          = "A line of '=' or '-' characters appears as a comment to visually separate code (e.g., '# ----'). Section banners are the only permitted divider form."
-    'FORBIDDEN_REMOVED_CODE_COMMENT'    = "A comment indicates removed or deleted code (e.g., '# Removed:', '# Was:', '# Deleted:'). Removed code should be deleted entirely; the git history preserves it if needed."
+    # ---- SQL ----
+    'FORBIDDEN_INLINE_SQL_LITERAL'      = "Multi-line SQL is embedded as a single-line string literal instead of a here-string. Use @`"...`"@ for multi-line SQL."
+    'MISSING_TRUST_SERVER_CERTIFICATE'  = "An Invoke-Sqlcmd call is missing the -TrustServerCertificate parameter. All AG-listener and instance connections in this environment require it."
+    'MISSING_APPLICATION_NAME'          = "An Invoke-Sqlcmd call is missing the -ApplicationName parameter. Collectors must identify themselves in DMV attribution."
+    'MISSING_PARAMETER_DECLARATION'     = "A query references @parameter placeholders but lacks a -Parameters @{...} hashtable. Parameterize SQL rather than constructing it via string concatenation."
     'FORBIDDEN_LINKED_SERVER'           = "A query references a linked server (four-part name). PowerShell collectors must hit each instance directly with separate Invoke-Sqlcmd calls."
-    'MISSING_TRUSTSERVERCERTIFICATE'    = "An Invoke-Sqlcmd call is missing the -TrustServerCertificate parameter. All AG-listener and instance connections in this environment require it."
-    'MISSING_APPLICATIONNAME'           = "An Invoke-Sqlcmd call is missing the -ApplicationName parameter. Collectors must identify themselves in DMV attribution."
 
-    # ---- Comment structure (Section 17.8) ----
-    'FORBIDDEN_COMMENT_STYLE'           = "A free-standing block comment exists that does not match any of the allowed kinds (file header, section banner, docblock, sub-section marker)."
+    # ---- Comments ----
+    'FORBIDDEN_INLINE_BANNER'           = "A '# ---' mini-banner appears in the file. Section banners are the only permitted divider form."
+    'FORBIDDEN_BOX_DRAWING_BANNER'      = "A '# --' box-drawing banner appears in the file (Unicode line-drawing characters). Section banners are the only permitted divider form."
+    'FORBIDDEN_REMOVED_CODE_COMMENT'    = "A comment indicates removed or deleted code (e.g., '# Removed:', '# Was:', '# Deleted:'). Removed code should be deleted entirely; the git history preserves it if needed."
+    'FORBIDDEN_SUBSECTION_MARKER'       = "A sub-section marker comment appears in the file. Section banners are the only permitted divider form."
+    'FORBIDDEN_FREESTANDING_COMMENT_BLOCK' = "A free-standing block comment exists that does not match any of the allowed kinds (file header, section banner, docblock)."
+    'FORBIDDEN_TRAILING_COMMENT'        = "A '#' comment appears at the end of a code line. Comments must lead the line they describe, not trail on it."
+
+    # ---- Module exports ----
+    'FORBIDDEN_WILDCARD_EXPORT'         = "Export-ModuleMember -Function * (wildcard) is used. Exports must be enumerated explicitly."
+    'EXPORTED_FUNCTION_NOT_DEFINED'     = "Export-ModuleMember references a function not defined in the file."
+    'DEFINED_FUNCTION_NOT_EXPORTED'     = "A function declared in a module file is not exported via Export-ModuleMember."
+    'MISSING_EXPORTS_SECTION'           = "A module file lacks an EXPORTS section."
+
+    # ---- Logging ----
+    'FORBIDDEN_WRITE_HOST'              = "A Write-Host call appears in a standalone or shared-library file. Use Write-Log instead. The Start-xFACtsOrchestrator.ps1 entry-point script is exempt."
+
+    # ---- Whitespace ----
     'EXCESS_BLANK_LINES'                = "More than one blank line appears between top-level constructs."
+    'TRAILING_WHITESPACE'               = "A line ends with trailing whitespace."
 }
 
 
@@ -345,7 +451,7 @@ $script:rows       = New-Object System.Collections.Generic.List[object]
 $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 
 # Per-file PS_FILE row references. Pass 3 / post-walk code uses this map to
-# attach file-overall drift codes (EXCESS_BLANK_LINES, FORBIDDEN_COMMENT_STYLE)
+# attach file-overall drift codes (EXCESS_BLANK_LINES, FORBIDDEN_FREESTANDING_COMMENT_BLOCK)
 # to each file's PS_FILE anchor row. The PS_FILE row is the universal "this
 # file was scanned" anchor, parallel to CSS_FILE, JS_FILE, HTML_FILE.
 $script:psFileRowByFile = @{}
@@ -372,10 +478,17 @@ $script:CurrentSections           = $null    # output of New-SectionList
 $script:CurrentNormalizedComments = $null    # PS comment tokens converted to normalized shape
 $script:CurrentCommentIndex       = $null    # for preceding-comment lookup (docblocks, purpose comments)
 $script:CurrentLocalFunctions     = $null    # HashSet of function names defined in this file
+$script:CurrentFunctionRanges     = $null    # list of @{Name; LineStart; LineEnd} for function-scope attribution
 $script:CurrentRegistryPrefix     = $null    # cc_prefix from Component_Registry for this file (or $null)
 $script:CurrentRegistryHasMapping = $false   # whether the file has any Object_Registry/Component_Registry entry
 $script:CurrentValidSectionTypes  = $null    # role-specific valid section types
 $script:CurrentRequiresComponent  = $false   # whether the role requires .COMPONENT in the header
+
+# Cached PowerShell approved verb list, populated lazily on first function-name
+# validation. Reset is not needed; Get-Verb's output is stable for the PowerShell
+# session. Used by Add-PSFunctionRow's MALFORMED_FUNCTION_NAME / UNAPPROVED_VERB
+# checks.
+$script:ApprovedVerbs             = $null
 
 
 # ============================================================================
@@ -1038,6 +1151,26 @@ function Add-PSCommentBannerRow {
             -Context "Banner '$($Section.FullTitle)' appears more than once in this file."
     }
 
+    # MALFORMED_SINGLETON_NAME: singleton section banner must use the
+    # canonical NAME from spec §4.4. ROUTE has role-conditional valid names.
+    if ($Section.TypeName -and $Section.BannerName -and
+        $SingletonSectionTypes -contains $Section.TypeName -and
+        $SingletonSectionCanonicalNames.ContainsKey($Section.TypeName)) {
+        $validNames = $SingletonSectionCanonicalNames[$Section.TypeName]
+        if ($Section.BannerName -cnotin $validNames) {
+            # For ROUTE, refine the message based on the file role.
+            $expectedDisplay = if ($Section.TypeName -eq 'ROUTE') {
+                if ($script:CurrentFileRole -eq 'api-route') { 'API ENDPOINTS' }
+                elseif ($script:CurrentFileRole -eq 'page-route') { 'PAGE PATH' }
+                else { ($validNames -join "' or '") }
+            } else {
+                $validNames[0]
+            }
+            Add-DriftCode -Row $row -Code 'MALFORMED_SINGLETON_NAME' `
+                -Context "Singleton banner '$($Section.TypeName): $($Section.BannerName)' should use canonical NAME '$expectedDisplay'."
+        }
+    }
+
     if ($Section.Prefix -and -not (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
         Add-DriftCode -Row $row -Code 'MALFORMED_PREFIX_VALUE' `
             -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a 3-char lowercase prefix nor (none)."
@@ -1101,6 +1234,66 @@ function Add-PSChangelogRow {
         -PurposeDescription (ConvertTo-CleanCommentText -CommentText $changelogText) `
         -SuppressSectionLookup
     $script:rows.Add($row)
+
+    # ---- CHANGELOG entry validation ----
+    # Spec §7.2:
+    #   - Each entry begins with `# YYYY-MM-DD  <description>` (ISO date, two spaces).
+    #   - Entries are ordered most-recent-first.
+    #   - No version numbers in entries.
+    if ($null -ne $changelogText) {
+        $entryLines = $changelogText -split "`n"
+        $entryDates = New-Object System.Collections.Generic.List[datetime]
+        $entryLineNums = New-Object System.Collections.Generic.List[int]
+        for ($li = 0; $li -lt $entryLines.Count; $li++) {
+            $ln = $entryLines[$li]
+            $absLine = $Section.BodyStartLine + $li
+            if ($ln -notmatch '^\s*#') { continue }
+            $stripped = $ln -replace '^\s*#\s*', ''
+            # Entries start with YYYY-MM-DD followed by two spaces.
+            # Continuation lines have leading whitespace and are not validated here.
+            if ([string]::IsNullOrWhiteSpace($stripped)) { continue }
+            if ($stripped -notmatch '^\d') {
+                # Non-date-starting content line. Could be continuation (allowed)
+                # or malformed (we conservatively skip continuation patterns).
+                continue
+            }
+
+            # First-position character is a digit — this should be a date-led entry.
+            if ($stripped -match '^(\d{4}-\d{2}-\d{2})\s\s(\S.*)$') {
+                $dateText = $matches[1]
+                try {
+                    $parsed = [datetime]::ParseExact($dateText, 'yyyy-MM-dd', $null)
+                    $entryDates.Add($parsed)
+                    $entryLineNums.Add($absLine)
+                } catch {
+                    Add-DriftCode -Row $row -Code 'MALFORMED_CHANGELOG_DATE' `
+                        -Context "Line ${absLine}: date '$dateText' is not a valid ISO YYYY-MM-DD value."
+                }
+            }
+            else {
+                Add-DriftCode -Row $row -Code 'MALFORMED_CHANGELOG_ENTRY' `
+                    -Context "Line ${absLine}: entry does not begin with '# YYYY-MM-DD  <description>'."
+            }
+
+            # FORBIDDEN_VERSION_IN_CHANGELOG: version literal in the entry text.
+            # Patterns like '1.2.3', 'v1.2', 'Version 2.0'.
+            if ($stripped -match '\b(v?\d+\.\d+(\.\d+)?)\b' -or
+                $stripped -match '(?i)\bversion\s+\d+\.\d+\b') {
+                Add-DriftCode -Row $row -Code 'FORBIDDEN_VERSION_IN_CHANGELOG' `
+                    -Context "Line ${absLine}: entry contains a version literal."
+            }
+        }
+
+        # CHANGELOG_ORDER_VIOLATION: dates must be most-recent-first.
+        for ($i = 1; $i -lt $entryDates.Count; $i++) {
+            if ($entryDates[$i] -gt $entryDates[$i - 1]) {
+                Add-DriftCode -Row $row -Code 'CHANGELOG_ORDER_VIOLATION' `
+                    -Context "Line $($entryLineNums[$i]): entry date $($entryDates[$i].ToString('yyyy-MM-dd')) is newer than the prior entry. Most-recent-first ordering required."
+                break
+            }
+        }
+    }
+
     return $row
 }
 
@@ -1206,7 +1399,7 @@ function Add-PSFunctionRow {
             -Context "Function '$fnName' is declared inside a control-flow block."
     }
 
-    # NESTED_FUNCTION_DEFINITION: walk parents for another FunctionDefinitionAst
+    # FORBIDDEN_NESTED_FUNCTION: walk parents for another FunctionDefinitionAst
     $cursor = $FunctionAst.Parent
     $isNested = $false
     while ($null -ne $cursor) {
@@ -1217,8 +1410,132 @@ function Add-PSFunctionRow {
         $cursor = $cursor.Parent
     }
     if ($isNested) {
-        Add-DriftCode -Row $row -Code 'NESTED_FUNCTION_DEFINITION' `
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_NESTED_FUNCTION' `
             -Context "Function '$fnName' is nested inside another function."
+    }
+
+    # FORBIDDEN_FILTER_FUNCTION: filter keyword form is forbidden
+    if ($FunctionAst.IsFilter) {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_FILTER_FUNCTION' `
+            -Context "Function '$fnName' is declared with the 'filter' keyword. Use 'function' with explicit process { ... } instead."
+    }
+
+    # FORBIDDEN_FUNCTION_IN_ROUTE / FORBIDDEN_FUNCTION_IN_API_ROUTE:
+    # Function declarations are forbidden in page-route and api-route files.
+    if ($script:CurrentFileRole -eq 'page-route') {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_FUNCTION_IN_ROUTE' `
+            -Context "Function '$fnName' declared in a page-route file. Helpers belong in modules."
+    }
+    elseif ($script:CurrentFileRole -eq 'api-route') {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_FUNCTION_IN_API_ROUTE' `
+            -Context "Function '$fnName' declared in an api-route file. Helpers belong in modules."
+    }
+
+    # MISSING_PARAM_BLOCK: Every function declares a param() block, even if empty.
+    # The AST exposes this as ParamBlock on either Body.ParamBlock (typical) or
+    # the function's own ParamBlock property (rare alternative form).
+    $hasParamBlock = ($null -ne $FunctionAst.Body -and $null -ne $FunctionAst.Body.ParamBlock) -or
+                     ($null -ne $FunctionAst.Parameters)
+    if (-not $hasParamBlock) {
+        Add-DriftCode -Row $row -Code 'MISSING_PARAM_BLOCK' `
+            -Context "Function '$fnName' is missing a param() block. All functions declare param() even if empty."
+    }
+
+    # MALFORMED_FUNCTION_NAME / UNAPPROVED_VERB:
+    # Function names follow Verb-Noun. The verb must be in PowerShell's approved list.
+    # Underscore prefix or non-letter start is forbidden. PowerShell verbs are
+    # accessible via Get-Verb; we cache the list on first use.
+    if ($fnName -match '^[^A-Za-z]' -or $fnName -match '^_') {
+        Add-DriftCode -Row $row -Code 'MALFORMED_FUNCTION_NAME' `
+            -Context "Function name '$fnName' starts with a non-letter character. Names must follow Verb-Noun."
+    }
+    elseif ($fnName -notmatch '^[A-Z][a-zA-Z]*-[A-Za-z]') {
+        Add-DriftCode -Row $row -Code 'MALFORMED_FUNCTION_NAME' `
+            -Context "Function name '$fnName' does not follow Verb-Noun (PascalCase Verb, hyphen, then noun)."
+    }
+    else {
+        # Extract the verb (text before the first hyphen) and validate against approved list.
+        $verb = $fnName -replace '^([A-Z][a-zA-Z]*)-.*$', '$1'
+        if ($null -eq $script:ApprovedVerbs) {
+            $script:ApprovedVerbs = @(Get-Verb | Select-Object -ExpandProperty Verb)
+        }
+        if ($verb -notin $script:ApprovedVerbs) {
+            Add-DriftCode -Row $row -Code 'UNAPPROVED_VERB' `
+                -Context "Function '$fnName' uses verb '$verb' which is not in the PowerShell approved verb list."
+        }
+    }
+
+    # ---- Docblock content validation ----
+    # Spec §8.1: docblock must include .SYNOPSIS and .DESCRIPTION. .PARAMETER
+    # blocks correspond 1:1 with declared parameters and appear in param() order.
+    # Forbidden keywords: .COMPONENT, .NOTES, .EXAMPLE, .INPUTS, .OUTPUTS,
+    # .LINK, .ROLE, .FUNCTIONALITY, .FORWARDHELPTARGETNAME,
+    # .REMOTEHELPRUNSPACE, .EXTERNALHELP.
+    if ($null -ne $docBlockText) {
+        # MISSING_SYNOPSIS / MISSING_DESCRIPTION
+        $hasSynopsis    = $docBlockText -match '(?ms)^\s*\.SYNOPSIS\b'
+        $hasDescription = $docBlockText -match '(?ms)^\s*\.DESCRIPTION\b'
+        if (-not $hasSynopsis) {
+            Add-DriftCode -Row $row -Code 'MISSING_SYNOPSIS' `
+                -Context "Function '$fnName' docblock is missing the .SYNOPSIS field."
+        }
+        if (-not $hasDescription) {
+            Add-DriftCode -Row $row -Code 'MISSING_DESCRIPTION' `
+                -Context "Function '$fnName' docblock is missing the .DESCRIPTION field."
+        }
+
+        # FORBIDDEN_DOCBLOCK_KEYWORD
+        $forbiddenDocKeywords = @(
+            '.COMPONENT', '.NOTES', '.EXAMPLE', '.INPUTS', '.OUTPUTS',
+            '.LINK', '.ROLE', '.FUNCTIONALITY', '.FORWARDHELPTARGETNAME',
+            '.REMOTEHELPRUNSPACE', '.EXTERNALHELP'
+        )
+        $foundForbidden = New-Object System.Collections.Generic.List[string]
+        foreach ($kw in $forbiddenDocKeywords) {
+            $escapedKw = [regex]::Escape($kw)
+            if ($docBlockText -match "(?ms)^\s*$escapedKw\b") {
+                $foundForbidden.Add($kw)
+            }
+        }
+        if ($foundForbidden.Count -gt 0) {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_DOCBLOCK_KEYWORD' `
+                -Context "Function '$fnName' docblock contains forbidden keyword(s): $($foundForbidden -join ', ')."
+        }
+
+        # ---- Parameter cross-validation ----
+        # Collect declared param names from AST and .PARAMETER blocks from docblock.
+        $declaredParams = @()
+        if ($null -ne $FunctionAst.Body -and $null -ne $FunctionAst.Body.ParamBlock) {
+            $declaredParams = @($FunctionAst.Body.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+        }
+        $docParams = @()
+        $docParamMatches = [regex]::Matches($docBlockText, '(?ms)^\s*\.PARAMETER\s+(\w+)\b')
+        foreach ($m in $docParamMatches) { $docParams += $m.Groups[1].Value }
+
+        # MISSING_PARAMETER_DOC: declared but not documented
+        foreach ($p in $declaredParams) {
+            if ($p -notin $docParams) {
+                Add-DriftCode -Row $row -Code 'MISSING_PARAMETER_DOC' `
+                    -Context "Function '$fnName' parameter '$p' has no matching .PARAMETER block."
+            }
+        }
+        # EXTRA_PARAMETER_DOC: documented but not declared
+        foreach ($dp in $docParams) {
+            if ($dp -notin $declaredParams) {
+                Add-DriftCode -Row $row -Code 'EXTRA_PARAMETER_DOC' `
+                    -Context "Function '$fnName' docblock has .PARAMETER '$dp' but no matching parameter is declared."
+            }
+        }
+        # PARAMETER_DOC_ORDER_VIOLATION: 1:1 match but order differs
+        if ($declaredParams.Count -gt 0 -and $docParams.Count -gt 0 -and
+            $declaredParams.Count -eq $docParams.Count) {
+            $sameSet = (@($declaredParams | Sort-Object) -join '|') -eq (@($docParams | Sort-Object) -join '|')
+            $sameOrder = ($declaredParams -join '|') -eq ($docParams -join '|')
+            if ($sameSet -and -not $sameOrder) {
+                Add-DriftCode -Row $row -Code 'PARAMETER_DOC_ORDER_VIOLATION' `
+                    -Context "Function '$fnName' .PARAMETER blocks are not in the same order as the param() block."
+            }
+        }
     }
 
     return $row
@@ -1359,11 +1676,75 @@ function Add-PSAssignmentRow {
     elseif ($sectionType -ne 'CONSTANTS' -and $sectionType -ne 'VARIABLES') {
         Add-DriftCode -Row $row -Code 'WRONG_DECLARATION_SECTION' `
             -Context "Top-level assignment `$$varName appears in a $sectionType section; spec requires CONSTANTS or VARIABLES."
+        # Also flag as MISPLACED_DECLARATION (spec-named code; sibling to WRONG_DECLARATION_SECTION)
+        Add-DriftCode -Row $row -Code 'MISPLACED_DECLARATION' `
+            -Context "`$script: declaration appears outside a CONSTANTS or VARIABLES section."
     }
 
+    # ---- Purpose comment (granular: CONSTANT/VARIABLE specific) ----
     if ($null -eq $purposeComment) {
+        # Emit the granular code matching the section type, plus retain
+        # MISSING_PURPOSE_COMMENT for legacy compatibility / catch-all.
         Add-DriftCode -Row $row -Code 'MISSING_PURPOSE_COMMENT' `
             -Context "`$$varName has no preceding purpose comment."
+        if ($componentType -eq 'PS_CONSTANT') {
+            Add-DriftCode -Row $row -Code 'MISSING_CONSTANT_COMMENT' `
+                -Context "Constant `$$varName has no preceding purpose comment."
+        }
+        elseif ($componentType -eq 'PS_VARIABLE') {
+            Add-DriftCode -Row $row -Code 'MISSING_VARIABLE_COMMENT' `
+                -Context "Variable `$$varName has no preceding purpose comment."
+        }
+    }
+
+    # ---- Scope qualifier validation ----
+    # Spec §9.2: only $script: (lowercase) is permitted at file scope.
+    # $Script: (capital S), $global:, and other qualifiers are drift.
+    # Walk the left-side AST text to find the literal qualifier as written.
+    $leftText = if ($left.Extent) { $left.Extent.Text } else { '' }
+    if ($leftText -match '^\$([A-Za-z]+):') {
+        $qualifier = $matches[1]
+        if ($qualifier -ceq 'Script') {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_SCOPE_QUALIFIER' `
+                -Context "Declaration uses `$Script: (capital S). Only `$script: (lowercase) is permitted."
+        }
+        elseif ($qualifier -ceq 'global') {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_GLOBAL_VARIABLE' `
+                -Context "Declaration uses `$global: scope. `$global: is forbidden anywhere in the file."
+        }
+        elseif ($qualifier -ne 'script' -and $qualifier -ne 'private' -and $qualifier -ne 'local') {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_SCOPE_QUALIFIER' `
+                -Context "Declaration uses `$${qualifier}: scope. Only `$script: is permitted at file scope."
+        }
+    }
+
+    # ---- Automatic variable assignment ----
+    # Spec §9.2: assignment to PowerShell automatic variables is forbidden.
+    $automaticVars = @(
+        'args', '_', 'matches', 'input', 'PSScriptRoot', 'PSCommandPath',
+        'MyInvocation', 'PSBoundParameters', 'Error', 'Host', 'HOME',
+        'PID', 'PROFILE', 'PSCulture', 'PSUICulture', 'PSVersionTable',
+        'ShellId', 'StackTrace', 'this', 'true', 'false', 'null',
+        'ExecutionContext', 'foreach', 'switch', 'OFS', 'PSCmdlet'
+    )
+    if ($varName -in $automaticVars) {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_AUTOVAR_REASSIGNMENT' `
+            -Context "Assignment to PowerShell automatic variable `$$varName is forbidden."
+    }
+
+    # ---- Multi-declaration / chained assignment ----
+    # Spec §9.2: chained assignments ($a = $b = $c = 0) are forbidden.
+    # An AssignmentStatementAst whose Right is itself another AssignmentStatementAst
+    # signals chained form.
+    if ($null -ne $AssignmentAst.Right -and
+        $AssignmentAst.Right -is [System.Management.Automation.Language.PipelineAst]) {
+        $rightExpr = $AssignmentAst.Right.PipelineElements
+        if ($rightExpr.Count -eq 1 -and
+            $rightExpr[0] -is [System.Management.Automation.Language.CommandExpressionAst] -and
+            $rightExpr[0].Expression -is [System.Management.Automation.Language.AssignmentStatementAst]) {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_MULTI_DECLARATION' `
+                -Context "Chained assignment detected. Each declaration must be its own statement."
+        }
     }
 
     return $row
@@ -1409,6 +1790,97 @@ function Add-PSRouteRow {
     if ($section -and $section.TypeName -ne 'ROUTE') {
         Add-DriftCode -Row $row -Code 'ROUTE_OUTSIDE_ROUTE_SECTION' `
             -Context "Add-PodeRoute call appears in a $($section.TypeName) section; spec requires the ROUTE section."
+    }
+
+    # ---- Route argument and body validation ----
+    # Spec §11.1 requires:
+    #   - -Authentication 'ADLogin' on every Add-PodeRoute call
+    #   - page routes: Get-UserAccess as the first statement, end with Write-PodeHtmlResponse
+    #   - api routes: Test-ActionEndpoint somewhere in the scriptblock, end with Write-PodeJsonResponse
+
+    # MISSING_AUTHENTICATION: walk command elements looking for -Authentication 'ADLogin'
+    $hasAdLoginAuth = $false
+    if ($null -ne $CommandAst.CommandElements) {
+        for ($i = 0; $i -lt $CommandAst.CommandElements.Count - 1; $i++) {
+            $elem = $CommandAst.CommandElements[$i]
+            if ($elem -is [System.Management.Automation.Language.CommandParameterAst] -and
+                $elem.ParameterName -eq 'Authentication') {
+                $nextElem = $CommandAst.CommandElements[$i + 1]
+                if ($null -ne $nextElem -and $nextElem.Extent) {
+                    $authValue = $nextElem.Extent.Text -replace "^['""]|['""]$", ''
+                    if ($authValue -eq 'ADLogin') { $hasAdLoginAuth = $true }
+                }
+                break
+            }
+        }
+    }
+    if (-not $hasAdLoginAuth) {
+        Add-DriftCode -Row $row -Code 'MISSING_AUTHENTICATION' `
+            -Context "Add-PodeRoute call lacks -Authentication 'ADLogin'."
+    }
+
+    # Locate the route scriptblock (the -ScriptBlock argument value).
+    $scriptBlockAst = $null
+    if ($null -ne $CommandAst.CommandElements) {
+        for ($i = 0; $i -lt $CommandAst.CommandElements.Count - 1; $i++) {
+            $elem = $CommandAst.CommandElements[$i]
+            if ($elem -is [System.Management.Automation.Language.CommandParameterAst] -and
+                $elem.ParameterName -eq 'ScriptBlock') {
+                $nextElem = $CommandAst.CommandElements[$i + 1]
+                if ($nextElem -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+                    $scriptBlockAst = $nextElem.ScriptBlock
+                }
+                break
+            }
+        }
+    }
+
+    if ($null -ne $scriptBlockAst -and $null -ne $scriptBlockAst.EndBlock) {
+        $statements = $scriptBlockAst.EndBlock.Statements
+        $stmtCount = $statements.Count
+
+        # MISSING_RBAC_CHECK_PAGE: page route first statement must call Get-UserAccess
+        # MISSING_RBAC_CHECK_API: api route must call Test-ActionEndpoint somewhere
+        if ($script:CurrentFileRole -eq 'page-route') {
+            $firstCallsGetUserAccess = $false
+            if ($stmtCount -gt 0) {
+                $firstStmt = $statements[0]
+                if ($firstStmt.Extent -and $firstStmt.Extent.Text -match '\bGet-UserAccess\b') {
+                    $firstCallsGetUserAccess = $true
+                }
+            }
+            if (-not $firstCallsGetUserAccess) {
+                Add-DriftCode -Row $row -Code 'MISSING_RBAC_CHECK_PAGE' `
+                    -Context "Page route scriptblock does not call Get-UserAccess as the first statement."
+            }
+        }
+        elseif ($script:CurrentFileRole -eq 'api-route') {
+            $callsTestActionEndpoint = $false
+            foreach ($stmt in $statements) {
+                if ($stmt.Extent -and $stmt.Extent.Text -match '\bTest-ActionEndpoint\b') {
+                    $callsTestActionEndpoint = $true
+                    break
+                }
+            }
+            if (-not $callsTestActionEndpoint) {
+                Add-DriftCode -Row $row -Code 'MISSING_RBAC_CHECK_API' `
+                    -Context "API route scriptblock does not call Test-ActionEndpoint."
+            }
+        }
+
+        # MISSING_RESPONSE_WRITE_PAGE / MISSING_RESPONSE_WRITE_API: last statement
+        if ($stmtCount -gt 0) {
+            $lastStmt = $statements[$stmtCount - 1]
+            $lastText = if ($lastStmt.Extent) { $lastStmt.Extent.Text } else { '' }
+            if ($script:CurrentFileRole -eq 'page-route' -and $lastText -notmatch '\bWrite-PodeHtmlResponse\b') {
+                Add-DriftCode -Row $row -Code 'MISSING_RESPONSE_WRITE_PAGE' `
+                    -Context "Page route scriptblock does not end with Write-PodeHtmlResponse."
+            }
+            elseif ($script:CurrentFileRole -eq 'api-route' -and $lastText -notmatch '\bWrite-PodeJsonResponse\b') {
+                Add-DriftCode -Row $row -Code 'MISSING_RESPONSE_WRITE_API' `
+                    -Context "API route scriptblock does not end with Write-PodeJsonResponse."
+            }
+        }
     }
 
     return $row
@@ -1510,6 +1982,109 @@ function Add-PSExportRow {
     $script:rows.Add($row)
     return $row
 }
+
+# Emit a SQL_QUERY row representing a call to a known SQL-querying command
+# (Invoke-Sqlcmd and the Invoke-XFActs* family). The row also carries any
+# per-call drift codes for spec §12.2 violations: missing -TrustServerCertificate,
+# missing -ApplicationName, parameter references without -Parameters, and
+# linked-server references. Returns $null if the call is not a SQL command.
+function Add-PSSqlCallRow {
+    param([Parameter(Mandatory)]$CommandAst)
+
+    $cmdName = $CommandAst.GetCommandName()
+    if ([string]::IsNullOrEmpty($cmdName)) { return $null }
+    if ($cmdName -notin $SQLQueryFunctions) { return $null }
+
+    $line = Get-PSAstNodeLine    -Node $CommandAst
+    $col  = Get-PSAstNodeColumn  -Node $CommandAst
+
+    $key = "$($script:CurrentFile)|$line|$col|SQL_QUERY|$cmdName|USAGE|sqlcmd-call"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $sig = if ($CommandAst.Extent) { Format-SingleLine -Text $CommandAst.Extent.Text } else { "$cmdName ..." }
+    if ($sig -and $sig.Length -gt 200) { $sig = $sig.Substring(0, 200) + '...' }
+
+    $parentFn = $null
+    $cursor = $CommandAst.Parent
+    while ($null -ne $cursor) {
+        if ($cursor -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+            $parentFn = $cursor.Name
+            break
+        }
+        $cursor = $cursor.Parent
+    }
+
+    $row = New-PSRow `
+        -ComponentType  'SQL_QUERY' `
+        -ComponentName  $cmdName `
+        -VariantType    'sqlcmd-call' `
+        -LineStart      $line `
+        -LineEnd        $line `
+        -ColumnStart    $col `
+        -ReferenceType  'USAGE' `
+        -Scope          $scope `
+        -ParentFunction $parentFn `
+        -Signature      $sig `
+        -RawText        $sig
+    $script:rows.Add($row)
+
+    # Walk command elements once, collecting which parameters appear and
+    # capturing the -Query value when present for downstream checks.
+    $hasTrustServerCert  = $false
+    $hasApplicationName  = $false
+    $hasParameters       = $false
+    $queryText           = $null
+
+    if ($null -ne $CommandAst.CommandElements) {
+        for ($i = 0; $i -lt $CommandAst.CommandElements.Count; $i++) {
+            $elem = $CommandAst.CommandElements[$i]
+            if ($elem -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
+            $pn = $elem.ParameterName
+            switch -Regex ($pn) {
+                '^TrustServerCertificate$' { $hasTrustServerCert = $true }
+                '^ApplicationName$'        { $hasApplicationName = $true }
+                '^Parameters$'             { $hasParameters = $true }
+                '^Query$' {
+                    $next = if (($i + 1) -lt $CommandAst.CommandElements.Count) { $CommandAst.CommandElements[$i + 1] } else { $null }
+                    if ($null -ne $next -and $next.Extent) {
+                        $queryText = $next.Extent.Text
+                    }
+                }
+            }
+        }
+    }
+
+    # Only Invoke-Sqlcmd requires -TrustServerCertificate and -ApplicationName;
+    # the Invoke-XFActs* wrappers handle those internally.
+    if ($cmdName -eq 'Invoke-Sqlcmd') {
+        if (-not $hasTrustServerCert) {
+            Add-DriftCode -Row $row -Code 'MISSING_TRUST_SERVER_CERTIFICATE' `
+                -Context "Invoke-Sqlcmd at line $line is missing -TrustServerCertificate."
+        }
+        if (-not $hasApplicationName) {
+            Add-DriftCode -Row $row -Code 'MISSING_APPLICATION_NAME' `
+                -Context "Invoke-Sqlcmd at line $line is missing -ApplicationName."
+        }
+    }
+
+    # If the query text references @parameter placeholders but -Parameters
+    # is not declared, that's MISSING_PARAMETER_DECLARATION drift.
+    if ($null -ne $queryText -and $queryText -match '@\w+\b' -and -not $hasParameters) {
+        Add-DriftCode -Row $row -Code 'MISSING_PARAMETER_DECLARATION' `
+            -Context "Query at line $line references @parameter placeholders but -Parameters @{...} is not declared."
+    }
+
+    # FORBIDDEN_LINKED_SERVER: four-part name in the query text.
+    # Pattern: [server].[db].[schema].[table] or server.db.schema.table.
+    if ($null -ne $queryText -and $queryText -match '\b\[?[A-Za-z][A-Za-z0-9_-]*\]?\s*\.\s*\[?[A-Za-z][A-Za-z0-9_]*\]?\s*\.\s*\[?[A-Za-z][A-Za-z0-9_]*\]?\s*\.\s*\[?[A-Za-z][A-Za-z0-9_]*\]?\b') {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_LINKED_SERVER' `
+            -Context "Query at line $line references a linked-server (four-part name)."
+    }
+
+    return $row
+}
+
 
 # Emit a PS_FUNCTION_CALL USAGE row for a call to a cataloged function.
 # Resolves scope=SHARED if the function is in the shared-functions map;
@@ -1618,7 +2193,13 @@ function Add-PSWriteHostRow {
 # divider (e.g., '# ==========' or '# ----------'). These are forbidden
 # as visual separators; section banners are the only permitted divider.
 function Add-PSInlineBannerRow {
-    param([int]$LineStart, [int]$ColumnStart, [string]$RawText)
+    param(
+        [int]$LineStart,
+        [int]$ColumnStart,
+        [string]$RawText,
+        [ValidateSet('ascii', 'box-drawing', 'subsection-marker')]
+        [string]$Style = 'ascii'
+    )
 
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|PS_INLINE_BANNER|<inline-banner>|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
@@ -1628,6 +2209,7 @@ function Add-PSInlineBannerRow {
     $row = New-PSRow `
         -ComponentType 'PS_INLINE_BANNER' `
         -ComponentName '<inline-banner>' `
+        -VariantType   $Style `
         -LineStart     $LineStart `
         -LineEnd       $LineStart `
         -ColumnStart   $ColumnStart `
@@ -1637,8 +2219,83 @@ function Add-PSInlineBannerRow {
         -RawText       $RawText `
         -SuppressSectionLookup
     $script:rows.Add($row)
-    Add-DriftCode -Row $row -Code 'FORBIDDEN_INLINE_DIVIDER' `
-        -Context "Inline divider line at line $LineStart."
+
+    switch ($Style) {
+        'box-drawing' {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_BOX_DRAWING_BANNER' `
+                -Context "Box-drawing banner at line $LineStart (Unicode line-drawing characters)."
+        }
+        'subsection-marker' {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_SUBSECTION_MARKER' `
+                -Context "Sub-section marker comment at line $LineStart."
+        }
+        default {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_INLINE_BANNER' `
+                -Context "Inline divider line at line $LineStart."
+        }
+    }
+    return $row
+}
+
+# Emit a PS_INLINE_COMMENT row for a '#' line comment or a run of
+# consecutive '#' line comments. Pure inventory cataloging: a run of N
+# adjacent line comments becomes one row spanning $LineStart..$LineEnd.
+# Variant types:
+#   'single-line' - one comment line
+#   'multi-line'  - two or more consecutive comment lines
+#   'trailing'    - a '#' comment on the same line as code (drift)
+# Only the 'trailing' variant carries a drift code. Leading line comments
+# are normal annotations and produce no drift.
+function Add-PSInlineCommentRow {
+    param(
+        [Parameter(Mandatory)][int]$LineStart,
+        [Parameter(Mandatory)][int]$LineEnd,
+        [Parameter(Mandatory)][int]$ColumnStart,
+        [Parameter(Mandatory)][string]$RawText,
+        [ValidateSet('single-line', 'multi-line', 'trailing')]
+        [string]$Variant = 'single-line'
+    )
+
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|PS_INLINE_COMMENT|<inline-comment>|DEFINITION|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+
+    # Build a parent_function attribution by scanning function ranges.
+    # Reuse the cached function range list built during the walk.
+    $parentFn = $null
+    if ($null -ne $script:CurrentFunctionRanges) {
+        foreach ($rng in $script:CurrentFunctionRanges) {
+            if ($LineStart -ge $rng.LineStart -and $LineStart -le $rng.LineEnd) {
+                $parentFn = $rng.Name
+                break
+            }
+        }
+    }
+
+    $sig = Format-SingleLine -Text $RawText
+    if ($sig -and $sig.Length -gt 200) { $sig = $sig.Substring(0, 200) + '...' }
+
+    $row = New-PSRow `
+        -ComponentType  'PS_INLINE_COMMENT' `
+        -ComponentName  '<inline-comment>' `
+        -VariantType    $Variant `
+        -LineStart      $LineStart `
+        -LineEnd        $LineEnd `
+        -ColumnStart    $ColumnStart `
+        -ReferenceType  'DEFINITION' `
+        -Scope          $scope `
+        -ParentFunction $parentFn `
+        -Signature      $sig `
+        -RawText        $RawText `
+        -SuppressSectionLookup
+    $script:rows.Add($row)
+
+    if ($Variant -eq 'trailing') {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_TRAILING_COMMENT' `
+            -Context "Trailing '#' comment on code line at line $LineStart. Comments must lead the line."
+    }
+
     return $row
 }
 
@@ -1690,6 +2347,12 @@ function Add-PSCommentBlockRow {
         -PurposeDescription (ConvertTo-CleanCommentText -CommentText $RawText) `
         -SuppressSectionLookup
     $script:rows.Add($row)
+
+    # FORBIDDEN_FREESTANDING_COMMENT_BLOCK: any block comment cataloged here
+    # is, by definition, not a file header / section banner / function docblock
+    # (those are routed to their own row builders before this point).
+    Add-DriftCode -Row $row -Code 'FORBIDDEN_FREESTANDING_COMMENT_BLOCK' `
+        -Context "Free-standing block comment at line $LineStart. Block-comment syntax is reserved for file header, section banners, and function docblocks."
     return $row
 }
 
@@ -1724,6 +2387,15 @@ function Add-PSModuleImportRow {
         -Signature         $sig `
         -RawText           $sig
     $script:rows.Add($row)
+
+    # MISPLACED_IMPORT: imports must appear in the IMPORTS section.
+    $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+    if ($null -eq $section -or $section.TypeName -ne 'IMPORTS') {
+        $where = if ($section) { "the $($section.TypeName) section" } else { 'outside any section banner' }
+        Add-DriftCode -Row $row -Code 'MISPLACED_IMPORT' `
+            -Context "Import statement appears in $where; spec requires the IMPORTS section."
+    }
+
     return $row
 }
 
@@ -1944,6 +2616,12 @@ $componentPrefixMap = Get-ComponentRegistryPrefixMap `
     -FileType       @('PS','Route','API','Module')
 Write-Log ("  Component_Registry prefix rows loaded: {0}" -f $componentPrefixMap.Count)
 
+Write-Log "Loading Component_Registry component_name set for INVALID_COMPONENT_VALUE validation..."
+$componentNameSet = Get-ComponentRegistryNameSet `
+    -ServerInstance $script:XFActsServerInstance `
+    -Database       $script:XFActsDatabase
+Write-Log ("  Component_Registry component_name rows loaded: {0}" -f $componentNameSet.Count)
+
 $objectRegistryMisses = New-Object 'System.Collections.Generic.HashSet[string]'
 
 
@@ -1993,6 +2671,32 @@ foreach ($file in $PSFiles) {
     # Build local-functions set
     $script:CurrentLocalFunctions = Get-LocalPSFunctions -Ast $parsed.Ast
 
+    # Build per-function line ranges for inline-comment parent_function attribution.
+    # Includes nested functions so that comments inside any function get attributed
+    # to the innermost enclosing function (first match wins; we sort innermost-first
+    # by reverse-sorting by LineStart descending so closer-to-target ranges come first).
+    $script:CurrentFunctionRanges = New-Object System.Collections.Generic.List[object]
+    $allFnNodes = Find-PSAstNodes -Ast $parsed.Ast `
+        -AstType ([System.Management.Automation.Language.FunctionDefinitionAst])
+    foreach ($fn in $allFnNodes) {
+        if (-not $fn.Name) { continue }
+        $fnStart = Get-PSAstNodeLine    -Node $fn
+        $fnEnd   = Get-PSAstNodeEndLine -Node $fn
+        $script:CurrentFunctionRanges.Add([ordered]@{
+            Name      = $fn.Name
+            LineStart = $fnStart
+            LineEnd   = $fnEnd
+        })
+    }
+    # Sort by LineStart descending so nested (later, deeper) ranges come first
+    # in the lookup. Inner functions have larger LineStart values than their
+    # enclosing function, so this gives innermost-first matching.
+    if ($script:CurrentFunctionRanges.Count -gt 1) {
+        $sorted = @($script:CurrentFunctionRanges | Sort-Object -Property LineStart -Descending)
+        $script:CurrentFunctionRanges = New-Object System.Collections.Generic.List[object]
+        foreach ($r in $sorted) { $script:CurrentFunctionRanges.Add($r) }
+    }
+
     $startCount = $script:rows.Count
     $scopeLabel = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
     Write-Host ("  Walking {0} ({1}, role={2})..." -f $name, $scopeLabel, $role) -ForegroundColor Cyan
@@ -2038,12 +2742,13 @@ foreach ($file in $PSFiles) {
             }
         }
 
-        # Validate .COMPONENT against Component_Registry if present
-        if (-not [string]::IsNullOrEmpty($headerInfo.Component) -and $componentPrefixMap.Count -gt 0) {
-            # Check if any file in componentPrefixMap maps to this component_name.
-            # We don't have a direct component_name lookup here, but we can validate
-            # presence via a second query. For now, defer to first-run analysis.
-            # TODO: validate INVALID_COMPONENT_VALUE on a follow-up pass.
+        # Validate .COMPONENT against Component_Registry if present.
+        # The name must appear in $componentNameSet (active component_names).
+        if (-not [string]::IsNullOrEmpty($headerInfo.Component) -and $componentNameSet.Count -gt 0) {
+            if (-not $componentNameSet.Contains($headerInfo.Component)) {
+                Add-DriftCode -Row $headerRow -Code 'INVALID_COMPONENT_VALUE' `
+                    -Context "Header .COMPONENT value '$($headerInfo.Component)' does not match any active row in Component_Registry."
+            }
         }
 
         # FILE_ORG_MISMATCH
@@ -2057,13 +2762,14 @@ foreach ($file in $PSFiles) {
         }
     }
     else {
-        # No header found at all
-        $headerRow = Add-PSFileHeaderRow `
-            -LineStart 1 -LineEnd 1 `
-            -RawText   $null `
-            -PurposeDescription $null
-        Add-DriftCode -Row $headerRow -Code 'MALFORMED_FILE_HEADER' `
-            -Context "No comment-based-help block found at the top of the file."
+        # No <# #> block found at line 1. No FILE_HEADER row is emitted --
+        # the drift attaches to the PS_FILE anchor row instead, following
+        # the same pattern used by MISSING_SECTION_BANNER (attached to the
+        # function row, not to a phantom banner row).
+        if ($null -ne $psFileRow) {
+            Add-DriftCode -Row $psFileRow -Code 'MALFORMED_FILE_HEADER' `
+                -Context "No comment-based-help block found at the top of the file."
+        }
     }
 
     # ---- Emit COMMENT_BANNER rows from the section list ----
@@ -2235,7 +2941,22 @@ foreach ($file in $PSFiles) {
                                     $exportedNames = Get-ExportedNamesFromAst -Node $next
                                     foreach ($nm in $exportedNames) {
                                         if (-not [string]::IsNullOrWhiteSpace($nm)) {
-                                            Add-PSExportRow -CommandAst $cmd -ExportedName $nm -ExportKind $exportKind | Out-Null
+                                            $exportRow = Add-PSExportRow -CommandAst $cmd -ExportedName $nm -ExportKind $exportKind
+                                            if ($null -ne $exportRow) {
+                                                # FORBIDDEN_WILDCARD_EXPORT: '*' wildcard is not permitted.
+                                                if ($nm -eq '*') {
+                                                    Add-DriftCode -Row $exportRow -Code 'FORBIDDEN_WILDCARD_EXPORT' `
+                                                        -Context "Export-ModuleMember -$exportKind * uses wildcard. Exports must be enumerated explicitly."
+                                                }
+                                                # EXPORTED_FUNCTION_NOT_DEFINED: only for -Function exports;
+                                                # function name not declared in this file.
+                                                elseif ($exportKind -eq 'function' -and
+                                                        $script:CurrentLocalFunctions -and
+                                                        -not $script:CurrentLocalFunctions.Contains($nm)) {
+                                                    Add-DriftCode -Row $exportRow -Code 'EXPORTED_FUNCTION_NOT_DEFINED' `
+                                                        -Context "Export-ModuleMember references function '$nm' which is not defined in this file."
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -2259,6 +2980,10 @@ foreach ($file in $PSFiles) {
                     # RBAC checks
                     if ($RBACCheckFunctions -contains $cmdName) {
                         Add-PSRBACCheckRow -CommandAst $cmd -CheckFunction $cmdName | Out-Null
+                    }
+                    # SQL-querying command calls (Invoke-Sqlcmd + Invoke-XFActs*)
+                    if ($SQLQueryFunctions -contains $cmdName) {
+                        Add-PSSqlCallRow -CommandAst $cmd | Out-Null
                     }
                     # Cataloged function calls
                     Add-PSFunctionCallRow -CommandAst $cmd | Out-Null
@@ -2319,9 +3044,23 @@ foreach ($file in $PSFiles) {
             }
 
             if (Test-LooksLikeSQL -Text $text) {
-                Add-PSSqlQueryRow `
+                $sqlRow = Add-PSSqlQueryRow `
                     -LineStart $line -LineEnd $endLn -ColumnStart $col `
-                    -QueryText $text -ParentFunction $parentFn -Kind 'literal' | Out-Null
+                    -QueryText $text -ParentFunction $parentFn -Kind 'literal'
+
+                # FORBIDDEN_INLINE_SQL_LITERAL: multi-line SQL embedded in a
+                # single-line string literal (rather than a here-string).
+                # Detection: the string is StringConstantExpressionAst with a
+                # StringConstantType of SingleQuoted or DoubleQuoted (not here-string),
+                # AND the query text contains newline characters.
+                if ($null -ne $sqlRow -and
+                    $sn -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                    $strType = $sn.StringConstantType.ToString()
+                    if ($strType -notmatch 'HereString' -and $text -match "`n") {
+                        Add-DriftCode -Row $sqlRow -Code 'FORBIDDEN_INLINE_SQL_LITERAL' `
+                            -Context "Multi-line SQL at line $line is embedded as a $strType string literal. Use a here-string (@`"...`"@)."
+                    }
+                }
 
                 # GlobalConfig refs inside this SQL
                 $gcRefs = Get-GlobalConfigReferences -Text $text
@@ -2355,85 +3094,308 @@ foreach ($file in $PSFiles) {
     }
 
     # ---- AST WALK: PASS F - Comment-level passes ----
+    # Walks every comment token in the file and dispatches by shape. Three
+    # broad categories are handled:
+    #
+    #   1. Block comments (<# ... #>)
+    #      - File header / section banner / function docblock: already claimed
+    #        by their respective row builders; skipped here.
+    #      - Anything else: emits a PS_COMMENT_BLOCK row with the
+    #        FORBIDDEN_FREESTANDING_COMMENT_BLOCK drift code (block-comment
+    #        syntax is reserved for structural docs per spec §3.2).
+    #
+    #   2. Line comments (#) at the start of a line, or runs of consecutive
+    #      such lines. Coalesced into a single PS_INLINE_COMMENT row per
+    #      contiguous run. Special single-line forms (divider patterns,
+    #      removed-code headstones) get their own row types instead.
+    #
+    #   3. Trailing line comments (# at the end of a code line). Each emits
+    #      its own PS_INLINE_COMMENT row with variant='trailing' and the
+    #      FORBIDDEN_TRAILING_COMMENT drift code.
     try {
+        # Build source-lines once for trailing-comment detection.
+        $srcLines = if ($null -ne $script:CurrentFileSource) {
+            $script:CurrentFileSource -split "`r?`n"
+        } else { @() }
+
+        # Partition comments into block comments and line comments.
+        # Line comments get further partitioned into leading vs trailing
+        # using the source-line "is there non-whitespace before the # column"
+        # test. A line comment whose column is 1, or whose preceding text on
+        # the same line is all whitespace, is leading. Otherwise trailing.
+        $lineComments = New-Object System.Collections.Generic.List[object]
+        $blockComments = New-Object System.Collections.Generic.List[object]
         foreach ($c in $script:CurrentNormalizedComments) {
+            if ($c.Type -eq 'Block') {
+                $blockComments.Add($c)
+                continue
+            }
+            # Line comment: classify leading vs trailing.
+            $isTrailing = $false
+            if ($c.ColumnStart -gt 1 -and $srcLines.Count -ge $c.LineStart) {
+                $lineText = $srcLines[$c.LineStart - 1]
+                if ($null -ne $lineText -and $lineText.Length -ge ($c.ColumnStart - 1)) {
+                    $beforeHash = $lineText.Substring(0, $c.ColumnStart - 1)
+                    if ($beforeHash -match '\S') { $isTrailing = $true }
+                }
+            }
+            $lineComments.Add([pscustomobject]@{
+                Comment    = $c
+                IsTrailing = $isTrailing
+            })
+        }
+
+        # ---- Trailing line comments: one row each, all carry drift ----
+        foreach ($entry in $lineComments) {
+            if (-not $entry.IsTrailing) { continue }
+            $c = $entry.Comment
+            Add-PSInlineCommentRow `
+                -LineStart   $c.LineStart `
+                -LineEnd     $c.LineStart `
+                -ColumnStart $c.ColumnStart `
+                -RawText     $c.OriginalToken.Text `
+                -Variant     'trailing' | Out-Null
+        }
+
+        # ---- Leading line comments: coalesce runs and dispatch ----
+        # A run is a maximal sequence of leading line comments on consecutive
+        # source lines (no gap). The "next" line must immediately follow the
+        # previous (LineStart difference of 1) and must also be a leading line
+        # comment. Any blank line or code line breaks the run.
+        $leading = @($lineComments | Where-Object { -not $_.IsTrailing } |
+                     ForEach-Object { $_.Comment } |
+                     Sort-Object LineStart)
+
+        $i = 0
+        while ($i -lt $leading.Count) {
+            # Build the run starting at $i.
+            $runStart = $i
+            $runEnd   = $i
+            for ($j = $i + 1; $j -lt $leading.Count; $j++) {
+                $prev = $leading[$j - 1]
+                $cur  = $leading[$j]
+                if ($cur.LineStart -eq ($prev.LineStart + 1)) {
+                    $runEnd = $j
+                } else {
+                    break
+                }
+            }
+
+            $runLength = $runEnd - $runStart + 1
+            $firstComment = $leading[$runStart]
+            $lastComment  = $leading[$runEnd]
+
+            if ($runLength -eq 1) {
+                # Single-line run. Check for special drift-emitting patterns first.
+                $text = $firstComment.Text
+                $matched = $false
+
+                if ($text -match '^[\s]*[=\-]{4,}[\s]*$') {
+                    Add-PSInlineBannerRow `
+                        -LineStart   $firstComment.LineStart `
+                        -ColumnStart $firstComment.ColumnStart `
+                        -RawText     $firstComment.OriginalToken.Text `
+                        -Style       'ascii' | Out-Null
+                    $matched = $true
+                }
+                elseif ($text -match '^[\s]*[\u2500-\u257F]{4,}[\s]*$') {
+                    Add-PSInlineBannerRow `
+                        -LineStart   $firstComment.LineStart `
+                        -ColumnStart $firstComment.ColumnStart `
+                        -RawText     $firstComment.OriginalToken.Text `
+                        -Style       'box-drawing' | Out-Null
+                    $matched = $true
+                }
+                elseif ($text -match '(?i)^\s*(removed|deleted|was|todo:?\s*remove)\b') {
+                    Add-PSRemovedCodeCommentRow `
+                        -LineStart   $firstComment.LineStart `
+                        -ColumnStart $firstComment.ColumnStart `
+                        -RawText     $firstComment.OriginalToken.Text | Out-Null
+                    $matched = $true
+                }
+
+                if (-not $matched) {
+                    # Plain single-line inline annotation.
+                    Add-PSInlineCommentRow `
+                        -LineStart   $firstComment.LineStart `
+                        -LineEnd     $firstComment.LineStart `
+                        -ColumnStart $firstComment.ColumnStart `
+                        -RawText     $firstComment.OriginalToken.Text `
+                        -Variant     'single-line' | Out-Null
+                }
+            }
+            else {
+                # Multi-line run. Concatenate the original tokens for raw_text
+                # so the catalog preserves the developer's text verbatim.
+                $rawParts = @()
+                for ($k = $runStart; $k -le $runEnd; $k++) {
+                    $rawParts += $leading[$k].OriginalToken.Text
+                }
+                $rawJoined = $rawParts -join "`n"
+
+                Add-PSInlineCommentRow `
+                    -LineStart   $firstComment.LineStart `
+                    -LineEnd     $lastComment.LineStart `
+                    -ColumnStart $firstComment.ColumnStart `
+                    -RawText     $rawJoined `
+                    -Variant     'multi-line' | Out-Null
+            }
+
+            $i = $runEnd + 1
+        }
+
+        # ---- Block comments: existing dispatch (header / banner / docblock claimed-check, fallback to PS_COMMENT_BLOCK) ----
+        foreach ($c in $blockComments) {
             $text = $c.Text
             if ([string]::IsNullOrEmpty($text)) { continue }
 
-            if ($c.Type -eq 'Line') {
-                # Inline dividers: a single-line comment whose content is
-                # entirely '=' or '-' (with optional whitespace).
-                if ($text -match '^[\s]*[=\-]{4,}[\s]*$' -or
-                    $text -match '^[\s]*[\u2500-\u257F]{4,}[\s]*$') {
-                    Add-PSInlineBannerRow -LineStart $c.LineStart -ColumnStart $c.ColumnStart `
-                        -RawText $c.OriginalToken.Text | Out-Null
-                    continue
-                }
-
-                # Removed-code headstones
-                if ($text -match '(?i)^\s*(removed|deleted|was|todo:?\s*remove)\b') {
-                    Add-PSRemovedCodeCommentRow -LineStart $c.LineStart -ColumnStart $c.ColumnStart `
-                        -RawText $c.OriginalToken.Text | Out-Null
+            # Skip if already claimed (file header, function docblock, etc.).
+            $isClaimed = $false
+            foreach ($ci in $script:CurrentCommentIndex) {
+                if ($ci.StartLine -eq $c.LineStart -and $ci.Used) {
+                    $isClaimed = $true
+                    break
                 }
             }
-            elseif ($c.Type -eq 'Block') {
-                # Free-standing block comments that aren't header, banner, or docblock.
-                # Skip if already claimed (e.g. by a function as its docblock, or as
-                # the file header).
-                $isClaimed = $false
-                foreach ($ci in $script:CurrentCommentIndex) {
-                    if ($ci.StartLine -eq $c.LineStart -and $ci.Used) {
-                        $isClaimed = $true
-                        break
-                    }
-                }
-                if ($isClaimed) { continue }
+            if ($isClaimed) { continue }
 
-                # Skip section banners
-                if (Test-IsBannerComment -CommentText $text -ValidSectionTypes $script:CurrentValidSectionTypes) {
-                    continue
-                }
-
-                # Sub-section markers: text like '-- label --'
-                $trimmedText = $text.Trim()
-                if ($trimmedText -match '^--.+--$') { continue }
-
-                # Anything left over is a stray block comment
-                Add-PSCommentBlockRow -LineStart $c.LineStart -LineEnd $c.LineEnd `
-                    -ColumnStart $c.ColumnStart -RawText $c.OriginalToken.Text | Out-Null
+            # Skip section banners (these are cataloged via Add-PSCommentBannerRow).
+            if (Test-IsBannerComment -CommentText $text -ValidSectionTypes $script:CurrentValidSectionTypes) {
+                continue
             }
+
+            # Anything left over is a stray block comment (FORBIDDEN_FREESTANDING_COMMENT_BLOCK).
+            Add-PSCommentBlockRow `
+                -LineStart   $c.LineStart `
+                -LineEnd     $c.LineEnd `
+                -ColumnStart $c.ColumnStart `
+                -RawText     $c.OriginalToken.Text | Out-Null
         }
     } catch {
         Write-Log "Pass F (comment passes) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # ---- FORBIDDEN_COMMENT_STYLE: stray block comments accounting ----
-    # Aggregate stray block comments and attach the drift code to PS_FILE.
-    $strayLines = New-Object System.Collections.Generic.List[int]
-    foreach ($c in $script:CurrentNormalizedComments) {
-        if ($c.Type -ne 'Block') { continue }
-        # Skip the file header
-        if ($c.LineStart -le 3) { continue }
-        # Skip section banners
-        if (Test-IsBannerComment -CommentText $c.Text -ValidSectionTypes $script:CurrentValidSectionTypes) { continue }
-        # Skip sub-section markers
-        $trimmedText = if ($c.Text) { $c.Text.Trim() } else { '' }
-        if ($trimmedText -match '^--.+--$') { continue }
-        # Skip if claimed by a definition
-        $isClaimed = $false
-        foreach ($ci in $script:CurrentCommentIndex) {
-            if ($ci.StartLine -eq $c.LineStart -and $ci.Used) {
-                $isClaimed = $true
-                break
+    # ---- Module-level export checks (module role only) ----
+    # Spec §14.1:
+    #   - MISSING_EXPORTS_SECTION: module file lacks an EXPORTS section.
+    #   - DEFINED_FUNCTION_NOT_EXPORTED: function declared but not exported.
+    if ($script:CurrentFileRole -eq 'module' -and $null -ne $psFileRow) {
+        # Collect EXPORTS section presence and the names actually exported.
+        $hasExportsSection = $false
+        if ($script:CurrentSections) {
+            foreach ($sec in $script:CurrentSections) {
+                if ($sec.TypeName -eq 'EXPORTS') { $hasExportsSection = $true; break }
             }
         }
-        if ($isClaimed) { continue }
-        $strayLines.Add([int]$c.LineStart)
+        if (-not $hasExportsSection) {
+            Add-DriftCode -Row $psFileRow -Code 'MISSING_EXPORTS_SECTION' `
+                -Context "Module file lacks an EXPORTS section."
+        }
+
+        # Collect exported function names from PS_EXPORT rows generated for this file.
+        $exportedFns = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($r in $script:rows) {
+            if ($r.FileName -eq $script:CurrentFile -and
+                $r.ComponentType -eq 'PS_EXPORT' -and
+                $r.VariantType -eq 'function') {
+                [void]$exportedFns.Add($r.ComponentName)
+            }
+        }
+        # Find functions declared in this file (via PS_FUNCTION rows) that
+        # are NOT in the exported set. Each one gets a DEFINED_FUNCTION_NOT_EXPORTED
+        # drift code attached to its own row.
+        foreach ($r in $script:rows) {
+            if ($r.FileName -eq $script:CurrentFile -and
+                $r.ComponentType -eq 'PS_FUNCTION' -and
+                $r.ReferenceType -eq 'DEFINITION' -and
+                -not $exportedFns.Contains($r.ComponentName)) {
+                Add-DriftCode -Row $r -Code 'DEFINED_FUNCTION_NOT_EXPORTED' `
+                    -Context "Function '$($r.ComponentName)' declared in module file but not exported."
+            }
+        }
     }
-    if ($strayLines.Count -gt 0 -and $psFileRow) {
-        $linesText = ($strayLines | Sort-Object) -join ', '
-        Add-DriftCode -Row $psFileRow -Code 'FORBIDDEN_COMMENT_STYLE' `
-            -Context "Stray block comments at line(s): $linesText."
+
+    # ---- TRAILING_WHITESPACE: per-file line scan ----
+    # Walks each source line; if any line ends with whitespace, attach the
+    # drift code to the PS_FILE row. One drift code attachment per file
+    # regardless of count; the context lists offending line numbers.
+    if ($null -ne $psFileRow -and $null -ne $script:CurrentFileSource) {
+        $trailingLines = New-Object System.Collections.Generic.List[int]
+        $sourceLines = $script:CurrentFileSource -split "`r?`n"
+        for ($li = 0; $li -lt $sourceLines.Count; $li++) {
+            $ln = $sourceLines[$li]
+            if ($ln.Length -gt 0 -and $ln -match '[\s]+$') {
+                $trailingLines.Add($li + 1)
+            }
+        }
+        if ($trailingLines.Count -gt 0) {
+            $lineSummary = if ($trailingLines.Count -le 10) {
+                ($trailingLines -join ', ')
+            } else {
+                ($trailingLines[0..9] -join ', ') + ", +$($trailingLines.Count - 10) more"
+            }
+            Add-DriftCode -Row $psFileRow -Code 'TRAILING_WHITESPACE' `
+                -Context "Lines with trailing whitespace: $lineSummary."
+        }
+    }
+
+    # ---- File-level role/section checks ----
+    # MISSING_REQUIRED_SECTION: a section type required for this role is absent.
+    # DUPLICATE_SINGULAR_SECTION: a singleton section appears more than once.
+    # FORBIDDEN_SECTION_TYPE: a section's type isn't valid for this role
+    # (currently emitted as UNKNOWN_SECTION_TYPE via Get-BannerInfo; we also
+    # surface it explicitly on the PS_FILE row here for visibility).
+    if ($null -ne $psFileRow -and $null -ne $script:CurrentSections -and $null -ne $script:CurrentFileRole) {
+        # Build per-type section counts.
+        $typeCounts = @{}
+        $foundTypes = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($sec in $script:CurrentSections) {
+            if ($null -eq $sec -or [string]::IsNullOrEmpty($sec.TypeName)) { continue }
+            if (-not $typeCounts.ContainsKey($sec.TypeName)) { $typeCounts[$sec.TypeName] = 0 }
+            $typeCounts[$sec.TypeName] += 1
+            [void]$foundTypes.Add($sec.TypeName)
+        }
+
+        # MISSING_REQUIRED_SECTION
+        if ($RequiredSectionsByRole.ContainsKey($script:CurrentFileRole)) {
+            $required = $RequiredSectionsByRole[$script:CurrentFileRole]
+            $missing = New-Object System.Collections.Generic.List[string]
+            foreach ($req in $required) {
+                if (-not $foundTypes.Contains($req)) { $missing.Add($req) }
+            }
+            if ($missing.Count -gt 0) {
+                Add-DriftCode -Row $psFileRow -Code 'MISSING_REQUIRED_SECTION' `
+                    -Context "Role '$($script:CurrentFileRole)' requires section(s): $($missing -join ', ')."
+            }
+        }
+
+        # DUPLICATE_SINGULAR_SECTION
+        $dupSingletons = New-Object System.Collections.Generic.List[string]
+        foreach ($typeName in $typeCounts.Keys) {
+            if ($SingletonSectionTypes -contains $typeName -and $typeCounts[$typeName] -gt 1) {
+                $count = $typeCounts[$typeName]
+                $dupSingletons.Add("$typeName (${count}x)")
+            }
+        }
+        if ($dupSingletons.Count -gt 0) {
+            Add-DriftCode -Row $psFileRow -Code 'DUPLICATE_SINGULAR_SECTION' `
+                -Context "Singleton sections appear more than once: $($dupSingletons -join ', ')."
+        }
+
+        # FORBIDDEN_SECTION_TYPE
+        $allowedForRole = if ($ValidSectionTypesByRole.ContainsKey($script:CurrentFileRole)) {
+            $ValidSectionTypesByRole[$script:CurrentFileRole]
+        } else { @() }
+        $forbiddenFound = New-Object System.Collections.Generic.List[string]
+        foreach ($typeName in $foundTypes) {
+            if ($typeName -notin $allowedForRole) {
+                $forbiddenFound.Add($typeName)
+            }
+        }
+        if ($forbiddenFound.Count -gt 0) {
+            Add-DriftCode -Row $psFileRow -Code 'FORBIDDEN_SECTION_TYPE' `
+                -Context "Section type(s) not allowed for role '$($script:CurrentFileRole)': $($forbiddenFound -join ', ')."
+        }
     }
 
     $delta = $script:rows.Count - $startCount
