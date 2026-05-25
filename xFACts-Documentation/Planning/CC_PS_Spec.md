@@ -376,12 +376,13 @@ $results = Invoke-XFActsQuery -Query @"
 
 ## 13. Comments
 
-Four comment forms are recognized:
+Five comment forms are recognized:
 
 1. **File header** — a single `<# ... #>` block comment at line 1 (§2).
 2. **Section banners** — `<# ... #>` block comments enclosing a section's title, description, and prefix declaration (§3).
 3. **Docblocks** — `<# ... #>` block comments on function definitions (§8.1).
 4. **`#` line comments** — single lines or runs of consecutive lines starting with `#`. Used for inline annotations preceding the code they describe.
+5. **Sub-section markers** — single-line `#` comment of the form `# -- <Label> --`, used as a lightweight visual divider between groups of related declarations within a section (§13.2).
 
 No other comment forms are recognized. `<# ... #>` block-comment syntax is reserved for forms 1, 2, and 3 above (§3.2).
 
@@ -390,9 +391,26 @@ No other comment forms are recognized. `<# ... #>` block-comment syntax is reser
 - Mini-banners using `# ---` characters.
 - Box-drawing banners using `# ──` characters or other Unicode line-drawing.
 - Headstone comments describing removed code.
-- Sub-section markers (any inline divider comment not matching one of the four recognized forms).
 - Free-standing block comments outside the file header, a section banner, or a function docblock.
 - **Trailing comments** — a `#` comment at the end of a code line is forbidden. Comments lead the line they describe; they do not trail on it.
+
+### 13.2 Sub-section markers
+
+A sub-section marker is a single-line `#` comment that visually groups related declarations within a section. Used in long FUNCTIONS sections (and other sections with many declarations) where banner-level grouping would over-fragment the FILE ORGANIZATION list.
+
+```
+# -- <Label> --
+```
+
+- Shape: `#`, a single space, exactly two `-` characters, a single space, label text, a single space, exactly two `-` characters, end of line. No trailing whitespace.
+- The label contains at least one letter.
+- The marker is a single `#` line comment, not a run.
+- The marker is preceded by at least one blank line. (The blank line preceding a section banner satisfies this when the marker is the first content after the banner.)
+- The marker is followed by at least one blank line.
+- Sub-section markers do not appear in the FILE ORGANIZATION list.
+- Sub-section markers do not nest. A section may contain multiple markers, each grouping the declarations that follow it until the next marker or the section's end.
+
+A new banner is created when the new content is a distinct concept with its own purpose; a sub-section marker is used when the new content is a sub-group of an existing concept within the same section.
 
 ---
 
@@ -440,7 +458,6 @@ Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-
 | Mini-banner using `# ---` | §13.1 |
 | Box-drawing banner using `# ──` | §13.1 |
 | Headstone comment describing removed code | §13.1 |
-| Sub-section marker comment | §13.1 |
 | Free-standing block comment outside header/banner/docblock | §13.1 |
 | `$Script:` (capital S), `$global:`, or any non-`$script:` scope qualifier for top-level declarations | §9.2 |
 | Assignment to PowerShell automatic variables | §9.2 |
@@ -562,7 +579,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `FORBIDDEN_INLINE_BANNER` | `# ---` mini-banner appears in the file. | §13.1 |
 | `FORBIDDEN_BOX_DRAWING_BANNER` | `# ──` box-drawing banner appears in the file. | §13.1 |
 | `FORBIDDEN_REMOVED_CODE_COMMENT` | Headstone comment describing removed code. | §13.1 |
-| `FORBIDDEN_SUBSECTION_MARKER` | Sub-section marker comment. | §13.1 |
+| `MALFORMED_SUBSECTION_MARKER` | Comment uses the sub-section marker shape but violates the §13.2 rules (wrong dash count, missing label, inside a `#` comment run, or missing required surrounding blank line). | §13.2 |
 | `FORBIDDEN_FREESTANDING_COMMENT_BLOCK` | Free-standing block comment outside header/banner/docblock. | §13.1 |
 | `FORBIDDEN_TRAILING_COMMENT` | `#` comment appears at the end of a code line. Comments must lead, not trail. | §13.1 |
 | `FORBIDDEN_WILDCARD_EXPORT` | `Export-ModuleMember -Function *` used. | §14.1 |
