@@ -889,20 +889,22 @@ function Get-NavBarHtml {
     .SYNOPSIS
         Renders the horizontal navigation bar HTML for a given user.
         Filters pages by user permissions, groups by section with separators,
-        applies the 'active' class to the current page, and appends the admin
+        applies the 'cc-active' class to the current page, and appends the admin
         gear icon for users with the Admin role.
 
         Emits cc- prefixed chrome classes per CC_CSS_Spec.md Section 5.2:
         cc-nav-bar, cc-nav-link, cc-nav-section-<key>, cc-nav-separator,
-        cc-nav-spacer, cc-nav-admin. The 'active' state modifier stays
-        unprefixed (compound modifier). RBAC_NavSection.accent_class
-        database values (e.g., 'nav-section-platform') are transformed at
-        emission time by prepending 'cc-'.
+        cc-nav-spacer, cc-nav-admin. The 'cc-active' state modifier carries
+        the cc- prefix per CC_CSS_Spec.md Section 7.1 (every class token in a
+        compound must carry its section's declared prefix).
+        RBAC_NavSection.accent_class database values (e.g.,
+        'nav-section-platform') are transformed at emission time by
+        prepending 'cc-'.
     .PARAMETER UserContext
         Hashtable from Get-UserContext containing user identity and roles.
     .PARAMETER CurrentPageRoute
         The route of the page currently being rendered (e.g., '/server-health').
-        Used to apply the 'active' CSS class to the matching nav link.
+        Used to apply the 'cc-active' CSS class to the matching nav link.
     .RETURNS
         Complete <nav> HTML block ready to embed in a page.
     .EXAMPLE
@@ -930,7 +932,7 @@ function Get-NavBarHtml {
     [void]$sb.AppendLine('    <nav class="cc-nav-bar">')
 
     # Home link is always first, regardless of section
-    $homeActiveClass = if ($CurrentPageRoute -eq '/') { ' active' } else { '' }
+    $homeActiveClass = if ($CurrentPageRoute -eq '/') { ' cc-active' } else { '' }
     [void]$sb.AppendLine("        <a href=`"/`" class=`"cc-nav-link$homeActiveClass`">Home</a>")
 
     # Iterate sections in order, filtering pages by user permissions
@@ -964,7 +966,7 @@ function Get-NavBarHtml {
 
         # Render each accessible page
         foreach ($page in $accessiblePages) {
-            $activeClass = if ($page.page_route -eq $CurrentPageRoute) { ' active' } else { '' }
+            $activeClass = if ($page.page_route -eq $CurrentPageRoute) { ' cc-active' } else { '' }
             # RBAC_NavSection.accent_class stores values like 'nav-section-platform';
             # prepend 'cc-' at emission time to produce 'cc-nav-section-platform' for
             # the new CC chrome class convention. Database content stays unchanged.
@@ -977,9 +979,9 @@ function Get-NavBarHtml {
         $sectionsRendered++
     }
 
-    # Append admin gear for admin users (always last; gets 'active' class when on /admin)
+    # Append admin gear for admin users (always last; gets 'cc-active' class when on /admin)
     if ($isAdmin) {
-        $adminActiveClass = if ($CurrentPageRoute -eq '/admin') { ' active' } else { '' }
+        $adminActiveClass = if ($CurrentPageRoute -eq '/admin') { ' cc-active' } else { '' }
         [void]$sb.AppendLine('        <span class="cc-nav-spacer"></span>')
         [void]$sb.AppendLine("        <a href=`"/admin`" class=`"cc-nav-link cc-nav-admin$adminActiveClass`" title=`"Administration`">&#9881;</a>")
     }
@@ -1130,9 +1132,10 @@ function Get-PageHeaderHtml {
         container (typically the left half of .cc-header-bar).
 
         Emits cc- prefixed chrome classes per CC_CSS_Spec.md Section 5.2:
-        cc-page-h1, cc-page-h1-link, cc-page-subtitle. The section-<key>
-        modifier on cc-page-h1 stays unprefixed (compound modifier) so
-        cc-shared.css's color-routing rules match.
+        cc-page-h1, cc-page-h1-link, cc-page-subtitle. The cc-section-<key>
+        modifier on cc-page-h1 carries the cc- prefix per CC_CSS_Spec.md
+        Section 7.1 (every class token in a compound must carry its section's
+        declared prefix) so cc-shared.css's color-routing rules match.
 
         Sourcing from RBAC_NavRegistry means display_title, description, and
         doc_page_id are managed in one place; route files no longer hardcode
@@ -1163,11 +1166,12 @@ function Get-PageHeaderHtml {
         $h1Inner = $title
     }
 
-    # Emit the section-{key} modifier so cc-shared.css's color-routing rules
+    # Emit the cc-section-{key} modifier so cc-shared.css's color-routing rules
     # match; falls back to bare .cc-page-h1 when section_key is missing.
-    # section-<key> is a compound modifier per the spec and stays unprefixed.
+    # cc-section-<key> carries the cc- prefix per CC_CSS_Spec.md Section 7.1
+    # (every class token in a compound must carry its section's declared prefix).
     $sectionKey = ConvertFrom-DBNull $entry.section_key
-    $sectionClass = if ($sectionKey) { " section-$sectionKey" } else { '' }
+    $sectionClass = if ($sectionKey) { " cc-section-$sectionKey" } else { '' }
 
     return "<h1 class=`"cc-page-h1$sectionClass`">$h1Inner</h1>`n<p class=`"cc-page-subtitle`">$description</p>"
 }
