@@ -10,17 +10,9 @@
    that pages consume directly: HTML escaping, timestamp formatting, the
    visibility/idle/session-aware fetch wrapper, the engine card system, the
    connection status banner, the reconnection grace mechanism, the shared
-   page-refresh hook, and the styled alert/confirm modals.
-
-   This file is the canonical FOUNDATION and CHROME source for the platform.
-   Per Section 4.4 of CC_JS_Spec.md, no other file may declare FOUNDATION or
-   CHROME banners; cc-shared.js holds single-source ownership.
-
-   Per CC_JS_Spec.md Section 11.2.4 (unified prefix rename), every top-level
-   identifier in this file uses the cc_ prefix. Pages declare their page-
-   local hooks and ENGINE_PROCESSES map under their own <prefix>_ namespace,
-   and the bootloader looks them up at runtime via the cc_pagePrefix
-   captured at boot from the body's data-cc-prefix attribute.
+   page-refresh hook, and the styled alert/confirm modals. The bootloader
+   in this file discovers each page's JS module via the body's
+   data-cc-prefix attribute and invokes its lifecycle entry point.
 
    FILE ORGANIZATION
    -----------------
@@ -341,7 +333,7 @@ function cc_renderPageError(message) {
         'data-action-click="cc-reload-page">Refresh</button>' +
         ' <span class="cc-page-error-banner-contact">If the problem continues, ' +
         'contact the Applications &amp; Integration team.</span>';
-    banner.classList.add('page-error-banner-visible');
+    banner.classList.add('cc-page-error-banner-visible');
 }
 
 /* Delegated dispatcher for shared chrome actions. Routes
@@ -466,7 +458,7 @@ function cc_handleVisibilityChange() {
        <prefix>_onPageResumed fetching new data. */
     var btn = document.querySelector('.cc-page-refresh-btn');
     if (btn) {
-        btn.classList.add('spinning');
+        btn.classList.add('cc-page-refresh-spinning');
         btn.addEventListener('animationend', cc_clearRefreshSpin, { once: true });
     }
 
@@ -882,7 +874,7 @@ function cc_tickEngineIndicator(slug) {
 
     /* No data yet: waiting state. */
     if (!event) {
-        els.bar.className = 'cc-engine-bar disabled';
+        els.bar.className = 'cc-engine-bar cc-disabled';
         if (els.card) els.card.className = 'cc-engine-card';
         if (els.cd) {
             els.cd.textContent = '';
@@ -893,7 +885,7 @@ function cc_tickEngineIndicator(slug) {
 
     /* STARTED: process is running. */
     if (event.eventType === 'PROCESS_STARTED') {
-        els.bar.className = 'cc-engine-bar running';
+        els.bar.className = 'cc-engine-bar cc-running';
         if (els.card) els.card.className = 'cc-engine-card';
         if (els.cd) els.cd.textContent = 'RUNNING';
         return;
@@ -937,13 +929,13 @@ function cc_tickEngineIndicator(slug) {
     var barCls;
     var cardCls = 'cc-engine-card';
     if (lastFailed || critical) {
-        barCls = 'cc-engine-bar critical';
-        cardCls = 'cc-engine-card card-critical';
+        barCls = 'cc-engine-bar cc-critical';
+        cardCls = 'cc-engine-card cc-card-critical';
     } else if (overdue) {
-        barCls = 'cc-engine-bar overdue';
-        cardCls = 'cc-engine-card card-warning';
+        barCls = 'cc-engine-bar cc-overdue';
+        cardCls = 'cc-engine-card cc-card-warning';
     } else {
-        barCls = 'cc-engine-bar idle';
+        barCls = 'cc-engine-bar cc-idle';
     }
 
     els.bar.className = barCls;
@@ -951,36 +943,27 @@ function cc_tickEngineIndicator(slug) {
     if (els.cd) {
         els.cd.textContent = cdText || '';
         if (!cdText) els.cd.innerHTML = '&nbsp;';
-        els.cd.className = (overdue || critical) ? 'cc-engine-countdown cd-overdue' : 'cc-engine-countdown';
+        els.cd.className = (overdue || critical) ? 'cc-engine-countdown cc-cd-overdue' : 'cc-engine-countdown';
     }
 }
 
 /* ============================================================================
    CHROME: DOM ELEMENT RESOLUTION
    ----------------------------------------------------------------------------
-   Resolves the bar/card/countdown DOM elements for an engine slug. Pages
-   may use suffixed IDs (cc-engine-bar-{slug}) for multi-process layouts
-   or bare IDs for single-process layouts; this function auto-detects
-   the pattern.
+   Resolves the bar/card/countdown DOM elements for an engine slug. Engine
+   card IDs follow the slug-suffixed pattern cc-engine-bar-{slug},
+   cc-card-engine-{slug}, cc-engine-cd-{slug} emitted by Get-EngineCardsHtml.
    Prefix: cc
    ============================================================================ */
 
-/* Finds engine card DOM elements by slug.
-   Multi-process pages: IDs have slug suffix (cc-engine-bar-nb, cc-card-engine-nb)
-   Single-process pages: bare IDs (cc-engine-bar, cc-card-engine) - auto-detected */
+/* Finds engine card DOM elements by slug. Each engine card on a page is
+   identified by a slug-suffixed ID (cc-engine-bar-{slug}, cc-card-engine-{slug},
+   cc-engine-cd-{slug}) emitted by Get-EngineCardsHtml when the page registers
+   processes in Orchestrator.ProcessRegistry. */
 function cc_getEngineElements(slug) {
-    /* Try suffixed first (multi-process pattern). */
     var bar = document.getElementById('cc-engine-bar-' + slug);
     var card = document.getElementById('cc-card-engine-' + slug);
     var cd = document.getElementById('cc-engine-cd-' + slug);
-
-    /* Fall back to bare IDs (single-process pattern). */
-    if (!bar) {
-        bar = document.getElementById('cc-engine-bar');
-        card = document.getElementById('cc-card-engine');
-        cd = document.getElementById('cc-engine-cd');
-    }
-
     return { bar: bar, card: card, cd: cd };
 }
 
@@ -994,15 +977,15 @@ function cc_getEngineElements(slug) {
    ============================================================================ */
 
 /* Subtle visual indicator on the cc-engine-row when WebSocket is
-   disconnected. Adds or removes a 'ws-disconnected' class that pages can
+   disconnected. Adds or removes a 'cc-ws-disconnected' class that pages can
    style. */
 function cc_updateEngineConnectionIndicator(connected) {
     var rows = document.querySelectorAll('.cc-engine-row');
     rows.forEach(function(row) {
         if (connected) {
-            row.classList.remove('ws-disconnected');
+            row.classList.remove('cc-ws-disconnected');
         } else {
-            row.classList.add('ws-disconnected');
+            row.classList.add('cc-ws-disconnected');
         }
     });
 }
@@ -1031,7 +1014,6 @@ function cc_showEnginePopup(slug, procName, anchorEl) {
 
     var popup = document.createElement('div');
     popup.className = 'cc-engine-popup';
-    popup.id = 'cc-engine-popup';
 
     var statusColor = '#4ec9b0';
     var statusText = event.status || event.eventType;
@@ -1118,7 +1100,7 @@ function cc_showEnginePopup(slug, procName, anchorEl) {
 /* Removes the engine popup if present and clears the visibility flag.
    Idempotent: safe to call when no popup exists. */
 function cc_closeEnginePopup() {
-    var existing = document.getElementById('cc-engine-popup');
+    var existing = document.querySelector('.cc-engine-popup');
     if (existing) existing.remove();
     cc_enginePopupVisible = false;
 }
@@ -1213,7 +1195,7 @@ function cc_updateConnectionBanner() {
     if (!el) return;
 
     if (cc_engineSessionExpired) {
-        el.className = 'cc-connection-banner session-expired';
+        el.className = 'cc-connection-banner cc-session-expired';
         el.innerHTML = 'Session expired \u2014 <a href="/login" class="cc-banner-link">Sign In</a>';
         el.style.display = 'block';
         return;
@@ -1221,12 +1203,12 @@ function cc_updateConnectionBanner() {
 
     switch (cc_engineConnectionState) {
         case 'reconnecting':
-            el.className = 'cc-connection-banner reconnecting';
+            el.className = 'cc-connection-banner cc-reconnecting';
             el.textContent = 'Reconnecting to server\u2026';
             el.style.display = 'block';
             break;
         case 'disconnected':
-            el.className = 'cc-connection-banner disconnected';
+            el.className = 'cc-connection-banner cc-disconnected';
             el.textContent = 'Connection lost \u2014 server may be unavailable';
             el.style.display = 'block';
             break;
@@ -1242,7 +1224,7 @@ function cc_updateConnectionBanner() {
 function cc_showReloadingBanner() {
     var el = document.getElementById('cc-connection-banner');
     if (!el) return;
-    el.className = 'cc-connection-banner reloading';
+    el.className = 'cc-connection-banner cc-reloading';
     el.textContent = 'Server reconnected \u2014 reloading\u2026';
     el.style.display = 'block';
 }
@@ -1458,10 +1440,9 @@ function cc_applyIdleTimeoutConfig(data) {
 /* Shows a subtle overlay indicating polling is paused. Idempotent: a
    second call while the overlay is already up is a no-op. */
 function cc_showIdleOverlay() {
-    if (document.getElementById('cc-engine-idle-overlay')) return;
+    if (document.querySelector('.cc-idle-overlay')) return;
 
     var overlay = document.createElement('div');
-    overlay.id = 'cc-engine-idle-overlay';
     overlay.className = 'cc-idle-overlay';
     overlay.innerHTML = '<div class="cc-idle-message">Paused \u2014 move mouse to resume</div>';
     document.body.appendChild(overlay);
@@ -1470,7 +1451,7 @@ function cc_showIdleOverlay() {
 /* Removes the idle overlay if present. Idempotent: safe to call when
    no overlay exists. */
 function cc_hideIdleOverlay() {
-    var overlay = document.getElementById('cc-engine-idle-overlay');
+    var overlay = document.querySelector('.cc-idle-overlay');
     if (overlay) overlay.remove();
 }
 
@@ -1637,7 +1618,7 @@ function cc_fmtEngineCountdown(s) {
 function cc_pageRefresh() {
     var btn = document.querySelector('.cc-page-refresh-btn');
     if (btn) {
-        btn.classList.add('spinning');
+        btn.classList.add('cc-page-refresh-spinning');
         btn.addEventListener('animationend', cc_clearRefreshSpin, { once: true });
     }
     var onPageRefresh = window[cc_pagePrefix + '_onPageRefresh'];
@@ -1651,7 +1632,7 @@ function cc_pageRefresh() {
    by manual refresh (cc_pageRefresh) and tab-resume
    (cc_handleVisibilityChange). */
 function cc_clearRefreshSpin(e) {
-    e.currentTarget.classList.remove('spinning');
+    e.currentTarget.classList.remove('cc-page-refresh-spinning');
 }
 
 /* ============================================================================
