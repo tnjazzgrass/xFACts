@@ -25,7 +25,7 @@ Three changes from the JS populator performance investigation doc landed in the 
 
 ### Change 1: `Get-SectionForLine` — linear scan → binary search
 
-The function is called once per row emission in Pass 2 of every populator. JS files emit ~10K rows each, so per-file lookup cost matters. The old implementation walked the section list linearly; the new implementation uses a binary search over the section list (already sorted by banner start line by `New-SectionList`). Drops per-lookup cost from O(N) to O(log N).
+The function is called once per row emission in Pass 2 of every populator. The old implementation walked the section list linearly; the new implementation uses a binary search over the section list (already sorted by banner start line by `New-SectionList`). Drops per-lookup cost from O(N) to O(log N).
 
 ### Change 2: `Invoke-AstWalk` — `PSObject.Properties.Name -contains 'type'` → `$null -ne $Node.type`
 
@@ -33,11 +33,40 @@ Hot-path optimization in the generic AST walker. Every node visit checked for a 
 
 ### Change 3: `Invoke-AstWalk` — `-Visitor` parameter accepts a function name (string) in addition to a scriptblock
 
-PowerShell scriptblock dispatch is substantially slower than function-call dispatch. The parameter type was loosened from `[scriptblock]` to untyped; PowerShell's `&` call operator handles both forms identically, so no change at the call site. Existing scriptblock callers continue to work; future callers that switch to function-name dispatch get faster invocation on the hot path. **This change is currently latent — no caller in the codebase yet passes a function name.** Activating it is part of the next session's B4 work (convert `$JsVisitor` scriptblock to `Invoke-JsVisitor` function on the JS populator side, plus the equivalent for CSS).
+PowerShell scriptblock dispatch is substantially slower than function-call dispatch. The parameter type was loosened from `[scriptblock]` to untyped; PowerShell's `&` call operator handles both forms identically, so no change at the call site. Existing scriptblock callers continue to work; future callers that switch to function-name dispatch get faster invocation on the hot path. **This change is currently latent — no caller in the codebase yet passes a function name.** Activating it is part of the next session's B4 work.
 
-### Performance expectation
+### Measured impact — none yet on JS, helper changes did not move the needle
 
-The investigation doc projected these three changes (plus the deferred B4) close 80-90% of the JS populator's per-file walk-time gap. Changes 1 and 2 alone are projected at 60-70%. Real-world measurement not yet collected for the JS populator at the new helper version; the PS populator run reported in this session ran in ~54 seconds for 85 files (3500-line populator scanning files totaling tens of thousands of source lines), which is comfortably within target range and not the gating bottleneck.
+End-of-session full-pipeline timing for all four populators:
+
+| Populator | Files | P1 time | P2 time | Total | P2 sec/file | P2 rows/sec |
+|---|---|---|---|---|---|---|
+| CSS | 32 | 19s | 36s | 65s | 1.12 | 239 |
+| HTML | 41 | — | 15s | 16s | 0.37 | 293 |
+| **JS** | **29** | **95s** | **278s** | **382s** | **9.59** | **38** |
+| PS | 85 | 1s | 54s | 65s | 0.64 | 321 |
+
+The investigation doc baselined JS at ~283s P2 / 9.8s per file before the helper changes. The current run shows 278s / 9.59s per file. **Essentially no measurable gain** — within noise.
+
+JS runs 6-8x slower per row than every other populator. CSS and PS both use the same shared helper (`Get-SectionForLine`, `Invoke-AstWalk`) and run at 200-300+ rows/sec; JS runs at 38 rows/sec. The bottleneck is JS-populator-specific, not in the shared helper.
+
+### Real bottleneck — diagnosed mid-session investigation
+
+The `$JsVisitor` scriptblock (lines 2649-3632 of the JS populator, **984 lines**) runs once per AST node, ~10-15K times per file. The first thing the visitor does, before the switch on `$Node.type` even runs, is execute five function calls to gather per-node metadata:
+
+```powershell
+$line       = Get-NodeLine    -Node $Node
+$endLine    = Get-NodeEndLine -Node $Node
+$col        = Get-NodeColumn  -Node $Node
+$section    = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+$parentName = Get-CurrentParentName -ParentNodes $ParentNodes
+```
+
+The switch handles **only 10 of the ~30-40 distinct AST node types** real JS code produces. The other 20-30 node types — `BinaryExpression`, `Identifier`, `MemberExpression`, `BlockStatement`, `IfStatement`, `ReturnStatement`, etc. — fall through with no action. But every one of those fall-through nodes still pays the 5-function-call setup tax. Most likely 60-70% of the per-node work is wasted on uninteresting nodes.
+
+The investigation doc's prescriptions (binary search, property-check fix) optimize for algorithmic complexity, but the actual cost in this hot path is **PowerShell's per-function-call overhead** — parameter binding, scope setup, return marshaling. Saving microseconds per call via better algorithms doesn't move the needle when every visitor invocation pays milliseconds for the dispatch chain itself.
+
+The B4 work (scriptblock → function for `$JsVisitor`) is one piece. But the **real win is restructuring the visitor so the per-node setup work runs only when the switch case actually needs it**. Moving the five setup calls inside each handled case (or computing them lazily on first use) eliminates the 60-70% waste on fall-through nodes. This is not in the original investigation doc and is the most promising line of work for next session.
 
 ---
 
@@ -185,28 +214,43 @@ Spec, shared helper, and populator are internally consistent. The PS populator c
 
 ## 6. JS populator — remaining work for next session
 
-The JS populator is the **only remaining populator with outstanding work**. Three items from earlier carry-over lists are all that's left to fully wrap the populator family:
+The JS populator is the **only remaining populator with outstanding work**. End-of-session timing shows the helper-side performance changes did not improve JS measurably (see §1), so the perf scope for next session has shifted based on mid-session diagnosis.
+
+### B0 (new, top priority) — Visitor pre-switch cost reduction
+
+The `$JsVisitor` scriptblock at lines 2649-3632 (984 lines) executes five function calls (`Get-NodeLine`, `Get-NodeEndLine`, `Get-NodeColumn`, `Get-SectionForLine`, `Get-CurrentParentName`) on **every** AST node visit, before the switch on `$Node.type` decides whether the node is interesting. The switch handles 10 node types; real JS produces 30-40 distinct types. Most node visits (60-70%) fall through the switch with no work, but still pay the setup tax.
+
+Fix: move the five setup calls from the pre-switch preamble into the individual switch cases that need them, OR compute them lazily on first use within a case. Either approach eliminates the setup cost on fall-through nodes.
+
+Expected impact: large. If 60-70% of node visits are wasted setup, this is the dominant available win. Worth profiling before committing to a specific implementation — `Measure-Command` around a single large file (e.g., `bdl-import.js` at 1037 rows) before and after the change will validate.
 
 ### B1 — FILE_HEADER phantom-row fix
 
-Mechanical mirror of the PS fix that landed in Session 11. Verification query after the PS fix (`SELECT COUNT(*) FROM dbo.Asset_Registry WHERE component_type = 'FILE_HEADER' AND raw_text IS NULL`) returned 5 rows, all from JS files. The fix: locate the JS populator's "no header found" branch (likely emits an `Add-JSFileHeaderRow` call with NULL raw_text), replace with drift attachment to the `JS_FILE` anchor row using whatever drift code corresponds to MALFORMED_FILE_HEADER on the JS side.
+Mechanical mirror of the PS fix that landed in Session 11. Verification query after the PS fix returned 5 phantom rows, all from JS files. Locate the JS populator's "no header found" branch (likely emits an `Add-JSFileHeaderRow` call with NULL raw_text), replace with drift attachment to the `JS_FILE` anchor row using whatever drift code corresponds to MALFORMED_FILE_HEADER on the JS side. Independent of perf work.
 
-### B4 — Visitor scriptblock → function (JS and CSS populators)
+### B4 — Visitor scriptblock → function (JS and CSS)
 
-The shared helper's `Invoke-AstWalk` now accepts function-name dispatch (Change 3 above), but no caller has been switched yet. The JS populator's `$JsVisitor` scriptblock body is large (~1000 lines per the performance investigation doc). Converting it to a standalone `Invoke-JsVisitor` function involves moving the body, updating the single call site, and dealing with any scope-related semantics that change between scriptblock and function dispatch (closure variable visibility, `return` behavior, automatic variable handling). Same operation on the CSS populator's `$CssVisitor`, smaller in scope.
+The shared helper's `Invoke-AstWalk` now accepts function-name dispatch (Change 3 in §1), but no caller has been switched yet. Converting `$JsVisitor` to a standalone `Invoke-JsVisitor` function involves moving the 984-line body, updating the single call site, and handling scope-related semantics that change between scriptblock and function dispatch (closure variable visibility, `return` behavior, automatic variable handling).
+
+**Pair this with B0** — restructuring the visitor to do per-case setup is much easier when the visitor is a real function rather than a scriptblock. Doing B0 inside the scriptblock would still pay scriptblock-dispatch overhead per node. Combine the two: convert to function, restructure setup at the same time.
+
+Same operation on the CSS populator's `$CssVisitor`, smaller in scope. Probably second-pass after JS is validated.
 
 ### B5 — Batch Node subprocess for parse-js.js / parse-css.js
 
-The populators currently spawn a fresh `node parse-js.js` (or `parse-css.js`) subprocess per scanned file in Pass 1. The investigation doc proposes batching: one long-running Node process that reads file paths from stdin and emits parse results to stdout, drastically reducing subprocess startup overhead. Affects `parse-js.js`, `parse-css.js`, and Pass 1 of both populators.
+The populators currently spawn a fresh `node parse-js.js` (or `parse-css.js`) subprocess per scanned file in Pass 1. JS Pass 1 alone is 95s — about 3.3s per file, almost all of which is Node startup overhead. The investigation doc proposes batching: one long-running Node process that reads file paths from stdin and emits parse results to stdout.
 
-### Plus — late-discovery cleanup items still applicable to JS
+Pass 1 is currently 25% of total JS run time. Even a 50% reduction here (47s saved) is significant. Independent of B0/B4.
 
-- Performance fix 2.1 (`Get-SectionForLine` binary search): **already landed** in the shared helper this session, applies to JS automatically.
-- Performance fix 2.3 (`$null -ne $Node.type` direct property check): **already landed** in the shared helper this session, applies to JS automatically.
-- Performance fix 2.2 (scriptblock → function): **shared helper side ready**, needs JS populator caller change (B4 above).
-- Performance fix 2.4 (batch Node subprocess): **B5 above**.
+### Recommended next-session order
 
-So the helper-side perf gains are already active for the JS populator now — re-running the JS populator at the current helper version should already show measurable improvement before any JS populator code changes land. The JS-side perf work in the next session activates the remaining 20-30% of the projected gap.
+1. **Profile first.** `Measure-Command` around a single large file's Pass 2 to confirm B0 is the dominant cost. If profiling shows something else (e.g., `Add-JsDefinitionRow` itself is slow), redirect.
+2. **B1** — small, mechanical, independent. Knocks out a clean correctness item.
+3. **B4 + B0 together** — convert `$JsVisitor` to `Invoke-JsVisitor` function and restructure setup at the same time. Test with single-file timing first, then full-pipeline.
+4. **B5** — Pass 1 batching, if context permits. Lower priority than B0/B4 unless those don't move the needle as much as projected.
+5. Mirror B4 (+ B0-equivalent if applicable) to CSS populator.
+
+The PS populator is the proof point that this architecture CAN run fast (321 rows/sec on the same shared helper). Getting JS within 2-3x of that throughput is realistic — probably ~150 rows/sec, which would put JS P2 at around 70s instead of 278s. That's the target.
 
 ---
 
@@ -253,3 +297,5 @@ The `$rows` variable name collision with `$script:rows` (Pass 3 bulk-insert coll
 After JS populator wrap-up next session, the populator-completion milestone is hit. The next initiative beyond that is the **per-page file refactor** against the four specs, starting with **Backup** (the four files Backup.ps1, Backup-API.ps1, backup.css, backup.js) as the reference implementation. The shared-file drift cleanup in `cc-shared.css`, `cc-shared.js`, and `xFACts-CCShared.psm1` also lives in that refactor stage.
 
 The catalog (post-JS-wrap) becomes the source-of-truth driver for refactor work: drift queries against `dbo.Asset_Registry` produce the per-file remediation list directly.
+
+**Scope risk:** the JS populator perf work (B0/B4) is more uncertain than originally projected. The investigation doc's prescriptions did not move the needle measurably. The new diagnosis (visitor pre-switch cost) is the most likely big win, but unmeasured. If profiling reveals something else dominates, the next session may not fully close out JS perf — and B1 (FILE_HEADER fix) plus B5 (batch Node subprocess) may be the realistic deliverables. The refactor stage does not depend on JS perf being fully optimized; the populator just needs to be correct and tolerably fast. Even at 38 rows/sec the JS populator finishes in ~6 minutes, which is usable for the refactor cadence.
