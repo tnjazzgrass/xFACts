@@ -18,13 +18,6 @@
    the last page has migrated to consume cc-shared.css, engine-events.css
    is deleted.
 
-   Per CC_CSS_Spec.md Section 5, every chrome class definition uses the
-   cc- prefix and every section banner declares Prefix: cc. Compound
-   modifier classes (e.g., .disabled, .wide, .active, .open, .hidden,
-   .section-platform, .has-center) stay unprefixed because they have no
-   standalone definitions; their validity is established by their pairing
-   with a registered cc- base class.
-
    FILE ORGANIZATION
    -----------------
    FOUNDATION: TOKENS, RESETS, KEYFRAMES, ANIMATION UTILITIES
@@ -48,9 +41,7 @@
    declared once in :root and referenced everywhere via var(...), CSS reset
    rules that establish the dark-theme baseline, browser scrollbar styling,
    all @keyframes definitions used anywhere in this file, and the small set
-   of animation utility classes pages can apply directly. Element-only,
-   universal, and pseudo-element selectors are spec-permitted in this
-   section only because that's how CSS resets work.
+   of animation utility classes pages can apply directly.
    Prefix: cc
    ============================================================================ */
 
@@ -326,7 +317,10 @@ a { color: var(--color-text-link); }
     background: var(--color-bg-card-hover);
 }
 
-.cc-nav-link.active { /* active state for the current page's nav link (default accent) */
+/* State tag marking the active (current-page) nav link. Styling applied via compound rules with the section accent classes. */
+.cc-active { }
+
+.cc-nav-link.cc-active { /* active state for the current page's nav link (default accent) */
     color: var(--color-accent-shared);
     border-bottom-color: var(--color-accent-shared);
 }
@@ -355,32 +349,41 @@ a { color: var(--color-text-link); }
     font-size: var(--font-size-content-lg);
 }
 
+/* Section tag marking a nav link as belonging to a platform-section page. Color applied via compound rules. */
+.cc-nav-section-platform { }
+
 /* Platform-section accent: blue on hover and active state. */
 .cc-nav-link.cc-nav-section-platform:hover { /* hover state for platform-section nav links */
     color: var(--color-accent-platform);
 }
 
-.cc-nav-section-platform.active { /* active state for platform-section nav links */
+.cc-nav-section-platform.cc-active { /* active state for platform-section nav links */
     color: var(--color-accent-platform);
     border-bottom-color: var(--color-accent-platform);
 }
+
+/* Section tag marking a nav link as belonging to a departmental-section page. Color applied via compound rules. */
+.cc-nav-section-departmental { }
 
 /* Departmental-section accent: yellow on hover and active state. */
 .cc-nav-link.cc-nav-section-departmental:hover { /* hover state for departmental-section nav links */
     color: var(--color-accent-departmental);
 }
 
-.cc-nav-section-departmental.active { /* active state for departmental-section nav links */
+.cc-nav-section-departmental.cc-active { /* active state for departmental-section nav links */
     color: var(--color-accent-departmental);
     border-bottom-color: var(--color-accent-departmental);
 }
+
+/* Section tag marking a nav link as belonging to a tools-section page. Color applied via compound rules. */
+.cc-nav-section-tools { }
 
 /* Tools-section accent: soft blue on hover and active state. */
 .cc-nav-link.cc-nav-section-tools:hover { /* hover state for tools-section nav links */
     color: var(--color-accent-tools);
 }
 
-.cc-nav-section-tools.active { /* active state for tools-section nav links */
+.cc-nav-section-tools.cc-active { /* active state for tools-section nav links */
     color: var(--color-accent-tools);
     border-bottom-color: var(--color-accent-tools);
 }
@@ -397,11 +400,6 @@ a { color: var(--color-text-link); }
    refresh info row + optional engine cards on the right. The H1 color is
    driven by the body's section class so changing a page's section in
    RBAC_NavRegistry automatically updates the page color.
-
-   Element selectors (h1) appear here intentionally: pages do not redefine
-   h1 color in their own CSS, and the body.section-* selectors live in
-   FOUNDATION's reset family. We localize h1 styling to the page-title
-   chrome by giving it a class wrapper.
    Prefix: cc
    ============================================================================ */
 
@@ -412,19 +410,31 @@ a { color: var(--color-text-link); }
     font-size: var(--font-size-h1);
 }
 
-.cc-page-h1.section-platform { /* H1 color when page belongs to the platform section */
+/* Body accent tag marking the page as belonging to the platform section. Color cascades to chrome elements via compound rules. */
+.cc-section-platform { }
+
+.cc-page-h1.cc-section-platform { /* H1 color when page belongs to the platform section */
     color: var(--color-accent-platform);
 }
 
-.cc-page-h1.section-departmental { /* H1 color when page belongs to the departmental section */
+/* Body accent tag marking the page as belonging to the departmental section. Color cascades to chrome elements via compound rules. */
+.cc-section-departmental { }
+
+.cc-page-h1.cc-section-departmental { /* H1 color when page belongs to the departmental section */
     color: var(--color-accent-departmental);
 }
 
-.cc-page-h1.section-tools { /* H1 color when page belongs to the tools section */
+/* Body accent tag marking the page as belonging to the tools section. Color cascades to chrome elements via compound rules. */
+.cc-section-tools { }
+
+.cc-page-h1.cc-section-tools { /* H1 color when page belongs to the tools section */
     color: var(--color-accent-tools);
 }
 
-.cc-page-h1.section-admin { /* H1 color when page is an admin-only page */
+/* Body accent tag marking the page as an admin-only page. Color cascades to chrome elements via compound rules. */
+.cc-section-admin { }
+
+.cc-page-h1.cc-section-admin { /* H1 color when page is an admin-only page */
     color: var(--color-accent-platform);
 }
 
@@ -461,7 +471,10 @@ a { color: var(--color-text-link); }
     flex-shrink: 0;
 }
 
-.cc-header-bar.has-center { /* enables the absolute-positioned center column variant */
+/* Modifier tag opting the header bar into the absolute-positioned center column variant. */
+.cc-has-center { }
+
+.cc-header-bar.cc-has-center { /* enables the absolute-positioned center column variant */
     position: relative;
 }
 
@@ -539,7 +552,10 @@ a { color: var(--color-text-link); }
     border-color: var(--color-text-subtle);
 }
 
-.cc-page-refresh-btn.spinning { /* state when refresh is actively running (briefly post-click) */
+/* State tag indicating the refresh button is currently running its spin animation. */
+.cc-page-refresh-spinning { }
+
+.cc-page-refresh-btn.cc-page-refresh-spinning { /* state when refresh is actively running (briefly post-click) */
     animation: page-refresh-spin var(--duration-slow) ease-in-out;
     border-color: var(--color-accent-shared);
     color: var(--color-accent-shared);
@@ -580,7 +596,10 @@ a { color: var(--color-text-link); }
     animation: pulse var(--duration-pulse) infinite;
 }
 
-.cc-refresh-badge-dot.idle { /* dimmed, non-animating state when polling is paused */
+/* State tag indicating an element is in an idle (paused or non-active) state. Used on refresh-badge dots and engine bars. */
+.cc-idle { }
+
+.cc-refresh-badge-dot.cc-idle { /* dimmed, non-animating state when polling is paused */
     animation: none;
     opacity: 0.4;
 }
@@ -623,7 +642,10 @@ a { color: var(--color-text-link); }
     gap: 5px;
 }
 
-.cc-engine-row.ws-disconnected { /* visual state when the WebSocket connection is dropped */
+/* State tag indicating the WebSocket connection has dropped. Used to add a visual outline to the engine row. */
+.cc-ws-disconnected { }
+
+.cc-engine-row.cc-ws-disconnected { /* visual state when the WebSocket connection is dropped */
     border: 1px dashed var(--color-text-subtle);
     border-radius: var(--size-radius-default);
     padding: var(--size-radius-sm);
@@ -644,12 +666,18 @@ a { color: var(--color-text-link); }
     cursor: pointer;
 }
 
-.cc-engine-card.card-warning { /* warning frame coloring (overdue) */
+/* State tag indicating an engine card is in a warning state. */
+.cc-card-warning { }
+
+.cc-engine-card.cc-card-warning { /* warning frame coloring (overdue) */
     border-color: var(--color-accent-departmental);
     background: var(--color-tint-warning);
 }
 
-.cc-engine-card.card-critical { /* critical frame coloring */
+/* State tag indicating an engine card is in a critical state. */
+.cc-card-critical { }
+
+.cc-engine-card.cc-card-critical { /* critical frame coloring */
     border-color: var(--color-status-critical);
     background: var(--color-tint-critical);
 }
@@ -672,27 +700,39 @@ a { color: var(--color-text-link); }
     transition: background-color var(--duration-default), box-shadow var(--duration-default);
 }
 
-.cc-engine-bar.idle { /* engine is idle (last run successful, awaiting next trigger) */
+.cc-engine-bar.cc-idle { /* engine is idle (last run successful, awaiting next trigger) */
     background: var(--color-status-idle);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-idle);
 }
 
-.cc-engine-bar.running { /* engine is actively running */
+/* State tag indicating an engine is actively running. */
+.cc-running { }
+
+.cc-engine-bar.cc-running { /* engine is actively running */
     background: var(--color-status-running);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-running);
 }
 
-.cc-engine-bar.overdue { /* engine has missed its expected next-run time */
+/* State tag indicating an engine has missed its expected next-run time. */
+.cc-overdue { }
+
+.cc-engine-bar.cc-overdue { /* engine has missed its expected next-run time */
     background: var(--color-status-overdue);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-overdue);
 }
 
-.cc-engine-bar.critical { /* engine's last run failed or is severely overdue */
+/* State tag indicating an element is in a critical state. Used on engine bars and connection-related elements. */
+.cc-critical { }
+
+.cc-engine-bar.cc-critical { /* engine's last run failed or is severely overdue */
     background: var(--color-status-critical);
     box-shadow: 0 0 var(--size-spacing-sm) var(--color-glow-status-critical);
 }
 
-.cc-engine-bar.disabled { /* engine is administratively disabled */
+/* State tag indicating an element is disabled. */
+.cc-disabled { }
+
+.cc-engine-bar.cc-disabled { /* engine is administratively disabled */
     background: var(--color-status-disabled);
     box-shadow: none;
 }
@@ -706,7 +746,10 @@ a { color: var(--color-text-link); }
     line-height: 10px;
 }
 
-.cc-engine-countdown.cd-overdue { /* countdown text styling when engine is overdue */
+/* State tag indicating an engine countdown is in the overdue state. */
+.cc-cd-overdue { }
+
+.cc-engine-countdown.cc-cd-overdue { /* countdown text styling when engine is overdue */
     color: var(--color-status-critical);
 }
 
@@ -760,7 +803,10 @@ a { color: var(--color-text-link); }
     border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.cc-engine-popup-row.last { /* last row in the popup (no bottom border) */
+/* Position tag marking an element as the last in a sequence. Used to suppress bottom borders/margins on terminal rows or paragraphs. */
+.cc-last { }
+
+.cc-engine-popup-row.cc-last { /* last row in the popup (no bottom border) */
     border-bottom: none;
 }
 
@@ -830,28 +876,40 @@ a { color: var(--color-text-link); }
     flex-shrink: 0;
 }
 
-.cc-connection-banner.reconnecting { /* attempting to reconnect (blue) */
+/* State tag indicating the WebSocket is in the reconnecting state. */
+.cc-reconnecting { }
+
+.cc-connection-banner.cc-reconnecting { /* attempting to reconnect (blue) */
     display: block;
     background: var(--color-banner-reconnecting-bg);
     border: var(--size-border-thin) solid var(--color-banner-reconnecting-border);
     color: var(--color-accent-platform);
 }
 
-.cc-connection-banner.disconnected { /* connection lost (red-orange) */
+/* State tag indicating the WebSocket connection has been lost. */
+.cc-disconnected { }
+
+.cc-connection-banner.cc-disconnected { /* connection lost (red-orange) */
     display: block;
     background: var(--color-banner-disconnected-bg);
     border: var(--size-border-thin) solid var(--color-banner-disconnected-border);
     color: var(--color-status-critical);
 }
 
-.cc-connection-banner.session-expired { /* user session has expired (yellow) */
+/* State tag indicating the user session has expired. */
+.cc-session-expired { }
+
+.cc-connection-banner.cc-session-expired { /* user session has expired (yellow) */
     display: block;
     background: var(--color-banner-session-bg);
     border: var(--size-border-thin) solid var(--color-banner-session-border);
     color: var(--color-accent-departmental);
 }
 
-.cc-connection-banner.reloading { /* page is about to reload (teal) */
+/* State tag indicating the page is about to reload after a reconnect. */
+.cc-reloading { }
+
+.cc-connection-banner.cc-reloading { /* page is about to reload (teal) */
     display: block;
     background: var(--color-banner-reloading-bg);
     border: var(--size-border-thin) solid var(--color-banner-reloading-border);
@@ -895,7 +953,10 @@ a { color: var(--color-text-link); }
     flex-shrink: 0;
 }
 
-.cc-page-error-banner.page-error-banner-visible { /* bootloader-populated state */
+/* State tag toggled by the bootloader to reveal the page-error banner when a boot error occurs. */
+.cc-page-error-banner-visible { }
+
+.cc-page-error-banner.cc-page-error-banner-visible { /* bootloader-populated state */
     display: block;
 }
 
@@ -973,7 +1034,10 @@ a { color: var(--color-text-link); }
     overflow: hidden;
 }
 
-.cc-section.fill { /* section consumes remaining vertical space and scrolls internally */
+/* Modifier tag opting a section into the fill-remaining-space variant (consumes vertical space with internal scrolling). */
+.cc-fill { }
+
+.cc-section.cc-fill { /* section consumes remaining vertical space and scrolls internally */
     flex: 1;
     flex-shrink: 1;
     min-height: 0;
@@ -1016,9 +1080,9 @@ a { color: var(--color-text-link); }
    (summary stats, tables, sections, accordions, empty states).
 
    Width tiers:
-     default  600px  -- single-column detail views
-     .wide    800px  -- tabular detail with multiple columns
-     .xwide   1000px -- wide multi-column tables
+     default       600px  -- single-column detail views
+     .cc-wide      800px  -- tabular detail with multiple columns
+     .cc-xwide     1000px -- wide multi-column tables
    Prefix: cc
    ============================================================================ */
 
@@ -1034,11 +1098,14 @@ a { color: var(--color-text-link); }
     z-index: var(--z-panel-overlay);
 }
 
-.cc-slide-overlay.open { /* state when the overlay is visible (panel is open) */
+/* State tag indicating an overlay or panel is in the open (visible) state. */
+.cc-open { }
+
+.cc-slide-overlay.cc-open { /* state when the overlay is visible (panel is open) */
     display: block;
 }
 
-/* The slide panel itself (hidden offscreen until .open). */
+/* The slide panel itself (hidden offscreen until .cc-open). */
 .cc-slide-panel {
     position: fixed;
     top: 0;
@@ -1053,21 +1120,28 @@ a { color: var(--color-text-link); }
     transition: right var(--duration-default) ease;
 }
 
-.cc-slide-panel.wide { /* wider panel for tabular detail content */
+/* Width-tier modifier tag for the wider panel/modal variant. */
+.cc-wide { }
+
+.cc-slide-panel.cc-wide { /* wider panel for tabular detail content */
     width: var(--size-panel-width-wide);
     right: var(--size-panel-offset-wide);
 }
 
-.cc-slide-panel.xwide { /* widest panel for wide multi-column tables */
+/* Width-tier modifier tag for the widest panel variant. */
+.cc-xwide { }
+
+.cc-slide-panel.cc-xwide { /* widest panel for wide multi-column tables */
     width: var(--size-panel-width-xwide);
     right: var(--size-panel-offset-xwide);
 }
 
-.cc-slide-panel.open { /* state when the panel is visible (slid into view) */
+.cc-slide-panel.cc-open { /* state when the panel is visible (slid into view) */
     right: 0;
 }
 
-.cc-slide-panel.cc-slide-auto-height { /* vertically-centered panel that sizes to content (compact dialogs) */
+/* Vertically-centered slide panel variant that sizes to content (compact dialogs). */
+.cc-slide-auto-height {
     height: auto;
     max-height: 90vh;
     top: 50%;
@@ -1076,7 +1150,7 @@ a { color: var(--color-text-link); }
     border: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.cc-slide-auto-height.open { /* offset the auto-height panel slightly from the right edge */
+.cc-slide-auto-height.cc-open { /* offset the auto-height panel slightly from the right edge */
     right: var(--size-page-padding-y);
 }
 
@@ -1163,7 +1237,10 @@ a { color: var(--color-text-link); }
     white-space: nowrap;
 }
 
-.cc-slide-table-td.align-right { /* right-aligned numeric/timestamp cells */
+/* Layout tag right-aligning a table cell's content. */
+.cc-align-right { }
+
+.cc-slide-table-td.cc-align-right { /* right-aligned numeric/timestamp cells */
     text-align: right;
 }
 
@@ -1227,7 +1304,10 @@ a { color: var(--color-text-link); }
     transition: transform var(--duration-fast) ease;
 }
 
-.cc-slide-accordion-chevron.expanded { /* rotated 90deg when the accordion is open */
+/* State tag indicating an accordion section is in the expanded (open) state. */
+.cc-expanded { }
+
+.cc-slide-accordion-chevron.cc-expanded { /* rotated 90deg when the accordion is open */
     transform: rotate(90deg);
 }
 
@@ -1237,7 +1317,7 @@ a { color: var(--color-text-link); }
     padding: var(--size-spacing-md) 0 var(--size-spacing-md) var(--size-spacing-xl);
 }
 
-.cc-slide-accordion-body.expanded { /* visible state when the accordion is open */
+.cc-slide-accordion-body.cc-expanded { /* visible state when the accordion is open */
     display: block;
 }
 
@@ -1264,12 +1344,10 @@ a { color: var(--color-text-link); }
    all Control Center pages. Used by cc_showAlert() and cc_showConfirm()
    in cc-shared.js, which dynamically create and remove the overlay
    element. Pages can also declare a cc-modal-overlay statically in HTML
-   and toggle visibility via the .hidden class for async-content modals.
+   and toggle visibility via the .cc-hidden class for async-content modals.
 
    The .cc-modal-close button is shared with slide panel headers (a
    single close-button class works in both contexts).
-
-   uses @keyframes ccModalFadeIn from FOUNDATION
    Prefix: cc
    ============================================================================ */
 
@@ -1288,7 +1366,10 @@ a { color: var(--color-text-link); }
     animation: ccModalFadeIn var(--duration-fast) ease;
 }
 
-.cc-modal-overlay.hidden { /* hidden initial state for statically-declared modals */
+/* State tag indicating an element is in the hidden state. */
+.cc-hidden { }
+
+.cc-modal-overlay.cc-hidden { /* hidden initial state for statically-declared modals */
     display: none;
 }
 
@@ -1305,11 +1386,14 @@ a { color: var(--color-text-link); }
     box-shadow: var(--shadow-modal);
 }
 
-.cc-modal.medium { /* medium-width modal for typical detail views */
+/* Width-tier modifier tag for the medium-width modal variant. */
+.cc-medium { }
+
+.cc-modal.cc-medium { /* medium-width modal for typical detail views */
     width: var(--size-modal-width-medium);
 }
 
-.cc-modal.wide { /* wider modal for tabular content or detail views */
+.cc-modal.cc-wide { /* wider modal for tabular content or detail views */
     width: var(--size-modal-width-wide);
 }
 
@@ -1356,7 +1440,7 @@ a { color: var(--color-text-link); }
     margin: 0 0 10px 0;
 }
 
-.cc-modal-paragraph.last { /* last paragraph in the body (no bottom margin) */
+.cc-modal-paragraph.cc-last { /* last paragraph in the body (no bottom margin) */
     margin-bottom: 0;
 }
 
