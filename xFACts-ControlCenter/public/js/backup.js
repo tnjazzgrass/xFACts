@@ -18,7 +18,7 @@
    CONSTANTS: PAGE CONFIGURATION
    CONSTANTS: DISPATCH TABLES
    STATE: PAGE STATE
-   FUNCTIONS: PAGE BOOT
+   FUNCTIONS: INITIALIZATION
    FUNCTIONS: LIVE POLLING
    FUNCTIONS: API CALLS
    FUNCTIONS: PIPELINE STATUS
@@ -84,13 +84,13 @@ const bkp_PAGE_REFRESH_INTERVAL_DEFAULT = 5;
 
 /* Page-local click action dispatch table. */
 const bkp_clickActions = {
-    'open-pipeline-detail':  bkp_openPipelineDetail,
-    'open-queue-detail':     bkp_openQueueDetail,
-    'open-retention-detail': bkp_openRetentionDetail,
-    'modal-close':           bkp_closeDetailModal,
-    'modal-close-on-overlay': bkp_closeDetailModalOnOverlay,
-    'slideout-close':        bkp_closeRetentionSlideout,
-    'toggle-accordion':      bkp_toggleAccordion
+    'bkp-open-pipeline-detail':   bkp_openPipelineDetail,
+    'bkp-open-queue-detail':      bkp_openQueueDetail,
+    'bkp-open-retention-detail':  bkp_openRetentionDetail,
+    'bkp-modal-close':            bkp_closeDetailModal,
+    'bkp-modal-close-on-overlay': bkp_closeDetailModalOnOverlay,
+    'bkp-slideout-close':         bkp_closeRetentionSlideout,
+    'bkp-toggle-accordion':       bkp_toggleAccordion
 };
 
 /* ============================================================================
@@ -137,7 +137,7 @@ var bkp_queueData = {
 };
 
 /* ============================================================================
-   FUNCTIONS: PAGE BOOT
+   FUNCTIONS: INITIALIZATION
    ----------------------------------------------------------------------------
    The mandatory bkp_init function called by the cc-shared.js bootloader
    after this module loads. Performs one-time page setup, runs the first
@@ -340,7 +340,7 @@ function bkp_loadQueueStatus() {
 
 /* Renders the pipeline status cards. One card per process; each card
    shows run state, last run, file/byte counts, and a status badge.
-   Cards declare data-action-click="open-pipeline-detail" so the
+   Cards declare data-action-click="bkp-open-pipeline-detail" so the
    delegated click listener routes through bkp_clickActions. */
 function bkp_renderPipelineStatus(processes) {
     var container = document.getElementById('bkp-pipeline-status');
@@ -352,12 +352,12 @@ function bkp_renderPipelineStatus(processes) {
         var lastRun = isRunning ? 'Running...' : (proc.completed_dttm ? bkp_formatDateTime(proc.completed_dttm) : 'Never');
         var badge = bkp_getProcessBadge(proc, statusClass);
 
-        var cardClass = 'bkp-pipeline-card clickable';
+        var cardClass = 'bkp-pipeline-card bkp-clickable';
         if (statusClass) cardClass += ' ' + statusClass;
         var timeClass = 'bkp-pipeline-time';
         if (statusClass) timeClass += ' ' + statusClass;
 
-        html += '<div class="' + cardClass + '" data-action-click="open-pipeline-detail" data-process-name="' + cc_escapeHtml(proc.process_name) + '">';
+        html += '<div class="' + cardClass + '" data-action-click="bkp-open-pipeline-detail" data-process-name="' + cc_escapeHtml(proc.process_name) + '">';
         html += '<div class="bkp-pipeline-card-header">';
         html += '<span class="bkp-pipeline-name">' + bkp_formatProcessName(proc.process_name) + '</span>';
         html += '<span class="bkp-pipeline-status-badge ' + badge.badgeClass + '">' + badge.label + '</span>';
@@ -385,31 +385,31 @@ function bkp_renderPipelineStatus(processes) {
    of the last completion drives the warning/critical thresholds, with
    retention having looser thresholds because it runs daily. */
 function bkp_getProcessStatusClass(proc) {
-    if (proc.last_status === 'FAILED') return 'status-critical';
-    if (proc.started_dttm && !proc.completed_dttm) return 'status-running';
+    if (proc.last_status === 'FAILED') return 'bkp-status-critical';
+    if (proc.started_dttm && !proc.completed_dttm) return 'bkp-status-running';
 
     var minutes = proc.minutes_since_completion;
-    if (minutes === null) return 'status-unknown';
+    if (minutes === null) return 'bkp-status-unknown';
 
     if (proc.process_name === 'RETENTION') {
-        if (minutes > 48 * 60) return 'status-critical';
-        if (minutes > 25 * 60) return 'status-warning';
+        if (minutes > 48 * 60) return 'bkp-status-critical';
+        if (minutes > 25 * 60) return 'bkp-status-warning';
         return '';
     }
-    if (minutes > 30) return 'status-critical';
-    if (minutes > 10) return 'status-warning';
+    if (minutes > 30) return 'bkp-status-critical';
+    if (minutes > 10) return 'bkp-status-warning';
     return '';
 }
 
 /* Returns the badge label and class for a pipeline card based on the
    raw process state and the resolved status class. */
 function bkp_getProcessBadge(proc, statusClass) {
-    if (proc.last_status === 'FAILED') return { label: 'FAILED', badgeClass: 'failed' };
-    if (statusClass === 'status-running') return { label: 'RUNNING', badgeClass: 'running' };
-    if (statusClass === 'status-critical') return { label: 'STALE', badgeClass: 'failed' };
-    if (statusClass === 'status-warning') return { label: 'DELAYED', badgeClass: 'warning' };
-    if (statusClass === 'status-unknown') return { label: 'UNKNOWN', badgeClass: 'unknown' };
-    return { label: 'SUCCESS', badgeClass: 'success' };
+    if (proc.last_status === 'FAILED') return { label: 'FAILED', badgeClass: 'bkp-failed' };
+    if (statusClass === 'bkp-status-running') return { label: 'RUNNING', badgeClass: 'bkp-running' };
+    if (statusClass === 'bkp-status-critical') return { label: 'STALE', badgeClass: 'bkp-failed' };
+    if (statusClass === 'bkp-status-warning') return { label: 'DELAYED', badgeClass: 'bkp-warning' };
+    if (statusClass === 'bkp-status-unknown') return { label: 'UNKNOWN', badgeClass: 'bkp-unknown' };
+    return { label: 'SUCCESS', badgeClass: 'bkp-success' };
 }
 
 /* Opens the pipeline detail modal for a single process. Loads the
@@ -453,9 +453,9 @@ function bkp_renderPipelineModal(container, data) {
 
     if (data.summary) {
         var s = data.summary;
-        var statusClass = s.last_status === 'SUCCESS' ? 'summary-status-success'
-            : s.last_status === 'PARTIAL' ? 'summary-status-partial'
-            : 'summary-status-failed';
+        var statusClass = s.last_status === 'SUCCESS' ? 'bkp-summary-status-success'
+            : s.last_status === 'PARTIAL' ? 'bkp-summary-status-partial'
+            : 'bkp-summary-status-failed';
 
         html += '<div class="bkp-detail-summary">';
         html += '<span class="bkp-detail-summary-item"><span class="bkp-detail-summary-value ' + statusClass + '">' + (s.last_status || '-') + '</span></span>';
@@ -481,18 +481,18 @@ function bkp_renderPipelineModal(container, data) {
         html += '<th class="bkp-detail-table-th">Server</th>';
         html += '<th class="bkp-detail-table-th">Database</th>';
         html += '<th class="bkp-detail-table-th">File</th>';
-        html += '<th class="bkp-detail-table-th align-right">Size</th>';
-        html += '<th class="bkp-detail-table-th align-right">Duration</th>';
+        html += '<th class="bkp-detail-table-th bkp-align-right">Size</th>';
+        html += '<th class="bkp-detail-table-th bkp-align-right">Duration</th>';
         html += '</tr></thead><tbody>';
         data.files.forEach(function(f) {
-            var statusCss = f.status === 'SUCCESS' ? 'status-success' : 'status-failed';
+            var statusCss = f.status === 'SUCCESS' ? 'bkp-status-success' : 'bkp-status-failed';
             html += '<tr class="bkp-detail-table-row">';
             html += '<td class="bkp-detail-table-td ' + statusCss + '">' + cc_escapeHtml(f.status) + '</td>';
             html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.server_name || '-') + '</td>';
             html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.database_name || '-') + '</td>';
             html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.file_name || '-') + '</td>';
-            html += '<td class="bkp-detail-table-td align-right">' + (f.bytes_processed > 0 ? bkp_formatBytesShort(f.bytes_processed) : '-') + '</td>';
-            html += '<td class="bkp-detail-table-td align-right">' + bkp_formatDurationMs(f.duration_ms) + '</td>';
+            html += '<td class="bkp-detail-table-td bkp-align-right">' + (f.bytes_processed > 0 ? bkp_formatBytesShort(f.bytes_processed) : '-') + '</td>';
+            html += '<td class="bkp-detail-table-td bkp-align-right">' + bkp_formatDurationMs(f.duration_ms) + '</td>';
             html += '</tr>';
             if (f.error_message) {
                 html += '<tr><td colspan="6" class="bkp-detail-error-caption">' + cc_escapeHtml(f.error_message) + '</td></tr>';
@@ -516,7 +516,7 @@ function bkp_renderPipelineModal(container, data) {
 
 /* Renders the network and AWS queue cards. Each card shows the pending
    file count and total size; cards with content are clickable and
-   declare data-action-click="open-queue-detail". */
+   declare data-action-click="bkp-open-queue-detail". */
 function bkp_renderQueueStatus() {
     var container = document.getElementById('bkp-queue-status');
     var html = '<div class="bkp-card-pair">';
@@ -532,9 +532,9 @@ function bkp_renderQueueStatus() {
    non-clickable with an "Empty" detail caption. */
 function bkp_renderQueueCard(type, label, queue, icon) {
     var clickable = queue.file_count > 0;
-    var cardClass = 'bkp-status-card' + (clickable ? ' clickable' : '');
+    var cardClass = 'bkp-status-card' + (clickable ? ' bkp-clickable' : '');
     var dataAttrs = clickable
-        ? ' data-action-click="open-queue-detail" data-queue-type="' + type + '"'
+        ? ' data-action-click="bkp-open-queue-detail" data-queue-type="' + type + '"'
         : '';
     var detail = queue.total_bytes > 0 ? bkp_formatBytesShort(queue.total_bytes) : 'Empty';
 
@@ -591,16 +591,16 @@ function bkp_renderQueueModal(container, data) {
     html += '<th class="bkp-detail-table-th">Database</th>';
     html += '<th class="bkp-detail-table-th">File</th>';
     html += '<th class="bkp-detail-table-th">Backup Date</th>';
-    html += '<th class="bkp-detail-table-th align-right">Size</th>';
+    html += '<th class="bkp-detail-table-th bkp-align-right">Size</th>';
     html += '</tr></thead><tbody>';
     data.files.forEach(function(f) {
         html += '<tr class="bkp-detail-table-row">';
-        html += '<td class="bkp-detail-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
+        html += '<td class="bkp-detail-table-td"><span class="bkp-backup-type-badge bkp-type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
         html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.server_name) + '</td>';
         html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.database_name) + '</td>';
         html += '<td class="bkp-detail-table-td">' + cc_escapeHtml(f.file_name) + '</td>';
         html += '<td class="bkp-detail-table-td">' + bkp_formatDateTime(f.backup_finish_dttm) + '</td>';
-        html += '<td class="bkp-detail-table-td align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
+        html += '<td class="bkp-detail-table-td bkp-align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
         html += '</tr>';
     });
     html += '</tbody></table>';
@@ -642,9 +642,9 @@ function bkp_renderRetentionStatus() {
    render non-clickable. */
 function bkp_renderRetentionCard(type, label, pending) {
     var clickable = pending.file_count > 0;
-    var cardClass = 'bkp-status-card' + (clickable ? ' clickable' : '');
+    var cardClass = 'bkp-status-card' + (clickable ? ' bkp-clickable' : '');
     var dataAttrs = clickable
-        ? ' data-action-click="open-retention-detail" data-retention-type="' + type + '"'
+        ? ' data-action-click="bkp-open-retention-detail" data-action-bkp-retention-type="' + type + '"'
         : '';
 
     var html = '<div class="' + cardClass + '"' + dataAttrs + '>';
@@ -663,13 +663,13 @@ function bkp_renderRetentionCard(type, label, pending) {
    server / database accordion. The overlay and panel IDs follow the
    bkp-slideout-{type}-retention-{overlay|} pattern from Backup.ps1. */
 function bkp_openRetentionDetail(target) {
-    var type = target.dataset.retentionType;
+    var type = target.dataset.bkpRetentionType;
     var overlayId = 'bkp-slideout-' + type + '-retention-overlay';
     var panelId   = 'bkp-slideout-' + type + '-retention';
     var bodyId    = 'bkp-' + type + '-retention-body';
 
-    document.getElementById(overlayId).classList.add('open');
-    document.getElementById(panelId).classList.add('open');
+    document.getElementById(overlayId).classList.add('cc-open');
+    document.getElementById(panelId).classList.add('cc-open');
 
     var body = document.getElementById(bodyId);
     body.innerHTML = '<div class="bkp-loading">Loading retention candidates...</div>';
@@ -686,15 +686,15 @@ function bkp_openRetentionDetail(target) {
 }
 
 /* Closes the retention slideout for the given type. Reads the type from
-   the clicked element's data-action-type attribute (set on both the
-   overlay and the close button in Backup.ps1). */
+   the clicked element's data-action-bkp-type argument attribute (set on
+   both the overlay and the close button in Backup.ps1). */
 function bkp_closeRetentionSlideout(target) {
-    var type = target.dataset.actionType;
+    var type = target.dataset.bkpType;
     if (!type) return;
     var overlayId = 'bkp-slideout-' + type + '-retention-overlay';
     var panelId   = 'bkp-slideout-' + type + '-retention';
-    document.getElementById(overlayId).classList.remove('open');
-    document.getElementById(panelId).classList.remove('open');
+    document.getElementById(overlayId).classList.remove('cc-open');
+    document.getElementById(panelId).classList.remove('cc-open');
 }
 
 /* Renders the retention slideout body: a summary bar showing total
@@ -738,7 +738,7 @@ function bkp_renderRetentionSlideout(container, data, type) {
         var server = servers[serverName];
         var serverId = 'bkp-ret-srv-' + type + '-' + serverName.replace(/[^a-zA-Z0-9]/g, '_');
 
-        html += '<div class="cc-slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + serverId + '" id="' + serverId + '-header">';
+        html += '<div class="cc-slide-accordion-header" data-action-click="bkp-toggle-accordion" data-accordion-id="' + serverId + '" id="' + serverId + '-header">';
         html += '<span class="cc-slide-accordion-label">' + cc_escapeHtml(serverName) + '</span>';
         html += '<span class="cc-slide-accordion-stats">' + server.files.length + ' files &middot; ' + bkp_formatBytesShort(server.bytes) + '</span>';
         html += '<span class="cc-slide-accordion-chevron" id="' + serverId + '-chevron">&#9654;</span>';
@@ -750,7 +750,7 @@ function bkp_renderRetentionSlideout(container, data, type) {
             var db = server.databases[dbName];
             var dbId = serverId + '-' + dbName.replace(/[^a-zA-Z0-9]/g, '_');
 
-            html += '<div class="cc-slide-accordion-header" data-action-click="toggle-accordion" data-accordion-id="' + dbId + '" id="' + dbId + '-header">';
+            html += '<div class="cc-slide-accordion-header" data-action-click="bkp-toggle-accordion" data-accordion-id="' + dbId + '" id="' + dbId + '-header">';
             html += '<span class="cc-slide-accordion-label">' + cc_escapeHtml(dbName) + '</span>';
             html += '<span class="cc-slide-accordion-stats">' + db.files.length + ' files &middot; ' + bkp_formatBytesShort(db.bytes) + '</span>';
             html += '<span class="cc-slide-accordion-chevron" id="' + dbId + '-chevron">&#9654;</span>';
@@ -764,14 +764,14 @@ function bkp_renderRetentionSlideout(container, data, type) {
             html += '<th class="cc-slide-table-th">Type</th>';
             html += '<th class="cc-slide-table-th">File</th>';
             html += '<th class="cc-slide-table-th">Backup Date</th>';
-            html += '<th class="cc-slide-table-th align-right">Size</th>';
+            html += '<th class="cc-slide-table-th cc-align-right">Size</th>';
             html += '</tr></thead><tbody>';
             db.files.forEach(function(f) {
                 html += '<tr class="cc-slide-table-row">';
-                html += '<td class="cc-slide-table-td"><span class="bkp-backup-type-badge type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
+                html += '<td class="cc-slide-table-td"><span class="bkp-backup-type-badge bkp-type-' + f.backup_type.toLowerCase() + '">' + cc_escapeHtml(f.backup_type) + '</span></td>';
                 html += '<td class="cc-slide-table-td">' + cc_escapeHtml(f.file_name) + '</td>';
                 html += '<td class="cc-slide-table-td">' + bkp_formatDateTime(f.backup_finish_dttm) + '</td>';
-                html += '<td class="cc-slide-table-td align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
+                html += '<td class="cc-slide-table-td cc-align-right">' + bkp_formatBytesShort(f.file_size_bytes) + '</td>';
                 html += '</tr>';
             });
             html += '</tbody></table>';
@@ -785,16 +785,16 @@ function bkp_renderRetentionSlideout(container, data, type) {
 }
 
 /* Toggles the expanded state of an accordion section by its data-accordion-id.
-   Adds or removes the 'expanded' class on the body (controls display) and
-   the chevron (controls rotation). The header itself carries no .expanded
+   Adds or removes the 'cc-expanded' class on the body (controls display) and
+   the chevron (controls rotation). The header itself carries no .cc-expanded
    state in cc-shared.css; it's the body and chevron that change visually. */
 function bkp_toggleAccordion(target) {
     var id = target.dataset.accordionId;
     if (!id) return;
     var body = document.getElementById(id + '-body');
     var chevron = document.getElementById(id + '-chevron');
-    if (body) body.classList.toggle('expanded');
-    if (chevron) chevron.classList.toggle('expanded');
+    if (body) body.classList.toggle('cc-expanded');
+    if (chevron) chevron.classList.toggle('cc-expanded');
 }
 
 /* ============================================================================
@@ -1035,13 +1035,13 @@ function bkp_renderNetworkStorageRow(storage) {
     return rowHtml;
 }
 
-/* Returns the storage status modifier for a drive based on percent free
-   space. Below 10% is critical; below 20% is warning; otherwise an
-   empty string (no modifier class). The returned value matches the
-   modifier classes on .bkp-drive-label. */
+/* Returns the storage status modifier class for a drive based on percent
+   free space. Below 10% is bkp-critical; below 20% is bkp-warning;
+   otherwise an empty string (no modifier class). The returned value
+   matches the modifier classes on .bkp-drive-label. */
 function bkp_getStorageStatusClass(percentFree) {
-    if (percentFree < 10) return 'critical';
-    if (percentFree < 20) return 'warning';
+    if (percentFree < 10) return 'bkp-critical';
+    if (percentFree < 20) return 'bkp-warning';
     return '';
 }
 
@@ -1053,9 +1053,9 @@ function bkp_renderSegmentGauge(percent, statusClass, numSegments) {
     var filledCount = Math.round((percent / 100) * numSegments);
     var activeClass;
 
-    if (statusClass === 'critical') activeClass = 'active-critical';
-    else if (statusClass === 'warning') activeClass = 'active-warning';
-    else activeClass = 'active-healthy';
+    if (statusClass === 'bkp-critical') activeClass = 'bkp-active-critical';
+    else if (statusClass === 'bkp-warning') activeClass = 'bkp-active-warning';
+    else activeClass = 'bkp-active-healthy';
 
     var html = '<div class="bkp-segment-bar">';
     for (var i = 0; i < numSegments; i++) {
@@ -1079,18 +1079,18 @@ function bkp_renderSegmentGauge(percent, statusClass, numSegments) {
    by removing the .hidden class. */
 function bkp_openDetailModal(title) {
     document.getElementById('bkp-detail-title').textContent = title;
-    document.getElementById('bkp-modal-detail-overlay').classList.remove('hidden');
+    document.getElementById('bkp-modal-detail-overlay').classList.remove('cc-hidden');
 }
 
 /* Closes the detail modal. Hides the modal overlay by adding the
    .hidden class. Wired up from the close button via data-action-click. */
 function bkp_closeDetailModal() {
-    document.getElementById('bkp-modal-detail-overlay').classList.add('hidden');
+    document.getElementById('bkp-modal-detail-overlay').classList.add('cc-hidden');
 }
 
 /* Closes the detail modal only when the overlay itself is clicked (not
    the dialog inside it). Wired up from the overlay via
-   data-action-click="modal-close-on-overlay". */
+   data-action-click="bkp-modal-close-on-overlay". */
 function bkp_closeDetailModalOnOverlay(target, event) {
     if (event.target === target) {
         bkp_closeDetailModal();
