@@ -420,7 +420,7 @@ $ContractIdentifiers = @('ENGINE_PROCESSES') + $RecognizedHookNames
 # misplacement drift code. The TypeName is implicit (CONSTANTS for the
 # ENGINE_PROCESSES banner, FUNCTIONS for the hooks banner); the BannerName
 # is what's checked at row-emission time.
-$EngineProcessesBannerName = 'ENGINE PROCESSES'
+$script:EngineProcessesBannerName = 'ENGINE PROCESSES'
 
 # The fixed banner name for the page boot function's required home.
 # Every page file declares an INITIALIZATION banner as the first
@@ -2646,16 +2646,18 @@ function Get-TimerHandleCandidates {
 # orchestration loop. Returning 'SKIP_CHILDREN' stops the walker from
 # recursing into the current node's children -- used for top-level IIFEs.
 
-$JsVisitor = {
+function Invoke-JsVisitor {
     param($Node, $ParentChain, $ParentNodes)
 
     if ($null -eq $Node -or $null -eq $Node.type) { return }
 
-    $line       = Get-NodeLine    -Node $Node
-    $endLine    = Get-NodeEndLine -Node $Node
-    $col        = Get-NodeColumn  -Node $Node
-    $section    = Get-SectionForLine -Sections $script:CurrentSections -Line $line
-    $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
+    # NOTE: there is no pre-switch setup. The five legacy preamble values
+    # ($line, $endLine, $col, $section, $parentName) are computed lazily
+    # inside each switch case that needs them, AFTER any early-rejection
+    # checks. This avoids paying the setup tax on the 60-70% of node
+    # visits that fall through the switch with no work to do, and on the
+    # node visits that match a case but are then rejected by case-level
+    # gating (e.g., FunctionDeclaration rejected by Test-IsTopLevel).
 
     switch ($Node.type) {
 
@@ -2665,6 +2667,15 @@ $JsVisitor = {
             $isTopLevel    = Test-IsTopLevel -ParentChain $ParentChain
             $isConditional = Test-IsConditionallyDefined -ParentChain $ParentChain
             if (-not $isTopLevel) { return }
+
+            # Per-case setup. This case emits a row, so it needs position
+            # info ($line / $endLine / $col) and the containing section.
+            # It does NOT use $parentName; top-level functions have no
+            # meaningful "parent function" context.
+            $line    = Get-NodeLine    -Node $Node
+            $endLine = Get-NodeEndLine -Node $Node
+            $col     = Get-NodeColumn  -Node $Node
+            $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
 
             $fnName = $Node.id.name
             $sig = if ($Node.async -eq $true)     { "async function $fnName(" }
@@ -2840,6 +2851,15 @@ $JsVisitor = {
             $isTopLevel = Test-IsTopLevel -ParentChain $ParentChain
             if (-not $isTopLevel) { return }
 
+            # Per-case setup. This case emits rows per declarator using
+            # per-declarator $declLine / $declCol values (declarators on
+            # one statement may not all sit on the same line), so the
+            # case-level $line / $endLine / $col are not needed. Only
+            # $section is needed at case scope - it's the same for every
+            # declarator in this statement.
+            $line    = Get-NodeLine -Node $Node
+            $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+
             $isMulti = ($Node.declarations -and $Node.declarations.Count -gt 1)
             $isLet   = ($Node.kind -eq 'let')
 
@@ -2966,7 +2986,7 @@ $JsVisitor = {
                 $isEngineProcessesName = Test-IsEngineProcessesName -IdentifierName $declName
                 $isInEngineProcessesBanner = ($section -and
                                               $section.TypeName -eq 'CONSTANTS' -and
-                                              $section.BannerName -eq $EngineProcessesBannerName)
+                                              $section.BannerName -eq $script:EngineProcessesBannerName)
                 $isEngineProcessesCarveOut = ($isEngineProcessesName -and
                                               $Node.kind -eq 'var' -and
                                               $isInEngineProcessesBanner)
@@ -3189,6 +3209,13 @@ $JsVisitor = {
             if (-not $isTopLevel) { return }
             if (-not $Node.id -or -not $Node.id.name) { return }
 
+            # Per-case setup. Emits a row, so position info + section.
+            # No $parentName - top-level classes have no parent function.
+            $line    = Get-NodeLine    -Node $Node
+            $endLine = Get-NodeEndLine -Node $Node
+            $col     = Get-NodeColumn  -Node $Node
+            $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+
             $clsName = $Node.id.name
             $sig = "class $clsName"
             if ($Node.superClass -and $Node.superClass.name) { $sig += " extends $($Node.superClass.name)" }
@@ -3241,6 +3268,15 @@ $JsVisitor = {
                 return
             }
 
+            # Per-case setup. Emits a row, so position info + section.
+            # No $parentName at the case level - the parent class name is
+            # computed below by walking $ParentNodes for ClassDeclaration /
+            # ClassExpression.
+            $line    = Get-NodeLine    -Node $Node
+            $endLine = Get-NodeEndLine -Node $Node
+            $col     = Get-NodeColumn  -Node $Node
+            $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+
             $sig = "$methodName(...)"
             if ($Node.kind -eq 'constructor') { $sig = "constructor(...)" }
 
@@ -3276,6 +3312,14 @@ $JsVisitor = {
 
         'ImportDeclaration' {
             if ($script:CurrentSuppressDefinitions) { return }
+
+            # Per-case setup. Emits a row per specifier; all specifiers in
+            # one import statement share the same position and section.
+            $line    = Get-NodeLine    -Node $Node
+            $endLine = Get-NodeEndLine -Node $Node
+            $col     = Get-NodeColumn  -Node $Node
+            $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+
             $sourceVal = if ($Node.source -and $Node.source.value) { [string]$Node.source.value } else { '?' }
             foreach ($spec in $Node.specifiers) {
                 $importedName = $null
@@ -3298,6 +3342,15 @@ $JsVisitor = {
         'CallExpression' {
             $callee = $Node.callee
             if ($null -eq $callee) { return }
+
+            # Per-case setup. Emits several row kinds (eval, document.write,
+            # function USAGE, addEventListener, require, etc.) - all need
+            # position info, $parentName, and a few sites need $section.
+            $line       = Get-NodeLine    -Node $Node
+            $endLine    = Get-NodeEndLine -Node $Node
+            $col        = Get-NodeColumn  -Node $Node
+            $section    = Get-SectionForLine -Sections $script:CurrentSections -Line $line
+            $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
 
             # eval(...)
             if ($callee.type -eq 'Identifier' -and $callee.name -eq 'eval') {
@@ -3449,6 +3502,14 @@ $JsVisitor = {
         }
 
         'TemplateLiteral' {
+            # Per-case setup. Emits inline-style / inline-script / inline-event
+            # rows and HTML-bearing-text rows; all need position info and
+            # $parentName. $section is not used by this case.
+            $line       = Get-NodeLine    -Node $Node
+            $endLine    = Get-NodeEndLine -Node $Node
+            $col        = Get-NodeColumn  -Node $Node
+            $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
+
             $reconstructed = ''
             for ($i = 0; $i -lt $Node.quasis.Count; $i++) {
                 $q = $Node.quasis[$i]
@@ -3481,6 +3542,14 @@ $JsVisitor = {
         'Literal' {
             if ($null -eq $Node.value) { return }
             if (-not ($Node.value -is [string])) { return }
+
+            # Per-case setup. Same emission shape as TemplateLiteral; no
+            # $section needed.
+            $line       = Get-NodeLine    -Node $Node
+            $endLine    = Get-NodeEndLine -Node $Node
+            $col        = Get-NodeColumn  -Node $Node
+            $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
+
             $strVal = [string]$Node.value
             $rawSnippet = Get-RangeText -Source $script:CurrentFileSource -Node $Node
 
@@ -3504,6 +3573,13 @@ $JsVisitor = {
             $left  = $Node.left
             $right = $Node.right
             if ($null -eq $left -or $null -eq $right) { return }
+
+            # Per-case setup. Emits window-assignment, timer, and direct-on<event>
+            # rows; all need position info and $parentName. $section is not used.
+            $line       = Get-NodeLine    -Node $Node
+            $endLine    = Get-NodeEndLine -Node $Node
+            $col        = Get-NodeColumn  -Node $Node
+            $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
 
             # Pattern 1: window.X = ... (forbidden outside cc-shared.js)
             if ($left.type -eq 'MemberExpression' -and
@@ -3599,6 +3675,12 @@ $JsVisitor = {
         'ExpressionStatement' {
             $isTopLevel = Test-IsTopLevel -ParentChain $ParentChain
             if (-not $isTopLevel) { return }
+
+            # Per-case setup. Only $line / $endLine / $col are needed -
+            # $section / $parentName are not used by this case.
+            $line    = Get-NodeLine    -Node $Node
+            $endLine = Get-NodeEndLine -Node $Node
+            $col     = Get-NodeColumn  -Node $Node
 
             # Top-level IIFE detection. The IIFE emits a JS_IIFE row carrying
             # its full body in raw_text plus FORBIDDEN_IIFE drift. Definition
@@ -3707,30 +3789,49 @@ foreach ($file in $JsFiles) {
     $jsFileRow = Add-JsFileRow -LineEnd $fileLineCount
 
     # ---- Emit FILE_HEADER row ----
+    # The FILE_HEADER row is emitted only when a real /* ... */ block at
+    # line 1 is found. If no valid header is present, drift attaches to
+    # the JS_FILE anchor row instead (same pattern as the PS populator's
+    # PS_FILE fallback for MALFORMED_FILE_HEADER).
     $headerInfo = Get-FileHeaderInfo -Comments $normalizedComments
-    $headerRawText = $null
-    foreach ($c in $normalizedComments) {
-        if ($c.Type -eq 'Block') {
-            $crlf = "`r`n"; $lf = "`n"; $cr = "`r"
-            $headerRawText = ($c.Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
-            break
-        }
-    }
-    $headerRow = Add-FileHeaderRow `
-        -LineStart          $headerInfo.StartLine `
-        -LineEnd            $headerInfo.EndLine `
-        -RawText            $headerRawText `
-        -PurposeDescription $headerInfo.Description
-    foreach ($code in $headerInfo.DriftCodes) {
-        Add-DriftCode -Row $headerRow -Code $code
-    }
 
-    # FILE_ORG_MISMATCH on the FILE_HEADER row when the FILE ORGANIZATION
-    # list doesn't match the actual section banners verbatim/in-order.
     if ($headerInfo.IsValid) {
+        $headerRawText = $null
+        foreach ($c in $normalizedComments) {
+            if ($c.Type -eq 'Block') {
+                $crlf = "`r`n"; $lf = "`n"; $cr = "`r"
+                $headerRawText = ($c.Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
+                break
+            }
+        }
+        $headerRow = Add-FileHeaderRow `
+            -LineStart          $headerInfo.StartLine `
+            -LineEnd            $headerInfo.EndLine `
+            -RawText            $headerRawText `
+            -PurposeDescription $headerInfo.Description
+        foreach ($code in $headerInfo.DriftCodes) {
+            Add-DriftCode -Row $headerRow -Code $code
+        }
+
+        # FILE_ORG_MISMATCH on the FILE_HEADER row when the FILE ORGANIZATION
+        # list doesn't match the actual section banners verbatim/in-order.
         $matchOK = Test-FileOrgMatchesBanners -FileOrgList $headerInfo.FileOrgList -Sections $script:CurrentSections
         if (-not $matchOK) {
             Add-DriftCode -Row $headerRow -Code 'FILE_ORG_MISMATCH'
+        }
+    }
+    else {
+        # No valid /* ... */ block at line 1. No FILE_HEADER row is emitted;
+        # the drift attaches to the JS_FILE anchor row instead. Mirrors the
+        # PS populator's PS_FILE fallback. Codes returned by
+        # Get-FileHeaderInfo for this case are MALFORMED_FILE_HEADER (and
+        # potentially FORBIDDEN_CHANGELOG_BLOCK if the block existed but
+        # didn't start at line 1).
+        if ($null -ne $jsFileRow) {
+            foreach ($code in $headerInfo.DriftCodes) {
+                Add-DriftCode -Row $jsFileRow -Code $code `
+                    -Context "No /* ... */ block found at line 1 of the file."
+            }
         }
     }
 
@@ -3787,7 +3888,7 @@ foreach ($file in $JsFiles) {
     Write-Host ("  Walking {0} ({1}, zone={2})..." -f $name, $scopeLabel, $zone) -ForegroundColor Cyan
 
     try {
-        Invoke-AstWalk -Node $parsed.Ast -Visitor $JsVisitor
+        Invoke-AstWalk -Node $parsed.Ast -Visitor 'Invoke-JsVisitor'
     } catch {
         # Walk failure = populator tooling defect, not source spec drift.
         # Discard partial rows from this file's walk (everything past
