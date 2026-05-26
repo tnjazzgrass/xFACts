@@ -818,29 +818,53 @@ function Get-NodeColumn {
     return 1
 }
 
-# Determine whether a CallExpression's callee matches a given dotted path.
-# The leftmost segment matches the bottom-most object.
-function Test-CalleeMatchesEnd {
-    param($Callee, [string[]]$Path)
-    if ($null -eq $Callee) { return $false }
+# Walk a CallExpression callee chain ONCE and return its dotted segments in
+# leaf-first order (the deepest property is at index 0). Used in conjunction
+# with Test-SegmentsMatchEnd: the CallExpression case computes segments
+# once per visit, then calls Test-SegmentsMatchEnd for each pattern instead
+# of re-walking the callee chain on every check.
+#
+# Returns $null when the callee shape cannot be matched at all - either it's
+# null, contains a computed property access (foo[bar]), or contains a
+# non-Identifier property. The caller treats $null as "no match."
+#
+# The unary comma on the final return is critical. PowerShell's output
+# stream enumerates IEnumerable return values, so a bare `return $segments`
+# would unroll the List into separate output items, and the caller would
+# receive a single string (for 1-segment chains) or an Object[] (for 2+) -
+# either of which silently breaks the .Count / [i] contract that
+# Test-SegmentsMatchEnd relies on. The comma wraps the list in a 1-element
+# tuple so the output stream emits the List as a single object.
+function Get-CalleeSegments {
+    param($Callee)
+    if ($null -eq $Callee) { return $null }
 
     $segments = New-Object System.Collections.Generic.List[string]
     $cursor = $Callee
     while ($cursor -and $cursor.type -eq 'MemberExpression') {
-        if ($cursor.computed) { return $false }
-        if (-not $cursor.property -or $cursor.property.type -ne 'Identifier') { return $false }
-        $segments.Insert(0, $cursor.property.name)
+        if ($cursor.computed) { return $null }
+        if (-not $cursor.property -or $cursor.property.type -ne 'Identifier') { return $null }
+        [void]$segments.Add($cursor.property.name)
         $cursor = $cursor.object
     }
     if ($cursor -and $cursor.type -eq 'Identifier') {
-        $segments.Insert(0, $cursor.name)
+        [void]$segments.Add($cursor.name)
     }
+    return , $segments
+}
 
-    if ($segments.Count -lt $Path.Count) { return $false }
-
-    $tail = $segments.Count - $Path.Count
+# Test whether the tail of a pre-walked callee segments list matches a given
+# dotted path. The leftmost segment of $Path matches the bottom-most object.
+# $Segments must be the value returned from Get-CalleeSegments (leaf-first
+# order); the comparison flips the path index to align natural-order $Path
+# against leaf-first $Segments.
+function Test-SegmentsMatchEnd {
+    param($Segments, [string[]]$Path)
+    if ($null -eq $Segments) { return $false }
+    if ($Segments.Count -lt $Path.Count) { return $false }
+    $lastPathIdx = $Path.Count - 1
     for ($i = 0; $i -lt $Path.Count; $i++) {
-        if ($segments[$tail + $i] -ne $Path[$i]) { return $false }
+        if ($Segments[$i] -ne $Path[$lastPathIdx - $i]) { return $false }
     }
     return $true
 }
@@ -3352,6 +3376,13 @@ function Invoke-JsVisitor {
             $section    = Get-SectionForLine -Sections $script:CurrentSections -Line $line
             $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
 
+            # Walk the callee chain ONCE for all the dotted-path checks below.
+            # $calleeSegments is leaf-first (Get-CalleeSegments contract) or
+            # $null for callees that can't be matched (computed access, etc.).
+            # Test-SegmentsMatchEnd handles the $null case as "no match", so
+            # the checks below remain syntactically identical to before.
+            $calleeSegments = Get-CalleeSegments -Callee $callee
+
             # eval(...)
             if ($callee.type -eq 'Identifier' -and $callee.name -eq 'eval') {
                 Add-JsEvalRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
@@ -3359,7 +3390,7 @@ function Invoke-JsVisitor {
             }
 
             # document.write(...)
-            if (Test-CalleeMatchesEnd -Callee $callee -Path @('document','write')) {
+            if (Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('document','write')) {
                 Add-JsDocumentWriteRow -LineStart $line -LineEnd $endLine -ColumnStart $col `
                     -Signature 'document.write(...)' -ParentFunction $parentName -RawText 'document.write(...)' | Out-Null
             }
@@ -3373,9 +3404,9 @@ function Invoke-JsVisitor {
             }
 
             # classList.add/remove/toggle('class')
-            if ((Test-CalleeMatchesEnd -Callee $callee -Path @('classList','add'))    -or
-                (Test-CalleeMatchesEnd -Callee $callee -Path @('classList','remove')) -or
-                (Test-CalleeMatchesEnd -Callee $callee -Path @('classList','toggle'))) {
+            if ((Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('classList','add'))    -or
+                (Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('classList','remove')) -or
+                (Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('classList','toggle'))) {
                 foreach ($arg in $Node.arguments) {
                     if ($arg.type -eq 'Literal' -and $arg.value -is [string]) {
                         $cls = $arg.value.Trim()
@@ -3393,7 +3424,7 @@ function Invoke-JsVisitor {
             }
 
             # getElementById('foo')
-            if (Test-CalleeMatchesEnd -Callee $callee -Path @('getElementById')) {
+            if (Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('getElementById')) {
                 $arg = $Node.arguments | Select-Object -First 1
                 if ($arg -and $arg.type -eq 'Literal' -and $arg.value -is [string]) {
                     $idName = $arg.value
@@ -3406,8 +3437,8 @@ function Invoke-JsVisitor {
             }
 
             # querySelector / querySelectorAll
-            if ((Test-CalleeMatchesEnd -Callee $callee -Path @('querySelector')) -or
-                (Test-CalleeMatchesEnd -Callee $callee -Path @('querySelectorAll'))) {
+            if ((Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('querySelector')) -or
+                (Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('querySelectorAll'))) {
                 $arg = $Node.arguments | Select-Object -First 1
                 if ($arg -and $arg.type -eq 'Literal' -and $arg.value -is [string]) {
                     $selector   = $arg.value
@@ -3432,7 +3463,7 @@ function Invoke-JsVisitor {
             }
 
             # addEventListener('event', ...)
-            if (Test-CalleeMatchesEnd -Callee $callee -Path @('addEventListener')) {
+            if (Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('addEventListener')) {
                 $arg = $Node.arguments | Select-Object -First 1
                 if ($arg -and $arg.type -eq 'Literal' -and $arg.value -is [string]) {
                     $evName = $arg.value
@@ -3456,7 +3487,7 @@ function Invoke-JsVisitor {
             }
 
             # setAttribute('id'|'class', value)
-            if (Test-CalleeMatchesEnd -Callee $callee -Path @('setAttribute')) {
+            if (Test-SegmentsMatchEnd -Segments $calleeSegments -Path @('setAttribute')) {
                 $arg1 = $Node.arguments | Select-Object -First 1
                 $arg2 = $Node.arguments | Select-Object -First 1 -Skip 1
                 if ($arg1 -and $arg1.type -eq 'Literal' -and $arg1.value -is [string] `
@@ -3543,14 +3574,30 @@ function Invoke-JsVisitor {
             if ($null -eq $Node.value) { return }
             if (-not ($Node.value -is [string])) { return }
 
+            $strVal = [string]$Node.value
+
+            # Short strings (under 4 chars) cannot possibly contain HTML,
+            # an inline <style>/<script> block, or a class/id attribute.
+            # The vast majority of literals are short string keys, error
+            # message fragments, etc. - this gate skips the regex work
+            # AND the per-case setup for them.
+            if ($strVal.Length -lt 4) { return }
+
+            # Hoisted gate: Test-LooksLikeHtml is the broadest predicate.
+            # If it doesn't fire, neither Test-LooksLikeInlineStyle nor
+            # Test-LooksLikeInlineScript can fire either (a string with
+            # '<style>' or '<script>' necessarily matches '<\s*\w'). So a
+            # single regex check here lets us bail out of ~99% of literal
+            # visits with no other work.
+            if (-not (Test-LooksLikeHtml -Text $strVal)) { return }
+
             # Per-case setup. Same emission shape as TemplateLiteral; no
-            # $section needed.
+            # $section needed. Setup runs only for HTML-bearing literals.
             $line       = Get-NodeLine    -Node $Node
             $endLine    = Get-NodeEndLine -Node $Node
             $col        = Get-NodeColumn  -Node $Node
             $parentName = Get-CurrentParentName -ParentNodes $ParentNodes
 
-            $strVal = [string]$Node.value
             $rawSnippet = Get-RangeText -Source $script:CurrentFileSource -Node $Node
 
             if (Test-LooksLikeInlineStyle -Text $strVal) {
@@ -3564,7 +3611,6 @@ function Invoke-JsVisitor {
                     -RawText $rawSnippet | Out-Null
             }
 
-            if (-not (Test-LooksLikeHtml -Text $strVal)) { return }
             Add-RowsFromHtmlBearingText -Text $strVal -StartLine $line -StartCol $col `
                 -ParentFunction $parentName -RawText $rawSnippet
         }
