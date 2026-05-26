@@ -9,7 +9,7 @@
     following the CC HTML Spec for body attributes, page-local prefixing, engine card
     rendering, and data-action-click event dispatch.
 
-    During the CC File Format Standardization §11.2.4 unified prefix rename
+    During the CC File Format Standardization Section 11.2.4 unified prefix rename
     migration, this route explicitly imports the xFACts-CCShared module at
     the top of its scriptblock. This shadows the auto-loaded xFACts-Helpers
     module for this route's execution so Get-NavBarHtml and Get-PageHeaderHtml
@@ -22,15 +22,63 @@
     ServerOps.Backup
 
 .NOTES
+    File Name : Backup.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes
+
     FILE ORGANIZATION
-        CHANGELOG
+        CHANGELOG: CHANGE HISTORY
         ROUTE: PAGE PATH
 #>
 
-# ============================================================================
-# CHANGELOG
-# ----------------------------------------------------------------------------
-# 2026-05-18  CC File Format Standardization §11.2.4 (unified prefix rename
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-driven change history for this page route. Entries appear
+   most-recent first. Each entry begins with the ISO date followed by two
+   spaces and the description; continuation lines align with the start of
+   the description text.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-05-26  CC File Format Standardization (drift triage follow-up):
+#             post-deploy drift report flagged additional source-file
+#             issues. Updated the .NOTES FILE ORGANIZATION list entry
+#             'CHANGELOG' to 'CHANGELOG: CHANGE HISTORY' so it matches
+#             the actual banner title verbatim per spec section 2.1.
+#             Swapped the order of cc-page-error-banner and
+#             cc-connection-banner placeholders so connection-banner
+#             precedes page-error-banner per CC HTML Spec sections 2.4
+#             and 2.5. Added one blank line between the closing title
+#             element and the page-specific link element, and between
+#             the page-specific link element and the cc-shared link
+#             element, per CC HTML Spec section 3.1. Renamed the
+#             slideout argument attribute from data-action-type to
+#             data-action-bkp-type (four occurrences across local and
+#             network slideouts) per CC HTML Spec section 7.4
+#             argument-attribute prefix rules; backup.js handler reads
+#             the argument as dataset.bkpType.
+# 2026-05-26  CC File Format Standardization: refactored the page route
+#             file itself to the CC PS Spec. Stripped the UTF-8 BOM and
+#             normalized non-ASCII characters to ASCII. Converted the
+#             CHANGELOG and ROUTE banners from the legacy '# ===' line-
+#             comment form to the spec-mandated '<# ... #>' block-comment
+#             form with proper Description and Prefix lines, and renamed
+#             the CHANGELOG banner to 'CHANGELOG: CHANGE HISTORY' per
+#             spec singleton-NAME rules. Added File Name and Location
+#             fields to the .NOTES block. Updated the page HTML to use
+#             cc- prefixed compound modifiers from the cc-shared.css
+#             refactor: 'cc-engine-bar disabled' became 'cc-engine-bar
+#             cc-disabled' (four occurrences); 'cc-modal-overlay hidden'
+#             became 'cc-modal-overlay cc-hidden'; 'cc-modal wide' became
+#             'cc-modal cc-wide'; 'cc-slide-panel wide' became
+#             'cc-slide-panel cc-wide' (two occurrences). Updated
+#             data-action-click values for page-local dispatch keys to
+#             carry the bkp- page prefix: 'modal-close-on-overlay' became
+#             'bkp-modal-close-on-overlay'; 'modal-close' became
+#             'bkp-modal-close'; 'slideout-close' became
+#             'bkp-slideout-close' (four occurrences). Chrome dispatch
+#             keys (cc-page-refresh) remain unchanged.
+# 2026-05-18  CC File Format Standardization Section 11.2.4 (unified prefix rename
 #             pass): adopted the new cc- chrome class convention across the
 #             entire page emission. Body data-page/data-prefix attributes
 #             renamed to data-cc-page/data-cc-prefix. All chrome class names
@@ -90,20 +138,20 @@
 #             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
 #             browser tab title now render from RBAC_NavRegistry via
 #             Get-PageHeaderHtml and Get-PageBrowserTitle.
-# ============================================================================
 
-# ============================================================================
-# ROUTE: PAGE PATH
-# ----------------------------------------------------------------------------
-# Registers the Backup Monitoring dashboard page at GET /backup. Performs
-# RBAC access check, resolves user context, renders nav and header from
-# the RBAC_NavRegistry, and emits the page HTML.
-# ============================================================================
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   Registers the Backup Monitoring dashboard page at GET /backup. Performs
+   RBAC access check, resolves user context, renders nav and header from
+   the RBAC_NavRegistry, and emits the page HTML.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/backup' -Authentication 'ADLogin' -ScriptBlock {
 
     # Import the cc- emission helpers. During the CC File Format
-    # Standardization §11.2.4 migration this overrides the auto-loaded
+    # Standardization Section 11.2.4 migration this overrides the auto-loaded
     # xFACts-Helpers module for this route's execution, so Get-NavBarHtml
     # and Get-PageHeaderHtml emit cc- prefixed chrome classes that match
     # cc-shared.css and cc-shared.js. Once every page has migrated and
@@ -127,7 +175,9 @@ Add-PodeRoute -Method Get -Path '/backup' -Authentication 'ADLogin' -ScriptBlock
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/backup.css">
+
     <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
 <body class="cc-section-platform" data-cc-page="backup" data-cc-prefix="bkp">
@@ -146,30 +196,30 @@ $navHtml
             <div class="cc-engine-row">
                 <div class="cc-engine-card" id="cc-card-engine-collection">
                     <span class="cc-engine-label">BACKUP</span>
-                    <div class="cc-engine-bar disabled" id="cc-engine-bar-collection"></div>
+                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-collection"></div>
                     <span class="cc-engine-countdown" id="cc-engine-cd-collection">&nbsp;</span>
                 </div>
                 <div class="cc-engine-card" id="cc-card-engine-networkcopy">
                     <span class="cc-engine-label">NETWORK</span>
-                    <div class="cc-engine-bar disabled" id="cc-engine-bar-networkcopy"></div>
+                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-networkcopy"></div>
                     <span class="cc-engine-countdown" id="cc-engine-cd-networkcopy">&nbsp;</span>
                 </div>
                 <div class="cc-engine-card" id="cc-card-engine-awsupload">
                     <span class="cc-engine-label">AWS</span>
-                    <div class="cc-engine-bar disabled" id="cc-engine-bar-awsupload"></div>
+                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-awsupload"></div>
                     <span class="cc-engine-countdown" id="cc-engine-cd-awsupload">&nbsp;</span>
                 </div>
                 <div class="cc-engine-card" id="cc-card-engine-retention">
                     <span class="cc-engine-label">RETENTION</span>
-                    <div class="cc-engine-bar disabled" id="cc-engine-bar-retention"></div>
+                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-retention"></div>
                     <span class="cc-engine-countdown" id="cc-engine-cd-retention">&nbsp;</span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="cc-page-error-banner" class="cc-page-error-banner"></div>
     <div id="cc-connection-banner" class="cc-connection-banner"></div>
+    <div id="cc-page-error-banner" class="cc-page-error-banner"></div>
 
     <div class="bkp-two-column-layout">
 
@@ -242,11 +292,11 @@ $navHtml
     </div>
 
     <!-- Modal for pipeline and queue file-level detail breakdowns -->
-    <div id="bkp-modal-detail-overlay" class="cc-modal-overlay hidden" data-action-click="modal-close-on-overlay">
-        <div class="cc-modal wide">
+    <div id="bkp-modal-detail-overlay" class="cc-modal-overlay cc-hidden" data-action-click="bkp-modal-close-on-overlay">
+        <div class="cc-modal cc-wide">
             <div class="cc-modal-header">
                 <h3 id="bkp-detail-title">Detail</h3>
-                <button class="cc-modal-close" data-action-click="modal-close">&times;</button>
+                <button class="cc-modal-close" data-action-click="bkp-modal-close">&times;</button>
             </div>
             <div class="cc-modal-body" id="bkp-detail-body">
                 <div class="bkp-loading">Loading...</div>
@@ -255,12 +305,12 @@ $navHtml
     </div>
 
     <!-- Slideout for displaying local-drive backup retention candidates -->
-    <div id="bkp-slideout-local-retention-overlay" class="cc-slide-overlay" data-action-click="slideout-close" data-action-type="local"></div>
+    <div id="bkp-slideout-local-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-action-bkp-type="local"></div>
     <!-- Slideout for displaying local-drive backup retention candidates -->
-    <div id="bkp-slideout-local-retention" class="cc-slide-panel wide">
+    <div id="bkp-slideout-local-retention" class="cc-slide-panel cc-wide">
         <div class="cc-slide-panel-header">
             <h3 class="cc-slide-panel-title">&#128465; Local Retention Candidates</h3>
-            <button class="cc-modal-close" data-action-click="slideout-close" data-action-type="local">&times;</button>
+            <button class="cc-modal-close" data-action-click="bkp-slideout-close" data-action-bkp-type="local">&times;</button>
         </div>
         <div class="cc-slide-panel-body" id="bkp-local-retention-body">
             <div class="bkp-loading">Loading...</div>
@@ -268,12 +318,12 @@ $navHtml
     </div>
 
     <!-- Slideout for displaying network-share backup retention candidates -->
-    <div id="bkp-slideout-network-retention-overlay" class="cc-slide-overlay" data-action-click="slideout-close" data-action-type="network"></div>
+    <div id="bkp-slideout-network-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-action-bkp-type="network"></div>
     <!-- Slideout for displaying network-share backup retention candidates -->
-    <div id="bkp-slideout-network-retention" class="cc-slide-panel wide">
+    <div id="bkp-slideout-network-retention" class="cc-slide-panel cc-wide">
         <div class="cc-slide-panel-header">
             <h3 class="cc-slide-panel-title">&#128465; Network Retention Candidates</h3>
-            <button class="cc-modal-close" data-action-click="slideout-close" data-action-type="network">&times;</button>
+            <button class="cc-modal-close" data-action-click="bkp-slideout-close" data-action-bkp-type="network">&times;</button>
         </div>
         <div class="cc-slide-panel-body" id="bkp-network-retention-body">
             <div class="bkp-loading">Loading...</div>
