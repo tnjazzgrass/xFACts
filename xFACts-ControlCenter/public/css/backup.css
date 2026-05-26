@@ -13,7 +13,7 @@
 
    All page-local classes are prefixed bkp- to make scope visible at a
    glance: bkp-* in HTML or in another CSS file is unambiguously a backup
-   page concern. Shared classes (e.g., .section, .xf-modal-body) consumed
+   page concern. Shared classes (e.g., .cc-section, .cc-modal-body) consumed
    by this page's HTML are defined in cc-shared.css and referenced here
    only when this page needs to override or extend them.
 
@@ -127,31 +127,46 @@
     flex: 1;
 }
 
-.bkp-pipeline-card.status-warning { /* warning-state frame coloring */
+/* State tag indicating an element is in the warning state. Used on pipeline cards and pipeline-time text. */
+.bkp-status-warning { }
+
+.bkp-pipeline-card.bkp-status-warning { /* warning-state frame coloring */
     border-color: var(--color-accent-departmental);
     background: rgba(220, 220, 170, 0.1);
 }
 
-.bkp-pipeline-card.status-critical { /* critical-state frame coloring */
+/* State tag indicating an element is in the critical state. Used on pipeline cards and pipeline-time text. */
+.bkp-status-critical { }
+
+.bkp-pipeline-card.bkp-status-critical { /* critical-state frame coloring */
     border-color: var(--color-status-critical);
     background: rgba(244, 135, 113, 0.1);
 }
 
-.bkp-pipeline-card.status-running { /* running-state frame coloring */
+/* State tag indicating an element is in the running state. Used on pipeline cards and pipeline-time text. */
+.bkp-status-running { }
+
+.bkp-pipeline-card.bkp-status-running { /* running-state frame coloring */
     border-color: var(--color-accent-platform);
     background: rgba(86, 156, 214, 0.1);
 }
 
-.bkp-pipeline-card.status-unknown { /* unknown-state frame coloring */
+/* State tag indicating an element is in the unknown state. Used on pipeline cards and pipeline-time text. */
+.bkp-status-unknown { }
+
+.bkp-pipeline-card.bkp-status-unknown { /* unknown-state frame coloring */
     border-color: var(--color-text-subtle);
 }
 
-.bkp-pipeline-card.clickable { /* clickable card variant — opens detail slideout */
+/* Modifier tag opting a card into the clickable variant (cursor pointer plus hover styling). Used on pipeline cards and status cards. */
+.bkp-clickable { }
+
+.bkp-pipeline-card.bkp-clickable { /* clickable card variant — opens detail slideout */
     cursor: pointer;
     transition: border-color var(--duration-instant) ease;
 }
 
-.bkp-pipeline-card.clickable:hover { /* hover state for clickable cards */
+.bkp-pipeline-card.bkp-clickable:hover { /* hover state for clickable cards */
     border-color: var(--color-accent-platform);
 }
 
@@ -184,19 +199,19 @@
     margin-bottom: var(--size-spacing-xs);
 }
 
-.bkp-pipeline-time.status-warning { /* time text color when card is in warning state */
+.bkp-pipeline-time.bkp-status-warning { /* time text color when card is in warning state */
     color: var(--color-accent-departmental);
 }
 
-.bkp-pipeline-time.status-critical { /* time text color when card is in critical state */
+.bkp-pipeline-time.bkp-status-critical { /* time text color when card is in critical state */
     color: var(--color-status-critical);
 }
 
-.bkp-pipeline-time.status-running { /* time text color when card is in running state */
+.bkp-pipeline-time.bkp-status-running { /* time text color when card is in running state */
     color: var(--color-accent-platform);
 }
 
-.bkp-pipeline-time.status-unknown { /* time text color when card is in unknown state */
+.bkp-pipeline-time.bkp-status-unknown { /* time text color when card is in unknown state */
     color: var(--color-text-subtle);
 }
 
@@ -217,27 +232,42 @@
     white-space: nowrap;
 }
 
-.bkp-pipeline-status-badge.success { /* success state — teal pill */
+/* State tag indicating a status badge is in the success state. */
+.bkp-success { }
+
+.bkp-pipeline-status-badge.bkp-success { /* success state — teal pill */
     background: rgba(78, 201, 176, 0.2);
     color: var(--color-accent-shared);
 }
 
-.bkp-pipeline-status-badge.running { /* running state — blue pill */
+/* State tag indicating a status badge is in the running state. */
+.bkp-running { }
+
+.bkp-pipeline-status-badge.bkp-running { /* running state — blue pill */
     background: rgba(86, 156, 214, 0.2);
     color: var(--color-accent-platform);
 }
 
-.bkp-pipeline-status-badge.warning { /* warning state — yellow pill */
+/* State tag indicating an element is in the warning state. Used on pipeline status badges and drive labels. */
+.bkp-warning { }
+
+.bkp-pipeline-status-badge.bkp-warning { /* warning state — yellow pill */
     background: rgba(220, 220, 170, 0.2);
     color: var(--color-accent-departmental);
 }
 
-.bkp-pipeline-status-badge.failed { /* failed state — orange pill */
+/* State tag indicating a status badge is in the failed state. */
+.bkp-failed { }
+
+.bkp-pipeline-status-badge.bkp-failed { /* failed state — orange pill */
     background: rgba(244, 135, 113, 0.2);
     color: var(--color-status-critical);
 }
 
-.bkp-pipeline-status-badge.unknown { /* unknown state — gray pill */
+/* State tag indicating a status badge is in the unknown state. */
+.bkp-unknown { }
+
+.bkp-pipeline-status-badge.bkp-unknown { /* unknown state — gray pill */
     background: rgba(85, 85, 85, 0.2);
     color: var(--color-border-strong);
 }
@@ -283,12 +313,12 @@
     flex: 1;
 }
 
-.bkp-status-card.clickable { /* clickable card variant — opens detail slideout */
+.bkp-status-card.bkp-clickable { /* clickable card variant — opens detail slideout */
     cursor: pointer;
     transition: border-color var(--duration-instant) ease, background var(--duration-instant) ease;
 }
 
-.bkp-status-card.clickable:hover { /* hover state for clickable status cards */
+.bkp-status-card.bkp-clickable:hover { /* hover state for clickable status cards */
     border-color: var(--color-accent-platform);
     background: var(--color-border-divider);
 }
@@ -503,11 +533,14 @@
     font-weight: 500;
 }
 
-.bkp-drive-label.warning { /* drive is past warning threshold */
+.bkp-drive-label.bkp-warning { /* drive is past warning threshold */
     color: var(--color-accent-departmental);
 }
 
-.bkp-drive-label.critical { /* drive is past critical threshold */
+/* State tag indicating an element is in the critical state. Used on drive labels. */
+.bkp-critical { }
+
+.bkp-drive-label.bkp-critical { /* drive is past critical threshold */
     color: var(--color-status-critical);
 }
 
@@ -540,15 +573,24 @@
     transition: background var(--duration-default) ease;
 }
 
-.bkp-segment.active-healthy { /* segment is filled and drive is below warning threshold */
+/* State tag indicating a gauge segment is active and the drive is below the warning threshold. */
+.bkp-active-healthy { }
+
+.bkp-segment.bkp-active-healthy { /* segment is filled and drive is below warning threshold */
     background: var(--color-accent-shared);
 }
 
-.bkp-segment.active-warning { /* segment is filled and drive is past warning threshold */
+/* State tag indicating a gauge segment is active and the drive is past the warning threshold. */
+.bkp-active-warning { }
+
+.bkp-segment.bkp-active-warning { /* segment is filled and drive is past warning threshold */
     background: var(--color-accent-departmental);
 }
 
-.bkp-segment.active-critical { /* segment is filled and drive is past critical threshold */
+/* State tag indicating a gauge segment is active and the drive is past the critical threshold. */
+.bkp-active-critical { }
+
+.bkp-segment.bkp-active-critical { /* segment is filled and drive is past critical threshold */
     background: var(--color-status-critical);
 }
 
@@ -575,19 +617,28 @@
     letter-spacing: 0.3px;
 }
 
-.bkp-backup-type-badge.type-full { /* FULL backup type — teal */
+/* Type tag marking a backup-type badge as the FULL backup type. */
+.bkp-type-full { }
+
+.bkp-backup-type-badge.bkp-type-full { /* FULL backup type — teal */
     background: rgba(78, 201, 176, 0.15);
     color: var(--color-accent-shared);
     border: var(--size-border-thin) solid rgba(78, 201, 176, 0.3);
 }
 
-.bkp-backup-type-badge.type-diff { /* DIFFERENTIAL backup type — blue */
+/* Type tag marking a backup-type badge as the DIFFERENTIAL backup type. */
+.bkp-type-diff { }
+
+.bkp-backup-type-badge.bkp-type-diff { /* DIFFERENTIAL backup type — blue */
     background: rgba(86, 156, 214, 0.15);
     color: var(--color-accent-platform);
     border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
 }
 
-.bkp-backup-type-badge.type-log { /* TRANSACTION LOG backup type — muted yellow (informational, not warning) */
+/* Type tag marking a backup-type badge as the TRANSACTION LOG backup type. */
+.bkp-type-log { }
+
+.bkp-backup-type-badge.bkp-type-log { /* TRANSACTION LOG backup type — muted yellow (informational, not warning) */
     background: rgba(220, 220, 170, 0.12);
     color: #b5b07a;
     border: var(--size-border-thin) solid rgba(220, 220, 170, 0.25);
@@ -596,10 +647,10 @@
 /* ============================================================================
    CONTENT: DETAIL MODAL CONTENT
    ----------------------------------------------------------------------------
-   Sub-components rendered inside the shared xf-modal-body when displaying
+   Sub-components rendered inside the shared cc-modal-body when displaying
    pipeline or queue file-level detail. The outer modal container itself
-   uses the shared .xf-modal-overlay / .xf-modal.wide / .xf-modal-header /
-   .xf-modal-body classes from cc-shared.css. These sub-components are
+   uses the shared .cc-modal-overlay / .cc-modal.cc-wide / .cc-modal-header /
+   .cc-modal-body classes from cc-shared.css. These sub-components are
    page-local until a second page proves cross-page reuse.
    Prefix: bkp
    ============================================================================ */
@@ -628,17 +679,26 @@
     font-weight: 500;
 }
 
-.bkp-detail-summary-value.summary-status-success { /* summary value when overall status is success */
+/* State tag indicating a detail summary value reflects an overall success status. */
+.bkp-summary-status-success { }
+
+.bkp-detail-summary-value.bkp-summary-status-success { /* summary value when overall status is success */
     color: var(--color-accent-shared);
     font-weight: 600;
 }
 
-.bkp-detail-summary-value.summary-status-partial { /* summary value when overall status is partial success */
+/* State tag indicating a detail summary value reflects an overall partial-success status. */
+.bkp-summary-status-partial { }
+
+.bkp-detail-summary-value.bkp-summary-status-partial { /* summary value when overall status is partial success */
     color: var(--color-accent-departmental);
     font-weight: 600;
 }
 
-.bkp-detail-summary-value.summary-status-failed { /* summary value when overall status is failed */
+/* State tag indicating a detail summary value reflects an overall failed status. */
+.bkp-summary-status-failed { }
+
+.bkp-detail-summary-value.bkp-summary-status-failed { /* summary value when overall status is failed */
     color: var(--color-status-critical);
     font-weight: 600;
 }
@@ -668,15 +728,24 @@
     white-space: nowrap;
 }
 
-.bkp-detail-table-td.align-right { /* right-aligned numeric or timestamp cells */
+/* Layout tag right-aligning a table cell's content. */
+.bkp-align-right { }
+
+.bkp-detail-table-td.bkp-align-right { /* right-aligned numeric or timestamp cells */
     text-align: right;
 }
 
-.bkp-detail-table-td.status-success { /* cell text color for success-status rows */
+/* State tag indicating a detail table cell reflects a success status. */
+.bkp-status-success { }
+
+.bkp-detail-table-td.bkp-status-success { /* cell text color for success-status rows */
     color: var(--color-accent-shared);
 }
 
-.bkp-detail-table-td.status-failed { /* cell text color for failed-status rows */
+/* State tag indicating a detail table cell reflects a failed status. */
+.bkp-status-failed { }
+
+.bkp-detail-table-td.bkp-status-failed { /* cell text color for failed-status rows */
     color: var(--color-status-critical);
 }
 
