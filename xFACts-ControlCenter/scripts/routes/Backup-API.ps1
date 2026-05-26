@@ -20,19 +20,22 @@
     ServerOps.Backup
 
 .NOTES
+    File Name : Backup-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes
+
     FILE ORGANIZATION
         ROUTE: API ENDPOINTS
 #>
 
-# ============================================================================
-# ROUTE: API ENDPOINTS
-# ----------------------------------------------------------------------------
-# All API endpoint registrations for the Backup Monitoring dashboard. Each
-# Add-PodeRoute scriptblock performs the RBAC check via Test-ActionEndpoint,
-# queries xFACts and (where needed) remote servers, and returns the JSON
-# response shape consumed by backup.js.
-# Prefix: (none)
-# ============================================================================
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   All API endpoint registrations for the Backup Monitoring dashboard. Each
+   Add-PodeRoute scriptblock performs the RBAC check via Test-ActionEndpoint,
+   queries xFACts and (where needed) remote servers, and returns the JSON
+   response shape consumed by backup.js.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/api/backup/active-operations' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -76,7 +79,7 @@ CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
 WHERE r.command IN ('BACKUP DATABASE', 'BACKUP LOG', 'RESTORE DATABASE', 'RESTORE HEADERONLY')
 "@
 
-        # Per-server connections stay raw — they target arbitrary remote SQL
+        # Per-server connections stay raw -- they target arbitrary remote SQL
         # instances, not xFACts. Short Connect Timeout (5s) keeps an unreachable
         # server from stalling the whole endpoint.
         foreach ($serverName in $servers) {
@@ -149,8 +152,10 @@ WHERE r.command IN ('BACKUP DATABASE', 'BACKUP LOG', 'RESTORE DATABASE', 'RESTOR
         }
 
         # Conservative defaults when no historical data exists for a backup_type
-        $defaultAwsSpeed = 50000000        # 50 MB/sec
-        $defaultNetworkSpeed = 100000000   # 100 MB/sec
+        # AWS upload default: 50 MB/sec
+        $defaultAwsSpeed = 50000000
+        # Network copy default: 100 MB/sec
+        $defaultNetworkSpeed = 100000000
 
         # IN_PROGRESS operations from FileTracking
         $inProgressRows = Invoke-XFActsQuery -Query @"
@@ -452,7 +457,7 @@ Add-PodeRoute -Method Get -Path '/api/backup/storage-status' -Authentication 'AD
             $networkRoot = $networkRootRows[0].setting_value
         }
 
-        # Network share free-space probe via CIM (stays raw — not SQL)
+        # Network share free-space probe via CIM (stays raw -- not SQL)
         $networkStorage = $null
         if ($networkRoot) {
             try {
@@ -908,7 +913,7 @@ Add-PodeRoute -Method Get -Path '/api/backup/retention-candidates' -Authenticati
         }
 
         # Two structurally similar queries selected by validated $type. Same approach
-        # as queue-detail — column names can't be parameterized, so pre-write each branch.
+        # as queue-detail -- column names can't be parameterized, so pre-write each branch.
         if ($type -eq 'local') {
             $query = @"
                 ;WITH LocalFullRanked AS (
