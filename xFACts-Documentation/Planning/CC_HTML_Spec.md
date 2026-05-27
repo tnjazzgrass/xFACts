@@ -28,7 +28,7 @@ $navHtml
 
 ### 1.1 Rules
 
-- `<!DOCTYPE html>` opens the document on its own line. The token is exactly `<!DOCTYPE html>` — uppercase keyword, lowercase tag name.
+- `<!DOCTYPE html>` opens the document on its own line. The token is exactly `<!DOCTYPE html>` -- uppercase keyword, lowercase tag name.
 - The root element is `<html>` with no attributes.
 - The `<title>` element's content is the `$browserTitle` PowerShell variable, sourced from `Get-PageBrowserTitle`. The route file declares `$browserTitle = Get-PageBrowserTitle -PageRoute '<route>'` before the HTML here-string.
 - `<body>` declares three attributes in this exact order: `class="cc-section-<sectionKey>"` where `<sectionKey>` matches `RBAC_NavSection.section_key`; `data-cc-page="<slug>"` where `<slug>` is the page's URL slug; `data-cc-prefix="<prefix>"` where `<prefix>` matches `Component_Registry.cc_prefix`.
@@ -69,7 +69,7 @@ $navHtml
 </body>
 ```
 
-- `<body>` contains, in this exact order: the `$navHtml` substitution; the page header bar (§2.1); the connection banner placeholder (§2.4); the page error banner placeholder (§2.5); page-specific content; the overlay block (§5.4, optional — present only when the page declares overlay constructs); the single `<script>` tag (§3.2).
+- `<body>` contains, in this exact order: the `$navHtml` substitution; the page header bar (§2.1); the connection banner placeholder (§2.4); the page error banner placeholder (§2.5); page-specific content; the overlay block (§5.4, optional -- present only when the page declares overlay constructs); the single `<script>` tag (§3.2).
 - "Page-specific content" is the structural slot where the page author renders the page's main content. The rules in §6 (classes), §7 (action attributes), §8 (data attributes), §9 (text content), and §10 (comments) govern its contents.
 
 #### 1.2.3 Page-shell whitespace discipline
@@ -85,7 +85,7 @@ $navHtml
 
 ### 1.3 Helper-emitted HTML fragments
 
-A helper module function emits a partial HTML fragment for substitution into a page shell (`Get-NavBarHtml`, `Get-PageHeaderHtml`, and similar). It is not subject to the page-shell rules in §1.1 and §1.2. It is subject to the attribute-level rules in §4–§10 and the helper-specific rules in §11.
+A helper module function emits a partial HTML fragment for substitution into a page shell (`Get-NavBarHtml`, `Get-PageHeaderHtml`, and similar). It is not subject to the page-shell rules in §1.1 and §1.2. It is subject to the attribute-level rules in §4-§10 and the helper-specific rules in §11.
 
 ### 1.4 Access-denied page
 
@@ -134,7 +134,7 @@ Markup is exactly:
 
 #### 2.2.1 Rules
 
-- The outer container, live indicator span, live status line, last-update span, and page refresh button match the mandated markup verbatim — class names, attributes, text content, entity reference.
+- The outer container, live indicator span, live status line, last-update span, and page refresh button match the mandated markup verbatim -- class names, attributes, text content, entity reference.
 - The `cc-last-update` chrome ID appears exactly once per page.
 
 ### 2.3 Engine cards
@@ -164,11 +164,11 @@ Engine card row structure:
 
 ### 2.4 Connection banner placeholder
 
-A single `<div id="cc-connection-banner" class="cc-connection-banner"></div>` appears exactly once per page, immediately after the page header bar. The placeholder is empty — `cc-shared.js` populates it at runtime based on WebSocket state.
+A single `<div id="cc-connection-banner" class="cc-connection-banner"></div>` appears exactly once per page, immediately after the page header bar. The placeholder is empty -- `cc-shared.js` populates it at runtime based on WebSocket state.
 
 ### 2.5 Page error banner placeholder
 
-A single `<div id="cc-page-error-banner" class="cc-page-error-banner"></div>` appears exactly once per page, immediately after the connection banner placeholder. The placeholder is empty — `cc-shared.js` populates it at runtime when page module loading or initialization fails.
+A single `<div id="cc-page-error-banner" class="cc-page-error-banner"></div>` appears exactly once per page, immediately after the connection banner placeholder. The placeholder is empty -- `cc-shared.js` populates it at runtime when page module loading or initialization fails.
 
 ---
 
@@ -204,7 +204,7 @@ The `<script>` tag appears as the last content in `<body>` before `</body>`.
 #### 3.2.1 Rules
 
 - The single `<script>` tag's `src` is exactly `/js/cc-shared.js`. No other JavaScript files are referenced from HTML.
-- The `<script>` tag has no other attributes — no `defer`, no `async`, no `type`, no `crossorigin`.
+- The `<script>` tag has no other attributes -- no `defer`, no `async`, no `type`, no `crossorigin`.
 - The page-specific JS file is loaded dynamically by the bootloader based on the `data-cc-page` attribute (§1.1). It does not appear as a `<script>` tag in HTML.
 
 ---
@@ -213,15 +213,15 @@ The `<script>` tag appears as the last content in `<body>` before `</body>`.
 
 Every identifier in HTML markup carries a prefix that identifies its ownership. Prefixes distinguish platform-owned identifiers (defined by this spec, by chrome JavaScript, or by helper modules) from page-owned identifiers (defined by the route author for the page's own use).
 
-- **Page prefix** — the value of `Component_Registry.cc_prefix` for the page's component. Used on page-owned identifiers (IDs, classes, action values, `data-*` attribute names, argument attributes).
-- **Chrome prefix** — the literal token `cc-`. Used on platform-owned identifiers emitted by `cc-shared.js`, `cc-shared.css`, helper module functions, the page-shell mandated `data-*` attributes, or fixed in this spec as part of the page chrome.
+- **Page prefix** -- the value of `Component_Registry.cc_prefix` for the page's component. Used on page-owned identifiers (IDs, classes, action values, `data-*` attribute names, argument attributes).
+- **Chrome prefix** -- the literal token `cc-`. Used on platform-owned identifiers emitted by `cc-shared.js`, `cc-shared.css`, helper module functions, the page-shell mandated `data-*` attributes, or fixed in this spec as part of the page chrome.
 
 ### 4.1 Rules
 
 - Every ID begins with the page's `cc_prefix` followed by `-` (page-owned IDs), or with `cc-` (platform-owned chrome IDs). No other forms.
 - Every class begins with the page's `cc_prefix` followed by `-` (page-owned classes), or with `cc-` (platform-owned chrome classes). No other forms.
 - Every `data-action-<event>` value begins with the page's `cc_prefix` followed by `-` (page-owned actions), or with `cc-` (platform-owned chrome actions). No other forms.
-- Every argument attribute name (`data-action-<arg-name>`) begins with the same prefix as its parent element's `data-action-<event>` attribute value. Page-owned action → page-prefixed argument; `cc-` prefixed action → `cc-` prefixed argument. See §7.4.
+- Every argument attribute name (`data-action-<arg-name>`) begins with the same prefix as its parent element's `data-action-<event>` attribute value. Page-owned action -> page-prefixed argument; `cc-` prefixed action -> `cc-` prefixed argument. See §7.4.
 - Every `data-*` attribute name not in the `data-action-*` family begins with `data-cc-` (platform-owned, defined by this spec or by chrome JavaScript) or `data-<page-prefix>-` (page-owned, defined by the route author). The set of valid platform-owned `data-cc-*` attribute names is the closed set in §13.4. No other forms.
 - The set of valid chrome IDs is the closed set in §5.1. The set of valid chrome action values is governed by `cc-shared.js`. The set of valid platform-owned `data-cc-*` attribute names is the closed set in §13.4. Adding a new platform identifier requires a spec amendment.
 
@@ -242,7 +242,7 @@ Chrome IDs are platform-wide identifiers used by `cc-shared.js` and `cc-shared.c
 | `cc-engine-bar-<slug>` | Engine status bar element. |
 | `cc-engine-cd-<slug>` | Engine countdown text element. |
 
-Adding a new chrome ID requires a spec amendment to the table above. Helper-emitted IDs are subject to this same closed set — a helper emitting an ID not in §5.1 is drift.
+Adding a new chrome ID requires a spec amendment to the table above. Helper-emitted IDs are subject to this same closed set -- a helper emitting an ID not in §5.1 is drift.
 
 ### 5.2 Page-local IDs
 
@@ -258,14 +258,14 @@ Page-local IDs have the form `<prefix>-<purpose>` where `<prefix>` is the page's
 
 ### 5.4 Overlay constructs
 
-Modals, slideouts, and slide-up panels are the three overlay constructs. All three follow a unified structural pattern: an outer overlay element contains a nested inner dialog element as a direct child. The outer overlay element's class distinguishes the construct type for CSS positioning; the inner dialog and its child elements share a common `cc-dialog-*` class family across all three constructs.
+Modals, slideouts, and slide-up panels are the three overlay constructs. All three follow a unified structural pattern: an outer overlay element contains a nested inner dialog element as a direct child. The outer overlay element's class distinguishes the construct type for CSS positioning; the inner dialog carries a matching secondary class (`cc-dialog-modal`, `cc-dialog-slide`, or `cc-dialog-slideup`) and shares the common `cc-dialog-*` class family with its child elements across all three constructs.
 
 #### 5.4.1 Modal template
 
 ```html
 <!-- Purpose: short description of what this modal does -->
 <div id="<prefix>-modal-<purpose>" class="cc-modal-overlay">
-    <div class="cc-dialog">
+    <div class="cc-dialog cc-dialog-modal">
         <div class="cc-dialog-header">
             <h3 class="cc-dialog-title">Title text</h3>
             <button class="cc-dialog-close" data-action-click="<prefix>-close-modal">&times;</button>
@@ -286,7 +286,7 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 ```html
 <!-- Purpose: short description of what this slideout does -->
 <div id="<prefix>-slideout-<purpose>" class="cc-slide-overlay">
-    <div class="cc-dialog">
+    <div class="cc-dialog cc-dialog-slide">
         <div class="cc-dialog-header">
             <h3 class="cc-dialog-title">Title text</h3>
             <button class="cc-dialog-close" data-action-click="<prefix>-close-slideout">&times;</button>
@@ -306,7 +306,7 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 ```html
 <!-- Purpose: short description of what this slide-up panel does -->
 <div id="<prefix>-slideup-<purpose>" class="cc-slideup-overlay">
-    <div class="cc-dialog">
+    <div class="cc-dialog cc-dialog-slideup">
         <div class="cc-dialog-header">
             <h3 class="cc-dialog-title">Title text</h3>
             <button class="cc-dialog-close" data-action-click="<prefix>-close-slideup">&times;</button>
@@ -325,6 +325,7 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 
 - An overlay construct is one outer overlay element containing exactly one direct child `.cc-dialog`. The outer element's class identifies the construct type: `cc-modal-overlay` (modal), `cc-slide-overlay` (slideout), or `cc-slideup-overlay` (slide-up panel).
 - The outer overlay element carries the construct's ID. Modal IDs use `<prefix>-modal-<purpose>`; slideout IDs use `<prefix>-slideout-<purpose>`; slide-up panel IDs use `<prefix>-slideup-<purpose>`. The nested `.cc-dialog` carries no ID.
+- The inner `.cc-dialog` carries a second class identifying its construct: `cc-dialog-modal` inside a `cc-modal-overlay`, `cc-dialog-slide` inside a `cc-slide-overlay`, or `cc-dialog-slideup` inside a `cc-slideup-overlay`.
 - The inner `.cc-dialog` contains a `.cc-dialog-header`, a `.cc-dialog-body`, and optionally a `.cc-dialog-actions` footer, in this order. The header contains exactly one `.cc-dialog-title` element and exactly one `.cc-dialog-close` button.
 - All overlay constructs on a page appear in one contiguous block within the page-shell position defined by §1.2.2.
 - Within the overlay block, only formatting whitespace and each construct's preceding purpose comment may appear between constructs. No other HTML elements, no other comments.
@@ -393,7 +394,7 @@ Every action attribute uses the form `data-action-<event>="<action-value>"` wher
 - Every action attribute name is exactly `data-action-<event>` where `<event>` is in the closed set from §7.3.
 - Every action value carries a prefix per §4: `<page-prefix>-<name>` for page-local actions, `cc-<name>` for shared chrome actions.
 - Action values use lowercase letters, digits, and hyphens only.
-- Every action value has a matching entry in its event-scoped dispatch table — page-local in `<prefix>_<event>Actions`, shared in `cc_<event>Actions`. Resolution is event-type-scoped.
+- Every action value has a matching entry in its event-scoped dispatch table -- page-local in `<prefix>_<event>Actions`, shared in `cc_<event>Actions`. Resolution is event-type-scoped.
 - A `data-action-<event>` attribute is valid only on the elements listed in §7.5.
 
 ### 7.3 Recognized events
@@ -479,9 +480,9 @@ Inline `<svg>` elements are catalogued at the outer-element level only. Internal
 
 HTML comments serve three purposes:
 
-1. **Section dividers** — multi-line block comments separating major content blocks within a route file's HTML. Optional, used for readability.
-2. **Inline annotations** — single-line comments providing brief context on a specific element or block. Optional.
-3. **Panel purpose comments** — single-line comments immediately preceding an overlay construct (§5.4), describing the construct's purpose. Required by §5.4.
+1. **Section dividers** -- multi-line block comments separating major content blocks within a route file's HTML. Optional, used for readability.
+2. **Inline annotations** -- single-line comments providing brief context on a specific element or block. Optional.
+3. **Panel purpose comments** -- single-line comments immediately preceding an overlay construct (§5.4), describing the construct's purpose. Required by §5.4.
 
 ### 10.1 Section divider format
 
@@ -547,6 +548,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | Duplicate ID values on a page | §5.3 |
 | Overlay construct outer overlay element missing its nested `.cc-dialog` direct child | §5.4 |
 | Overlay construct missing its `.cc-dialog-header`, `.cc-dialog-body`, or required child elements | §5.4 |
+| Overlay construct's inner `.cc-dialog` missing the matching `cc-dialog-modal`, `cc-dialog-slide`, or `cc-dialog-slideup` class | §5.4 |
 | Overlay construct declaration not preceded by an HTML purpose comment | §5.4 |
 | Overlay constructs not grouped in one contiguous block | §5.4 |
 | Non-overlay element appearing between overlay constructs in the overlay block | §5.4 |
@@ -572,8 +574,8 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | HTML comment containing PowerShell variable interpolation | §10.2 |
 | Unclosed HTML comment | §10.2 |
 | Non-purpose comment appearing inside the overlay block | §5.4, §10.2 |
-| Inline `<style>` block (outside SVG) | — |
-| Inline `style="..."` attribute on any element | — |
+| Inline `<style>` block (outside SVG) | -- |
+| Inline `style="..."` attribute on any element | -- |
 | Inline `<script>` block with body content (only the asset reference form `<script src="..."></script>` is permitted) | §3.2 |
 | Inline event handler attribute (`onclick`, `onchange`, any `on*`) on any element | §7 |
 | Function defined inside a route file's ScriptBlock that returns HTML | §11 |
@@ -584,7 +586,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 
 ## 13. Chrome class and attribute reference
 
-The chrome classes and platform-owned attributes referenced by this spec are defined in `cc-shared.css` and by this spec. The tables below are the contract — when this spec references a chrome identifier, it must exist at the named location with the same name. Adding or renaming a chrome identifier requires updates in both files.
+The chrome classes and platform-owned attributes referenced by this spec are defined in `cc-shared.css` and by this spec. The tables below are the contract -- when this spec references a chrome identifier, it must exist at the named location with the same name. Adding or renaming a chrome identifier requires updates in both files.
 
 ### 13.1 Page chrome classes
 
@@ -612,6 +614,9 @@ The chrome classes and platform-owned attributes referenced by this spec are def
 | `cc-slide-overlay` | Slideout outermost element (§5.4.2) |
 | `cc-slideup-overlay` | Slide-up panel outermost element (§5.4.3) |
 | `cc-dialog` | Inner dialog/panel element (shared across all three overlay constructs) |
+| `cc-dialog-modal` | Secondary class on `.cc-dialog` inside a modal (§5.4.1) |
+| `cc-dialog-slide` | Secondary class on `.cc-dialog` inside a slideout (§5.4.2) |
+| `cc-dialog-slideup` | Secondary class on `.cc-dialog` inside a slide-up panel (§5.4.3) |
 | `cc-dialog-header` | Dialog header row (shared) |
 | `cc-dialog-title` | Dialog header title text (shared) |
 | `cc-dialog-close` | Dialog close (X) button (shared) |
@@ -699,6 +704,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `MALFORMED_MODAL_STRUCTURE` | Modal outer `.cc-modal-overlay` missing its nested `.cc-dialog` child, or `.cc-dialog` missing required child elements. | §5.4 |
 | `MALFORMED_SLIDEOUT_STRUCTURE` | Slideout outer `.cc-slide-overlay` missing its nested `.cc-dialog` child, or `.cc-dialog` missing required child elements. | §5.4 |
 | `MALFORMED_SLIDEUP_STRUCTURE` | Slide-up panel outer `.cc-slideup-overlay` missing its nested `.cc-dialog` child, or `.cc-dialog` missing required child elements. | §5.4 |
+| `MISSING_DIALOG_CLASS` | Overlay construct's inner `.cc-dialog` does not carry the matching secondary class (`cc-dialog-modal` inside a modal, `cc-dialog-slide` inside a slideout, `cc-dialog-slideup` inside a slide-up panel). | §5.4 |
 | `MALFORMED_MODAL_ID` | Modal outer element ID does not follow `<prefix>-modal-<purpose>` form. | §5.4 |
 | `MALFORMED_SLIDEOUT_ID` | Slideout outer element ID does not follow `<prefix>-slideout-<purpose>` form. | §5.4 |
 | `MALFORMED_SLIDEUP_ID` | Slide-up panel outer element ID does not follow `<prefix>-slideup-<purpose>` form. | §5.4 |
