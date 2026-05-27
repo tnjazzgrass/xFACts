@@ -26,6 +26,7 @@
     Location  : E:\xFACts-ControlCenter\scripts\routes
 
     FILE ORGANIZATION
+    -----------------
         CHANGELOG: CHANGE HISTORY
         ROUTE: PAGE PATH
 #>
@@ -78,8 +79,7 @@
 #             'bkp-modal-close'; 'slideout-close' became
 #             'bkp-slideout-close' (four occurrences). Chrome dispatch
 #             keys (cc-page-refresh) remain unchanged.
-# 2026-05-18  CC File Format Standardization Section 11.2.4 (unified prefix rename
-#             pass): adopted the new cc- chrome class convention across the
+# 2026-05-18  Adopted the new cc- chrome class convention across the
 #             entire page emission. Body data-page/data-prefix attributes
 #             renamed to data-cc-page/data-cc-prefix. All chrome class names
 #             (header-bar, header-right, refresh-info, live-indicator,
@@ -194,31 +194,32 @@ $navHtml
                 <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
             <div class="cc-engine-row">
-                <div class="cc-engine-card" id="cc-card-engine-collection">
+                <div class="cc-card-engine" id="cc-card-engine-collection">
                     <span class="cc-engine-label">BACKUP</span>
-                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-collection"></div>
-                    <span class="cc-engine-countdown" id="cc-engine-cd-collection">&nbsp;</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-collection"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-collection"></span>
                 </div>
-                <div class="cc-engine-card" id="cc-card-engine-networkcopy">
+                <div class="cc-card-engine" id="cc-card-engine-networkcopy">
                     <span class="cc-engine-label">NETWORK</span>
-                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-networkcopy"></div>
-                    <span class="cc-engine-countdown" id="cc-engine-cd-networkcopy">&nbsp;</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-networkcopy"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-networkcopy"></span>
                 </div>
-                <div class="cc-engine-card" id="cc-card-engine-awsupload">
+                <div class="cc-card-engine" id="cc-card-engine-awsupload">
                     <span class="cc-engine-label">AWS</span>
-                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-awsupload"></div>
-                    <span class="cc-engine-countdown" id="cc-engine-cd-awsupload">&nbsp;</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-awsupload"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-awsupload"></span>
                 </div>
-                <div class="cc-engine-card" id="cc-card-engine-retention">
+                <div class="cc-card-engine" id="cc-card-engine-retention">
                     <span class="cc-engine-label">RETENTION</span>
-                    <div class="cc-engine-bar cc-disabled" id="cc-engine-bar-retention"></div>
-                    <span class="cc-engine-countdown" id="cc-engine-cd-retention">&nbsp;</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-retention"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-retention"></span>
                 </div>
             </div>
         </div>
     </div>
 
     <div id="cc-connection-banner" class="cc-connection-banner"></div>
+
     <div id="cc-page-error-banner" class="cc-page-error-banner"></div>
 
     <div class="bkp-two-column-layout">
