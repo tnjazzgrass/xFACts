@@ -54,10 +54,10 @@
 #             the page-specific link element and the cc-shared link
 #             element, per CC HTML Spec section 3.1. Renamed the
 #             slideout argument attribute from data-action-type to
-#             data-bkp-type (four occurrences across local and
+#             data-action-bkp-type (four occurrences across local and
 #             network slideouts) per CC HTML Spec section 7.4
 #             argument-attribute prefix rules; backup.js handler reads
-#             the argument as dataset.bkpType.
+#             the argument as dataset.actionBkpType.
 # 2026-05-26  CC File Format Standardization: refactored the page route
 #             file itself to the CC PS Spec. Stripped the UTF-8 BOM and
 #             normalized non-ASCII characters to ASCII. Converted the
@@ -306,11 +306,11 @@ $navHtml
     </div>
 
     <!-- Slideout for displaying local-drive backup retention candidates -->
-    <div id="bkp-local-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-bkp-type="local">
+    <div id="bkp-local-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-action-bkp-type="local">
         <div class="cc-dialog cc-dialog-slide cc-wide">
             <div class="cc-dialog-header">
                 <h3 class="cc-dialog-title">&#128465; Local Retention Candidates</h3>
-                <button class="cc-dialog-close" data-action-click="bkp-slideout-close" data-bkp-type="local">&times;</button>
+                <button class="cc-dialog-close" data-action-click="bkp-slideout-close" data-action-bkp-type="local">&times;</button>
             </div>
             <div class="cc-dialog-body" id="bkp-local-retention-body">
                 <div class="bkp-loading">Loading...</div>
@@ -319,11 +319,11 @@ $navHtml
     </div>
 
     <!-- Slideout for displaying network-share backup retention candidates -->
-    <div id="bkp-network-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-bkp-type="network">
+    <div id="bkp-network-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-action-bkp-type="network">
         <div class="cc-dialog cc-dialog-slide cc-wide">
             <div class="cc-dialog-header">
                 <h3 class="cc-dialog-title">&#128465; Network Retention Candidates</h3>
-                <button class="cc-dialog-close" data-action-click="bkp-slideout-close" data-bkp-type="network">&times;</button>
+                <button class="cc-dialog-close" data-action-click="bkp-slideout-close" data-action-bkp-type="network">&times;</button>
             </div>
             <div class="cc-dialog-body" id="bkp-network-retention-body">
                 <div class="bkp-loading">Loading...</div>
