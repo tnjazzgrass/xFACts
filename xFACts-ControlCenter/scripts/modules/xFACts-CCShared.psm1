@@ -1,84 +1,148 @@
-# ============================================================================
-# xFACts Control Center - Shared Helper Functions Module (xFACts-CCShared.psm1)
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.Shared)
-# Location: E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1
-#
-# PowerShell module providing database connectivity and RBAC functions.
-# Loaded via Import-PodeModule in Start-ControlCenter.ps1, which makes
-# all exported functions available across all Pode runspaces (routes,
-# middleware, etc.) automatically.
-#
-# This module is a drop-in successor to xFACts-Helpers.psm1. Routes
-# migrated to the CC File Format Standardization conventions (cc- chrome
-# class prefix, cc_ JS identifier prefix, data-cc-page/data-cc-prefix body
-# attributes) import this module instead of xFACts-Helpers. During the
-# page-by-page migration both modules coexist; once the last page has
-# migrated to consume cc-shared.css and cc-shared.js, xFACts-Helpers.psm1
-# is deleted.
-#
-# Functions:
-#   Database:
-#     Invoke-XFActsQuery  - Execute SQL query, return results as hashtables
-#     Invoke-XFActsProc   - Execute stored procedure, capture PRINT messages
-#
-#   RBAC:
-#     Get-UserAccess          - Page-level access check (use in page routes)
-#     Test-ActionPermission   - Action-level permission check (use in API routes)
-#     Get-UserContext         - User identity/role context for UI rendering
-#     Get-NavBarHtml          - Renders the horizontal nav bar HTML for a user
-#     Get-HomePageSections    - Returns structured section/page data for Home tile rendering
-#     Get-NavRegistryEntry    - Returns the cached RBAC_NavRegistry row for a route
-#     Get-PageHeaderHtml      - Renders the H1+subtitle block from RBAC_NavRegistry
-#     Get-PageBrowserTitle    - Returns the browser tab title from RBAC_NavRegistry
-#     Get-PageScriptTagHtml   - Renders the cc-shared.js <script> tag for page footers
-#     Get-AccessDeniedHtml    - Styled 403 page matching Control Center theme
-#     Get-ActionDeniedResponse - Standardized 403 JSON for API endpoints
-#
-# CHANGELOG
-# ---------
-# 2026-05-18  CC File Format Standardization (Phase 1, §11.2.4 unified prefix
-#             rename): forked from xFACts-Helpers.psm1 as the new canonical
-#             helpers module for CC-compliant pages. Get-NavBarHtml updated
-#             to emit cc- prefixed nav chrome classes (cc-nav-bar,
-#             cc-nav-link, cc-nav-section-<key>, cc-nav-separator,
-#             cc-nav-spacer, cc-nav-admin). Get-PageHeaderHtml updated to
-#             emit cc-page-h1, cc-page-h1-link, cc-page-subtitle. The
-#             section-<key> compound modifier on cc-page-h1 stays
-#             unprefixed per CC_CSS_Spec.md. RBAC_NavSection.accent_class
-#             database values (e.g., 'nav-section-platform') are
-#             transformed at emission time by prepending 'cc-' so the
-#             database content stays unchanged during the migration. Also
-#             added Get-PageScriptTagHtml to the Export-ModuleMember list
-#             (the function was defined in xFACts-Helpers.psm1 but never
-#             exported, preventing routes from calling it).
-# 2026-04-29  Inherited from xFACts-Helpers.psm1: Phase 3d of dynamic nav
-#             added Get-NavRegistryEntry, Get-PageHeaderHtml, and
-#             Get-PageBrowserTitle. Page H1 link, title, subtitle, and
-#             browser tab title render from RBAC_NavRegistry instead of
-#             being hardcoded in each route file.
-# ============================================================================
+<#
+.SYNOPSIS
+    Shared Control Center helper module providing database access, RBAC evaluation,
+    server-side navigation rendering, and supporting utility functions.
 
+.DESCRIPTION
+    Drop-in successor to xFACts-Helpers.psm1 consumed by every Control Center page
+    that has been refactored to the CC File Format Standardization conventions
+    (cc- chrome class prefix, cc_ JavaScript identifier prefix, data-cc-page /
+    data-cc-prefix body attributes). Loaded by Start-ControlCenter.ps1 via
+    Import-PodeModule so every exported function is available across all Pode
+    runspaces. Provides the xFACts database access surface (Invoke-XFActsQuery,
+    Invoke-XFActsProc, Invoke-XFActsNonQuery), the full RBAC evaluation chain
+    (cache, role resolution, page-tier resolution, action and endpoint permission
+    checks, user context), server-side navigation and page-header rendering, the
+    API result cache, encrypted credentials retrieval, CRS5 (Debt Manager) and
+    AG-secondary read helpers, the DmOps remaining-counts cache, BDL XML
+    construction and reconciliation, and DBNull-safe value conversion helpers.
+
+.COMPONENT
+    ControlCenter.Shared
+
+.NOTES
+    File Name : xFACts-CCShared.psm1
+    Location  : E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1
+
+    FILE ORGANIZATION
+    -----------------
+    CONSTANTS: CONNECTION STRINGS
+    VARIABLES: RBAC CACHE
+    VARIABLES: DMOPS CACHE
+    FUNCTIONS: DATABASE
+    FUNCTIONS: RBAC CACHE
+    FUNCTIONS: RBAC HELPERS
+    FUNCTIONS: RBAC CORE
+    FUNCTIONS: DYNAMIC NAVIGATION
+    FUNCTIONS: RBAC AUDIT LOG
+    FUNCTIONS: ACCESS DENIED RESPONSES
+    FUNCTIONS: API CACHE
+    FUNCTIONS: CRS5 DATABASE
+    FUNCTIONS: DMOPS CACHE
+    FUNCTIONS: SERVICE CREDENTIALS
+    FUNCTIONS: AG READ QUERY
+    FUNCTIONS: DATA CONVERSION HELPERS
+    FUNCTIONS: BDL PROCESS
+    FUNCTIONS: TOOLS SERVER TARGETING
+    EXPORTS: MODULE EXPORTS
+#>
+
+<# ============================================================================
+   CONSTANTS: CONNECTION STRINGS
+   ----------------------------------------------------------------------------
+   Immutable connection strings shared across the module. The xFACts AG
+   listener connection string is used by every Invoke-XFActs* helper.
+   Prefix: (none)
+   ============================================================================ #>
+
+# xFACts AG listener connection string. Integrated Security with
+# ApplicationName tagging so sys.dm_exec_sessions attributes the work back
+# to the Control Center for DMV reporting.
 $script:ConnectionString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
 
+<# ============================================================================
+   VARIABLES: RBAC CACHE
+   ----------------------------------------------------------------------------
+   Module-scope mutable cache of the RBAC_* configuration tables. Populated
+   by Initialize-RBACCache and refreshed on a fixed cadence governed by
+   CacheDurationSec.
+   Prefix: (none)
+   ============================================================================ #>
+
+# In-memory RBAC cache. Populated by Initialize-RBACCache and consulted by
+# every access check via Confirm-RBACCache (lazy TTL refresh).
+$script:RBACCache = @{
+    Roles            = $null
+    RoleMappings     = $null
+    PagePermissions  = $null
+    ActionGrants     = $null
+    ActionRegistry   = $null
+    DepartmentPages  = $null
+    NavSections      = $null
+    NavRegistry      = $null
+    EnforcementMode  = 'disabled'
+    AuditVerbosity   = 'denials_only'
+    LastRefresh      = [datetime]::MinValue
+    # Cache duration in seconds (5 minutes).
+    CacheDurationSec = 300
+}
+
+<# ============================================================================
+   VARIABLES: DMOPS CACHE
+   ----------------------------------------------------------------------------
+   Module-scope mutable cache backing Get-RemainingCounts. Holds the latest
+   aggregate counts from the DmOps archive pipeline with a short TTL because
+   the underlying numbers change with every archive run.
+   Prefix: (none)
+   ============================================================================ #>
+
+# In-memory DmOps remaining-counts cache. Populated by Get-RemainingCounts on
+# first read or after TTL expiry.
+$script:DmOpsRemainingCache = @{
+    ArchiveConsumersRemaining = $null
+    ArchiveAccountsRemaining  = $null
+    ShellRemaining            = $null
+    BaselineDttm              = $null
+    ArchiveTargetInstance     = $null
+    ShellPurgeTargetInstance  = $null
+    CacheMaxAgeMinutes        = 60
+}
+
+<# ============================================================================
+   FUNCTIONS: DATABASE
+   ----------------------------------------------------------------------------
+   Primary read, stored-procedure, and non-query execution paths against the
+   xFACts AG listener. Used by every Control Center route that touches the
+   platform database.
+   Prefix: (none)
+   ============================================================================ #>
+
 function Invoke-XFActsQuery {
-    <#
-    .SYNOPSIS
-        Executes a SQL query and returns results as an array of hashtables.
-    .PARAMETER Query
-        The SQL query to execute.
-    .PARAMETER Parameters
-        Optional hashtable of parameters for parameterized queries.
-    .EXAMPLE
-        $results = Invoke-XFActsQuery -Query "SELECT * FROM dbo.ServerRegistry"
-    .EXAMPLE
-        $results = Invoke-XFActsQuery -Query "SELECT * FROM dbo.ServerRegistry WHERE server_id = @id" -Parameters @{ id = 1 }
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Query,
 
         [hashtable]$Parameters = @{}
     )
+
+    <#
+    .SYNOPSIS
+        Executes a SQL query against the xFACts AG listener and returns results as hashtables.
+
+    .DESCRIPTION
+        Opens a SQL connection to the AVG-PROD-LSNR xFACts database using
+        Integrated Security, executes the supplied query, and returns each result
+        row as a hashtable keyed by column name. Closes the connection in a
+        finally block. Used as the primary read path for every CC route that
+        queries the xFACts database.
+
+    .PARAMETER Query
+        The SQL query text to execute. Multi-line queries may use here-strings.
+
+    .PARAMETER Parameters
+        Optional hashtable of parameter name/value pairs. Keys map to @parameter placeholders in the query; strings are typed as VarChar to avoid implicit NVARCHAR conversion that defeats indexes.
+    #>
 
     $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
     $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
@@ -117,24 +181,31 @@ function Invoke-XFActsQuery {
 }
 
 function Invoke-XFActsProc {
-    <#
-    .SYNOPSIS
-        Executes a stored procedure and captures PRINT/RAISERROR messages.
-    .PARAMETER ProcName
-        The fully qualified stored procedure name (e.g., "ServerOps.sp_DiagnoseServerHealth").
-    .PARAMETER Parameters
-        Optional hashtable of parameters to pass to the procedure.
-    .RETURNS
-        An ArrayList of messages captured from PRINT/RAISERROR statements.
-    .EXAMPLE
-        $messages = Invoke-XFActsProc -ProcName "ServerOps.sp_DiagnoseServerHealth" -Parameters @{ server_name = "AVG-PROD-LSNR"; lookback_minutes = 60 }
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ProcName,
 
         [hashtable]$Parameters = @{}
     )
+
+    <#
+    .SYNOPSIS
+        Executes a stored procedure against the xFACts AG listener and captures PRINT messages.
+
+    .DESCRIPTION
+        Opens a SQL connection to the AVG-PROD-LSNR xFACts database, attaches an
+        InfoMessage handler so PRINT output is captured, executes the named
+        stored procedure with any supplied parameters, and returns a hashtable
+        containing the result rows plus the captured PRINT messages. Command
+        timeout is fixed at 120 seconds for diagnostic procs.
+
+    .PARAMETER ProcName
+        Fully-qualified procedure name (e.g., dbo.sp_DiagnoseServerHealth).
+
+    .PARAMETER Parameters
+        Optional hashtable of parameter name/value pairs. Keys map to procedure parameters by name; strings are typed as VarChar.
+    #>
 
     $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
     $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
@@ -154,7 +225,8 @@ function Invoke-XFActsProc {
         $cmd = $conn.CreateCommand()
         $cmd.CommandType = [System.Data.CommandType]::StoredProcedure
         $cmd.CommandText = $ProcName
-        $cmd.CommandTimeout = 120  # 2 minutes for diagnostic procs
+        # 2 minutes for diagnostic procs
+        $cmd.CommandTimeout = 120
 
         foreach ($key in $Parameters.Keys) {
             $p = $cmd.Parameters.AddWithValue("@$key", $Parameters[$key])
@@ -171,22 +243,7 @@ function Invoke-XFActsProc {
 }
 
 function Invoke-XFActsNonQuery {
-    <#
-    .SYNOPSIS
-        Executes a non-query SQL statement (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP) against the xFACts database.
-    .PARAMETER Query
-        The SQL statement to execute.
-    .PARAMETER Parameters
-        Optional hashtable of parameters for parameterized queries.
-    .PARAMETER TimeoutSeconds
-        Command timeout in seconds (default: 30).
-    .RETURNS
-        The number of rows affected (for DML statements). DDL statements return -1.
-    .EXAMPLE
-        $rows = Invoke-XFActsNonQuery -Query "UPDATE dbo.GlobalConfig SET setting_value = @val WHERE config_id = @id" -Parameters @{ val = '10'; id = 5 }
-    .EXAMPLE
-        Invoke-XFActsNonQuery -Query "CREATE TABLE Staging.[MyTable] ([id] INT, [name] VARCHAR(50))"
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Query,
@@ -195,6 +252,26 @@ function Invoke-XFActsNonQuery {
 
         [int]$TimeoutSeconds = 30
     )
+
+    <#
+    .SYNOPSIS
+        Executes a non-query SQL statement against the xFACts AG listener and returns affected row count.
+
+    .DESCRIPTION
+        Opens a SQL connection to the AVG-PROD-LSNR xFACts database, executes
+        an INSERT/UPDATE/DELETE statement (or any other non-result-set
+        statement), and returns the number of rows affected. Closes the
+        connection in a finally block.
+
+    .PARAMETER Query
+        The SQL statement to execute.
+
+    .PARAMETER Parameters
+        Optional hashtable of parameter name/value pairs. Keys map to @parameter placeholders; strings are typed as VarChar.
+
+    .PARAMETER TimeoutSeconds
+        Command timeout in seconds. Defaults to 30.
+    #>
 
     $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;"
     $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
@@ -218,64 +295,30 @@ function Invoke-XFActsNonQuery {
     }
 }
 
-# ============================================================================
-# RBAC (Role-Based Access Control) Functions
-# ============================================================================
-# Provides permission evaluation for the Control Center.
-# AD groups -> Roles -> Page permissions -> Action grants
-#
-# Usage in routes:
-#   # Page-level access check
-#   $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/server-health'
-#   if (-not $access.HasAccess) {
-#       Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName) -StatusCode 403
-#       return
-#   }
-#
-#   # Action-level permission check
-#   if (-not (Test-ActionPermission -WebEvent $WebEvent -PageRoute '/server-health' -ActionName 'kill-zombie')) {
-#       Write-PodeJsonResponse -Value (Get-ActionDeniedResponse -ActionName 'kill-zombie') -StatusCode 403
-#       return
-#   }
-#
-#   # UI rendering context
-#   $ctx = Get-UserContext -WebEvent $WebEvent
-#   if ($ctx.IsAdmin) { # show admin controls }
-#
-#   # Dynamic nav rendering (Phase 2)
-#   $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/server-health'
-#   $sections = Get-HomePageSections -UserContext $ctx
-#
-#   # Dynamic page header rendering (Phase 3d)
-#   $headerHtml   = Get-PageHeaderHtml   -PageRoute '/server-health'
-#   $browserTitle = Get-PageBrowserTitle -PageRoute '/server-health'
-# ============================================================================
-
-# ----------------------------------------------------------------------------
-# RBAC Cache
-# All RBAC tables loaded into memory, refreshed every 5 minutes.
-# Avoids querying the database on every request.
-# ----------------------------------------------------------------------------
-$script:RBACCache = @{
-    Roles            = $null
-    RoleMappings     = $null
-    PagePermissions  = $null
-    ActionGrants     = $null
-    ActionRegistry   = $null
-    DepartmentPages  = $null
-    NavSections      = $null
-    NavRegistry      = $null
-    EnforcementMode  = 'disabled'
-    AuditVerbosity   = 'denials_only'
-    LastRefresh      = [datetime]::MinValue
-    CacheDurationSec = 300  # 5 minutes
-}
+<# ============================================================================
+   FUNCTIONS: RBAC CACHE
+   ----------------------------------------------------------------------------
+   In-memory cache of the RBAC_* configuration tables. The cache is loaded
+   on first access and refreshed on a fixed cadence governed by the
+   CacheDurationSec setting in $script:RBACCache.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Initialize-RBACCache {
+    [CmdletBinding()]
+    param()
+
     <#
     .SYNOPSIS
-        Loads RBAC configuration from the database into memory cache.
-        Called on first request and refreshed every CacheDurationSec seconds.
+        Loads all RBAC configuration tables from the database into the in-memory cache.
+
+    .DESCRIPTION
+        Issues a single batched query against the RBAC_* tables and populates
+        the $script:RBACCache hashtable with Roles, RoleMappings, PagePermissions,
+        ActionGrants, ActionRegistry, DepartmentPages, NavSections, NavRegistry,
+        plus the EnforcementMode and AuditVerbosity GlobalConfig values. Stamps
+        LastRefresh with the current time. Called automatically by
+        Confirm-RBACCache when the cache is empty or stale.
     #>
 
     try {
@@ -372,50 +415,72 @@ function Initialize-RBACCache {
 }
 
 function Confirm-RBACCache {
+    [CmdletBinding()]
+    param()
+
     <#
     .SYNOPSIS
-        Ensures the RBAC cache is loaded and fresh.
-        Call at the start of any RBAC function.
+        Ensures the RBAC cache is current, refreshing it if empty or expired.
+
+    .DESCRIPTION
+        Checks the elapsed time since the last cache refresh against the
+        CacheDurationSec setting. When the cache is empty or has aged beyond
+        its TTL, calls Initialize-RBACCache to repopulate it. Cheap enough to
+        call on every RBAC check.
     #>
+
     $elapsed = (Get-Date) - $script:RBACCache.LastRefresh
     if ($null -eq $script:RBACCache.Roles -or $elapsed.TotalSeconds -gt $script:RBACCache.CacheDurationSec) {
         Initialize-RBACCache
     }
 }
 
-# ----------------------------------------------------------------------------
-# DBNull Normalization
-# ----------------------------------------------------------------------------
-# SQL NULL values returned from Invoke-XFActsQuery surface as
-# [System.DBNull]::Value, which PowerShell treats as TRUTHY in boolean
-# contexts. This causes silent bugs in conditionals -- e.g. a check like
-# `if ($_.department_scope)` evaluates to true for DBNull even when the
-# database column is NULL.
-#
-# Use this helper to normalize DB-sourced values to actual $null before
-# evaluating them in if statements, -not expressions, Where-Object filter
-# scriptblocks, or comparisons against $null.
-#
-# Example: if (ConvertFrom-DBNull $row.optional_field) { ... }
-# ----------------------------------------------------------------------------
+<# ============================================================================
+   FUNCTIONS: RBAC HELPERS
+   ----------------------------------------------------------------------------
+   Small helpers consumed by the RBAC core: DBNull normalization for
+   boolean-context safety, and the numeric tier-comparison primitives.
+   Prefix: (none)
+   ============================================================================ #>
 
 function ConvertFrom-DBNull {
+    [CmdletBinding()]
     param($Value)
+
+    <#
+    .SYNOPSIS
+        Returns $null when the supplied value is a DBNull, otherwise returns the value unchanged.
+
+    .DESCRIPTION
+        SQL NULL values returned from Invoke-XFActsQuery surface as
+        [System.DBNull]::Value, which PowerShell treats as truthy in boolean
+        contexts. This helper normalizes DBNull to $null so conditional checks
+        like "if ($_.department_scope)" evaluate correctly.
+
+    .PARAMETER Value
+        The raw value from a SQL result row, which may be [DBNull] or any other type.
+    #>
+
     if ($Value -is [System.DBNull]) { return $null }
     return $Value
 }
 
-# ----------------------------------------------------------------------------
-# Tier Comparison Helpers
-# ----------------------------------------------------------------------------
-
 function Get-TierLevel {
+    [CmdletBinding()]
+    param([string]$Tier)
+
     <#
     .SYNOPSIS
-        Converts a tier name to a numeric level for comparison.
-        Higher number = more access.
+        Converts an access tier name to a numeric level for comparison.
+
+    .DESCRIPTION
+        Maps the tier strings used in RBAC_PermissionMapping and
+        RBAC_ActionRegistry to numeric levels suitable for >= comparisons.
+        Higher numbers mean more privilege. Unknown tier strings return 0.
+
+    .PARAMETER Tier
+        The tier name: read, operate, manage, admin, or any other string (treated as 0).
     #>
-    param([string]$Tier)
 
     switch ($Tier) {
         'admin'   { return 3 }
@@ -426,34 +491,59 @@ function Get-TierLevel {
 }
 
 function Test-TierSufficient {
-    <#
-    .SYNOPSIS
-        Tests whether a user's tier meets or exceeds the required tier.
-    #>
+    [CmdletBinding()]
     param(
         [string]$UserTier,
         [string]$RequiredTier
     )
 
+    <#
+    .SYNOPSIS
+        Tests whether a user tier meets or exceeds a required tier.
+
+    .DESCRIPTION
+        Resolves both tier names to numeric levels via Get-TierLevel and
+        returns $true when the user tier is numerically greater than or
+        equal to the required tier.
+
+    .PARAMETER UserTier
+        The tier the user holds.
+
+    .PARAMETER RequiredTier
+        The tier required to perform the operation.
+    #>
+
     return (Get-TierLevel -Tier $UserTier) -ge (Get-TierLevel -Tier $RequiredTier)
 }
 
-# ----------------------------------------------------------------------------
-# Core RBAC Functions
-# ----------------------------------------------------------------------------
+<# ============================================================================
+   FUNCTIONS: RBAC CORE
+   ----------------------------------------------------------------------------
+   The page-level and action-level access evaluation surface every CC
+   route consumes. Get-UserAccess gates page rendering; Test-ActionEndpoint
+   is the universal API hook; Get-UserContext powers UI personalization.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Resolve-UserRoles {
-    <#
-    .SYNOPSIS
-        Resolves a user's AD groups into RBAC roles.
-    .PARAMETER UserGroups
-        Array of AD group names from $WebEvent.Auth.User.Groups
-    .RETURNS
-        Array of hashtables with role details and department scope
-    #>
+    [CmdletBinding()]
     param(
         [array]$UserGroups
     )
+
+    <#
+    .SYNOPSIS
+        Resolves a user's AD group memberships to the RBAC roles those groups map to.
+
+    .DESCRIPTION
+        Iterates the supplied AD group list and looks each up in the
+        RBAC_RoleMapping cache. Returns the distinct set of role names the
+        user holds via group membership. Unknown groups are silently
+        skipped.
+
+    .PARAMETER UserGroups
+        Array of AD group SAM account names from the user's authentication context.
+    #>
 
     Confirm-RBACCache
 
@@ -478,20 +568,28 @@ function Resolve-UserRoles {
 }
 
 function Get-UserPageTier {
-    <#
-    .SYNOPSIS
-        Determines the highest permission tier a user has for a specific page.
-    .PARAMETER UserRoles
-        Array of resolved roles from Resolve-UserRoles
-    .PARAMETER PageRoute
-        The page route to check (e.g., '/server-health')
-    .RETURNS
-        String tier name ('admin', 'operate', 'view') or $null if no access
-    #>
+    [CmdletBinding()]
     param(
         [array]$UserRoles,
         [string]$PageRoute
     )
+
+    <#
+    .SYNOPSIS
+        Resolves the highest access tier a user holds for a specific page route.
+
+    .DESCRIPTION
+        Walks the user's RBAC roles, looks up each role's permissions against
+        the supplied page route in RBAC_PermissionMapping, and returns the
+        highest-privilege tier any role grants. Returns $null when no role
+        grants access to the page.
+
+    .PARAMETER UserRoles
+        Array of role names the user holds (from Resolve-UserRoles).
+
+    .PARAMETER PageRoute
+        The page route path being accessed (e.g., /server-health).
+    #>
 
     Confirm-RBACCache
 
@@ -546,27 +644,37 @@ function Get-UserPageTier {
 }
 
 function Test-ActionPermission {
-    <#
-    .SYNOPSIS
-        Tests whether a user can perform a specific action on a page.
-        Evaluation order: User DENY > Role DENY > User ALLOW > Role ALLOW > Tier fallback
-    .PARAMETER WebEvent
-        The Pode WebEvent object containing auth context
-    .PARAMETER PageRoute
-        The page route (e.g., '/server-health')
-    .PARAMETER ActionName
-        The action to check (e.g., 'kill-zombie')
-    .PARAMETER RequiredTier
-        Minimum tier normally required for this action (default: 'operate')
-    .RETURNS
-        $true if the action is permitted, $false otherwise
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$WebEvent,
         [Parameter(Mandatory)][string]$PageRoute,
         [Parameter(Mandatory)][string]$ActionName,
         [string]$RequiredTier = 'operate'
     )
+
+    <#
+    .SYNOPSIS
+        Tests whether a user has permission to perform a specific action on a page.
+
+    .DESCRIPTION
+        Performs the action-level permission check used by API routes. Resolves
+        the user's context, looks up the action in RBAC_ActionRegistry to get
+        the action's required tier, then compares the user's page tier against
+        that required tier. Honors the platform's enforcement mode setting --
+        in audit mode access is granted but the denial would have been logged.
+
+    .PARAMETER WebEvent
+        The Pode $WebEvent for the current request, carrying the authenticated user identity.
+
+    .PARAMETER PageRoute
+        The page route the action belongs to.
+
+    .PARAMETER ActionName
+        The action name as registered in RBAC_ActionRegistry.
+
+    .PARAMETER RequiredTier
+        Optional override of the registry-declared required tier. Defaults to operate.
+    #>
 
     Confirm-RBACCache
 
@@ -665,26 +773,26 @@ function Test-ActionPermission {
 }
 
 function Test-ActionEndpoint {
-    <#
-    .SYNOPSIS
-        Checks whether the current API action is permitted for the authenticated user.
-        Reads the endpoint path and HTTP method from $WebEvent, looks it up in the
-        ActionRegistry cache, and runs the full RBAC permission check if registered.
-
-        Call at the top of any POST/PUT/DELETE route scriptblock:
-            if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-
-        Unregistered endpoints are allowed through (returns $true).
-        If denied in enforce mode, sends 403 JSON response before returning $false.
-    .PARAMETER WebEvent
-        The Pode WebEvent object containing auth context, path, and method
-    .RETURNS
-        $true  - Action permitted (or endpoint not registered)
-        $false - Action denied (403 response already sent)
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$WebEvent
     )
+
+    <#
+    .SYNOPSIS
+        Tests whether an API endpoint call is permitted, fail-open for unregistered actions.
+
+    .DESCRIPTION
+        Universal RBAC hook called by every API route. Resolves the page route
+        and action name from the request, looks the action up in
+        RBAC_ActionRegistry, and applies the platform's standard tier-comparison
+        logic. Endpoints not yet registered in RBAC_ActionRegistry return
+        $true (fail-open) so new endpoints work immediately and registration
+        can be added after deployment.
+
+    .PARAMETER WebEvent
+        The Pode $WebEvent for the current request.
+    #>
 
     Confirm-RBACCache
 
@@ -717,28 +825,32 @@ function Test-ActionEndpoint {
 }
 
 function Get-UserAccess {
-    <#
-    .SYNOPSIS
-        Evaluates a user's access to a specific page. Returns an object with
-        access decision, tier, roles, and department context.
-    .PARAMETER WebEvent
-        The Pode WebEvent object containing auth context
-    .PARAMETER PageRoute
-        The page route to check (e.g., '/server-health', '/departmental/business-services')
-    .RETURNS
-        Hashtable with: HasAccess, Tier, Roles, DepartmentScope, Username, DisplayName, IsDeptOnly
-    .EXAMPLE
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/server-health'
-        if (-not $access.HasAccess) {
-            Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName) -StatusCode 403
-            return
-        }
-        # Use $access.Tier to conditionally render UI elements
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$WebEvent,
         [Parameter(Mandatory)][string]$PageRoute
     )
+
+    <#
+    .SYNOPSIS
+        Performs the page-level access check used by every page route as the first statement.
+
+    .DESCRIPTION
+        Resolves the user's identity, AD groups, and RBAC roles, looks up the
+        page tier the roles grant for the supplied route, and returns a
+        hashtable describing whether access is granted, the resolved tier, and
+        the user's display name. Honors the enforcement mode -- when disabled
+        every user gets admin access; when audit mode is active access is
+        granted but denials are still logged. Page routes call this as the
+        first statement of the scriptblock and return Get-AccessDeniedHtml
+        when HasAccess is false.
+
+    .PARAMETER WebEvent
+        The Pode $WebEvent for the current request.
+
+    .PARAMETER PageRoute
+        The page route being requested.
+    #>
 
     Confirm-RBACCache
 
@@ -775,7 +887,8 @@ function Get-UserAccess {
     # If disabled, grant full access
     if ($mode -eq 'disabled') {
         $result.HasAccess = $true
-        $result.Tier = 'admin'  # Effectively unrestricted
+        # Effectively unrestricted
+        $result.Tier = 'admin'
         return $result
     }
 
@@ -806,7 +919,8 @@ function Get-UserAccess {
         # In audit mode, still allow access
         if ($mode -eq 'audit') {
             $result.HasAccess = $true
-            $result.Tier = 'admin'  # Audit mode = unrestricted
+            # Audit mode = unrestricted
+            $result.Tier = 'admin'
         }
     }
 
@@ -814,20 +928,24 @@ function Get-UserAccess {
 }
 
 function Get-UserContext {
-    <#
-    .SYNOPSIS
-        Lightweight function to get user identity and role context for UI rendering.
-        Does NOT perform access checks -- use Get-UserAccess for that.
-        Useful for building nav menus, showing/hiding elements, displaying user info.
-    .PARAMETER WebEvent
-        The Pode WebEvent object containing auth context
-    .RETURNS
-        Hashtable with: Username, DisplayName, Roles, RoleNames, DepartmentScopes,
-        IsDeptOnly, IsAdmin, HasPlatformAccess, UserDepartments
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$WebEvent
     )
+
+    <#
+    .SYNOPSIS
+        Resolves the current user's identity, roles, and admin status into a UI rendering context.
+
+    .DESCRIPTION
+        Lightweight context-builder used by page templates and nav rendering.
+        Returns a hashtable containing the username, display name, AD group
+        list, resolved RBAC roles, IsAdmin flag, and department scope. Used to
+        drive nav visibility, admin gating, and personalized page content.
+
+    .PARAMETER WebEvent
+        The Pode $WebEvent for the current request.
+    #>
 
     Confirm-RBACCache
 
@@ -880,42 +998,43 @@ function Get-UserContext {
     }
 }
 
-# ----------------------------------------------------------------------------
-# Dynamic Navigation Rendering
-# ----------------------------------------------------------------------------
+<# ============================================================================
+   FUNCTIONS: DYNAMIC NAVIGATION
+   ----------------------------------------------------------------------------
+   Server-side rendering of the navigation bar, Home page tile layout, and
+   per-page header / browser-title / script-tag blocks. Driven by the
+   cached RBAC_NavRegistry and RBAC_NavSection content.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-NavBarHtml {
-    <#
-    .SYNOPSIS
-        Renders the horizontal navigation bar HTML for a given user.
-        Filters pages by user permissions, groups by section with separators,
-        applies the 'cc-active' class to the current page, and appends the admin
-        gear icon for users with the Admin role.
-
-        Emits cc- prefixed chrome classes per CC_CSS_Spec.md Section 5.2:
-        cc-nav-bar, cc-nav-link, cc-nav-section-<key>, cc-nav-separator,
-        cc-nav-spacer, cc-nav-admin. The 'cc-active' state modifier carries
-        the cc- prefix per CC_CSS_Spec.md Section 7.1 (every class token in a
-        compound must carry its section's declared prefix).
-        RBAC_NavSection.accent_class database values (e.g.,
-        'nav-section-platform') are transformed at emission time by
-        prepending 'cc-'.
-    .PARAMETER UserContext
-        Hashtable from Get-UserContext containing user identity and roles.
-    .PARAMETER CurrentPageRoute
-        The route of the page currently being rendered (e.g., '/server-health').
-        Used to apply the 'cc-active' CSS class to the matching nav link.
-    .RETURNS
-        Complete <nav> HTML block ready to embed in a page.
-    .EXAMPLE
-        $ctx = Get-UserContext -WebEvent $WebEvent
-        $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/server-health'
-        # Then embed $navHtml in your page HTML
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][hashtable]$UserContext,
         [Parameter(Mandatory)][string]$CurrentPageRoute
     )
+
+    <#
+    .SYNOPSIS
+        Renders the horizontal navigation bar HTML for a given user and current page.
+
+    .DESCRIPTION
+        Filters the RBAC_NavRegistry rows visible to the user, groups them by
+        section per RBAC_NavSection, applies the cc-active modifier to the link
+        matching the current page route, and appends the admin gear icon for
+        users with the Admin role. Emits cc- prefixed chrome classes per the
+        CC_CSS_Spec (cc-nav-bar, cc-nav-link, cc-nav-section-<key>,
+        cc-nav-separator, cc-nav-spacer, cc-nav-admin). RBAC_NavSection.accent_class
+        database values (e.g., nav-section-platform) are transformed at
+        emission time by prepending cc- so the database content stays unchanged
+        during the migration.
+
+    .PARAMETER UserContext
+        Hashtable from Get-UserContext containing user identity and roles.
+
+    .PARAMETER CurrentPageRoute
+        The route of the page currently being rendered. Used to apply the cc-active modifier to the matching nav link.
+    #>
 
     Confirm-RBACCache
 
@@ -931,9 +1050,15 @@ function Get-NavBarHtml {
     $sb = New-Object System.Text.StringBuilder 2048
     [void]$sb.AppendLine('    <nav class="cc-nav-bar">')
 
-    # Home link is always first, regardless of section
-    $homeActiveClass = if ($CurrentPageRoute -eq '/') { ' cc-active' } else { '' }
-    [void]$sb.AppendLine("        <a href=`"/`" class=`"cc-nav-link$homeActiveClass`">Home</a>")
+    # Home link is always first, regardless of section. The class string is
+    # built via the array-join pattern: collect tokens into an array, then
+    # join with a single space. This keeps the class attribute on the emitted
+    # <a> tag fully resolved (no string-interpolation directly into the
+    # class attribute) per the CC spec.
+    $homeTokens = @('cc-nav-link')
+    if ($CurrentPageRoute -eq '/') { $homeTokens += 'cc-active' }
+    $homeClasses = $homeTokens -join ' '
+    [void]$sb.AppendLine("        <a href=`"/`" class=`"$homeClasses`">Home</a>")
 
     # Iterate sections in order, filtering pages by user permissions
     $sectionsRendered = 0
@@ -964,26 +1089,36 @@ function Get-NavBarHtml {
             [void]$sb.AppendLine('        <span class="cc-nav-separator">|</span>')
         }
 
-        # Render each accessible page
+        # Render each accessible page. Class string is built via the
+        # array-join pattern, same shape as the home link above.
+        # RBAC_NavSection.accent_class stores values like 'nav-section-platform';
+        # we prepend 'cc-' at emission time to produce 'cc-nav-section-platform'
+        # for the new CC chrome class convention. Database content stays
+        # unchanged.
         foreach ($page in $accessiblePages) {
-            $activeClass = if ($page.page_route -eq $CurrentPageRoute) { ' cc-active' } else { '' }
-            # RBAC_NavSection.accent_class stores values like 'nav-section-platform';
-            # prepend 'cc-' at emission time to produce 'cc-nav-section-platform' for
-            # the new CC chrome class convention. Database content stays unchanged.
-            $accentClass = if ($section.accent_class) { " cc-$($section.accent_class)" } else { '' }
-            $cssClasses = "cc-nav-link$accentClass$activeClass"
+            $pageTokens = @('cc-nav-link')
+            if ($section.accent_class) {
+                $pageTokens += "cc-$($section.accent_class)"
+            }
+            if ($page.page_route -eq $CurrentPageRoute) {
+                $pageTokens += 'cc-active'
+            }
+            $pageClasses = $pageTokens -join ' '
             $label = [System.Web.HttpUtility]::HtmlEncode($page.nav_label)
-            [void]$sb.AppendLine("        <a href=`"$($page.page_route)`" class=`"$cssClasses`">$label</a>")
+            [void]$sb.AppendLine("        <a href=`"$($page.page_route)`" class=`"$pageClasses`">$label</a>")
         }
 
         $sectionsRendered++
     }
 
-    # Append admin gear for admin users (always last; gets 'cc-active' class when on /admin)
+    # Append admin gear for admin users (always last; gets 'cc-active' class
+    # when the user is currently viewing /admin). Same array-join pattern.
     if ($isAdmin) {
-        $adminActiveClass = if ($CurrentPageRoute -eq '/admin') { ' cc-active' } else { '' }
+        $adminTokens = @('cc-nav-link', 'cc-nav-admin')
+        if ($CurrentPageRoute -eq '/admin') { $adminTokens += 'cc-active' }
+        $adminClasses = $adminTokens -join ' '
         [void]$sb.AppendLine('        <span class="cc-nav-spacer"></span>')
-        [void]$sb.AppendLine("        <a href=`"/admin`" class=`"cc-nav-link cc-nav-admin$adminActiveClass`" title=`"Administration`">&#9881;</a>")
+        [void]$sb.AppendLine("        <a href=`"/admin`" class=`"$adminClasses`" title=`"Administration`">&#9881;</a>")
     }
 
     [void]$sb.AppendLine('    </nav>')
@@ -992,35 +1127,26 @@ function Get-NavBarHtml {
 }
 
 function Get-HomePageSections {
-    <#
-    .SYNOPSIS
-        Returns structured section/page data for rendering the Home page tile grid.
-        Filters pages by user permissions and omits empty sections entirely.
-    .PARAMETER UserContext
-        Hashtable from Get-UserContext containing user identity and roles.
-    .RETURNS
-        Array of hashtables, one per non-empty section. Each section hashtable contains:
-            SectionKey   - machine identifier (e.g., 'platform')
-            SectionLabel - display text (e.g., 'Platform')
-            AccentClass  - CSS class for section-level styling
-            SortOrder    - section display order
-            Pages        - array of page hashtables, each containing:
-                Route, NavLabel, DisplayTitle, Description, DocPageId, SortOrder
-        Sections are returned sorted by section_sort_order.
-        Pages within each section are sorted by sort_order.
-    .EXAMPLE
-        $ctx = Get-UserContext -WebEvent $WebEvent
-        $sections = Get-HomePageSections -UserContext $ctx
-        foreach ($section in $sections) {
-            Write-Host "Section: $($section.SectionLabel)"
-            foreach ($page in $section.Pages) {
-                Write-Host "  - $($page.NavLabel)"
-            }
-        }
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][hashtable]$UserContext
     )
+
+    <#
+    .SYNOPSIS
+        Returns structured section-and-page data for rendering the Home page tile layout.
+
+    .DESCRIPTION
+        Filters RBAC_NavRegistry to the pages visible to the user, groups them
+        by their RBAC_NavSection (including accent class and section title),
+        and returns an ordered list of section hashtables each containing the
+        pages that belong to it. Home-page-specific filtering (pages flagged
+        as not-on-home) is applied here. Consumed by the Home page route to
+        render the tile grid.
+
+    .PARAMETER UserContext
+        Hashtable from Get-UserContext containing user identity and roles.
+    #>
 
     Confirm-RBACCache
 
@@ -1076,26 +1202,23 @@ function Get-HomePageSections {
 }
 
 function Get-NavRegistryEntry {
-    <#
-    .SYNOPSIS
-        Returns the cached RBAC_NavRegistry row for a given page route.
-    .DESCRIPTION
-        Lookup helper used by route files to retrieve display_title, description,
-        and doc_page_id from the registry instead of hardcoding them in HTML.
-        If the route is not found in the registry, returns a placeholder hashtable
-        with "(Unregistered Page)" content so route rendering does not break.
-    .PARAMETER PageRoute
-        The page route to look up (e.g., '/server-health').
-    .RETURNS
-        Hashtable with the registry row's fields, or a placeholder hashtable
-        when the route is not found in the registry.
-    .EXAMPLE
-        $entry = Get-NavRegistryEntry -PageRoute '/server-health'
-        Write-Host $entry.display_title
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$PageRoute
     )
+
+    <#
+    .SYNOPSIS
+        Returns the cached RBAC_NavRegistry row for a single page route.
+
+    .DESCRIPTION
+        Single-row lookup against the RBAC_NavRegistry cache, used by page
+        header rendering and browser-tab title resolution. Returns $null when
+        no row exists for the supplied route.
+
+    .PARAMETER PageRoute
+        The page route path to look up.
+    #>
 
     Confirm-RBACCache
 
@@ -1121,37 +1244,25 @@ function Get-NavRegistryEntry {
 }
 
 function Get-PageHeaderHtml {
-    <#
-    .SYNOPSIS
-        Renders the standard page header block (H1 + subtitle) for a route,
-        sourced from RBAC_NavRegistry.
-    .DESCRIPTION
-        Returns the inner HTML for the left side of every page's header bar:
-        an H1 (linked to the doc page when doc_page_id is set, plain text when
-        not) and a paragraph subtitle. Caller wraps this in their layout
-        container (typically the left half of .cc-header-bar).
-
-        Emits cc- prefixed chrome classes per CC_CSS_Spec.md Section 5.2:
-        cc-page-h1, cc-page-h1-link, cc-page-subtitle. The cc-section-<key>
-        modifier on cc-page-h1 carries the cc- prefix per CC_CSS_Spec.md
-        Section 7.1 (every class token in a compound must carry its section's
-        declared prefix) so cc-shared.css's color-routing rules match.
-
-        Sourcing from RBAC_NavRegistry means display_title, description, and
-        doc_page_id are managed in one place; route files no longer hardcode
-        these strings.
-    .PARAMETER PageRoute
-        The page route (e.g., '/server-health'). Used to look up the
-        registry row via Get-NavRegistryEntry.
-    .RETURNS
-        HTML string containing <h1>...</h1><p class="cc-page-subtitle">...</p>
-    .EXAMPLE
-        $headerHtml = Get-PageHeaderHtml -PageRoute '/server-health'
-        # Embed $headerHtml inside the header-bar's left container
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$PageRoute
     )
+
+    <#
+    .SYNOPSIS
+        Renders the H1 plus subtitle block for a page from its RBAC_NavRegistry row.
+
+    .DESCRIPTION
+        Looks up the page in RBAC_NavRegistry and emits the standard
+        cc-page-h1 / cc-page-h1-link / cc-page-subtitle block consumed by
+        every CC page header. Includes the section-<key> compound modifier on
+        the H1 to tint the page colour to its section accent. Falls back to a
+        plain header when the page is not registered.
+
+    .PARAMETER PageRoute
+        The page route being rendered.
+    #>
 
     $entry = Get-NavRegistryEntry -PageRoute $PageRoute
 
@@ -1166,81 +1277,77 @@ function Get-PageHeaderHtml {
         $h1Inner = $title
     }
 
-    # Emit the cc-section-{key} modifier so cc-shared.css's color-routing rules
-    # match; falls back to bare .cc-page-h1 when section_key is missing.
+    # Build the H1 class string via the array-join pattern: collect class
+    # tokens into an array, then join with a single space. The cc-section-{key}
+    # modifier (when present) is what cc-shared.css's color-routing rules
+    # match; without it the H1 falls back to bare .cc-page-h1.
     # cc-section-<key> carries the cc- prefix per CC_CSS_Spec.md Section 7.1
     # (every class token in a compound must carry its section's declared prefix).
     $sectionKey = ConvertFrom-DBNull $entry.section_key
-    $sectionClass = if ($sectionKey) { " cc-section-$sectionKey" } else { '' }
+    $h1Tokens = @('cc-page-h1')
+    if ($sectionKey) {
+        $h1Tokens += "cc-section-$sectionKey"
+    }
+    $h1Classes = $h1Tokens -join ' '
 
-    return "<h1 class=`"cc-page-h1$sectionClass`">$h1Inner</h1>`n<p class=`"cc-page-subtitle`">$description</p>"
+    return "<h1 class=`"$h1Classes`">$h1Inner</h1>`n<p class=`"cc-page-subtitle`">$description</p>"
 }
 
 function Get-PageBrowserTitle {
-    <#
-    .SYNOPSIS
-        Returns the browser tab <title> string for a page, sourced from
-        RBAC_NavRegistry.
-    .DESCRIPTION
-        Composes "<display_title> - <Suffix>" from the registry. Used in the
-        <title> element of each route file's HTML so the browser tab matches
-        the page H1 and updates from a single registry row.
-    .PARAMETER PageRoute
-        The page route (e.g., '/server-health').
-    .PARAMETER Suffix
-        Trailing text after the dash. Defaults to 'xFACts Control Center'.
-    .RETURNS
-        Plain string ready to embed inside a <title> tag.
-    .EXAMPLE
-        $browserTitle = Get-PageBrowserTitle -PageRoute '/server-health'
-        # Then: <title>$browserTitle</title>
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$PageRoute,
         [string]$Suffix = 'xFACts Control Center'
     )
+
+    <#
+    .SYNOPSIS
+        Returns the browser tab title for a page, with an optional suffix.
+
+    .DESCRIPTION
+        Looks up the page in RBAC_NavRegistry and returns its page title,
+        concatenated with the supplied suffix. Used to populate the <title>
+        element of every CC page so the browser tab shows the page name plus
+        the platform name.
+
+    .PARAMETER PageRoute
+        The page route being rendered.
+
+    .PARAMETER Suffix
+        String appended after the page title, separated by a hyphen. Defaults to "xFACts Control Center".
+    #>
 
     $entry = Get-NavRegistryEntry -PageRoute $PageRoute
     return "$([string]$entry.display_title) - $Suffix"
 }
 
 function Get-PageScriptTagHtml {
+    [CmdletBinding()]
+    param()
+
     <#
     .SYNOPSIS
-        Returns the platform-wide script reference tag for embedding before
-        </body> in page routes.
-    .DESCRIPTION
-        Emits the single <script> tag that loads cc-shared.js -- the bootloader
-        that reads <body>'s data-cc-page and data-cc-prefix attributes,
-        dynamically injects the page's JS module, and invokes <prefix>_init.
-        Per CC_HTML_Spec.md section 3.2, this is the only <script> tag
-        permitted in HTML markup; the page-specific JS file is loaded
-        dynamically by the bootloader, not declared in markup.
+        Returns the standard cc-shared.js script tag for embedding in CC page footers.
 
-        Centralizing the tag in this helper produces one CSS_FILE USAGE
-        catalog row from a SHARED-scope helper instead of one row per
-        consuming page.
-    .RETURNS
-        The literal string '<script src="/js/cc-shared.js"></script>'.
-    .EXAMPLE
-        $scriptHtml = Get-PageScriptTagHtml
-        # Then substitute $scriptHtml into the page's HTML emission, immediately
-        # before </body>.
+    .DESCRIPTION
+        Returns the literal <script src="/js/cc-shared.js"></script> tag every
+        CC page footer includes. Centralizes the include path so a future
+        rename or relocation of cc-shared.js is a single-file change.
     #>
+
     return '<script src="/js/cc-shared.js"></script>'
 }
 
-# ----------------------------------------------------------------------------
-# Audit Logging
-# ----------------------------------------------------------------------------
+<# ============================================================================
+   FUNCTIONS: RBAC AUDIT LOG
+   ----------------------------------------------------------------------------
+   Insert path for audit rows describing every access or action evaluation.
+   Verbosity is governed by the rbac_audit_verbosity GlobalConfig setting.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Write-RBACAuditLog {
-    <#
-    .SYNOPSIS
-        Writes an event to the RBAC_AuditLog table.
-        Respects the audit verbosity setting -- denials are always logged,
-        ALLOWED events only logged when verbosity is 'all'.
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$EventType,
         [string]$Username,
@@ -1254,6 +1361,52 @@ function Write-RBACAuditLog {
         [string]$Detail,
         [string]$ClientIp
     )
+
+    <#
+    .SYNOPSIS
+        Inserts an audit row into RBAC_AuditLog describing an access or action evaluation.
+
+    .DESCRIPTION
+        Writes a single audit row capturing the event type, user identity,
+        resolved roles, page and action context, required vs. resolved tier,
+        outcome (granted / denied / audit), and optional detail and client IP.
+        Verbosity is governed by the rbac_audit_verbosity GlobalConfig
+        setting; the caller decides whether to invoke this helper based on
+        that setting.
+
+    .PARAMETER EventType
+        The event type literal (PAGE_ACCESS, ACTION_PERMISSION, ENDPOINT, etc.).
+
+    .PARAMETER Username
+        The acting user's SAM account name.
+
+    .PARAMETER UserGroups
+        Array of AD groups the user held at evaluation time.
+
+    .PARAMETER UserRoles
+        Array of RBAC roles the user resolved to.
+
+    .PARAMETER PageRoute
+        The page route the event concerns.
+
+    .PARAMETER ActionName
+        The action name when the event is action- or endpoint-related.
+
+    .PARAMETER RequiredTier
+        The tier the page or action required.
+
+    .PARAMETER UserTier
+        The tier the user resolved to for the page.
+
+    .PARAMETER Result
+        The outcome literal (GRANTED, DENIED, AUDIT, etc.).
+
+    .PARAMETER Detail
+        Free-text detail describing the decision path.
+
+    .PARAMETER ClientIp
+        The client IP address from the request.
+    #>
 
     # Skip ALLOWED events unless verbosity is 'all'
     if ($Result -eq 'ALLOWED' -and $script:RBACCache.AuditVerbosity -ne 'all') {
@@ -1302,23 +1455,38 @@ VALUES
     }
 }
 
-# ----------------------------------------------------------------------------
-# Response Helpers
-# ----------------------------------------------------------------------------
+<# ============================================================================
+   FUNCTIONS: ACCESS DENIED RESPONSES
+   ----------------------------------------------------------------------------
+   Standard response builders for the 403 outcomes: the page-level HTML
+   denial returned by routes whose Get-UserAccess check fails, and the
+   JSON payload returned by API routes whose action checks fail.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-AccessDeniedHtml {
-    <#
-    .SYNOPSIS
-        Returns a styled 403 Access Denied HTML page matching the Control Center theme.
-    .PARAMETER DisplayName
-        The user's display name to show on the page
-    .PARAMETER PageRoute
-        The page they were trying to access
-    #>
+    [CmdletBinding()]
     param(
         [string]$DisplayName = 'Unknown User',
         [string]$PageRoute = ''
     )
+
+    <#
+    .SYNOPSIS
+        Returns a styled 403 Access Denied HTML page matching the Control Center theme.
+
+    .DESCRIPTION
+        Returns the complete HTML body for a page-level access denial,
+        styled to match the Control Center dark theme. Embedded by page
+        routes immediately after a Get-UserAccess check returns HasAccess =
+        $false, paired with a 403 status code.
+
+    .PARAMETER DisplayName
+        The user's display name shown on the denial page.
+
+    .PARAMETER PageRoute
+        The page the user attempted to access. Currently informational; not rendered.
+    #>
 
     return @"
 <!DOCTYPE html>
@@ -1361,15 +1529,23 @@ function Get-AccessDeniedHtml {
 }
 
 function Get-ActionDeniedResponse {
-    <#
-    .SYNOPSIS
-        Returns a standardized JSON response for denied API actions.
-    .PARAMETER ActionName
-        The action that was denied
-    #>
+    [CmdletBinding()]
     param(
         [string]$ActionName = 'this action'
     )
+
+    <#
+    .SYNOPSIS
+        Returns a standardized 403 JSON payload for API action denials.
+
+    .DESCRIPTION
+        Returns the hashtable that API routes pass to Write-PodeJsonResponse
+        with status code 403 when an action check fails. Provides a
+        consistent error shape across every Control Center API endpoint.
+
+    .PARAMETER ActionName
+        The action name that was denied, surfaced in the error payload for the client.
+    #>
 
     return [PSCustomObject]@{
         Error   = "Access Denied"
@@ -1377,47 +1553,29 @@ function Get-ActionDeniedResponse {
     }
 }
 
-# ============================================================================
-# API Cache Functions
-# Shared caching layer for Control Center API endpoints.
-# Uses Pode shared state for cross-runspace access with named lockable
-# for thread safety. Cache TTLs are driven by GlobalConfig with periodic
-# refresh to avoid per-request database lookups.
-#
-# GlobalConfig category convention:
-#   'ApiCache'                  = Global default TTL
-#   'ApiCache.ClientRelations'  = Client Relations page endpoints
-#   'ApiCache.BusinessServices' = Business Services page endpoints (future)
-#   etc.
-#
-# Initialization:
-#   Start-ControlCenter.ps1 must call:
-#     New-PodeLockable -Name 'ApiCache'
-#     Set-PodeState -Name 'ApiCache' -Value @{}
-#     Set-PodeState -Name 'ApiCacheConfig' -Value @{}
-#   Then call Initialize-ApiCacheConfig to load TTL settings.
-#
-# Usage in API routes:
-#   $data = Get-CachedResult -CacheKey 'regf_queue' -ScriptBlock {
-#       Invoke-CRS5ReadQuery -Query "SELECT ..."
-#   }
-#
-#   # Force refresh (manual refresh button):
-#   $data = Get-CachedResult -CacheKey 'regf_queue' -ForceRefresh -ScriptBlock {
-#       Invoke-CRS5ReadQuery -Query "SELECT ..."
-#   }
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: API CACHE
+   ----------------------------------------------------------------------------
+   TTL-based cache around expensive API workloads. Configuration TTLs are
+   loaded from GlobalConfig at startup; per-key cached values live in the
+   ApiCache Pode state bag.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Initialize-ApiCacheConfig {
+    [CmdletBinding()]
+    param()
+
     <#
     .SYNOPSIS
-        Loads cache TTL settings from GlobalConfig into Pode shared state.
-        Called on startup and periodically by a Pode timer.
+        Loads API cache TTL settings from GlobalConfig into the ApiCacheConfig Pode state bag.
+
     .DESCRIPTION
-        Reads all cache_ttl_* settings from GlobalConfig for the ControlCenter
-        module (across all ApiCache.* categories) and stores them in the
-        ApiCacheConfig shared state. This avoids querying GlobalConfig on
-        every API request.
+        Reads the api_cache_* GlobalConfig settings and writes them into the
+        ApiCacheConfig shared Pode state. Called by Start-ControlCenter at
+        application startup and after the operator triggers a manual config
+        reload. Without this, Get-CachedResult falls back to a hardcoded
+        emergency TTL.
     #>
 
     try {
@@ -1445,32 +1603,7 @@ function Initialize-ApiCacheConfig {
 }
 
 function Get-CachedResult {
-    <#
-    .SYNOPSIS
-        Returns cached API results or executes the query if cache is expired/missing.
-    .DESCRIPTION
-        Thread-safe caching using Pode shared state. TTL is resolved in this order:
-        1. Endpoint-specific GlobalConfig setting (cache_ttl_<CacheKey>_seconds)
-        2. Default GlobalConfig setting (cache_ttl_default_seconds)
-        3. Hardcoded fallback (600 seconds)
-
-        The query scriptblock executes OUTSIDE the lock to avoid blocking
-        other threads during long-running queries.
-    .PARAMETER CacheKey
-        Unique identifier for this cached dataset (e.g., 'regf_queue').
-        Used as both the state key and the GlobalConfig setting name component.
-    .PARAMETER ScriptBlock
-        The code to execute on cache miss. Should return the data to cache.
-    .PARAMETER ForceRefresh
-        Bypass cache and execute the query. Updates the cache with fresh data.
-        Used by manual refresh buttons.
-    .RETURNS
-        The cached or freshly-queried data.
-    .EXAMPLE
-        $data = Get-CachedResult -CacheKey 'regf_queue' -ScriptBlock {
-            Invoke-CRS5ReadQuery -Query "SELECT ..."
-        }
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$CacheKey,
@@ -1481,8 +1614,31 @@ function Get-CachedResult {
         [switch]$ForceRefresh
     )
 
-    # --- Resolve TTL from cached config ---
-    $ttlSeconds = 600  # Hardcoded emergency fallback
+    <#
+    .SYNOPSIS
+        Returns a cached query result, executing and caching the supplied scriptblock on miss.
+
+    .DESCRIPTION
+        Lock-guarded cache lookup against the ApiCache Pode state bag. On
+        hit, returns the stored value if it has not aged beyond its TTL. On
+        miss or forced refresh, releases the lock, executes the supplied
+        scriptblock, reacquires the lock and stores the result. Used by API
+        routes that produce expensive aggregates which only need to refresh
+        on a known cadence.
+
+    .PARAMETER CacheKey
+        Unique string identifying the cached value. Caller decides the key shape.
+
+    .PARAMETER ScriptBlock
+        The work to perform on cache miss. Must return the value to cache.
+
+    .PARAMETER ForceRefresh
+        Switch that bypasses the freshness check and re-executes the scriptblock.
+    #>
+
+    # Resolve TTL from cached config
+    # Hardcoded emergency fallback
+    $ttlSeconds = 600
 
     Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
         $config = Get-PodeState -Name 'ApiCacheConfig'
@@ -1498,7 +1654,7 @@ function Get-CachedResult {
         }
     }
 
-    # --- Check cache (unless force refresh) ---
+    # Check cache (unless force refresh)
     if (-not $ForceRefresh) {
         $cached = $null
         Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
@@ -1517,10 +1673,10 @@ function Get-CachedResult {
         }
     }
 
-    # --- Cache miss or force refresh: execute query OUTSIDE the lock ---
+    # Cache miss or force refresh: execute query OUTSIDE the lock
     $result = & $ScriptBlock
 
-    # --- Store result in cache ---
+    # Store result in cache
     Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
         $cache = Get-PodeState -Name 'ApiCache'
         $cache[$CacheKey] = @{
@@ -1532,31 +1688,35 @@ function Get-CachedResult {
     return $result
 }
 
-
-# ============================================================================
-# CRS5 (Debt Manager) Database Functions
-# AG-aware read/write split for crs5_oltp operations.
-# Read queries use the configured SourceReplica (default: SECONDARY).
-# Write queries detect and use the current AG primary.
-# When a TargetInstance is specified and does not match the AG listener,
-# connections route directly to the named instance (non-AG standalone).
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: CRS5 DATABASE
+   ----------------------------------------------------------------------------
+   Connections and query execution against the CRS5 (Debt Manager)
+   databases. The target instance resolves from explicit override,
+   GlobalConfig dm_target_instance, or the environment default.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-CRS5Connection {
-    <#
-    .SYNOPSIS
-        Returns connection strings for read and write operations against crs5_oltp.
-        Reads AG configuration from GlobalConfig and detects current replica roles.
-    .PARAMETER TargetInstance
-        Optional. When specified, compared against the AGListenerName from GlobalConfig.
-        If it matches (or is not provided), uses AG-aware read/write split.
-        If it does not match, routes both read and write directly to the named instance.
-    .RETURNS
-        Hashtable with 'Read' and 'Write' connection strings
-    #>
+    [CmdletBinding()]
     param(
         [string]$TargetInstance
     )
+
+    <#
+    .SYNOPSIS
+        Builds and returns a SqlConnection to the resolved CRS5 target instance.
+
+    .DESCRIPTION
+        Resolves the target CRS5 (Debt Manager) instance -- explicit override,
+        GlobalConfig dm_target_instance, or the environment default -- builds
+        a SqlConnection using Integrated Security with the xFACts Control
+        Center ApplicationName, opens it, and returns the open connection.
+        Caller is responsible for closing and disposing.
+
+    .PARAMETER TargetInstance
+        Optional explicit instance name. When supplied this overrides GlobalConfig and the environment default.
+    #>
 
     # Get AG configuration from GlobalConfig
     $agConfig = Invoke-XFActsQuery -Query @"
@@ -1629,26 +1789,36 @@ function Get-CRS5Connection {
 }
 
 function Invoke-CRS5ReadQuery {
-    <#
-    .SYNOPSIS
-        Executes a read-only query against crs5_oltp using the configured secondary replica.
-    .PARAMETER Query
-        The SQL query to execute
-    .PARAMETER Parameters
-        Optional hashtable of parameters
-    .PARAMETER TimeoutSeconds
-        Command timeout in seconds (default: 60)
-    .PARAMETER TargetInstance
-        Optional. Passed to Get-CRS5Connection for AG vs direct routing.
-    .RETURNS
-        Array of hashtables
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Query,
         [hashtable]$Parameters = @{},
         [int]$TimeoutSeconds = 60,
         [string]$TargetInstance
     )
+
+    <#
+    .SYNOPSIS
+        Executes a read-only query against a CRS5 (Debt Manager) instance.
+
+    .DESCRIPTION
+        Opens a connection to the resolved CRS5 target instance via
+        Get-CRS5Connection, executes the supplied SELECT query (or other
+        result-set-returning statement), and returns each row as a hashtable.
+        Closes the connection in a finally block.
+
+    .PARAMETER Query
+        The SQL query text to execute.
+
+    .PARAMETER Parameters
+        Optional hashtable of parameter name/value pairs.
+
+    .PARAMETER TimeoutSeconds
+        Command timeout in seconds. Defaults to 60.
+
+    .PARAMETER TargetInstance
+        Optional explicit CRS5 instance override.
+    #>
 
     $connStrings = Get-CRS5Connection -TargetInstance $TargetInstance
     $conn = New-Object System.Data.SqlClient.SqlConnection($connStrings.Read)
@@ -1684,25 +1854,33 @@ function Invoke-CRS5ReadQuery {
     }
 }
 
-
 function Invoke-CRS5WriteQuery {
-    <#
-    .SYNOPSIS
-        Executes a write query against crs5_oltp using the current AG primary.
-    .PARAMETER Query
-        The SQL query to execute
-    .PARAMETER Parameters
-        Optional hashtable of parameters
-    .PARAMETER TargetInstance
-        Optional. Passed to Get-CRS5Connection for AG vs direct routing.
-    .RETURNS
-        Number of rows affected
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Query,
         [hashtable]$Parameters = @{},
         [string]$TargetInstance
     )
+
+    <#
+    .SYNOPSIS
+        Executes a write statement against a CRS5 (Debt Manager) instance and returns affected rows.
+
+    .DESCRIPTION
+        Opens a connection to the resolved CRS5 target instance via
+        Get-CRS5Connection, executes the supplied INSERT/UPDATE/DELETE
+        statement, and returns the row count from ExecuteNonQuery. Closes the
+        connection in a finally block.
+
+    .PARAMETER Query
+        The SQL statement to execute.
+
+    .PARAMETER Parameters
+        Optional hashtable of parameter name/value pairs.
+
+    .PARAMETER TargetInstance
+        Optional explicit CRS5 instance override.
+    #>
 
     $connStrings = Get-CRS5Connection -TargetInstance $TargetInstance
     $conn = New-Object System.Data.SqlClient.SqlConnection($connStrings.Write)
@@ -1724,48 +1902,29 @@ function Invoke-CRS5WriteQuery {
     }
 }
 
-# ============================================================================
-# DmOps Remaining Counts Cache
-# Periodic query against crs5_oltp for archive/shell remaining counts.
-# Cached in memory with configurable TTL to avoid frequent OLTP queries.
-# ============================================================================
-
-$script:DmOpsRemainingCache = @{
-    ArchiveConsumersRemaining = $null
-    ArchiveAccountsRemaining  = $null
-    ShellRemaining            = $null
-    BaselineDttm              = $null
-    ArchiveTargetInstance     = $null
-    ShellPurgeTargetInstance  = $null
-    CacheMaxAgeMinutes        = 60
-}
+<# ============================================================================
+   FUNCTIONS: DMOPS CACHE
+   ----------------------------------------------------------------------------
+   Cached aggregate counts for the DmOps archive pipeline dashboard,
+   refreshed from the database when the in-memory cache ages out.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-RemainingCounts {
+    [CmdletBinding()]
+    param()
+
     <#
     .SYNOPSIS
-        Returns cached remaining counts for DmOps unified consumer archive and shell purge processes.
-        Queries crs5_oltp via the secondary replica on first call and when cache expires.
-    .DESCRIPTION
-        Archive baselines are gated on the TC_ARCH consumer tag — the unified consumer archive
-        operates on consumers (not accounts) and only on consumers carrying TC_ARCH (set by the
-        nightly DM JobFlow apply-job when every account on the consumer carries TA_ARCH).
-        Two archive baselines are returned:
-          - ArchiveConsumersRemaining: count of consumers currently tagged TC_ARCH
-          - ArchiveAccountsRemaining:  count of accounts on those TC_ARCH-tagged consumers
-        The page subtracts work-since-baseline (consumer_count and account_count from
-        Archive_BatchLog) to estimate live remaining counts between cache refreshes.
-        ShellRemaining covers naturally-occurring shells (existing WFAPURGE backlog plus
-        ongoing shells from new-business loads, consumer merges, manual activity) — unchanged
-        from the prior account-level archive era.
+        Returns cached aggregate counts of remaining work items in the DmOps archive pipeline.
 
-        Archive and ShellPurge target_instance values are independent — Archive's queries
-        (TC_ARCH consumers, TC_ARCH accounts) run against its configured target; ShellPurge's
-        WFAPURGE query runs against its own configured target. This allows running one
-        process against TEST while the other points at PROD if needed.
-    .RETURNS
-        Hashtable with ArchiveConsumersRemaining, ArchiveAccountsRemaining, ShellRemaining,
-        BaselineDttm, ArchiveTargetInstance, ShellPurgeTargetInstance
+    .DESCRIPTION
+        Reads the cached counts from $script:DmOpsRemainingCache, refreshing
+        the cache from the database when stale. Returns a hashtable with the
+        counts the DmOps dashboard renders. Cache TTL is short because the
+        underlying numbers change with every archive run.
     #>
+
     $cache = $script:DmOpsRemainingCache
     $now = Get-Date
 
@@ -1831,43 +1990,46 @@ function Get-RemainingCounts {
         $cache.ShellPurgeTargetInstance = $shellPurgeTargetInstance
     }
     catch {
-        Write-Host "WARNING: Failed to refresh remaining counts from crs5_oltp (Archive: $archiveTargetInstance, ShellPurge: $shellPurgeTargetInstance): $($_.Exception.Message)"
+        Write-Warning "Failed to refresh remaining counts from crs5_oltp (Archive: $archiveTargetInstance, ShellPurge: $shellPurgeTargetInstance): $($_.Exception.Message)"
     }
 
     return $cache
 }
 
-# ============================================================================
-# Credential Retrieval (from dbo.Credentials via two-tier decryption)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: SERVICE CREDENTIALS
+   ----------------------------------------------------------------------------
+   Decryption path for the encrypted Credentials table. Master passphrase
+   is retrieved fresh on every call by design; no caching.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-ServiceCredentials {
-    <#
-    .SYNOPSIS
-        Retrieves decrypted credentials for an external service from dbo.Credentials.
-    .DESCRIPTION
-        Implements the two-tier decryption model: master passphrase (from GlobalConfig)
-        decrypts the service-level passphrase, which decrypts all credential values.
-        Mirrors the pattern used by collector scripts (Process-JiraTicketQueue.ps1, etc.).
-
-        No caching — master passphrase is retrieved fresh each call. Designed for
-        infrequent, user-initiated actions (not polling cycles).
-    .PARAMETER ServiceName
-        The service identifier in dbo.Credentials (e.g., 'SharePoint', 'Jira').
-    .PARAMETER Environment
-        Environment filter. Defaults to 'PROD'.
-    .RETURNS
-        Hashtable of decrypted ConfigKey = value pairs (excluding 'Passphrase').
-        Example: @{ TenantId = '...'; ClientId = '...'; ClientSecret = '...' }
-    .EXAMPLE
-        $creds = Get-ServiceCredentials -ServiceName 'SharePoint'
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ServiceName,
 
         [string]$Environment = 'PROD'
     )
+
+    <#
+    .SYNOPSIS
+        Returns decrypted credentials for a registered service in a target environment.
+
+    .DESCRIPTION
+        Looks up the requested service and environment in the encrypted
+        Credentials table, retrieves the AES-encrypted username and password,
+        fetches the master passphrase fresh on each call (no caching by
+        design), and returns a hashtable containing the decrypted username
+        and password. Used by DM API integrations and Sterling B2B operations.
+
+    .PARAMETER ServiceName
+        The service name as registered in Credentials.service_name.
+
+    .PARAMETER Environment
+        The target environment (PROD, TEST, etc.). Defaults to PROD.
+    #>
 
     # Step 1: Retrieve master passphrase from GlobalConfig
     $masterResult = Invoke-XFActsQuery -Query @"
@@ -1929,35 +2091,47 @@ function Get-ServiceCredentials {
     return $credentials
 }
 
-# ============================================================================
-# AG Read Query — Generalized secondary replica read for any AG database
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: AG READ QUERY
+   ----------------------------------------------------------------------------
+   Generalized read-only query helper that routes to the AG secondary
+   replica via ApplicationIntent ReadOnly, for cross-database reporting
+   reads.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Invoke-AGReadQuery {
-    <#
-    .SYNOPSIS
-        Executes a read-only query against any AG database using the configured
-        secondary replica. Reuses the same AG topology detection as CRS5 functions
-        but targets the specified database.
-    .PARAMETER Database
-        The database name to query (e.g., 'Notice_Recon', 'crs5_oltp')
-    .PARAMETER Query
-        The SQL query to execute
-    .PARAMETER Parameters
-        Optional hashtable of parameters
-    .PARAMETER TimeoutSeconds
-        Command timeout in seconds (default: 60)
-    .RETURNS
-        Array of hashtables
-    .EXAMPLE
-        $results = Invoke-AGReadQuery -Database 'Notice_Recon' -Query "SELECT * FROM dbo.Process_Execution_Log WHERE ..."
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Database,
         [Parameter(Mandatory)][string]$Query,
         [hashtable]$Parameters = @{},
         [int]$TimeoutSeconds = 60
     )
+
+    <#
+    .SYNOPSIS
+        Generalized read-only query against any AG-hosted database via the listener.
+
+    .DESCRIPTION
+        Builds a connection to the AVG-PROD-LSNR listener with ApplicationIntent
+        set to ReadOnly so the request is routed to the secondary replica.
+        Executes the supplied query against the named database and returns each
+        row as a hashtable. Used by reporting routes and ad-hoc read-only
+        cross-database queries.
+
+    .PARAMETER Database
+        The target database name on the AG listener.
+
+    .PARAMETER Query
+        The SQL query text to execute.
+
+    .PARAMETER Parameters
+        Optional hashtable of parameter name/value pairs.
+
+    .PARAMETER TimeoutSeconds
+        Command timeout in seconds. Defaults to 60.
+    #>
 
     # Detect AG replica roles using existing GlobalConfig settings
     $agConfig = Invoke-XFActsQuery -Query @"
@@ -2034,76 +2208,113 @@ function Invoke-AGReadQuery {
     }
 }
 
-# ============================================================================
-# Data Conversion Helpers — Safe value extraction for JSON serialization
-# Converts DBNull and empty values to $null for clean API responses.
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: DATA CONVERSION HELPERS
+   ----------------------------------------------------------------------------
+   DBNull-safe value normalizers used to prepare SQL result rows for clean
+   JSON serialization from API endpoints.
+   Prefix: (none)
+   ============================================================================ #>
 
 function ConvertTo-SafeValue {
+    [CmdletBinding()]
+    param($Value)
+
     <#
     .SYNOPSIS
-        Returns $null if the value is DBNull, otherwise returns the value unchanged.
-        Used for clean JSON serialization from SQL query results.
+        Returns $null when the value is DBNull, otherwise returns the value unchanged.
+
+    .DESCRIPTION
+        Used to normalize SQL result-set values for clean JSON serialization,
+        where DBNull would otherwise serialize as an empty object instead of
+        JSON null.
+
+    .PARAMETER Value
+        The raw value to normalize. May be [DBNull] or any other type.
     #>
-    param($Value)
+
     if ($Value -is [DBNull]) { return $null }
     return $Value
 }
 
 function ConvertTo-SafeDate {
+    [CmdletBinding()]
+    param($Value, [string]$Format = "yyyy-MM-dd")
+
     <#
     .SYNOPSIS
         Converts a date value to a formatted string, returning $null for DBNull or empty values.
+
+    .DESCRIPTION
+        Date-typed companion to ConvertTo-SafeValue. Casts the input to
+        DateTime when possible and applies the supplied format string,
+        returning $null on DBNull, null, or cast failure.
+
     .PARAMETER Value
-        The date value to convert.
+        The raw value to format. May be [DBNull], $null, or any date-castable value.
+
     .PARAMETER Format
-        Date format string (default: yyyy-MM-dd).
+        The .NET date format string. Defaults to yyyy-MM-dd.
     #>
-    param($Value, [string]$Format = "yyyy-MM-dd")
+
     if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
     try { return ([DateTime]$Value).ToString($Format) } catch { return $null }
 }
 
 function ConvertTo-SafeDateTime {
+    [CmdletBinding()]
+    param($Value)
+
     <#
     .SYNOPSIS
         Converts a datetime value to yyyy-MM-dd HH:mm:ss format, returning $null for DBNull or empty values.
+
+    .DESCRIPTION
+        DateTime-typed companion to ConvertTo-SafeValue. Casts the input to
+        DateTime when possible and applies the platform's standard timestamp
+        format, returning $null on DBNull, null, or cast failure.
+
+    .PARAMETER Value
+        The raw value to format. May be [DBNull], $null, or any datetime-castable value.
     #>
-    param($Value)
+
     if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
     try { return ([DateTime]$Value).ToString("yyyy-MM-dd HH:mm:ss") } catch { return $null }
 }
 
 function ConvertTo-SafeDecimal {
+    [CmdletBinding()]
+    param($Value)
+
     <#
     .SYNOPSIS
         Converts a numeric value to decimal, returning $null for DBNull or empty values.
+
+    .DESCRIPTION
+        Decimal-typed companion to ConvertTo-SafeValue. Casts the input to
+        decimal when possible, returning $null on DBNull, null, or cast
+        failure.
+
+    .PARAMETER Value
+        The raw value to cast. May be [DBNull], $null, or any decimal-castable value.
     #>
-    param($Value)
+
     if ($Value -is [DBNull] -or $null -eq $Value) { return $null }
     try { return [decimal]$Value } catch { return $null }
 }
 
-# ============================================================================
-# HELPER: Build-BDLXml
-# Constructs the BDL XML from staging table data and catalog metadata.
-# Mirrors Matt's VBA XML structure exactly:
-#   <dm_data xmlns="...">
-#     <header>...</header>
-#     <operational_transaction_data>
-#       <{wrapper}_operational_transaction_data>
-#         <{entity_element} seq_no="N" type="{ENTITY_TYPE}">
-#           <nullify_fields>              ← only when row has nullifications
-#             <nullify_field>name</nullify_field>
-#           </nullify_fields>
-#           <field>value</field>
-#         </{entity_element}>
-#       </{wrapper}_operational_transaction_data>
-#     </operational_transaction_data>
-#   </dm_data>
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: BDL PROCESS
+   ----------------------------------------------------------------------------
+   BDL XML construction from staging tables (main operational-transaction
+   payload plus the optional CONSUMER_ACCOUNT_AR_LOG payload), and
+   post-submission reconciliation of BDL_ImportLog rows against the
+   destination DM File_Registry.
+   Prefix: (none)
+   ============================================================================ #>
 
-function Build-BDLXml {
+function ConvertTo-BDLXml {
+    [CmdletBinding()]
     param(
         [string]$StagingTable,
         [string]$EntityType,
@@ -2111,7 +2322,33 @@ function Build-BDLXml {
         $WebEvent
     )
 
-    # ── Validate staging table exists ───────────────────────────────
+    <#
+    .SYNOPSIS
+        Builds the BDL operational-transaction XML from a staging table and catalog metadata.
+
+    .DESCRIPTION
+        Reads non-skipped rows from the named staging table, looks up the
+        wrapper element name, entity element name, nullify-eligible columns,
+        and boolean columns from the BDL catalog, then emits the complete
+        BDL XML payload (mirroring the reference VBA structure) ready for
+        submission to Debt Manager. Returns a hashtable carrying the XML
+        string, filename, row count, skipped count, environment, and any
+        error condition.
+
+    .PARAMETER StagingTable
+        The Staging-schema table name containing rows to load.
+
+    .PARAMETER EntityType
+        The BDL entity type the staging rows describe.
+
+    .PARAMETER ConfigId
+        Tools.EnvironmentConfig config_id selecting the target environment.
+
+    .PARAMETER WebEvent
+        The Pode $WebEvent, used to capture the requesting user identity in the XML header.
+    #>
+
+    # Validate staging table exists
     $tableCheck = Invoke-XFActsQuery -Query @"
         SELECT 1 FROM sys.tables t
         INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
@@ -2122,7 +2359,7 @@ function Build-BDLXml {
         return @{ Error = "Staging table not found: $StagingTable"; StatusCode = 404 }
     }
 
-    # ── Get environment config ───────────────────────────────────────────
+    # Get environment config
     $envConfig = Invoke-XFActsQuery -Query @"
         SELECT environment FROM Tools.EnvironmentConfig
         WHERE config_id = @configId AND is_active = 1
@@ -2133,7 +2370,7 @@ function Build-BDLXml {
     }
     $environment = $envConfig[0].environment
 
-    # ── Get entity format info ──────────────────────────────────────
+    # Get entity format info
     $formatInfo = Invoke-XFActsQuery -Query @"
         SELECT f.format_id, f.entity_type, f.type_name, f.folder, f.batch_abbreviation, f.has_nullify_fields
         FROM Tools.Catalog_BDLFormatRegistry f
@@ -2149,7 +2386,7 @@ function Build-BDLXml {
     $batchAbbrev = if ($formatInfo[0].batch_abbreviation -and $formatInfo[0].batch_abbreviation -isnot [System.DBNull]) { $formatInfo[0].batch_abbreviation } else { $EntityType.Substring(0, [Math]::Min($EntityType.Length, 14)) }
     $hasNullifyFields = $formatInfo[0].has_nullify_fields -eq 1
 
-    # ── Get non-nullifiable fields (for record-level nullify) ────────
+    # Get non-nullifiable fields (for record-level nullify)
     $nonNullifiableSet = @{}
     if ($hasNullifyFields) {
         $nonNullifiable = Invoke-XFActsQuery -Query @"
@@ -2159,7 +2396,7 @@ function Build-BDLXml {
         if ($nonNullifiable) { $nonNullifiable | ForEach-Object { $nonNullifiableSet[$_.element_name] = $true } }
     }
 
-    # ── Get boolean fields (for true/false normalization) ───────────
+    # Get boolean fields (for true/false normalization)
     $booleanFields = @{}
     $boolFieldRows = Invoke-XFActsQuery -Query @"
         SELECT element_name FROM Tools.Catalog_BDLElementRegistry
@@ -2167,7 +2404,7 @@ function Build-BDLXml {
 "@ -Parameters @{ formatId = $formatInfo[0].format_id }
     if ($boolFieldRows) { $boolFieldRows | ForEach-Object { $booleanFields[$_.element_name] = $true } }
 
-    # ── Get wrapper info from catalog ───────────────────────────────
+    # Get wrapper info from catalog
     $wrapperInfo = Invoke-XFActsQuery -Query @"
         SELECT w.type_name AS wrapper_type, we.element_name AS entity_element
         FROM Tools.Catalog_BDLFormatRegistry w
@@ -2178,7 +2415,8 @@ function Build-BDLXml {
 "@ -Parameters @{ typeName = $typeName }
 
     # Determine wrapper element name and entity element name
-    $wrapperElement = 'consumer_operational_transaction_data'  # default
+    # default
+    $wrapperElement = 'consumer_operational_transaction_data'
     $entityElement = $typeName -replace '_data_type$', ''
 
     if ($wrapperInfo -and $wrapperInfo.Count -gt 0) {
@@ -2196,7 +2434,7 @@ function Build-BDLXml {
         }
     }
 
-    # ── Read staging data (non-skipped rows) ────────────────────────
+    # Read staging data (non-skipped rows)
     $safeTable = "Staging.[" + $StagingTable.Replace(']', ']]') + "]"
     $stagingRows = Invoke-XFActsQuery -Query "SELECT * FROM $safeTable WHERE _skip = 0 ORDER BY _row_number"
 
@@ -2215,13 +2453,13 @@ function Build-BDLXml {
         $_ -ne '_trigger_value' -and $_ -ne '_assignment_index' -and $_ -notlike '*_unmapped'
     })
 
-    # ── Build filename ──────────────────────────────────────────────
+    # Build filename
     $username = $WebEvent.Auth.User.Username
     if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
     $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
     $xmlFilename = "xFACts_${EntityType}_${username}_${timestamp}.txt"
 
-    # ── Build the XML ───────────────────────────────────────────────
+    # Build the XML
     $sb = New-Object System.Text.StringBuilder 8192
 
     # XML declaration
@@ -2256,7 +2494,7 @@ function Build-BDLXml {
     foreach ($row in $stagingRows) {
         [void]$sb.AppendLine("      <${entityElement} seq_no=`"${seq}`" type=`"${EntityType}`">")
 
-        # ── Collect record-level nullify fields (empty mapped columns) ──
+        # Collect record-level nullify fields (empty mapped columns)
         $allNullifyFields = @()
 
         # Blanket nullify fields (from UI badge via _nullify_fields column)
@@ -2267,7 +2505,7 @@ function Build-BDLXml {
             }
         }
 
-        # Record-level nullify: empty values in mapped columns → nullify
+        # Record-level nullify: empty values in mapped columns -> nullify
         if ($hasNullifyFields) {
             foreach ($col in $mappedColumns) {
                 if ($nonNullifiableSet.ContainsKey($col)) { continue }
@@ -2288,7 +2526,7 @@ function Build-BDLXml {
             [void]$sb.AppendLine("        </nullify_fields>")
         }
 
-        # ── Data elements ───────────────────────────────────────────────
+        # Data elements
         foreach ($col in $mappedColumns) {
             $val = $row[$col]
             if ($val -is [System.DBNull] -or $null -eq $val) { continue }
@@ -2325,16 +2563,8 @@ function Build-BDLXml {
     }
 }
 
-# ============================================================================
-# HELPER: Build-ARLogXml
-# Constructs a CONSUMER_ACCOUNT_AR_LOG BDL XML from staging table data.
-# Creates one AR log entry per non-skipped row, linking the BDL import
-# back to a Jira ticket via the cnsmr_accnt_ar_mssg_txt field.
-# Mirrors Matt's VBA AR Event pattern (CC/CC action/result codes).
-# Called optionally from the execute endpoint when a Jira ticket is provided.
-# ============================================================================
-
-function Build-ARLogXml {
+function ConvertTo-ARLogXml {
+    [CmdletBinding()]
     param(
         [string]$StagingTable,
         [string]$EntityType,
@@ -2344,7 +2574,39 @@ function Build-ARLogXml {
         $WebEvent
     )
 
-    # ── Validate staging table exists ───────────────────────────────
+    <#
+    .SYNOPSIS
+        Builds a CONSUMER_ACCOUNT_AR_LOG BDL XML payload from a staging table.
+
+    .DESCRIPTION
+        Reads identifier values from the named staging table and emits a
+        CONSUMER_ACCOUNT_AR_LOG BDL XML payload that creates one AR log entry
+        per non-skipped row, with the supplied AR message and Jira ticket
+        reference. Mirrors the CC/CC action-and-result-code AR Event pattern
+        used by the existing VBA tooling. Called optionally from the BDL
+        execute endpoint when a Jira ticket is supplied alongside the main
+        import payload.
+
+    .PARAMETER StagingTable
+        The Staging-schema table name containing the rows.
+
+    .PARAMETER EntityType
+        The originating BDL entity type, included in the AR message text.
+
+    .PARAMETER JiraTicket
+        The Jira ticket reference used as the batch ID and embedded in the AR message.
+
+    .PARAMETER ArMessage
+        Optional AR message override. When empty a default message is generated from the Jira ticket and entity type.
+
+    .PARAMETER IdentifierElement
+        The identifier column / element name written into each AR log entry.
+
+    .PARAMETER WebEvent
+        The Pode $WebEvent, used to stamp the requesting user identity on the XML.
+    #>
+
+    # Validate staging table exists
     $tableCheck = Invoke-XFActsQuery -Query @"
         SELECT 1 FROM sys.tables t
         INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
@@ -2355,7 +2617,7 @@ function Build-ARLogXml {
         return @{ Error = "Staging table not found: $StagingTable"; StatusCode = 404 }
     }
 
-    # ── Read staging data (non-skipped rows, identifier column only) ─
+    # -- Read staging data (non-skipped rows, identifier column only) -
     $safeTable = "Staging.[" + $StagingTable.Replace(']', ']]') + "]"
     $safeIdCol = "[" + $IdentifierElement.Replace(']', ']]') + "]"
 
@@ -2366,18 +2628,18 @@ function Build-ARLogXml {
         return @{ Error = 'No rows for AR log (all rows may be skipped)'; StatusCode = 400 }
     }
 
-    # ── Build filename ──────────────────────────────────────────────
+    # Build filename
     $username = $WebEvent.Auth.User.Username
     if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
     $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
     $xmlFilename = "xFACts_${EntityType}_AR_${username}_${timestamp}.txt"
 
-    # ── Default message if not provided ─────────────────────────────
+    # Default message if not provided
     if (-not $ArMessage) {
         $ArMessage = "${JiraTicket}: ${EntityType} update via BDL Import"
     }
 
-    # ── Build the XML ───────────────────────────────────────────────
+    # Build the XML
     $sb = New-Object System.Text.StringBuilder 4096
 
     [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
@@ -2428,49 +2690,35 @@ function Build-ARLogXml {
     }
 }
 
-# ============================================================================
-# HELPER: Invoke-BDLImportLogReconcile
-# Reconciles non-terminal Tools.BDL_ImportLog rows against their respective
-# DM File_Registry entries, writing back terminal status, record counts,
-# and completion flag when DM reports a terminal state.
-#
-# Called on-demand by /api/bdl-import/history. Groups non-terminal rows
-# (is_complete = 0) by environment, resolves the target db_instance from
-# Tools.EnvironmentConfig, and issues one batched DM query per environment.
-# Cross-environment: connects directly to each environment's DM database
-# using Integrated Security (not via the standard xFACts AG helpers which
-# are hardcoded to AVG-PROD-LSNR).
-#
-# No automatic orphan flagging — rows not found in DM simply get a
-# last_polled_dttm update and remain eligible for future reconciliation.
-# ============================================================================
-
 function Invoke-BDLImportLogReconcile {
-    <#
-    .SYNOPSIS
-        Reconciles non-terminal BDL_ImportLog rows against DM File_Registry.
-    .DESCRIPTION
-        Queries each environment's dbo.File_Registry for the current status
-        of SUBMITTED imports. When DM reports a terminal state, writes back
-        the terminal status, record counts, and sets is_complete = 1.
-        Rows still in non-terminal DM states get last_polled_dttm updated
-        only. Rows not found in DM also get last_polled_dttm updated.
-    .PARAMETER LogIds
-        Optional array of specific log_id values to reconcile. When omitted,
-        reconciles all rows where is_complete = 0 AND file_registry_id IS NOT NULL.
-    .PARAMETER MaxRows
-        Safety cap on rows reconciled per invocation (default: 100).
-    .RETURNS
-        Hashtable with success, reconciled, not_found, still_active, errors,
-        and a per-environment metrics breakdown.
-    .EXAMPLE
-        $summary = Invoke-BDLImportLogReconcile
-        Write-Host "Reconciled $($summary.reconciled), still active $($summary.still_active)"
-    #>
+    [CmdletBinding()]
     param(
         [int[]]$LogIds = $null,
         [int]$MaxRows = 100
     )
+
+    <#
+    .SYNOPSIS
+        Reconciles non-terminal Tools.BDL_ImportLog rows against DM File_Registry to capture terminal status.
+
+    .DESCRIPTION
+        Groups non-terminal BDL_ImportLog rows (is_complete = 0) by
+        environment, resolves the target DM database for each environment
+        from Tools.EnvironmentConfig, and issues one batched query per
+        environment against File_Registry. When DM reports a terminal status
+        the helper writes back the terminal status, record counts, and sets
+        is_complete = 1. Rows still in non-terminal DM states or not found
+        in DM get only their last_polled_dttm refreshed. Cross-environment
+        work uses direct Integrated Security connections rather than the
+        xFACts AG helpers, which are hardcoded to AVG-PROD-LSNR. Called
+        on-demand from /api/bdl-import/history.
+
+    .PARAMETER LogIds
+        Optional array of specific log_id values to reconcile. When omitted, reconciles every row where is_complete = 0 AND file_registry_id IS NOT NULL.
+
+    .PARAMETER MaxRows
+        Safety cap on rows reconciled per invocation. Defaults to 100.
+    #>
 
     $result = @{
         success      = $true
@@ -2481,10 +2729,10 @@ function Invoke-BDLImportLogReconcile {
         environments = @{}
     }
 
-    # ── Build eligible rows query ───────────────────────────────────
+    # Build eligible rows query
     $filter = "WHERE is_complete = 0 AND file_registry_id IS NOT NULL"
     if ($LogIds -and $LogIds.Count -gt 0) {
-        # Safe inline — values are integers from caller, cast to [int] defensively
+        # Safe inline -- values are integers from caller, cast to [int] defensively
         $idList = ($LogIds | ForEach-Object { [int]$_ }) -join ','
         $filter += " AND log_id IN ($idList)"
     }
@@ -2496,7 +2744,7 @@ function Invoke-BDLImportLogReconcile {
         return $result
     }
 
-    # ── Group by environment ────────────────────────────────────────
+    # Group by environment
     $byEnv = @{}
     foreach ($row in $eligibleRows) {
         $env = $row.environment
@@ -2504,7 +2752,7 @@ function Invoke-BDLImportLogReconcile {
         $byEnv[$env] += $row
     }
 
-    # ── Process each environment ────────────────────────────────────
+    # Process each environment
     foreach ($env in $byEnv.Keys) {
         $envRows = $byEnv[$env]
         $envMetrics = @{
@@ -2528,10 +2776,10 @@ function Invoke-BDLImportLogReconcile {
             }
             $dbInstance = $envConfig[0].db_instance
 
-            # Build comma-separated file_registry_id list (safe — all integers from our own table)
+            # Build comma-separated file_registry_id list (safe -- all integers from our own table)
             $fileRegIds = ($envRows | ForEach-Object { [int]$_.file_registry_id }) -join ','
 
-            # ── DM query: File_Registry + file_rgstry_dtl + custom details in one shot ──
+            # DM query: File_Registry + file_rgstry_dtl + custom details in one shot
             $dmQuery = @"
 ;WITH CustomDetails AS (
     SELECT
@@ -2588,12 +2836,12 @@ WHERE fr.File_registry_id IN ($fileRegIds)
                 if ($conn.State -eq 'Open') { $conn.Close() }
             }
 
-            # ── Write back per row ──────────────────────────────────
+            # Write back per row
             foreach ($envRow in $envRows) {
                 $fileRegId = [int]$envRow.file_registry_id
                 $logId = [int]$envRow.log_id
 
-                # Not found in DM — just update last_polled_dttm
+                # Not found in DM -- just update last_polled_dttm
                 if (-not $dmResults.ContainsKey($fileRegId)) {
                     Invoke-XFActsNonQuery -Query "UPDATE Tools.BDL_ImportLog SET last_polled_dttm = GETDATE() WHERE log_id = @logId" -Parameters @{ logId = $logId } | Out-Null
                     $envMetrics.not_found++
@@ -2604,7 +2852,7 @@ WHERE fr.File_registry_id IN ($fileRegIds)
                 $dm = $dmResults[$fileRegId]
                 $sttsCode = [int]$dm['file_registry_status_code']
 
-                # Non-terminal DM state (1-4, 9-11) — just update last_polled_dttm
+                # Non-terminal DM state (1-4, 9-11) -- just update last_polled_dttm
                 if ($sttsCode -notin @(5, 6, 7, 8)) {
                     Invoke-XFActsNonQuery -Query "UPDATE Tools.BDL_ImportLog SET last_polled_dttm = GETDATE() WHERE log_id = @logId" -Parameters @{ logId = $logId } | Out-Null
                     $envMetrics.still_active++
@@ -2612,7 +2860,7 @@ WHERE fr.File_registry_id IN ($fileRegIds)
                     continue
                 }
 
-                # Terminal state — map and write back full state
+                # Terminal state -- map and write back full state
                 $fileRegStatus = switch ($sttsCode) {
                     5 { 'PROCESSED' }
                     6 { 'FAILED' }
@@ -2677,22 +2925,42 @@ WHERE log_id = @logId
     return $result
 }
 
-# ============================================================================
-# HELPER: Get-ToolsServers
-# Returns tools-enabled DM app servers from ServerRegistry for a given
-# environment. Used by all DM API operations (job triggers, BDL import, etc.).
-#
-# -PrimaryOnly: Returns only the is_api_primary server (single-server ops)
-# Without flag: Returns all servers with API URLs (all-server ops like Drools)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: TOOLS SERVER TARGETING
+   ----------------------------------------------------------------------------
+   Resolves the set of DM Tools-enabled servers for a target environment.
+   Drives both single-server operations (primary only) and all-server
+   operations (Drools refresh and similar).
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-ToolsServers {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Environment,
 
         [switch]$PrimaryOnly
     )
+
+    <#
+    .SYNOPSIS
+        Returns the set of DM Tools-enabled servers for a target environment.
+
+    .DESCRIPTION
+        Queries dbo.ServerRegistry for servers that have the tools_enabled
+        flag set in the requested environment and that carry an api_base_url.
+        When PrimaryOnly is set, returns only the is_api_primary server for
+        single-server operations (such as job triggers). Without the switch
+        returns every API-eligible server, ordered by name, for all-server
+        operations (such as Drools rule refreshes).
+
+    .PARAMETER Environment
+        The target environment (PROD, TEST, etc.) to filter the server list by.
+
+    .PARAMETER PrimaryOnly
+        Switch that restricts the result to the single is_api_primary server.
+    #>
 
     if ($PrimaryOnly) {
         $servers = Invoke-XFActsQuery -Query @"
@@ -2721,59 +2989,52 @@ function Get-ToolsServers {
     return @($servers)
 }
 
-# ============================================================================
-# Export-ModuleMember
-# ============================================================================
+<# ============================================================================
+   EXPORTS: MODULE EXPORTS
+   ----------------------------------------------------------------------------
+   Enumerated list of every public function exported by this module. The list
+   is alphabetical to make additions and audits straightforward.
+   Prefix: (none)
+   ============================================================================ #>
+
 Export-ModuleMember -Function @(
-    # Database
-    'Invoke-XFActsQuery',
-    'Invoke-XFActsProc',
-    'Invoke-XFActsNonQuery',
-    # RBAC - Core
-    'Get-UserAccess',
-    'Test-ActionPermission',
-    'Test-ActionEndpoint',
-    'Get-UserContext',
-    # RBAC - Dynamic Nav
-    'Get-NavBarHtml',
-    'Get-HomePageSections',
-    'Get-NavRegistryEntry',
-    'Get-PageHeaderHtml',
-    'Get-PageBrowserTitle',
-    'Get-PageScriptTagHtml',
-    # RBAC - Internal (needed by routes that build CRS5 connections)
-    'Resolve-UserRoles',
-    'Get-UserPageTier',
-    'Initialize-RBACCache',
     'Confirm-RBACCache',
-    'Get-TierLevel',
-    'Test-TierSufficient',
-    'Write-RBACAuditLog',
-    # RBAC - Response Helpers
-    'Get-AccessDeniedHtml',
-    'Get-ActionDeniedResponse',
-    # API Cache
-    'Initialize-ApiCacheConfig',
-    'Get-CachedResult',
-    # Credentials
-    'Get-ServiceCredentials',
-    # Tools Server Targeting
-    'Get-ToolsServers',
-    # BDL Process
-    'Build-BDLXml',
-    'Build-ARLogXml',
-    'Invoke-BDLImportLogReconcile',
-    # CRS5 (Debt Manager) Database
-    'Get-CRS5Connection',
-    'Invoke-CRS5ReadQuery',
-    'Invoke-CRS5WriteQuery',
-    # AG Generalized Read
-    'Invoke-AGReadQuery',
-    # DmOps Cache
-    'Get-RemainingCounts',
-    # Data Conversion Helpers
-    'ConvertTo-SafeValue',
+    'ConvertFrom-DBNull',
+    'ConvertTo-ARLogXml',
+    'ConvertTo-BDLXml',
     'ConvertTo-SafeDate',
     'ConvertTo-SafeDateTime',
-    'ConvertTo-SafeDecimal'
+    'ConvertTo-SafeDecimal',
+    'ConvertTo-SafeValue',
+    'Get-AccessDeniedHtml',
+    'Get-ActionDeniedResponse',
+    'Get-CRS5Connection',
+    'Get-CachedResult',
+    'Get-HomePageSections',
+    'Get-NavBarHtml',
+    'Get-NavRegistryEntry',
+    'Get-PageBrowserTitle',
+    'Get-PageHeaderHtml',
+    'Get-PageScriptTagHtml',
+    'Get-RemainingCounts',
+    'Get-ServiceCredentials',
+    'Get-TierLevel',
+    'Get-ToolsServers',
+    'Get-UserAccess',
+    'Get-UserContext',
+    'Get-UserPageTier',
+    'Initialize-ApiCacheConfig',
+    'Initialize-RBACCache',
+    'Invoke-AGReadQuery',
+    'Invoke-BDLImportLogReconcile',
+    'Invoke-CRS5ReadQuery',
+    'Invoke-CRS5WriteQuery',
+    'Invoke-XFActsNonQuery',
+    'Invoke-XFActsProc',
+    'Invoke-XFActsQuery',
+    'Resolve-UserRoles',
+    'Test-ActionEndpoint',
+    'Test-ActionPermission',
+    'Test-TierSufficient',
+    'Write-RBACAuditLog'
 )
