@@ -76,9 +76,9 @@ Four section types, in fixed order:
 
 | Order | TYPE | Purpose | Multiple banners? |
 |-------|------|---------|-------------------|
-| 1 | `IMPORTS` | ES module imports or `require` statements. | No — single banner only. |
-| 2 | `CONSTANTS` | Module-scope `const` declarations of immutable values. Includes per-event dispatch tables (§11) and the `<prefix>_ENGINE_PROCESSES` constant (§7.2). | Yes — group by concept. |
-| 3 | `STATE` | Module-scope `var` declarations of mutable values. | Yes — group by concept. |
+| 1 | `IMPORTS` | ES module imports or `require` statements. | No -- single banner only. |
+| 2 | `CONSTANTS` | Module-scope `const` declarations of immutable values. Includes per-event dispatch tables (§11) and the `<prefix>_ENGINE_PROCESSES` constant (§7.2). | Yes -- group by concept. |
+| 3 | `STATE` | Module-scope `var` declarations of mutable values. | Yes -- group by concept. |
 | 4 | `FUNCTIONS` | Function declarations. | Yes. Two banners have fixed names: `INITIALIZATION` (first FUNCTIONS banner, contains only `<prefix>_init` per §11.1) and `PAGE LIFECYCLE HOOKS` (last FUNCTIONS banner, contains only hooks per §8). Zero or more named FUNCTIONS banners appear between them. |
 
 ### 4.2 The shared file `cc-shared.js`
@@ -88,10 +88,10 @@ Five section types, in fixed order:
 | Order | TYPE | Purpose | Multiple banners? |
 |-------|------|---------|-------------------|
 | 1 | `IMPORTS` | ES module imports or `require` statements. | No. |
-| 2 | `FOUNDATION` | Platform-wide immutable constants and primitives. Holds `const` declarations only. | Yes — group by concept. |
-| 3 | `STATE` | Platform-wide mutable runtime state. Holds `var` declarations only. | Yes — group by concept. |
-| 4 | `BOOTLOADER` | Page-module discovery, loading, lifecycle invocation, and the shared dispatch tables. | No — single banner only. |
-| 5 | `CHROME` | Universal page chrome and shared utilities. | Yes — group by concept. |
+| 2 | `FOUNDATION` | Platform-wide immutable constants and primitives. Holds `const` declarations only. | Yes -- group by concept. |
+| 3 | `STATE` | Platform-wide mutable runtime state. Holds `var` declarations only. | Yes -- group by concept. |
+| 4 | `BOOTLOADER` | Page-module discovery, loading, lifecycle invocation, and the shared dispatch tables. | No -- single banner only. |
+| 5 | `CHROME` | Universal page chrome and shared utilities. | Yes -- group by concept. |
 
 ### 4.3 Rules
 
@@ -109,8 +109,8 @@ Every section banner declares one prefix via the `Prefix:` line. Every top-level
 
 Two forms, no others:
 
-- **Page prefix** — the value of `Component_Registry.cc_prefix` for the file's component. Declared in every section banner of page files. Identifiers in these sections begin with `<page-prefix>_`.
-- **Chrome prefix** — the literal token `cc`. Declared in every section banner of `cc-shared.js`. Identifiers in `cc-shared.js` begin with `cc_`.
+- **Page prefix** -- the value of `Component_Registry.cc_prefix` for the file's component. Declared in every section banner of page files. Identifiers in these sections begin with `<page-prefix>_`.
+- **Chrome prefix** -- the literal token `cc`. Declared in every section banner of `cc-shared.js`. Identifiers in `cc-shared.js` begin with `cc_`.
 
 ### 5.2 Rules
 
@@ -144,9 +144,9 @@ function name() { ... }
 
 Module-scope declarations split into two kinds based on the section they live in:
 
-- **`FOUNDATION` sections** — all declarations must use `const`.
-- **`CONSTANTS` sections** — all declarations must use `const` *except for* `<prefix>_ENGINE_PROCESSES` which must use `var`.
-- **`STATE` sections** — all declarations must use `var`.
+- **`FOUNDATION` sections** -- all declarations must use `const`.
+- **`CONSTANTS` sections** -- all declarations must use `const` *except for* `<prefix>_ENGINE_PROCESSES` which must use `var`.
+- **`STATE` sections** -- all declarations must use `var`.
 
 `let` is forbidden anywhere in any JS file.
 
@@ -266,6 +266,72 @@ Each event with a non-empty page-side dispatch table is registered as a single d
 - Every dispatch table entry's handler value resolves to a function defined in the same file.
 - A page-side dispatch table key carries the page prefix. A chrome dispatch table key carries the `cc-` prefix. Keys not matching the table's prefix are drift.
 
+### 11.5 Overlay open/close handler patterns
+
+Pages with overlay constructs (HTML spec §5.4) open and close them from dispatched action handlers. Three handler patterns are recognized.
+
+#### 11.5.1 Dynamic modal
+
+The handler constructs the overlay element, sets its innerHTML, and appends it to `document.body`. The close handler removes the overlay element.
+
+```javascript
+function <prefix>_openSomething() {
+    var overlay = document.createElement('div');
+    overlay.className = 'cc-modal-overlay';
+    overlay.innerHTML = '<div class="cc-dialog cc-dialog-modal">...</div>';
+    document.body.appendChild(overlay);
+}
+
+function <prefix>_closeSomething(overlay) {
+    overlay.remove();
+}
+```
+
+#### 11.5.2 Static modal
+
+The static markup includes `cc-hidden`. The open handler removes `cc-hidden`; the close handler adds it.
+
+```javascript
+function <prefix>_openSomething() {
+    document.getElementById('<prefix>-modal-something').classList.remove('cc-hidden');
+}
+
+function <prefix>_closeSomething() {
+    document.getElementById('<prefix>-modal-something').classList.add('cc-hidden');
+}
+```
+
+#### 11.5.3 Static slide overlay
+
+The open handler adds `cc-open` to the outer overlay, then adds `cc-open` to the inner `.cc-dialog` inside a `requestAnimationFrame` callback. The close handler attaches a one-shot `transitionend` listener to the inner `.cc-dialog` that removes `cc-open` from the outer overlay, then removes `cc-open` from the inner `.cc-dialog`.
+
+```javascript
+function <prefix>_openSomething() {
+    var overlay = document.getElementById('<prefix>-slideout-something');
+    var dialog  = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+}
+
+function <prefix>_closeSomething() {
+    var overlay = document.getElementById('<prefix>-slideout-something');
+    var dialog  = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
+}
+```
+
+#### 11.5.4 Rules
+
+- Dynamic-overlay open and close handlers follow §11.5.1.
+- Static-modal open and close handlers follow §11.5.2.
+- Static slide-overlay open and close handlers follow §11.5.3.
+
 ---
 
 ## 12. Event handler binding
@@ -276,7 +342,7 @@ Event handlers are attached via `addEventListener`. The canonical pattern is eve
 
 A delegation binding has three parts:
 
-1. A stable parent — an element that exists in the page's static markup or is rendered exactly once and not replaced.
+1. A stable parent -- an element that exists in the page's static markup or is rendered exactly once and not replaced.
 2. A single `addEventListener` call on that parent, registered during page boot inside the `<prefix>_init` function.
 3. A handler that dispatches by examining `event.target` via `event.target.matches(selector)` or `event.target.closest(selector)`.
 
@@ -286,6 +352,7 @@ Direct binding (without delegation) is permitted in exactly these cases:
 
 1. **Singleton elements bound at page boot.** An element that exists exactly once on the page and is not subject to re-rendering, bound during `<prefix>_init`.
 2. **Window-level and document-level events.** Events bound on `window` or `document`.
+3. **One-shot `transitionend` listeners inside overlay close handlers** per §11.5.3.
 
 ### 12.3 Rules
 
@@ -298,11 +365,11 @@ Direct binding (without delegation) is permitted in exactly these cases:
 
 Five comment forms are recognized:
 
-1. **File header** — single block comment at line 1 (§2).
-2. **Section banners** — multi-line block comments enclosing a section's title, description, and prefix declaration (§3).
-3. **Purpose comments** — single block comment immediately preceding a function, class, method, constant, state variable, or hook declaration. Required.
-4. **Sub-section markers** — inline block comment between definitions in a section, used as a lightweight visual divider: `/* -- <label> -- */`. Optional.
-5. **Inline body comments** — block comment inside a function body explaining the immediately-following statement or sub-group. Permitted only inside function bodies.
+1. **File header** -- single block comment at line 1 (§2).
+2. **Section banners** -- multi-line block comments enclosing a section's title, description, and prefix declaration (§3).
+3. **Purpose comments** -- single block comment immediately preceding a function, class, method, constant, state variable, or hook declaration. Required.
+4. **Sub-section markers** -- inline block comment between definitions in a section, used as a lightweight visual divider: `/* -- <label> -- */`. Optional.
+5. **Inline body comments** -- block comment inside a function body explaining the immediately-following statement or sub-group. Permitted only inside function bodies.
 
 ### 13.1 Rules
 
@@ -335,22 +402,22 @@ When a section's content grows, choose between a new banner or a sub-section mar
 | `addEventListener` bound to per-iteration elements inside a loop | §12.3 |
 | Bare top-level IIFE (`(function(){...})()`) | §6 |
 | Revealing-module wrapper (`const X = (function(){...})();` or `var X = (function(){...})();`) | §6 |
-| `eval(...)` call | — |
-| `document.write(...)` call | — |
-| `window.<name> = ...` assignment outside `cc-shared.js` | — |
-| `<style>` element inside template or string literal | — |
-| `<script>` element inside template or string literal | — |
-| Inline `on<event>="..."` attribute inside template or string literal | — |
+| `eval(...)` call | -- |
+| `document.write(...)` call | -- |
+| `window.<name> = ...` assignment outside `cc-shared.js` | -- |
+| `<style>` element inside template or string literal | -- |
+| `<script>` element inside template or string literal | -- |
+| Inline `on<event>="..."` attribute inside template or string literal | -- |
 | `//` line comment at file scope | §13.1 |
 | Block comment at file scope not matching one of the five recognized forms | §13.1 |
-| More than one consecutive blank line inside a top-level function body | — |
-| More than one blank line between top-level constructs | — |
+| More than one consecutive blank line inside a top-level function body | -- |
+| More than one blank line between top-level constructs | -- |
 
 ---
 
 ## 16. Chrome identifier reference
 
-The `cc_*` identifiers referenced by the JS spec are defined in `cc-shared.js`. The list below is the contract — when this spec references a chrome identifier, that identifier must exist in `cc-shared.js` with the same name. Adding or renaming a chrome identifier referenced by this spec requires updates in both files.
+The `cc_*` identifiers referenced by the JS spec are defined in `cc-shared.js`. The list below is the contract -- when this spec references a chrome identifier, that identifier must exist in `cc-shared.js` with the same name. Adding or renaming a chrome identifier referenced by this spec requires updates in both files.
 
 ### 16.1 Dispatch tables
 
