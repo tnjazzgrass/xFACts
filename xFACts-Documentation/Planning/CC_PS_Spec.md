@@ -48,6 +48,7 @@ The header is a single comment-based-help block at the top of the file, opening 
 - `.COMPONENT` is required in every file regardless of role. The declared value matches a row in `dbo.Component_Registry.component_name`.
 - All other comment-based-help keywords (`.EXAMPLE`, `.INPUTS`, `.OUTPUTS`, `.LINK`, `.ROLE`, `.FUNCTIONALITY`, `.FORWARDHELPTARGETNAME`, `.REMOTEHELPRUNSPACE`, `.EXTERNALHELP`) are forbidden.
 - `.NOTES` contains exactly three fields, in this order: File Name, Location, FILE ORGANIZATION list. The header contains no Author, Date, Version, Function Inventory, or Deployment fields, and no inline `===` or `---` divider rules outside the `.NOTES` block's FILE ORGANIZATION separator.
+- The FILE ORGANIZATION separator is exactly 17 `-` characters (`-----------------`), positioned on the single line immediately after the `FILE ORGANIZATION` label. Any other dash count, or a separator in any other position, is treated as a forbidden inline divider.
 - The FILE ORGANIZATION list contains exactly the `<TYPE>: <NAME>` of each section banner, verbatim, in order. No numbering. No trailing description text.
 - CHANGELOG content does not appear in the file header. Change history lives in the dedicated `CHANGELOG` section (§7) for roles that permit it.
 
@@ -252,12 +253,13 @@ The CHANGELOG section produces a dedicated `PS_CHANGELOG_ENTRY` row per entry in
 
 ## 8. Function definitions
 
-A function definition has exactly one form:
+A function definition has exactly one form. The four constructs inside the function body appear in this exact order: `[CmdletBinding()]`, then `param()`, then the comment-based-help docblock, then the function body code:
 
 ```powershell
 function Verb-Noun {
     [CmdletBinding()]
     param( ... )
+
     <#
     .SYNOPSIS
         <One-line summary>
@@ -273,9 +275,10 @@ function Verb-Noun {
 
 ### 8.1 Rules
 
-- `[CmdletBinding()]` is mandatory on every function.
-- Every function declares a `param()` block, even if empty. The `param()` block is required by `[CmdletBinding()]` and is the canonical place to declare parameter contracts. Functions taking pipeline input or no parameters at all still declare `param()` — empty, or with the appropriate parameter attributes.
-- Comment-based-help docblock is mandatory on every function. The docblock requires `.SYNOPSIS` and `.DESCRIPTION`. `.PARAMETER` blocks correspond 1:1 with declared parameters — every declared parameter has a matching `.PARAMETER` block, no `.PARAMETER` block references a parameter the function does not declare, and the `.PARAMETER` blocks appear in the same order as the parameters in the `param()` block. `.COMPONENT`, `.NOTES`, `.EXAMPLE`, and other keywords are forbidden in function docblocks.
+- `[CmdletBinding()]` is mandatory on every function and appears first inside the function body.
+- Every function declares a `param()` block, even if empty, immediately after `[CmdletBinding()]`. The `param()` block is required by `[CmdletBinding()]` and is the canonical place to declare parameter contracts. Functions taking pipeline input or no parameters at all still declare `param()` — empty, or with the appropriate parameter attributes.
+- The comment-based-help docblock is mandatory on every function and is always positioned as the third construct inside the function body, after `[CmdletBinding()]` and `param()` and before the body code.
+- The docblock requires `.SYNOPSIS` and `.DESCRIPTION`. `.PARAMETER` blocks correspond 1:1 with declared parameters — every declared parameter has a matching `.PARAMETER` block, no `.PARAMETER` block references a parameter the function does not declare, and the `.PARAMETER` blocks appear in the same order as the parameters in the `param()` block. `.COMPONENT`, `.NOTES`, `.EXAMPLE`, and other keywords are forbidden in function docblocks.
 - Function names follow PowerShell's `Verb-Noun` convention. The verb is from the PowerShell approved verb list (`Get-Verb`). Functions starting with an underscore or any non-letter character are forbidden.
 - In files whose component has a non-NULL `cc_prefix`, the noun half of the function name begins with that prefix followed by an underscore (e.g., `Get-bkp_OpenBatches` in a file with prefix `bkp`). In files whose component has `cc_prefix = NULL`, no prefix is applied; the function name is bare `Verb-Noun` (e.g., `Initialize-XFActsScript`).
 - The `filter` keyword form is forbidden. All functions use the `function` keyword. Pipeline-processing functions declare an explicit `process { ... }` block instead.
@@ -532,14 +535,16 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `MALFORMED_SINGLETON_NAME` | A singleton section's banner title does not match the fixed value from §4.4. | §4.4 |
 | `MISSING_PREFIX_DECLARATION` | Banner missing the `Prefix:` line. | §5.2 |
 | `MALFORMED_PREFIX_VALUE` | Banner declares a `Prefix:` value that is neither the registered page prefix, `cc`, nor `(none)`. | §5.2 |
-| `PREFIX_REGISTRY_MISMATCH` | Banner's declared prefix does not match `Component_Registry.cc_prefix` for the file's component. | §5.2 |
+| `PREFIX_REGISTRY_MISMATCH` | An identifier-bearing section (CONSTANTS, VARIABLES, FUNCTIONS) declares a `Prefix:` value that does not match the file's registered `Component_Registry.cc_prefix`. Identifier-free sections (CHANGELOG, IMPORTS, PARAMETERS, INITIALIZATION, EXECUTION, ROUTE, EXPORTS) declare `(none)` regardless of the file's registered prefix and are exempt from this check. | §5.2 |
+| `MISPLACED_NONE_PREFIX` | An identifier-bearing section (CONSTANTS, VARIABLES, FUNCTIONS) declares `Prefix: (none)` in a file whose component has a registered (non-NULL) `cc_prefix`. The section's identifiers carry the file's registered prefix, so the banner must declare that prefix rather than `(none)`. | §5.2 |
 | `PREFIX_MISSING` | Top-level identifier in a prefixable section does not begin with the file's registered prefix. | §5.3 |
 | `PREFIX_MISMATCH` | Top-level identifier does not begin with the section's declared prefix. | §5.3 |
 | `MALFORMED_CHANGELOG_ENTRY` | CHANGELOG entry does not begin with `# YYYY-MM-DD  `. | §7.2 |
 | `MALFORMED_CHANGELOG_DATE` | CHANGELOG entry date is not in ISO YYYY-MM-DD format. | §7.2 |
 | `CHANGELOG_ORDER_VIOLATION` | CHANGELOG entries appear out of most-recent-first order. | §7.2 |
 | `FORBIDDEN_VERSION_IN_CHANGELOG` | A CHANGELOG entry contains a version literal. | §7.2 |
-| `MISSING_DOCBLOCK` | Function declaration not preceded by a comment-based-help docblock. | §8.1 |
+| `MISSING_DOCBLOCK` | Function has no comment-based-help docblock in its required position. | §8.1 |
+| `MISPLACED_DOCBLOCK` | Function docblock is present but not in the required position (above the function declaration or after body code instead of immediately after `[CmdletBinding()]` and `param()`). | §8.1 |
 | `MISSING_CMDLETBINDING` | Function declaration missing `[CmdletBinding()]`. | §8.1 |
 | `MISSING_PARAM_BLOCK` | Function missing a `param()` block. | §8.1 |
 | `MALFORMED_DOCBLOCK` | Function docblock missing required elements or in wrong order. | §8.1 |
