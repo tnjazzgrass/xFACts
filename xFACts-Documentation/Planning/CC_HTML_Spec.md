@@ -148,7 +148,7 @@ Engine card row structure:
     <div class="cc-card-engine" id="cc-card-engine-<slug>">
         <span class="cc-engine-label">SLUG_LABEL</span>
         <div class="cc-engine-bar" id="cc-engine-bar-<slug>"></div>
-        <span class="cc-engine-cd" id="cc-engine-cd-<slug>">--</span>
+        <span class="cc-engine-cd" id="cc-engine-cd-<slug>"></span>
     </div>
     <!-- additional cards follow -->
 </div>
@@ -157,7 +157,7 @@ Engine card row structure:
 #### 2.3.1 Rules
 
 - The outer container is exactly `<div class="cc-engine-row">`. The row contains only engine card elements as children.
-- Each engine card has exactly four elements in this order: outer `cc-card-engine` div with `id="cc-card-engine-<slug>"`; `cc-engine-label` span containing the label text; `cc-engine-bar` div with `id="cc-engine-bar-<slug>"` and no content; `cc-engine-cd` span with `id="cc-engine-cd-<slug>"` containing the literal `--`.
+- Each engine card has exactly four elements in this order: outer `cc-card-engine` div with `id="cc-card-engine-<slug>"`; `cc-engine-label` span containing the label text; `cc-engine-bar` div with `id="cc-engine-bar-<slug>"` and no content; `cc-engine-cd` span with `id="cc-engine-cd-<slug>"` and no content.
 - The `<slug>` for each card matches `Orchestrator.ProcessRegistry.cc_engine_slug` for an active process registered to this page.
 - The label text matches `Orchestrator.ProcessRegistry.cc_engine_label` for the corresponding process.
 - Engine cards appear in declaration order matching `Orchestrator.ProcessRegistry.cc_sort_order`.
