@@ -54,7 +54,7 @@
 #             the page-specific link element and the cc-shared link
 #             element, per CC HTML Spec section 3.1. Renamed the
 #             slideout argument attribute from data-action-type to
-#             data-action-bkp-type (four occurrences across local and
+#             data-bkp-type (four occurrences across local and
 #             network slideouts) per CC HTML Spec section 7.4
 #             argument-attribute prefix rules; backup.js handler reads
 #             the argument as dataset.bkpType.
@@ -294,40 +294,40 @@ $navHtml
 
     <!-- Modal for pipeline and queue file-level detail breakdowns -->
     <div id="bkp-modal-detail-overlay" class="cc-modal-overlay cc-hidden" data-action-click="bkp-modal-close-on-overlay">
-        <div class="cc-modal cc-wide">
-            <div class="cc-modal-header">
-                <h3 id="bkp-detail-title">Detail</h3>
-                <button class="cc-modal-close" data-action-click="bkp-modal-close">&times;</button>
+        <div class="cc-dialog cc-dialog-modal cc-wide">
+            <div class="cc-dialog-header">
+                <h3 id="bkp-detail-title" class="cc-dialog-title">Detail</h3>
+                <button class="cc-dialog-close" data-action-click="bkp-modal-close">&times;</button>
             </div>
-            <div class="cc-modal-body" id="bkp-detail-body">
+            <div class="cc-dialog-body" id="bkp-detail-body">
                 <div class="bkp-loading">Loading...</div>
             </div>
         </div>
     </div>
 
     <!-- Slideout for displaying local-drive backup retention candidates -->
-    <div id="bkp-slideout-local-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-action-bkp-type="local"></div>
-    <!-- Slideout for displaying local-drive backup retention candidates -->
-    <div id="bkp-slideout-local-retention" class="cc-slide-panel cc-wide">
-        <div class="cc-slide-panel-header">
-            <h3 class="cc-slide-panel-title">&#128465; Local Retention Candidates</h3>
-            <button class="cc-modal-close" data-action-click="bkp-slideout-close" data-action-bkp-type="local">&times;</button>
-        </div>
-        <div class="cc-slide-panel-body" id="bkp-local-retention-body">
-            <div class="bkp-loading">Loading...</div>
+    <div id="bkp-local-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-bkp-type="local">
+        <div class="cc-dialog cc-dialog-slide cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">&#128465; Local Retention Candidates</h3>
+                <button class="cc-dialog-close" data-action-click="bkp-slideout-close" data-bkp-type="local">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="bkp-local-retention-body">
+                <div class="bkp-loading">Loading...</div>
+            </div>
         </div>
     </div>
 
     <!-- Slideout for displaying network-share backup retention candidates -->
-    <div id="bkp-slideout-network-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-action-bkp-type="network"></div>
-    <!-- Slideout for displaying network-share backup retention candidates -->
-    <div id="bkp-slideout-network-retention" class="cc-slide-panel cc-wide">
-        <div class="cc-slide-panel-header">
-            <h3 class="cc-slide-panel-title">&#128465; Network Retention Candidates</h3>
-            <button class="cc-modal-close" data-action-click="bkp-slideout-close" data-action-bkp-type="network">&times;</button>
-        </div>
-        <div class="cc-slide-panel-body" id="bkp-network-retention-body">
-            <div class="bkp-loading">Loading...</div>
+    <div id="bkp-network-retention-overlay" class="cc-slide-overlay" data-action-click="bkp-slideout-close" data-bkp-type="network">
+        <div class="cc-dialog cc-dialog-slide cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">&#128465; Network Retention Candidates</h3>
+                <button class="cc-dialog-close" data-action-click="bkp-slideout-close" data-bkp-type="network">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="bkp-network-retention-body">
+                <div class="bkp-loading">Loading...</div>
+            </div>
         </div>
     </div>
 
