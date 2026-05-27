@@ -644,7 +644,7 @@ function bkp_renderRetentionCard(type, label, pending) {
     var clickable = pending.file_count > 0;
     var cardClass = 'bkp-status-card' + (clickable ? ' bkp-clickable' : '');
     var dataAttrs = clickable
-        ? ' data-action-click="bkp-open-retention-detail" data-action-bkp-retention-type="' + type + '"'
+        ? ' data-action-click="bkp-open-retention-detail" data-bkp-retention-type="' + type + '"'
         : '';
 
     var html = '<div class="' + cardClass + '"' + dataAttrs + '>';
@@ -660,16 +660,24 @@ function bkp_renderRetentionCard(type, label, pending) {
 
 /* Opens the retention detail slideout for a retention type ('local' or
    'network'). Loads the candidate file list and renders it as a nested
-   server / database accordion. The overlay and panel IDs follow the
-   bkp-slideout-{type}-retention-{overlay|} pattern from Backup.ps1. */
+   server / database accordion. The outer overlay ID follows the
+   bkp-{type}-retention-overlay pattern from Backup.ps1; the dialog
+   inside is found via querySelector (it carries no ID of its own).
+   The dialog's cc-open is applied on the next animation frame so the
+   slide-in transition animates from the off-screen position (the dialog
+   isn't rendered until the overlay's display:none is removed by the
+   first add). */
 function bkp_openRetentionDetail(target) {
     var type = target.dataset.bkpRetentionType;
-    var overlayId = 'bkp-slideout-' + type + '-retention-overlay';
-    var panelId   = 'bkp-slideout-' + type + '-retention';
+    var overlayId = 'bkp-' + type + '-retention-overlay';
     var bodyId    = 'bkp-' + type + '-retention-body';
 
-    document.getElementById(overlayId).classList.add('cc-open');
-    document.getElementById(panelId).classList.add('cc-open');
+    var overlay = document.getElementById(overlayId);
+    var dialog  = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
 
     var body = document.getElementById(bodyId);
     body.innerHTML = '<div class="bkp-loading">Loading retention candidates...</div>';
@@ -686,15 +694,22 @@ function bkp_openRetentionDetail(target) {
 }
 
 /* Closes the retention slideout for the given type. Reads the type from
-   the clicked element's data-action-bkp-type argument attribute (set on
-   both the overlay and the close button in Backup.ps1). */
+   the clicked element's data-bkp-type argument attribute (set on
+   both the overlay and the close button in Backup.ps1). The dialog's
+   cc-open is removed first to start the slide-out transition; the
+   overlay's cc-open is removed when the transition finishes so the
+   dimmer stays in place during the slide-out. */
 function bkp_closeRetentionSlideout(target) {
     var type = target.dataset.bkpType;
     if (!type) return;
-    var overlayId = 'bkp-slideout-' + type + '-retention-overlay';
-    var panelId   = 'bkp-slideout-' + type + '-retention';
-    document.getElementById(overlayId).classList.remove('cc-open');
-    document.getElementById(panelId).classList.remove('cc-open');
+    var overlayId = 'bkp-' + type + '-retention-overlay';
+    var overlay = document.getElementById(overlayId);
+    var dialog  = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
 }
 
 /* Renders the retention slideout body: a summary bar showing total
