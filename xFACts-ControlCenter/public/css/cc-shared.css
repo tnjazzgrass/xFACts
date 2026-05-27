@@ -9,7 +9,7 @@
    connection banner, back link, section containers, slide panels, modals,
    and feedback overlays. Page-specific CSS files contain page-specific
    content rules only and consume the building blocks defined here via
-   shared classes (e.g., .cc-section, .cc-slide-panel, .cc-modal) and the
+   shared classes (e.g., .cc-section, .cc-dialog) and the
    custom property tokens in :root (e.g., var(--color-bg-card),
    var(--size-radius-default)).
 
@@ -29,8 +29,7 @@
    CHROME: PAGE ERROR BANNER
    CHROME: BACK LINK
    CONTENT: SECTIONS
-   CONTENT: SLIDE PANELS
-   CONTENT: MODAL SYSTEM
+   CONTENT: OVERLAYS
    FEEDBACK_OVERLAYS: IDLE OVERLAY
    ============================================================================ */
 
@@ -188,6 +187,7 @@
     --z-panel-overlay:          1000;
     --z-panel:                  1001;
     --z-modal-overlay:          1300;
+    --z-engine-popup:           9999;
     --z-idle-overlay:           10000;
 }
 
@@ -755,6 +755,8 @@ a { color: var(--color-text-link); }
 
 /* Click-popup that appears when an engine card is clicked, showing last run details. */
 .cc-engine-popup {
+    position: fixed;
+    z-index: var(--z-engine-popup);
     background: var(--color-bg-card);
     border: var(--size-border-thin) solid var(--color-accent-platform);
     border-radius: var(--size-radius-lg);
@@ -821,6 +823,35 @@ a { color: var(--color-text-link); }
     color: var(--color-text-primary);
     font-size: var(--font-size-content);
     text-align: right;
+}
+
+/* Status text inside an engine popup row. Color is driven by a state-tag
+   modifier class (cc-status-success / cc-status-running / cc-status-failed). */
+.cc-engine-popup-status {
+    font-size: var(--font-size-content);
+    font-weight: 600;
+    text-align: right;
+}
+
+/* State tag indicating a successful or completed status. */
+.cc-status-success { }
+
+.cc-engine-popup-status.cc-status-success { /* SUCCESS / completed status color */
+    color: var(--color-accent-shared);
+}
+
+/* State tag indicating a currently-running status. */
+.cc-status-running { }
+
+.cc-engine-popup-status.cc-status-running { /* PROCESS_STARTED / RUNNING status color */
+    color: var(--color-accent-platform);
+}
+
+/* State tag indicating a failed or timed-out status. */
+.cc-status-failed { }
+
+.cc-engine-popup-status.cc-status-failed { /* FAILED / TIMEOUT status color */
+    color: var(--color-status-critical);
 }
 
 /* Container for the optional output preview block at the bottom of the popup. */
@@ -1022,7 +1053,7 @@ a { color: var(--color-text-link); }
    Prefix: cc
    ============================================================================ */
 
-/* The section container — every page composes its content from these. */
+/* The section container -- every page composes its content from these. */
 .cc-section {
     background: var(--color-bg-card);
     border: var(--size-border-thin) solid var(--color-border-default);
@@ -1073,20 +1104,64 @@ a { color: var(--color-text-link); }
 }
 
 /* ============================================================================
-   CONTENT: SLIDE PANELS
+   CONTENT: OVERLAYS
    ----------------------------------------------------------------------------
-   Reusable slide-from-right panel system with overlay, header, scrollable
-   body, and a small library of standard sub-components for common layouts
-   (summary stats, tables, sections, accordions, empty states).
+   The three overlay constructs (modal, slideout, slide-up) plus the unified
+   .cc-dialog family that fills them. Outer overlay elements
+   (.cc-modal-overlay, .cc-slide-overlay) are full-viewport dimmers; modal
+   overlays additionally flex-center their dialog. Each dialog carries one
+   kind-of-dialog state class (.cc-dialog-modal or .cc-dialog-slide) that
+   provides positioning and width; .cc-dialog itself provides the visual
+   chrome (background, border, shadow, header, body, actions, body typography)
+   shared by all overlay kinds.
 
-   Width tiers:
+   Width tiers for slide dialogs:
      default       600px  -- single-column detail views
      .cc-wide      800px  -- tabular detail with multiple columns
      .cc-xwide     1000px -- wide multi-column tables
+
+   Width tiers for modal dialogs:
+     default       380px  -- compact alerts and confirms
+     .cc-medium    500px  -- typical detail views
+     .cc-wide      700px  -- tabular content or wider detail views
+
+   A slide dialog uses .cc-open to slide into view (right: 0 overrides its
+   off-screen right offset). A slide overlay uses .cc-open to switch from
+   display:none to display:block, revealing the dimmer. Both classes are
+   toggled together when a slideout opens or closes.
+
+   Slide-content sub-components (.cc-slide-summary, .cc-slide-stat-*,
+   .cc-slide-table-*, .cc-slide-section, .cc-slide-accordion-*,
+   .cc-slide-empty) live in this section because they are typical
+   building blocks for content inside a slide dialog's body. They are
+   not slide-exclusive; a modal whose body needs a stat grid or a data
+   table consumes them too.
    Prefix: cc
    ============================================================================ */
 
-/* The full-viewport overlay behind an open slide panel. */
+/* The full-viewport modal overlay (dimmer that flex-centers its dialog). */
+.cc-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--color-bg-overlay-modal);
+    z-index: var(--z-modal-overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: ccModalFadeIn var(--duration-fast) ease;
+}
+
+/* State tag indicating an element is in the hidden state. */
+.cc-hidden { }
+
+.cc-modal-overlay.cc-hidden { /* hidden initial state for statically-declared modals */
+    display: none;
+}
+
+/* The full-viewport slide overlay (dimmer behind an open slide-dialog). */
 .cc-slide-overlay {
     display: none;
     position: fixed;
@@ -1098,88 +1173,202 @@ a { color: var(--color-text-link); }
     z-index: var(--z-panel-overlay);
 }
 
-/* State tag indicating an overlay or panel is in the open (visible) state. */
+/* State tag indicating an overlay or dialog is in the open (visible) state. */
 .cc-open { }
 
-.cc-slide-overlay.cc-open { /* state when the overlay is visible (panel is open) */
+.cc-slide-overlay.cc-open { /* dimmer visible when the slide dialog is open */
     display: block;
 }
 
-/* The slide panel itself (hidden offscreen until .cc-open). */
-.cc-slide-panel {
+/* The inner dialog panel. Provides visual chrome (background, border, shadow,
+   flex-column layout). Positioning and sizing come from the kind-of-dialog
+   state class (.cc-dialog-modal or .cc-dialog-slide). */
+.cc-dialog {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-xl);
+    box-shadow: var(--shadow-modal);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Modal-kind dialog state. Content-sized, centered by the modal-overlay's flex layout. */
+.cc-dialog-modal {
+    width: var(--size-modal-width-default);
+    max-width: 90vw;
+    max-height: 90vh;
+}
+
+/* Width-tier modifier tag for medium-width modals. */
+.cc-medium { }
+
+.cc-dialog-modal.cc-medium { /* medium-width modal dialog for typical detail views */
+    width: var(--size-modal-width-medium);
+}
+
+/* Width-tier modifier tag for wider modals and slide dialogs. */
+.cc-wide { }
+
+.cc-dialog-modal.cc-wide { /* wider modal dialog for tabular content */
+    width: var(--size-modal-width-wide);
+}
+
+/* Slide-kind dialog state. Right-anchored panel positioned over the slide-overlay
+   dimmer; off-screen by default, slides in when .cc-open is added. */
+.cc-dialog-slide {
     position: fixed;
     top: 0;
     right: var(--size-panel-offset-default);
     width: var(--size-panel-width-default);
     height: 100%;
-    background: var(--color-bg-card);
-    border-left: var(--size-border-thin) solid var(--color-border-default);
     z-index: var(--z-panel);
-    display: flex;
-    flex-direction: column;
     transition: right var(--duration-default) ease;
 }
 
-/* Width-tier modifier tag for the wider panel/modal variant. */
-.cc-wide { }
-
-.cc-slide-panel.cc-wide { /* wider panel for tabular detail content */
+.cc-dialog-slide.cc-wide { /* wider slide dialog for tabular detail content */
     width: var(--size-panel-width-wide);
     right: var(--size-panel-offset-wide);
 }
 
-/* Width-tier modifier tag for the widest panel variant. */
+/* Width-tier modifier tag for the widest slide dialog variant. */
 .cc-xwide { }
 
-.cc-slide-panel.cc-xwide { /* widest panel for wide multi-column tables */
+.cc-dialog-slide.cc-xwide { /* widest slide dialog for wide multi-column tables */
     width: var(--size-panel-width-xwide);
     right: var(--size-panel-offset-xwide);
 }
 
-.cc-slide-panel.cc-open { /* state when the panel is visible (slid into view) */
+.cc-dialog-slide.cc-open { /* slid into view (overrides the off-screen right offset) */
     right: 0;
 }
 
-/* Vertically-centered slide panel variant that sizes to content (compact dialogs). */
-.cc-slide-auto-height {
-    height: auto;
-    max-height: 90vh;
-    top: 50%;
-    transform: translateY(-50%);
-    border-radius: var(--size-radius-xl);
-    border: var(--size-border-thin) solid var(--color-border-default);
-}
-
-.cc-slide-auto-height.cc-open { /* offset the auto-height panel slightly from the right edge */
-    right: var(--size-page-padding-y);
-}
-
-/* The slide panel header (title left, close button right). */
-.cc-slide-panel-header {
+/* Dialog header row (title on the left, optional close button on the right). */
+.cc-dialog-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: var(--size-spacing-xl) var(--size-page-padding-y);
-    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     background: var(--color-bg-card-hover);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-xl) var(--size-radius-xl) 0 0;
 }
 
-/* The title text inside the slide panel header. */
-.cc-slide-panel-title {
+/* Dialog title text inside the header. */
+.cc-dialog-title {
+    flex: 1;
     margin: 0;
     color: var(--color-accent-shared);
     font-size: var(--font-size-heading-lg);
     font-weight: 600;
 }
 
-/* The scrollable body container for slide panel content. */
-.cc-slide-panel-body {
+/* Dialog close button (the X glyph in the header). */
+.cc-dialog-close {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color var(--duration-instant);
+}
+
+.cc-dialog-close:hover { /* hover state for the close button */
+    color: var(--color-text-primary);
+}
+
+/* The scrollable body container for dialog content. */
+.cc-dialog-body {
     flex: 1;
     overflow-y: auto;
     padding: var(--size-spacing-xl) var(--size-page-padding-y);
 }
 
-/* Slide panel sub-component: summary stat grid (small key/value cards in a grid). */
+/* Paragraph styling inside the dialog body. */
+.cc-dialog-paragraph {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-content-lg);
+    line-height: 1.6;
+    margin: 0 0 10px 0;
+}
+
+/* Position tag marking an element as the last in a sequence (used in popups and dialog bodies). */
+.cc-last { }
+
+.cc-dialog-paragraph.cc-last { /* last paragraph in the body (no bottom margin) */
+    margin-bottom: 0;
+}
+
+/* Strong/emphasized text inside the dialog body. */
+.cc-dialog-strong {
+    color: var(--color-accent-shared);
+}
+
+/* Dialog footer action button row. */
+.cc-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: var(--size-spacing-xl) var(--size-page-padding-y);
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* Cancel/secondary button inside the dialog actions row. */
+.cc-dialog-btn-cancel {
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.cc-dialog-btn-cancel:hover { /* hover state for the cancel button */
+    background: var(--color-border-divider);
+    border-color: var(--color-text-muted);
+}
+
+/* Primary action button inside the dialog actions row. */
+.cc-dialog-btn-primary {
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    background: var(--color-button-primary-bg);
+    border: var(--size-border-thin) solid var(--color-button-primary-bg);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-on-primary);
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.cc-dialog-btn-primary:hover { /* hover state for the primary button */
+    background: var(--color-button-primary-bg-hover);
+    border-color: var(--color-button-primary-bg-hover);
+}
+
+/* Danger/destructive action button inside the dialog actions row. */
+.cc-dialog-btn-danger {
+    padding: var(--size-spacing-md) var(--size-page-padding-y);
+    background: var(--color-button-danger-bg);
+    border: var(--size-border-thin) solid var(--color-button-danger-border);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-on-primary);
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.cc-dialog-btn-danger:hover { /* hover state for the danger button */
+    background: var(--color-button-danger-bg-hover);
+    border-color: var(--color-button-danger-border-hover);
+}
+
+/* Slide-content sub-component: summary stat grid (small key/value cards in a grid). */
 .cc-slide-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -1187,7 +1376,7 @@ a { color: var(--color-text-link); }
     margin-bottom: var(--size-spacing-xl);
 }
 
-/* Single summary stat card. */
+/* Single summary stat card inside a stat grid. */
 .cc-slide-stat {
     background: var(--color-bg-card-hover);
     border-radius: var(--size-radius-lg);
@@ -1209,7 +1398,7 @@ a { color: var(--color-text-link); }
     margin-top: var(--size-spacing-xs);
 }
 
-/* Slide panel sub-component: data table (sticky header, dark rows). */
+/* Slide-content sub-component: data table (sticky header, dark rows). */
 .cc-slide-table {
     width: 100%;
     border-collapse: collapse;
@@ -1244,12 +1433,14 @@ a { color: var(--color-text-link); }
     text-align: right;
 }
 
-/* Hover row state for the slide table. */
+/* Slide-table data row (the standalone row base class for hover styling). */
+.cc-slide-table-row { }
+
 .cc-slide-table-row:hover { /* hover state for any data row in the slide table */
     background: var(--color-bg-card-hover);
 }
 
-/* Slide panel sub-component: in-panel section divider (for grouping content within a panel). */
+/* Slide-content sub-component: in-panel section divider (groups content within a dialog body). */
 .cc-slide-section {
     margin-bottom: var(--size-spacing-2xl);
 }
@@ -1264,7 +1455,7 @@ a { color: var(--color-text-link); }
     border-bottom: var(--size-border-thin) solid var(--color-border-default);
 }
 
-/* Slide panel sub-component: accordion header (clickable to expand/collapse). */
+/* Slide-content sub-component: accordion header (clickable to expand/collapse). */
 .cc-slide-accordion-header {
     display: flex;
     justify-content: space-between;
@@ -1329,202 +1520,12 @@ a { color: var(--color-text-link); }
     font-style: italic;
 }
 
-/* Empty-state placeholder shown when a slide panel has no content to display. */
+/* Empty-state placeholder shown when a dialog body has no content to display. */
 .cc-slide-empty {
     color: var(--color-text-muted);
     font-size: var(--font-size-content-lg);
     padding: var(--size-spacing-2xl);
     text-align: center;
-}
-
-/* ============================================================================
-   CONTENT: MODAL SYSTEM
-   ----------------------------------------------------------------------------
-   The cc-modal-* class set replaces native alert() and confirm() across
-   all Control Center pages. Used by cc_showAlert() and cc_showConfirm()
-   in cc-shared.js, which dynamically create and remove the overlay
-   element. Pages can also declare a cc-modal-overlay statically in HTML
-   and toggle visibility via the .cc-hidden class for async-content modals.
-
-   The .cc-modal-close button is shared with slide panel headers (a
-   single close-button class works in both contexts).
-   Prefix: cc
-   ============================================================================ */
-
-/* The full-viewport overlay behind an open modal. */
-.cc-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--color-bg-overlay-modal);
-    z-index: var(--z-modal-overlay);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: ccModalFadeIn var(--duration-fast) ease;
-}
-
-/* State tag indicating an element is in the hidden state. */
-.cc-hidden { }
-
-.cc-modal-overlay.cc-hidden { /* hidden initial state for statically-declared modals */
-    display: none;
-}
-
-/* The modal container itself (centered in the overlay). */
-.cc-modal {
-    background: var(--color-bg-card);
-    border: var(--size-border-thin) solid var(--color-border-default);
-    border-radius: var(--size-radius-xl);
-    width: var(--size-modal-width-default);
-    max-width: 90vw;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: var(--shadow-modal);
-}
-
-/* Width-tier modifier tag for the medium-width modal variant. */
-.cc-medium { }
-
-.cc-modal.cc-medium { /* medium-width modal for typical detail views */
-    width: var(--size-modal-width-medium);
-}
-
-.cc-modal.cc-wide { /* wider modal for tabular content or detail views */
-    width: var(--size-modal-width-wide);
-}
-
-/* The modal header (icon + title + close button). */
-.cc-modal-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: var(--size-spacing-xl) var(--size-page-padding-y);
-    background: var(--color-border-divider);
-    border-bottom: var(--size-border-thin) solid var(--color-border-default);
-    border-radius: var(--size-radius-xl) var(--size-radius-xl) 0 0;
-    font-size: var(--font-size-heading-md);
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-
-/* Title text inside the modal header (flex-1 pushes the close button to the right). */
-.cc-modal-title {
-    flex: 1;
-    margin: 0;
-    color: var(--color-accent-shared);
-    font-size: var(--font-size-heading-lg);
-    font-weight: 600;
-}
-
-/* Optional icon glyph at the left of the modal header. */
-.cc-modal-icon {
-    font-size: 20px;
-}
-
-/* The modal body (main content area). Scrolls internally when modal content exceeds max height. */
-.cc-modal-body {
-    padding: var(--size-page-padding-y);
-    overflow-y: auto;
-    flex: 1;
-}
-
-/* Paragraph styling inside the modal body. */
-.cc-modal-paragraph {
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-content-lg);
-    line-height: 1.6;
-    margin: 0 0 10px 0;
-}
-
-.cc-modal-paragraph.cc-last { /* last paragraph in the body (no bottom margin) */
-    margin-bottom: 0;
-}
-
-/* Strong/emphasized text inside the modal body. */
-.cc-modal-strong {
-    color: var(--color-accent-shared);
-}
-
-/* The modal action button row at the bottom (footer). */
-.cc-modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: var(--size-spacing-xl) var(--size-page-padding-y);
-    border-top: var(--size-border-thin) solid var(--color-border-default);
-}
-
-/* Cancel/secondary button inside the modal actions row. */
-.cc-modal-btn-cancel {
-    padding: var(--size-spacing-md) var(--size-page-padding-y);
-    background: var(--color-bg-card-hover);
-    border: var(--size-border-thin) solid var(--color-border-default);
-    border-radius: var(--size-radius-default);
-    color: var(--color-text-primary);
-    font-size: var(--font-size-content-lg);
-    cursor: pointer;
-    transition: all var(--duration-instant);
-}
-
-.cc-modal-btn-cancel:hover { /* hover state for the cancel button */
-    background: var(--color-border-divider);
-    border-color: var(--color-text-muted);
-}
-
-/* Primary action button inside the modal actions row. */
-.cc-modal-btn-primary {
-    padding: var(--size-spacing-md) var(--size-page-padding-y);
-    background: var(--color-button-primary-bg);
-    border: var(--size-border-thin) solid var(--color-button-primary-bg);
-    border-radius: var(--size-radius-default);
-    color: var(--color-text-on-primary);
-    font-size: var(--font-size-content-lg);
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--duration-instant);
-}
-
-.cc-modal-btn-primary:hover { /* hover state for the primary button */
-    background: var(--color-button-primary-bg-hover);
-    border-color: var(--color-button-primary-bg-hover);
-}
-
-/* Danger/destructive action button inside the modal actions row. */
-.cc-modal-btn-danger {
-    padding: var(--size-spacing-md) var(--size-page-padding-y);
-    background: var(--color-button-danger-bg);
-    border: var(--size-border-thin) solid var(--color-button-danger-border);
-    border-radius: var(--size-radius-default);
-    color: var(--color-text-on-primary);
-    font-size: var(--font-size-content-lg);
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--duration-instant);
-}
-
-.cc-modal-btn-danger:hover { /* hover state for the danger button */
-    background: var(--color-button-danger-bg-hover);
-    border-color: var(--color-button-danger-border-hover);
-}
-
-/* Shared close button (X) used in both modal headers and slide panel headers. */
-.cc-modal-close {
-    background: none;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: 24px;
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-    transition: color var(--duration-instant);
-}
-
-.cc-modal-close:hover { /* hover state for the close button */
-    color: var(--color-text-primary);
 }
 
 /* ============================================================================
