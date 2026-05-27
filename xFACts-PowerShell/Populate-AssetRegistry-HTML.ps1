@@ -4618,7 +4618,7 @@ function Invoke-HtmlTokenWalk {
 #   <div class="cc-modal-overlay" id="..."> (or cc-slide-overlay / cc-slideup-overlay)
 #       <div class="cc-dialog">
 #           <div class="cc-dialog-header">
-#               <span class="cc-dialog-title">...</span>
+#               <h3 class="cc-dialog-title">...</h3>
 #               <button class="cc-dialog-close">...</button>
 #           </div>
 #           <div class="cc-dialog-body">...</div>
@@ -5152,7 +5152,7 @@ function Invoke-EngineCardValidation {
             if ($cdClose -gt $childIdxs[2]) {
                 for ($m = $childIdxs[2] + 1; $m -lt $cdClose; $m++) {
                     $bt = $Tokens[$m]
-                    if ($bt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($bt.Raw)) { continue }
+                    if ($bt.Kind -eq 'Text' -and $bt.Raw.Length -eq 0) { continue }
                     Add-DriftCode -Row $cardRow -Code 'MALFORMED_ENGINE_CARD' `
                         -Context "cc-engine-cd span contains content; spec requires the element be empty."
                     break
