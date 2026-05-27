@@ -644,7 +644,7 @@ function bkp_renderRetentionCard(type, label, pending) {
     var clickable = pending.file_count > 0;
     var cardClass = 'bkp-status-card' + (clickable ? ' bkp-clickable' : '');
     var dataAttrs = clickable
-        ? ' data-action-click="bkp-open-retention-detail" data-bkp-retention-type="' + type + '"'
+        ? ' data-action-click="bkp-open-retention-detail" data-action-bkp-retention-type="' + type + '"'
         : '';
 
     var html = '<div class="' + cardClass + '"' + dataAttrs + '>';
@@ -668,7 +668,7 @@ function bkp_renderRetentionCard(type, label, pending) {
    isn't rendered until the overlay's display:none is removed by the
    first add). */
 function bkp_openRetentionDetail(target) {
-    var type = target.dataset.bkpRetentionType;
+    var type = target.dataset.actionBkpRetentionType;
     var overlayId = 'bkp-' + type + '-retention-overlay';
     var bodyId    = 'bkp-' + type + '-retention-body';
 
@@ -694,13 +694,13 @@ function bkp_openRetentionDetail(target) {
 }
 
 /* Closes the retention slideout for the given type. Reads the type from
-   the clicked element's data-bkp-type argument attribute (set on
+   the clicked element's data-action-bkp-type argument attribute (set on
    both the overlay and the close button in Backup.ps1). The dialog's
    cc-open is removed first to start the slide-out transition; the
    overlay's cc-open is removed when the transition finishes so the
    dimmer stays in place during the slide-out. */
 function bkp_closeRetentionSlideout(target) {
-    var type = target.dataset.bkpType;
+    var type = target.dataset.actionBkpType;
     if (!type) return;
     var overlayId = 'bkp-' + type + '-retention-overlay';
     var overlay = document.getElementById(overlayId);
