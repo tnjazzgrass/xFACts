@@ -241,6 +241,7 @@ $DriftDescriptions = [ordered]@{
     'MALFORMED_MODAL_STRUCTURE'         = "A modal's outer cc-modal-overlay is missing its nested .cc-dialog child, or the .cc-dialog is missing required child elements."
     'MALFORMED_SLIDEOUT_STRUCTURE'      = "A slideout's outer cc-slide-overlay is missing its nested .cc-dialog child, or the .cc-dialog is missing required child elements."
     'MALFORMED_SLIDEUP_STRUCTURE'       = "A slide-up panel's outer cc-slideup-overlay is missing its nested .cc-dialog child, or the .cc-dialog is missing required child elements."
+    'MISSING_DIALOG_CLASS'              = "An overlay construct's inner .cc-dialog does not carry the matching secondary class (cc-dialog-modal inside a modal, cc-dialog-slide inside a slideout, cc-dialog-slideup inside a slide-up panel)."
     'MISSING_PANEL_PURPOSE_COMMENT'     = "An overlay construct is not preceded by an HTML purpose comment."
     'OVERLAY_BLOCK_NON_CONTIGUOUS'      = "A non-overlay element or non-purpose comment appears within the overlay block; only formatting whitespace and per-construct purpose comments are permitted between constructs."
     'FORBIDDEN_HELPER_PAGE_PREFIX_ID'   = "A helper module function emits HTML with a page-prefixed ID."
@@ -4589,7 +4590,7 @@ function Invoke-HtmlTokenWalk {
 # ============================================================================
 #
 # After the walker collects overlay constructs (one per outer overlay element
-# encountered), run two validators:
+# encountered), run three validators:
 #
 # 1. Per-construct structural validation: each outer overlay element must
 #    contain exactly one nested .cc-dialog child, which in turn contains
@@ -4600,7 +4601,13 @@ function Invoke-HtmlTokenWalk {
 #      MALFORMED_SLIDEOUT_STRUCTURE
 #      MALFORMED_SLIDEUP_STRUCTURE
 #
-# 2. Overlay block contiguity: when more than one overlay construct exists
+# 2. Inner dialog secondary class: when the structural check passes, the
+#    inner .cc-dialog must carry the secondary class matching the overlay
+#    kind -- cc-dialog-modal inside a cc-modal-overlay, cc-dialog-slide
+#    inside a cc-slide-overlay, or cc-dialog-slideup inside a
+#    cc-slideup-overlay. Drift code: MISSING_DIALOG_CLASS.
+#
+# 3. Overlay block contiguity: when more than one overlay construct exists
 #    on the page, they must form one contiguous block. Only formatting
 #    whitespace and per-construct purpose comments are permitted between
 #    constructs. Drift code: OVERLAY_BLOCK_NON_CONTIGUOUS.
@@ -4612,11 +4619,14 @@ function Invoke-HtmlTokenWalk {
 # Test the structural shape of one overlay construct's outer element.
 # Returns $true if the structure conforms to the unified overlay shape,
 # $false otherwise. When it returns $false the caller attaches the
-# corresponding MALFORMED_<KIND>_STRUCTURE drift code.
+# corresponding MALFORMED_<KIND>_STRUCTURE drift code. This function does
+# NOT validate the secondary cc-dialog-<kind> class on the inner dialog;
+# that check lives in Test-OverlayDialogClass and runs only when this
+# function returns $true.
 #
 # Required shape (parameterized by outer overlay element):
 #   <div class="cc-modal-overlay" id="..."> (or cc-slide-overlay / cc-slideup-overlay)
-#       <div class="cc-dialog">
+#       <div class="cc-dialog cc-dialog-modal"> (or cc-dialog-slide / cc-dialog-slideup)
 #           <div class="cc-dialog-header">
 #               <h3 class="cc-dialog-title">...</h3>
 #               <button class="cc-dialog-close">...</button>
@@ -4769,6 +4779,72 @@ function Test-OverlayConstructStructure {
     return $true
 }
 
+# Test whether the inner .cc-dialog of one overlay construct carries the
+# secondary class matching its overlay kind. Returns $true on match,
+# $false on mismatch or missing class. This function assumes the
+# structural check (Test-OverlayConstructStructure) has already returned
+# $true; it walks the same outer-element-to-inner-dialog path and
+# inspects the inner dialog's class token list.
+#
+# Expected class-by-kind mapping:
+#   modal    -> cc-dialog-modal
+#   slideout -> cc-dialog-slide
+#   slideup  -> cc-dialog-slideup
+#
+# When the kind is unrecognized, returns $true (no opinion). When the
+# inner .cc-dialog cannot be located (structural fault), returns $true
+# as well -- the structural fault is the caller's concern via
+# Test-OverlayConstructStructure.
+function Test-OverlayDialogClass {
+    param(
+        [Parameter(Mandatory)]$Tokens,
+        [Parameter(Mandatory)][int]$OuterTokenIdx,
+        [Parameter(Mandatory)][string]$OverlayKind
+    )
+
+    # Expected secondary class on .cc-dialog for each overlay kind.
+    $expected = switch ($OverlayKind) {
+        'modal'    { 'cc-dialog-modal' }
+        'slideout' { 'cc-dialog-slide' }
+        'slideup'  { 'cc-dialog-slideup' }
+        default    { $null }
+    }
+    if ($null -eq $expected) { return $true }
+
+    if ($OuterTokenIdx -lt 0 -or $OuterTokenIdx -ge $Tokens.Count) { return $true }
+    $outerCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $OuterTokenIdx
+    if ($outerCloseIdx -le $OuterTokenIdx) { return $true }
+
+    # Walk direct children of the outer overlay element looking for the
+    # single .cc-dialog child. Mirrors the discovery walk inside
+    # Test-OverlayConstructStructure.
+    $dialogIdx = -1
+    $cursor = $OuterTokenIdx + 1
+    while ($cursor -lt $outerCloseIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment')  { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag')   { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity')   { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $dialogIdx = $cursor
+            break
+        }
+        $cursor++
+    }
+    if ($dialogIdx -lt 0) { return $true }
+
+    $dialogTok = $Tokens[$dialogIdx]
+    if ([string]::IsNullOrWhiteSpace($dialogTok.AttrText)) { return $false }
+    $dialogAttrs = Get-AttributesFromToken -AttrText $dialogTok.AttrText
+    $dialogClass = Get-AttributeByName -Attrs $dialogAttrs -Name 'class'
+    if ($null -eq $dialogClass) { return $false }
+    $dialogClassTokens = @($dialogClass.Value.Trim() -split '\s+')
+
+    return ($dialogClassTokens -contains $expected)
+}
+
 function Invoke-OverlayPostWalkValidation {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -4809,6 +4885,43 @@ function Invoke-OverlayPostWalkValidation {
                     Add-DriftCode -Row $script:htmlFileRowByFile[$script:CurrentFile] `
                         -Code $structCode `
                         -Context "Overlay outer element at line $($c.AbsLine) does not conform to required nested .cc-dialog structure."
+                }
+            }
+        }
+        else {
+            # Structural check passed. Validate that the inner .cc-dialog
+            # carries the secondary class matching its overlay kind.
+            $dialogClassOk = Test-OverlayDialogClass `
+                -Tokens $Tokens `
+                -OuterTokenIdx $c.OuterTokenIdx `
+                -OverlayKind $c.OverlayKind
+            if (-not $dialogClassOk) {
+                $expectedClass = switch ($c.OverlayKind) {
+                    'modal'    { 'cc-dialog-modal' }
+                    'slideout' { 'cc-dialog-slide' }
+                    'slideup'  { 'cc-dialog-slideup' }
+                    default    { $null }
+                }
+                if ($null -ne $expectedClass) {
+                    $attached = $false
+                    if (-not [string]::IsNullOrEmpty($c.IdValue)) {
+                        foreach ($r in $script:rows) {
+                            if ($r.FileName -eq $script:CurrentFile -and
+                                $r.ComponentType -eq 'HTML_ID' -and
+                                $r.ComponentName -eq $c.IdValue -and
+                                $r.LineStart -eq $c.AbsLine) {
+                                Add-DriftCode -Row $r -Code 'MISSING_DIALOG_CLASS' `
+                                    -Context "Overlay construct '$($c.IdValue)' is missing the expected secondary class '$expectedClass' on its inner .cc-dialog."
+                                $attached = $true
+                                break
+                            }
+                        }
+                    }
+                    if (-not $attached -and $script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) {
+                        Add-DriftCode -Row $script:htmlFileRowByFile[$script:CurrentFile] `
+                            -Code 'MISSING_DIALOG_CLASS' `
+                            -Context "Overlay outer element at line $($c.AbsLine) is missing the expected secondary class '$expectedClass' on its inner .cc-dialog."
+                    }
                 }
             }
         }
