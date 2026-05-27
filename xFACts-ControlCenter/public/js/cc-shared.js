@@ -876,10 +876,7 @@ function cc_tickEngineIndicator(slug) {
     if (!event) {
         els.bar.className = 'cc-engine-bar cc-disabled';
         if (els.card) els.card.className = 'cc-engine-card';
-        if (els.cd) {
-            els.cd.textContent = '';
-            els.cd.innerHTML = '&nbsp;';
-        }
+        if (els.cd) els.cd.textContent = '';
         return;
     }
 
@@ -942,7 +939,6 @@ function cc_tickEngineIndicator(slug) {
     if (els.card) els.card.className = cardCls;
     if (els.cd) {
         els.cd.textContent = cdText || '';
-        if (!cdText) els.cd.innerHTML = '&nbsp;';
         els.cd.className = (overdue || critical) ? 'cc-engine-countdown cc-cd-overdue' : 'cc-engine-countdown';
     }
 }
@@ -1015,13 +1011,13 @@ function cc_showEnginePopup(slug, procName, anchorEl) {
     var popup = document.createElement('div');
     popup.className = 'cc-engine-popup';
 
-    var statusColor = '#4ec9b0';
     var statusText = event.status || event.eventType;
+    var statusClass = 'cc-status-success';
     if (event.eventType === 'PROCESS_STARTED') {
-        statusColor = '#569cd6';
         statusText = 'RUNNING';
+        statusClass = 'cc-status-running';
     } else if (event.status === 'FAILED' || event.status === 'TIMEOUT') {
-        statusColor = '#f48771';
+        statusClass = 'cc-status-failed';
     }
 
     var durationText = event.durationMs != null
@@ -1051,7 +1047,7 @@ function cc_showEnginePopup(slug, procName, anchorEl) {
         '</div>' +
         '<div class="cc-engine-popup-row">' +
             '<span class="cc-engine-popup-label">Status</span>' +
-            '<span class="cc-engine-popup-value" style="color:' + statusColor + ';font-weight:600">' + statusText + '</span>' +
+            '<span class="cc-engine-popup-status ' + statusClass + '">' + statusText + '</span>' +
         '</div>';
 
     if (event.exitCode != null) {
@@ -1086,12 +1082,13 @@ function cc_showEnginePopup(slug, procName, anchorEl) {
         closeBtn.addEventListener('click', cc_closeEnginePopup);
     }
 
-    /* Position near the card. */
+    /* Position near the card. The top and right coordinates depend on the
+       clicked card's runtime bounding rect, so they are computed here and
+       applied directly. Static layout (position, z-index) lives in
+       cc-shared.css on .cc-engine-popup. */
     var rect = anchorEl.getBoundingClientRect();
-    popup.style.position = 'fixed';
     popup.style.top = (rect.bottom + 6) + 'px';
     popup.style.right = (window.innerWidth - rect.right) + 'px';
-    popup.style.zIndex = '9999';
 
     document.body.appendChild(popup);
     cc_enginePopupVisible = true;
@@ -1197,7 +1194,6 @@ function cc_updateConnectionBanner() {
     if (cc_engineSessionExpired) {
         el.className = 'cc-connection-banner cc-session-expired';
         el.innerHTML = 'Session expired \u2014 <a href="/login" class="cc-banner-link">Sign In</a>';
-        el.style.display = 'block';
         return;
     }
 
@@ -1205,17 +1201,14 @@ function cc_updateConnectionBanner() {
         case 'reconnecting':
             el.className = 'cc-connection-banner cc-reconnecting';
             el.textContent = 'Reconnecting to server\u2026';
-            el.style.display = 'block';
             break;
         case 'disconnected':
             el.className = 'cc-connection-banner cc-disconnected';
             el.textContent = 'Connection lost \u2014 server may be unavailable';
-            el.style.display = 'block';
             break;
         default:
             el.className = 'cc-connection-banner';
             el.textContent = '';
-            el.style.display = 'none';
     }
 }
 
@@ -1226,7 +1219,6 @@ function cc_showReloadingBanner() {
     if (!el) return;
     el.className = 'cc-connection-banner cc-reloading';
     el.textContent = 'Server reconnected \u2014 reloading\u2026';
-    el.style.display = 'block';
 }
 
 /* ============================================================================
@@ -1644,13 +1636,18 @@ function cc_clearRefreshSpin(e) {
    async flow. Both functions append an overlay to document.body and
    resolve when the user acts.
 
+   Generated markup is the modal overlay shape: an outer cc-modal-overlay
+   (full-viewport dimmer that flex-centers its content) containing one
+   nested .cc-dialog.cc-dialog-modal with cc-dialog-header, cc-dialog-body,
+   and cc-dialog-actions children.
+
    Usage:
-     cc_showAlert('File not found.', { title: 'Error', icon: '&#10005;', iconColor: '#f48771' });
+     cc_showAlert('File not found.', { title: 'Error' });
 
      cc_showConfirm('Delete this item?', {
          title: 'Confirm Delete',
          confirmLabel: 'Delete',
-         confirmClass: 'cc-modal-btn-danger'
+         confirmClass: 'cc-dialog-btn-danger'
      }).then(function(confirmed) { if (confirmed) { ... } });
 
      // For HTML content in the body:
@@ -1660,13 +1657,10 @@ function cc_clearRefreshSpin(e) {
 
 /* Promise-returning replacement for native alert(). Appends an overlay
    modal to document.body, focuses the OK button, and resolves the
-   returned promise when the user clicks OK. Options: title, icon,
-   iconColor, buttonLabel. */
+   returned promise when the user clicks OK. Options: title, buttonLabel. */
 function cc_showAlert(message, options) {
     var opts = options || {};
     var title = opts.title || 'Notice';
-    var icon = opts.icon || '&#9432;';
-    var iconColor = opts.iconColor || '#569cd6';
     var buttonLabel = opts.buttonLabel || 'OK';
 
     return new Promise(function(resolve) {
@@ -1674,19 +1668,21 @@ function cc_showAlert(message, options) {
         var overlay = document.createElement('div');
         overlay.id = id;
         overlay.className = 'cc-modal-overlay';
-        overlay.innerHTML = '<div class="cc-modal">'
-            + '<div class="cc-modal-header">'
-            + '<span class="cc-modal-icon" style="color:' + iconColor + '">' + icon + '</span>'
-            + '<span>' + cc_escapeHtml(title) + '</span>'
+        overlay.innerHTML = '<div class="cc-dialog cc-dialog-modal">'
+            + '<div class="cc-dialog-header">'
+            + '<h3 class="cc-dialog-title">' + cc_escapeHtml(title) + '</h3>'
             + '</div>'
-            + '<div class="cc-modal-body"><p>' + cc_escapeHtml(message) + '</p></div>'
-            + '<div class="cc-modal-actions">'
-            + '<button class="cc-modal-btn-primary" id="' + id + '-ok">' + cc_escapeHtml(buttonLabel) + '</button>'
-            + '</div></div>';
+            + '<div class="cc-dialog-body">'
+            + '<p class="cc-dialog-paragraph cc-last">' + cc_escapeHtml(message) + '</p>'
+            + '</div>'
+            + '<div class="cc-dialog-actions">'
+            + '<button class="cc-dialog-btn-primary" id="' + id + '-ok">' + cc_escapeHtml(buttonLabel) + '</button>'
+            + '</div>'
+            + '</div>';
         document.body.appendChild(overlay);
 
-        /* Wire the OK button via addEventListener; the previous inline
-           onclick assignment was a forbidden pattern. */
+        /* Wire the OK button via addEventListener; inline onclick is a
+           forbidden pattern. */
         var okBtn = document.getElementById(id + '-ok');
         okBtn.addEventListener('click', function() {
             overlay.remove();
@@ -1698,18 +1694,15 @@ function cc_showAlert(message, options) {
 
 /* Promise-returning replacement for native confirm(). Appends an overlay
    modal to document.body and resolves the returned promise with true on
-   confirm, false on cancel. Options: title, icon, iconColor,
-   confirmLabel, cancelLabel, confirmClass, html. The html option, when
-   true, lets the message string render as raw HTML (used for richer
-   confirmation prompts). */
+   confirm, false on cancel. Options: title, confirmLabel, cancelLabel,
+   confirmClass, html. The html option, when true, lets the message string
+   render as raw HTML (used for richer confirmation prompts). */
 function cc_showConfirm(message, options) {
     var opts = options || {};
     var title = opts.title || 'Confirm';
-    var icon = opts.icon || '&#9888;';
-    var iconColor = opts.iconColor || '#dcdcaa';
     var confirmLabel = opts.confirmLabel || 'Continue';
     var cancelLabel = opts.cancelLabel || 'Cancel';
-    var confirmClass = opts.confirmClass || 'cc-modal-btn-primary';
+    var confirmClass = opts.confirmClass || 'cc-dialog-btn-primary';
     var messageHtml = opts.html || false;
 
     return new Promise(function(resolve) {
@@ -1717,21 +1710,23 @@ function cc_showConfirm(message, options) {
         var overlay = document.createElement('div');
         overlay.id = id;
         overlay.className = 'cc-modal-overlay';
-        var bodyContent = messageHtml ? message : '<p>' + cc_escapeHtml(message) + '</p>';
-        overlay.innerHTML = '<div class="cc-modal">'
-            + '<div class="cc-modal-header">'
-            + '<span class="cc-modal-icon" style="color:' + iconColor + '">' + icon + '</span>'
-            + '<span>' + cc_escapeHtml(title) + '</span>'
+        var bodyContent = messageHtml
+            ? message
+            : '<p class="cc-dialog-paragraph cc-last">' + cc_escapeHtml(message) + '</p>';
+        overlay.innerHTML = '<div class="cc-dialog cc-dialog-modal">'
+            + '<div class="cc-dialog-header">'
+            + '<h3 class="cc-dialog-title">' + cc_escapeHtml(title) + '</h3>'
             + '</div>'
-            + '<div class="cc-modal-body">' + bodyContent + '</div>'
-            + '<div class="cc-modal-actions">'
-            + '<button class="cc-modal-btn-cancel" id="' + id + '-cancel">' + cc_escapeHtml(cancelLabel) + '</button>'
+            + '<div class="cc-dialog-body">' + bodyContent + '</div>'
+            + '<div class="cc-dialog-actions">'
+            + '<button class="cc-dialog-btn-cancel" id="' + id + '-cancel">' + cc_escapeHtml(cancelLabel) + '</button>'
             + '<button class="' + confirmClass + '" id="' + id + '-ok">' + cc_escapeHtml(confirmLabel) + '</button>'
-            + '</div></div>';
+            + '</div>'
+            + '</div>';
         document.body.appendChild(overlay);
 
-        /* Wire the cancel and OK buttons via addEventListener; the
-           previous inline onclick assignments were forbidden patterns. */
+        /* Wire the cancel and OK buttons via addEventListener; inline
+           onclick is a forbidden pattern. */
         document.getElementById(id + '-cancel').addEventListener('click', function() {
             overlay.remove();
             resolve(false);
