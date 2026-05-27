@@ -7,13 +7,13 @@
    chrome (nav bar, header bar, refresh info, sections, engine cards,
    connection banner, slide panels, modals, animations, design tokens) is
    provided by cc-shared.css per the CC Page Chrome Contract. This file
-   contains only the backup page's local content classes — pipeline status
+   contains only the backup page's local content classes -- pipeline status
    cards, queue and retention summary cards, active operations tables,
    storage drive gauges, backup type badges, and detail-modal sub-components.
 
    All page-local classes are prefixed bkp- to make scope visible at a
    glance: bkp-* in HTML or in another CSS file is unambiguously a backup
-   page concern. Shared classes (e.g., .cc-section, .cc-modal-body) consumed
+   page concern. Shared classes (e.g., .cc-section, .cc-dialog-body) consumed
    by this page's HTML are defined in cc-shared.css and referenced here
    only when this page needs to override or extend them.
 
@@ -161,7 +161,7 @@
 /* Modifier tag opting a card into the clickable variant (cursor pointer plus hover styling). Used on pipeline cards and status cards. */
 .bkp-clickable { }
 
-.bkp-pipeline-card.bkp-clickable { /* clickable card variant — opens detail slideout */
+.bkp-pipeline-card.bkp-clickable { /* clickable card variant -- opens detail slideout */
     cursor: pointer;
     transition: border-color var(--duration-instant) ease;
 }
@@ -235,7 +235,7 @@
 /* State tag indicating a status badge is in the success state. */
 .bkp-success { }
 
-.bkp-pipeline-status-badge.bkp-success { /* success state — teal pill */
+.bkp-pipeline-status-badge.bkp-success { /* success state -- teal pill */
     background: rgba(78, 201, 176, 0.2);
     color: var(--color-accent-shared);
 }
@@ -243,7 +243,7 @@
 /* State tag indicating a status badge is in the running state. */
 .bkp-running { }
 
-.bkp-pipeline-status-badge.bkp-running { /* running state — blue pill */
+.bkp-pipeline-status-badge.bkp-running { /* running state -- blue pill */
     background: rgba(86, 156, 214, 0.2);
     color: var(--color-accent-platform);
 }
@@ -251,7 +251,7 @@
 /* State tag indicating an element is in the warning state. Used on pipeline status badges and drive labels. */
 .bkp-warning { }
 
-.bkp-pipeline-status-badge.bkp-warning { /* warning state — yellow pill */
+.bkp-pipeline-status-badge.bkp-warning { /* warning state -- yellow pill */
     background: rgba(220, 220, 170, 0.2);
     color: var(--color-accent-departmental);
 }
@@ -259,7 +259,7 @@
 /* State tag indicating a status badge is in the failed state. */
 .bkp-failed { }
 
-.bkp-pipeline-status-badge.bkp-failed { /* failed state — orange pill */
+.bkp-pipeline-status-badge.bkp-failed { /* failed state -- orange pill */
     background: rgba(244, 135, 113, 0.2);
     color: var(--color-status-critical);
 }
@@ -267,7 +267,7 @@
 /* State tag indicating a status badge is in the unknown state. */
 .bkp-unknown { }
 
-.bkp-pipeline-status-badge.bkp-unknown { /* unknown state — gray pill */
+.bkp-pipeline-status-badge.bkp-unknown { /* unknown state -- gray pill */
     background: rgba(85, 85, 85, 0.2);
     color: var(--color-border-strong);
 }
@@ -313,7 +313,7 @@
     flex: 1;
 }
 
-.bkp-status-card.bkp-clickable { /* clickable card variant — opens detail slideout */
+.bkp-status-card.bkp-clickable { /* clickable card variant -- opens detail slideout */
     cursor: pointer;
     transition: border-color var(--duration-instant) ease, background var(--duration-instant) ease;
 }
@@ -387,7 +387,7 @@
     margin-bottom: 15px;
 }
 
-.bkp-operation-group:last-child { /* last group — no bottom margin */
+.bkp-operation-group:last-child { /* last group -- no bottom margin */
     margin-bottom: 0;
 }
 
@@ -436,7 +436,7 @@
     background: var(--color-bg-card-deep);
 }
 
-/* Filename cell — monospace font for visual alignment of paths. */
+/* Filename cell -- monospace font for visual alignment of paths. */
 .bkp-operation-file-name {
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-body);
@@ -492,7 +492,7 @@
     margin-bottom: 15px;
 }
 
-.bkp-storage-group:last-child { /* last storage group — no bottom margin */
+.bkp-storage-group:last-child { /* last storage group -- no bottom margin */
     margin-bottom: 0;
 }
 
@@ -514,7 +514,7 @@
     margin-bottom: var(--size-spacing-md);
 }
 
-.bkp-storage-drive:last-child { /* last drive in a group — no bottom margin */
+.bkp-storage-drive:last-child { /* last drive in a group -- no bottom margin */
     margin-bottom: 0;
 }
 
@@ -620,7 +620,7 @@
 /* Type tag marking a backup-type badge as the FULL backup type. */
 .bkp-type-full { }
 
-.bkp-backup-type-badge.bkp-type-full { /* FULL backup type — teal */
+.bkp-backup-type-badge.bkp-type-full { /* FULL backup type -- teal */
     background: rgba(78, 201, 176, 0.15);
     color: var(--color-accent-shared);
     border: var(--size-border-thin) solid rgba(78, 201, 176, 0.3);
@@ -629,7 +629,7 @@
 /* Type tag marking a backup-type badge as the DIFFERENTIAL backup type. */
 .bkp-type-diff { }
 
-.bkp-backup-type-badge.bkp-type-diff { /* DIFFERENTIAL backup type — blue */
+.bkp-backup-type-badge.bkp-type-diff { /* DIFFERENTIAL backup type -- blue */
     background: rgba(86, 156, 214, 0.15);
     color: var(--color-accent-platform);
     border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
@@ -638,7 +638,7 @@
 /* Type tag marking a backup-type badge as the TRANSACTION LOG backup type. */
 .bkp-type-log { }
 
-.bkp-backup-type-badge.bkp-type-log { /* TRANSACTION LOG backup type — muted yellow (informational, not warning) */
+.bkp-backup-type-badge.bkp-type-log { /* TRANSACTION LOG backup type -- muted yellow (informational, not warning) */
     background: rgba(220, 220, 170, 0.12);
     color: #b5b07a;
     border: var(--size-border-thin) solid rgba(220, 220, 170, 0.25);
@@ -647,15 +647,15 @@
 /* ============================================================================
    CONTENT: DETAIL MODAL CONTENT
    ----------------------------------------------------------------------------
-   Sub-components rendered inside the shared cc-modal-body when displaying
+   Sub-components rendered inside the shared cc-dialog-body when displaying
    pipeline or queue file-level detail. The outer modal container itself
-   uses the shared .cc-modal-overlay / .cc-modal.cc-wide / .cc-modal-header /
-   .cc-modal-body classes from cc-shared.css. These sub-components are
+   uses the shared .cc-modal-overlay.cc-wide / .cc-dialog / .cc-dialog-header /
+   .cc-dialog-body classes from cc-shared.css. These sub-components are
    page-local until a second page proves cross-page reuse.
    Prefix: bkp
    ============================================================================ */
 
-/* Detail summary bar — renders at top of modal body with key stats. */
+/* Detail summary bar -- renders at top of modal body with key stats. */
 .bkp-detail-summary {
     display: flex;
     gap: var(--size-spacing-2xl);
@@ -703,7 +703,7 @@
     font-weight: 600;
 }
 
-/* Detail data table — renders below the summary bar. */
+/* Detail data table -- renders below the summary bar. */
 .bkp-detail-table {
     width: 100%;
     border-collapse: collapse;
