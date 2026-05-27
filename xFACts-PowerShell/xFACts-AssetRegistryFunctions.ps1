@@ -49,6 +49,32 @@
 
     CHANGELOG
     ---------
+    2026-05-27  Get-PSFileHeaderInfo Pass 4: added a second carve-out to the
+                FILE ORGANIZATION block region. List entries inside the
+                FILE ORGANIZATION list verbatim-name the file's section
+                banners; when the file has a CHANGELOG section banner the
+                list entry for it also begins with 'CHANGELOG'. That list
+                entry is not a CHANGELOG block inside the header - it is
+                just naming a section banner. The FORBIDDEN_CHANGELOG_IN_HEADER
+                scan now skips lines inside the FILE ORG block to avoid
+                this false positive. Block bounds are computed once at
+                the top of Pass 4: $fileOrgBlockStart at the line two
+                after the label (skipping the label and separator);
+                $fileOrgBlockEnd at the first blank line or end of header.
+                Existing separator carve-out behavior unchanged.
+    2026-05-26  Get-PSFileHeaderInfo Pass 4 inline-divider carve-out for the
+                FILE ORGANIZATION separator. The separator line immediately
+                following the FILE ORGANIZATION label inside .NOTES is
+                exactly 17 '-' characters and is explicitly allowed - it
+                must not fire FORBIDDEN_INLINE_DIVIDER_IN_HEADER. The pass
+                was rewritten from a foreach loop into a for-index loop
+                that pre-computes the FILE ORGANIZATION label index, then
+                exempts a single line at (index + 1) from the divider
+                check when (and only when) it matches the exact 17-dash
+                shape. Any other dash count in that position, and any
+                other dash-rule line elsewhere in the header, continues
+                to fire drift like before. No call-site changes; the
+                helper's public contract is unchanged.
     2026-05-25  Performance pass for the JS populator hot paths. Two changes
                 in Invoke-AstWalk and one in Get-SectionForLine:
                   - Get-SectionForLine: linear scan replaced with binary
@@ -92,20 +118,20 @@
                   - New shared helper Get-FileOrgList. Both Get-FileHeaderInfo
                     (CSS / JS) and Get-PSFileHeaderInfo (PS) now delegate
                     FILE ORGANIZATION list extraction to this single helper.
-                    The helper enforces verbatim banner-title entries per the
-                    new specs (CSS / JS / PS section 2.1): no numbered prefix
-                    stripping, no trailing "-- annotation" stripping. Any
+                    The helper enforces verbatim banner-title entries: no
+                    numbered prefix stripping, no trailing "-- annotation"
+                    stripping. Any
                     deviation surfaces as FILE_ORG_MISMATCH on the FILE_HEADER
                     row downstream. One place to change the rule, three
                     populators benefit.
                   - Get-BannerPrefixValue no longer silently strips trailing
                     "-- text" or "(parenthetical)" annotations from the Prefix
-                    line. The new specs (CSS / JS section 5) say the Prefix
-                    line declares exactly one value; anything else is drift.
-                    Stripped accommodations let MALFORMED_PREFIX_VALUE catch
-                    real authoring drift instead of hiding it.
+                    line. The Prefix line declares exactly one value; anything
+                    else is drift. Stripped accommodations let
+                    MALFORMED_PREFIX_VALUE catch real authoring drift instead
+                    of hiding it.
                   - Test-PrefixValueIsValid drops the hardcoded 3-character
-                    lowercase shape constraint. The new CSS / JS specs do
+                    lowercase shape constraint. The CSS / JS specs do
                     not constrain page-prefix shape; that belongs to the
                     registry's CK constraint. The validator now accepts
                     'cc' or any non-empty token containing no whitespace
@@ -897,7 +923,7 @@ function Test-IsBannerComment {
 #                   BANNER_MISSING_DESCRIPTION      empty description block
 #                   MISSING_PREFIX_DECLARATION      no Prefix: line found
 #
-# Per CC_CSS_Spec.md Section 3, the canonical banner form is:
+# The canonical banner form is:
 #
 #     ============================================================================  (76 '=')
 #     <TYPE>: <NAME>
@@ -1738,7 +1764,7 @@ function Invoke-AstWalk {
 #                    MISSING_COMPONENT_DECLARATION (when -RequireComponent is set
 #                       and .COMPONENT is absent)
 #
-# Per CC_PS_Spec.md Sections 6 and 17.1, the canonical header form is:
+# The canonical PS header form is:
 #
 #     <#
 #     .SYNOPSIS
@@ -1909,10 +1935,67 @@ function Get-PSFileHeaderInfo {
     # ---- Pass 4: forbidden-content scanning of the entire header body ----
     # These checks run against the full body text. Each fires its own drift
     # code; multiple can fire on the same header.
-    foreach ($line in $lines) {
+    #
+    # FILE ORGANIZATION block carve-outs: the FILE ORGANIZATION region
+    # inside .NOTES is a list of section banner titles, one per line.
+    # Two carve-outs apply to scans of this region:
+    #   1. Separator carve-out (existing): the line immediately after the
+    #      FILE ORGANIZATION label may be exactly 17 '-' characters.
+    #      That single line is exempt from the inline-divider check.
+    #   2. CHANGELOG list-entry carve-out: list entries inside the FILE
+    #      ORGANIZATION block name the section banners verbatim. When the
+    #      file has a CHANGELOG section banner titled e.g.
+    #      'CHANGELOG: CHANGE HISTORY', the list entry for it also begins
+    #      with 'CHANGELOG'. That list entry is NOT a CHANGELOG block
+    #      inside the header; it is just naming a section banner.
+    #      List entries inside the FILE ORGANIZATION block are exempt
+    #      from the CHANGELOG-in-header check.
+    #
+    # We compute the FILE ORGANIZATION block's start and end line indices
+    # once, then use those bounds inside the per-line loop.
+    $fileOrgLabelIdx = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -cmatch '^\s*FILE\s+ORGANIZATION\s*$') {
+            $fileOrgLabelIdx = $i
+            break
+        }
+    }
+
+    # FILE ORGANIZATION block body: starts two lines after the label
+    # (skipping the label and the separator line), ends at the first
+    # blank line or end of header. When no FILE ORG label was found,
+    # both indices stay at -1 and the in-block check always evaluates
+    # to false.
+    $fileOrgBlockStart = -1
+    $fileOrgBlockEnd   = -1
+    if ($fileOrgLabelIdx -ge 0) {
+        $fileOrgBlockStart = $fileOrgLabelIdx + 2
+        for ($j = $fileOrgBlockStart; $j -lt $lines.Count; $j++) {
+            if ([string]::IsNullOrWhiteSpace($lines[$j])) {
+                $fileOrgBlockEnd = $j - 1
+                break
+            }
+        }
+        if ($fileOrgBlockEnd -lt 0) {
+            $fileOrgBlockEnd = $lines.Count - 1
+        }
+    }
+
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+
+        $isInsideFileOrgBlock = (
+            $fileOrgBlockStart -ge 0 -and
+            $i -ge $fileOrgBlockStart -and
+            $i -le $fileOrgBlockEnd
+        )
+
         # CHANGELOG keyword inside the header -> drift. CHANGELOG belongs in
-        # a dedicated section outside the header.
-        if ($line -cmatch '^\s*CHANGELOG\b') {
+        # a dedicated section outside the header. A list entry inside the
+        # FILE ORGANIZATION block that happens to begin with 'CHANGELOG' is
+        # not a CHANGELOG block; it is the name of a section banner the
+        # file declares, listed verbatim. Skip the check inside FILE ORG.
+        if (-not $isInsideFileOrgBlock -and $line -cmatch '^\s*CHANGELOG\b') {
             $info.HasChangelog = $true
             if ($info.DriftCodes -notcontains 'FORBIDDEN_CHANGELOG_IN_HEADER') {
                 $info.DriftCodes += 'FORBIDDEN_CHANGELOG_IN_HEADER'
@@ -1960,9 +2043,22 @@ function Get-PSFileHeaderInfo {
 
         # Inline divider rules of '=' or '-' INSIDE the header body
         # (separate from the <# / #> delimiters which are the outer
-        # comment boundary). Spec uses .NOTES blocks and section banners
-        # for separation; inline rules inside the header are drift.
-        if ($line -match '^\s*[=]{5,}\s*$' -or $line -match '^\s*[-]{5,}\s*$') {
+        # comment boundary). The header structure uses .NOTES blocks and
+        # section banners for separation; inline rules inside the header
+        # are drift.
+        #
+        # One carve-out: the FILE ORGANIZATION separator is exactly one
+        # line of exactly 17 '-' characters, positioned immediately after
+        # the FILE ORGANIZATION label. The line at ($fileOrgLabelIdx + 1)
+        # is exempt only when it matches that exact shape; any other dash
+        # count in that position is drift like everywhere else.
+        $isAllowedFileOrgSeparator = (
+            $fileOrgLabelIdx -ge 0 -and
+            $i -eq ($fileOrgLabelIdx + 1) -and
+            $line -match '^\s*-{17}\s*$'
+        )
+        if (-not $isAllowedFileOrgSeparator -and
+            ($line -match '^\s*[=]{5,}\s*$' -or $line -match '^\s*[-]{5,}\s*$')) {
             if ($info.DriftCodes -notcontains 'FORBIDDEN_INLINE_DIVIDER_IN_HEADER') {
                 $info.DriftCodes += 'FORBIDDEN_INLINE_DIVIDER_IN_HEADER'
             }
@@ -1970,8 +2066,9 @@ function Get-PSFileHeaderInfo {
     }
 
     # ---- Pass 4a: forbidden comment-based-help keywords ----
-    # Per spec §2.1, only .SYNOPSIS, .DESCRIPTION, .PARAMETER, .COMPONENT,
-    # and .NOTES are recognized. Any other .KEYWORD is FORBIDDEN_HEADER_KEYWORD.
+    # The recognized comment-based-help keywords are .SYNOPSIS,
+    # .DESCRIPTION, .PARAMETER, .COMPONENT, and .NOTES. Any other
+    # .KEYWORD is FORBIDDEN_HEADER_KEYWORD.
     $allowedHeaderTags = @('SYNOPSIS', 'DESCRIPTION', 'PARAMETER', 'COMPONENT', 'NOTES')
     foreach ($block in $blocks) {
         if ($block.Tag -notin $allowedHeaderTags) {
@@ -1982,8 +2079,8 @@ function Get-PSFileHeaderInfo {
     }
 
     # ---- Pass 4b: .NOTES field structure validation ----
-    # Per spec §2.1, .NOTES contains exactly three fields in this order:
-    # File Name, Location, FILE ORGANIZATION list. Two checks:
+    # .NOTES contains exactly three fields in this order: File Name,
+    # Location, FILE ORGANIZATION list. Two checks:
     #   MALFORMED_NOTES_FIELD - missing required fields or unexpected fields.
     #   NOTES_FIELD_ORDER_VIOLATION - fields present but out of canonical order.
     if ($info.Notes) {
