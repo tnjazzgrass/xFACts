@@ -207,6 +207,32 @@ The `<script>` tag appears as the last content in `<body>` before `</body>`.
 - The `<script>` tag has no other attributes -- no `defer`, no `async`, no `type`, no `crossorigin`.
 - The page-specific JS file is loaded dynamically by the bootloader based on the `data-cc-page` attribute (§1.1). It does not appear as a `<script>` tag in HTML.
 
+#### 3.2.2 Vendored library references
+
+A page that depends on a third-party browser library (for example, a charting library) references that library through a locally-hosted, vendored `<script>` tag. The library file is committed to the repository under `/public/js/` and served locally; it is never loaded from a CDN or other external origin.
+
+```
+<script src="/js/<library>"></script>
+```
+
+##### 3.2.2.1 Rules
+
+- A vendored library reference uses the form `<script src="/js/<library>"></script>` exactly, where `<library>` is the bare filename of a library in the vendored-library closed set below. No other attributes -- no `defer`, no `async`, no `type`, no `crossorigin`.
+- Vendored library references appear in `<body>`, after all page-specific content, immediately before the mandatory `<script src="/js/cc-shared.js"></script>` tag. They are the only `<script>` tags other than the shared tag permitted in the page, and the shared tag is always last.
+- When a page declares more than one vendored library reference, their relative order is the author's choice, but all of them precede the shared tag.
+- The `src` is always a local `/js/` path. A vendored reference whose `src` is an external URL (CDN, absolute `http(s)://`, protocol-relative) is drift.
+- The vendored-library set is closed. Adding a library requires a spec amendment to the table below.
+
+##### 3.2.2.2 Vendored library closed set
+
+| Library file | Purpose |
+|---|---|
+| `chart.min.js` | Chart.js charting library (canvas-based line/bar/time-series charts). |
+| `chartjs-adapter-date-fns.min.js` | Chart.js date adapter (self-contained build, includes date-fns) enabling time-scale axes. |
+| `xlsx.full.min.js` | SheetJS library for client-side parsing of uploaded Excel/CSV files (BDL Import). |
+
+Adding or renaming a vendored library requires updates to this table and to the populator's vendored-library allow-list.
+
 ---
 
 ## 4. Prefix discipline
@@ -577,6 +603,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | Inline `<style>` block (outside SVG) | -- (except per §1.4) |
 | Inline `style="..."` attribute on any element | -- |
 | Inline `<script>` block with body content (only the asset reference form `<script src="..."></script>` is permitted) | §3.2 |
+| Vendored library `<script>` reference with an external (non-`/js/`) `src`, with extra attributes, or placed outside the body slot before `cc-shared.js` | §3.2.2 |
 | Inline event handler attribute (`onclick`, `onchange`, any `on*`) on any element | §7 |
 | Function defined inside a route file's ScriptBlock that returns HTML | §11 |
 | Helper emitting a page-prefixed ID, class, action value, `data-*` attribute, or argument value referencing non-parameter state | §11.1 |
@@ -691,10 +718,10 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `MALFORMED_SHARED_CSS_REFERENCE` | Second CSS reference is not `/css/cc-shared.css`. | §3.1 |
 | `CSS_REFERENCE_ORDER_VIOLATION` | Page-specific reference appears after shared reference. | §3.1 |
 | `UNEXPECTED_CSS_REFERENCE` | More than two CSS references in `<head>`. | §3.1 |
-| `WRONG_SCRIPT_SOURCE` | `<script>` tag `src` is not `/js/cc-shared.js`. | §3.2 |
+| `WRONG_SCRIPT_SOURCE` | A `<script>` element's src attribute is not "/js/cc-shared.js" and is not a vendored library reference (§3.2.2). | §3.2 |
 | `MALFORMED_SCRIPT_TAG` | `<script>` tag has attributes other than `src`. | §3.2 |
 | `MISSING_SHARED_SCRIPT_TAG` | The mandated `<script src="/js/cc-shared.js"></script>` reference is missing from the page. | §3.2 |
-| `UNEXPECTED_SCRIPT_TAG` | More than one `<script>` tag appears in the page markup. Exactly one is permitted. | §3.2 |
+| `UNEXPECTED_SCRIPT_TAG` | A page contains more than one non-vendored `<script>` tag; exactly one (`cc-shared.js`) is permitted besides vendored library references (§3.2.2). | §3.2 |
 | `CHROME_ID_OUTSIDE_CLOSED_SET` | An ID starting with `cc-` is not in the §5.1 chrome ID set. | §5.1 |
 | `CHROME_ID_REUSED_AS_LOCAL` | A page-local element carries a chrome ID. | §5.3 |
 | `MISSING_PREFIX_ID` | Page-local ID does not begin with the page's prefix. | §5.3 |
