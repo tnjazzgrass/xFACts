@@ -1470,24 +1470,22 @@ function Get-AccessDeniedHtml {
         [string]$DisplayName = 'Unknown User',
         [string]$PageRoute = ''
     )
-
     <#
     .SYNOPSIS
         Returns a styled 403 Access Denied HTML page matching the Control Center theme.
-
     .DESCRIPTION
         Returns the complete HTML body for a page-level access denial,
         styled to match the Control Center dark theme. Embedded by page
         routes immediately after a Get-UserAccess check returns HasAccess =
-        $false, paired with a 403 status code.
-
+        $false, paired with a 403 status code. The inline <style> block is
+        permitted under CC_HTML_Spec section 1.4 because authentication
+        or authorization failure may coincide with conditions that prevent
+        loading of /css/cc-shared.css.
     .PARAMETER DisplayName
         The user's display name shown on the denial page.
-
     .PARAMETER PageRoute
         The page the user attempted to access. Currently informational; not rendered.
     #>
-
     return @"
 <!DOCTYPE html>
 <html>
@@ -1507,6 +1505,7 @@ function Get-AccessDeniedHtml {
         .denied-icon { font-size: 48px; margin-bottom: 20px; }
         h1 { color: #f14c4c; font-size: 24px; margin: 0 0 10px 0; }
         p { color: #888; margin: 10px 0; }
+        .denied-subtext { font-size: 12px; color: #666; }
         .home-link {
             display: inline-block; margin-top: 20px; padding: 10px 24px;
             background: #4ec9b0; color: #1e1e1e; text-decoration: none;
@@ -1520,7 +1519,7 @@ function Get-AccessDeniedHtml {
         <div class="denied-icon">&#128274;</div>
         <h1>Access Denied</h1>
         <p>Sorry $DisplayName, you don't have permission to access this page.</p>
-        <p style="font-size: 12px; color: #666;">If you believe this is an error, contact the Applications Team.</p>
+        <p class="denied-subtext">If you believe this is an error, contact the Applications Team.</p>
         <a href="/" class="home-link">Go Home</a>
     </div>
 </body>
