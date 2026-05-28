@@ -89,7 +89,7 @@ A helper module function emits a partial HTML fragment for substitution into a p
 
 ### 1.4 Access-denied page
 
-The 403 access-denied response is a complete page and is subject to every spec rule in this document. There are no carve-outs.
+The 403 access-denied response is a complete page and is subject to every spec rule in this document, with one exception: the page may include a single inline `<style>` block in its `<head>`. This carve-out exists because authentication or authorization failure may coincide with conditions that prevent the user's browser from loading `/css/cc-shared.css`, and the page must remain styled in that case. The carve-out applies only to the response emitted by the `Get-AccessDeniedHtml` helper function in `xFACts-CCShared.psm1`. The inline `style="..."` attribute prohibition is not affected.
 
 ---
 
@@ -574,7 +574,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | HTML comment containing PowerShell variable interpolation | §10.2 |
 | Unclosed HTML comment | §10.2 |
 | Non-purpose comment appearing inside the overlay block | §5.4, §10.2 |
-| Inline `<style>` block (outside SVG) | -- |
+| Inline `<style>` block (outside SVG) | -- (except per §1.4) |
 | Inline `style="..."` attribute on any element | -- |
 | Inline `<script>` block with body content (only the asset reference form `<script src="..."></script>` is permitted) | §3.2 |
 | Inline event handler attribute (`onclick`, `onchange`, any `on*`) on any element | §7 |
@@ -733,7 +733,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `MALFORMED_COMMENT_DASHES` | HTML comment body contains `--` other than the closing `-->`. | §10.2 |
 | `FORBIDDEN_COMMENT_INTERPOLATION` | HTML comment contains PowerShell variable interpolation. | §10.2 |
 | `MALFORMED_COMMENT_UNCLOSED` | HTML comment is unclosed. | §10.2 |
-| `FORBIDDEN_INLINE_STYLE_BLOCK` | `<style>` block in HTML markup outside SVG. | §12 |
+| `FORBIDDEN_INLINE_STYLE_BLOCK` | `<style>` block in HTML markup outside SVG. Not fired inside `Get-AccessDeniedHtml` per §1.4. | §12 |
 | `FORBIDDEN_INLINE_STYLE_ATTRIBUTE` | Element has an inline `style=""` attribute. | §12 |
 | `FORBIDDEN_INLINE_SCRIPT_BLOCK` | `<script>` element contains body content. | §3.2, §12 |
 | `FORBIDDEN_INLINE_EVENT_HANDLER` | Element has an inline `on*` event handler attribute. | §7, §12 |
