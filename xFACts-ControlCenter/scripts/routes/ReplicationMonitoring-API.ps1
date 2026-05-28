@@ -1,19 +1,45 @@
-# ============================================================================
-# xFACts Control Center - Replication Monitoring API Endpoints
-# Location: E:\xFACts-ControlCenter\scripts\routes\ReplicationMonitoring-API.ps1
-# Version: Tracked in dbo.System_Metadata (component: ServerOps.Replication)
-#
-# API endpoints for the Replication Monitoring page.
-# ============================================================================
+<#
+.SYNOPSIS
+    Pode API endpoints for the Replication Monitoring page.
 
-# ============================================================================
-# API: Current Agent Status
-# Returns latest snapshot per agent with registry context
-# ============================================================================
+.DESCRIPTION
+    Registers the read-only GET endpoints that back the Replication Monitoring
+    dashboard: current agent status, queue-depth history, end-to-end latency
+    history, delivery-rate (throughput) history, the replication event log
+    (with date and agent filters and BIDATA-correlation mode), and the
+    GlobalConfig replication thresholds. Every endpoint guards with
+    Test-ActionEndpoint and reads from the ServerOps.Replication_* tables via
+    the Invoke-XFActsQuery wrapper, returning JSON.
+
+.COMPONENT
+    ServerOps.Replication
+
+.NOTES
+    File Name : ReplicationMonitoring-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes
+
+    FILE ORGANIZATION
+    -----------------
+        ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   The read-only GET endpoints backing the Replication Monitoring page. Each
+   Add-PodeRoute scriptblock performs the RBAC check via Test-ActionEndpoint,
+   queries the ServerOps.Replication tables through Invoke-XFActsQuery, and
+   returns the JSON response shape consumed by replication-monitoring.js. On
+   error each returns an object carrying an Error property with HTTP 500.
+   Prefix: (none)
+   ============================================================================ #>
+
 Add-PodeRoute -Method Get -Path '/api/replication/agent-status' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $query = @"
-SELECT 
+SELECT
     r.publication_registry_id,
     r.publication_name,
     r.publisher_db,
@@ -59,22 +85,20 @@ ORDER BY r.agent_type, r.publication_name
     }
 }
 
-# ============================================================================
-# API: Queue Depth History
-# Returns pending_command_count over time for Distribution agents
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/replication/queue-history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $minutes = $WebEvent.Query['minutes']
         if (-not $minutes) { $minutes = 60 }
-        
+
         $query = @"
-SELECT 
+SELECT
     r.publication_name,
     h.pending_command_count,
     CONVERT(VARCHAR(23), h.collected_dttm, 126) AS collected_dttm
 FROM ServerOps.Replication_AgentHistory h
-INNER JOIN ServerOps.Replication_PublicationRegistry r 
+INNER JOIN ServerOps.Replication_PublicationRegistry r
     ON h.publication_registry_id = r.publication_registry_id
 WHERE r.agent_type = 'Distribution'
   AND r.is_dropped = 0
@@ -89,17 +113,15 @@ ORDER BY h.collected_dttm ASC, r.publication_name
     }
 }
 
-# ============================================================================
-# API: Latency History
-# Returns tracer token latency over time
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/replication/latency-history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $minutes = $WebEvent.Query['minutes']
         if (-not $minutes) { $minutes = 60 }
-        
+
         $query = @"
-SELECT 
+SELECT
     r.publication_name,
     r.subscriber_name,
     l.total_latency_ms,
@@ -107,7 +129,7 @@ SELECT
     l.distributor_to_subscriber_ms,
     CONVERT(VARCHAR(23), l.collected_dttm, 126) AS collected_dttm
 FROM ServerOps.Replication_LatencyHistory l
-INNER JOIN ServerOps.Replication_PublicationRegistry r 
+INNER JOIN ServerOps.Replication_PublicationRegistry r
     ON l.publication_registry_id = r.publication_registry_id
 WHERE r.is_dropped = 0
   AND l.collected_dttm >= DATEADD(MINUTE, -$minutes, GETDATE())
@@ -121,23 +143,21 @@ ORDER BY l.collected_dttm ASC, r.publication_name
     }
 }
 
-# ============================================================================
-# API: Throughput History
-# Returns delivery_rate over time for all agents
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/replication/throughput-history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $minutes = $WebEvent.Query['minutes']
         if (-not $minutes) { $minutes = 60 }
-        
+
         $query = @"
-SELECT 
+SELECT
     r.publication_name,
     r.agent_type,
     h.delivery_rate,
     CONVERT(VARCHAR(23), h.collected_dttm, 126) AS collected_dttm
 FROM ServerOps.Replication_AgentHistory h
-INNER JOIN ServerOps.Replication_PublicationRegistry r 
+INNER JOIN ServerOps.Replication_PublicationRegistry r
     ON h.publication_registry_id = r.publication_registry_id
 WHERE r.is_dropped = 0
   AND h.collected_dttm >= DATEADD(MINUTE, -$minutes, GETDATE())
@@ -151,33 +171,31 @@ ORDER BY h.collected_dttm ASC, r.agent_type, r.publication_name
     }
 }
 
-# ============================================================================
-# API: Event Log
-# Returns all events for a given date, optionally filtered by publication_registry_id
-# Supports correlation mode: ?correlated=1 returns all events with correlation_source across all dates
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/replication/events' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $correlated = $WebEvent.Query['correlated']
         $date = $WebEvent.Query['date']
         if (-not $date) { $date = (Get-Date).ToString('yyyy-MM-dd') }
-        
+
         $agentFilter = $WebEvent.Query['agent']
-        
+
+        # Correlation mode returns all events carrying a correlation_source
+        # across every date; normal mode filters to a single date.
         if ($correlated -eq '1') {
-            # Correlation mode: all events with correlation_source, no date filter
             $whereClause = "WHERE e.correlation_source IS NOT NULL"
         }
         else {
             $whereClause = "WHERE CAST(e.event_dttm AS DATE) = @date"
         }
-        
+
         if ($agentFilter -and $agentFilter -ne 'ALL') {
             $whereClause += " AND e.publication_registry_id = @agent"
         }
-        
+
         $query = @"
-SELECT 
+SELECT
     e.event_id,
     e.publication_registry_id,
     r.publication_name,
@@ -195,7 +213,7 @@ SELECT
     e.correlation_source,
     CONVERT(VARCHAR(23), e.collected_dttm, 126) AS collected_dttm
 FROM ServerOps.Replication_EventLog e
-INNER JOIN ServerOps.Replication_PublicationRegistry r 
+INNER JOIN ServerOps.Replication_PublicationRegistry r
     ON e.publication_registry_id = r.publication_registry_id
 $whereClause
 ORDER BY e.event_dttm DESC
@@ -207,9 +225,9 @@ ORDER BY e.event_dttm DESC
         if ($agentFilter -and $agentFilter -ne 'ALL') {
             $params.agent = [int]$agentFilter
         }
-        
+
         $results = Invoke-XFActsQuery -Query $query -Parameters $params
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             events = $results
             date = if ($correlated -eq '1') { 'all' } else { $date }
@@ -222,26 +240,24 @@ ORDER BY e.event_dttm DESC
     }
 }
 
-# ============================================================================
-# API: Thresholds
-# Returns current GlobalConfig thresholds for replication
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/replication/thresholds' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $query = @"
 SELECT setting_name, setting_value, data_type
 FROM dbo.GlobalConfig
-WHERE module_name = 'ServerOps' 
+WHERE module_name = 'ServerOps'
   AND category = 'Replication'
   AND is_active = 1
 "@
         $results = Invoke-XFActsQuery -Query $query
-        
+
         $thresholds = @{}
         foreach ($row in $results) {
             $thresholds[$row.setting_name] = $row.setting_value
         }
-        
+
         Write-PodeJsonResponse -Value $thresholds
     }
     catch {
