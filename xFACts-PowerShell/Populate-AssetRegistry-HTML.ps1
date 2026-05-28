@@ -4235,9 +4235,12 @@ function Invoke-HtmlTokenWalk {
             continue
         }
 
-        # Inline <style> block forbidden - attach to HTML_FILE row
+        # Inline <style> block forbidden - attach to HTML_FILE row.
+        # Per CC_HTML_Spec section 1.4 carve-out, a <style> block inside
+        # the Get-AccessDeniedHtml helper is permitted and does not fire.
         if ($t.TagName -eq 'style' -and $t.Kind -eq 'StartTag') {
-            if ($script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) {
+            if ($ParentFunction -ne 'Get-AccessDeniedHtml' -and
+                $script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) {
                 Add-DriftCode -Row $script:htmlFileRowByFile[$script:CurrentFile] `
                     -Code 'FORBIDDEN_INLINE_STYLE_BLOCK' `
                     -Context "Inline <style> block at line $absLine"
