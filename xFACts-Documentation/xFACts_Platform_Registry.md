@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-28 04:03:11
+Generated: 2026-05-28 14:20:38
 
 ## Module Registry
 
@@ -405,7 +405,9 @@ Generated: 2026-05-28 04:03:11
 | Tools.Operations | BDL_ImportLog | Database | Table | Tools | Audit trail for BDL import executions. One row per import capturing the full lifecycle from validation through DM submission. |
 | Tools.Operations | BDL_ImportTemplate | Database | Table | Tools | Saved column mapping templates for BDL Import. Stores reusable source-to-element field mappings per entity type, allowing users to apply a known file layout without manual column pairing. |
 | Tools.Operations | EnvironmentConfig | Database | Table | Tools | Per-environment configuration for Tools module operations. One row per DM environment with database instance and dmfs file import paths. API URLs sourced from dbo.ServerRegistry. |
-| Tools.Operations | xlsx.full.min.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\xlsx.full.min.js | SheetJS library for Excel file parsing (BDL Import) |
+| Tools.Operations | chart.min.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\chart.min.js | Chart.js charting library for canvas-based time-series charts |
+| Tools.Operations | chartjs-adapter-date-fns.min.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\chartjs-adapter-date-fns.min.js | Chart.js date adapter (self-contained date-fns bundle) for time-scale axes |
+| Tools.Operations | xlsx.full.min.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\xlsx.full.min.js | SheetJS library for Excel file parsing |
 | Tools.Utilities | sp_SyncColumnOrdinals | Database | Procedure | Tools | Aligns Object_Metadata column description sort_order values with actual sys.columns column_id ordinals for a specified table. Deactivates Object_Metadata rows for dropped columns. |
 | Tools.Utilities | parse-css.js | PowerShell | Script | E:\xFACts-PowerShell\parse-css.js | Node.js helper script that parses CSS source into structured AST output. Reads CSS from stdin, uses PostCSS 8.5.12 with postcss-selector-parser 7.1.1 to produce JSON containing rules, at-rules, comments, and decomposed selector trees with line numbers. Invoked as a subprocess by Populate-AssetRegistry-CSS.ps1 during catalog refresh. |
 | Tools.Utilities | parse-js.js | PowerShell | Script | E:\xFACts-PowerShell\parse-js.js | Node.js helper script that parses JavaScript source into structured AST output. Reads JS from stdin, uses Acorn 8.16.0 with acorn-walk 8.3.5 to produce ESTree-format JSON with full source position information. Invoked as a subprocess by Populate-AssetRegistry-JS.ps1 during catalog refresh. |
