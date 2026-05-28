@@ -129,6 +129,15 @@ $RecognizedEvents = @('click','change','input','submit','blur','focus','keydown'
 $SharedCssFiles = @('cc-shared.css')
 $SharedJsFiles  = @('cc-shared.js','engine-events.js')
 
+# Vendored third-party JS libraries. These are locally-hosted browser
+# libraries (downloaded and committed under public/js/, not CDN-loaded)
+# that a page may reference via a <script src="/js/<lib>"> tag placed in
+# <body> immediately before the mandatory cc-shared.js tag. They are
+# recognized references, not drift: excluded from the single-script-tag
+# count and exempt from the cc-shared.js src check. The set is closed;
+# adding a library requires a spec amendment (CC_HTML_Spec section 3.2).
+$VendoredJsFiles = @('chart.min.js','chartjs-adapter-date-fns.min.js','xlsx.full.min.js')
+
 # HTML void elements (per HTML5). These elements cannot have content and
 # therefore never produce a closing tag. Used by the walker's element-stack
 # tracker to skip pushing void elements as parent context - any text
@@ -3191,6 +3200,16 @@ function Get-PageShellDrift {
         for ($k = $bodyStartIdx + 1; $k -lt $bodyEndIdx; $k++) {
             $t = $Tokens[$k]
             if (($t.Kind -eq 'StartTag' -or $t.Kind -eq 'SelfClose') -and $t.TagName -eq 'script') {
+                # Vendored library references are recognized, not counted:
+                # exclude any <script> whose src bare filename is in the
+                # vendored allow-list so they don't trip the single-tag
+                # count or the shared-src check below.
+                $sAttrs = Get-AttributesFromToken -AttrText $t.AttrText
+                $sSrc   = Get-AttributeByName -Attrs $sAttrs -Name 'src'
+                if ($null -ne $sSrc -and -not [string]::IsNullOrWhiteSpace($sSrc.Value)) {
+                    $sBare = [System.IO.Path]::GetFileName([string]$sSrc.Value)
+                    if ($VendoredJsFiles -contains $sBare) { continue }
+                }
                 $scriptTags += $k
             }
         }
@@ -4320,7 +4339,8 @@ function Invoke-HtmlTokenWalk {
                         if (-not $scriptCodes.Contains('MALFORMED_JS_SCRIPT')) { [void]$scriptCodes.Add('MALFORMED_JS_SCRIPT') }
                     }
                 }
-                if ($src.Value -ne '/js/cc-shared.js') {
+                $srcBare = [System.IO.Path]::GetFileName([string]$src.Value)
+                if ($src.Value -ne '/js/cc-shared.js' -and $VendoredJsFiles -notcontains $srcBare) {
                     [void]$scriptCodes.Add('WRONG_SCRIPT_SOURCE')
                 }
                 Add-JsFileUsageRow `
