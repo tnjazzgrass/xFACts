@@ -351,6 +351,16 @@ $DocsSharedCssFiles = @(
 # that will be eliminated when pages migrate to cc-shared.js.
 $CanonicalSharedFile = 'cc-shared.js'
 
+# Vendored third-party JS libraries (locally-hosted browser libraries
+# committed under public/js/, not authored CC code). These are cataloged
+# as a single JS_FILE anchor row each but never parsed or walked: the CC
+# JS spec does not govern third-party minified bundles, so emitting
+# construct rows or drift against them would be noise. The anchor row
+# exists so page <script src="/js/<lib>"> USAGE references resolve to a
+# real DEFINITION instead of <undefined>. The set is closed; adding a
+# library requires a spec amendment (CC_HTML_Spec section 3.2.2).
+$VendoredJsFiles = @('chart.min.js','chartjs-adapter-date-fns.min.js','xlsx.full.min.js')
+
 # Files exempt from the FORBIDDEN_WINDOW_ASSIGNMENT check. Only cc-shared.js
 # may carry window.<name> = ... assignments. Listed separately from
 # $CcSharedFiles because the two lists serve different purposes (USAGE
@@ -1316,16 +1326,30 @@ function Invoke-JsParse {
 
 Write-Log "Discovering JS files..."
 
-$JsFiles = New-Object System.Collections.Generic.List[string]
+$JsFiles       = New-Object System.Collections.Generic.List[string]
+$VendoredFiles = New-Object System.Collections.Generic.List[string]
 foreach ($root in $JsScanRoots) {
     if (-not (Test-Path $root)) {
         Write-Log "Scan root not found, skipping: $root" 'WARN'
         continue
     }
-    $found = @(Get-ChildItem -Path $root -Filter '*.js' -Recurse -File |
-                 Where-Object { $_.Name -notlike '*.min.js' } |
+    $allJs = @(Get-ChildItem -Path $root -Filter '*.js' -Recurse -File |
                  Select-Object -ExpandProperty FullName)
-    foreach ($f in $found) { [void]$JsFiles.Add($f) }
+    foreach ($f in $allJs) {
+        $fName = [System.IO.Path]::GetFileName($f)
+        # Vendored libraries: anchor-only, never walked. Checked first so a
+        # vendored *.min.js (e.g. xlsx.full.min.js) is captured for anchoring
+        # rather than silently dropped by the *.min.js walk-set exclusion.
+        if ($VendoredJsFiles -contains $fName) {
+            [void]$VendoredFiles.Add($f)
+            continue
+        }
+        # Walk set: authored CC JS only. Minified files that are NOT on the
+        # vendored allow-list are excluded entirely (no walk, no anchor).
+        if ($fName -notlike '*.min.js') {
+            [void]$JsFiles.Add($f)
+        }
+    }
 }
 
 if (-not [string]::IsNullOrEmpty($FileFilter)) {
@@ -1341,7 +1365,6 @@ if (-not [string]::IsNullOrEmpty($FileFilter)) {
 } else {
     Write-Log ("Discovered {0} .js files to scan" -f $JsFiles.Count)
 }
-
 
 # ============================================================================
 # PASS 1 - PARSE ALL FILES, COLLECT SHARED-SCOPE DEFINITIONS (zone-aware)
@@ -4199,6 +4222,39 @@ foreach ($file in $JsFiles) {
 
     $delta = $script:rows.Count - $startCount
     Write-Host ("    -> {0} rows" -f $delta) -ForegroundColor Green
+}
+
+# ---- Vendored library anchor rows ----
+# Vendored third-party libraries are cataloged as a single JS_FILE anchor
+# row each and never parsed or walked: the CC JS spec does not govern
+# third-party minified bundles. The anchor row lets page <script src>
+# USAGE references resolve to a real DEFINITION (no <undefined> source).
+# Honors -FileFilter so a single-file run emits just the matching anchor.
+$vendoredToAnchor = $VendoredFiles
+if (-not [string]::IsNullOrEmpty($FileFilter)) {
+    $vendoredToAnchor = New-Object System.Collections.Generic.List[string]
+    foreach ($f in $VendoredFiles) {
+        $name = [System.IO.Path]::GetFileName($f)
+        if ($name -eq $FileFilter -or $name -like $FileFilter) {
+            [void]$vendoredToAnchor.Add($f)
+        }
+    }
+}
+
+foreach ($vfile in $vendoredToAnchor) {
+    $vName = [System.IO.Path]::GetFileName($vfile)
+    $vLineCount = 0
+    try {
+        $vLineCount = ((Get-Content -Path $vfile -Raw -Encoding UTF8 -ErrorAction Stop) -split "`n").Count
+    } catch {
+        Write-Log ("Could not read vendored file for line count: {0} ({1})" -f $vName, $_.Exception.Message) 'WARN'
+    }
+    $script:CurrentFile         = $vName
+    $script:CurrentFileIsShared = $true
+    $anchorRow = Add-JsFileRow -LineEnd $vLineCount
+    if ($null -ne $anchorRow) {
+        Write-Log ("Vendored library anchored (not walked): {0}" -f $vName)
+    }
 }
 
 # ============================================================================
