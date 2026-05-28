@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-28 14:20:38
+Generated: 2026-05-28 15:13:54
 
 ## Module Registry
 
