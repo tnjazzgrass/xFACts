@@ -248,8 +248,8 @@ Every identifier in HTML markup carries a prefix that identifies its ownership. 
 - Every class begins with the page's `cc_prefix` followed by `-` (page-owned classes), or with `cc-` (platform-owned chrome classes). No other forms.
 - Every `data-action-<event>` value begins with the page's `cc_prefix` followed by `-` (page-owned actions), or with `cc-` (platform-owned chrome actions). No other forms.
 - Every argument attribute name (`data-action-<arg-name>`) begins with the same prefix as its parent element's `data-action-<event>` attribute value. Page-owned action -> page-prefixed argument; `cc-` prefixed action -> `cc-` prefixed argument. See §7.4.
-- Every `data-*` attribute name not in the `data-action-*` family begins with `data-cc-` (platform-owned, defined by this spec or by chrome JavaScript) or `data-<page-prefix>-` (page-owned, defined by the route author). The set of valid platform-owned `data-cc-*` attribute names is the closed set in §13.4. No other forms.
-- The set of valid chrome IDs is the closed set in §5.1. The set of valid chrome action values is governed by `cc-shared.js`. The set of valid platform-owned `data-cc-*` attribute names is the closed set in §13.4. Adding a new platform identifier requires a spec amendment.
+- Every `data-*` attribute name not in the `data-action-*` family begins with `data-cc-` (platform-owned, defined by this spec or by chrome JavaScript) or `data-<page-prefix>-` (page-owned, defined by the route author). The set of valid platform-owned `data-cc-*` attribute names is the closed set in §14.4. No other forms.
+- The set of valid chrome IDs is the closed set in §5.1. The set of valid chrome action values is governed by `cc-shared.js`. The set of valid platform-owned `data-cc-*` attribute names is the closed set in §14.4. Adding a new platform identifier requires a spec amendment.
 
 ---
 
@@ -458,7 +458,7 @@ An element with a `data-action-<event>` attribute may declare zero or more argum
 A `data-action-<event>` attribute is valid only on:
 
 - An interactive HTML element: `<button>`, `<a>` with `href`, `<input>`, `<select>`, `<textarea>`.
-- An element carrying one of the three overlay container classes from §13.2: `cc-modal-overlay`, `cc-slide-overlay`, `cc-slideup-overlay`. This carve-out enables the "click outside the dialog to close" UX pattern on overlay constructs.
+- An element carrying one of the three overlay container classes from §14.2: `cc-modal-overlay`, `cc-slide-overlay`, `cc-slideup-overlay`. This carve-out enables the "click outside the dialog to close" UX pattern on overlay constructs.
 
 The carve-out list is closed. Adding a new non-interactive element type that may carry action attributes requires a spec amendment.
 
@@ -471,7 +471,7 @@ Pages and helper modules declare custom `data-*` attributes on HTML elements to 
 ### 8.1 Rules
 
 - Every `data-*` attribute name is either platform-owned (`data-cc-<name>`) or page-owned (`data-<page-prefix>-<name>`). Platform-owned attributes are defined by this spec or by chrome JavaScript; page-owned attributes are defined by the route author for page-local use. No other prefix forms.
-- The set of valid platform-owned `data-cc-*` attribute names is the closed set in §13.4. Adding a new platform-owned attribute requires a spec amendment.
+- The set of valid platform-owned `data-cc-*` attribute names is the closed set in §14.4. Adding a new platform-owned attribute requires a spec amendment.
 - Attribute names use lowercase letters, digits, and hyphens only.
 - Attribute values are static strings or fully-resolved PowerShell variables. Mixed interpolation is forbidden.
 
@@ -546,7 +546,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 - Every ID a helper emits is a chrome ID from the closed set in §5.1. Page-prefixed IDs are forbidden in helper-emitted HTML.
 - Every class a helper emits is `cc-` prefixed per §4. Page-prefixed classes are forbidden in helper-emitted HTML.
 - Every action value a helper emits is `cc-` prefixed per §4 and §7.
-- Every `data-*` attribute a helper emits is in the platform-owned set from §13.4 (`data-cc-*`). Page-prefixed `data-*` names are forbidden in helper-emitted HTML.
+- Every `data-*` attribute a helper emits is in the platform-owned set from §14.4 (`data-cc-*`). Page-prefixed `data-*` names are forbidden in helper-emitted HTML.
 - Argument attribute values in helper-emitted markup come from the helper's `param()` declarations or `foreach` iterators over those parameters. Values that reference script-scope, module-level, or ambient state are forbidden.
 
 ---
@@ -592,8 +592,8 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | Argument attribute name not carrying the same prefix as its parent action value | §7.4 |
 | Argument attribute name matching an event name from §7.3 | §7.4 |
 | Argument attribute value mixing static text with PowerShell interpolation | §7.4 |
-| `data-*` attribute name not in the platform-owned set (§13.4) and not beginning with `data-<page-prefix>-` | §4, §8 |
-| `data-cc-*` attribute outside the closed platform-owned set in §13.4 | §8 |
+| `data-*` attribute name not in the platform-owned set (§14.4) and not beginning with `data-<page-prefix>-` | §4, §8 |
+| `data-cc-*` attribute outside the closed platform-owned set in §14.4 | §8 |
 | `data-*` attribute value mixing static text with PowerShell interpolation | §8 |
 | User-facing attribute (`title`, `placeholder`, `aria-label`, `alt`) declared with empty value | §9.1 |
 | HTML comment containing `--` other than the closing `-->` | §10.2 |
@@ -611,11 +611,25 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 
 ---
 
-## 13. Chrome class and attribute reference
+## 13. Cross-spec resolution
+
+HTML files emit USAGE rows that reference identifiers defined by other file types. These references resolve against the catalog after every populator has run, in a dedicated resolve phase. Three reference types in HTML files are subject to cross-spec resolution: CSS class references in `class=""` attributes, CSS file references in `<link rel="stylesheet">` elements, and JS file references in `<script src="">` elements.
+
+The resolve phase matches each USAGE row to a DEFINITION row of the same `component_type` and `component_name`, within the same zone. When no matching DEFINITION exists in the catalog, the resolve phase stamps the appropriate drift code on the USAGE row.
+
+### 13.1 Rules
+
+- Every CSS class referenced by an HTML file has a matching `CSS_CLASS` DEFINITION row in the catalog.
+- Every CSS file referenced by an HTML file has a matching `CSS_FILE` DEFINITION row in the catalog.
+- Every JS file referenced by an HTML file has a matching `JS_FILE` DEFINITION row in the catalog.
+
+---
+
+## 14. Chrome class and attribute reference
 
 The chrome classes and platform-owned attributes referenced by this spec are defined in `cc-shared.css` and by this spec. The tables below are the contract -- when this spec references a chrome identifier, it must exist at the named location with the same name. Adding or renaming a chrome identifier requires updates in both files.
 
-### 13.1 Page chrome classes
+### 14.1 Page chrome classes
 
 | Class | Used by |
 |---|---|
@@ -633,7 +647,7 @@ The chrome classes and platform-owned attributes referenced by this spec are def
 | `cc-connection-banner` | Connection state banner placeholder (§2.4) |
 | `cc-page-error-banner` | Page boot error banner placeholder (§2.5) |
 
-### 13.2 Overlay construct classes
+### 14.2 Overlay construct classes
 
 | Class | Used by |
 |---|---|
@@ -650,7 +664,7 @@ The chrome classes and platform-owned attributes referenced by this spec are def
 | `cc-dialog-body` | Dialog main content area (shared) |
 | `cc-dialog-actions` | Dialog footer action button row (shared, optional) |
 
-### 13.3 Body section accent classes
+### 14.3 Body section accent classes
 
 The `<body>` carries a section accent class derived from `RBAC_NavSection.section_key`:
 
@@ -662,7 +676,7 @@ The `<body>` carries a section accent class derived from `RBAC_NavSection.sectio
 
 The list expands when `RBAC_NavSection` adds new sections. The spec follows registry state.
 
-### 13.4 Platform-owned `data-*` attributes
+### 14.4 Platform-owned `data-*` attributes
 
 The set of valid platform-owned `data-cc-*` attribute names is closed:
 
@@ -675,7 +689,7 @@ Adding a new platform-owned `data-cc-*` attribute requires a spec amendment to t
 
 ---
 
-## 14. Drift code reference
+## 15. Drift code reference
 
 Each rule that the populator enforces produces one drift code. This table is the contract between the spec and the populator.
 
@@ -752,8 +766,8 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `ARGUMENT_NAME_COLLIDES_WITH_EVENT` | Argument attribute name matches an event name from §7.3. | §7.4 |
 | `MALFORMED_ACTION_ARGUMENT_NAME` | Argument attribute name contains characters other than lowercase letters, digits, and hyphens. | §7.4 |
 | `FORBIDDEN_INLINE_ACTION_ARGUMENT_INTERPOLATION` | Argument attribute value mixes static text with PowerShell interpolation. | §7.4 |
-| `MALFORMED_DATA_ATTRIBUTE_NAME` | `data-*` attribute name not in §13.4 platform-owned set and not beginning with `data-<page-prefix>-`. | §4, §8 |
-| `UNREGISTERED_PLATFORM_DATA_ATTRIBUTE` | `data-cc-*` attribute name not in the §13.4 closed set. | §8 |
+| `MALFORMED_DATA_ATTRIBUTE_NAME` | `data-*` attribute name not in §14.4 platform-owned set and not beginning with `data-<page-prefix>-`. | §4, §8 |
+| `UNREGISTERED_PLATFORM_DATA_ATTRIBUTE` | `data-cc-*` attribute name not in the §14.4 closed set. | §8 |
 | `FORBIDDEN_INLINE_DATA_INTERPOLATION` | `data-*` attribute value mixes static text with PowerShell interpolation. | §8 |
 | `EMPTY_DISPLAY_TEXT` | User-facing attribute declared with empty value. | §9.1 |
 | `FORBIDDEN_TEXT_INTERPOLATION` | Text content uses a forbidden interpolation pattern. | §9.1 |
@@ -772,3 +786,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `FORBIDDEN_HELPER_PAGE_ACTION` | Helper emits a page-prefixed action value. | §11.1 |
 | `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE` | Helper emits a page-prefixed `data-*` attribute. | §11.1 |
 | `FORBIDDEN_HELPER_PAGE_ACTION_ARGUMENT` | Helper emits an argument attribute referencing non-parameter state. | §11.1 |
+| `HTML_CSS_CLASS_UNRESOLVED` | A `CSS_CLASS` USAGE row could not be matched to any `CSS_CLASS` DEFINITION row. | §13.1 |
+| `HTML_CSS_FILE_UNRESOLVED` | A `CSS_FILE` USAGE row could not be matched to any `CSS_FILE` DEFINITION row. | §13.1 |
+| `HTML_JS_FILE_UNRESOLVED` | A `JS_FILE` USAGE row could not be matched to any `JS_FILE` DEFINITION row. | §13.1 |
+| `UNRESOLVED_REFERENCE` | A cross-spec USAGE row remains in the `<pending>` state after the resolve phase completes. Indicates a gap in the resolve phase rather than a spec violation. | §13 |
