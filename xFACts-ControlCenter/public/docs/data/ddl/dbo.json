@@ -359,6 +359,15 @@
                                        },
                                        {
                                            "ordinal":  5,
+                                           "name":  "zone",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Partition identifier separating the Control Center catalog from the Documentation site catalog. Every USAGE row resolves only against DEFINITION rows in the same zone; cross-zone resolution does not occur. Valid values: \u0027cc\u0027 (Control Center application files) and \u0027docs\u0027 (Documentation site files). Written by every populator at row emission time based on the file path being scanned."
+                                       },
+                                       {
+                                           "ordinal":  6,
                                            "name":  "line_start",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -366,7 +375,7 @@
                                            "description":  "The 1-based source line where this construct begins."
                                        },
                                        {
-                                           "ordinal":  6,
+                                           "ordinal":  7,
                                            "name":  "line_end",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -374,7 +383,7 @@
                                            "description":  "The 1-based source line where this construct ends."
                                        },
                                        {
-                                           "ordinal":  7,
+                                           "ordinal":  8,
                                            "name":  "column_start",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -382,7 +391,7 @@
                                            "description":  "The 0-based column where this construct begins on its starting line."
                                        },
                                        {
-                                           "ordinal":  8,
+                                           "ordinal":  9,
                                            "name":  "component_type",
                                            "dataType":  "varchar",
                                            "length":  "50",
@@ -391,7 +400,7 @@
                                            "description":  "The type of construct this row represents."
                                        },
                                        {
-                                           "ordinal":  9,
+                                           "ordinal":  10,
                                            "name":  "component_name",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -400,7 +409,7 @@
                                            "description":  "The construct\u0027s identifier."
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  11,
                                            "name":  "variant_type",
                                            "dataType":  "varchar",
                                            "length":  "30",
@@ -409,7 +418,7 @@
                                            "description":  "Discriminates sub-flavors within a component_type."
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  12,
                                            "name":  "variant_qualifier_1",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -418,7 +427,7 @@
                                            "description":  "First qualifier slot of the variant."
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  13,
                                            "name":  "variant_qualifier_2",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -427,7 +436,7 @@
                                            "description":  "Second qualifier slot of the variant."
                                        },
                                        {
-                                           "ordinal":  15,
+                                           "ordinal":  14,
                                            "name":  "reference_type",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -436,7 +445,7 @@
                                            "description":  "Whether this row defines a construct or references one."
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  15,
                                            "name":  "scope",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -445,7 +454,7 @@
                                            "description":  "Whether the construct lives in a curated shared file or in a page-local file."
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  16,
                                            "name":  "source_file",
                                            "dataType":  "varchar",
                                            "length":  "200",
@@ -454,7 +463,7 @@
                                            "description":  "For DEFINITION rows, equals file_name. For USAGE rows, the file where the construct is defined."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  17,
                                            "name":  "source_section",
                                            "dataType":  "varchar",
                                            "length":  "300",
@@ -463,7 +472,7 @@
                                            "description":  "The full title of the section banner this row belongs to."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  18,
                                            "name":  "signature",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -472,7 +481,7 @@
                                            "description":  "Construct-specific structural detail."
                                        },
                                        {
-                                           "ordinal":  20,
+                                           "ordinal":  19,
                                            "name":  "has_dynamic_content",
                                            "dataType":  "bit",
                                            "nullable":  true,
@@ -480,7 +489,7 @@
                                            "description":  "When TRUE, the parent attribute or text construct from which this row was extracted also contains runtime-only content the populator cannot statically resolve (e.g., a class attribute that combines literal class names with a parameter-passed class name). When FALSE or NULL, the parent construct is fully captured in the catalog. Used by HTML and JS populator rows; not meaningful for CSS rows, which are always fully literal."
                                        },
                                        {
-                                           "ordinal":  21,
+                                           "ordinal":  20,
                                            "name":  "parent_function",
                                            "dataType":  "varchar",
                                            "length":  "200",
@@ -489,7 +498,7 @@
                                            "description":  "The enclosing context, where applicable."
                                        },
                                        {
-                                           "ordinal":  22,
+                                           "ordinal":  21,
                                            "name":  "raw_text",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -498,7 +507,7 @@
                                            "description":  "Verbatim source text of the construct."
                                        },
                                        {
-                                           "ordinal":  23,
+                                           "ordinal":  22,
                                            "name":  "purpose_description",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -507,7 +516,7 @@
                                            "description":  "Human-authored description of the construct, extracted from preceding comments."
                                        },
                                        {
-                                           "ordinal":  24,
+                                           "ordinal":  23,
                                            "name":  "occurrence_index",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -516,7 +525,7 @@
                                            "description":  "1-based ordinal disambiguator for repeated instances within a file."
                                        },
                                        {
-                                           "ordinal":  25,
+                                           "ordinal":  24,
                                            "name":  "drift_codes",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -525,7 +534,7 @@
                                            "description":  "Comma-separated list of spec-drift codes attached to this row."
                                        },
                                        {
-                                           "ordinal":  26,
+                                           "ordinal":  25,
                                            "name":  "drift_text",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -534,7 +543,7 @@
                                            "description":  "Pipe-separated human-readable descriptions corresponding to drift_codes."
                                        },
                                        {
-                                           "ordinal":  27,
+                                           "ordinal":  26,
                                            "name":  "last_parsed_dttm",
                                            "dataType":  "datetime2",
                                            "nullable":  false,
@@ -600,7 +609,11 @@
                                                 },
                                                 {
                                                     "name":  "CK_Asset_Registry_scope",
-                                                    "definition":  "([scope]=\u0027LOCAL\u0027 OR [scope]=\u0027SHARED\u0027)"
+                                                    "definition":  "([scope]=\u0027LOCAL\u0027 OR [scope]=\u0027SHARED\u0027 OR [scope]=\u0027\u003cpending\u003e\u0027 OR [scope]=\u0027\u003cundefined\u003e\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Asset_Registry_zone",
+                                                    "definition":  "([zone]=\u0027docs\u0027 OR [zone]=\u0027cc\u0027)"
                                                 }
                                             ]
                    },
