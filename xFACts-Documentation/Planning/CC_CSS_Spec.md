@@ -67,7 +67,7 @@ Each section opens with a multi-line block comment:
 
 ## 4. Section types
 
-Six section types are recognized:
+Five section types are recognized:
 
 | Order | TYPE | Purpose | Where it lives |
 |-------|------|---------|----------------|
@@ -75,14 +75,14 @@ Six section types are recognized:
 | 2 | `CHROME` | Universal page chrome — nav bar, header bar, refresh info, engine cards, connection banner. | Anchor file only. |
 | 3 | `LAYOUT` | Page-level structural layout. | Page files. At most one LAYOUT section per page. |
 | 4 | `CONTENT` | Page-specific content components — cards, tables, badges, panels, sub-components. | Page files. Multiple CONTENT sections permitted, one per logical concept. |
-| 5 | `OVERRIDES` | Last-resort overrides of shared classes for page-specific contexts. | Page files. |
-| 6 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements — idle overlay, toast notifications, loading spinners, confirmation flashes. | Anchor file or page file, scoped by overlay scope. |
+| 5 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements — idle overlay, toast notifications, loading spinners, confirmation flashes. | Anchor file or page file, scoped by overlay scope. |
 
 ### 4.1 Rules
 
 - `FOUNDATION` and `CHROME` sections live in exactly one file per component — the component's anchor file. Any other file containing a FOUNDATION or CHROME section is drift.
 - Section types appear in the order shown.
 - Multiple sections of the same type may appear in any author-chosen order. The type-order rule governs ordering between different types only.
+- A page file does not redefine or selectively modify chrome classes. When a page needs a behavior that chrome does not provide, the resolution is either a spec amendment that adds the variation to the chrome layer, or a page-local class under the page's prefix. Choose the chrome path when the variation is broadly reusable; the page-local path when it is specific to one page.
 
 ### 4.2 Anchor files
 
@@ -103,7 +103,7 @@ Every section banner declares one prefix via the `Prefix:` line. The prefix scop
 
 Two forms, no others:
 
-- **Page prefix** — the value of `Component_Registry.cc_prefix` for the file's component. Used in LAYOUT, CONTENT, OVERRIDES, and FEEDBACK_OVERLAYS sections of page files.
+- **Page prefix** — the value of `Component_Registry.cc_prefix` for the file's component. Used in LAYOUT, CONTENT, and page-file FEEDBACK_OVERLAYS sections of page files.
 - **Chrome prefix** — the literal token `cc`. Used in FOUNDATION, CHROME, and anchor-file FEEDBACK_OVERLAYS sections of the anchor file.
 
 ### 5.2 Rules
@@ -142,9 +142,9 @@ A class-on-class compound (`.foo.bar`) is not a variant. It is a rule that style
 ### 7.1 Rules
 
 - A variant follows its base class's purpose comment in the file. It does not carry its own purpose comment.
-- A class-on-class compound rule is neither a class definition nor a variant. It does not carry a purpose comment or a trailing inline comment. Each class token in the compound must be defined by a separate single-class rule in scope; when no such definition exists, the populator emits `UNDEFINED_CLASS_USAGE` on the compound's USAGE rows.
-- A base class definition precedes its pseudo-element rules, which precede its pseudo-class variants. A pseudo-element rule appearing before its base, or after a variant on the same class, is drift (`PSEUDO_ELEMENT_OUT_OF_ORDER`). A variant appearing before its base class definition is drift (`VARIANT_BEFORE_BASE`).
-- A class-on-class compound rule is neither a class definition nor a variant. It does not carry a purpose comment or a trailing inline comment. Each class token in the compound must be defined by a separate single-class rule in scope; when no such definition exists, the populator emits `UNDEFINED_CLASS_USAGE` on the compound's USAGE rows.
+- Every variant has a base class definition in the same file. A pseudo-class variant or a class-on-class compound that references a class without a single-class definition in the same file is drift.
+- A base class definition precedes its pseudo-element rules, which precede its pseudo-class variants. A pseudo-element rule appearing before its base, or after a variant on the same class, is drift. A variant appearing before its base class definition is drift.
+- A class-on-class compound rule is neither a class definition nor a variant. It does not carry a purpose comment or a trailing inline comment. Each class token in the compound must be defined by a separate single-class rule in the same file.
 - Every variant carries a trailing inline comment on the same line as the opening `{`, describing the state: `.foo:hover { /* state */ ... }`.
 - Every class token in a compound selector carries its section's declared prefix (§5).
 - Compound depth is capped at two class tokens. `.foo.bar.baz` and deeper compounds are forbidden.
@@ -202,7 +202,7 @@ Tokens follow the form `--<category>-<role>-<modifier>`, where:
 - Tokens are defined once, in the component's anchor file FOUNDATION section. Page files do not redeclare or override tokens locally.
 - A value used in two or more places in the codebase is a token. Single-use values may remain literals.
 - Pages reference tokens via `var(--token-name)` only. Hex literals or pixel literals where a token exists are drift.
-- Exactly one `:root` block per file. Multiple `:root` blocks are drift (`DUPLICATE_ROOT_BLOCK`).
+- Exactly one `:root` block per file. Multiple `:root` blocks are drift.
 - The `:root` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`.
 - Sub-section markers are permitted inside `:root` as group labels.
 - Within `:root`, blank lines may separate token groups. This is the only location where blank lines inside a rule body are permitted.
@@ -232,9 +232,9 @@ Rules that apply to the file as a whole.
 
 ### 13.1 Rules
 
-- Every two adjacent top-level constructs are separated by exactly one blank line. Zero is drift (`MISSING_BLANK_LINE_SEPARATOR`); two or more is drift (`EXCESS_BLANK_LINES`). Top-level constructs are: the file header, every section banner, every class definition, every variant, every pseudo-element rule, every sub-section marker, every `@media` block, every `@keyframes` block, and the `:root` block.
-- Every section banner is followed by at least one cataloguable construct before the next banner or end-of-file. An empty section is drift (`EMPTY_SECTION`).
-- The file ends with `}` followed by exactly one newline (`\n`). Missing trailing newline is drift (`MISSING_TRAILING_NEWLINE`).
+- Every two adjacent top-level constructs are separated by exactly one blank line. Top-level constructs are: the file header, every section banner, every class definition, every variant, every pseudo-element rule, every sub-section marker, every `@media` block, every `@keyframes` block, and the `:root` block.
+- Every section banner is followed by at least one cataloguable construct before the next banner or end-of-file.
+- The file ends with `}` followed by exactly one newline (`\n`).
 
 ---
 
@@ -299,37 +299,38 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `PREFIX_REGISTRY_MISMATCH` | A page-file banner's declared prefix does not match `Component_Registry.cc_prefix`. | §5.2 |
 | `ANCHOR_SECTION_INVALID_PREFIX` | A FOUNDATION, CHROME, or anchor-file FEEDBACK_OVERLAYS section declares a prefix other than `cc`. | §5.2 |
 | `PREFIX_MISMATCH` | A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked. | §5, §6.1, §7.1 |
-| `UNDEFINED_CLASS_USAGE` | A class participating in a compound or descendant rule has no standalone single-class definition in scope. | §7.1 |
+| `UNDEFINED_CLASS_USAGE` | A class participating in a class-on-class compound rule has no standalone single-class definition in the same file. | §7.1 |
+| `ORPHAN_VARIANT` | A pseudo-class variant references a class with no single-class definition in the same file. | §7.1 |
 | `PSEUDO_ELEMENT_OUT_OF_ORDER` | A pseudo-element rule appears before its base class or after a variant on the same class. | §7.1 |
 | `VARIANT_BEFORE_BASE` | A class variant appears before its base class definition in the file. | §7.1 |
 | `MISSING_PURPOSE_COMMENT` | A class definition, `:root` block, `@keyframes` block, or `@media` block is not preceded by a single-line purpose comment. | §6.1, §10.2, §11, §12.1 |
 | `MISSING_VARIANT_COMMENT` | A variant does not carry a trailing inline comment. | §7.1 |
 | `DUPLICATE_ROOT_BLOCK` | A file contains more than one `:root` block. | §10.2 |
-| `FORBIDDEN_ELEMENT_SELECTOR` | Element selector outside FOUNDATION. | §12 |
-| `FORBIDDEN_UNIVERSAL_SELECTOR` | Universal selector outside FOUNDATION. | §12 |
-| `FORBIDDEN_ATTRIBUTE_SELECTOR` | Attribute selector outside FOUNDATION. | §12 |
-| `FORBIDDEN_PSEUDO_ELEMENT_LOCATION` | Pseudo-element outside FOUNDATION not attached to a class. | §12 |
-| `FORBIDDEN_ID_SELECTOR` | Selector includes an `#id` token. | §12 |
-| `FORBIDDEN_GROUP_SELECTOR` | Selector contains a comma. | §12 |
-| `FORBIDDEN_DESCENDANT` | Selector contains a descendant combinator. | §7.2, §12 |
-| `FORBIDDEN_CHILD_COMBINATOR` | Selector contains a `>` combinator. | §12 |
-| `FORBIDDEN_ADJACENT_SIBLING` | Selector contains a `+` combinator. | §12 |
-| `FORBIDDEN_GENERAL_SIBLING` | Selector contains a `~` combinator. | §12 |
-| `COMPOUND_DEPTH_3PLUS` | Compound selector contains three or more class tokens. | §7.1, §12 |
-| `FORBIDDEN_STACKED_PSEUDO` | Compound selector contains two or more pseudo-classes. | §7.1, §12 |
-| `FORBIDDEN_NOT_PSEUDO` | Selector contains `:not(...)`. | §7.1, §12 |
-| `PSEUDO_INTERLEAVED` | Pseudo-class appears between two class tokens. | §12 |
-| `FORBIDDEN_AT_IMPORT` | File contains `@import`. | §12 |
-| `FORBIDDEN_AT_FONT_FACE` | File contains `@font-face`. | §12 |
-| `FORBIDDEN_AT_SUPPORTS` | File contains `@supports`. | §12 |
-| `FORBIDDEN_KEYFRAMES_LOCATION` | `@keyframes` appears outside the anchor file FOUNDATION. | §11, §12 |
-| `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` | Custom property definition appears outside the anchor file FOUNDATION. | §10.2, §12 |
-| `DRIFT_HEX_LITERAL` | Hex color literal where a token exists. | §10.2, §12 |
-| `DRIFT_PX_LITERAL` | Pixel literal where a size token exists. | §10.2, §12 |
-| `FORBIDDEN_COMPOUND_DECLARATION` | Two or more declarations on the same line. | §12 |
-| `BLANK_LINE_INSIDE_RULE` | Blank line inside a class definition outside `:root`. | §10.2, §12 |
-| `EXCESS_BLANK_LINES` | More than one blank line between top-level constructs. | §12 |
-| `FORBIDDEN_COMMENT_STYLE` | Comment does not match one of the four recognized forms. | §8, §12 |
+| `FORBIDDEN_ELEMENT_SELECTOR` | Element selector outside FOUNDATION. | §14 |
+| `FORBIDDEN_UNIVERSAL_SELECTOR` | Universal selector outside FOUNDATION. | §14 |
+| `FORBIDDEN_ATTRIBUTE_SELECTOR` | Attribute selector outside FOUNDATION. | §14 |
+| `FORBIDDEN_PSEUDO_ELEMENT_LOCATION` | Pseudo-element outside FOUNDATION not attached to a class. | §14 |
+| `FORBIDDEN_ID_SELECTOR` | Selector includes an `#id` token. | §14 |
+| `FORBIDDEN_GROUP_SELECTOR` | Selector contains a comma. | §14 |
+| `FORBIDDEN_DESCENDANT` | Selector contains a descendant combinator. | §7.2, §14 |
+| `FORBIDDEN_CHILD_COMBINATOR` | Selector contains a `>` combinator. | §14 |
+| `FORBIDDEN_ADJACENT_SIBLING` | Selector contains a `+` combinator. | §14 |
+| `FORBIDDEN_GENERAL_SIBLING` | Selector contains a `~` combinator. | §14 |
+| `COMPOUND_DEPTH_3PLUS` | Compound selector contains three or more class tokens. | §7.1, §14 |
+| `FORBIDDEN_STACKED_PSEUDO` | Compound selector contains two or more pseudo-classes. | §7.1, §14 |
+| `FORBIDDEN_NOT_PSEUDO` | Selector contains `:not(...)`. | §7.1, §14 |
+| `PSEUDO_INTERLEAVED` | Pseudo-class appears between two class tokens. | §14 |
+| `FORBIDDEN_AT_IMPORT` | File contains `@import`. | §14 |
+| `FORBIDDEN_AT_FONT_FACE` | File contains `@font-face`. | §14 |
+| `FORBIDDEN_AT_SUPPORTS` | File contains `@supports`. | §14 |
+| `FORBIDDEN_KEYFRAMES_LOCATION` | `@keyframes` appears outside the anchor file FOUNDATION. | §11, §14 |
+| `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` | Custom property definition appears outside the anchor file FOUNDATION. | §10.2, §14 |
+| `DRIFT_HEX_LITERAL` | Hex color literal where a token exists. | §10.2, §14 |
+| `DRIFT_PX_LITERAL` | Pixel literal where a size token exists. | §10.2, §14 |
+| `FORBIDDEN_COMPOUND_DECLARATION` | Two or more declarations on the same line. | §14 |
+| `BLANK_LINE_INSIDE_RULE` | Blank line inside a class definition outside `:root`. | §10.2, §14 |
+| `EXCESS_BLANK_LINES` | More than one blank line between top-level constructs. | §13.1, §14 |
+| `FORBIDDEN_COMMENT_STYLE` | Comment does not match one of the four recognized forms. | §8, §14 |
 | `MISSING_BLANK_LINE_SEPARATOR` | Two adjacent top-level constructs have no blank line between them. | §13.1 |
 | `EMPTY_SECTION` | A section banner is not followed by any cataloguable construct before the next banner or end-of-file. | §13.1 |
 | `MISSING_TRAILING_NEWLINE` | The file does not end with a single trailing newline. | §13.1 |
