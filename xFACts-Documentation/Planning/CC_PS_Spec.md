@@ -98,8 +98,8 @@ All other commentary uses `#` line comments.
 | TYPE | Purpose |
 |---|---|
 | `CHANGELOG` | Date-driven change history. The single source of file-level change tracking. |
-| `IMPORTS` | Dot-source statements and `Import-Module` calls. |
 | `PARAMETERS` | The `[CmdletBinding()]` attribute and `param()` block declaring script-level parameters. |
+| `IMPORTS` | Dot-source statements and `Import-Module` calls. |
 | `INITIALIZATION` | One-time setup function calls that must execute at file scope before other content (e.g., `Initialize-XFActsScript`). |
 | `CONSTANTS` | `$script:` declarations of immutable values. |
 | `VARIABLES` | `$script:` declarations of mutable values. |
@@ -113,8 +113,8 @@ All other commentary uses `#` line comments.
 | TYPE | page-route | api-route | module | standalone | shared-library |
 |---|---|---|---|---|---|
 | `CHANGELOG` | Allowed | Forbidden | Forbidden | Allowed | Allowed |
-| `IMPORTS` | Forbidden | Forbidden | Allowed | Allowed | Forbidden |
 | `PARAMETERS` | Forbidden | Forbidden | Forbidden | Allowed | Forbidden |
+| `IMPORTS` | Forbidden | Forbidden | Allowed | Allowed | Forbidden |
 | `INITIALIZATION` | Forbidden | Forbidden | Forbidden | Allowed | Forbidden |
 | `CONSTANTS` | Forbidden | Forbidden | Allowed | Allowed | Allowed |
 | `VARIABLES` | Forbidden | Forbidden | Allowed | Allowed | Allowed |
@@ -125,7 +125,7 @@ All other commentary uses `#` line comments.
 
 ### 4.2 Type ordering
 
-When multiple section types appear, they appear in this fixed order: `CHANGELOG`, `IMPORTS`, `PARAMETERS`, `INITIALIZATION`, `CONSTANTS`, `VARIABLES`, `FUNCTIONS`, then either `EXECUTION` or `ROUTE` (mutually exclusive per the matrix), then `EXPORTS`.
+When multiple section types appear, they appear in this fixed order: `CHANGELOG`, `PARAMETERS`, `IMPORTS`, `INITIALIZATION`, `CONSTANTS`, `VARIABLES`, `FUNCTIONS`, then either `EXECUTION` or `ROUTE` (mutually exclusive per the matrix), then `EXPORTS`.
 
 ### 4.3 Multiple banners of the same type
 
@@ -138,8 +138,8 @@ Singleton sections use fixed banner titles:
 | TYPE | Banner title |
 |---|---|
 | `CHANGELOG` | `CHANGELOG: CHANGE HISTORY` |
-| `IMPORTS` | `IMPORTS: SCRIPT DEPENDENCIES` |
 | `PARAMETERS` | `PARAMETERS: SCRIPT PARAMETERS` |
+| `IMPORTS` | `IMPORTS: SCRIPT DEPENDENCIES` |
 | `INITIALIZATION` | `INITIALIZATION: SCRIPT INITIALIZATION` |
 | `EXECUTION` | `EXECUTION: SCRIPT EXECUTION` |
 | `ROUTE` (page-route) | `ROUTE: PAGE PATH` |
@@ -154,17 +154,16 @@ Every section banner declares one prefix via the `Prefix:` line.
 
 ### 5.1 Prefix forms
 
-Three forms, no others:
+Two forms, no others:
 
 - **Page prefix** — the value of `Component_Registry.cc_prefix` for the file's component. Used in page-related files where identifiers carry the page prefix.
-- **Chrome prefix** — the literal token `cc`. Reserved for files whose component's `cc_prefix` is `cc`.
 - **`(none)` sentinel** — used in files whose component has `cc_prefix = NULL` (shared-library files and modules whose component is a platform-wide bucket), and in section types that have no top-level identifiers to govern (CHANGELOG, IMPORTS, PARAMETERS, INITIALIZATION, EXECUTION, ROUTE, EXPORTS). Functions in these files use PowerShell's `Verb-Noun` naming, which is not subject to the platform's prefix discipline.
 
 ### 5.2 Banner prefix rules
 
 - The `Prefix:` line is mandatory in every section banner.
 - The `Prefix:` line declares exactly one value. Comma-separated values are not permitted.
-- Sections without prefix-bearing identifiers (CHANGELOG, IMPORTS, PARAMETERS, INITIALIZATION, EXECUTION, ROUTE, EXPORTS) declare `Prefix: (none)`.
+- Sections without prefix-bearing identifiers (CHANGELOG, PARAMETERS, IMPORTS, INITIALIZATION, EXECUTION, ROUTE, EXPORTS) declare `Prefix: (none)`.
 - Sections with prefix-bearing identifiers (CONSTANTS, VARIABLES, FUNCTIONS) declare the file's registered prefix from `Component_Registry.cc_prefix`. When the file's component has `cc_prefix = NULL`, these sections declare `Prefix: (none)`.
 - `Component_Registry.cc_prefix` is the source of truth. When the file and registry disagree, the file is wrong.
 
@@ -216,14 +215,14 @@ Forbidden: `CHANGELOG`, `PARAMETERS`, `INITIALIZATION`, `EXECUTION`, `ROUTE`.
 #### 6.2.4 standalone
 
 Required: `EXECUTION` (exactly one, with NAME `SCRIPT EXECUTION`).
-Allowed: `CHANGELOG`, `IMPORTS`, `PARAMETERS`, `INITIALIZATION`, `CONSTANTS`, `VARIABLES`, `FUNCTIONS`.
+Allowed: `CHANGELOG`, `PARAMETERS`, `IMPORTS`, `INITIALIZATION`, `CONSTANTS`, `VARIABLES`, `FUNCTIONS`.
 Forbidden: `ROUTE`, `EXPORTS`.
 
 #### 6.2.5 shared-library
 
 Required: `FUNCTIONS` (1+).
 Allowed: `CHANGELOG`, `CONSTANTS`, `VARIABLES`.
-Forbidden: `IMPORTS`, `PARAMETERS`, `INITIALIZATION`, `EXECUTION`, `ROUTE`, `EXPORTS`.
+Forbidden: `PARAMETERS`, `IMPORTS`, `INITIALIZATION`, `EXECUTION`, `ROUTE`, `EXPORTS`.
 
 ---
 
@@ -534,7 +533,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `DUPLICATE_SINGULAR_SECTION` | A type marked "exactly one" appears more than once. | §4.1 |
 | `MALFORMED_SINGLETON_NAME` | A singleton section's banner title does not match the fixed value from §4.4. | §4.4 |
 | `MISSING_PREFIX_DECLARATION` | Banner missing the `Prefix:` line. | §5.2 |
-| `MALFORMED_PREFIX_VALUE` | Banner declares a `Prefix:` value that is neither the registered page prefix, `cc`, nor `(none)`. | §5.2 |
+| `MALFORMED_PREFIX_VALUE` | Banner declares a `Prefix:` value that is neither the registered page prefix, nor `(none)`. | §5.2 |
 | `PREFIX_REGISTRY_MISMATCH` | An identifier-bearing section (CONSTANTS, VARIABLES, FUNCTIONS) declares a `Prefix:` value that does not match the file's registered `Component_Registry.cc_prefix`. Identifier-free sections (CHANGELOG, IMPORTS, PARAMETERS, INITIALIZATION, EXECUTION, ROUTE, EXPORTS) declare `(none)` regardless of the file's registered prefix and are exempt from this check. | §5.2 |
 | `MISPLACED_NONE_PREFIX` | An identifier-bearing section (CONSTANTS, VARIABLES, FUNCTIONS) declares `Prefix: (none)` in a file whose component has a registered (non-NULL) `cc_prefix`. The section's identifiers carry the file's registered prefix, so the banner must declare that prefix rather than `(none)`. | §5.2 |
 | `PREFIX_MISSING` | Top-level identifier in a prefixable section does not begin with the file's registered prefix. | §5.3 |
