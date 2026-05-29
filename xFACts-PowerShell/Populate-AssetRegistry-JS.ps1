@@ -501,7 +501,6 @@ $DriftDescriptions = [ordered]@{
     'ENGINE_SLUG_JS_MISMATCH'           = "An ENGINE_PROCESSES entry's slug value does not match Orchestrator.ProcessRegistry.cc_engine_slug for the corresponding process. The slug declared in JS must match the slug registered in ProcessRegistry."
     'UNRESOLVED_DISPATCH_HANDLER'       = "A dispatch table entry references a handler function name that does not resolve to a function defined in the same file (page-side dispatch) or in cc-shared.js (shared-side dispatch). The handler must exist or the dispatched action will fail at runtime."
     'MALFORMED_ACTION_KEY'              = "A dispatch table key violates the action-value naming rules: page-side keys must be kebab-case (lowercase letters, digits, hyphens) and must NOT start with 'cc-' (which is reserved for shared chrome actions); shared-side keys MUST start with 'cc-'."
-    'JS_HTML_ID_UNRESOLVED'             = "A JS reference to an HTML ID (via getElementById, querySelector, etc.) does not resolve to any HTML_ID DEFINITION row in the catalog. Either the ID is not declared in any HTML route file, or the HTML populator has not yet run."
     'JS_HTML_ID_MALFORMED'              = "A JS reference to an HTML ID uses a string that contains characters outside the spec's lowercase-letters/digits/hyphens set, or does not begin with the file's registered cc_prefix followed by a hyphen. Page-local IDs must match the <prefix>-<purpose> form."
     # Forbidden patterns
     'FORBIDDEN_LET'                     = "A let declaration appears anywhere in the file."
@@ -1506,132 +1505,6 @@ Write-Log ("  Docs zone - shared classes:   {0}" -f $script:docsSharedClasses.Co
 
 
 # ============================================================================
-# CSS_CLASS DEFINITION PRELOAD (zone-aware)
-# ============================================================================
-# CSS_CLASS USAGE rows from the JS populator resolve to either SHARED or
-# LOCAL scope by looking up the class name in zone-bucketed maps loaded from
-# the catalog. The CSS populator must run first (it produces the DEFINITION
-# rows that this query reads). When the query returns zero rows or fails,
-# every CSS_CLASS USAGE row stamps as scope='LOCAL' / source_file='<undefined>'.
-
-Write-Log "Loading existing CSS_CLASS DEFINITION rows for scope resolution..."
-
-$cssDefs = Get-SqlData -Query @"
-SELECT component_name, scope, file_name
-FROM dbo.Asset_Registry
-WHERE component_type = 'CSS_CLASS'
-  AND reference_type = 'DEFINITION'
-  AND file_type = 'CSS';
-"@
-
-$script:ccSharedClassMap   = @{}
-$script:docsSharedClassMap = @{}
-$script:ccLocalClassMap    = @{}
-$script:docsLocalClassMap  = @{}
-$cssPreLoadState = 'QUERY_FAILED'
-
-if ($null -ne $cssDefs) {
-    $defArray = @($cssDefs)
-    if ($defArray.Count -eq 0) {
-        $cssPreLoadState = 'EMPTY'
-    } else {
-        $cssPreLoadState = 'OK'
-        foreach ($d in $defArray) {
-            $cn = $d.component_name
-            if ([string]::IsNullOrEmpty($cn)) { continue }
-            $fn = $d.file_name
-            $isDocs = ($DocsSharedCssFiles -contains $fn) -or ($fn -like 'docs-*')
-            if ($d.scope -eq 'SHARED') {
-                if ($isDocs) {
-                    if (-not $script:docsSharedClassMap.ContainsKey($cn)) { $script:docsSharedClassMap[$cn] = $fn }
-                } else {
-                    if (-not $script:ccSharedClassMap.ContainsKey($cn))   { $script:ccSharedClassMap[$cn] = $fn }
-                }
-            } else {
-                if ($isDocs) {
-                    if (-not $script:docsLocalClassMap.ContainsKey($cn)) { $script:docsLocalClassMap[$cn] = $fn }
-                } else {
-                    if (-not $script:ccLocalClassMap.ContainsKey($cn))   { $script:ccLocalClassMap[$cn] = $fn }
-                }
-            }
-        }
-    }
-}
-
-switch ($cssPreLoadState) {
-    'OK' {
-        Write-Log ("  CC zone   - shared CSS classes:     {0}" -f $script:ccSharedClassMap.Count)
-        Write-Log ("  CC zone   - local-only CSS classes: {0}" -f $script:ccLocalClassMap.Count)
-        Write-Log ("  Docs zone - shared CSS classes:     {0}" -f $script:docsSharedClassMap.Count)
-        Write-Log ("  Docs zone - local-only CSS classes: {0}" -f $script:docsLocalClassMap.Count)
-    }
-    'EMPTY' {
-        Write-Log "CSS_CLASS DEFINITION query returned zero rows. Class scope resolution will mark everything '<undefined>'." 'WARN'
-    }
-    'QUERY_FAILED' {
-        Write-Log "Could not load CSS_CLASS DEFINITION rows. Class scope resolution will mark everything '<undefined>'." 'WARN'
-    }
-}
-
-
-# ============================================================================
-# HTML_ID DEFINITION PRELOAD (cross-spec resolution)
-# ============================================================================
-# HTML_ID USAGE rows the JS populator emits (from getElementById /
-# querySelector / setAttribute('id', ...) / el.id = '...') are resolved
-# against HTML_ID DEFINITION rows from the HTML populator. The validation
-# fires JS_HTML_ID_UNRESOLVED on USAGE rows whose ID does not appear in
-# any HTML DEFINITION row, and JS_HTML_ID_MALFORMED on USAGE rows whose
-# ID string violates the spec's lowercase-letters/digits/hyphens rule
-# or whose ID does not begin with the file's registered cc_prefix + '-'.
-# HTML populator runs before JS in the standard pipeline order. In
-# standalone runs (before HTML has populated), the query returns zero
-# rows; cross-spec validation suppresses with a startup warning so JS
-# rows still emit cleanly without spurious drift.
-
-Write-Log "Loading existing HTML_ID DEFINITION rows for cross-spec resolution..."
-
-$htmlIdDefs = Get-SqlData -Query @"
-SELECT component_name, file_name
-FROM dbo.Asset_Registry
-WHERE component_type = 'HTML_ID'
-  AND reference_type = 'DEFINITION'
-  AND file_type = 'HTML';
-"@
-
-$script:htmlIdDefinitionMap = @{}
-$htmlIdPreLoadState = 'QUERY_FAILED'
-
-if ($null -ne $htmlIdDefs) {
-    $defArray = @($htmlIdDefs)
-    if ($defArray.Count -eq 0) {
-        $htmlIdPreLoadState = 'EMPTY'
-    } else {
-        $htmlIdPreLoadState = 'OK'
-        foreach ($d in $defArray) {
-            $cn = $d.component_name
-            if ([string]::IsNullOrEmpty($cn)) { continue }
-            if (-not $script:htmlIdDefinitionMap.ContainsKey($cn)) {
-                $script:htmlIdDefinitionMap[$cn] = $d.file_name
-            }
-        }
-    }
-}
-
-switch ($htmlIdPreLoadState) {
-    'OK' {
-        Write-Log ("  HTML_ID DEFINITION rows loaded: {0}" -f $script:htmlIdDefinitionMap.Count)
-    }
-    'EMPTY' {
-        Write-Log "HTML_ID DEFINITION query returned zero rows. JS_HTML_ID_UNRESOLVED will not be emitted (HTML populator has not yet run, or no IDs are declared)." 'WARN'
-    }
-    'QUERY_FAILED' {
-        Write-Log "Could not load HTML_ID DEFINITION rows. JS_HTML_ID_UNRESOLVED will not be emitted (resolution skipped)." 'WARN'
-    }
-}
-
-
-# ============================================================================
 # PROCESS REGISTRY PRELOAD (ENGINE_PROCESSES validation)
 # ============================================================================
 # ENGINE_PROCESSES validation cross-checks each page file's ENGINE_PROCESSES
@@ -1719,14 +1592,6 @@ $objectRegistryMisses = New-Object 'System.Collections.Generic.HashSet[string]'
 # ZONE-AWARE SHARED MAP ACCESSORS
 # ============================================================================
 
-function Get-ZoneSharedClassMap {
-    if ($script:CurrentFileZone -eq 'docs') { return $script:docsSharedClassMap }
-    return $script:ccSharedClassMap
-}
-function Get-ZoneLocalClassMap {
-    if ($script:CurrentFileZone -eq 'docs') { return $script:docsLocalClassMap }
-    return $script:ccLocalClassMap
-}
 # Defensive: explicit null-fallback with newly-created empty HashSet.
 # Two separate failure modes are guarded:
 # 1. PowerShell pipeline-unwrapping a HashSet on function return
@@ -1876,6 +1741,7 @@ function New-JsRow {
     return New-AssetRegistryRow `
         -FileName           $script:CurrentFile `
         -FileType           'JS' `
+        -Zone               $script:CurrentFileZone `
         -LineStart          $LineStart `
         -LineEnd            $LineEnd `
         -ColumnStart        $ColumnStart `
@@ -1892,18 +1758,6 @@ function New-JsRow {
         -ParentFunction     $ParentFunction `
         -RawText            $RawText `
         -PurposeDescription $PurposeDescription
-}
-
-# Resolve a CSS class name's scope and source file. DEFINITION rows aren't
-# emitted by the JS populator (CSS populator owns those); USAGE rows resolve
-# against the consumer's zone shared/local maps.
-function Resolve-CssClassUsage {
-    param([string]$ClassName)
-    $sharedMap = Get-ZoneSharedClassMap
-    $localMap  = Get-ZoneLocalClassMap
-    if ($sharedMap.ContainsKey($ClassName)) { return @{ Scope = 'SHARED'; SourceFile = $sharedMap[$ClassName] } }
-    if ($localMap.ContainsKey($ClassName))  { return @{ Scope = 'LOCAL';  SourceFile = $localMap[$ClassName]  } }
-    return @{ Scope = 'LOCAL'; SourceFile = '<undefined>' }
 }
 
 # Emit the JS_FILE anchor row for the current file. Exactly one row per
@@ -2154,8 +2008,6 @@ function Add-ClassUsageRow {
     )
     if ([string]::IsNullOrWhiteSpace($ClassName)) { return $null }
 
-    $resolved = Resolve-CssClassUsage -ClassName $ClassName
-
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|CSS_CLASS|$ClassName|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
@@ -2163,8 +2015,8 @@ function Add-ClassUsageRow {
         -ComponentType  'CSS_CLASS' `
         -ComponentName  $ClassName `
         -ReferenceType  'USAGE' `
-        -Scope          $resolved.Scope `
-        -SourceFile     $resolved.SourceFile `
+        -Scope          '<pending>' `
+        -SourceFile     '<pending>' `
         -LineStart      $LineStart `
         -LineEnd        $LineStart `
         -ColumnStart    $ColumnStart `
@@ -2183,8 +2035,19 @@ function Add-HtmlIdRow {
     )
     if ([string]::IsNullOrWhiteSpace($IdName)) { return $null }
 
-    # HTML_ID rows are ALWAYS scope='LOCAL' regardless
-    # of whether the host file is shared. IDs are inherently page-specific.
+    # DEFINITION rows: the JS file is declaring the ID itself, so it is
+    # the source of truth (scope='LOCAL', source_file=current JS file).
+    # USAGE rows: the JS file is referencing an ID defined elsewhere
+    # (typically an HTML route file). The resolve phase fills in scope
+    # and source_file by matching against HTML_ID DEFINITION rows.
+    if ($ReferenceType -eq 'DEFINITION') {
+        $rowScope      = 'LOCAL'
+        $rowSourceFile = $script:CurrentFile
+    } else {
+        $rowScope      = '<pending>'
+        $rowSourceFile = '<pending>'
+    }
+
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|HTML_ID|$IdName|$ReferenceType|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
@@ -2192,8 +2055,8 @@ function Add-HtmlIdRow {
         -ComponentType  'HTML_ID' `
         -ComponentName  $IdName `
         -ReferenceType  $ReferenceType `
-        -Scope          'LOCAL' `
-        -SourceFile     $script:CurrentFile `
+        -Scope          $rowScope `
+        -SourceFile     $rowSourceFile `
         -LineStart      $LineStart `
         -LineEnd        $LineStart `
         -ColumnStart    $ColumnStart `
@@ -2208,18 +2071,6 @@ function Add-HtmlIdRow {
     if (Test-HtmlIdMalformed -IdName $IdName) {
         Add-DriftCode -Row $row -Code 'JS_HTML_ID_MALFORMED' `
             -Context "ID '$IdName' contains disallowed characters or does not begin with the file's registered cc_prefix + '-' or the chrome prefix 'cc-'."
-    }
-
-    # JS_HTML_ID_UNRESOLVED applies only to USAGE rows: a JS reference
-    # to an HTML ID that isn't declared anywhere in the HTML catalog.
-    # Suppressed entirely when the HTML preload didn't return any rows
-    # (standalone JS-only run), to avoid spurious drift while the HTML
-    # populator hasn't run yet.
-    if ($ReferenceType -eq 'USAGE' -and
-        $script:htmlIdDefinitionMap.Count -gt 0 -and
-        -not $script:htmlIdDefinitionMap.ContainsKey($IdName)) {
-        Add-DriftCode -Row $row -Code 'JS_HTML_ID_UNRESOLVED' `
-            -Context "ID '$IdName' has no matching HTML_ID DEFINITION row in the catalog."
     }
 
     return $row
@@ -4251,6 +4102,7 @@ foreach ($vfile in $vendoredToAnchor) {
     }
     $script:CurrentFile         = $vName
     $script:CurrentFileIsShared = $true
+    $script:CurrentFileZone     = 'cc'
     $anchorRow = Add-JsFileRow -LineEnd $vLineCount
     if ($null -ne $anchorRow) {
         Write-Log ("Vendored library anchored (not walked): {0}" -f $vName)
