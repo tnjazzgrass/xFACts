@@ -265,6 +265,7 @@ function New-AssetRegistryRow {
     param(
         [Parameter(Mandatory)][string]$FileName,
         [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS')][string]$FileType,
+        [Parameter(Mandatory)][ValidateSet('cc','docs')][string]$Zone,
         [int]$LineStart = 1,
         [int]$LineEnd = 0,
         [int]$ColumnStart = 0,
@@ -300,6 +301,7 @@ function New-AssetRegistryRow {
     return [ordered]@{
         FileName           = (Get-TruncatedFieldValue -Value $FileName          -MaxLength 200)
         FileType           = $FileType
+        Zone               = $Zone
         LineStart          = $LineStart
         LineEnd            = if ($LineEnd) { $LineEnd } else { $LineStart }
         ColumnStart        = $ColumnStart
@@ -677,6 +679,7 @@ function Invoke-AssetRegistryBulkInsert {
     [void]$dt.Columns.Add('file_name',           [string])
     [void]$dt.Columns.Add('object_registry_id',  [int])
     [void]$dt.Columns.Add('file_type',           [string])
+    [void]$dt.Columns.Add('zone',                [string])
     [void]$dt.Columns.Add('line_start',          [int])
     [void]$dt.Columns.Add('line_end',            [int])
     [void]$dt.Columns.Add('column_start',        [int])
@@ -710,6 +713,7 @@ function Invoke-AssetRegistryBulkInsert {
         }
 
         $row['file_type']           = $r.FileType
+        $row['zone']                = $r.Zone
         $row['line_start']          = if ($null -eq $r.LineStart)   { 1 } else { [int]$r.LineStart }
         $row['line_end']            = if ($null -eq $r.LineEnd)     { [System.DBNull]::Value } else { [int]$r.LineEnd }
         $row['column_start']        = if ($null -eq $r.ColumnStart) { [System.DBNull]::Value } else { [int]$r.ColumnStart }
