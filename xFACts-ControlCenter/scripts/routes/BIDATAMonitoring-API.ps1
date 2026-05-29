@@ -8,6 +8,16 @@
 #
 # CHANGELOG
 # ---------
+# 2026-05-14  todays-build: replaced hardcoded total_expected_steps = 20 with
+#             a cached live lookup against msdb.dbo.sysjobsteps on the
+#             configured source server. Uses inline Pode-state cache reads
+#             (Lock-PodeObject + Get-PodeState) with key 'bidata_step_count';
+#             TTL configured via GlobalConfig
+#             (cache_ttl_bidata_step_count_seconds, default 12h). On
+#             authoritative-lookup failure, falls back to MAX(step_id) from
+#             the most recent completed build in BIDATA.StepExecution; the
+#             fallback value is NOT cached so a transient source-server
+#             hiccup doesn't poison the cache for the full TTL window.
 # 2026-05-09  step-progress: added live next-step-name lookup for IN_PROGRESS
 #             builds. Queries msdb.dbo.sysjobsteps on the configured source
 #             server (GlobalConfig: bidata_build_source_server) at request
@@ -92,11 +102,146 @@ WHERE build_date >= DATEADD(DAY, -14, GETDATE())
         
         $conn.Close()
         
+        # -- Resolve total step count: check cache; on miss, query authoritative source and cache only if successful --
+        $totalExpectedSteps = $null
+        $cachedValue = $null
+        
+        # Try to read from the cache directly (don't run a scriptblock through Get-CachedResult --
+        # we need control over whether to write back, which Get-CachedResult doesn't provide).
+        try {
+            Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
+                $cache = Get-PodeState -Name 'ApiCache'
+                if ($cache -and $cache.ContainsKey('bidata_step_count')) {
+                    $entry = $cache['bidata_step_count']
+                    $ttlSeconds = 43200  # 12h fallback if config missing
+                    $config = Get-PodeState -Name 'ApiCacheConfig'
+                    if ($config -and $config.ContainsKey('cache_ttl_bidata_step_count_seconds')) {
+                        $ttlSeconds = [int]$config['cache_ttl_bidata_step_count_seconds']
+                    }
+                    $age = ((Get-Date) - $entry.Timestamp).TotalSeconds
+                    if ($age -lt $ttlSeconds) {
+                        $cachedValue = $entry.Data
+                    }
+                }
+            }
+        }
+        catch {
+            $cachedValue = $null
+        }
+        
+        if ($null -ne $cachedValue) {
+            $totalExpectedSteps = $cachedValue
+        }
+        else {
+            # Cache miss -- resolve from authoritative source (msdb.dbo.sysjobsteps on the source server).
+            # Read source server and job name from GlobalConfig.
+            $sourceServer = $null
+            $jobNameForSteps = $null
+            try {
+                $cfgConn2 = New-Object System.Data.SqlClient.SqlConnection($connString)
+                $cfgConn2.Open()
+                $cfgCmd2 = $cfgConn2.CreateCommand()
+                $cfgCmd2.CommandText = @"
+SELECT
+    MAX(CASE WHEN setting_name = 'bidata_build_source_server' THEN setting_value END) AS source_server,
+    MAX(CASE WHEN setting_name = 'bidata_build_job_name'      THEN setting_value END) AS job_name
+FROM dbo.GlobalConfig
+WHERE setting_name IN ('bidata_build_source_server', 'bidata_build_job_name')
+  AND is_active = 1
+"@
+                $cfgCmd2.CommandTimeout = 5
+                $cfgReader2 = $cfgCmd2.ExecuteReader()
+                if ($cfgReader2.Read()) {
+                    $sourceServer = if ($cfgReader2['source_server'] -is [DBNull]) { $null } else { [string]$cfgReader2['source_server'] }
+                    $jobNameForSteps = if ($cfgReader2['job_name'] -is [DBNull]) { $null } else { [string]$cfgReader2['job_name'] }
+                }
+                $cfgReader2.Close()
+                $cfgConn2.Close()
+            }
+            catch {
+                $sourceServer = $null
+                $jobNameForSteps = $null
+            }
+            
+            $authoritativeCount = $null
+            if (-not [string]::IsNullOrEmpty($sourceServer) -and -not [string]::IsNullOrEmpty($jobNameForSteps)) {
+                $msdbConn2 = $null
+                try {
+                    $msdbConnString2 = "Server=$sourceServer;Database=msdb;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=5;"
+                    $msdbConn2 = New-Object System.Data.SqlClient.SqlConnection($msdbConnString2)
+                    $msdbConn2.Open()
+                    $msdbCmd2 = $msdbConn2.CreateCommand()
+                    $msdbCmd2.CommandText = @"
+SELECT COUNT(*) AS step_count
+FROM msdb.dbo.sysjobs j
+INNER JOIN msdb.dbo.sysjobsteps js ON js.job_id = j.job_id
+WHERE j.name = @job_name
+"@
+                    $msdbCmd2.Parameters.AddWithValue("@job_name", $jobNameForSteps) | Out-Null
+                    $msdbCmd2.CommandTimeout = 5
+                    $stepResult = $msdbCmd2.ExecuteScalar()
+                    if ($stepResult -isnot [DBNull] -and $null -ne $stepResult -and [int]$stepResult -gt 0) {
+                        $authoritativeCount = [int]$stepResult
+                    }
+                }
+                catch {
+                    $authoritativeCount = $null
+                }
+                finally {
+                    if ($msdbConn2 -and $msdbConn2.State -eq 'Open') { $msdbConn2.Close() }
+                }
+            }
+            
+            if ($null -ne $authoritativeCount) {
+                # Authoritative success -- use it AND write to cache.
+                $totalExpectedSteps = $authoritativeCount
+                try {
+                    Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
+                        $cache = Get-PodeState -Name 'ApiCache'
+                        if ($null -ne $cache) {
+                            $cache['bidata_step_count'] = @{
+                                Data      = $authoritativeCount
+                                Timestamp = Get-Date
+                            }
+                        }
+                    }
+                }
+                catch {
+                    # Cache write failure is non-fatal; the value is already in $totalExpectedSteps
+                }
+            }
+            else {
+                # Authoritative path failed -- fall back to MAX(step_id) from most recent completed build.
+                # NOT cached, so a transient source-server hiccup doesn't poison the cache for the full TTL.
+                try {
+                    $fbConn2 = New-Object System.Data.SqlClient.SqlConnection($connString)
+                    $fbConn2.Open()
+                    $fbCmd2 = $fbConn2.CreateCommand()
+                    $fbCmd2.CommandText = @"
+SELECT TOP 1 (SELECT MAX(s.step_id) FROM BIDATA.StepExecution s WHERE s.build_id = b.build_id) AS max_step_id
+FROM BIDATA.BuildExecution b
+WHERE b.status = 'COMPLETED'
+ORDER BY b.build_id DESC
+"@
+                    $fbCmd2.CommandTimeout = 5
+                    $fbResult = $fbCmd2.ExecuteScalar()
+                    $fbConn2.Close()
+                    if ($fbResult -isnot [DBNull] -and $null -ne $fbResult -and [int]$fbResult -gt 0) {
+                        $totalExpectedSteps = [int]$fbResult
+                    }
+                }
+                catch {
+                    $totalExpectedSteps = $null
+                }
+            }
+        }
+        
+        
         Write-PodeJsonResponse -Value @{
             builds = $builds
             job_name = $jobName
             avg_duration_seconds = $avgDurationSeconds
-            total_expected_steps = 20
+            total_expected_steps = $totalExpectedSteps
             timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
@@ -250,7 +395,7 @@ GROUP BY s.step_id, s.step_name
         }
         
         $conn.Close()
-
+        
         # -- Look up the next step's name from sysjobsteps on the source server --
         # Best-effort: any failure leaves $nextStepName as $null and the UI
         # falls back to its existing "Step N executing" label.
