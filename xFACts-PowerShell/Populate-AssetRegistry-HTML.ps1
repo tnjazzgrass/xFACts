@@ -123,12 +123,6 @@ $PsScanRoots = @(
 # event name.
 $RecognizedEvents = @('click','change','input','submit','blur','focus','keydown','keyup')
 
-# Shared CSS / JS files. Used by USAGE-side resolvers to assign SHARED
-# scope when an HTML reference targets one of these filenames. Anything
-# else is treated as LOCAL.
-$SharedCssFiles = @('cc-shared.css')
-$SharedJsFiles  = @('cc-shared.js','engine-events.js')
-
 # Vendored third-party JS libraries. These are locally-hosted browser
 # libraries (downloaded and committed under public/js/, not CDN-loaded)
 # that a page may reference via a <script src="/js/<lib>"> tag placed in
@@ -338,12 +332,6 @@ $script:CurrentFile         = $null  # bare filename (e.g., 'BusinessServices.ps
 $script:CurrentFullPath     = $null  # full path
 $script:CurrentRegisteredType = $null # 'Route' | 'API' | 'Module' | $null
 $script:CurrentCcPrefix     = $null  # cc_prefix for this file's component, or $null
-
-# Cross-population resolution maps. Populated once at startup.
-$script:cssClassSharedMap   = @{}
-$script:cssClassLocalMap    = @{}
-$script:cssFileMap          = @{}
-$script:jsFileMap           = @{}
 
 # Per-file classification and cc_prefix lookup maps. Populated once at
 # startup from Object_Registry and Component_Registry.
@@ -2299,6 +2287,7 @@ function New-HtmlRow {
     return New-AssetRegistryRow `
         -FileName           $script:CurrentFile `
         -FileType           'HTML' `
+        -Zone               'cc' `
         -LineStart          $LineStart `
         -LineEnd            $LineEnd `
         -ColumnStart        $ColumnStart `
@@ -2667,8 +2656,6 @@ function Add-CssClassUsageRow {
     )
     if ([string]::IsNullOrWhiteSpace($ClassName)) { return $null }
 
-    $resolved = Resolve-CssClassScope -ClassName $ClassName
-
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|CSS_CLASS|$ClassName|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
@@ -2676,8 +2663,8 @@ function Add-CssClassUsageRow {
         -ComponentType      'CSS_CLASS' `
         -ComponentName      $ClassName `
         -ReferenceType      'USAGE' `
-        -Scope              $resolved.Scope `
-        -SourceFile         $resolved.SourceFile `
+        -Scope              '<pending>' `
+        -SourceFile         '<pending>' `
         -LineStart          $LineStart `
         -LineEnd            $LineStart `
         -ColumnStart        $ColumnStart `
@@ -2706,17 +2693,21 @@ function Add-CssFileUsageRow {
     )
     if ([string]::IsNullOrWhiteSpace($Href)) { return $null }
 
-    $resolved = Resolve-CssFileScope -Href $Href
+    # Use the bare filename (not the full URL path) as component_name and
+    # dedupe key. This matches the CSS populator's CSS_FILE DEFINITION
+    # rows, which use $script:CurrentFile (a bare filename). The full URL
+    # is preserved in raw_text for debugging context.
+    $bare = [System.IO.Path]::GetFileName($Href)
 
-    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|CSS_FILE|$Href|USAGE|"
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|CSS_FILE|$bare|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
     $row = New-HtmlRow `
         -ComponentType      'CSS_FILE' `
-        -ComponentName      $Href `
+        -ComponentName      $bare `
         -ReferenceType      'USAGE' `
-        -Scope              $resolved.Scope `
-        -SourceFile         $resolved.SourceFile `
+        -Scope              '<pending>' `
+        -SourceFile         '<pending>' `
         -LineStart          $LineStart `
         -LineEnd            $LineStart `
         -ColumnStart        $ColumnStart `
@@ -2745,17 +2736,21 @@ function Add-JsFileUsageRow {
     )
     if ([string]::IsNullOrWhiteSpace($Src)) { return $null }
 
-    $resolved = Resolve-JsFileScope -Src $Src
+    # Use the bare filename (not the full URL path) as component_name and
+    # dedupe key. This matches the JS populator's JS_FILE DEFINITION rows,
+    # which use $script:CurrentFile (a bare filename). The full URL is
+    # preserved in raw_text for debugging context.
+    $bare = [System.IO.Path]::GetFileName($Src)
 
-    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_FILE|$Src|USAGE|"
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|JS_FILE|$bare|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
     $row = New-HtmlRow `
         -ComponentType      'JS_FILE' `
-        -ComponentName      $Src `
+        -ComponentName      $bare `
         -ReferenceType      'USAGE' `
-        -Scope              $resolved.Scope `
-        -SourceFile         $resolved.SourceFile `
+        -Scope              '<pending>' `
+        -SourceFile         '<pending>' `
         -LineStart          $LineStart `
         -LineEnd            $LineStart `
         -ColumnStart        $ColumnStart `
@@ -2768,55 +2763,6 @@ function Add-JsFileUsageRow {
     return $row
 }
 
-# ============================================================================
-# CROSS-POPULATION SCOPE RESOLUTION
-# ============================================================================
-
-function Resolve-CssClassScope {
-    param([string]$ClassName)
-
-    if ([string]::IsNullOrWhiteSpace($ClassName)) {
-        return @{ Scope = 'LOCAL'; SourceFile = '<undefined>' }
-    }
-    if ($script:cssClassSharedMap.ContainsKey($ClassName)) {
-        return @{ Scope = 'SHARED'; SourceFile = $script:cssClassSharedMap[$ClassName] }
-    }
-    if ($script:cssClassLocalMap.ContainsKey($ClassName)) {
-        return @{ Scope = 'LOCAL'; SourceFile = $script:cssClassLocalMap[$ClassName] }
-    }
-    return @{ Scope = 'LOCAL'; SourceFile = '<undefined>' }
-}
-
-function Resolve-CssFileScope {
-    param([string]$Href)
-
-    if ([string]::IsNullOrWhiteSpace($Href)) {
-        return @{ Scope = 'LOCAL'; SourceFile = '<undefined>' }
-    }
-    $bare = [System.IO.Path]::GetFileName($Href)
-    if ($script:cssFileMap.ContainsKey($bare)) {
-        $scope = if ($SharedCssFiles -contains $bare) { 'SHARED' } else { 'LOCAL' }
-        return @{ Scope = $scope; SourceFile = $script:cssFileMap[$bare] }
-    }
-    # Unknown CSS file - default to LOCAL scope and '<undefined>' source.
-    $scope = if ($SharedCssFiles -contains $bare) { 'SHARED' } else { 'LOCAL' }
-    return @{ Scope = $scope; SourceFile = '<undefined>' }
-}
-
-function Resolve-JsFileScope {
-    param([string]$Src)
-
-    if ([string]::IsNullOrWhiteSpace($Src)) {
-        return @{ Scope = 'LOCAL'; SourceFile = '<undefined>' }
-    }
-    $bare = [System.IO.Path]::GetFileName($Src)
-    if ($script:jsFileMap.ContainsKey($bare)) {
-        $scope = if ($SharedJsFiles -contains $bare) { 'SHARED' } else { 'LOCAL' }
-        return @{ Scope = $scope; SourceFile = $script:jsFileMap[$bare] }
-    }
-    $scope = if ($SharedJsFiles -contains $bare) { 'SHARED' } else { 'LOCAL' }
-    return @{ Scope = $scope; SourceFile = '<undefined>' }
-}
 # ============================================================================
 # PAGE SHELL VALIDATION
 # ============================================================================
@@ -4422,8 +4368,7 @@ function Invoke-HtmlTokenWalk {
                         if (-not $IsHelperEmission -and -not [string]::IsNullOrEmpty($PagePrefix)) {
                             $expectedPrefix = "$PagePrefix-"
                             $isCcPrefixed = $cls.StartsWith('cc-')
-                            $isSharedClass = $script:cssClassSharedMap.ContainsKey($cls)
-                            if (-not $cls.StartsWith($expectedPrefix) -and -not $isCcPrefixed -and -not $isSharedClass) {
+                            if (-not $cls.StartsWith($expectedPrefix) -and -not $isCcPrefixed) {
                                 $perClassCodes += 'CLASS_PREFIX_MISMATCH'
                             }
                         }
@@ -6069,100 +6014,6 @@ foreach ($kv in $ccPrefixMap.GetEnumerator()) {
 Write-Log ("  cc_prefix entries loaded: {0} ({1} distinct prefixes)" -f $script:ccPrefixByFile.Count, $script:knownPagePrefixes.Count)
 
 $objectRegistryMisses = New-Object 'System.Collections.Generic.HashSet[string]'
-
-# ============================================================================
-# CROSS-POPULATION PRE-LOADS
-# ============================================================================
-
-Write-Log "Loading CSS_CLASS DEFINITION rows for scope resolution..."
-try {
-    $cssClassQuery = @"
-SELECT component_name, scope, file_name
-FROM dbo.Asset_Registry
-WHERE component_type IN ('CSS_CLASS','CSS_VARIANT')
-  AND reference_type = 'DEFINITION'
-  AND file_type      = 'CSS'
-"@
-    $cssClassResults = Invoke-Sqlcmd -ServerInstance $script:XFActsServerInstance `
-                                     -Database       $script:XFActsDatabase `
-                                     -Query          $cssClassQuery `
-                                     -QueryTimeout   60 `
-                                     -ApplicationName $script:XFActsAppName `
-                                     -ErrorAction Stop `
-                                     -SuppressProviderContextWarning -TrustServerCertificate
-    foreach ($row in $cssClassResults) {
-        $cn = [string]$row.component_name
-        if ([string]::IsNullOrEmpty($cn)) { continue }
-        if ($row.scope -eq 'SHARED') {
-            if (-not $script:cssClassSharedMap.ContainsKey($cn)) {
-                $script:cssClassSharedMap[$cn] = [string]$row.file_name
-            }
-        } else {
-            if (-not $script:cssClassLocalMap.ContainsKey($cn)) {
-                $script:cssClassLocalMap[$cn] = [string]$row.file_name
-            }
-        }
-    }
-}
-catch {
-    Write-Log "CSS_CLASS DEFINITION query failed: $($_.Exception.Message). USAGE rows will resolve to '<undefined>'." 'WARN'
-}
-Write-Log ("  CSS_CLASS DEFINITIONs loaded: {0} shared, {1} local" -f `
-           $script:cssClassSharedMap.Count, $script:cssClassLocalMap.Count)
-
-Write-Log "Loading CSS_FILE rows for asset-reference resolution..."
-try {
-    $cssFileQuery = @"
-SELECT component_name, file_name
-FROM dbo.Asset_Registry
-WHERE component_type = 'CSS_FILE'
-  AND reference_type = 'DEFINITION'
-"@
-    $cssFileResults = Invoke-Sqlcmd -ServerInstance $script:XFActsServerInstance `
-                                    -Database       $script:XFActsDatabase `
-                                    -Query          $cssFileQuery `
-                                    -QueryTimeout   30 `
-                                    -ApplicationName $script:XFActsAppName `
-                                    -ErrorAction Stop `
-                                    -SuppressProviderContextWarning -TrustServerCertificate
-    foreach ($row in $cssFileResults) {
-        $cn = [string]$row.component_name
-        if (-not [string]::IsNullOrEmpty($cn) -and -not $script:cssFileMap.ContainsKey($cn)) {
-            $script:cssFileMap[$cn] = [string]$row.file_name
-        }
-    }
-}
-catch {
-    Write-Log "CSS_FILE query failed: $($_.Exception.Message)." 'WARN'
-}
-Write-Log ("  CSS_FILE rows loaded: {0}" -f $script:cssFileMap.Count)
-
-Write-Log "Loading JS_FILE rows for asset-reference resolution..."
-try {
-    $jsFileQuery = @"
-SELECT component_name, file_name
-FROM dbo.Asset_Registry
-WHERE component_type = 'JS_FILE'
-  AND reference_type = 'DEFINITION'
-"@
-    $jsFileResults = Invoke-Sqlcmd -ServerInstance $script:XFActsServerInstance `
-                                   -Database       $script:XFActsDatabase `
-                                   -Query          $jsFileQuery `
-                                   -QueryTimeout   30 `
-                                   -ApplicationName $script:XFActsAppName `
-                                   -ErrorAction Stop `
-                                   -SuppressProviderContextWarning -TrustServerCertificate
-    foreach ($row in $jsFileResults) {
-        $cn = [string]$row.component_name
-        if (-not [string]::IsNullOrEmpty($cn) -and -not $script:jsFileMap.ContainsKey($cn)) {
-            $script:jsFileMap[$cn] = [string]$row.file_name
-        }
-    }
-}
-catch {
-    Write-Log "JS_FILE query failed: $($_.Exception.Message)." 'WARN'
-}
-Write-Log ("  JS_FILE rows loaded: {0}" -f $script:jsFileMap.Count)
 
 # ============================================================================
 # ORCHESTRATOR PROCESS REGISTRY LOAD
