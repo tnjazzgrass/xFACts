@@ -446,7 +446,20 @@ The five hook suffixes a page may implement, per §8:
 
 ---
 
-## 17. Drift code reference
+## 17. Cross-spec resolution
+
+JS files emit USAGE rows that reference identifiers defined by other file types. These references resolve against the catalog after every populator has run, in a dedicated resolve phase. Two reference types in JS files are subject to cross-spec resolution: CSS class references (in classList operations, `className` assignments, and string literals) and HTML ID references (in `getElementById`, `querySelector`, `setAttribute('id', ...)`, and `el.id` assignments).
+
+The resolve phase matches each USAGE row to a DEFINITION row of the same `component_type` and `component_name`, within the same zone. When no matching DEFINITION exists in the catalog, the resolve phase stamps the appropriate drift code on the USAGE row.
+
+### 17.1 Rules
+
+- Every CSS class referenced by a JS file has a matching `CSS_CLASS` DEFINITION row in the catalog.
+- Every HTML ID referenced by a JS file has a matching `HTML_ID` DEFINITION row in the catalog.
+
+---
+
+## 18. Drift code reference
 
 The populator emits a drift code on every spec violation. Each code maps to a single rule. This table is the contract between the spec and the populator.
 
@@ -510,6 +523,8 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `FORBIDDEN_COMMENT_STYLE` | Comment does not match one of the five recognized forms. | §13.1 |
 | `BLANK_LINE_INSIDE_FUNCTION_BODY_AT_SCOPE` | More than one consecutive blank line inside a top-level function body. | §15 |
 | `EXCESS_BLANK_LINES` | More than one blank line between top-level constructs. | §15 |
-| `JS_HTML_ID_UNRESOLVED` | `getElementById` or `querySelector('#...')` references an ID that does not resolve to any HTML `id` declaration in the catalog. | §11 |
+| `JS_CSS_CLASS_UNRESOLVED` | A `CSS_CLASS` USAGE row could not be matched to any `CSS_CLASS` DEFINITION row. | §17.1 |
+| `JS_HTML_ID_UNRESOLVED` | A `HTML_ID` USAGE row could not be matched to any `HTML_ID` DEFINITION row. | §17.1 |
 | `JS_HTML_ID_MALFORMED` | HTML ID string referenced from JS contains characters other than lowercase letters, digits, and hyphens, or does not begin with the page's prefix or `cc-`. | §11 |
+| `UNRESOLVED_REFERENCE` | A cross-spec USAGE row remains in the `<pending>` state after the resolve phase completes. Indicates a gap in the resolve phase rather than a spec violation. | §17 |
 | `SHADOWS_SHARED_FUNCTION` | Page file defines a function whose name matches a `cc-shared.js` export. | §5 |
