@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-05-28 15:13:54
+Generated: 2026-05-29 11:52:28
 
 ## Module Registry
 
@@ -415,6 +415,7 @@ Generated: 2026-05-28 15:13:54
 | Tools.Utilities | Populate-AssetRegistry-HTML.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-HTML.ps1 | Asset_Registry parser pipeline component for HTML markup embedded in PowerShell files. Walks every .ps1 and .psm1 file under the Control Center route and helper directories, identifies HTML-emitting constructs, and emits one Asset_Registry row per cataloged HTML construct. Validates each row against CC_HTML_Spec.md rules and attaches drift codes for any deviation. |
 | Tools.Utilities | Populate-AssetRegistry-JS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-JS.ps1 | Asset_Registry parser pipeline component for JavaScript source files. Walks every JS file in the Control Center codebase, parses each via the parse-js.js Node helper, and emits Asset_Registry rows for both JS code constructs and HTML markup found inside template strings. Validates each row against CC_JS_Spec.md rules and attaches drift codes for any deviation. |
 | Tools.Utilities | Populate-AssetRegistry-PS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-PS.ps1 | Asset_Registry parser pipeline component for PowerShell source files. Walks every .ps1 and .psm1 file under the xFACts PowerShell roots, parses each via the native PowerShell AST, and emits one Asset_Registry row per cataloged construct. Validates each row against CC_PS_Spec.md rules and attaches drift codes for any deviation. |
+| Tools.Utilities | Resolve-AssetRegistryReferences.ps1 | PowerShell | Script | E:\xFACts-PowerShell | Cross-spec resolution phase of the Asset_Registry pipeline. Runs after the four populators have written DEFINITION and USAGE rows. Resolves every cross-spec USAGE row's source_file and scope against matching DEFINITION rows; emits edge-specific drift codes when references cannot be resolved, and a catch-all UNRESOLVED_REFERENCE code on any row that remains in the <pending> state after the resolve phase completes. |
 | Tools.Utilities | xFACts-AssetRegistryFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-AssetRegistryFunctions.ps1 | Shared function library for the Asset_Registry parser pipeline. Dot-sourced by every populator in the family. Centralizes row construction, drift code attachment, occurrence-index computation, registry loads, bulk insert, banner detection and parsing, file-header parsing, pre-built section list construction, and the generic AST visitor walker. Per-language logic stays in each populator. |
 
 ## Global Configuration
@@ -454,6 +455,7 @@ Generated: 2026-05-28 15:13:54
 | BIDATA |  | bidata_build_source_server | DM-PROD-REP | VARCHAR | Server where the nightly BIDATA build runs |
 | BIDATA |  | bidata_build_start_grace_minutes | 15 | INT | Minutes after scheduled start before alerting that the build has not started |
 | ControlCenter | ApiCache | cache_ttl_default_seconds | 600 | INT | Default cache duration for API responses (seconds) |
+| ControlCenter | ApiCache.BIDATA | cache_ttl_bidata_step_count_seconds | 43200 | INT | Cache TTL (12 hours) for the BIDATA Daily Build job step count. |
 | ControlCenter | ApiCache.ClientRelations | cache_ttl_regf_queue_seconds | 300 | INT | Cache duration for Client Relations Reg F queue data (seconds) |
 | ControlCenter | Connection | refresh_idle_timeout_seconds | 240 | INT | Seconds of inactivity before dashboard pauses and shows idle overlay |
 | ControlCenter | Connection | refresh_reconnect_grace_seconds | 60 | INT | Seconds to show reconnecting banner before displaying an error |
