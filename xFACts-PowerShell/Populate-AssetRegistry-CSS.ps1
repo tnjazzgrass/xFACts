@@ -882,6 +882,7 @@ function New-CssRow {
     return New-AssetRegistryRow `
         -FileName           $script:CurrentFile `
         -FileType           'CSS' `
+        -Zone               $script:CurrentFileZone `
         -LineStart          $LineStart `
         -LineEnd            $LineEnd `
         -ColumnStart        $ColumnStart `
