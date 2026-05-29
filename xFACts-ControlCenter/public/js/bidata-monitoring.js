@@ -9,6 +9,11 @@
 
    CHANGELOG
    ---------
+   2026-05-14  Removed excludedStepIds filter from renderCurrentBuildExecution.
+                 Panel now displays every step the build executed, matching
+                 the slideout and history views. Simplifies maintenance --
+                 future job-structure changes no longer require updating a
+                 hand-maintained exclusion list.
    2026-05-09  renderCurrentBuildExecution: running-step row now displays
                  the actual step name from data.next_step_name (sourced from
                  sysjobsteps via the API). Falls back to "Step N executing"
@@ -56,7 +61,6 @@ var pageLoadDate = new Date().toDateString();
 // Page state
 var currentTrendDays = 30;          // Default to 30 days
 var customDateRange = null;
-var excludedStepIds = [1, 2, 17, 18, 19, 20];
 var currentTrendData = null;
 var currentHistoryData = null;
 
@@ -290,7 +294,7 @@ function renderLiveActivity(data) {
         // Progress card
         html += '<div class="activity-card status-running">';
         html += '<div class="activity-card-header"><span class="activity-name">Progress</span><span class="activity-icon">&#128202;</span></div>';
-        html += '<div class="activity-card-body"><div class="activity-value">' + build.steps_completed + ' / ' + data.total_expected_steps + '</div><div class="activity-detail">Steps completed</div></div>';
+        html += '<div class="activity-card-body"><div class="activity-value">' + build.steps_completed + ' / ' + (data.total_expected_steps || '-') + '</div><div class="activity-detail">Steps completed</div></div>';
         html += '</div>';
         // ETA card (if calculable)
         if (data.avg_duration_seconds && elapsed > 0) {
@@ -407,7 +411,7 @@ function renderCurrentBuildExecution(data) {
         return String(endHours).padStart(2, '0') + ':' + String(endMins).padStart(2, '0') + ':' + String(endSecs).padStart(2, '0');
     }
 
-    var displaySteps = data.steps.filter(function(s) { return excludedStepIds.indexOf(s.step_id) === -1; });
+    var displaySteps = data.steps;
 
     // Header row
     var html = '<div class="execution-list">';
