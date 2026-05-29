@@ -2511,6 +2511,12 @@
                         "category":  "Utilities"
                     },
                     {
+                        "name":  "Resolve-AssetRegistryReferences.ps1",
+                        "description":  "Cross-spec resolution phase of the Asset_Registry pipeline. Runs after the four populators have written DEFINITION and USAGE rows. Resolves every cross-spec USAGE row\u0027s source_file and scope against matching DEFINITION rows; emits edge-specific drift codes when references cannot be resolved, and a catch-all UNRESOLVED_REFERENCE code on any row that remains in the \u003cpending\u003e state after the resolve phase completes.",
+                        "module":  "Tools",
+                        "category":  "Utilities"
+                    },
+                    {
                         "name":  "xFACts-AssetRegistryFunctions.ps1",
                         "description":  "Shared function library for the Asset_Registry parser pipeline. Dot-sourced by every populator in the family after xFACts-OrchestratorFunctions.ps1. Centralizes row construction, drift code attachment, occurrence-index computation, registry loads, bulk insert, banner detection and parsing, file-header parsing, pre-built section list construction, and the generic AST visitor walker.",
                         "module":  "Tools",
