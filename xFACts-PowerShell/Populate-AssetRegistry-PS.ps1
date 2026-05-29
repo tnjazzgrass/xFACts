@@ -1201,6 +1201,7 @@ function New-PSRow {
     return New-AssetRegistryRow `
         -FileName           $script:CurrentFile `
         -FileType           'PS' `
+        -Zone               'cc' `
         -LineStart          $LineStart `
         -LineEnd            $LineEnd `
         -ColumnStart        $ColumnStart `
