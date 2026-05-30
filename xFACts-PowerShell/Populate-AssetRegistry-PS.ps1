@@ -3,94 +3,68 @@
     xFACts - Asset Registry PowerShell Populator
 
 .DESCRIPTION
-    Walks every .ps1 and .psm1 file under the xFACts PowerShell roots
-    (E:\xFACts-PowerShell, E:\xFACts-ControlCenter\scripts\routes,
-    E:\xFACts-ControlCenter\scripts\modules), parses each file with the
-    native PowerShell AST parser, and generates Asset_Registry rows
-    describing every catalogable construct found in the file plus drift
-    codes against CC_PS_Spec.md.
-
-    Five file roles are recognized via path-based classification:
-      - 'page-route'      - scripts\routes\<Page>\<Page>.ps1
-      - 'api-route'       - scripts\routes\<Page>\<Page>-API.ps1
-      - 'module'          - any .psm1 file
-      - 'shared-library'  - xFACts-PowerShell\xFACts-<name>.ps1
-      - 'standalone'      - any other .ps1 under xFACts-PowerShell
-
-    Each role has a role-specific valid-section-types set passed to
-    Get-BannerInfo so a role-inappropriate banner produces
-    UNKNOWN_SECTION_TYPE drift rather than being silently accepted.
-
-    This populator consumes shared infrastructure from
-    xFACts-AssetRegistryFunctions.ps1: row construction, drift attachment,
-    bulk insert, banner detection / parsing, file-header parsing
-    (Get-PSFileHeaderInfo specifically for PS comment-based-help blocks),
-    section list construction, registry loads, PS AST navigation
-    (Find-PSAstNodes, Test-IsTopLevelPSAst, Test-IsConditionallyDefinedPSAst,
-    position helpers).
-
-    Categories of rows emitted:
-
-    Structural:
-      PS_FILE, FILE_HEADER, COMMENT_BANNER, PS_CHANGELOG
-
-    Definitions:
-      PS_FUNCTION, PS_FUNCTION_VARIANT (filter), PS_DOCBLOCK,
-      PS_PARAMETER, PS_CONSTANT, PS_VARIABLE, PS_EXPORT
-
-    Pode infrastructure:
-      PS_ROUTE, PS_MIDDLEWARE, PS_WEBSOCKET_ROUTE
-
-    Cross-file references:
-      PS_FUNCTION_CALL (USAGE), MODULE_IMPORT, RBAC_CHECK,
-      GLOBALCONFIG_REF, SQL_QUERY
-
-    Forbidden patterns:
-      PS_WRITE_HOST, PS_INLINE_BANNER, PS_REMOVED_CODE_COMMENT
-
-    Comment structure:
-      PS_COMMENT_BLOCK (free-standing block comments)
-
-    First-run expectation: substantial drift across most files since the
-    PS file format spec is brand new and almost no PS files have been
-    refactored yet. The catalog will reflect the current state and the
-    refactor work ahead.
+    Walks every .ps1 and .psm1 file under the xFACts PowerShell roots,
+    parses each with the native PowerShell AST parser, and generates
+    Asset_Registry rows describing every catalogable construct plus drift
+    codes. Five file roles are recognized via path-based classification
+    (page-route, api-route, module, shared-library, standalone), each with
+    its own valid-section-types set.
 
 .PARAMETER Execute
-    Required to actually delete the PS rows from Asset_Registry and write
-    the new row set. Without this flag, runs in preview mode.
+    Required to delete the existing PS rows and write the new row set.
+    Without this flag, runs in preview mode.
 
 .PARAMETER FileFilter
-    Optional file-name filter for processing a single file or subset
-    (e.g., -FileFilter 'Collect-DMVMetrics.ps1' processes only that file).
+    Optional file-name filter for processing a single file or subset.
 
 .COMPONENT
     Tools.Utilities
 
 .NOTES
+    File Name : Populate-AssetRegistry-PS.ps1
+    Location  : E:\xFACts-PowerShell
+
     FILE ORGANIZATION
-        1. CONFIGURATION: Paths and Discovery
-        2. CONSTANTS: Spec Constants
-        3. CONSTANTS: Drift Descriptions
-        4. VARIABLES: Script-Scope State
-        5. FUNCTIONS: File Role Detection
-        6. FUNCTIONS: PS Parser and Comment Normalization
-        7. FUNCTIONS: Format Helpers
-        8. FUNCTIONS: SQL / GlobalConfig / RBAC Detection
-        9. FUNCTIONS: Variant Shape Helpers
-       10. FUNCTIONS: Local Definition Collection
-       11. FUNCTIONS: Row Emitters
-       12. FUNCTIONS: Comment Index
-       13. EXECUTION: Pass 1 - Parse and Collect Shared Definitions
-       14. EXECUTION: Registry Loads
-       15. EXECUTION: Pass 2 - Per-File Walk
-       16. EXECUTION: Pass 3 - Cross-File Compliance Checks
-       17. EXECUTION: Output Boundary Validation
-       18. EXECUTION: Occurrence Index Computation
-       19. EXECUTION: Summary Output
-       20. EXECUTION: Database Write
-       21. EXECUTION: Object_Registry Miss Report
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: EXECUTION PREFERENCES
+    CONSTANTS: PATHS AND DISCOVERY
+    CONSTANTS: SPEC CONSTANTS
+    CONSTANTS: DRIFT DESCRIPTIONS
+    VARIABLES: SCRIPT-SCOPE STATE
+    FUNCTIONS: FILE ROLE DETECTION
+    FUNCTIONS: PS PARSER AND COMMENT NORMALIZATION
+    FUNCTIONS: FORMAT HELPERS
+    FUNCTIONS: SQL / GLOBALCONFIG / RBAC DETECTION
+    FUNCTIONS: VARIANT SHAPE HELPERS
+    FUNCTIONS: LOCAL DEFINITION COLLECTION
+    FUNCTIONS: COMMENT INDEX
+    FUNCTIONS: ROW EMITTERS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-stamped change history. Each entry is one ISO date line followed by an
+   indented description. Entries appear most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-05-29  Conformed the working file to the Control Center PowerShell file
+#             format spec: block-comment section banners, canonical section
+#             order, single EXECUTION section with sub-section markers, and
+#             leading purpose comments on script-scope declarations.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: the execute switch and an optional single-file filter.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -98,33 +72,47 @@ param(
     [string]$FileFilter
 )
 
-# ============================================================================
-# DOT-SOURCE SHARED INFRASTRUCTURE
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers and the Asset
+   Registry shared functions (row construction, banner parsing, registry loads).
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
 . "$PSScriptRoot\xFACts-AssetRegistryFunctions.ps1"
 
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup of shared infrastructure, logging, and application identity.
+   Prefix: (none)
+   ============================================================================ #>
+
 Initialize-XFActsScript -ScriptName 'Populate-AssetRegistry-PS' -Execute:$Execute
 
+<# ============================================================================
+   CONSTANTS: EXECUTION PREFERENCES
+   ----------------------------------------------------------------------------
+   PowerShell preference variables that govern script execution behavior.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Stop on any error so failures surface immediately rather than continuing
+# against partial state.
 $ErrorActionPreference = 'Stop'
 
+<# ============================================================================
+   CONSTANTS: PATHS AND DISCOVERY
+   ----------------------------------------------------------------------------
+   Scan roots and file-classification lists (shared libraries, shared modules,
+   standalone path exceptions, Write-Host exemptions).
+   Prefix: (none)
+   ============================================================================ #>
 
-# ============================================================================
-# CONFIGURATION: PATHS AND DISCOVERY
-# ============================================================================
-
-# Four scan roots cover all PS files in the xFACts platform:
-# 1. xFACts-PowerShell                     - standalone scripts + shared libs
-# 2. xFACts-ControlCenter\scripts          - Pode entry point (Start-ControlCenter.ps1)
-# and any other top-level CC bootstrap scripts
-# (server.psd1 lives here but is out of scope -
-# this populator only scans .ps1 and .psm1)
-# 3. xFACts-ControlCenter\scripts\routes   - page-route and api-route .ps1
-# 4. xFACts-ControlCenter\scripts\modules  - .psm1 helper modules
-# Note: roots 2/3/4 are nested. The discovery loop walks each with -Recurse,
-# which would double-count files under routes\ and modules\. Discovery
-# de-duplicates by FullName after collection.
+# Scan roots covering all PS files in the platform. Roots are nested, so
+# discovery de-duplicates by full path after collection.
 $PSScanRoots = @(
     'E:\xFACts-PowerShell',
     'E:\xFACts-ControlCenter\scripts',
@@ -132,50 +120,41 @@ $PSScanRoots = @(
     'E:\xFACts-ControlCenter\scripts\modules'
 )
 
-# Shared library files (live in xFACts-PowerShell root). Functions defined
-# in these files are visible to all consumers; the Pass 1 walk collects
-# them into a shared-functions HashSet so PS_FUNCTION_CALL USAGE rows can
-# resolve scope=SHARED with source_file pointing at the defining library.
+# Shared library files (xFACts-PowerShell root). Their functions are visible
+# to all consumers and resolve as scope=SHARED.
 $SharedLibraryFiles = @(
     'xFACts-OrchestratorFunctions.ps1',
     'xFACts-AssetRegistryFunctions.ps1',
     'xFACts-IndexFunctions.ps1'
 )
 
-# Module files (.psm1) exporting cataloged helpers. The CC route handlers
-# import these and call their exported functions. Same treatment as shared
-# libraries for USAGE resolution. Two entries during the migration window:
-# xFACts-Helpers.psm1 is the legacy module consumed by unmigrated pages;
-# xFACts-CCShared.psm1 is the target module. The list shrinks naturally as
-# pages migrate and xFACts-Helpers.psm1 is retired.
+# Module files (.psm1) exporting cataloged helpers consumed by CC routes.
 $SharedModuleFiles = @(
     'xFACts-Helpers.psm1',
     'xFACts-CCShared.psm1'
 )
 
-# Path-based standalone exceptions: files that live in a routes-style
-# directory but are structurally standalone (e.g. Start-ControlCenter.ps1
-# is the Pode entry point, not a page route).
+# Files in a routes-style directory that are structurally standalone.
 $StandalonePathExceptions = @(
     'Start-ControlCenter.ps1'
 )
 
-# Files exempt from Write-Host drift. The xFACts orchestrator entry-point
-# script and a handful of CLI-style utilities legitimately use Write-Host
-# for operator-facing output. Add to this list as needed; default behavior
-# is to flag every Write-Host call as drift.
+# Files exempt from Write-Host drift; these legitimately use Write-Host for
+# operator-facing output.
 $WriteHostExemptFiles = @(
     'Start-xFACtsOrchestrator.ps1'
 )
 
+<# ============================================================================
+   CONSTANTS: SPEC CONSTANTS
+   ----------------------------------------------------------------------------
+   The recognized section types and the per-role valid-type, ordering, singleton,
+   prefix-classification, and required-section tables.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ============================================================================
-# CONSTANTS: SPEC CONSTANTS
-# ============================================================================
-
-# The 10 recognized section types. Different
-# file roles permit different subsets; the per-role valid-section-types
-# table below carves out the valid set for each role.
+# The recognized section types. Per-role tables below carve out which subset
+# each file role permits.
 $AllValidSectionTypes = @(
     'CHANGELOG',
     'IMPORTS',
@@ -189,14 +168,13 @@ $AllValidSectionTypes = @(
     'EXPORTS'
 )
 
-# Required section order. The hashtable maps
-# each section type to its order slot; lower slot = appears earlier. ROUTE
-# and EXECUTION share slot 8 because they are mutually exclusive based on
-# file role (page-routes have ROUTE; standalone scripts have EXECUTION).
+# Required section order. Each type maps to an order slot; lower = earlier.
+# ROUTE and EXECUTION share slot 8 because they are mutually exclusive by role
+# (page-routes have ROUTE; standalone scripts have EXECUTION).
 $SectionTypeOrder = @{
     'CHANGELOG'      = 1
-    'IMPORTS'        = 2
-    'PARAMETERS'     = 3
+    'PARAMETERS'     = 2
+    'IMPORTS'        = 3
     'INITIALIZATION' = 4
     'CONSTANTS'      = 5
     'VARIABLES'      = 6
@@ -206,22 +184,8 @@ $SectionTypeOrder = @{
     'EXPORTS'        = 9
 }
 
-# Per-role valid section types. A banner whose type is not in the role's
-# allowed list produces UNKNOWN_SECTION_TYPE drift via Get-BannerInfo.
-# Role-to-section-type mapping:
-#   page-route     - CHANGELOG, ROUTE
-#   api-route      - ROUTE
-#   module         - CHANGELOG, IMPORTS, CONSTANTS, VARIABLES,
-#                    FUNCTIONS, EXPORTS
-#   standalone     - CHANGELOG, IMPORTS, PARAMETERS, INITIALIZATION,
-#                    CONSTANTS, VARIABLES, FUNCTIONS, EXECUTION
-#   shared-library - CHANGELOG, IMPORTS, CONSTANTS, VARIABLES,
-#                    FUNCTIONS, EXPORTS
-# Route files are restricted because their one job is to register a Pode
-# route; helpers, constants, and initialization belong in modules or
-# standalone scripts. A legacy route file with extra sections gets
-# FORBIDDEN_SECTION_TYPE on the banner row plus cataloging of inner
-# constructs as normal.
+# Per-role valid section types. A banner whose type is not in the role list
+# produces UNKNOWN_SECTION_TYPE drift.
 $ValidSectionTypesByRole = @{
     'page-route'     = @('CHANGELOG','ROUTE')
     'api-route'      = @('ROUTE')
@@ -230,42 +194,24 @@ $ValidSectionTypesByRole = @{
     'shared-library' = @('CHANGELOG','IMPORTS','CONSTANTS','VARIABLES','FUNCTIONS','EXPORTS')
 }
 
-# Section types that appear exactly once per file. Used to detect
-# DUPLICATE_SINGULAR_SECTION drift. CONSTANTS, VARIABLES, FUNCTIONS may
-# appear multiple times (grouped by purpose), but everything else
-# is a singleton.
+# Section types that appear exactly once per file (DUPLICATE_SINGULAR_SECTION).
+# CONSTANTS, VARIABLES, and FUNCTIONS may repeat.
 $SingletonSectionTypes = @(
     'CHANGELOG','IMPORTS','PARAMETERS','INITIALIZATION','EXPORTS',
     'EXECUTION','ROUTE'
 )
 
-# Sections classified by whether their contents declare prefix-bearing
-# identifiers. The classification governs which banner Prefix value the
-# section legitimately declares:
-# - Identifier-bearing sections (CONSTANTS, VARIABLES, FUNCTIONS) declare
-# the file's registered prefix (or 'cc' for shared files). They contain
-# named PowerShell identifiers that the platform prefix discipline
-# governs.
-# - Identifier-free sections (CHANGELOG, IMPORTS, PARAMETERS,
-# INITIALIZATION, EXECUTION, ROUTE, EXPORTS) declare '(none)'. They
-# contain change-history prose, framework calls, route registrations,
-# parameter blocks, top-level statements, or already-prefixed exports.
-# None of these constructs are prefix-bearing declarations the platform
-# governs.
-# PREFIX_REGISTRY_MISMATCH only fires on identifier-bearing sections.
-# MISPLACED_NONE_PREFIX fires when an identifier-bearing section declares
-# '(none)' in a file with a registered cc_prefix.
+# Identifier-bearing sections: their contents declare the file prefix.
 $IdentifierBearingSectionTypes = @(
     'CONSTANTS','VARIABLES','FUNCTIONS'
 )
+# Identifier-free sections: their contents declare (none).
 $IdentifierFreeSectionTypes = @(
     'CHANGELOG','IMPORTS','PARAMETERS','INITIALIZATION','EXECUTION','ROUTE','EXPORTS'
 )
 
-# Canonical banner NAMEs for singleton section types. A singleton banner
-# whose NAME does not match the canonical value fires MALFORMED_SINGLETON_NAME.
-# ROUTE has two valid NAMEs based on role: 'PAGE PATH' for page-route,
-# 'API ENDPOINTS' for api-route.
+# Canonical banner NAMEs for singleton section types. A mismatch fires
+# MALFORMED_SINGLETON_NAME. ROUTE has two valid NAMEs based on role.
 $SingletonSectionCanonicalNames = @{
     'CHANGELOG'      = @('CHANGE HISTORY')
     'IMPORTS'        = @('SCRIPT DEPENDENCIES')
@@ -276,8 +222,7 @@ $SingletonSectionCanonicalNames = @{
     'ROUTE'          = @('PAGE PATH','API ENDPOINTS')
 }
 
-# Sections required to be present per role. Files missing a required
-# section get MISSING_REQUIRED_SECTION on the PS_FILE anchor row.
+# Sections required per role; absence fires MISSING_REQUIRED_SECTION.
 $RequiredSectionsByRole = @{
     'page-route'     = @('ROUTE')
     'api-route'      = @('ROUTE')
@@ -286,15 +231,10 @@ $RequiredSectionsByRole = @{
     'shared-library' = @('FUNCTIONS')
 }
 
-# Roles for which .COMPONENT in the file header is required (rather than
-# merely allowed). Standalone scripts typically have .COMPONENT pointing
-# at the component they serve; modules and shared libraries always do.
-# Page-routes and api-routes do too. This is checked by Get-PSFileHeaderInfo
-# when called with -RequireComponent.
+# Roles for which .COMPONENT in the header is required rather than optional.
 $ComponentRequiredRoles = @('page-route','api-route','module','shared-library','standalone')
 
 # Function names that count as RBAC checks.
-# Calls to these functions produce RBAC_CHECK rows.
 $RBACCheckFunctions = @(
     'Get-UserAccess',
     'Test-ActionEndpoint',
@@ -302,11 +242,8 @@ $RBACCheckFunctions = @(
     'Test-UserHasRole'
 )
 
-# Function names that take a -Query parameter pointing at a SQL string.
-# Used by Pass D detection to fire SQL_QUERY rows on the -Query argument
-# at the call site. (Permissive mode also fires SQL_QUERY rows on any
-# here-string or string literal that passes Test-LooksLikeSQL regardless
-# of how it's used; this list is for guaranteed-SQL detection.)
+# Function names that take a -Query parameter pointing at a SQL string;
+# used by SQL_QUERY call-site detection.
 $SQLQueryFunctions = @(
     'Invoke-Sqlcmd',
     'Invoke-XFActsQuery',
@@ -317,27 +254,25 @@ $SQLQueryFunctions = @(
     'Get-SqlData'
 )
 
-# Function names that take a -Setting parameter pointing at a GlobalConfig
-# setting name. Used by GLOBALCONFIG_REF detection.
+# Function names that take a GlobalConfig setting name; used by
+# GLOBALCONFIG_REF detection.
 $GlobalConfigFunctions = @(
     'Get-GlobalConfigValue',
     'Set-GlobalConfigValue',
     'Test-GlobalConfigSetting'
 )
 
+<# ============================================================================
+   CONSTANTS: DRIFT DESCRIPTIONS
+   ----------------------------------------------------------------------------
+   Master table of every drift code the populator can emit, grouped by category.
+   Used by Add-DriftCode to validate codes before attachment.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ============================================================================
-# CONSTANTS: DRIFT DESCRIPTIONS
-# ============================================================================
-# Master table of every drift code the populator can emit. Used by
-# Add-DriftCode (from helpers) to validate codes before attachment.
-# #
-# Codes are grouped by category: file header, section banners, section types,
-# prefix, CHANGELOG, function definitions, parameters, variables/constants,
-# imports, routes, SQL, comments, module exports, logging, whitespace.
-
+# Master table mapping every drift code to its human-readable description.
 $DriftDescriptions = [ordered]@{
-    # ---- File header ----
+    # File header
     'MALFORMED_FILE_HEADER'             = "The file's header block is missing, malformed, or contains required fields out of order."
     'FORBIDDEN_HEADER_KEYWORD'          = "The file header contains a forbidden comment-based-help keyword (.EXAMPLE, .INPUTS, .OUTPUTS, .LINK, .ROLE, .FUNCTIONALITY, .FORWARDHELPTARGETNAME, .REMOTEHELPRUNSPACE, or .EXTERNALHELP)."
     'MALFORMED_NOTES_FIELD'             = "The .NOTES block is missing required fields (File Name, Location, FILE ORGANIZATION) or contains extra fields."
@@ -354,7 +289,7 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_INLINE_DIVIDER_IN_HEADER' = "The file header contains inline divider rules of '=' or '-' characters outside the .NOTES block's FILE ORGANIZATION separator. Inline rules inside the header are not part of the comment-based-help spec."
     'FILE_ORG_MISMATCH'                 = "The FILE ORGANIZATION list inside .NOTES does not exactly match the section banner titles in the file body, by content or by order."
 
-    # ---- Section banners ----
+    # Section banners
     'MISSING_SECTION_BANNER'            = "A function definition (or other catalogable construct) appears outside any banner -- no section banner precedes it in the file."
     'BANNER_INLINE_SHAPE'               = "A section banner uses the single-line ===== Title ===== form. The spec requires a multi-line banner with bracketing rule lines, title line, separator, description block, and Prefix line."
     'BANNER_INVALID_RULE_CHAR'          = "A section banner's opening or closing bracketing line is not composed entirely of '=' characters."
@@ -366,7 +301,7 @@ $DriftDescriptions = [ordered]@{
     'BANNER_MISSING_NAME'               = "A section banner declares a bare <TYPE> or <TYPE>: with no NAME. Every banner requires a human-readable NAME; singletons use the fixed NAMEs."
     'DUPLICATE_BANNER_NAME'             = "Two or more section banners with the same TYPE and NAME appear in the file. Each banner must be unique within a file."
 
-    # ---- Section types ----
+    # Section types
     'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not valid for the file's role. Each role has its own permitted section-type set."
     'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order for the file role."
     'FORBIDDEN_SECTION_TYPE'            = "A section type appears in a file role that forbids it (e.g., INITIALIZATION in a page-route file)."
@@ -374,21 +309,21 @@ $DriftDescriptions = [ordered]@{
     'DUPLICATE_SINGULAR_SECTION'        = "A section type marked 'exactly one' appears more than once in the file."
     'MALFORMED_SINGLETON_NAME'          = "A singleton section's banner title does not match its canonical fixed value."
 
-    # ---- Prefix ----
+    # Prefix
     'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
-    'MALFORMED_PREFIX_VALUE'            = "A section banner's Prefix line declares a value that is not one of the following: registered page prefix, 'cc' literal, or '(none)'."
+    'MALFORMED_PREFIX_VALUE'            = "A section banner's Prefix line declares a value that is neither the registered page prefix nor '(none)'."
     'PREFIX_REGISTRY_MISMATCH'          = "An identifier-bearing section (CONSTANTS, VARIABLES, FUNCTIONS) declares a Prefix value that does not match the file's registered Component_Registry.cc_prefix. Identifier-free sections (CHANGELOG, IMPORTS, PARAMETERS, INITIALIZATION, EXECUTION, ROUTE, EXPORTS) legitimately declare '(none)' and are exempt from this check."
     'MISPLACED_NONE_PREFIX'             = "An identifier-bearing section (CONSTANTS, VARIABLES, FUNCTIONS) declares 'Prefix: (none)' in a file whose component has a registered (non-NULL) cc_prefix. The section's identifiers carry the file's registered prefix, so the banner must declare that prefix rather than '(none)'."
     'PREFIX_MISSING'                    = "A top-level identifier does not start with the file's registered prefix. Component_Registry declares a cc_prefix for the file but the identifier name does not match. Fires independently of banners; surfaces prefix non-conformance in pre-spec files."
     'PREFIX_MISMATCH'                   = "A top-level identifier name does not begin with the prefix declared in its containing section's banner followed by an underscore."
 
-    # ---- CHANGELOG ----
+    # CHANGELOG
     'MALFORMED_CHANGELOG_ENTRY'         = "A CHANGELOG entry does not begin with '# YYYY-MM-DD ' (ISO date, two spaces, then description)."
     'MALFORMED_CHANGELOG_DATE'          = "A CHANGELOG entry's date is not in ISO YYYY-MM-DD format."
     'CHANGELOG_ORDER_VIOLATION'         = "CHANGELOG entries appear out of most-recent-first order."
     'FORBIDDEN_VERSION_IN_CHANGELOG'    = "A CHANGELOG entry contains a version literal. Versions are tracked in System_Metadata, not in CHANGELOG entries."
 
-    # ---- Function definitions ----
+    # Function definitions
     'MISSING_DOCBLOCK'                  = "A function definition has no comment-based-help docblock in its required position. The docblock must appear as the third construct inside the function body, after [CmdletBinding()] and param(), before the body code."
     'MISPLACED_DOCBLOCK'                = "A function docblock is present but is not in the required position. The docblock must appear as the third construct inside the function body, after [CmdletBinding()] and param(), before the body code. Docblocks above the function declaration or after body code fire this drift."
     'MISSING_CMDLETBINDING'             = "A function definition is missing the [CmdletBinding()] attribute. Per spec, every function must declare CmdletBinding."
@@ -397,6 +332,8 @@ $DriftDescriptions = [ordered]@{
     'MISSING_SYNOPSIS'                  = "A function docblock is missing the .SYNOPSIS field."
     'MISSING_DESCRIPTION'               = "A function docblock is missing the .DESCRIPTION field."
     'FORBIDDEN_DOCBLOCK_KEYWORD'        = "A function docblock contains a forbidden keyword (.COMPONENT, .NOTES, .EXAMPLE, etc.). Function docblocks only allow .SYNOPSIS, .DESCRIPTION, and .PARAMETER blocks."
+    'FORBIDDEN_DOCBLOCK_IN_STANDALONE'  = "A function in a standalone file has a comment-based-help docblock. Standalone functions use a single-line purpose comment instead."
+    'MISSING_FUNCTION_PURPOSE_COMMENT'  = "A function in a standalone file has no single-line comment on the line directly above its declaration."
     'MALFORMED_FUNCTION_NAME'           = "A function name does not follow the Verb-Noun convention."
     'UNAPPROVED_VERB'                   = "A function uses a verb not in PowerShell's approved verb list (Get-Verb)."
     'FORBIDDEN_FUNCTION_IN_ROUTE'       = "A function is declared in a page-route file. Helpers belong in modules, not route files."
@@ -408,11 +345,11 @@ $DriftDescriptions = [ordered]@{
     'DUPLICATE_FUNCTION_DEFINITION'     = "The same function name is declared by more than one PS file across the codebase. Cross-file duplicates resolve unpredictably at runtime."
     'ORPHAN_FUNCTION_CALL'              = "A function call references a name not defined in any cataloged PS file. External-module calls that don't import the source module are common causes."
 
-    # ---- Parameters ----
+    # Parameters
     'MISSING_PARAMETER_DOC'             = "A function parameter lacks a corresponding .PARAMETER tag in the docblock. Every parameter must be documented."
     'EXTRA_PARAMETER_DOC'               = "The docblock contains a .PARAMETER tag for a parameter the function does not define."
 
-    # ---- Variables and constants ----
+    # Variables and constants
     'FORBIDDEN_SCOPE_QUALIFIER'         = "A top-level declaration uses '`$Script:' (capital S) or another non-'`$script:' scope qualifier. Only '`$script:' (lowercase) is permitted."
     'FORBIDDEN_GLOBAL_VARIABLE'         = "A declaration uses the '`$global:' scope qualifier. '`$global:' is forbidden anywhere in the file."
     'FORBIDDEN_AUTOVAR_REASSIGNMENT'    = "Assignment to a PowerShell automatic variable (`$args, `$_, `$matches, `$input, `$PSScriptRoot, etc.) is forbidden."
@@ -423,10 +360,10 @@ $DriftDescriptions = [ordered]@{
     'MISPLACED_DECLARATION'             = "A '`$script:' declaration appears outside a CONSTANTS or VARIABLES section."
     'WRONG_DECLARATION_SECTION'         = "An assignment statement appears in a section type that disallows it (e.g., a constant in a VARIABLES section)."
 
-    # ---- Imports ----
+    # Imports
     'MISPLACED_IMPORT'                  = "An import statement (dot-source or Import-Module) appears outside the IMPORTS section."
 
-    # ---- Routes ----
+    # Routes
     'ROUTE_OUTSIDE_ROUTE_SECTION'       = "An Add-PodeRoute call appears outside a ROUTE section."
     'MIDDLEWARE_OUTSIDE_INIT_SECTION'   = "An Add-PodeMiddleware call appears outside an INITIALIZATION section."
     'MISSING_AUTHENTICATION'            = "An Add-PodeRoute call lacks -Authentication 'ADLogin'."
@@ -435,14 +372,14 @@ $DriftDescriptions = [ordered]@{
     'MISSING_RESPONSE_WRITE_PAGE'       = "A page route scriptblock does not end with Write-PodeHtmlResponse."
     'MISSING_RESPONSE_WRITE_API'        = "An API route scriptblock does not end with Write-PodeJsonResponse."
 
-    # ---- SQL ----
+    # SQL
     'FORBIDDEN_INLINE_SQL_LITERAL'      = "Multi-line SQL is embedded as a single-line string literal instead of a here-string. Use @`"...`"@ for multi-line SQL."
     'MISSING_TRUST_SERVER_CERTIFICATE'  = "An Invoke-Sqlcmd call is missing the -TrustServerCertificate parameter. All AG-listener and instance connections in this environment require it."
     'MISSING_APPLICATION_NAME'          = "An Invoke-Sqlcmd call is missing the -ApplicationName parameter. Collectors must identify themselves in DMV attribution."
     'MISSING_PARAMETER_DECLARATION'     = "A query references @parameter placeholders but lacks a -Parameters @{...} hashtable. Parameterize SQL rather than constructing it via string concatenation."
     'FORBIDDEN_LINKED_SERVER'           = "A query references a linked server (four-part name). PowerShell collectors must hit each instance directly with separate Invoke-Sqlcmd calls."
 
-    # ---- Comments ----
+    # Comments
     'FORBIDDEN_INLINE_BANNER'           = "A '# ---' mini-banner appears in the file. Section banners are the only permitted divider form."
     'FORBIDDEN_BOX_DRAWING_BANNER'      = "A '# --' box-drawing banner appears in the file (Unicode line-drawing characters). Section banners are the only permitted divider form."
     'FORBIDDEN_REMOVED_CODE_COMMENT'    = "A comment indicates removed or deleted code (e.g., '# Removed:', '# Was:', '# Deleted:'). Removed code should be deleted entirely; the git history preserves it if needed."
@@ -450,74 +387,92 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_FREESTANDING_COMMENT_BLOCK' = "A free-standing block comment exists that does not match any of the allowed kinds (file header, section banner, docblock)."
     'FORBIDDEN_TRAILING_COMMENT'        = "A '#' comment appears at the end of a code line. Comments must lead the line they describe, not trail on it."
 
-    # ---- Module exports ----
+    # Module exports
     'FORBIDDEN_WILDCARD_EXPORT'         = "Export-ModuleMember -Function * (wildcard) is used. Exports must be enumerated explicitly."
     'EXPORTED_FUNCTION_NOT_DEFINED'     = "Export-ModuleMember references a function not defined in the file."
     'DEFINED_FUNCTION_NOT_EXPORTED'     = "A function declared in a module file is not exported via Export-ModuleMember."
     'MISSING_EXPORTS_SECTION'           = "A module file lacks an EXPORTS section."
 
-    # ---- Logging ----
+    # Logging
     'FORBIDDEN_WRITE_HOST'              = "A Write-Host call appears in a standalone or shared-library file. Use Write-Log instead. The Start-xFACtsOrchestrator.ps1 entry-point script is exempt."
 
-    # ---- Whitespace ----
+    # Whitespace
     'EXCESS_BLANK_LINES'                = "More than one blank line appears between top-level constructs."
     'TRAILING_WHITESPACE'               = "A line ends with trailing whitespace."
 }
 
+<# ============================================================================
+   VARIABLES: SCRIPT-SCOPE STATE
+   ----------------------------------------------------------------------------
+   Mutable script-scope state populated during execution: row collection,
+   dedupe tracking, shared-definition maps, and per-file walk context.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ============================================================================
-# VARIABLES: SCRIPT-SCOPE STATE
-# ============================================================================
-
-# Row collection and dedupe tracker. The helpers reference these directly
-# via Test-AddDedupeKey and Add-DriftCode.
+# Row collection list, built up across the walk and written at the end.
 $script:rows       = New-Object System.Collections.Generic.List[object]
+# Dedupe tracker keyed per row, referenced by Test-AddDedupeKey and Add-DriftCode.
 $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 
-# Per-file PS_FILE row references. Pass 3 / post-walk code uses this map to
-# attach file-overall drift codes (EXCESS_BLANK_LINES, FORBIDDEN_FREESTANDING_COMMENT_BLOCK)
-# to each file's PS_FILE anchor row. The PS_FILE row is the universal "this
-# file was scanned" anchor, parallel to CSS_FILE, JS_FILE, HTML_FILE.
+# Per-file PS_FILE anchor row references. Post-walk code attaches file-overall
+# drift codes to each file's anchor row through this map.
 $script:psFileRowByFile = @{}
 
-# Shared definition maps populated by Pass 1. Each cataloged function in a
-# shared-library or shared-module file is added here; PS_FUNCTION_CALL USAGE
-# rows in any consumer file resolve scope=SHARED with source_file = the
-# defining shared file.
+# Set of function names defined in shared-library/module files (scope=SHARED).
 $script:sharedFunctions  = New-Object 'System.Collections.Generic.HashSet[string]'
+# Map of shared function name to its defining source file.
 $script:sharedSourceFile = @{}
 
 # Per-file context populated by the per-file walk loop. Each emitter reads
 # from these to apply file-scoped attribution to the rows it creates.
-$script:CurrentFile               = $null    # filename only (no path)
-$script:CurrentFileFullPath       = $null    # absolute path for diagnostics
-$script:CurrentFileRole           = $null    # 'page-route', 'api-route', 'module', 'standalone', 'shared-library'
-$script:CurrentFileIsShared       = $false   # shorthand for shared-library OR module file
-$script:CurrentFileSource         = $null    # raw text of the file
-$script:CurrentAst                = $null    # ScriptBlockAst returned by the parser
-$script:CurrentTokens             = $null    # token array from Parser::ParseFile
-$script:CurrentParseErrors        = $null    # array of ParseErrors (non-fatal; partial AST is still usable)
+# Filename only (no path) for the file being walked.
+$script:CurrentFile               = $null
+# Absolute path, for diagnostics.
+$script:CurrentFileFullPath       = $null
+# Role: page-route, api-route, module, standalone, or shared-library.
+$script:CurrentFileRole           = $null
+# Shorthand for a shared-library or module file.
+$script:CurrentFileIsShared       = $false
+# Raw text of the file.
+$script:CurrentFileSource         = $null
+# ScriptBlockAst returned by the parser.
+$script:CurrentAst                = $null
+# Token array from the parser.
+$script:CurrentTokens             = $null
+# Non-fatal parse errors; partial AST is still usable.
+$script:CurrentParseErrors        = $null
+# Line count of the current file.
 $script:CurrentFileLineCount      = 0
-$script:CurrentSections           = $null    # output of New-SectionList
-$script:CurrentNormalizedComments = $null    # PS comment tokens converted to normalized shape
-$script:CurrentCommentIndex       = $null    # for preceding-comment lookup (docblocks, purpose comments)
-$script:CurrentLocalFunctions     = $null    # HashSet of function names defined in this file
-$script:CurrentFunctionRanges     = $null    # list of @{Name; LineStart; LineEnd} for function-scope attribution
-$script:CurrentRegistryPrefix     = $null    # cc_prefix from Component_Registry for this file (or $null)
-$script:CurrentRegistryHasMapping = $false   # whether the file has any Object_Registry/Component_Registry entry
-$script:CurrentValidSectionTypes  = $null    # role-specific valid section types
-$script:CurrentRequiresComponent  = $false   # whether the role requires .COMPONENT in the header
+# Output of New-SectionList.
+$script:CurrentSections           = $null
+# PS comment tokens in normalized shape.
+$script:CurrentNormalizedComments = $null
+# Preceding-comment lookup for docblocks and purpose comments.
+$script:CurrentCommentIndex       = $null
+# HashSet of function names defined in this file.
+$script:CurrentLocalFunctions     = $null
+# Function line ranges for scope attribution.
+$script:CurrentFunctionRanges     = $null
+# cc_prefix from Component_Registry for this file, or null.
+$script:CurrentRegistryPrefix     = $null
+# Whether the file has an Object/Component_Registry entry.
+$script:CurrentRegistryHasMapping = $false
+# Role-specific valid section types.
+$script:CurrentValidSectionTypes  = $null
+# Whether the role requires .COMPONENT in the header.
+$script:CurrentRequiresComponent  = $false
 
 # Cached PowerShell approved verb list, populated lazily on first function-name
-# validation. Reset is not needed; Get-Verb's output is stable for the PowerShell
-# session. Used by Add-PSFunctionRow's MALFORMED_FUNCTION_NAME / UNAPPROVED_VERB
-# checks.
+# validation. Used by the MALFORMED_FUNCTION_NAME / UNAPPROVED_VERB checks.
 $script:ApprovedVerbs             = $null
 
-
-# ============================================================================
-# FUNCTIONS: FILE ROLE DETECTION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: FILE ROLE DETECTION
+   ----------------------------------------------------------------------------
+   Path-based classification of each .ps1/.psm1 file into one of the five
+   recognized roles.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Classify a .ps1 or .psm1 file into one of five roles. Path-based:
 # *.psm1 anywhere                                          -> 'module'
@@ -556,10 +511,13 @@ function Get-PSFileRole {
     return 'standalone'
 }
 
-
-# ============================================================================
-# FUNCTIONS: PS PARSER AND COMMENT NORMALIZATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: PS PARSER AND COMMENT NORMALIZATION
+   ----------------------------------------------------------------------------
+   Native AST parsing and conversion of PowerShell comment tokens into the
+   normalized shape the rest of the populator consumes.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Parse a PowerShell file using the native AST parser. Returns a hashtable
 # with the AST, the token stream, any parse errors (non-fatal), and the raw
@@ -652,10 +610,12 @@ function Convert-PSCommentsToNormalized {
     return @($list | Sort-Object LineStart)
 }
 
-
-# ============================================================================
-# FUNCTIONS: FORMAT HELPERS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: FORMAT HELPERS
+   ----------------------------------------------------------------------------
+   Small text and signature formatting helpers.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Collapse multi-line text to a single line. Used to normalize raw_text and
 # signature values where line breaks would interfere with display.
@@ -721,10 +681,13 @@ function Test-HasCmdletBinding {
     return $false
 }
 
-
-# ============================================================================
-# FUNCTIONS: SQL / GLOBALCONFIG / RBAC DETECTION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: SQL / GLOBALCONFIG / RBAC DETECTION
+   ----------------------------------------------------------------------------
+   Heuristics for recognizing SQL queries, GlobalConfig references, and
+   function variant shapes within source text.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Cheap pre-check: does this text look like a SQL query? Conservative pattern
 # matching on common SQL keywords at common positions. False positives are
@@ -803,10 +766,13 @@ function Get-GlobalConfigReferences {
     return @($results.ToArray())
 }
 
-
-# ============================================================================
-# FUNCTIONS: VARIANT SHAPE HELPERS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: VARIANT SHAPE HELPERS
+   ----------------------------------------------------------------------------
+   Helpers that classify function variants and extract exported names from
+   the several AST shapes Export-ModuleMember arguments can take.
+   Prefix: (none)
+   ============================================================================ #>
 
 # PS_FUNCTION (base, regular function) vs PS_FUNCTION_VARIANT (filter).
 # PowerShell distinguishes filter functions structurally: filter funcs
@@ -911,10 +877,13 @@ function Get-ExportedNamesFromAst {
     return @($names.ToArray())
 }
 
-
-# ============================================================================
-# FUNCTIONS: LOCAL DEFINITION COLLECTION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: LOCAL DEFINITION COLLECTION
+   ----------------------------------------------------------------------------
+   Collection of top-level function names defined in a file, for same-file
+   and cross-file resolution.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Walk the top-level statements of a parsed AST and collect the names of
 # every top-level function defined. Used for:
@@ -937,10 +906,13 @@ function Get-LocalPSFunctions {
     return $funcs
 }
 
-
-# ============================================================================
-# FUNCTIONS: COMMENT INDEX (PRECEDING-COMMENT LOOKUP)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: COMMENT INDEX
+   ----------------------------------------------------------------------------
+   Per-file block-comment index and the preceding/positioned-comment lookups
+   used by docblock and purpose-comment detection.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Build a per-file index of block comments for fast preceding-comment lookup.
 # Used by docblock detection (every function should have a comment-based-help
@@ -1162,11 +1134,13 @@ function Get-PrecedingPSLineComment {
     return $null
 }
 
-
-
-# ============================================================================
-# FUNCTIONS: ROW EMITTERS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ROW EMITTERS
+   ----------------------------------------------------------------------------
+   One emitter per catalog row type. Each builds a row, applies per-construct
+   drift codes, and adds it to the row collection.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Wrap New-AssetRegistryRow with the per-file context every PS row carries.
 # Returns the row but does not add it to $script:rows (callers add through
@@ -1441,7 +1415,7 @@ function Add-PSChangelogRow {
         -SuppressSectionLookup
     $script:rows.Add($row)
 
-    # ---- CHANGELOG entry validation ----
+    # CHANGELOG entry validation
     # # - Each entry begins with `# YYYY-MM-DD <description>` (ISO date, two spaces).
     # - Entries are ordered most-recent-first.
     # - No version numbers in entries.
@@ -1463,7 +1437,7 @@ function Add-PSChangelogRow {
                 continue
             }
 
-            # First-position character is a digit — this should be a date-led entry.
+            # First-position character is a digit  -  this should be a date-led entry.
             if ($stripped -match '^(\d{4}-\d{2}-\d{2})\s\s(\S.*)$') {
                 $dateText = $matches[1]
                 try {
@@ -1563,29 +1537,44 @@ function Add-PSFunctionRow {
         -SuppressSectionLookup
     $script:rows.Add($row)
 
-    # Docblock position drift. The canonical position is 'inside-body'.
-    # Any other position fires drift:
-    # - 'above-function': a block comment exists above the function declaration,
-    # the legacy location. Author put the docblock in the wrong place.
-    # - 'misplaced': a block comment exists somewhere else inside the body
-    # (typically after some code statements). Also misplaced.
-    # - 'missing': no docblock anywhere associated with the function.
-    if ($docInfo.Position -eq 'above-function') {
-        Add-DriftCode -Row $row -Code 'MISPLACED_DOCBLOCK' `
-            -Context "Function '$fnName' has a docblock above the function declaration; the docblock must appear inside the function body after [CmdletBinding()] and param()."
+    # Documentation rules are role-specific.
+    # Shared-library and module functions carry a comment-based-help docblock in
+    # the canonical position (after [CmdletBinding()] and param()) and declare
+    # [CmdletBinding()]. Standalone functions instead carry a single-line purpose
+    # comment above the declaration and do not use a docblock; [CmdletBinding()]
+    # is permitted but not required.
+    if ($script:CurrentFileRole -eq 'standalone') {
+        # A docblock is not used in a standalone file.
+        if ($docInfo.Position -ne 'missing') {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_DOCBLOCK_IN_STANDALONE' `
+                -Context "Function '$fnName' has a comment-based-help docblock; standalone functions use a single-line purpose comment instead."
+        }
+        # A single-line purpose comment is required directly above the declaration.
+        $fnPurpose = Get-PrecedingPSLineComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $line
+        if ($null -eq $fnPurpose) {
+            Add-DriftCode -Row $row -Code 'MISSING_FUNCTION_PURPOSE_COMMENT' `
+                -Context "Function '$fnName' has no single-line purpose comment on the line directly above its declaration."
+        }
     }
-    elseif ($docInfo.Position -eq 'misplaced') {
-        Add-DriftCode -Row $row -Code 'MISPLACED_DOCBLOCK' `
-            -Context "Function '$fnName' has a docblock inside the body but not in the canonical position immediately after [CmdletBinding()] and param()."
-    }
-    elseif ($docInfo.Position -eq 'missing') {
-        Add-DriftCode -Row $row -Code 'MISSING_DOCBLOCK' `
-            -Context "Function '$fnName' has no comment-based-help docblock."
-    }
+    else {
+        # Shared-library and module: docblock mandatory in the canonical position.
+        if ($docInfo.Position -eq 'above-function') {
+            Add-DriftCode -Row $row -Code 'MISPLACED_DOCBLOCK' `
+                -Context "Function '$fnName' has a docblock above the function declaration; the docblock must appear inside the function body after [CmdletBinding()] and param()."
+        }
+        elseif ($docInfo.Position -eq 'misplaced') {
+            Add-DriftCode -Row $row -Code 'MISPLACED_DOCBLOCK' `
+                -Context "Function '$fnName' has a docblock inside the body but not in the canonical position immediately after [CmdletBinding()] and param()."
+        }
+        elseif ($docInfo.Position -eq 'missing') {
+            Add-DriftCode -Row $row -Code 'MISSING_DOCBLOCK' `
+                -Context "Function '$fnName' has no comment-based-help docblock."
+        }
 
-    if (-not (Test-HasCmdletBinding -FunctionAst $FunctionAst)) {
-        Add-DriftCode -Row $row -Code 'MISSING_CMDLETBINDING' `
-            -Context "Function '$fnName' is missing the [CmdletBinding()] attribute."
+        if (-not (Test-HasCmdletBinding -FunctionAst $FunctionAst)) {
+            Add-DriftCode -Row $row -Code 'MISSING_CMDLETBINDING' `
+                -Context "Function '$fnName' is missing the [CmdletBinding()] attribute."
+        }
     }
 
     if ($null -eq $section) {
@@ -1691,13 +1680,15 @@ function Add-PSFunctionRow {
         }
     }
 
-    # ---- Docblock content validation ----
+    # Docblock content validation
     # docblock must include .SYNOPSIS and .DESCRIPTION. .PARAMETER
     # blocks correspond 1:1 with declared parameters and appear in param() order.
     # Forbidden keywords: .COMPONENT, .NOTES, .EXAMPLE, .INPUTS, .OUTPUTS,
     # .LINK, .ROLE, .FUNCTIONALITY, .FORWARDHELPTARGETNAME,
-    # .REMOTEHELPRUNSPACE, .EXTERNALHELP.
-    if ($null -ne $docBlockText) {
+    # .REMOTEHELPRUNSPACE, .EXTERNALHELP. Standalone files do not use docblocks,
+    # so docblock-content validation applies only to the other roles; a docblock
+    # in a standalone file is flagged by FORBIDDEN_DOCBLOCK_IN_STANDALONE alone.
+    if ($null -ne $docBlockText -and $script:CurrentFileRole -ne 'standalone') {
         # MISSING_SYNOPSIS / MISSING_DESCRIPTION
         $hasSynopsis    = $docBlockText -match '(?ms)^\s*\.SYNOPSIS\b'
         $hasDescription = $docBlockText -match '(?ms)^\s*\.DESCRIPTION\b'
@@ -1728,7 +1719,7 @@ function Add-PSFunctionRow {
                 -Context "Function '$fnName' docblock contains forbidden keyword(s): $($foundForbidden -join ', ')."
         }
 
-        # ---- Parameter cross-validation ----
+        # Parameter cross-validation
         # Collect declared param names from AST and .PARAMETER blocks from docblock.
         $declaredParams = @()
         if ($null -ne $FunctionAst.Body -and $null -ne $FunctionAst.Body.ParamBlock) {
@@ -1900,15 +1891,25 @@ function Add-PSAssignmentRow {
             -Context "Top-level assignment `$$varName appears outside any section banner."
     }
     elseif ($sectionType -ne 'CONSTANTS' -and $sectionType -ne 'VARIABLES') {
-        Add-DriftCode -Row $row -Code 'WRONG_DECLARATION_SECTION' `
-            -Context "Top-level assignment `$$varName appears in a $sectionType section; spec requires CONSTANTS or VARIABLES."
-        # Also flag as MISPLACED_DECLARATION (spec-named code; sibling to WRONG_DECLARATION_SECTION)
-        Add-DriftCode -Row $row -Code 'MISPLACED_DECLARATION' `
-            -Context "`$script: declaration appears outside a CONSTANTS or VARIABLES section."
+        # In a standalone file, an assignment inside the EXECUTION section performs
+        # work as the script runs; it is part of execution, not a file-scope
+        # declaration, so it does not fire the CONSTANTS/VARIABLES placement drift.
+        $isStandaloneExecution = ($script:CurrentFileRole -eq 'standalone' -and $sectionType -eq 'EXECUTION')
+        if (-not $isStandaloneExecution) {
+            Add-DriftCode -Row $row -Code 'WRONG_DECLARATION_SECTION' `
+                -Context "Top-level assignment `$$varName appears in a $sectionType section; spec requires CONSTANTS or VARIABLES."
+            # Also flag as MISPLACED_DECLARATION (spec-named code; sibling to WRONG_DECLARATION_SECTION)
+            Add-DriftCode -Row $row -Code 'MISPLACED_DECLARATION' `
+                -Context "`$script: declaration appears outside a CONSTANTS or VARIABLES section."
+        }
     }
 
-    # ---- Purpose comment (granular: CONSTANT/VARIABLE specific) ----
-    if ($null -eq $purposeComment) {
+    # Purpose comment (granular: CONSTANT/VARIABLE specific). A standalone
+    # EXECUTION-section assignment is an execution statement, not a declaration
+    # (per the section 9.3 carve-out above), so the declaration purpose-comment
+    # requirement does not apply to it.
+    $isStandaloneExecution = ($script:CurrentFileRole -eq 'standalone' -and $sectionType -eq 'EXECUTION')
+    if ($null -eq $purposeComment -and -not $isStandaloneExecution) {
         # Emit the granular code matching the section type, plus retain
         # MISSING_PURPOSE_COMMENT for legacy compatibility / catch-all.
         Add-DriftCode -Row $row -Code 'MISSING_PURPOSE_COMMENT' `
@@ -1923,7 +1924,7 @@ function Add-PSAssignmentRow {
         }
     }
 
-    # ---- Scope qualifier validation ----
+    # Scope qualifier validation
     # only $script: (lowercase) is permitted at file scope.
     # $Script: (capital S), $global:, and other qualifiers are drift.
     # Walk the left-side AST text to find the literal qualifier as written.
@@ -1944,7 +1945,7 @@ function Add-PSAssignmentRow {
         }
     }
 
-    # ---- Automatic variable assignment ----
+    # Automatic variable assignment
     # assignment to PowerShell automatic variables is forbidden.
     $automaticVars = @(
         'args', '_', 'matches', 'input', 'PSScriptRoot', 'PSCommandPath',
@@ -1958,7 +1959,7 @@ function Add-PSAssignmentRow {
             -Context "Assignment to PowerShell automatic variable `$$varName is forbidden."
     }
 
-    # ---- Multi-declaration / chained assignment ----
+    # Multi-declaration / chained assignment
     # chained assignments ($a = $b = $c = 0) are forbidden.
     # An AssignmentStatementAst whose Right is itself another AssignmentStatementAst
     # signals chained form.
@@ -2018,7 +2019,7 @@ function Add-PSRouteRow {
             -Context "Add-PodeRoute call appears in a $($section.TypeName) section; spec requires the ROUTE section."
     }
 
-    # ---- Route argument and body validation ----
+    # Route argument and body validation
     # Requires:
     # - -Authentication 'ADLogin' on every Add-PodeRoute call
     # - page routes: Get-UserAccess as the first statement, end with Write-PodeHtmlResponse
@@ -2310,7 +2311,6 @@ function Add-PSSqlCallRow {
 
     return $row
 }
-
 
 # Emit a PS_FUNCTION_CALL USAGE row for a call to a cataloged function.
 # Resolves scope=SHARED if the function is in the shared-functions map;
@@ -2749,10 +2749,16 @@ function Add-PSRBACCheckRow {
     return $row
 }
 
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   The populator run: discover files, parse and collect shared definitions, load
+   registries, walk each file emitting rows, run cross-file checks, validate,
+   index, summarize, and write to the database.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ============================================================================
-# EXECUTION: FILE DISCOVERY
-# ============================================================================
+# -- File Discovery --
 
 Write-Log "Discovering PS files..."
 
@@ -2796,10 +2802,8 @@ if (-not [string]::IsNullOrEmpty($FileFilter)) {
     Write-Log ("Discovered {0} PS files to scan" -f $PSFiles.Count)
 }
 
+# -- Pass 1: Parse and Collect Shared Definitions --
 
-# ============================================================================
-# EXECUTION: PASS 1 - PARSE AND COLLECT SHARED DEFINITIONS
-# ============================================================================
 # Walk every file once to (a) cache the parse result and (b) collect top-level
 # function definitions from shared-library and shared-module files into the
 # shared-functions HashSet. PS_FUNCTION_CALL USAGE rows in Pass 2 use this
@@ -2841,10 +2845,7 @@ foreach ($file in $PSFiles) {
 
 Write-Log ("  Shared functions collected: {0}" -f $script:sharedFunctions.Count)
 
-
-# ============================================================================
-# EXECUTION: REGISTRY LOADS
-# ============================================================================
+# -- Registry Loads --
 
 Write-Log "Loading Object_Registry mapping for FK resolution..."
 $objectRegistryMap = Get-ObjectRegistryMap `
@@ -2868,10 +2869,7 @@ Write-Log ("  Component_Registry component_name rows loaded: {0}" -f $componentN
 
 $objectRegistryMisses = New-Object 'System.Collections.Generic.HashSet[string]'
 
-
-# ============================================================================
-# EXECUTION: PASS 2 - PER-FILE WALK
-# ============================================================================
+# -- Pass 2: Per-File Walk --
 
 Write-Log "Pass 2: generating Asset_Registry rows..."
 
@@ -2886,7 +2884,7 @@ foreach ($file in $PSFiles) {
     $parsed = $cacheEntry.Parsed
     $role   = $cacheEntry.Role
 
-    # ---- Set per-file context ----
+    # Set per-file context
     $script:CurrentFile               = $name
     $script:CurrentFileFullPath       = $file
     $script:CurrentFileRole           = $role
@@ -2945,10 +2943,10 @@ foreach ($file in $PSFiles) {
     $scopeLabel = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
     Write-Host ("  Walking {0} ({1}, role={2})..." -f $name, $scopeLabel, $role) -ForegroundColor Cyan
 
-    # ---- Emit PS_FILE anchor row ----
+    # Emit PS_FILE anchor row
     $psFileRow = Add-PSFileRow -LineEnd $script:CurrentFileLineCount
 
-    # ---- Emit FILE_HEADER row ----
+    # Emit FILE_HEADER row
     # PS header is the first comment-based-help block in the token stream
     # (Block-type comment starting at line 1 or near it).
     $headerComment = $null
@@ -3016,7 +3014,7 @@ foreach ($file in $PSFiles) {
         }
     }
 
-    # ---- Emit COMMENT_BANNER rows from the section list ----
+    # Emit COMMENT_BANNER rows from the section list
     $previousSectionTypeOrderIdx = -1
     $seenBannerNames = New-Object 'System.Collections.Generic.HashSet[string]'
     foreach ($s in $script:CurrentSections) {
@@ -3038,7 +3036,7 @@ foreach ($file in $PSFiles) {
         }
     }
 
-    # ---- AST WALK: PASS A - Top-level functions ----
+    # AST WALK: PASS A - Top-level functions
     try {
         $topLevelFns = Find-PSAstNodes -Ast $parsed.Ast `
             -AstType ([System.Management.Automation.Language.FunctionDefinitionAst]) `
@@ -3128,7 +3126,7 @@ foreach ($file in $PSFiles) {
         Write-Log "Pass A (top-level functions) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # ---- AST WALK: PASS B - Top-level assignments (CONSTANTS/VARIABLES) ----
+    # AST WALK: PASS B - Top-level assignments (CONSTANTS/VARIABLES)
     try {
         # Look at the top-level statements only -- nested assignments inside
         # functions aren't cataloged at the file level.
@@ -3144,7 +3142,7 @@ foreach ($file in $PSFiles) {
         Write-Log "Pass B (top-level assignments) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # ---- AST WALK: PASS C - CommandAst for Pode infrastructure + imports ----
+    # AST WALK: PASS C - CommandAst for Pode infrastructure + imports
     try {
         $allCommands = Find-PSAstNodes -Ast $parsed.Ast `
             -AstType ([System.Management.Automation.Language.CommandAst])
@@ -3276,7 +3274,7 @@ foreach ($file in $PSFiles) {
         Write-Log "Pass C (CommandAst processing) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # ---- AST WALK: PASS D - Dot-source statements ----
+    # AST WALK: PASS D - Dot-source statements
     try {
         # Dot-source statements appear in the AST as CommandAst with InvocationOperator='Dot'.
         # We catch these here separately because they don't match a command name.
@@ -3295,7 +3293,7 @@ foreach ($file in $PSFiles) {
         Write-Log "Pass D (dot-source detection) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # ---- AST WALK: PASS E - String / here-string scanning for SQL and GlobalConfig ----
+    # AST WALK: PASS E - String / here-string scanning for SQL and GlobalConfig
     try {
         # Find every string-bearing AST node. We look at both
         # StringConstantExpressionAst (single/double-quoted single-line strings
@@ -3375,7 +3373,7 @@ foreach ($file in $PSFiles) {
         Write-Log "Pass E (string scanning) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # ---- AST WALK: PASS F - Comment-level passes ----
+    # AST WALK: PASS F - Comment-level passes
     # Walks every comment token in the file and dispatches by shape. Three
     # broad categories are handled:
     #
@@ -3427,7 +3425,7 @@ foreach ($file in $PSFiles) {
             })
         }
 
-        # ---- Trailing line comments: one row each, all carry drift ----
+        # Trailing line comments: one row each, all carry drift
         foreach ($entry in $lineComments) {
             if (-not $entry.IsTrailing) { continue }
             $c = $entry.Comment
@@ -3439,7 +3437,7 @@ foreach ($file in $PSFiles) {
                 -Variant     'trailing' | Out-Null
         }
 
-        # ---- Leading line comments: extract sub-section markers, then coalesce runs ----
+        # Leading line comments: extract sub-section markers, then coalesce runs
         # A run is a maximal sequence of leading line comments on consecutive
         # source lines (no gap). The "next" line must immediately follow the
         # previous (LineStart difference of 1) and must also be a leading line
@@ -3524,7 +3522,8 @@ foreach ($file in $PSFiles) {
             # the marker's leading-blank rule is satisfied transitively).
             # The line below the marker must be blank.
             if ($srcLines.Count -gt 0) {
-                $lineIdx = $entry.LineStart - 1  # 0-based source index
+                # 0-based source index
+                $lineIdx = $entry.LineStart - 1
 
                 # Leading check
                 if ($lineIdx -gt 0 -and -not $hasCommentAbove) {
@@ -3632,7 +3631,7 @@ foreach ($file in $PSFiles) {
             $i = $runEnd + 1
         }
 
-        # ---- Block comments: existing dispatch (header / banner / docblock claimed-check, fallback to PS_COMMENT_BLOCK) ----
+        # Block comments: existing dispatch (header / banner / docblock claimed-check, fallback to PS_COMMENT_BLOCK)
         foreach ($c in $blockComments) {
             $text = $c.Text
             if ([string]::IsNullOrEmpty($text)) { continue }
@@ -3663,7 +3662,7 @@ foreach ($file in $PSFiles) {
         Write-Log "Pass F (comment passes) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # ---- Module-level export checks (module role only) ----
+    # Module-level export checks (module role only)
     # # - MISSING_EXPORTS_SECTION: module file lacks an EXPORTS section.
     # - DEFINED_FUNCTION_NOT_EXPORTED: function declared but not exported.
     if ($script:CurrentFileRole -eq 'module' -and $null -ne $psFileRow) {
@@ -3702,7 +3701,7 @@ foreach ($file in $PSFiles) {
         }
     }
 
-    # ---- TRAILING_WHITESPACE: per-file line scan ----
+    # TRAILING_WHITESPACE: per-file line scan
     # Walks each source line; if any line ends with whitespace, attach the
     # drift code to the PS_FILE row. One drift code attachment per file
     # regardless of count; the context lists offending line numbers.
@@ -3726,7 +3725,7 @@ foreach ($file in $PSFiles) {
         }
     }
 
-    # ---- File-level role/section checks ----
+    # File-level role/section checks
     # MISSING_REQUIRED_SECTION: a section type required for this role is absent.
     # DUPLICATE_SINGULAR_SECTION: a singleton section appears more than once.
     # FORBIDDEN_SECTION_TYPE: a section's type isn't valid for this role
@@ -3789,10 +3788,7 @@ foreach ($file in $PSFiles) {
     Write-Host ("    -> {0} rows" -f $delta) -ForegroundColor Green
 }
 
-
-# ============================================================================
-# EXECUTION: PASS 3 - CROSS-FILE COMPLIANCE CHECKS
-# ============================================================================
+# -- Pass 3: Cross-File Compliance Checks --
 
 Write-Log "Pass 3: cross-file compliance checks..."
 
@@ -3811,7 +3807,8 @@ foreach ($file in $PSFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     if (-not $astCache.ContainsKey($file)) { continue }
     $parsed = $astCache[$file].Parsed
-    if ($null -eq $parsed) { continue }                # data-files have no AST
+    # data-files have no AST
+    if ($null -eq $parsed) { continue }
     if ([string]::IsNullOrEmpty($parsed.Source)) { continue }
 
     $sourceLines = $parsed.Source -split "`r?`n"
@@ -3863,7 +3860,8 @@ foreach ($file in $PSFiles) {
     $excessFound = $false
     $blankRun = 0
     for ($idx = 0; $idx -lt $sourceLines.Count; $idx++) {
-        $lineNum = $idx + 1  # 1-based for skip-set comparison
+        # 1-based for skip-set comparison
+        $lineNum = $idx + 1
         if ($skip.Contains($lineNum)) {
             $blankRun = 0
             continue
@@ -3928,25 +3926,16 @@ foreach ($fnName in $functionDefsByName.Keys) {
     }
 }
 
-
-# ============================================================================
-# EXECUTION: OUTPUT BOUNDARY VALIDATION
-# ============================================================================
+# -- Output Boundary Validation --
 
 Test-DriftCodesAgainstMasterTable -Rows $script:rows
 
-
-# ============================================================================
-# EXECUTION: OCCURRENCE INDEX COMPUTATION
-# ============================================================================
+# -- Occurrence Index Computation --
 
 Write-Log "Computing occurrence_index for all rows..."
 Set-OccurrenceIndices -Rows $script:rows
 
-
-# ============================================================================
-# EXECUTION: SUMMARY OUTPUT
-# ============================================================================
+# -- Summary Output --
 
 Write-Log ("Total rows generated: {0}" -f $script:rows.Count)
 
@@ -3959,10 +3948,7 @@ if ($script:rows.Count -gt 0) {
     Write-Log ("Rows with drift codes: {0} of {1} ({2:F1}%)" -f $driftedCount, $script:rows.Count, ($driftedCount / [double]$script:rows.Count * 100))
 }
 
-
-# ============================================================================
-# EXECUTION: DATABASE WRITE
-# ============================================================================
+# -- Database Write --
 
 if (-not $Execute) {
     Write-Log "PREVIEW MODE - no rows written to Asset_Registry. Use -Execute to insert." 'WARN'
@@ -4001,10 +3987,7 @@ catch {
     exit 1
 }
 
-
-# ============================================================================
-# EXECUTION: OBJECT_REGISTRY MISS REPORT
-# ============================================================================
+# -- Object_Registry Miss Report --
 
 if ($objectRegistryMisses.Count -gt 0) {
     Write-Log ("Object_Registry registration gaps detected for {0} file(s):" -f $objectRegistryMisses.Count) 'WARN'
