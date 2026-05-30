@@ -361,7 +361,7 @@
                                            "ordinal":  5,
                                            "name":  "zone",
                                            "dataType":  "varchar",
-                                           "length":  "10",
+                                           "length":  "20",
                                            "nullable":  false,
                                            "identity":  false,
                                            "description":  "Partition identifier separating the Control Center catalog from the Documentation site catalog. Every USAGE row resolves only against DEFINITION rows in the same zone; cross-zone resolution does not occur. Valid values: \u0027cc\u0027 (Control Center application files) and \u0027docs\u0027 (Documentation site files). Written by every populator at row emission time based on the file path being scanned."
@@ -609,11 +609,11 @@
                                                 },
                                                 {
                                                     "name":  "CK_Asset_Registry_scope",
-                                                    "definition":  "([scope]=\u0027LOCAL\u0027 OR [scope]=\u0027SHARED\u0027 OR [scope]=\u0027\u003cpending\u003e\u0027 OR [scope]=\u0027\u003cundefined\u003e\u0027)"
+                                                    "definition":  "([scope]=\u0027LOCAL\u0027 OR [scope]=\u0027SHARED\u0027 OR [scope]=\u0027\u003cpending\u003e\u0027 OR [scope]=\u0027\u003cundefined\u003e\u0027 OR [scope]=\u0027exempt\u0027)"
                                                 },
                                                 {
                                                     "name":  "CK_Asset_Registry_zone",
-                                                    "definition":  "([zone]=\u0027docs\u0027 OR [zone]=\u0027cc\u0027)"
+                                                    "definition":  "([zone]=\u0027docs\u0027 OR [zone]=\u0027cc\u0027 OR [zone]=\u0027standalone\u0027 OR [zone]=\u0027exempt\u0027 OR [zone]=\u0027\u003cundefined\u003e\u0027)"
                                                 }
                                             ]
                    },
@@ -2214,6 +2214,24 @@
                                        },
                                        {
                                            "ordinal":  9,
+                                           "name":  "zone",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The resolution universe a source file belongs to: cc, docs, standalone, or exempt; NULL for database objects."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "scope",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Whether a source file\u0027s content is LOCAL to the file or SHARED across its zone; NULL for database objects."
+                                       },
+                                       {
+                                           "ordinal":  11,
                                            "name":  "is_active",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -2222,7 +2240,7 @@
                                            "description":  "Soft delete flag. 1 = active, 0 = retired/dropped."
                                        },
                                        {
-                                           "ordinal":  10,
+                                           "ordinal":  12,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -2231,7 +2249,7 @@
                                            "description":  "When this object was registered. Auto-populated via default."
                                        },
                                        {
-                                           "ordinal":  11,
+                                           "ordinal":  13,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -2239,6 +2257,14 @@
                                            "identity":  false,
                                            "default":  "(suser_sname())",
                                            "description":  "Who registered this object. Auto-populated via SUSER_SNAME() default."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "scope_tier",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
                                        }
                                    ],
                        "indexes":  [
@@ -2283,8 +2309,24 @@
                                                     "definition":  "([object_category]=\u0027Documentation\u0027 OR [object_category]=\u0027WebAsset\u0027 OR [object_category]=\u0027PowerShell\u0027 OR [object_category]=\u0027Database\u0027)"
                                                 },
                                                 {
+                                                    "name":  "CK_Object_Registry_scope",
+                                                    "definition":  "([scope]=\u0027exempt\u0027 OR [scope]=\u0027SHARED\u0027 OR [scope]=\u0027LOCAL\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Object_Registry_scope_tier",
+                                                    "definition":  "([scope_tier]=\u0027SCOPED\u0027 OR [scope_tier]=\u0027PLATFORM\u0027)"
+                                                },
+                                                {
                                                     "name":  "CK_Object_Registry_type",
                                                     "definition":  "([object_type]=\u0027Config\u0027 OR [object_type]=\u0027Table\u0027 OR [object_type]=\u0027Procedure\u0027 OR [object_type]=\u0027Trigger\u0027 OR [object_type]=\u0027View\u0027 OR [object_type]=\u0027Function\u0027 OR [object_type]=\u0027Script\u0027 OR [object_type]=\u0027Route\u0027 OR [object_type]=\u0027API\u0027 OR [object_type]=\u0027Module\u0027 OR [object_type]=\u0027JavaScript\u0027 OR [object_type]=\u0027CSS\u0027 OR [object_type]=\u0027HTML\u0027 OR [object_type]=\u0027XE Session\u0027 OR [object_type]=\u0027DDL Trigger\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Object_Registry_zone",
+                                                    "definition":  "([zone]=\u0027exempt\u0027 OR [zone]=\u0027standalone\u0027 OR [zone]=\u0027docs\u0027 OR [zone]=\u0027cc\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Object_Registry_zone_scope_pairing",
+                                                    "definition":  "(([zone]=\u0027standalone\u0027 OR [zone]=\u0027docs\u0027 OR [zone]=\u0027cc\u0027) AND ([scope]=\u0027SHARED\u0027 OR [scope]=\u0027LOCAL\u0027) OR [zone]=\u0027exempt\u0027 AND [scope]=\u0027exempt\u0027 OR [zone] IS NULL AND [scope] IS NULL)"
                                                 }
                                             ],
                        "foreignKeys":  [
