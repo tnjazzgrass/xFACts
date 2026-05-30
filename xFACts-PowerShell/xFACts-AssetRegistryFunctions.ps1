@@ -265,7 +265,7 @@ function New-AssetRegistryRow {
     param(
         [Parameter(Mandatory)][string]$FileName,
         [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS')][string]$FileType,
-        [Parameter(Mandatory)][ValidateSet('cc','docs')][string]$Zone,
+        [Parameter(Mandatory)][ValidateSet('cc','docs','standalone','exempt','<undefined>')][string]$Zone,
         [int]$LineStart = 1,
         [int]$LineEnd = 0,
         [int]$ColumnStart = 0,
@@ -548,7 +548,69 @@ WHERE object_type IN ($inList)
     return $map
 }
 
-# Build a (file_name -> cc_prefix) map by joining dbo.Object_Registry to
+# Build a (file_name -> @{ Zone; Scope; ScopeTier }) map from dbo.Object_Registry.
+# Filters by object_type and is_active = 1, same alias-to-object_type mapping
+# as Get-ObjectRegistryMap. Returns the per-file zone, scope, and scope_tier
+# classification the populators use to stamp each emitted row and to select
+# documentation treatment (scope_tier PLATFORM -> full docblocks; SCOPED or
+# unset -> light purpose comment). ScopeTier is $null when the registry value
+# is NULL. A file absent from this map is a registration gap: the calling
+# populator stamps '<undefined>' for zone and scope and flags the file so the
+# gap surfaces as drift rather than being silently misclassified.
+function Get-ObjectRegistryZoneScopeMap {
+    param(
+        [Parameter(Mandatory)][string]$ServerInstance,
+        [Parameter(Mandatory)][string]$Database,
+        [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS','Route','API','Module','Config')][string[]]$FileType
+    )
+
+    $objectTypes = New-Object System.Collections.Generic.List[string]
+    foreach ($ft in $FileType) {
+        $mapped = switch ($ft) {
+            'CSS'    { 'CSS' }
+            'HTML'   { 'HTML' }
+            'JS'     { 'JavaScript' }
+            'PS'     { 'Script' }
+            'Route'  { 'Route' }
+            'API'    { 'API' }
+            'Module' { 'Module' }
+            'Config' { 'Config' }
+        }
+        if (-not $objectTypes.Contains($mapped)) { [void]$objectTypes.Add($mapped) }
+    }
+
+    # All values come from the closed alias set above, so there is no injection
+    # risk from the -FileType parameter.
+    $inList = ($objectTypes | ForEach-Object { "'$_'" }) -join ', '
+
+    $query = @"
+SELECT object_name, zone, scope, scope_tier
+FROM dbo.Object_Registry
+WHERE object_type IN ($inList)
+  AND is_active = 1
+"@
+
+    $map = @{}
+    try {
+        $results = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database `
+                                 -Query $query -QueryTimeout 30 `
+                                 -ApplicationName $script:XFActsAppName `
+                                 -ErrorAction Stop `
+                                 -SuppressProviderContextWarning -TrustServerCertificate
+        foreach ($row in $results) {
+            $map[$row.object_name] = @{
+                Zone      = $row.zone
+                Scope     = $row.scope
+                ScopeTier = if ($row.scope_tier -is [System.DBNull]) { $null } else { $row.scope_tier }
+            }
+        }
+    }
+    catch {
+        Write-Log "Get-ObjectRegistryZoneScopeMap query failed: $($_.Exception.Message)" 'WARN'
+    }
+
+    return $map
+}
 # dbo.Component_Registry on component_name, filtered to one or more
 # object_types (translated from the populator's FileType alias). Files
 # whose component has cc_prefix = NULL are included with $null as the
