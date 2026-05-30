@@ -328,7 +328,6 @@ $DriftDescriptions = [ordered]@{
     'MISPLACED_DOCBLOCK'                = "A function docblock is present but is not in the required position. The docblock must appear as the third construct inside the function body, after [CmdletBinding()] and param(), before the body code. Docblocks above the function declaration or after body code fire this drift."
     'MISSING_CMDLETBINDING'             = "A function definition is missing the [CmdletBinding()] attribute. Per spec, every function must declare CmdletBinding."
     'MISSING_PARAM_BLOCK'               = "A function is missing a param() block. Every function declares a param() block even if empty."
-    'MALFORMED_DOCBLOCK'                = "A function docblock is missing required elements (.SYNOPSIS, .DESCRIPTION) or has them in wrong order."
     'MISSING_SYNOPSIS'                  = "A function docblock is missing the .SYNOPSIS field."
     'MISSING_DESCRIPTION'               = "A function docblock is missing the .DESCRIPTION field."
     'FORBIDDEN_DOCBLOCK_KEYWORD'        = "A function docblock contains a forbidden keyword (.COMPONENT, .NOTES, .EXAMPLE, etc.). Function docblocks only allow .SYNOPSIS, .DESCRIPTION, and .PARAMETER blocks."
@@ -396,6 +395,9 @@ $DriftDescriptions = [ordered]@{
     # Logging
     'FORBIDDEN_WRITE_HOST'              = "A Write-Host call appears in a standalone or shared-library file. Use Write-Log instead. The Start-xFACtsOrchestrator.ps1 entry-point script is exempt."
 
+    # Registration
+    'FILE_NOT_REGISTERED'               = "The file has no active row in Object_Registry, so its zone and scope could not be determined. Every scanned file must be registered; add it to dbo.Object_Registry. Rows from this file carry zone and scope of '<undefined>'."
+
     # Whitespace
     'EXCESS_BLANK_LINES'                = "More than one blank line appears between top-level constructs."
     'TRAILING_WHITESPACE'               = "A line ends with trailing whitespace."
@@ -418,10 +420,15 @@ $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 # drift codes to each file's anchor row through this map.
 $script:psFileRowByFile = @{}
 
-# Set of function names defined in shared-library/module files (scope=SHARED).
-$script:sharedFunctions  = New-Object 'System.Collections.Generic.HashSet[string]'
-# Map of shared function name to its defining source file.
-$script:sharedSourceFile = @{}
+# Shared-scope function names per zone. Keyed by zone (cc, docs, standalone);
+# each value is a HashSet of function names defined in SHARED-scope files in
+# that zone. Resolution is strictly within-zone: a call resolves SHARED only
+# against shared functions in the caller's own zone.
+$script:sharedFunctionsByZone  = @{}
+# Map of zone -> @{ function name -> defining source file } for SHARED-scope
+# functions. Parallel to $sharedFunctionsByZone; supplies source_file on a
+# within-zone SHARED resolution and the shadow-source file name.
+$script:sharedSourceFileByZone = @{}
 
 # Per-file context populated by the per-file walk loop. Each emitter reads
 # from these to apply file-scoped attribution to the rows it creates.
@@ -431,6 +438,18 @@ $script:CurrentFile               = $null
 $script:CurrentFileFullPath       = $null
 # Role: page-route, api-route, module, standalone, or shared-library.
 $script:CurrentFileRole           = $null
+# Resolution zone for the current file, read from Object_Registry (cc, docs,
+# standalone, exempt, or '<undefined>' when the file is not registered).
+$script:CurrentFileZone           = $null
+# Resolution scope for the current file, read from Object_Registry (LOCAL,
+# SHARED, exempt, or '<undefined>' when the file is not registered). Stamped
+# on every row the file produces.
+$script:CurrentFileScope          = $null
+# Documentation tier for the current file, read from Object_Registry (PLATFORM,
+# SCOPED, or $null). PLATFORM selects full comment-based-help docblock treatment
+# (spec 8.3); SCOPED and unset select the light single-line purpose comment
+# treatment (spec 8.4).
+$script:CurrentFileScopeTier      = $null
 # Shorthand for a shared-library or module file.
 $script:CurrentFileIsShared       = $false
 # Raw text of the file.
@@ -1175,7 +1194,7 @@ function New-PSRow {
     return New-AssetRegistryRow `
         -FileName           $script:CurrentFile `
         -FileType           'PS' `
-        -Zone               'cc' `
+        -Zone               $script:CurrentFileZone `
         -LineStart          $LineStart `
         -LineEnd            $LineEnd `
         -ColumnStart        $ColumnStart `
@@ -1203,7 +1222,7 @@ function Add-PSFileRow {
     $key = "$($script:CurrentFile)|1|PS_FILE|$($script:CurrentFile)|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $row = New-PSRow `
         -ComponentType 'PS_FILE' `
         -ComponentName $script:CurrentFile `
@@ -1225,7 +1244,7 @@ function Add-PSFileHeaderRow {
         [int]$LineStart, [int]$LineEnd,
         [string]$RawText, [string]$PurposeDescription
     )
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $row = New-PSRow `
         -ComponentType      'FILE_HEADER' `
         -ComponentName      $script:CurrentFile `
@@ -1261,7 +1280,7 @@ function Add-PSCommentBannerRow {
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
     $componentName = if ($Section.BannerName) { $Section.BannerName } else { $Section.FullTitle }
-    $scope         = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope         = $script:CurrentFileScope
 
     $row = New-PSRow `
         -ComponentType      'COMMENT_BANNER' `
@@ -1389,7 +1408,7 @@ function Add-PSChangelogRow {
     $key = "$($script:CurrentFile)|$($Section.BodyStartLine)|PS_CHANGELOG|$($script:CurrentFile)|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     $changelogText = $null
     if ($script:CurrentFileSource) {
@@ -1495,7 +1514,7 @@ function Add-PSFunctionRow {
     $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
     $sectionTitle = if ($section) { $section.FullTitle } else { $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $key = "$($script:CurrentFile)|$line|$col|$($shape.ComponentType)|$fnName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
@@ -1537,27 +1556,15 @@ function Add-PSFunctionRow {
         -SuppressSectionLookup
     $script:rows.Add($row)
 
-    # Documentation rules are role-specific.
-    # Shared-library and module functions carry a comment-based-help docblock in
-    # the canonical position (after [CmdletBinding()] and param()) and declare
-    # [CmdletBinding()]. Standalone functions instead carry a single-line purpose
-    # comment above the declaration and do not use a docblock; [CmdletBinding()]
-    # is permitted but not required.
-    if ($script:CurrentFileRole -eq 'standalone') {
-        # A docblock is not used in a standalone file.
-        if ($docInfo.Position -ne 'missing') {
-            Add-DriftCode -Row $row -Code 'FORBIDDEN_DOCBLOCK_IN_STANDALONE' `
-                -Context "Function '$fnName' has a comment-based-help docblock; standalone functions use a single-line purpose comment instead."
-        }
-        # A single-line purpose comment is required directly above the declaration.
-        $fnPurpose = Get-PrecedingPSLineComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $line
-        if ($null -eq $fnPurpose) {
-            Add-DriftCode -Row $row -Code 'MISSING_FUNCTION_PURPOSE_COMMENT' `
-                -Context "Function '$fnName' has no single-line purpose comment on the line directly above its declaration."
-        }
-    }
-    else {
-        # Shared-library and module: docblock mandatory in the canonical position.
+    # Documentation rules are determined by scope_tier (spec 8.3 / 8.4).
+    # PLATFORM-tier files (broadly-consumed shared infrastructure) carry a
+    # comment-based-help docblock in the canonical position (after
+    # [CmdletBinding()] and param()) and declare [CmdletBinding()]. SCOPED-tier
+    # files and standalone scripts (scope_tier unset) instead carry a single-line
+    # purpose comment above the declaration and do not use a docblock;
+    # [CmdletBinding()] is permitted but not required.
+    if ($script:CurrentFileScopeTier -eq 'PLATFORM') {
+        # PLATFORM: docblock mandatory in the canonical position.
         if ($docInfo.Position -eq 'above-function') {
             Add-DriftCode -Row $row -Code 'MISPLACED_DOCBLOCK' `
                 -Context "Function '$fnName' has a docblock above the function declaration; the docblock must appear inside the function body after [CmdletBinding()] and param()."
@@ -1574,6 +1581,19 @@ function Add-PSFunctionRow {
         if (-not (Test-HasCmdletBinding -FunctionAst $FunctionAst)) {
             Add-DriftCode -Row $row -Code 'MISSING_CMDLETBINDING' `
                 -Context "Function '$fnName' is missing the [CmdletBinding()] attribute."
+        }
+    }
+    else {
+        # SCOPED-tier and standalone: a docblock is not used.
+        if ($docInfo.Position -ne 'missing') {
+            Add-DriftCode -Row $row -Code 'FORBIDDEN_DOCBLOCK_IN_STANDALONE' `
+                -Context "Function '$fnName' has a comment-based-help docblock; SCOPED-tier and standalone functions use a single-line purpose comment instead."
+        }
+        # A single-line purpose comment is required directly above the declaration.
+        $fnPurpose = Get-PrecedingPSLineComment -CommentIndex $script:CurrentCommentIndex -DefinitionLine $line
+        if ($null -eq $fnPurpose) {
+            Add-DriftCode -Row $row -Code 'MISSING_FUNCTION_PURPOSE_COMMENT' `
+                -Context "Function '$fnName' has no single-line purpose comment on the line directly above its declaration."
         }
     }
 
@@ -1685,10 +1705,11 @@ function Add-PSFunctionRow {
     # blocks correspond 1:1 with declared parameters and appear in param() order.
     # Forbidden keywords: .COMPONENT, .NOTES, .EXAMPLE, .INPUTS, .OUTPUTS,
     # .LINK, .ROLE, .FUNCTIONALITY, .FORWARDHELPTARGETNAME,
-    # .REMOTEHELPRUNSPACE, .EXTERNALHELP. Standalone files do not use docblocks,
-    # so docblock-content validation applies only to the other roles; a docblock
-    # in a standalone file is flagged by FORBIDDEN_DOCBLOCK_IN_STANDALONE alone.
-    if ($null -ne $docBlockText -and $script:CurrentFileRole -ne 'standalone') {
+    # .REMOTEHELPRUNSPACE, .EXTERNALHELP. Only PLATFORM-tier files use docblocks,
+    # so docblock-content validation applies only to them; a docblock in a
+    # SCOPED-tier or standalone file is flagged by FORBIDDEN_DOCBLOCK_IN_STANDALONE
+    # alone, not subjected to content rules it is not meant to satisfy.
+    if ($null -ne $docBlockText -and $script:CurrentFileScopeTier -eq 'PLATFORM') {
         # MISSING_SYNOPSIS / MISSING_DESCRIPTION
         $hasSynopsis    = $docBlockText -match '(?ms)^\s*\.SYNOPSIS\b'
         $hasDescription = $docBlockText -match '(?ms)^\s*\.DESCRIPTION\b'
@@ -1773,7 +1794,7 @@ function Add-PSDocblockRow {
     $key = "$($script:CurrentFile)|$LineStart|PS_DOCBLOCK|$FunctionName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     $row = New-PSRow `
         -ComponentType      'PS_DOCBLOCK' `
@@ -1806,7 +1827,7 @@ function Add-PSParameterRow {
     $key = "$($script:CurrentFile)|$line|$col|PS_PARAMETER|$FunctionName.$paramName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     $typeText = ''
     if ($ParameterAst.StaticType -and $ParameterAst.StaticType.FullName -ne 'System.Object') {
@@ -1864,7 +1885,7 @@ function Add-PSAssignmentRow {
     if ($sectionType -eq 'CONSTANTS') { $componentType = 'PS_CONSTANT' }
     elseif ($sectionType -eq 'VARIABLES') { $componentType = 'PS_VARIABLE' }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $key = "$($script:CurrentFile)|$line|$col|$componentType|$varName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
@@ -1994,7 +2015,7 @@ function Add-PSRouteRow {
     $key = "$($script:CurrentFile)|$line|$col|PS_ROUTE|$componentName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = if ($CommandAst.Extent) { Format-SingleLine -Text $CommandAst.Extent.Text } else { 'Add-PodeRoute' }
 
     $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
@@ -2125,7 +2146,7 @@ function Add-PSMiddlewareRow {
     $key = "$($script:CurrentFile)|$line|$col|PS_MIDDLEWARE|$componentName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = if ($CommandAst.Extent) { Format-SingleLine -Text $CommandAst.Extent.Text } else { 'Add-PodeMiddleware' }
 
     $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
@@ -2162,7 +2183,7 @@ function Add-PSWebSocketRouteRow {
     $key = "$($script:CurrentFile)|$line|$col|PS_WEBSOCKET_ROUTE|$componentName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = if ($CommandAst.Extent) { Format-SingleLine -Text $CommandAst.Extent.Text } else { 'Add-PodeRouteWebSocket' }
 
     $row = New-PSRow `
@@ -2192,7 +2213,7 @@ function Add-PSExportRow {
     $key = "$($script:CurrentFile)|$line|$col|PS_EXPORT|$ExportedName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = "Export-ModuleMember -${ExportKind} $ExportedName"
 
     $row = New-PSRow `
@@ -2228,7 +2249,7 @@ function Add-PSSqlCallRow {
     $key = "$($script:CurrentFile)|$line|$col|SQL_QUERY|$cmdName|USAGE|sqlcmd-call"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = if ($CommandAst.Extent) { Format-SingleLine -Text $CommandAst.Extent.Text } else { "$cmdName ..." }
     if ($sig -and $sig.Length -gt 200) { $sig = $sig.Substring(0, 200) + '...' }
 
@@ -2327,26 +2348,53 @@ function Add-PSFunctionCallRow {
     $sourceFile = $null
     $isOrphan = $false
 
-    if ($script:sharedFunctions.Contains($fnName)) {
+    # Resolution is strictly within the calling file's zone. Resolution order:
+    #  1. Shared function in the SAME zone        -> SHARED (resolved here).
+    #  2. Local function in the current file       -> LOCAL  (resolved here).
+    #  3. Shared function in a DIFFERENT zone       -> <pending> (cross-zone
+    #     reference, deferred to the resolver -- not resolvable in-populator).
+    #  4. xFACts-shaped name matching nothing       -> orphan, flagged here.
+    #  5. Anything else (built-ins, external)       -> skipped (not cataloged).
+    $zoneShared = if ($script:sharedFunctionsByZone.ContainsKey($script:CurrentFileZone)) {
+                      $script:sharedFunctionsByZone[$script:CurrentFileZone]
+                  } else { $null }
+
+    if ($null -ne $zoneShared -and $zoneShared.Contains($fnName)) {
         $scope = 'SHARED'
-        $sourceFile = if ($script:sharedSourceFile.ContainsKey($fnName)) { $script:sharedSourceFile[$fnName] } else { '<shared>' }
+        $srcMap = $script:sharedSourceFileByZone[$script:CurrentFileZone]
+        $sourceFile = if ($srcMap.ContainsKey($fnName)) { $srcMap[$fnName] } else { '<shared>' }
     }
     elseif ($script:CurrentLocalFunctions -and $script:CurrentLocalFunctions.Contains($fnName)) {
         $scope = 'LOCAL'
         $sourceFile = $script:CurrentFile
     }
-    elseif ($fnName -cmatch '^[A-Z][a-zA-Z]+-[a-z][a-z0-9]*_[A-Za-z]') {
-        # xFACts-shaped name (Verb-prefix_Noun) that does not
-        # resolve to any cataloged function. Emit a row carrying
-        # ORPHAN_FUNCTION_CALL drift so the catalog flags the missing target.
-        # Bare-Verb-Noun uncataloged calls remain silently skipped because
-        # they're indistinguishable from external-module / built-in calls.
-        $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
-        $sourceFile = $null
-        $isOrphan = $true
-    }
     else {
-        return $null
+        # Not resolvable within this zone. Determine whether the function is
+        # shared in some OTHER zone (cross-zone reference -> defer to resolver
+        # as <pending>) regardless of its name shape, or matches nothing at all.
+        $sharedOtherZone = $false
+        foreach ($z in $script:sharedFunctionsByZone.Keys) {
+            if ($z -eq $script:CurrentFileZone) { continue }
+            if ($script:sharedFunctionsByZone[$z].Contains($fnName)) { $sharedOtherZone = $true; break }
+        }
+
+        if ($sharedOtherZone) {
+            $scope = '<pending>'
+            $sourceFile = '<pending>'
+        }
+        elseif ($fnName -cmatch '^[A-Z][a-zA-Z]+-[a-z][a-z0-9]*_[A-Za-z]') {
+            # xFACts-shaped name (Verb-prefix_Noun) that does not resolve to any
+            # cataloged function in any zone. Emit a row carrying
+            # ORPHAN_FUNCTION_CALL so the catalog flags the missing target.
+            # Bare-Verb-Noun uncataloged calls remain silently skipped because
+            # they're indistinguishable from external-module / built-in calls.
+            $scope = $script:CurrentFileScope
+            $sourceFile = $null
+            $isOrphan = $true
+        }
+        else {
+            return $null
+        }
     }
 
     $line = Get-PSAstNodeLine    -Node $CommandAst
@@ -2401,7 +2449,7 @@ function Add-PSWriteHostRow {
     $key = "$($script:CurrentFile)|$line|$col|PS_WRITE_HOST|<write-host>|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = if ($CommandAst.Extent) { Format-SingleLine -Text $CommandAst.Extent.Text } else { 'Write-Host ...' }
 
     $parentFn = $null
@@ -2447,7 +2495,7 @@ function Add-PSInlineBannerRow {
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|PS_INLINE_BANNER|<inline-banner>|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     $row = New-PSRow `
         -ComponentType 'PS_INLINE_BANNER' `
@@ -2503,7 +2551,7 @@ function Add-PSInlineCommentRow {
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|PS_INLINE_COMMENT|<inline-comment>|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     # Build a parent_function attribution by scanning function ranges.
     # Reuse the cached function range list built during the walk.
@@ -2550,7 +2598,7 @@ function Add-PSRemovedCodeCommentRow {
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|PS_REMOVED_CODE_COMMENT|<removed-code>|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     $row = New-PSRow `
         -ComponentType 'PS_REMOVED_CODE_COMMENT' `
@@ -2577,7 +2625,7 @@ function Add-PSCommentBlockRow {
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|PS_COMMENT_BLOCK|<block-comment>|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     $row = New-PSRow `
         -ComponentType      'PS_COMMENT_BLOCK' `
@@ -2615,7 +2663,7 @@ function Add-PSModuleImportRow {
     $key = "$($script:CurrentFile)|$line|$col|MODULE_IMPORT|$componentName|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = if ($ImportAst.Extent) { Format-SingleLine -Text $ImportAst.Extent.Text } else { "$ImportKind $componentName" }
 
     $row = New-PSRow `
@@ -2657,7 +2705,7 @@ function Add-PSSqlQueryRow {
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|SQL_QUERY|<sql-query>|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = Format-SingleLine -Text $QueryText
     if ($sig -and $sig.Length -gt 200) { $sig = $sig.Substring(0, 200) + '...' }
 
@@ -2690,7 +2738,7 @@ function Add-PSGlobalConfigRefRow {
     $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|GLOBALCONFIG_REF|$SettingName|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
 
     $row = New-PSRow `
         -ComponentType  'GLOBALCONFIG_REF' `
@@ -2721,7 +2769,7 @@ function Add-PSRBACCheckRow {
     $key = "$($script:CurrentFile)|$line|$col|RBAC_CHECK|$CheckFunction|USAGE|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scope = $script:CurrentFileScope
     $sig = if ($CommandAst.Extent) { Format-SingleLine -Text $CommandAst.Extent.Text } else { "$CheckFunction(...)" }
 
     $parentFn = $null
@@ -2802,12 +2850,23 @@ if (-not [string]::IsNullOrEmpty($FileFilter)) {
     Write-Log ("Discovered {0} PS files to scan" -f $PSFiles.Count)
 }
 
+# -- Object_Registry Zone/Scope Classification --
+
+# Loaded before Pass 1 because the shared-function collection gate keys off
+# each file's table scope (SHARED) rather than its detected role.
+Write-Log "Loading Object_Registry zone/scope classification map..."
+$objectZoneScopeMap = Get-ObjectRegistryZoneScopeMap `
+    -ServerInstance $script:XFActsServerInstance `
+    -Database       $script:XFActsDatabase `
+    -FileType       @('PS','Route','API','Module')
+Write-Log ("  Object_Registry zone/scope rows loaded: {0}" -f $objectZoneScopeMap.Count)
+
 # -- Pass 1: Parse and Collect Shared Definitions --
 
 # Walk every file once to (a) cache the parse result and (b) collect top-level
-# function definitions from shared-library and shared-module files into the
-# shared-functions HashSet. PS_FUNCTION_CALL USAGE rows in Pass 2 use this
-# map to resolve scope=SHARED.
+# function definitions from SHARED-scope files into the shared-functions
+# HashSet. PS_FUNCTION_CALL USAGE rows in Pass 2 use this map to resolve
+# scope=SHARED.
 
 Write-Log "Pass 1: parse all files, collect shared-scope function definitions..."
 
@@ -2826,24 +2885,35 @@ foreach ($file in $PSFiles) {
     Write-Host " ok" -ForegroundColor Green
     $astCache[$file] = @{ Parsed = $parsed; Role = $role }
 
-    # Only collect shared-scope functions from shared-library and module files.
-    $isSharedScope = ($role -eq 'shared-library' -or $role -eq 'module')
-    if (-not $isSharedScope) { continue }
+    # Collect shared-scope functions from files whose Object_Registry scope is
+    # SHARED, bucketed by the file's zone. Resolution is strictly within-zone,
+    # so a function shared in one zone is invisible to callers in another. A
+    # file absent from the map is a registration gap: it contributes no shared
+    # functions and is flagged in Pass 2.
+    if (-not $objectZoneScopeMap.ContainsKey($name)) { continue }
+    $fileZone  = $objectZoneScopeMap[$name].Zone
+    $fileScope = $objectZoneScopeMap[$name].Scope
+    if ($fileScope -ne 'SHARED') { continue }
+
+    if (-not $script:sharedFunctionsByZone.ContainsKey($fileZone)) {
+        $script:sharedFunctionsByZone[$fileZone]  = New-Object 'System.Collections.Generic.HashSet[string]'
+        $script:sharedSourceFileByZone[$fileZone] = @{}
+    }
 
     $topLevelFns = Find-PSAstNodes -Ast $parsed.Ast `
         -AstType ([System.Management.Automation.Language.FunctionDefinitionAst]) `
         -TopLevelOnly
     foreach ($fn in $topLevelFns) {
         if ($fn.Name) {
-            [void]$script:sharedFunctions.Add($fn.Name)
-            if (-not $script:sharedSourceFile.ContainsKey($fn.Name)) {
-                $script:sharedSourceFile[$fn.Name] = $name
+            [void]$script:sharedFunctionsByZone[$fileZone].Add($fn.Name)
+            if (-not $script:sharedSourceFileByZone[$fileZone].ContainsKey($fn.Name)) {
+                $script:sharedSourceFileByZone[$fileZone][$fn.Name] = $name
             }
         }
     }
 }
 
-Write-Log ("  Shared functions collected: {0}" -f $script:sharedFunctions.Count)
+Write-Log ("  Shared functions collected across {0} zone(s)." -f $script:sharedFunctionsByZone.Count)
 
 # -- Registry Loads --
 
@@ -2888,7 +2958,22 @@ foreach ($file in $PSFiles) {
     $script:CurrentFile               = $name
     $script:CurrentFileFullPath       = $file
     $script:CurrentFileRole           = $role
-    $script:CurrentFileIsShared       = ($role -eq 'shared-library' -or $role -eq 'module')
+
+    # Zone and scope come from Object_Registry, not from role or path. A file
+    # absent from the map is a registration gap: stamp '<undefined>' for both
+    # so the gap surfaces as drift (FILE_NOT_REGISTERED on the anchor row)
+    # rather than being silently misclassified.
+    if ($objectZoneScopeMap.ContainsKey($name)) {
+        $script:CurrentFileZone      = $objectZoneScopeMap[$name].Zone
+        $script:CurrentFileScope     = $objectZoneScopeMap[$name].Scope
+        $script:CurrentFileScopeTier = $objectZoneScopeMap[$name].ScopeTier
+    } else {
+        $script:CurrentFileZone      = '<undefined>'
+        $script:CurrentFileScope     = '<undefined>'
+        $script:CurrentFileScopeTier = $null
+        [void]$objectRegistryMisses.Add($name)
+    }
+    $script:CurrentFileIsShared       = ($script:CurrentFileScope -eq 'SHARED')
     $script:CurrentFileSource         = $parsed.Source
     $script:CurrentAst                = $parsed.Ast
     $script:CurrentTokens             = $parsed.Tokens
@@ -2940,7 +3025,7 @@ foreach ($file in $PSFiles) {
     }
 
     $startCount = $script:rows.Count
-    $scopeLabel = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+    $scopeLabel = $script:CurrentFileScope
     Write-Host ("  Walking {0} ({1}, role={2})..." -f $name, $scopeLabel, $role) -ForegroundColor Cyan
 
     # Emit PS_FILE anchor row
@@ -3792,6 +3877,18 @@ foreach ($file in $PSFiles) {
 
 Write-Log "Pass 3: cross-file compliance checks..."
 
+# FILE_NOT_REGISTERED: any file absent from the Object_Registry zone/scope map
+# was stamped zone/scope '<undefined>' during the walk and recorded in
+# $objectRegistryMisses. Attach the drift code to each such file's PS_FILE
+# anchor row so the registration gap surfaces in drift analysis rather than
+# only in the console miss report.
+foreach ($missing in $objectRegistryMisses) {
+    if ($script:psFileRowByFile.ContainsKey($missing)) {
+        Add-DriftCode -Row $script:psFileRowByFile[$missing] -Code 'FILE_NOT_REGISTERED' `
+            -Context "File '$missing' has no active Object_Registry row; zone and scope are '<undefined>'."
+    }
+}
+
 # EXCESS_BLANK_LINES: walk each file's source and find consecutive runs of
 # truly blank lines (whitespace-only) between top-level constructs. The
 # previous implementation measured the line-number gap between adjacent
@@ -3884,15 +3981,21 @@ foreach ($file in $PSFiles) {
 }
 
 # SHADOWS_SHARED_FUNCTION: a non-shared file defining a function whose name
-# matches a shared-library export.
+# matches a shared function IN THE SAME ZONE. Cross-zone same-name functions
+# are separate namespaces (never loaded into the same runtime), so they are
+# not shadows.
 $shadowCandidates = @($script:rows | Where-Object {
     ($_.ComponentType -eq 'PS_FUNCTION' -or $_.ComponentType -eq 'PS_FUNCTION_VARIANT') -and
     $_.ReferenceType -eq 'DEFINITION' -and
     $_.Scope -eq 'LOCAL'
 })
 foreach ($row in $shadowCandidates) {
-    if ($script:sharedFunctions.Contains($row.ComponentName)) {
-        $shadowSrc = if ($script:sharedSourceFile.ContainsKey($row.ComponentName)) { $script:sharedSourceFile[$row.ComponentName] } else { '<shared>' }
+    $zoneShared = if ($script:sharedFunctionsByZone.ContainsKey($row.Zone)) {
+                      $script:sharedFunctionsByZone[$row.Zone]
+                  } else { $null }
+    if ($null -ne $zoneShared -and $zoneShared.Contains($row.ComponentName)) {
+        $srcMap = $script:sharedSourceFileByZone[$row.Zone]
+        $shadowSrc = if ($srcMap.ContainsKey($row.ComponentName)) { $srcMap[$row.ComponentName] } else { '<shared>' }
         Add-DriftCode -Row $row -Code 'SHADOWS_SHARED_FUNCTION' `
             -Context "Function '$($row.ComponentName)' shadows the shared definition in '$shadowSrc'."
     }
@@ -3903,26 +4006,33 @@ foreach ($row in $shadowCandidates) {
 # DEFINITION rows by ComponentName; any group spanning two or more distinct
 # files gets the drift code attached to every row in that group, with context
 # naming the other files involved.
+# DUPLICATE_FUNCTION_DEFINITION: the same function name declared by more than
+# one PS file WITHIN THE SAME ZONE. Grouping is by zone + name: a function
+# defined in two files of the same zone is a real runtime collision; the same
+# name in two different zones is not (separate resolution universes, never
+# loaded together). Any same-zone group spanning two or more distinct files
+# gets the drift code on every row in that group.
 $allFunctionDefRows = @($script:rows | Where-Object {
     ($_.ComponentType -eq 'PS_FUNCTION' -or $_.ComponentType -eq 'PS_FUNCTION_VARIANT') -and
     $_.ReferenceType -eq 'DEFINITION'
 })
-$functionDefsByName = @{}
+$functionDefsByKey = @{}
 foreach ($row in $allFunctionDefRows) {
-    if (-not $functionDefsByName.ContainsKey($row.ComponentName)) {
-        $functionDefsByName[$row.ComponentName] = New-Object System.Collections.Generic.List[object]
+    $key = "$($row.Zone)|$($row.ComponentName)"
+    if (-not $functionDefsByKey.ContainsKey($key)) {
+        $functionDefsByKey[$key] = New-Object System.Collections.Generic.List[object]
     }
-    [void]$functionDefsByName[$row.ComponentName].Add($row)
+    [void]$functionDefsByKey[$key].Add($row)
 }
-foreach ($fnName in $functionDefsByName.Keys) {
-    $defRows = $functionDefsByName[$fnName]
+foreach ($key in $functionDefsByKey.Keys) {
+    $defRows = $functionDefsByKey[$key]
     $distinctFiles = @($defRows | ForEach-Object { $_.FileName } | Sort-Object -Unique)
     if ($distinctFiles.Count -lt 2) { continue }
     foreach ($defRow in $defRows) {
         $otherFiles = @($distinctFiles | Where-Object { $_ -ne $defRow.FileName })
         $otherList  = $otherFiles -join ', '
         Add-DriftCode -Row $defRow -Code 'DUPLICATE_FUNCTION_DEFINITION' `
-            -Context "Function '$fnName' is also defined in: $otherList. Cross-file duplicate definitions resolve unpredictably at runtime."
+            -Context "Function '$($defRow.ComponentName)' is also defined in: $otherList. Cross-file duplicate definitions in the same zone resolve unpredictably at runtime."
     }
 }
 
