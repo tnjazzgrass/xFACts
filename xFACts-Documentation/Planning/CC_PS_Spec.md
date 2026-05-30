@@ -252,46 +252,64 @@ The CHANGELOG section produces a dedicated `PS_CHANGELOG_ENTRY` row per entry in
 
 ## 8. Function definitions
 
-A function definition has exactly one form. The four constructs inside the function body appear in this exact order: `[CmdletBinding()]`, then `param()`, then the comment-based-help docblock, then the function body code:
+*Rules in this section vary by file role. A file's complete rule set is the General Rules (§8.1) plus the one role subsection matching the file — General alone is incomplete, and only one role subsection applies.*
 
-```powershell
-function Verb-Noun {
-    [CmdletBinding()]
-    param( ... )
+### 8.1 General rules
 
-    <#
-    .SYNOPSIS
-        <One-line summary>
-    .DESCRIPTION
-        <Description>
-    .PARAMETER <ParamName>
-        <Per-parameter description>
-    #>
+These rules apply to every function in any file whose role permits functions.
 
-    # Function body
-}
-```
-
-### 8.1 Rules
-
-- `[CmdletBinding()]` is mandatory on every function and appears first inside the function body.
-- Every function declares a `param()` block, even if empty, immediately after `[CmdletBinding()]`. The `param()` block is required by `[CmdletBinding()]` and is the canonical place to declare parameter contracts. Functions taking pipeline input or no parameters at all still declare `param()` — empty, or with the appropriate parameter attributes.
-- The comment-based-help docblock is mandatory on every function and is always positioned as the third construct inside the function body, after `[CmdletBinding()]` and `param()` and before the body code.
-- The docblock requires `.SYNOPSIS` and `.DESCRIPTION`. `.PARAMETER` blocks correspond 1:1 with declared parameters — every declared parameter has a matching `.PARAMETER` block, no `.PARAMETER` block references a parameter the function does not declare, and the `.PARAMETER` blocks appear in the same order as the parameters in the `param()` block. `.COMPONENT`, `.NOTES`, `.EXAMPLE`, and other keywords are forbidden in function docblocks.
+- Every function declares a `param()` block, even if empty. Functions taking pipeline input or no parameters at all still declare `param()` — empty, or with the appropriate parameter attributes.
 - Function names follow PowerShell's `Verb-Noun` convention. The verb is from the PowerShell approved verb list (`Get-Verb`). Functions starting with an underscore or any non-letter character are forbidden.
 - In files whose component has a non-NULL `cc_prefix`, the noun half of the function name begins with that prefix followed by an underscore (e.g., `Get-bkp_OpenBatches` in a file with prefix `bkp`). In files whose component has `cc_prefix = NULL`, no prefix is applied; the function name is bare `Verb-Noun` (e.g., `Initialize-XFActsScript`).
 - The `filter` keyword form is forbidden. All functions use the `function` keyword. Pipeline-processing functions declare an explicit `process { ... }` block instead.
-- Function declarations are forbidden inside page-route and api-route files. Helpers belong in modules.
 - Function declarations are forbidden inside another function's body.
 - Function declarations are forbidden inside conditional or loop blocks (`if`, `else`, `while`, `do`, `for`, `foreach`, `switch`, `try`, `catch`, `finally`).
 - Function names in non-shared files must not match the name of any function defined in a shared-library file.
 - The same function name must not be declared by more than one PS file across the codebase.
 - Function calls reference names defined in a cataloged PS file or in an imported external module.
 - `[OutputType()]` is permitted but not required.
+- Every function is documented. The form of documentation depends on file role — see the role subsection below.
+
+### 8.2 Page-route and api-route files
+
+- Function declarations are forbidden. Helpers belong in modules.
+
+### 8.3 Shared-library and module files
+
+- `[CmdletBinding()]` is mandatory and appears first inside the function body, before `param()`.
+- The comment-based-help docblock is mandatory and is positioned as the third construct inside the function body, after `[CmdletBinding()]` and `param()` and before the body code:
+
+```powershell
+    function Verb-Noun {
+        [CmdletBinding()]
+        param( ... )
+
+        <#
+        .SYNOPSIS
+            <One-line summary>
+        .DESCRIPTION
+            <Description>
+        .PARAMETER <ParamName>
+            <Per-parameter description>
+        #>
+
+        # Function body
+    }
+```
+
+- The docblock requires `.SYNOPSIS` and `.DESCRIPTION`. `.PARAMETER` blocks correspond 1:1 with declared parameters — every declared parameter has a matching `.PARAMETER` block, no `.PARAMETER` block references a parameter the function does not declare, and the `.PARAMETER` blocks appear in the same order as the parameters in the `param()` block. `.COMPONENT`, `.NOTES`, `.EXAMPLE`, and other keywords are forbidden in function docblocks.
+
+### 8.4 Standalone files
+
+- `[CmdletBinding()]` is permitted but not required.
+- Each function carries a single-line `#` purpose comment on the line directly above the function declaration, stating the purpose the docblock's `.SYNOPSIS` would otherwise convey.
+- A comment-based-help docblock is not used.
 
 ---
 
 ## 9. Variables and constants
+
+*Rules in this section vary by file role. A file's complete rule set is the General Rules (§9.2) plus the one role subsection matching the file — General alone is incomplete, and only one role subsection applies.*
 
 Top-level declarations split into two kinds based on the section they live in:
 
@@ -307,7 +325,7 @@ $script:DefaultTimeout = 300        # in a CONSTANTS section
 $script:Config = @{}                # in a VARIABLES section
 ```
 
-### 9.2 Rules
+### 9.2 General rules
 
 - `$script:` (lowercase) is the only permitted scope qualifier for top-level declarations.
 - `$global:` declarations are forbidden anywhere in the file.
@@ -315,7 +333,11 @@ $script:Config = @{}                # in a VARIABLES section
 - Each declaration gets its own statement. Chained assignments (`$a = $b = $c = 0`) are forbidden.
 - Every constant and variable declaration is preceded by a single-line `#` comment describing its purpose.
 - In prefixable files, identifier names begin with the file's registered prefix followed by an underscore. Naming convention is `PascalCase` after the prefix.
-- A `$script:` declaration that appears outside a CONSTANTS or VARIABLES section is misplaced.
+- A constant — a value assigned once and not reassigned — lives in a CONSTANTS section. A mutable variable — a value reassigned or accumulated into after initialization — lives in a VARIABLES section.
+
+### 9.3 Standalone files
+
+- A top-level assignment that performs work as the script runs lives in the EXECUTION section. It is part of execution, not a file-scope declaration.
 
 ---
 
@@ -562,6 +584,8 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `SHADOWS_SHARED_FUNCTION` | Non-shared file defines a function whose name matches a shared-library export. | §8.1 |
 | `DUPLICATE_FUNCTION_DEFINITION` | The same function name is declared by more than one PS file across the codebase. | §8.1 |
 | `ORPHAN_FUNCTION_CALL` | Function call references a name not defined in any cataloged PS file. | §8.1 |
+| `FORBIDDEN_DOCBLOCK_IN_STANDALONE` | A function in a standalone file has a comment-based-help docblock. Standalone functions use a single-line purpose comment instead. | §8.4 |
+| `MISSING_FUNCTION_PURPOSE_COMMENT` | A function in a standalone file has no single-line `#` purpose comment on the line directly above its declaration. | §8.4 |
 | `FORBIDDEN_SCOPE_QUALIFIER` | Declaration uses `$Script:` (capital S) or other non-`$script:` scope. | §9.2 |
 | `FORBIDDEN_GLOBAL_VARIABLE` | Declaration uses `$global:` scope. | §9.2 |
 | `FORBIDDEN_AUTOVAR_REASSIGNMENT` | Assignment to a PowerShell automatic variable. | §9.2 |
