@@ -178,6 +178,8 @@ Two forms, no others:
 
 The file role determines which section types are allowed and which structural rules apply. Role is determined by file extension, filename pattern, and directory.
 
+Separately, files carry classification attributes (zone, scope, scope_tier) from dbo.Object_Registry that govern resolution and documentation treatment — see §6.3.
+
 ### 6.1 Role detection
 
 | Role | Detection rule |
@@ -224,6 +226,14 @@ Required: `FUNCTIONS` (1+).
 Allowed: `CHANGELOG`, `CONSTANTS`, `VARIABLES`.
 Forbidden: `PARAMETERS`, `IMPORTS`, `INITIALIZATION`, `EXECUTION`, `ROUTE`, `EXPORTS`.
 
+#### 6.3 Classification: zone, scope, and scope_tier
+
+Files are classified by three dbo.Object_Registry attributes, independent of role. Each applies only where meaningful; rows where an attribute does not apply hold NULL.
+
+- zone — cc, docs, standalone, or exempt. References resolve only within the same zone.
+- scope — LOCAL or SHARED.
+- scope_tier — PLATFORM or SCOPED for SHARED function-bearing files; otherwise NULL. Determines docblock treatment (§8.3 / §8.4).
+
 ---
 
 ## 7. CHANGELOG section
@@ -252,7 +262,7 @@ The CHANGELOG section produces a dedicated `PS_CHANGELOG_ENTRY` row per entry in
 
 ## 8. Function definitions
 
-*Rules in this section vary by file role. A file's complete rule set is the General Rules (§8.1) plus the one role subsection matching the file — General alone is incomplete, and only one role subsection applies.*
+*Rules in this section vary by file. A file's complete rule set is the General Rules (§8.1) plus the one subsection that applies: §8.2 for page-route and api-route files, §8.3 for PLATFORM-tier files, §8.4 for SCOPED-tier and standalone files. General alone is incomplete, and exactly one subsection applies.*
 
 ### 8.1 General rules
 
@@ -264,8 +274,8 @@ These rules apply to every function in any file whose role permits functions.
 - The `filter` keyword form is forbidden. All functions use the `function` keyword. Pipeline-processing functions declare an explicit `process { ... }` block instead.
 - Function declarations are forbidden inside another function's body.
 - Function declarations are forbidden inside conditional or loop blocks (`if`, `else`, `while`, `do`, `for`, `foreach`, `switch`, `try`, `catch`, `finally`).
-- Function names in non-shared files must not match the name of any function defined in a shared-library file.
-- The same function name must not be declared by more than one PS file across the codebase.
+- **Within a zone**, a function name in a non-shared file must not match the name of a SHARED function in the same zone.
+- **Within a zone**, the same function name must not be declared by more than one PS file.
 - Function calls reference names defined in a cataloged PS file or in an imported external module.
 - `[OutputType()]` is permitted but not required.
 - Every function is documented. The form of documentation depends on file role — see the role subsection below.
@@ -274,7 +284,9 @@ These rules apply to every function in any file whose role permits functions.
 
 - Function declarations are forbidden. Helpers belong in modules.
 
-### 8.3 Shared-library and module files
+### 8.3 PLATFORM-tier files
+
+Applies to files with scope_tier = PLATFORM (broadly-consumed shared infrastructure).
 
 - `[CmdletBinding()]` is mandatory and appears first inside the function body, before `param()`.
 - The comment-based-help docblock is mandatory and is positioned as the third construct inside the function body, after `[CmdletBinding()]` and `param()` and before the body code:
@@ -299,7 +311,9 @@ These rules apply to every function in any file whose role permits functions.
 
 - The docblock requires `.SYNOPSIS` and `.DESCRIPTION`. `.PARAMETER` blocks correspond 1:1 with declared parameters — every declared parameter has a matching `.PARAMETER` block, no `.PARAMETER` block references a parameter the function does not declare, and the `.PARAMETER` blocks appear in the same order as the parameters in the `param()` block. `.COMPONENT`, `.NOTES`, `.EXAMPLE`, and other keywords are forbidden in function docblocks.
 
-### 8.4 Standalone files
+### 8.4 SCOPED-tier and standalone files
+
+Applies to files with scope_tier = SCOPED (narrowly-scoped shared helpers) and to standalone-role scripts (which carry no scope_tier).
 
 - `[CmdletBinding()]` is permitted but not required.
 - Each function carries a single-line `#` purpose comment on the line directly above the function declaration, stating the purpose the docblock's `.SYNOPSIS` would otherwise convey.
@@ -491,8 +505,8 @@ Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-
 | Function name not following `Verb-Noun` with an approved verb | §8.1 |
 | Function declaration in a page-route or api-route file | §8.1 |
 | Function defined with the `filter` keyword | §8.1 |
-| Function name matching a shared-library function's name | §8.1 |
-| Duplicate function definition across PS files | §8.1 |
+| Function name matching a SHARED function's name in the same zone | §8.1 |
+| Duplicate function definition within a zone | §8.1 |
 | Function call to a name not defined in any cataloged PS file | §8.1 |
 | `Add-PodeRoute` without `-Authentication 'ADLogin'` | §11.1 |
 | Page route without `Get-UserAccess` as first statement | §11.1 |
@@ -529,7 +543,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `FORBIDDEN_HEADER_KEYWORD` | File header contains a forbidden comment-based-help keyword. | §2.1 |
 | `MALFORMED_NOTES_FIELD` | `.NOTES` block missing required fields or containing extra fields. | §2.1 |
 | `NOTES_FIELD_ORDER_VIOLATION` | `.NOTES` fields appear out of canonical order (File Name, Location, FILE ORGANIZATION). | §2.1 |
-| `PARAMETER_DOC_ORDER_VIOLATION` | `.PARAMETER` blocks do not appear in the same order as the parameters in the `param()` block. Applies to both file-header docblocks and function docblocks. | §2.1, §8.1 |
+| `PARAMETER_DOC_ORDER_VIOLATION` | `.PARAMETER` blocks do not appear in the same order as the parameters in the `param()` block. Applies to file-header docblocks (§2.1) and PLATFORM-tier function docblocks (§8.3). | §2.1, §8.3 |
 | `MISSING_COMPONENT_DECLARATION` | File header is missing a `.COMPONENT` declaration. | §2.1 |
 | `FORBIDDEN_AUTHOR_IN_HEADER` | File header contains an Author bookkeeping field. | §2.1 |
 | `FORBIDDEN_DATE_IN_HEADER` | File header contains a Date or Last Modified bookkeeping field. | §2.1 |
@@ -564,28 +578,27 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `MALFORMED_CHANGELOG_DATE` | CHANGELOG entry date is not in ISO YYYY-MM-DD format. | §7.2 |
 | `CHANGELOG_ORDER_VIOLATION` | CHANGELOG entries appear out of most-recent-first order. | §7.2 |
 | `FORBIDDEN_VERSION_IN_CHANGELOG` | A CHANGELOG entry contains a version literal. | §7.2 |
-| `MISSING_DOCBLOCK` | Function has no comment-based-help docblock in its required position. | §8.1 |
-| `MISPLACED_DOCBLOCK` | Function docblock is present but not in the required position (above the function declaration or after body code instead of immediately after `[CmdletBinding()]` and `param()`). | §8.1 |
-| `MISSING_CMDLETBINDING` | Function declaration missing `[CmdletBinding()]`. | §8.1 |
+| `MISSING_DOCBLOCK` | Function has no comment-based-help docblock in its required position. | §8.3 |
+| `MISPLACED_DOCBLOCK` | Function docblock is present but not in the required position (above the function declaration or after body code instead of immediately after `[CmdletBinding()]` and `param()`). | §8.3 |
+| `MISSING_CMDLETBINDING` | Function declaration missing `[CmdletBinding()]`. | §8.3 |
 | `MISSING_PARAM_BLOCK` | Function missing a `param()` block. | §8.1 |
-| `MALFORMED_DOCBLOCK` | Function docblock missing required elements or in wrong order. | §8.1 |
-| `MISSING_SYNOPSIS` | Function docblock missing `.SYNOPSIS`. | §8.1 |
-| `MISSING_DESCRIPTION` | Function docblock missing `.DESCRIPTION`. | §8.1 |
-| `MISSING_PARAMETER_DOC` | Function parameter without a matching `.PARAMETER` block in the docblock. | §8.1 |
-| `EXTRA_PARAMETER_DOC` | Function docblock contains a `.PARAMETER` block for a parameter the function does not define. | §8.1 |
-| `FORBIDDEN_DOCBLOCK_KEYWORD` | Function docblock contains `.COMPONENT`, `.NOTES`, `.EXAMPLE`, or other forbidden keywords. | §8.1 |
+| `MISSING_SYNOPSIS` | Function docblock missing `.SYNOPSIS`. | §8.3 |
+| `MISSING_DESCRIPTION` | Function docblock missing `.DESCRIPTION`. | §8.3 |
+| `MISSING_PARAMETER_DOC` | Function parameter without a matching `.PARAMETER` block in the docblock. | §8.3 |
+| `EXTRA_PARAMETER_DOC` | Function docblock contains a `.PARAMETER` block for a parameter the function does not define. | §8.3 |
+| `FORBIDDEN_DOCBLOCK_KEYWORD` | Function docblock contains `.COMPONENT`, `.NOTES`, `.EXAMPLE`, or other forbidden keywords. | §8.3 |
 | `MALFORMED_FUNCTION_NAME` | Function name does not follow `Verb-Noun`. | §8.1 |
 | `UNAPPROVED_VERB` | Function uses a verb not in PowerShell's approved verb list. | §8.1 |
-| `FORBIDDEN_FUNCTION_IN_ROUTE` | Function declared in a page-route file. | §8.1 |
-| `FORBIDDEN_FUNCTION_IN_API_ROUTE` | Function declared in an api-route file. | §8.1 |
+| `FORBIDDEN_FUNCTION_IN_ROUTE` | Function declared in a page-route file. | §8.2 |
+| `FORBIDDEN_FUNCTION_IN_API_ROUTE` | Function declared in an api-route file. | §8.2 |
 | `FORBIDDEN_CONDITIONAL_DEFINITION` | Function declared inside a conditional or loop block. | §8.1 |
 | `FORBIDDEN_NESTED_FUNCTION` | Function declared inside another function's body. | §8.1 |
 | `FORBIDDEN_FILTER_FUNCTION` | Function declared with the `filter` keyword instead of `function`. | §8.1 |
-| `SHADOWS_SHARED_FUNCTION` | Non-shared file defines a function whose name matches a shared-library export. | §8.1 |
-| `DUPLICATE_FUNCTION_DEFINITION` | The same function name is declared by more than one PS file across the codebase. | §8.1 |
+| `SHADOWS_SHARED_FUNCTION` | A function in a non-shared file matches the name of a `SHARED` function in the same zone. | §8.1 |
+| `DUPLICATE_FUNCTION_DEFINITION` | The same function name is declared by more than one PS file within the same zone. | §8.1 |
 | `ORPHAN_FUNCTION_CALL` | Function call references a name not defined in any cataloged PS file. | §8.1 |
-| `FORBIDDEN_DOCBLOCK_IN_STANDALONE` | A function in a standalone file has a comment-based-help docblock. Standalone functions use a single-line purpose comment instead. | §8.4 |
-| `MISSING_FUNCTION_PURPOSE_COMMENT` | A function in a standalone file has no single-line `#` purpose comment on the line directly above its declaration. | §8.4 |
+| `FORBIDDEN_DOCBLOCK_IN_STANDALONE` | A function in a SCOPED-tier or standalone file has a comment-based-help docblock. These functions use a single-line purpose comment instead. | §8.4 |
+| `MISSING_FUNCTION_PURPOSE_COMMENT` | A function in a SCOPED-tier or standalone file has no single-line `#` purpose comment on the line directly above its declaration. | §8.4 |
 | `FORBIDDEN_SCOPE_QUALIFIER` | Declaration uses `$Script:` (capital S) or other non-`$script:` scope. | §9.2 |
 | `FORBIDDEN_GLOBAL_VARIABLE` | Declaration uses `$global:` scope. | §9.2 |
 | `FORBIDDEN_AUTOVAR_REASSIGNMENT` | Assignment to a PowerShell automatic variable. | §9.2 |
