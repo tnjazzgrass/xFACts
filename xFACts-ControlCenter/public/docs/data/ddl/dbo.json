@@ -2314,7 +2314,7 @@
                                                 },
                                                 {
                                                     "name":  "CK_Object_Registry_scope_tier",
-                                                    "definition":  "([scope_tier]=\u0027SCOPED\u0027 OR [scope_tier]=\u0027PLATFORM\u0027)"
+                                                    "definition":  "([scope_tier]=\u0027SCOPED\u0027 OR [scope_tier]=\u0027PLATFORM\u0027 OR [scope_tier]=\u0027SHELL\u0027)"
                                                 },
                                                 {
                                                     "name":  "CK_Object_Registry_type",
