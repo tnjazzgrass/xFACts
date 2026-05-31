@@ -3,10 +3,6 @@
     xFACts - Shared Asset Registry Population Functions
 
 .DESCRIPTION
-    xFACts - ControlCenter.AssetRegistry
-    Script: xFACts-AssetRegistryFunctions.ps1
-    Version: Tracked in dbo.System_Metadata (component: ControlCenter.AssetRegistry)
-
     Common functions used by the Asset Registry populator family
     (Populate-AssetRegistry-CSS.ps1, Populate-AssetRegistry-HTML.ps1,
     Populate-AssetRegistry-JS.ps1, Populate-AssetRegistry-PS.ps1).
@@ -30,231 +26,93 @@
 
     Comment-shape contract: Get-FileHeaderInfo and New-SectionList accept
     a normalized comment-object shape with these fields:
-        .Type      - 'Block' for block comments (the only kind cataloged)
-        .Text      - inner text of the comment, with /* */ delimiters stripped
-        .LineStart - 1-based source line of the opening delimiter
-        .LineEnd   - 1-based source line of the closing delimiter
-    The acorn JS AST already produces objects close to this shape (.type,
-    .value, .loc.start.line, .loc.end.line); the JS populator wraps each
-    comment to the normalized shape before calling these helpers. PostCSS
-    produces a different shape (.type='comment', .text, .source.start.line);
-    the CSS populator wraps similarly. The wrapping is a one-shot adapter
-    in each populator; helpers see only the normalized shape.
+        Type      - 'Block' for block comments (the only kind cataloged)
+        Text      - inner text of the comment, with delimiters stripped
+        LineStart - 1-based source line of the opening delimiter
+        LineEnd   - 1-based source line of the closing delimiter
+    The acorn JS AST already produces objects close to this shape; the JS
+    populator wraps each comment to the normalized shape before calling these
+    helpers. PostCSS produces a different shape; the CSS populator wraps
+    similarly. The wrapping is a one-shot adapter in each populator; helpers
+    see only the normalized shape.
 
     Dot-source AFTER xFACts-OrchestratorFunctions.ps1 at the top of each
-    populator:
-        . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
-        . "$PSScriptRoot\xFACts-AssetRegistryFunctions.ps1"
-        Initialize-XFActsScript -ScriptName 'Populate-AssetRegistry-XXX' -Execute:$Execute
+    populator, then call Initialize-XFActsScript.
 
-    CHANGELOG
-    ---------
-    2026-05-27  Get-PSFileHeaderInfo Pass 4: added a second carve-out to the
-                FILE ORGANIZATION block region. List entries inside the
-                FILE ORGANIZATION list verbatim-name the file's section
-                banners; when the file has a CHANGELOG section banner the
-                list entry for it also begins with 'CHANGELOG'. That list
-                entry is not a CHANGELOG block inside the header - it is
-                just naming a section banner. The FORBIDDEN_CHANGELOG_IN_HEADER
-                scan now skips lines inside the FILE ORG block to avoid
-                this false positive. Block bounds are computed once at
-                the top of Pass 4: $fileOrgBlockStart at the line two
-                after the label (skipping the label and separator);
-                $fileOrgBlockEnd at the first blank line or end of header.
-                Existing separator carve-out behavior unchanged.
-    2026-05-26  Get-PSFileHeaderInfo Pass 4 inline-divider carve-out for the
-                FILE ORGANIZATION separator. The separator line immediately
-                following the FILE ORGANIZATION label inside .NOTES is
-                exactly 17 '-' characters and is explicitly allowed - it
-                must not fire FORBIDDEN_INLINE_DIVIDER_IN_HEADER. The pass
-                was rewritten from a foreach loop into a for-index loop
-                that pre-computes the FILE ORGANIZATION label index, then
-                exempts a single line at (index + 1) from the divider
-                check when (and only when) it matches the exact 17-dash
-                shape. Any other dash count in that position, and any
-                other dash-rule line elsewhere in the header, continues
-                to fire drift like before. No call-site changes; the
-                helper's public contract is unchanged.
-    2026-05-25  Performance pass for the JS populator hot paths. Two changes
-                in Invoke-AstWalk and one in Get-SectionForLine:
-                  - Get-SectionForLine: linear scan replaced with binary
-                    search. New-SectionList already returns sections sorted
-                    by banner start line (and bodies don't overlap), so the
-                    body-range lookup runs in O(log N) instead of O(N).
-                    Called ~10K times per JS file.
-                  - Invoke-AstWalk: replaced
-                    `$Node.PSObject.Properties.Name -contains 'type'` with
-                    `$null -ne $Node.type`. Same semantics on well-formed
-                    AST nodes (every JS/CSS AST node has .type) but avoids
-                    enumerating the PSObject property name array on every
-                    node visit.
-                  - Invoke-AstWalk: -Visitor parameter loosened from
-                    [scriptblock] to untyped so callers can pass either a
-                    scriptblock (legacy) or a string holding a function
-                    name. PowerShell's `&` operator dispatches both
-                    identically, so the call site is unchanged. Existing
-                    scriptblock callers continue to work; callers that
-                    switch to function-name dispatch get materially faster
-                    invocation on the hot path.
-    2026-05-23  Add-DriftCode behavior change. The function used to be
-                fully idempotent on the code: a second call with the same
-                code on the same row early-returned, silently dropping any
-                caller-supplied Context. This hid multi-occurrence drift
-                detail (e.g., a single MALFORMED_PAGE_SHELL_WHITESPACE
-                violation could fire on five page-shell pairs but only the
-                first context survived in drift_text). The function now
-                still dedupes the drift_codes column (the code itself never
-                appears twice in the comma list) but appends caller-supplied
-                Context strings unconditionally. When no Context is supplied
-                the generic master-table description is appended only on
-                first attachment (repeating the generic description would
-                be noise). Pre-existing callers that use the aggregate-
-                then-fire pattern (PS / JS / CSS populators for
-                FORBIDDEN_COMMENT_STYLE) are unaffected: they call
-                Add-DriftCode exactly once per code per row, so the new
-                accumulation path never triggers for them.
-    2026-05-22  Populator alignment - shared FILE ORG list parser and strict
-                prefix-value validation. Three changes:
-                  - New shared helper Get-FileOrgList. Both Get-FileHeaderInfo
-                    (CSS / JS) and Get-PSFileHeaderInfo (PS) now delegate
-                    FILE ORGANIZATION list extraction to this single helper.
-                    The helper enforces verbatim banner-title entries: no
-                    numbered prefix stripping, no trailing "-- annotation"
-                    stripping. Any
-                    deviation surfaces as FILE_ORG_MISMATCH on the FILE_HEADER
-                    row downstream. One place to change the rule, three
-                    populators benefit.
-                  - Get-BannerPrefixValue no longer silently strips trailing
-                    "-- text" or "(parenthetical)" annotations from the Prefix
-                    line. The Prefix line declares exactly one value; anything
-                    else is drift. Stripped accommodations let
-                    MALFORMED_PREFIX_VALUE catch real authoring drift instead
-                    of hiding it.
-                  - Test-PrefixValueIsValid drops the hardcoded 3-character
-                    lowercase shape constraint. The CSS / JS specs do
-                    not constrain page-prefix shape; that belongs to the
-                    registry's CK constraint. The validator now accepts
-                    'cc' or any non-empty token containing no whitespace
-                    or commas. New optional -AllowNoneSentinel switch
-                    preserves the (none) sentinel for PS callers (the PS
-                    spec keeps (none) for shared-library files); CSS / JS
-                    callers omit the switch and (none) becomes invalid.
-                The shared helpers stay shared; PS-specific behavior is
-                opt-in via the switch.
-    2026-05-13  Defensive field truncation. Added Get-TruncatedFieldValue
-                helper and applied it inside New-AssetRegistryRow to every
-                bounded VARCHAR(N) column based on the live dbo.Asset_Registry
-                schema (FileName=200, ComponentName=500, VariantType=30,
-                VariantQualifier1=100, VariantQualifier2=500, SourceFile=200,
-                SourceSection=300, ParentFunction=200). Long values get a
-                trailing '...' marker so truncation is visible to anyone
-                querying the catalog. Unbounded VARCHAR(MAX) columns
-                (Signature, RawText, PurposeDescription, DriftText) are
-                left alone - they can carry arbitrary length. Closed-enum
-                columns (FileType, ComponentType, ReferenceType, Scope) are
-                left alone - they're validated against CK constraints and
-                their values come from finite vocabularies. Motivation:
-                pre-spec PowerShell files produce malformed banners whose
-                BannerName fallback grabs the entire first non-rule line
-                (potentially hundreds of characters), and Pode route paths
-                could pathologically exceed 500 chars. Both used to fail
-                SqlBulkCopy with "invalid column length". Architectural fix
-                in the universal row builder protects every populator
-                (CSS, HTML, JS, PS) without per-emitter code changes.
-    2026-05-13  PS populator support. Added two PS-specific helpers in a
-                separate "PS AST AND HEADER HELPERS" section at the end of
-                the file:
-                  - Get-PSFileHeaderInfo parses the PowerShell comment-based-
-                    help block (the .SYNOPSIS / .DESCRIPTION / .PARAMETER /
-                    .COMPONENT / .NOTES form) at line 1 of a .ps1/.psm1 file.
-                    Sibling to Get-FileHeaderInfo (which is CSS/JS-specific).
-                    Emits PS-specific drift codes including FORBIDDEN_CHANGELOG_IN_HEADER,
-                    FORBIDDEN_AUTHOR_IN_HEADER, FORBIDDEN_DATE_IN_HEADER,
-                    FORBIDDEN_VERSION_IN_HEADER, FORBIDDEN_FUNCTION_INVENTORY,
-                    FORBIDDEN_DEPLOYMENT_BLOCK, FORBIDDEN_INLINE_DIVIDER_IN_HEADER.
-                    Returns FILE ORGANIZATION list extracted from .NOTES,
-                    plus the .COMPONENT value for downstream validation against
-                    Component_Registry.
-                  - PS AST navigation helpers: Find-PSAstNodes (wrapper
-                    around .FindAll() with TopLevelOnly mode), Get-PSAstParentChain
-                    (walks .Parent up to root), Get-PSAstNodeLine /
-                    Get-PSAstNodeEndLine / Get-PSAstNodeColumn (.Extent-based
-                    position extractors), Test-IsTopLevelPSAst (top-of-file
-                    statement check), Test-IsConditionallyDefinedPSAst (inside
-                    if/while/try check). PS AST is a fundamentally different
-                    walking pattern than the JSON-from-subprocess JS/CSS shape
-                    that Invoke-AstWalk handles, so a separate helper set
-                    rather than trying to make Invoke-AstWalk polymorphic.
-                The existing helpers are unchanged. CSS / JS / HTML populator
-                behavior is unaffected.
-    2026-05-11  Get-ObjectRegistryMap and Get-ComponentRegistryPrefixMap
-                -FileType parameter expanded to accept a string array and
-                four new alias values: 'Route', 'API', 'Module', 'Config'.
-                Query WHERE clause changed from object_type = '<x>' to
-                object_type IN (<list>). Enables the HTML populator to
-                resolve Asset_Registry FKs against the three object types
-                that host HTML in this codebase (Route .ps1, API .ps1,
-                Module .psm1) in a single query. Existing single-value
-                callers (CSS / HTML / JS / PS) are unaffected -- PowerShell
-                accepts a single string where an array is expected.
-    2026-05-07  Banner detection split into permissive detector + strict
-                validator. Test-IsBannerComment now returns $true for any
-                comment whose shape suggests an intended section banner
-                (rule lines of '=' or '-', or single-line '===== Title ====='
-                form), regardless of whether the title line uses a recognized
-                TYPE token. Get-BannerInfo emits granular drift codes per
-                spec rule violated rather than the previous catch-all
-                MALFORMED_SECTION_BANNER.
-                  New codes:
-                    BANNER_INLINE_SHAPE
-                    BANNER_INVALID_RULE_CHAR
-                    BANNER_INVALID_RULE_LENGTH
-                    BANNER_INVALID_SEPARATOR_CHAR
-                    BANNER_INVALID_SEPARATOR_LENGTH
-                    BANNER_MALFORMED_TITLE_LINE
-                    BANNER_MISSING_DESCRIPTION
-                  UNKNOWN_SECTION_TYPE (existing) now emitted when title
-                  line shape is correct but the TYPE token is not in the
-                  closed enum. MISSING_PREFIX_DECLARATION unchanged.
-                  Retired: MALFORMED_SECTION_BANNER (granular codes
-                  replace it). Restores catalog visibility for the ~260
-                  non-conforming banners across unrefactored files that
-                  the strict gate was rejecting outright.
-    2026-05-07  Bug fixes from first run.
-                - Get-ObjectRegistryMap and Get-ComponentRegistryPrefixMap
-                  now use the authoritative column names from Object_Registry's
-                  DDL JSON: object_type (not file_type) and registry_id (not
-                  object_registry_id). The populator-facing -FileType param
-                  is preserved as a short alias and translated to the spec's
-                  full object_type string ('JavaScript' for JS, 'Script' for
-                  PS, 'CSS' / 'HTML' for the others).
-                - Invoke-AssetRegistryBulkInsert's $Misses parameter now
-                  accepts an empty HashSet via [AllowEmptyCollection()] so
-                  the bulk insert step works on the first run, before any
-                  Object_Registry misses have accumulated.
-    2026-05-07  Comment-shape contract formalized. Get-FileHeaderInfo and
-                New-SectionList now read normalized .Type/.Text/.LineStart/
-                .LineEnd fields rather than acorn's .type/.value/.loc.start.
-                Each populator wraps language-specific comment objects into
-                the normalized shape before calling these helpers. Added
-                'selectorTree' to Invoke-AstWalk's skip list so the walker
-                does not descend into PostCSS's decomposed-selector subtree.
-    2026-05-06  Initial implementation. Extracted shared logic from
-                Populate-AssetRegistry-CSS.ps1 and Populate-AssetRegistry-JS.ps1
-                as part of the populator alignment pass. Adopted JS visitor
-                pattern, JS pre-built section list model, and a hybrid drift
-                attachment model (master-table validation + optional context
-                string). Added Get-ComponentRegistryPrefixMap for the
-                Component_Registry / cc_prefix join used by the prefix
-                registry validation work.
+.COMPONENT
+    Tools.Utilities
 
-================================================================================
+.NOTES
+    File Name : xFACts-AssetRegistryFunctions.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    FUNCTIONS: ROW CONSTRUCTION
+    FUNCTIONS: DEDUPE TRACKING
+    FUNCTIONS: DRIFT CODE ATTACHMENT
+    FUNCTIONS: OCCURRENCE INDEX COMPUTATION
+    FUNCTIONS: REGISTRY LOADS
+    FUNCTIONS: BULK INSERT
+    FUNCTIONS: COMMENT TEXT CLEANUP
+    FUNCTIONS: BANNER DETECTION AND PARSING
+    FUNCTIONS: FILE ORGANIZATION LIST PARSING
+    FUNCTIONS: FILE HEADER PARSING
+    FUNCTIONS: SECTION LIST
+    FUNCTIONS: AST WALKING
+    FUNCTIONS: PS AST AND HEADER HELPERS
 #>
 
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-stamped change history. Each entry is one ISO date line followed by an
+   indented description. Entries appear most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ============================================================================
-# ROW CONSTRUCTION
-# ============================================================================
+# 2026-05-27  Get-PSFileHeaderInfo Pass 4: added a FILE ORGANIZATION block
+#             carve-out so a CHANGELOG list entry inside the FILE ORG list is
+#             not mistaken for a CHANGELOG block in the header.
+# 2026-05-26  Get-PSFileHeaderInfo Pass 4: carve-out for the FILE ORGANIZATION
+#             separator (exactly 17 dashes) so it does not fire
+#             FORBIDDEN_INLINE_DIVIDER_IN_HEADER.
+# 2026-05-25  Performance pass for JS hot paths: binary-search section lookup
+#             in Get-SectionForLine, lighter node-type check and untyped
+#             -Visitor in Invoke-AstWalk.
+# 2026-05-23  Add-DriftCode appends caller Context unconditionally while still
+#             deduping the code itself, so multi-occurrence context is no
+#             longer lost.
+# 2026-05-22  Shared FILE ORG list parser (Get-FileOrgList) and strict
+#             prefix-value validation; Get-BannerPrefixValue no longer strips
+#             trailing annotations; Test-PrefixValueIsValid drops the fixed
+#             three-character shape constraint and accepts 'cc' or any single
+#             token, with an optional -AllowNoneSentinel switch for PS callers.
+# 2026-05-13  Defensive field truncation (Get-TruncatedFieldValue) applied in
+#             New-AssetRegistryRow to bounded VARCHAR columns.
+# 2026-05-13  PS populator support: Get-PSFileHeaderInfo plus PS AST navigation
+#             helpers in a dedicated section.
+# 2026-05-11  Get-ObjectRegistryMap and Get-ComponentRegistryPrefixMap accept a
+#             string-array -FileType with Route/API/Module/Config aliases and
+#             query object_type IN (<list>).
+# 2026-05-07  Banner detection split into a permissive detector plus a strict
+#             validator emitting granular banner drift codes; retired
+#             MALFORMED_SECTION_BANNER.
+# 2026-05-07  Bug fixes from first run: authoritative Object_Registry column
+#             names, and AllowEmptyCollection on the bulk-insert Misses param.
+# 2026-05-07  Comment-shape contract formalized; populators wrap language
+#             comments to the normalized shape before calling shared helpers.
+# 2026-05-06  Initial implementation. Extracted shared logic from the CSS and
+#             JS populators during the populator alignment pass.
+
+<# ============================================================================
+   FUNCTIONS: ROW CONSTRUCTION
+   ----------------------------------------------------------------------------
+   The standardized Asset_Registry row builder and bounded-field truncation
+   helper.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Standardized Asset_Registry row builder. Returns an ordered hashtable with
 # every column the bulk-insert DataTable expects. Callers populate the
@@ -342,10 +200,12 @@ function Get-TruncatedFieldValue {
     return $Value.Substring(0, $MaxLength - 3) + '...'
 }
 
-
-# ============================================================================
-# DEDUPE TRACKING
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: DEDUPE TRACKING
+   ----------------------------------------------------------------------------
+   Dedupe-key tracking shared across populators.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Test whether a dedupe key is new, adding it to the tracker on first sight.
 # Returns $true if the key was added (i.e., the row is new), $false if the key
@@ -358,10 +218,13 @@ function Test-AddDedupeKey {
     return $script:dedupeKeys.Add($Key)
 }
 
-
-# ============================================================================
-# DRIFT CODE ATTACHMENT
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: DRIFT CODE ATTACHMENT
+   ----------------------------------------------------------------------------
+   Attach drift codes to rows with master-table validation and optional
+   context.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Attach a drift code to a row using the hybrid model:
 #   - Code is validated against the populator's master $script:DriftDescriptions
@@ -448,10 +311,12 @@ function Test-DriftCodesAgainstMasterTable {
     }
 }
 
-
-# ============================================================================
-# OCCURRENCE INDEX COMPUTATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: OCCURRENCE INDEX COMPUTATION
+   ----------------------------------------------------------------------------
+   Assign per-construct occurrence indices across the collected rows.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Compute occurrence_index per (file_name, component_name, reference_type,
 # variant_type, variant_qualifier_1, variant_qualifier_2) tuple. Run once
@@ -475,10 +340,13 @@ function Set-OccurrenceIndices {
     }
 }
 
-
-# ============================================================================
-# REGISTRY LOADS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: REGISTRY LOADS
+   ----------------------------------------------------------------------------
+   Object_Registry and Component_Registry lookups used for FK resolution,
+   zone/scope classification, and prefix validation.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Build a (file_name -> registry_id) map from dbo.Object_Registry.
 # Filters by object_type and is_active = 1. Used at the bulk-insert step
@@ -548,13 +416,14 @@ WHERE object_type IN ($inList)
     return $map
 }
 
-# Build a (file_name -> @{ Zone; Scope; ScopeTier }) map from dbo.Object_Registry.
-# Filters by object_type and is_active = 1, same alias-to-object_type mapping
-# as Get-ObjectRegistryMap. Returns the per-file zone, scope, and scope_tier
-# classification the populators use to stamp each emitted row and to select
-# documentation treatment (scope_tier PLATFORM -> full docblocks; SCOPED or
-# unset -> light purpose comment). ScopeTier is $null when the registry value
-# is NULL. A file absent from this map is a registration gap: the calling
+# Build a (file_name -> @{ RegistryId; Zone; Scope; ScopeTier }) map from
+# dbo.Object_Registry. Filters by object_type and is_active = 1, same
+# alias-to-object_type mapping as Get-ObjectRegistryMap. Returns the per-file
+# registry_id (for FK linkage on emitted rows) plus the zone, scope, and
+# scope_tier classification the populators use to stamp each emitted row and to
+# select documentation treatment (scope_tier PLATFORM -> full docblocks; SCOPED
+# or unset -> light purpose comment). ScopeTier is $null when the registry
+# value is NULL. A file absent from this map is a registration gap: the calling
 # populator stamps '<undefined>' for zone and scope and flags the file so the
 # gap surfaces as drift rather than being silently misclassified.
 function Get-ObjectRegistryZoneScopeMap {
@@ -584,7 +453,7 @@ function Get-ObjectRegistryZoneScopeMap {
     $inList = ($objectTypes | ForEach-Object { "'$_'" }) -join ', '
 
     $query = @"
-SELECT object_name, zone, scope, scope_tier
+SELECT object_name, registry_id, zone, scope, scope_tier
 FROM dbo.Object_Registry
 WHERE object_type IN ($inList)
   AND is_active = 1
@@ -599,9 +468,10 @@ WHERE object_type IN ($inList)
                                  -SuppressProviderContextWarning -TrustServerCertificate
         foreach ($row in $results) {
             $map[$row.object_name] = @{
-                Zone      = $row.zone
-                Scope     = $row.scope
-                ScopeTier = if ($row.scope_tier -is [System.DBNull]) { $null } else { $row.scope_tier }
+                RegistryId = [int]$row.registry_id
+                Zone       = $row.zone
+                Scope      = $row.scope
+                ScopeTier  = if ($row.scope_tier -is [System.DBNull]) { $null } else { $row.scope_tier }
             }
         }
     }
@@ -714,10 +584,13 @@ function Get-ComponentRegistryNameSet {
     return $set
 }
 
-
-# ============================================================================
-# BULK INSERT
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: BULK INSERT
+   ----------------------------------------------------------------------------
+   Bulk-insert the collected rows into dbo.Asset_Registry, resolving FKs
+   and recording registration misses.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Build the Asset_Registry DataTable from a row collection and bulk-insert it
 # into dbo.Asset_Registry via SqlBulkCopy. Returns the inserted row count on
@@ -831,10 +704,12 @@ function Get-NullableValue {
     return $Value
 }
 
-
-# ============================================================================
-# COMMENT TEXT CLEANUP
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: COMMENT TEXT CLEANUP
+   ----------------------------------------------------------------------------
+   Normalize comment text for storage and the nullable-value helper.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Normalize a block-comment payload for storage as purpose_description or
 # COMMENT_BANNER raw text. Strips leading whitespace and JSDoc-style leading
@@ -884,10 +759,13 @@ function ConvertTo-CleanCommentText {
     return ($compact -join "`n").Trim()
 }
 
-
-# ============================================================================
-# BANNER DETECTION & PARSING
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: BANNER DETECTION AND PARSING
+   ----------------------------------------------------------------------------
+   Permissive banner detector plus the strict validator that emits granular
+   banner drift codes.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Cheap pre-check: does this comment look like a section banner? A banner
 # contains at least one rule line of 5+ '=' AND a TYPE: NAME line where TYPE
@@ -1055,7 +933,7 @@ function Get-BannerInfo {
         for ($i = $first; $i -le $last; $i++) { $effective += $lines[$i] }
     }
 
-    # ---- Validation Pass 1: inline-shape check ----
+    # Validation Pass 1: inline-shape check
     # The single-line form (===== Title =====) is invalid by spec - the
     # banner must be multi-line. When detected, we still parse what we
     # can but the catalog row carries the inline-shape drift code.
@@ -1065,7 +943,7 @@ function Get-BannerInfo {
         $info.DriftCodes += 'BANNER_INLINE_SHAPE'
     }
 
-    # ---- Validation Pass 2: bracketing rule lines ----
+    # Validation Pass 2: bracketing rule lines
     # The first and last effective lines must each be exactly 76 '='
     # characters. Two failure modes are distinguished:
     #   BANNER_INVALID_RULE_CHAR   - bracket line is not all '='
@@ -1088,7 +966,7 @@ function Get-BannerInfo {
         if ($sawWrongLengthEqRule) { $info.DriftCodes += 'BANNER_INVALID_RULE_LENGTH' }
     }
 
-    # ---- Validation Pass 3: title line ----
+    # Validation Pass 3: title line
     # Look for the first line matching ^TOKEN: NAME shape, where TOKEN is
     # all-uppercase letters/underscores (the spec form). Then check
     # whether TOKEN is in the enum.
@@ -1153,7 +1031,7 @@ function Get-BannerInfo {
         $info.DriftCodes += 'UNKNOWN_SECTION_TYPE'
     }
 
-    # ---- Validation Pass 4: Prefix line ----
+    # Validation Pass 4: Prefix line
     # Singular - the post-standardization spec form. Look anywhere in
     # the comment after the title line (or anywhere if no title line
     # was found).
@@ -1171,7 +1049,7 @@ function Get-BannerInfo {
         $info.DriftCodes += 'MISSING_PREFIX_DECLARATION'
     }
 
-    # ---- Validation Pass 5: separator line ----
+    # Validation Pass 5: separator line
     # The spec form has exactly one separator line of 76 '-' characters
     # between the title and the description. We look for the first
     # rule-shaped line in the body region (after title, before prefix
@@ -1207,7 +1085,7 @@ function Get-BannerInfo {
         }
     }
 
-    # ---- Description extraction + presence check ----
+    # Description extraction + presence check
     # Description sits between the separator (or title, if no separator)
     # and the Prefix line. Strip rule-shaped lines and boundary blanks.
     if ($titleLineIdx -ge 0) {
@@ -1237,7 +1115,7 @@ function Get-BannerInfo {
         }
     }
 
-    # ---- Validity ----
+    # Validity
     # Strict: every check must pass for IsValid = $true.
     if ($info.DriftCodes.Count -eq 0 -and
         -not [string]::IsNullOrEmpty($info.TypeName) -and
@@ -1315,10 +1193,13 @@ function Test-PrefixValueIsValid {
     return $true
 }
 
-
-# ============================================================================
-# FILE ORGANIZATION LIST PARSING (shared across CSS / JS / PS headers)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: FILE ORGANIZATION LIST PARSING
+   ----------------------------------------------------------------------------
+   Parse the FILE ORGANIZATION list out of a header body; shared across the
+   CSS, JS, and PS header parsers.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Parse the FILE ORGANIZATION list out of an array of body lines, starting
 # at $StartIndex (the first line AFTER the "FILE ORGANIZATION" header
@@ -1381,10 +1262,12 @@ function Get-FileOrgList {
     return @($entries.ToArray())
 }
 
-
-# ============================================================================
-# FILE HEADER PARSING (CSS / JS)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: FILE HEADER PARSING
+   ----------------------------------------------------------------------------
+   Parse the CSS/JS block-comment file header into its structured fields.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Parse the file-header block comment (the leading /* ... */ block at line 1).
 # Returns an ordered hashtable:
@@ -1543,10 +1426,13 @@ function Get-FileHeaderInfo {
     return $info
 }
 
-
-# ============================================================================
-# SECTION LIST (PRE-BUILT, LINE-RANGE INDEXED)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: SECTION LIST
+   ----------------------------------------------------------------------------
+   Build the pre-computed, line-range-indexed section list and the
+   line-to-section lookup.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Build a per-file list of section instances, sorted by source order. Each
 # instance carries its banner location, body line range, parsed banner fields,
@@ -1681,10 +1567,12 @@ function Test-FileOrgMatchesBanners {
     return $true
 }
 
-
-# ============================================================================
-# AST WALKING (GENERIC VISITOR - JS / CSS SHAPE)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: AST WALKING
+   ----------------------------------------------------------------------------
+   Generic depth-first AST visitor for the JS/CSS parse-tree shape.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Generic AST visitor walker. Visits every node in the tree depth-first and
 # invokes the visitor scriptblock at each one. The visitor receives:
@@ -1770,10 +1658,13 @@ function Invoke-AstWalk {
     }
 }
 
-
-# ============================================================================
-# PS AST AND HEADER HELPERS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: PS AST AND HEADER HELPERS
+   ----------------------------------------------------------------------------
+   PowerShell-specific AST navigation and the PS comment-based-help header
+   parser.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # These helpers serve the PowerShell populator (Populate-AssetRegistry-PS.ps1).
 # PowerShell's native AST is fundamentally different from the JSON-from-
@@ -1897,7 +1788,7 @@ function Get-PSFileHeaderInfo {
     $normalized = $body -replace $crlf, "`n" -replace $cr, "`n"
     $lines = $normalized -split "`n"
 
-    # ---- Pass 1: locate every .KEYWORD tag and slice the body into tag blocks ----
+    # Pass 1: locate every .KEYWORD tag and slice the body into tag blocks
     # Each tag block is a hashtable @{ Tag = '<NAME>'; Param = '<param-name>';
     # Lines = @( body lines ) }. Tag/Param are uppercased; Lines preserves the
     # original line text (without the .TAG prefix) for the tag's content.
@@ -1927,7 +1818,7 @@ function Get-PSFileHeaderInfo {
         $info.DriftCodes += 'MALFORMED_FILE_HEADER'
     }
 
-    # ---- Pass 2: populate the structured fields from the tag blocks ----
+    # Pass 2: populate the structured fields from the tag blocks
     $sawSynopsis    = $false
     $sawDescription = $false
 
@@ -1976,7 +1867,7 @@ function Get-PSFileHeaderInfo {
         }
     }
 
-    # ---- Pass 3: FILE ORGANIZATION extraction ----
+    # Pass 3: FILE ORGANIZATION extraction
     # Look inside .NOTES content for a "FILE ORGANIZATION" line; the shared
     # Get-FileOrgList helper handles the actual list parsing. The PS form
     # ends on the first blank line after entries (the .NOTES block is
@@ -1998,7 +1889,7 @@ function Get-PSFileHeaderInfo {
         }
     }
 
-    # ---- Pass 4: forbidden-content scanning of the entire header body ----
+    # Pass 4: forbidden-content scanning of the entire header body
     # These checks run against the full body text. Each fires its own drift
     # code; multiple can fire on the same header.
     #
@@ -2131,7 +2022,7 @@ function Get-PSFileHeaderInfo {
         }
     }
 
-    # ---- Pass 4a: forbidden comment-based-help keywords ----
+    # Pass 4a: forbidden comment-based-help keywords
     # The recognized comment-based-help keywords are .SYNOPSIS,
     # .DESCRIPTION, .PARAMETER, .COMPONENT, and .NOTES. Any other
     # .KEYWORD is FORBIDDEN_HEADER_KEYWORD.
@@ -2144,7 +2035,7 @@ function Get-PSFileHeaderInfo {
         }
     }
 
-    # ---- Pass 4b: .NOTES field structure validation ----
+    # Pass 4b: .NOTES field structure validation
     # .NOTES contains exactly three fields in this order: File Name,
     # Location, FILE ORGANIZATION list. Two checks:
     #   MALFORMED_NOTES_FIELD - missing required fields or unexpected fields.
@@ -2188,14 +2079,14 @@ function Get-PSFileHeaderInfo {
         }
     }
 
-    # ---- Pass 5: .COMPONENT presence check (optional via -RequireComponent) ----
+    # Pass 5: .COMPONENT presence check (optional via -RequireComponent)
     if ($RequireComponent -and [string]::IsNullOrEmpty($info.Component)) {
         if ($info.DriftCodes -notcontains 'MISSING_COMPONENT_DECLARATION') {
             $info.DriftCodes += 'MISSING_COMPONENT_DECLARATION'
         }
     }
 
-    # ---- Validity ----
+    # Validity
     # Valid only when no drift codes fired AND both .SYNOPSIS and .DESCRIPTION
     # are present. The component check participates only when required.
     $info.IsValid = ($info.DriftCodes.Count -eq 0 -and $sawSynopsis -and $sawDescription)
