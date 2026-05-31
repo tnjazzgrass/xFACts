@@ -54,6 +54,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-05-31  Added FORBIDDEN_ENV_ASSIGNMENT. The $env: provider is now
+#             permitted at file scope only for the variables in
+#             $AuthorizedEnvVars (currently NODE_PATH); any other $env: write
+#             is drift. Previously every $env: write fired
+#             FORBIDDEN_SCOPE_QUALIFIER.
 # 2026-05-31  Dropped the separate Get-ObjectRegistryMap call. The zone/scope
 #             map now also carries registry_id, so the file makes one
 #             Object_Registry query instead of two. A transitional shim at the
@@ -267,6 +272,13 @@ $GlobalConfigFunctions = @(
     'Test-GlobalConfigSetting'
 )
 
+# Environment variables a file may write at file scope via the $env: provider.
+# Any $env: write to a name not listed here fires FORBIDDEN_ENV_ASSIGNMENT.
+# Matched case-insensitively (Windows environment names are case-insensitive).
+$AuthorizedEnvVars = @(
+    'NODE_PATH'
+)
+
 <# ============================================================================
    CONSTANTS: DRIFT DESCRIPTIONS
    ----------------------------------------------------------------------------
@@ -356,6 +368,7 @@ $DriftDescriptions = [ordered]@{
     # Variables and constants
     'FORBIDDEN_SCOPE_QUALIFIER'         = "A top-level declaration uses '`$Script:' (capital S) or another non-'`$script:' scope qualifier. Only '`$script:' (lowercase) is permitted."
     'FORBIDDEN_GLOBAL_VARIABLE'         = "A declaration uses the '`$global:' scope qualifier. '`$global:' is forbidden anywhere in the file."
+    'FORBIDDEN_ENV_ASSIGNMENT'          = "A `$env: write targets an environment variable not on the permitted list. Only the variables in `$AuthorizedEnvVars may be written at file scope."
     'FORBIDDEN_AUTOVAR_REASSIGNMENT'    = "Assignment to a PowerShell automatic variable (`$args, `$_, `$matches, `$input, `$PSScriptRoot, etc.) is forbidden."
     'FORBIDDEN_MULTI_DECLARATION'       = "Chained variable assignment in a single statement (`$a = `$b = `$c = 0). Each declaration gets its own statement."
     'MISSING_CONSTANT_COMMENT'          = "A constant declaration is not preceded by a single-line purpose comment."
@@ -1964,6 +1977,16 @@ function Add-PSAssignmentRow {
         elseif ($qualifier -ceq 'global') {
             Add-DriftCode -Row $row -Code 'FORBIDDEN_GLOBAL_VARIABLE' `
                 -Context "Declaration uses `$global: scope. `$global: is forbidden anywhere in the file."
+        }
+        elseif ($qualifier -eq 'env') {
+            # The $env: provider is permitted only for authorized environment
+            # variables. $varName carries the full provider path (e.g.
+            # 'env:NODE_PATH'); strip the 'env:' prefix to get the bare name.
+            $envVarName = $varName -replace '^env:', ''
+            if ($AuthorizedEnvVars -notcontains $envVarName) {
+                Add-DriftCode -Row $row -Code 'FORBIDDEN_ENV_ASSIGNMENT' `
+                    -Context "`$env:$envVarName is not on the authorized list. Only $($AuthorizedEnvVars -join ', ') may be written at file scope."
+            }
         }
         elseif ($qualifier -ne 'script' -and $qualifier -ne 'private' -and $qualifier -ne 'local') {
             Add-DriftCode -Row $row -Code 'FORBIDDEN_SCOPE_QUALIFIER' `
