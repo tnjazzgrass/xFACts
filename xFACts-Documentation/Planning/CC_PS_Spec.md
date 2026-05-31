@@ -341,8 +341,9 @@ $script:Config = @{}                # in a VARIABLES section
 
 ### 9.2 General rules
 
-- `$script:` (lowercase) is the only permitted scope qualifier for top-level declarations.
+- `$script:` (lowercase) is the only permitted scope qualifier for top-level variable and constant declarations.
 - `$global:` declarations are forbidden anywhere in the file.
+- The `$env:` provider may be written at file scope only for these environment variables: `NODE_PATH`.
 - Assignment to PowerShell automatic variables (`$args`, `$_`, `$matches`, `$input`, `$PSScriptRoot`, etc.) is forbidden.
 - Each declaration gets its own statement. Chained assignments (`$a = $b = $c = 0`) are forbidden.
 - Every constant and variable declaration is preceded by a single-line `#` comment describing its purpose.
@@ -601,6 +602,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `MISSING_FUNCTION_PURPOSE_COMMENT` | A function in a SCOPED-tier or standalone file has no single-line `#` purpose comment on the line directly above its declaration. | §8.4 |
 | `FORBIDDEN_SCOPE_QUALIFIER` | Declaration uses `$Script:` (capital S) or other non-`$script:` scope. | §9.2 |
 | `FORBIDDEN_GLOBAL_VARIABLE` | Declaration uses `$global:` scope. | §9.2 |
+| `FORBIDDEN_ENV_ASSIGNMENT` | A `$env:` write targets a variable not on the permitted list. | §9.2 |
 | `FORBIDDEN_AUTOVAR_REASSIGNMENT` | Assignment to a PowerShell automatic variable. | §9.2 |
 | `FORBIDDEN_MULTI_DECLARATION` | Chained assignment in a single statement. | §9.2 |
 | `MISSING_CONSTANT_COMMENT` | Constant declaration not preceded by a purpose comment. | §9.2 |
