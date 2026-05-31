@@ -54,6 +54,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-05-31  Dropped the separate Get-ObjectRegistryMap call. The zone/scope
+#             map now also carries registry_id, so the file makes one
+#             Object_Registry query instead of two. A transitional shim at the
+#             bulk-insert call projects registry_id back to the flat map shape
+#             the bulk insert still expects.
 # 2026-05-29  Conformed the working file to the Control Center PowerShell file
 #             format spec: block-comment section banners, canonical section
 #             order, single EXECUTION section with sub-section markers, and
@@ -2917,13 +2922,6 @@ Write-Log ("  Shared functions collected across {0} zone(s)." -f $script:sharedF
 
 # -- Registry Loads --
 
-Write-Log "Loading Object_Registry mapping for FK resolution..."
-$objectRegistryMap = Get-ObjectRegistryMap `
-    -ServerInstance $script:XFActsServerInstance `
-    -Database       $script:XFActsDatabase `
-    -FileType       @('PS','Route','API','Module')
-Write-Log ("  Object_Registry rows loaded: {0}" -f $objectRegistryMap.Count)
-
 Write-Log "Loading Component_Registry prefix map for registry validation..."
 $componentPrefixMap = Get-ComponentRegistryPrefixMap `
     -ServerInstance $script:XFActsServerInstance `
@@ -4084,6 +4082,15 @@ if ($script:rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($script:rows.Count) rows..."
 try {
+    # Transitional shim: Invoke-AssetRegistryBulkInsert still takes the FK map
+    # as object_name -> registry_id. Project it from the combined zone/scope
+    # map (which now carries RegistryId) until the bulk insert is updated to
+    # accept the combined shape directly, at which point this shim is removed.
+    $objectRegistryMap = @{}
+    foreach ($objName in $objectZoneScopeMap.Keys) {
+        $objectRegistryMap[$objName] = $objectZoneScopeMap[$objName].RegistryId
+    }
+
     $inserted = Invoke-AssetRegistryBulkInsert `
         -ServerInstance     $script:XFActsServerInstance `
         -Database           $script:XFActsDatabase `
