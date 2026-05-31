@@ -72,6 +72,10 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-05-31  Get-ObjectRegistryZoneScopeMap now also returns ObjectType
+#             (Route / API / Module / CSS / etc.) so the HTML populator can
+#             classify each host file from the same single query. Additive;
+#             existing callers are unaffected.
 # 2026-05-27  Get-PSFileHeaderInfo Pass 4: added a FILE ORGANIZATION block
 #             carve-out so a CHANGELOG list entry inside the FILE ORG list is
 #             not mistaken for a CHANGELOG block in the header.
@@ -416,16 +420,18 @@ WHERE object_type IN ($inList)
     return $map
 }
 
-# Build a (file_name -> @{ RegistryId; Zone; Scope; ScopeTier }) map from
-# dbo.Object_Registry. Filters by object_type and is_active = 1, same
+# Build a (file_name -> @{ RegistryId; Zone; Scope; ScopeTier; ObjectType })
+# map from dbo.Object_Registry. Filters by object_type and is_active = 1, same
 # alias-to-object_type mapping as Get-ObjectRegistryMap. Returns the per-file
 # registry_id (for FK linkage on emitted rows) plus the zone, scope, and
 # scope_tier classification the populators use to stamp each emitted row and to
 # select documentation treatment (scope_tier PLATFORM -> full docblocks; SCOPED
-# or unset -> light purpose comment). ScopeTier is $null when the registry
-# value is NULL. A file absent from this map is a registration gap: the calling
-# populator stamps '<undefined>' for zone and scope and flags the file so the
-# gap surfaces as drift rather than being silently misclassified.
+# or unset -> light purpose comment), and the object_type (Route / API / Module
+# / CSS / JavaScript / Script / etc.) used by the HTML populator to classify
+# each host file. ScopeTier and ObjectType are $null when the registry value is
+# NULL. A file absent from this map is a registration gap: the calling populator
+# stamps '<undefined>' for zone and scope and flags the file so the gap surfaces
+# as drift rather than being silently misclassified.
 function Get-ObjectRegistryZoneScopeMap {
     param(
         [Parameter(Mandatory)][string]$ServerInstance,
@@ -453,7 +459,7 @@ function Get-ObjectRegistryZoneScopeMap {
     $inList = ($objectTypes | ForEach-Object { "'$_'" }) -join ', '
 
     $query = @"
-SELECT object_name, registry_id, zone, scope, scope_tier
+SELECT object_name, registry_id, zone, scope, scope_tier, object_type
 FROM dbo.Object_Registry
 WHERE object_type IN ($inList)
   AND is_active = 1
@@ -471,7 +477,8 @@ WHERE object_type IN ($inList)
                 RegistryId = [int]$row.registry_id
                 Zone       = $row.zone
                 Scope      = $row.scope
-                ScopeTier  = if ($row.scope_tier -is [System.DBNull]) { $null } else { $row.scope_tier }
+                ScopeTier  = if ($row.scope_tier  -is [System.DBNull]) { $null } else { $row.scope_tier }
+                ObjectType = if ($row.object_type -is [System.DBNull]) { $null } else { $row.object_type }
             }
         }
     }
