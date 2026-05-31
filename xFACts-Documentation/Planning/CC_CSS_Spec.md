@@ -71,27 +71,29 @@ Five section types are recognized:
 
 | Order | TYPE | Purpose | Where it lives |
 |-------|------|---------|----------------|
-| 1 | `FOUNDATION` | Custom property tokens, CSS resets, scrollbar styling, keyframes, animation utilities. | Anchor file only. |
-| 2 | `CHROME` | Universal page chrome — nav bar, header bar, refresh info, engine cards, connection banner. | Anchor file only. |
+| 1 | `FOUNDATION` | Custom property tokens, CSS resets, scrollbar styling, keyframes, animation utilities. | Shell file only. |
+| 2 | `CHROME` | Universal page chrome — nav bar, header bar, refresh info, engine cards, connection banner. | Shell file only. |
 | 3 | `LAYOUT` | Page-level structural layout. | Page files. At most one LAYOUT section per page. |
 | 4 | `CONTENT` | Page-specific content components — cards, tables, badges, panels, sub-components. | Page files. Multiple CONTENT sections permitted, one per logical concept. |
-| 5 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements — idle overlay, toast notifications, loading spinners, confirmation flashes. | Anchor file or page file, scoped by overlay scope. |
+| 5 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements — idle overlay, toast notifications, loading spinners, confirmation flashes. | Shell file or page file, scoped by overlay scope. |
 
 ### 4.1 Rules
 
-- `FOUNDATION` and `CHROME` sections live in exactly one file per component — the component's anchor file. Any other file containing a FOUNDATION or CHROME section is drift.
+- `FOUNDATION` and `CHROME` sections live in exactly one file per component — the component's shell file. Any other file containing a FOUNDATION or CHROME section is drift.
 - Section types appear in the order shown.
 - Multiple sections of the same type may appear in any author-chosen order. The type-order rule governs ordering between different types only.
 - A page file does not redefine or selectively modify chrome classes. When a page needs a behavior that chrome does not provide, the resolution is either a spec amendment that adds the variation to the chrome layer, or a page-local class under the page's prefix. Choose the chrome path when the variation is broadly reusable; the page-local path when it is specific to one page.
 
-### 4.2 Anchor files
+### 4.2 Shell files
 
-| Component | Anchor file |
+| Component | Shell file |
 |-----------|-------------|
 | `ControlCenter.Shared` (CC application) | `cc-shared.css` |
 | `Documentation.Site` (docs application) | `docs-shared.css` |
 
-Adding a platform domain that needs its own anchor file requires a spec amendment to the table above.
+Adding a platform domain that needs its own shell file requires a spec amendment to the table above.
+
+A file's shell designation is recorded in `Object_Registry` as `scope_tier = SHELL`; the populator reads it from there rather than matching file names.
 
 ---
 
@@ -104,12 +106,12 @@ Every section banner declares one prefix via the `Prefix:` line. The prefix scop
 Two forms, no others:
 
 - **Page prefix** — the value of `Component_Registry.cc_prefix` for the file's component. Used in LAYOUT, CONTENT, and page-file FEEDBACK_OVERLAYS sections of page files.
-- **Chrome prefix** — the literal token `cc`. Used in FOUNDATION, CHROME, and anchor-file FEEDBACK_OVERLAYS sections of the anchor file.
+- **Chrome prefix** — the literal token `cc`. Used in FOUNDATION, CHROME, and shell-file FEEDBACK_OVERLAYS sections of the shell file.
 
 ### 5.2 Rules
 
 - A page-file banner declares the page prefix from `Component_Registry.cc_prefix`.
-- An anchor-file banner declares `cc`.
+- A shell-file banner declares `cc`.
 - The `Prefix:` line declares exactly one value. Comma-separated values are not permitted.
 - `Component_Registry.cc_prefix` is the source of truth. When the file and registry disagree, the file is wrong.
 
@@ -187,7 +189,7 @@ When a section's content grows, choose between a new banner or a sub-section mar
 
 ## 10. Custom property tokens
 
-Custom properties (CSS variables) are the mechanism for sharing values across the codebase. Tokens live in `:root` declarations inside the FOUNDATION section of the component's anchor file (§4.2). Pages consume tokens via `var(--token-name)` references.
+Custom properties (CSS variables) are the mechanism for sharing values across the codebase. Tokens live in `:root` declarations inside the FOUNDATION section of the component's shell file (§4.2). Pages consume tokens via `var(--token-name)` references.
 
 ### 10.1 Token naming
 
@@ -199,7 +201,7 @@ Tokens follow the form `--<category>-<role>-<modifier>`, where:
 
 ### 10.2 Rules
 
-- Tokens are defined once, in the component's anchor file FOUNDATION section. Page files do not redeclare or override tokens locally.
+- Tokens are defined once, in the component's shell file FOUNDATION section. Page files do not redeclare or override tokens locally.
 - A value used in two or more places in the codebase is a token. Single-use values may remain literals.
 - Pages reference tokens via `var(--token-name)` only. Hex literals or pixel literals where a token exists are drift.
 - Exactly one `:root` block per file. Multiple `:root` blocks are drift.
@@ -211,7 +213,7 @@ Tokens follow the form `--<category>-<role>-<modifier>`, where:
 
 ## 11. @keyframes
 
-`@keyframes` definitions are permitted only in the FOUNDATION section of the component's anchor file (§4.2). Every `@keyframes` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`. Pages consume keyframes via `animation: <keyframe-name> ...` references but do not define new keyframes.
+`@keyframes` definitions are permitted only in the FOUNDATION section of the component's shell file (§4.2). Every `@keyframes` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`. Pages consume keyframes via `animation: <keyframe-name> ...` references but do not define new keyframes.
 
 ---
 
@@ -259,8 +261,8 @@ Rules that apply to the file as a whole.
 | `@import` | — |
 | `@font-face` | — |
 | `@supports` | — |
-| `@keyframes` outside the anchor file FOUNDATION | — |
-| Custom property defined outside the anchor file FOUNDATION | — |
+| `@keyframes` outside the shell file FOUNDATION | — |
+| Custom property defined outside the shell file FOUNDATION | — |
 | Hex literal where a token exists | Use `var(--token-name)`. |
 | Pixel literal where a size token exists | Same. |
 | CHANGELOG block in file header | Change history lives in git. |
@@ -292,12 +294,12 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `BANNER_MISSING_DESCRIPTION` | A banner has no description text. | §3.1 |
 | `UNKNOWN_SECTION_TYPE` | A banner declares a TYPE not in the recognized list. | §4 |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of order. | §4.1 |
-| `DUPLICATE_FOUNDATION` | A FOUNDATION section appears in a non-anchor file. | §4.1 |
-| `DUPLICATE_CHROME` | A CHROME section appears in a non-anchor file. | §4.1 |
+| `DUPLICATE_FOUNDATION` | A FOUNDATION section appears in a non-shell file. | §4.1 |
+| `DUPLICATE_CHROME` | A CHROME section appears in a non-shell file. | §4.1 |
 | `MISSING_PREFIX_DECLARATION` | A banner is missing the `Prefix:` line. | §5.2 |
 | `MALFORMED_PREFIX_VALUE` | A banner declares a `Prefix:` value that is neither a page prefix nor `cc`, or declares multiple comma-separated values. | §5.2 |
 | `PREFIX_REGISTRY_MISMATCH` | A page-file banner's declared prefix does not match `Component_Registry.cc_prefix`. | §5.2 |
-| `ANCHOR_SECTION_INVALID_PREFIX` | A FOUNDATION, CHROME, or anchor-file FEEDBACK_OVERLAYS section declares a prefix other than `cc`. | §5.2 |
+| `SHELL_SECTION_INVALID_PREFIX` | A FOUNDATION, CHROME, or shell-file FEEDBACK_OVERLAYS section declares a prefix other than `cc`. | §5.2 |
 | `PREFIX_MISMATCH` | A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked. | §5, §6.1, §7.1 |
 | `UNDEFINED_CLASS_USAGE` | A class participating in a class-on-class compound rule has no standalone single-class definition in the same file. | §7.1 |
 | `ORPHAN_VARIANT` | A pseudo-class variant references a class with no single-class definition in the same file. | §7.1 |
@@ -323,8 +325,8 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `FORBIDDEN_AT_IMPORT` | File contains `@import`. | §14 |
 | `FORBIDDEN_AT_FONT_FACE` | File contains `@font-face`. | §14 |
 | `FORBIDDEN_AT_SUPPORTS` | File contains `@supports`. | §14 |
-| `FORBIDDEN_KEYFRAMES_LOCATION` | `@keyframes` appears outside the anchor file FOUNDATION. | §11, §14 |
-| `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` | Custom property definition appears outside the anchor file FOUNDATION. | §10.2, §14 |
+| `FORBIDDEN_KEYFRAMES_LOCATION` | `@keyframes` appears outside the shell file FOUNDATION. | §11, §14 |
+| `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` | Custom property definition appears outside the shell file FOUNDATION. | §10.2, §14 |
 | `DRIFT_HEX_LITERAL` | Hex color literal where a token exists. | §10.2, §14 |
 | `DRIFT_PX_LITERAL` | Pixel literal where a size token exists. | §10.2, §14 |
 | `FORBIDDEN_COMPOUND_DECLARATION` | Two or more declarations on the same line. | §14 |
