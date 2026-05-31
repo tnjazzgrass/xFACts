@@ -609,24 +609,12 @@ WHERE reference_type = 'USAGE'
    Prefix: (none)
    ============================================================================ #>
 
+# Print the would-resolve / would-unresolve counts for a single edge.
 function Show-EdgePreview {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][hashtable]$Edge
     )
-
-    <#
-    .SYNOPSIS
-        Print the would-resolve / would-unresolve counts for a single edge.
-    .DESCRIPTION
-        Runs the edge's PreviewSql to get total_pending and would_resolve
-        counts without modifying the catalog. Computes would_unresolve as
-        the difference and emits one formatted log line.
-    .PARAMETER Edge
-        Edge definition hashtable carrying Name, DriftCode, DriftText,
-        PreviewSql, ResolveSql, and StampSql.
-    #>
-
     $result = Get-SqlData -Query $Edge.PreviewSql
     if ($null -eq $result) {
         Write-Log ("  {0}: preview query failed" -f $Edge.Name) 'WARN'
@@ -640,26 +628,12 @@ function Show-EdgePreview {
     Write-Log ("  {0,-26}  pending={1,-6} would_resolve={2,-6} would_unresolve={3}" -f $Edge.Name, $total, $resolve, $unresolve)
 }
 
+# Run Phase A (resolve) and Phase B (stamp misses) for a single edge.
 function Invoke-EdgeResolution {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][hashtable]$Edge
     )
-
-    <#
-    .SYNOPSIS
-        Run Phase A (resolve) and Phase B (stamp misses) for a single edge.
-    .DESCRIPTION
-        Captures the pending row count before Phase A, runs the edge's
-        ResolveSql to match USAGE rows to DEFINITION rows, recounts after
-        Phase A to compute how many resolved, then runs StampSql to mark
-        any remaining <pending> rows as <undefined> with the edge-specific
-        drift code. Emits one formatted log line summarizing both phases.
-    .PARAMETER Edge
-        Edge definition hashtable carrying Name, DriftCode, DriftText,
-        PreviewSql, ResolveSql, and StampSql.
-    #>
-
     $before = Get-SqlData -Query $Edge.PreviewSql
     if ($null -eq $before) {
         Write-Log ("  {0}: pre-resolution count query failed" -f $Edge.Name) 'ERROR'
@@ -699,20 +673,10 @@ function Invoke-EdgeResolution {
     Write-Log ("  {0,-26}  pending={1,-6} resolved={2,-6} unresolved={3}" -f $Edge.Name, $totalPending, $resolved, $stamped)
 }
 
+# Print the current cross-spec pending row count per edge bucket.
 function Show-PreRunSnapshot {
     [CmdletBinding()]
     param()
-
-    <#
-    .SYNOPSIS
-        Print the current cross-spec pending row count per edge bucket.
-    .DESCRIPTION
-        Queries Asset_Registry for USAGE rows whose scope and source_file
-        are both <pending>, grouped by component_type and file_type, and
-        emits one formatted log line per group. Used at the top of the
-        run to show what work the resolver is about to perform.
-    #>
-
     $sql = @"
 SELECT
     component_type,
@@ -746,21 +710,10 @@ ORDER BY file_type, component_type;
     }
 }
 
+# Stamp UNRESOLVED_REFERENCE on any cross-spec USAGE row still pending.
 function Invoke-FinalCatchAll {
     [CmdletBinding()]
     param()
-
-    <#
-    .SYNOPSIS
-        Stamp UNRESOLVED_REFERENCE on any cross-spec USAGE row still pending.
-    .DESCRIPTION
-        Defensive cleanup: after all five resolution edges have run, any
-        USAGE row still in <pending> state indicates a gap in the edge
-        list. The catch-all UPDATE marks those rows as <undefined> with
-        UNRESOLVED_REFERENCE so the gap surfaces in drift reports. Should
-        not stamp anything if the edge list is exhaustive.
-    #>
-
     $countSql = @"
 SELECT COUNT(*) AS still_pending
 FROM dbo.Asset_Registry
@@ -791,21 +744,10 @@ WHERE reference_type = 'USAGE'
     Write-Log ("Stamped {0} row(s) with UNRESOLVED_REFERENCE." -f $stillPending) 'WARN'
 }
 
+# Print the final state of cross-spec USAGE rows after resolution.
 function Show-PostRunSummary {
     [CmdletBinding()]
     param()
-
-    <#
-    .SYNOPSIS
-        Print the final state of cross-spec USAGE rows after resolution.
-    .DESCRIPTION
-        Queries Asset_Registry for USAGE rows of the four cross-spec
-        component types (CSS_CLASS, CSS_FILE, JS_FILE, HTML_ID), grouped
-        by file_type, component_type, and scope, and emits one formatted
-        log line per group. Used at the end of the run to show the final
-        distribution of resolved vs unresolved rows.
-    #>
-
     Write-Log ""
     Write-Log "Post-run state"
     Write-Log "--------------"
