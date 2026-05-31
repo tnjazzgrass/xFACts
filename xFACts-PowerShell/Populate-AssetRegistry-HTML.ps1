@@ -78,11 +78,75 @@
     Optional file-name filter for processing a single file or subset
     (e.g., -FileFilter 'BusinessServices.ps1' processes only that file).
 
+.COMPONENT
+    Tools.Utilities
+
 .NOTES
     File Name : Populate-AssetRegistry-HTML.ps1
     Location  : E:\xFACts-PowerShell
-    Version   : Tracked in dbo.System_Metadata (component: Tools.Utilities)
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: EXECUTION PREFERENCES
+    CONSTANTS: PATHS AND DISCOVERY
+    CONSTANTS: SPEC CONSTANTS
+    CONSTANTS: DRIFT DESCRIPTIONS
+    VARIABLES: SCRIPT-SCOPE STATE
+    FUNCTIONS: POWERSHELL AST PARSING
+    FUNCTIONS: AST CONTEXT HELPERS
+    FUNCTIONS: HTML EMISSION DISCOVERY
+    FUNCTIONS: ROUTE DISCOVERY
+    FUNCTIONS: HTML TOKENIZER
+    FUNCTIONS: ATTRIBUTE PARSER
+    FUNCTIONS: CLASS-NAME SPLITTING AND VALIDATION
+    FUNCTIONS: ID VALIDATION
+    FUNCTIONS: OVERLAY CONSTRUCT DETECTION
+    FUNCTIONS: EVENT HANDLER ANALYSIS
+    FUNCTIONS: DATA-ACTION ATTRIBUTE VALIDATION
+    FUNCTIONS: ROW EMITTERS
+    FUNCTIONS: PAGE SHELL VALIDATION
+    FUNCTIONS: STRUCTURE AND CHROME VALIDATORS
+    FUNCTIONS: MAIN TOKEN WALKER
+    FUNCTIONS: OVERLAY POST-WALK VALIDATION
+    FUNCTIONS: DUPLICATE ID CHECK
+    FUNCTIONS: ENGINE CARD VALIDATION
+    FUNCTIONS: PAGE CHROME VALIDATION
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-stamped change history. Each entry is one ISO date line followed by an
+   indented description. Entries appear most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-05-31  Converted to the Control Center PowerShell file format spec:
+#             block-comment header and section banners, canonical section
+#             order, dedicated CHANGELOG section, single EXECUTION section
+#             with sub-section markers, and leading purpose comments on
+#             script-scope declarations. Made the per-row zone stamp
+#             table-driven: zone now comes from dbo.Object_Registry via
+#             Get-ObjectRegistryZoneScopeMap rather than a hardcoded 'cc'.
+#             Dropped the separate Get-ObjectRegistryMap call and the
+#             hand-rolled object_type query; the zone/scope map now carries
+#             registry_id and object_type, so the file makes one
+#             Object_Registry query. A transitional shim at the bulk-insert
+#             call projects registry_id back to the flat map shape the bulk
+#             insert still expects. Added FILE_NOT_REGISTERED for files
+#             absent from Object_Registry.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: the execute switch and an optional single-file filter.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -90,21 +154,44 @@ param(
     [string]$FileFilter
 )
 
-# ============================================================================
-# DOT-SOURCE SHARED INFRASTRUCTURE
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-source the shared orchestrator and Asset Registry function libraries.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
 . "$PSScriptRoot\xFACts-AssetRegistryFunctions.ps1"
 
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   Common script setup: connection context and logging.
+   Prefix: (none)
+   ============================================================================ #>
+
 Initialize-XFActsScript -ScriptName 'Populate-AssetRegistry-HTML' -Execute:$Execute
 
+<# ============================================================================
+   CONSTANTS: EXECUTION PREFERENCES
+   ----------------------------------------------------------------------------
+   PowerShell preference variables that govern script execution behavior.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Stop on any error so failures surface immediately rather than continuing
+# against partial state.
 $ErrorActionPreference = 'Stop'
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+<# ============================================================================
+   CONSTANTS: PATHS AND DISCOVERY
+   ----------------------------------------------------------------------------
+   The Control Center root and the PS file roots scanned for embedded HTML.
+   Prefix: (none)
+   ============================================================================ #>
 
+# Control Center root directory.
 $CcRoot = 'E:\xFACts-ControlCenter'
 
 # Roots scanned for HTML-emitting PS files. The routes\ directory contains
@@ -118,6 +205,15 @@ $PsScanRoots = @(
     @{ Path = "$CcRoot\scripts\modules"; Pattern = '*.psm1' }
 )
 
+<# ============================================================================
+   CONSTANTS: SPEC CONSTANTS
+   ----------------------------------------------------------------------------
+   Closed sets the validators check against: recognized events, vendored JS
+   libraries, HTML void elements, chrome IDs, platform data-* attributes, and
+   the elements permitted to carry action attributes.
+   Prefix: (none)
+   ============================================================================ #>
+
 # Closed event set. Used to validate the event name on data-action-<event>
 # attributes. Inline on* attributes are forbidden entirely, regardless of
 # event name.
@@ -129,7 +225,7 @@ $RecognizedEvents = @('click','change','input','submit','blur','focus','keydown'
 # <body> immediately before the mandatory cc-shared.js tag. They are
 # recognized references, not drift: excluded from the single-script-tag
 # count and exempt from the cc-shared.js src check. The set is closed;
-# adding a library requires a spec amendment (CC_HTML_Spec section 3.2).
+# adding a library requires a spec amendment.
 $VendoredJsFiles = @('chart.min.js','chartjs-adapter-date-fns.min.js','xlsx.full.min.js')
 
 # HTML void elements (per HTML5). These elements cannot have content and
@@ -142,15 +238,16 @@ $HtmlVoidElements = @(
     'meta','param','source','track','wbr'
 )
 
-# Chrome ID closed set. The six platform-wide identifiers permitted on
-# chrome elements; helper-emitted IDs must be one of these patterns.
-# Three are exact strings; three are slug-bearing prefixes whose
-# remainder must be a kebab-case slug from Orchestrator.ProcessRegistry.
+# Chrome ID exact set: the three platform-wide identifiers permitted verbatim
+# on chrome elements.
 $ChromeIdExactSet = @(
     'cc-last-update',
     'cc-connection-banner',
     'cc-page-error-banner'
 )
+
+# Chrome ID slug prefixes: three prefixes whose remainder must be a kebab-case
+# slug from Orchestrator.ProcessRegistry.
 $ChromeIdSlugPrefixes = @(
     'cc-card-engine-',
     'cc-engine-bar-',
@@ -164,25 +261,29 @@ $PlatformDataAttributes = @(
     'data-cc-prefix'
 )
 
-# Elements permitted to carry data-action-<event> attributes. Action
-# attributes are valid on standard interactive elements plus the three
-# overlay container classes (the "click outside the dialog to close"
-# carve-out).
+# Elements permitted to carry data-action-<event> attributes.
 $ActionPermittedTags = @('button','a','input','select','textarea')
+
+# Overlay container classes also permitted to carry action attributes (the
+# "click outside the dialog to close" carve-out).
 $ActionPermittedOverlayClasses = @(
     'cc-modal-overlay',
     'cc-slide-overlay',
     'cc-slideup-overlay'
 )
 
-# ============================================================================
-# DRIFT CODE DESCRIPTIONS
-# ============================================================================
+<# ============================================================================
+   CONSTANTS: DRIFT DESCRIPTIONS
+   ----------------------------------------------------------------------------
+   Master table mapping every drift code this populator can emit to its
+   human-readable description. Add-DriftCode validates against this table.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Master table of every drift code this populator can emit. Used by
 # Add-DriftCode (from helpers) to validate codes before attachment.
 $DriftDescriptions = [ordered]@{
-    # ---- Page shell codes (attached to HTML_FILE) ----
+    # Page shell codes (attached to HTML_FILE)
     'MALFORMED_DOCTYPE'                 = "The HTML document does not open with <!DOCTYPE html> on its own line in the canonical form."
     'MALFORMED_HTML_ROOT'               = "The root <html> element has attributes; attributes are not permitted on the root element."
     'MALFORMED_HEAD'                    = "The <head> element contains constructs other than <title> and <link> (e.g., inline <style>, <meta>, <script>)."
@@ -208,7 +309,7 @@ $DriftDescriptions = [ordered]@{
     'MISSING_HEADER_HTML_VAR'           = "The route file does not declare `$headerHtml = Get-PageHeaderHtml ... before its HTML emission."
     'FORBIDDEN_ROUTE_LOCAL_HELPER'      = "A function defined inside a route file's ScriptBlock returns HTML; route files emit HTML inline only, helpers live in modules."
 
-    # ---- Page chrome codes ----
+    # Page chrome codes
     'MALFORMED_HEADER_BAR_STRUCTURE'    = "The page header bar's structure deviates from the mandated shape (outer container, left/right children, or required descendants)."
     'MALFORMED_REFRESH_INFO_STRUCTURE'  = "The refresh info block's structure deviates from the mandated shape (container, live indicator, status line, or refresh button)."
     'MALFORMED_ENGINE_ROW_STRUCTURE'    = "The engine row container's structure deviates from the mandated shape (outer container or non-card children)."
@@ -219,7 +320,7 @@ $DriftDescriptions = [ordered]@{
     'ENGINE_LABEL_REGISTRY_MISMATCH'    = "The label text in the engine label span doesn't match Orchestrator.ProcessRegistry.cc_engine_label."
     'ENGINE_CARD_PAGE_MISMATCH'         = "An engine card appears on a page whose route doesn't match Orchestrator.ProcessRegistry.cc_page_route."
 
-    # ---- Asset reference codes ----
+    # Asset reference codes
     'MALFORMED_CSS_LINK'                = "A <link> element uses attributes beyond rel=`"stylesheet`" and href=`"...`", or has an incorrect form."
     'MALFORMED_PAGE_CSS_REFERENCE'      = "The page-specific CSS reference's href doesn't match /css/<page>.css form."
     'MALFORMED_SHARED_CSS_REFERENCE'    = "The shared CSS reference is not exactly <link rel=`"stylesheet`" href=`"/css/cc-shared.css`">."
@@ -231,7 +332,7 @@ $DriftDescriptions = [ordered]@{
     'MALFORMED_JS_SCRIPT'               = "A <script> element uses attributes beyond src, or has body content."
     'FORBIDDEN_HELPER_ASSET_REFERENCE'  = "A helper module function emits a <link> or <script> element; helpers do not declare asset references."
 
-    # ---- ID codes ----
+    # ID codes
     'CHROME_ID_OUTSIDE_CLOSED_SET'      = "An ID starting with cc- is not in the chrome ID closed set."
     'CHROME_ID_REUSED_AS_LOCAL'         = "A page-local element carries a chrome ID."
     'MISSING_PREFIX_ID'                 = "A page-local ID does not begin with the page's prefix."
@@ -250,7 +351,7 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_HELPER_PAGE_PREFIX_ID'   = "A helper module function emits HTML with a page-prefixed ID."
     'HELPER_EMITS_UNREGISTERED_ID'      = "A helper module function emits an ID not in the chrome ID closed set."
 
-    # ---- Class attribute codes ----
+    # Class attribute codes
     'MALFORMED_CLASS_VALUE_WHITESPACE'  = "A class attribute value contains multiple consecutive spaces, leading/trailing whitespace, or tabs."
     'MALFORMED_CLASS_NAME'              = "A class name contains characters other than lowercase letters, digits, and hyphens."
     'DUPLICATE_CLASS_IN_VALUE'          = "The same class name appears more than once in the same class attribute."
@@ -258,7 +359,7 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_DYNAMIC_CLASS_PATTERN'   = "A dynamic class attribute does not use the array-join pattern (a single fully-resolved variable holding the joined class string)."
     'FORBIDDEN_HELPER_PAGE_PREFIX_CLASS' = "A helper module function emits a page-prefixed class."
 
-    # ---- Action attribute codes ----
+    # Action attribute codes
     'UNKNOWN_EVENT_TYPE'                = "A data-action-<event> attribute names an event not in the recognized closed set."
     'MALFORMED_ACTION_VALUE'            = "A data-action-<event> attribute value contains characters other than lowercase letters, digits, and hyphens."
     'ACTION_PREFIX_MISMATCH'            = "A data-action-<event> value does not carry the page prefix or cc- prefix."
@@ -272,30 +373,30 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_HELPER_PAGE_ACTION'      = "A helper module function emits a page-prefixed action value."
     'FORBIDDEN_HELPER_PAGE_ACTION_ARGUMENT' = "A helper module function emits an argument attribute whose interpolated value references state outside the helper's parameters and foreach iterators."
 
-    # ---- data-* attribute codes ----
+    # data-* attribute codes
     'MALFORMED_DATA_ATTRIBUTE_NAME'     = "A data-* attribute name is not in the platform-owned set and does not begin with data-<page-prefix>-."
     'UNREGISTERED_PLATFORM_DATA_ATTRIBUTE' = "A data-cc-* attribute name is not in the platform-owned closed set."
     'FORBIDDEN_INLINE_DATA_INTERPOLATION' = "A data-* attribute value mixes static text with PowerShell interpolation."
     'FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE' = "A helper module function emits a data-* attribute with a page-specific prefix."
 
-    # ---- Text content codes ----
+    # Text content codes
     'FORBIDDEN_TEXT_INTERPOLATION'      = "Text content uses a forbidden interpolation pattern (mixed static text with interpolation, or multiple top-level interpolations)."
     'EMPTY_DISPLAY_TEXT'                = "A user-facing attribute (title, placeholder, aria-label, alt) is declared with an empty value."
 
-    # ---- SVG codes ----
+    # SVG codes
     'MALFORMED_SVG_INTERPOLATION'       = "An SVG element's outer markup contains forbidden interpolation patterns."
 
-    # ---- Comment codes ----
+    # Comment codes
     'MALFORMED_COMMENT_DASHES'          = "An HTML comment body contains '--' other than the closing -->."
     'FORBIDDEN_COMMENT_INTERPOLATION'   = "An HTML comment contains PowerShell variable interpolation."
     'MALFORMED_COMMENT_UNCLOSED'        = "An HTML comment's opening <!-- does not have a matching closing -->."
 
-    # ---- Inline asset block codes ----
+    # Inline asset block codes
     'FORBIDDEN_INLINE_STYLE_BLOCK'      = "A <style> block appears in HTML markup outside SVG. Inline style blocks are forbidden."
     'FORBIDDEN_INLINE_SCRIPT_BLOCK'     = "A <script> element contains body content; only the asset reference form <script src=`"...`"></script> is permitted."
     'FORBIDDEN_INLINE_STYLE_ATTRIBUTE'  = "An element carries an inline style=`"...`" attribute."
 
-    # ---- Inline event handler codes (umbrella + shapes) ----
+    # Inline event handler codes (umbrella + shapes)
     'FORBIDDEN_INLINE_EVENT_HANDLER'    = "An element carries an inline on* event handler attribute. Inline event handlers are forbidden; use data-action-<event> attributes routed through the bootloader dispatch table."
     'MULTIPLE_HANDLER_STATEMENTS'       = "An event handler attribute contains multiple statements."
     'INLINE_HANDLER_EXPRESSION'         = "An event handler attribute contains expressions other than a single function call."
@@ -313,29 +414,52 @@ $DriftDescriptions = [ordered]@{
     'MALFORMED_ARGUMENT_QUOTING'        = "A string literal argument uses double quotes that conflict with the surrounding attribute value's quoting."
     'MALFORMED_ARGUMENT_LIST'           = "Multiple arguments are not separated by ', ' (comma followed by single space)."
     'FORBIDDEN_HELPER_PAGE_FUNCTION_CALL' = "A helper module function emits an event handler that calls a page-prefixed function."
-}
-# ============================================================================
-# SCRIPT-SCOPE STATE
-# ============================================================================
 
-# Row collection and dedupe tracker. The helpers reference $script:dedupeKeys
-# directly via Test-AddDedupeKey.
+    # File-level infrastructure codes
+    'FILE_NOT_REGISTERED'               = "The file has no active row in Object_Registry, so its zone and scope could not be determined. Every scanned file must be registered; add it to dbo.Object_Registry. Rows from this file carry zone and scope of '<undefined>'."
+}
+<# ============================================================================
+   VARIABLES: SCRIPT-SCOPE STATE
+   ----------------------------------------------------------------------------
+   Row collection, dedupe tracker, per-file walk context, and the
+   classification / prefix lookup maps loaded once at startup.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Row collection accumulated across all files and bulk-inserted at the end.
 $script:rows       = New-Object System.Collections.Generic.List[object]
+
+# Dedupe tracker. The helpers reference this set directly via Test-AddDedupeKey.
 $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 
 # Per-file HTML_FILE row references for cross-pass attachment of page-shell
 # drift codes. Page-shell drift codes are file-level concerns.
 $script:htmlFileRowByFile = @{}
 
-# Per-file context used throughout the per-file walk.
-$script:CurrentFile         = $null  # bare filename (e.g., 'BusinessServices.ps1')
-$script:CurrentFullPath     = $null  # full path
-$script:CurrentRegisteredType = $null # 'Route' | 'API' | 'Module' | $null
-$script:CurrentCcPrefix     = $null  # cc_prefix for this file's component, or $null
+# Bare filename of the file currently being walked (e.g., 'BusinessServices.ps1').
+$script:CurrentFile         = $null
 
-# Per-file classification and cc_prefix lookup maps. Populated once at
-# startup from Object_Registry and Component_Registry.
-$script:objectTypeByFile    = @{}
+# Full path of the file currently being walked.
+$script:CurrentFullPath     = $null
+
+# Object_Registry classification of the current file: 'Route', 'API', 'Module', or $null.
+$script:CurrentRegisteredType = $null
+
+# cc_prefix for the current file's component, or $null.
+$script:CurrentCcPrefix     = $null
+
+# Zone for the current file from Object_Registry, or '<undefined>' on a registration miss.
+$script:CurrentFileZone     = $null
+
+# Per-file Object_Registry classification map. Populated once at startup from
+# Get-ObjectRegistryZoneScopeMap: object_name -> @{ RegistryId; Zone; Scope;
+# ScopeTier; ObjectType }. Supplies the FK registry_id, the per-row zone stamp,
+# and the Route/API/Module classification in one query. A file absent from this
+# map is a registration gap (FILE_NOT_REGISTERED on its anchor row).
+$script:zoneScopeMap        = @{}
+
+# Per-file cc_prefix lookup map. Populated once at startup from
+# Component_Registry (a separate source from Object_Registry).
 $script:ccPrefixByFile      = @{}
 
 # Orchestrator.ProcessRegistry rows for engine card validation. Loaded
@@ -347,9 +471,12 @@ $script:processRegistryRows = @()
 # prefix collision detection on IDs.
 $script:knownPagePrefixes   = New-Object 'System.Collections.Generic.HashSet[string]'
 
-# ============================================================================
-# POWERSHELL AST PARSING
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: POWERSHELL AST PARSING
+   ----------------------------------------------------------------------------
+   Parse a PS file into an AST with the native PowerShell parser.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Parse a PowerShell file via the built-in Parser. Returns an object with:
 #   .Ast        - System.Management.Automation.Language.ScriptBlockAst
@@ -402,9 +529,13 @@ function Invoke-PsParse {
     }
 }
 
-# ============================================================================
-# POWERSHELL AST: CONTEXT HELPERS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: AST CONTEXT HELPERS
+   ----------------------------------------------------------------------------
+   Resolve the enclosing function and caller-given variable names for an
+   AST node, used to scope helper-emission argument validation.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Look up the enclosing function name for an AST node by walking its parent
 # chain. The PS AST exposes .Parent on every node; we walk upward until we
@@ -572,9 +703,13 @@ function Get-StringValueFromExpression {
     }
     return $null
 }
-# ============================================================================
-# POWERSHELL AST: HTML EMISSION DISCOVERY
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: HTML EMISSION DISCOVERY
+   ----------------------------------------------------------------------------
+   Find HTML-emitting constructs in a parsed file: here-strings, builder
+   Append sequences, and string-literal returns whose content is HTML.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Three PS patterns emit HTML in the CC codebase:
 #
@@ -878,9 +1013,13 @@ function Get-HtmlEmissions {
     return @($combined | Sort-Object { $_.StartLine })
 }
 
-# ============================================================================
-# POWERSHELL AST: ROUTE DISCOVERY
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ROUTE DISCOVERY
+   ----------------------------------------------------------------------------
+   Find Add-PodeRoute -Path declarations to associate emitted HTML with
+   the page routes it belongs to.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Find every Add-PodeRoute call in a file and return a list of:
 #   .Path       - the -Path parameter's literal string value
@@ -945,9 +1084,13 @@ function Get-PodeRoutes {
 
     return $routes
 }
-# ============================================================================
-# HTML TOKENIZER
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: HTML TOKENIZER
+   ----------------------------------------------------------------------------
+   Tokenize embedded HTML into tags, text, comments, and entities while
+   treating PowerShell interpolation as a first-class token concept.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # The tokenizer treats PowerShell interpolation as a first-class concept.
 # Each $var, ${name}, and $(expr) becomes a separate token of kind
@@ -974,7 +1117,7 @@ function Get-PodeRoutes {
 #
 # StartTag and SelfClose tokens carry .AttrText (the verbatim attribute
 # region of the tag, used for later attribute parsing).
-
+# Tokenize embedded HTML into tag, text, comment, and entity tokens, tracking PowerShell interpolation.
 function ConvertTo-HtmlTokens {
     param([Parameter(Mandatory)][string]$Text)
 
@@ -999,7 +1142,7 @@ function ConvertTo-HtmlTokens {
     while ($i -lt $n) {
         $ch = $Text[$i]
 
-        # ---- HTML comment: <!-- ... --> ----
+        # HTML comment: <!-- ... -->
         if ($ch -eq '<' -and (& $safeSubstring $i 4) -eq '<!--') {
             $startLine = $line
             $startCol  = $col
@@ -1039,7 +1182,7 @@ function ConvertTo-HtmlTokens {
             continue
         }
 
-        # ---- DOCTYPE: <!DOCTYPE html> (case-insensitive sniff) ----
+        # DOCTYPE: <!DOCTYPE html> (case-insensitive sniff)
         if ($ch -eq '<' -and (& $safeSubstring $i 9) -match '^(?i)<!doctype') {
             $startLine = $line
             $startCol  = $col
@@ -1072,7 +1215,7 @@ function ConvertTo-HtmlTokens {
             continue
         }
 
-        # ---- Closing tag: </name> ----
+        # Closing tag: </name>
         if ($ch -eq '<' -and ($i + 1) -lt $n -and $Text[$i + 1] -eq '/') {
             $startLine = $line
             $startCol  = $col
@@ -1104,7 +1247,7 @@ function ConvertTo-HtmlTokens {
             continue
         }
 
-        # ---- Opening tag / self-close: <name attrs...> or <name attrs.../> ----
+        # Opening tag / self-close: <name attrs...> or <name attrs.../>
         if ($ch -eq '<' -and ($i + 1) -lt $n -and ($Text[$i + 1] -match '[A-Za-z]')) {
             $startLine = $line
             $startCol  = $col
@@ -1167,7 +1310,7 @@ function ConvertTo-HtmlTokens {
             continue
         }
 
-        # ---- HTML entity: &name; &#N; &#xN; ----
+        # HTML entity: &name; &#N; &#xN;
         # Test before PowerShell interpolation because '&' is unambiguous.
         if ($ch -eq '&' -and ($i + 1) -lt $n) {
             $semi = $Text.IndexOf(';', $i + 1)
@@ -1199,7 +1342,7 @@ function ConvertTo-HtmlTokens {
             # Not a valid entity - fall through to Text handling.
         }
 
-        # ---- PowerShell interpolation: $var, ${name}, $(...) ----
+        # PowerShell interpolation: $var, ${name}, $(...)
         # If a $-led interpolation cannot be parsed (no matching closer),
         # the $ is consumed as a single literal text character below.
         # Otherwise the text accumulator's $-detection would break out of
@@ -1271,7 +1414,7 @@ function ConvertTo-HtmlTokens {
         }
         if ($consumedAsInterp) { continue }
 
-        # ---- Text: anything else, accumulated until next special character ----
+        # Text: anything else, accumulated until next special character
         # CRITICAL: the outer while loop reaches here ONLY when none of the
         # specialized branches (Comment / Doctype / EndTag / StartTag / Entity /
         # PsInterp / unparseable-$) matched. If $ch is a special char we
@@ -1315,9 +1458,13 @@ function ConvertTo-HtmlTokens {
 
     return $tokens
 }
-# ============================================================================
-# ATTRIBUTE PARSER
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ATTRIBUTE PARSER
+   ----------------------------------------------------------------------------
+   Split a start-tag token into its attribute name/value pairs, tracking
+   interpolation in each value.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # The tokenizer captures each StartTag/SelfClose token's attribute region
 # as a single verbatim string in $token.AttrText. This parser breaks that
@@ -1336,7 +1483,7 @@ function ConvertTo-HtmlTokens {
 # The parser walks character by character because PowerShell's regex
 # engine can't reliably handle attribute values that mix quoted strings
 # with PS interpolation containing nested parens.
-
+# Split a start-tag token into its attribute name/value pairs.
 function Get-AttributesFromToken {
     param([string]$AttrText)
 
@@ -1375,7 +1522,8 @@ function Get-AttributesFromToken {
             continue
         }
 
-        $i++  # skip '='
+        # skip '='
+        $i++
         while ($i -lt $n -and $text[$i] -match '\s') { $i++ }
         if ($i -ge $n) {
             $attrs.Add([ordered]@{
@@ -1472,9 +1620,13 @@ function Get-AttributeByName {
     return $null
 }
 
-# ============================================================================
-# CLASS-NAME SPLITTING AND VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: CLASS-NAME SPLITTING AND VALIDATION
+   ----------------------------------------------------------------------------
+   Split a class attribute value into individual class names and validate
+   each for whitespace, character set, duplication, and prefix.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # A class attribute value contains zero or more class names separated by
 # single spaces. Each name maps to one CSS_CLASS USAGE row.
@@ -1483,7 +1635,7 @@ function Get-AttributeByName {
 # $cssClasses-style PowerShell variable substitution holding the runtime-
 # built class list. The populator drops the interpolation tokens before
 # splitting so static class names survive extraction.
-
+# Split a class attribute value into individual static class names.
 function Split-StaticClassTokens {
     param([string]$Value)
     if ([string]::IsNullOrEmpty($Value)) { return @() }
@@ -1554,9 +1706,13 @@ function Get-ClassValueDriftCodes {
 
     return @($codes.ToArray())
 }
-# ============================================================================
-# ID VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ID VALIDATION
+   ----------------------------------------------------------------------------
+   Validate an id value for character set, prefix discipline, chrome-set
+   membership, and cross-page collisions.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # Every ID carries one of two prefixes followed by a hyphen:
 #   - The page's cc_prefix from Component_Registry (page-local IDs)
@@ -1653,9 +1809,13 @@ function Get-IdValueDriftCodes {
 
     return @($codes.ToArray())
 }
-# ============================================================================
-# OVERLAY CONSTRUCT DETECTION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: OVERLAY CONSTRUCT DETECTION
+   ----------------------------------------------------------------------------
+   Recognize modal, slideout, and slide-up overlay constructs and capture
+   their structure for post-walk validation.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # Modals, slideouts, and slide-up panels are the three overlay constructs.
 # All three follow a unified shape: a single outer overlay element carries
@@ -1671,7 +1831,7 @@ function Get-IdValueDriftCodes {
 #   .DriftCode    - MALFORMED_SLIDEOUT_ID / MALFORMED_MODAL_ID /
 #                   MALFORMED_SLIDEUP_ID if the ID looks like one of these
 #                   but the purpose portion is malformed
-
+# Classify an overlay id value and extract its construct kind and slug.
 function Get-OverlayIdInfo {
     param([Parameter(Mandatory)][string]$IdValue)
 
@@ -1731,9 +1891,13 @@ function Get-OverlayKindFromClass {
     }
     return $null
 }
-# ============================================================================
-# EVENT HANDLER ANALYSIS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: EVENT HANDLER ANALYSIS
+   ----------------------------------------------------------------------------
+   Analyze inline on* event-handler attributes (always forbidden) and the
+   handler-expression shape for drift detail.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # Inline on* event handlers are forbidden. The platform model uses
 # data-action-<event>="<action-name>" attributes that the bootloader's
@@ -1912,9 +2076,13 @@ function Get-HandlerFunctionName {
     }
     return $null
 }
-# ============================================================================
-# DATA-ACTION ATTRIBUTE VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: DATA-ACTION ATTRIBUTE VALIDATION
+   ----------------------------------------------------------------------------
+   Validate data-action-<event> attributes and their argument attributes
+   for event set, prefix discipline, and placement.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # data-action-* attributes fall into two structurally distinct families:
 #
@@ -1955,7 +2123,7 @@ function Get-DataActionAttributeKind {
     }
     return 'argument'
 }
-
+# Extract the event name from a data-action-<event> attribute name.
 function Get-EventFromDataActionName {
     param([string]$AttrName)
     if ($AttrName -match '^data-action-([a-z]+)$') {
@@ -2115,7 +2283,7 @@ function Get-InterpolationRootVariables {
             }
             if ($j -ge $n) { break }
             $expr = $Value.Substring($start, $j - $start).Trim()
-            $info = Parse-RootVariableFromExpression -Expression $expr
+            $info = Get-RootVariableFromExpression -Expression $expr
             $info.RawExpr = $expr
             $result.Add($info) | Out-Null
             $i = $j + 1
@@ -2128,7 +2296,7 @@ function Get-InterpolationRootVariables {
             while ($j -lt $n -and $Value[$j] -ne '}') { $j++ }
             if ($j -ge $n) { break }
             $expr = $Value.Substring($start, $j - $start)
-            $info = Parse-RootVariableFromExpression -Expression $expr
+            $info = Get-RootVariableFromExpression -Expression $expr
             $info.RawExpr = $expr
             $result.Add($info) | Out-Null
             $i = $j + 1
@@ -2140,7 +2308,7 @@ function Get-InterpolationRootVariables {
             $j = $start
             while ($j -lt $n -and $Value[$j] -match '[A-Za-z0-9_:]') { $j++ }
             $expr = $Value.Substring($start, $j - $start)
-            $info = Parse-RootVariableFromExpression -Expression $expr
+            $info = Get-RootVariableFromExpression -Expression $expr
             $info.RawExpr = $expr
             $result.Add($info) | Out-Null
             $i = $j
@@ -2160,7 +2328,7 @@ function Get-InterpolationRootVariables {
 #   - method call:       foo.Bar()      -> Root = 'foo',         IsScoped = false
 #   - function call:     Get-Thing      -> Root = $null          (no variable root)
 #   - empty:                            -> Root = $null
-function Parse-RootVariableFromExpression {
+function Get-RootVariableFromExpression {
     param([string]$Expression)
     $info = [ordered]@{
         Root     = $null
@@ -2255,9 +2423,13 @@ function Get-HtmlTextCategoricalName {
 
     return "$tag-$firstToken"
 }
-# ============================================================================
-# ROW EMITTERS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ROW EMITTERS
+   ----------------------------------------------------------------------------
+   Construct Asset_Registry rows for each cataloguable HTML construct,
+   attaching drift codes detected during emission.
+   Prefix: (none)
+   ============================================================================ #>
 
 # Wrap New-AssetRegistryRow with per-file context. Every HTML row carries
 # file_name = the current PS file's bare name and file_type = 'HTML'.
@@ -2287,7 +2459,7 @@ function New-HtmlRow {
     return New-AssetRegistryRow `
         -FileName           $script:CurrentFile `
         -FileType           'HTML' `
-        -Zone               'cc' `
+        -Zone               $script:CurrentFileZone `
         -LineStart          $LineStart `
         -LineEnd            $LineEnd `
         -ColumnStart        $ColumnStart `
@@ -2307,9 +2479,7 @@ function New-HtmlRow {
         -HasDynamicContent  $HasDynamicContent
 }
 
-# ---------------------------------------------------------------------------
-# HTML_FILE anchor row
-# ---------------------------------------------------------------------------
+# Emit the file-level HTML_FILE anchor row, one per host file.
 function Add-HtmlFileRow {
     param(
         [Parameter(Mandatory)][string]$ComponentName,
@@ -2342,9 +2512,7 @@ function Add-HtmlFileRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# HTML_ID DEFINITION row
-# ---------------------------------------------------------------------------
+# Emit an HTML_ID DEFINITION row for an id="..." attribute.
 function Add-HtmlIdRow {
     param(
         [Parameter(Mandatory)][string]$IdValue,
@@ -2381,9 +2549,7 @@ function Add-HtmlIdRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# HTML_DATA_ATTRIBUTE DEFINITION row
-# ---------------------------------------------------------------------------
+# Emit an HTML_DATA_ATTRIBUTE DEFINITION row for a data-* attribute.
 function Add-HtmlDataAttributeRow {
     param(
         [Parameter(Mandatory)][string]$AttrName,
@@ -2423,9 +2589,7 @@ function Add-HtmlDataAttributeRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# HTML_EVENT_HANDLER DEFINITION row
-# ---------------------------------------------------------------------------
+# Emit an HTML_EVENT_HANDLER row for an inline on* attribute (always forbidden).
 # component_name      = the on* attribute name (e.g., 'onclick')
 # variant_qualifier_1 = the called function name (when extractable)
 # Every row gets FORBIDDEN_INLINE_EVENT_HANDLER as the umbrella code; the
@@ -2467,9 +2631,7 @@ function Add-HtmlEventHandlerRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# HTML_TEXT DEFINITION row
-# ---------------------------------------------------------------------------
+# Emit an HTML_TEXT DEFINITION row for text content or a user-facing attribute.
 # Text content and the four user-facing attributes (title, placeholder,
 # aria-label, alt) emit HTML_TEXT rows.
 #
@@ -2517,9 +2679,7 @@ function Add-HtmlTextRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# HTML_ENTITY DEFINITION row
-# ---------------------------------------------------------------------------
+# Emit an HTML_ENTITY DEFINITION row for a named, numeric, or Unicode entity.
 # HTML entities catalog with:
 #   component_name = the full literal entity reference (e.g., '&nbsp;',
 #                    '&#9881;', '&#x2716;')
@@ -2556,9 +2716,7 @@ function Add-HtmlEntityRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# HTML_SVG DEFINITION row
-# ---------------------------------------------------------------------------
+# Emit an HTML_SVG DEFINITION row capturing an inline SVG outer element.
 # SVG markup is cataloged at the outer element level.
 # component_name = a categorical label (e.g., 'inline-icon', 'inline-illustration')
 # raw_text = the full SVG outer-element markup.
@@ -2596,9 +2754,7 @@ function Add-HtmlSvgRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# HTML_COMMENT DEFINITION row
-# ---------------------------------------------------------------------------
+# Emit an HTML_COMMENT DEFINITION row for an HTML comment.
 # Comments catalog into three kinds:
 #   - comment-section-divider: a comment that introduces a structural block
 #     (page header, content cards, overlay panels)
@@ -2640,9 +2796,7 @@ function Add-HtmlCommentRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# CSS_CLASS USAGE row (with cross-population resolution)
-# ---------------------------------------------------------------------------
+# Emit a CSS_CLASS USAGE row for a class name, resolving scope against existing CSS DEFINITION rows.
 function Add-CssClassUsageRow {
     param(
         [Parameter(Mandatory)][string]$ClassName,
@@ -2677,9 +2831,7 @@ function Add-CssClassUsageRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# CSS_FILE USAGE row
-# ---------------------------------------------------------------------------
+# Emit a CSS_FILE USAGE row for a <link rel="stylesheet"> reference.
 function Add-CssFileUsageRow {
     param(
         [Parameter(Mandatory)][string]$Href,
@@ -2720,9 +2872,7 @@ function Add-CssFileUsageRow {
     return $row
 }
 
-# ---------------------------------------------------------------------------
-# JS_FILE USAGE row
-# ---------------------------------------------------------------------------
+# Emit a JS_FILE USAGE row for a <script src="..."> reference.
 function Add-JsFileUsageRow {
     param(
         [Parameter(Mandatory)][string]$Src,
@@ -2763,9 +2913,13 @@ function Add-JsFileUsageRow {
     return $row
 }
 
-# ============================================================================
-# PAGE SHELL VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: PAGE SHELL VALIDATION
+   ----------------------------------------------------------------------------
+   Validate the mandated page-shell structure: doctype, head, body, asset
+   references, and element order.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # Every page route emits HTML matching this canonical shape:
 #
@@ -2881,7 +3035,7 @@ function Get-PageShellDrift {
         return $codes.ToArray()
     }
 
-    # ---- DOCTYPE: exact case canonical form ----
+    # DOCTYPE: exact case canonical form
     # The DOCTYPE token must be exactly <!DOCTYPE html> (uppercase keyword,
     # lowercase tag name).
     $firstSigIdx = Find-NextSignificantToken -Tokens $Tokens -StartAt 0
@@ -2894,7 +3048,7 @@ function Get-PageShellDrift {
         [void]$codes.Add('MALFORMED_DOCTYPE')
     }
 
-    # ---- <html> root with no attributes ----
+    # <html> root with no attributes
     $htmlStartIdx = Find-TokenIndex -Tokens $Tokens -Kind 'StartTag' `
         -Predicate { param($t) $t.TagName -eq 'html' }
     if ($htmlStartIdx -ge 0) {
@@ -2904,7 +3058,7 @@ function Get-PageShellDrift {
         }
     }
 
-    # ---- <head> contents validation ----
+    # <head> contents validation
     $headStartIdx = Find-TokenIndex -Tokens $Tokens -Kind 'StartTag' `
         -Predicate { param($t) $t.TagName -eq 'head' }
     $headEndIdx = -1
@@ -2913,7 +3067,8 @@ function Get-PageShellDrift {
             -Predicate { param($t) $t.TagName -eq 'head' } `
             -StartAt $headStartIdx
     }
-    $linkRefs = @()  # ordered list of href values inside <head>
+    # ordered list of href values inside <head>
+    $linkRefs = @()
     if ($headStartIdx -ge 0 -and $headEndIdx -gt $headStartIdx) {
         $hasMalformedChild = $false
         $hasHardcodedTitle = $false
@@ -2983,7 +3138,7 @@ function Get-PageShellDrift {
         if ($hasHardcodedTitle) { [void]$codes.Add('FORBIDDEN_HARDCODED_TITLE') }
     }
 
-    # ---- CSS reference count and order validation ----
+    # CSS reference count and order validation
     # Exactly two CSS references in <head>: the page-specific CSS first,
     # then cc-shared.css.
     if ($linkRefs.Count -ne 2) {
@@ -2996,7 +3151,7 @@ function Get-PageShellDrift {
         }
     }
 
-    # ---- <body> attributes: section class, data-cc-page, data-cc-prefix ----
+    # <body> attributes: section class, data-cc-page, data-cc-prefix
     $bodyStartIdx = Find-TokenIndex -Tokens $Tokens -Kind 'StartTag' `
         -Predicate { param($t) $t.TagName -eq 'body' }
     $bodyEndIdx = -1
@@ -3016,7 +3171,7 @@ function Get-PageShellDrift {
         }
     }
 
-    # ---- First content inside <body> must be $navHtml ----
+    # First content inside <body> must be $navHtml
     if ($bodyStartIdx -ge 0) {
         $afterBody = Find-NextSignificantToken -Tokens $Tokens -StartAt ($bodyStartIdx + 1)
         $hasNav = $false
@@ -3032,7 +3187,7 @@ function Get-PageShellDrift {
         }
     }
 
-    # ---- Page header bar: first content after $navHtml must be cc-header-bar ----
+    # Page header bar: first content after $navHtml must be cc-header-bar
     $headerBarFound = $false
     $hardcodedPageHeader = $false
     if ($bodyStartIdx -ge 0) {
@@ -3078,7 +3233,7 @@ function Get-PageShellDrift {
         [void]$codes.Add('FORBIDDEN_HARDCODED_PAGE_HEADER')
     }
 
-    # ---- Connection banner placeholder ----
+    # Connection banner placeholder
     $connectionBanners = @()
     for ($k = 0; $k -lt $Tokens.Count; $k++) {
         $t = $Tokens[$k]
@@ -3109,7 +3264,7 @@ function Get-PageShellDrift {
         }
     }
 
-    # ---- Page error banner placeholder ----
+    # Page error banner placeholder
     $pageErrorBanners = @()
     for ($k = 0; $k -lt $Tokens.Count; $k++) {
         $t = $Tokens[$k]
@@ -3140,7 +3295,7 @@ function Get-PageShellDrift {
         }
     }
 
-    # ---- Shared script tag must be last inside <body> ----
+    # Shared script tag must be last inside <body>
     if ($bodyStartIdx -ge 0 -and $bodyEndIdx -gt $bodyStartIdx) {
         $scriptTags = @()
         for ($k = $bodyStartIdx + 1; $k -lt $bodyEndIdx; $k++) {
@@ -3203,9 +3358,13 @@ function Get-PageShellDrift {
     return $codes.ToArray()
 }
 
-# ============================================================================
-# NEW VALIDATORS (Delivery 2)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: STRUCTURE AND CHROME VALIDATORS
+   ----------------------------------------------------------------------------
+   Structural validators for page-shell whitespace, attribute order, head
+   composition, refresh info, and the connection / error banners.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # Each function below contributes additional drift detection beyond the
 # baseline Get-PageShellDrift / Invoke-PageChromeValidation pair. They are
@@ -3214,9 +3373,7 @@ function Get-PageShellDrift {
 # rows. All drift attaches either to the file's HTML_FILE row or to the
 # specific construct row at the offending location.
 
-# ----------------------------------------------------------------------------
 # Test-RouteVariableAssignments
-# ----------------------------------------------------------------------------
 # Confirms that a route file declares the three substitution variables the
 # page shell template requires:
 #   $browserTitle = Get-PageBrowserTitle ...
@@ -3280,9 +3437,7 @@ function Test-RouteVariableAssignments {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-RouteLocalHelperFunctions
-# ----------------------------------------------------------------------------
 # Route files must emit HTML inline only; helper functions live in modules.
 # This validator finds every FunctionDefinitionAst defined INSIDE a
 # ScriptBlock that is itself the argument to Add-PodeRoute. Each such
@@ -3329,9 +3484,7 @@ function Test-RouteLocalHelperFunctions {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-BodyClassPrefixDiscipline
-# ----------------------------------------------------------------------------
 # The <body> element's class attribute may carry only:
 #   - cc-section-<sectionKey> (the section marker)
 #   - cc-* chrome classes (any other class beginning with cc-)
@@ -3366,9 +3519,7 @@ function Test-BodyClassPrefixDiscipline {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-PageShellOrder
-# ----------------------------------------------------------------------------
 # The mandated page-shell elements appear in a specific order in the
 # template. This validator builds an ordered list of "shell landmarks"
 # encountered in source order and compares it to the template sequence.
@@ -3475,9 +3626,7 @@ function Test-PageShellOrder {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-PageShellWhitespace
-# ----------------------------------------------------------------------------
 # Exactly one blank line must appear between adjacent mandated page-shell
 # elements inside <head> and inside <body>. Structural opening and closing
 # tags (DOCTYPE, <html>, <head>, </head>, <body>, </body>, </html>) are NOT
@@ -3523,9 +3672,10 @@ function Test-PageShellWhitespace {
         [Parameter(Mandatory)][int]$EmissionCount
     )
     if ($null -eq $Tokens -or $Tokens.Count -eq 0) { return }
-    if ($EmissionCount -ne 1) { return }   # Q4 carve-out: skip multi-emission files
+    # Q4 carve-out: skip multi-emission files
+    if ($EmissionCount -ne 1) { return }
 
-    # ---- Locate endpoint tokens for each in-scope pair ----
+    # Locate endpoint tokens for each in-scope pair
     # Each endpoint is captured as either:
     #   StartIdx  - a token index for a single landmark (Doctype, PsInterp,
     #               StartTag, or SelfClose) where the "after" boundary is
@@ -3539,7 +3689,7 @@ function Test-PageShellWhitespace {
     # the next landmark's start-token. The accumulated text must contain
     # exactly one blank-line sequence (one '\r?\n\s*\r?\n' match).
 
-    # ---- Title and link locators (inside <head>) ----
+    # Title and link locators (inside <head>)
     # <title> is a StartTag whose EndTag '</title>' closes it.
     # <link> elements are SelfClose tokens with rel="stylesheet".
     $titleStartIdx = -1
@@ -3568,7 +3718,7 @@ function Test-PageShellWhitespace {
         }
     }
 
-    # ---- Body landmark locators ----
+    # Body landmark locators
     # $navHtml is the PsInterp token whose Raw is '$navHtml' or '${navHtml}'.
     $navHtmlIdx          = -1
     $headerBarStartIdx   = -1
@@ -3601,7 +3751,7 @@ function Test-PageShellWhitespace {
         }
     }
 
-    # ---- Inline helper to measure blank lines between two token indices ----
+    # Inline helper to measure blank lines between two token indices
     # PrevEndIdx is the LAST token of the prior landmark; the gap text
     # begins immediately after this token. NextStartIdx is the FIRST
     # token of the next landmark; the gap text ends immediately before
@@ -3613,7 +3763,8 @@ function Test-PageShellWhitespace {
     $measureGap = {
         param([int]$PrevEndIdx, [int]$NextStartIdx, [string]$PairLabel)
         if ($PrevEndIdx -lt 0 -or $NextStartIdx -lt 0) { return }
-        if ($NextStartIdx -le $PrevEndIdx + 1) { return }   # nothing between
+        # nothing between
+        if ($NextStartIdx -le $PrevEndIdx + 1) { return }
 
         $gapTextSb = New-Object System.Text.StringBuilder
         $intervening = $false
@@ -3637,27 +3788,25 @@ function Test-PageShellWhitespace {
         }
     }
 
-    # ---- Pair A: </title> -> <link page.css> ----
+    # Pair A: </title> -> <link page.css>
     & $measureGap $titleEndIdx $linkPageIdx "</title> -> <link page.css>"
 
-    # ---- Pair B: <link page.css> -> <link cc-shared.css> ----
+    # Pair B: <link page.css> -> <link cc-shared.css>
     # Both link tokens are SelfClose (or StartTag for invalid markup), so
     # the prior landmark's last token IS the SelfClose token itself.
     & $measureGap $linkPageIdx $linkSharedIdx "<link page.css> -> <link cc-shared.css>"
 
-    # ---- Pair C: $navHtml -> <div class="cc-header-bar"> ----
+    # Pair C: $navHtml -> <div class="cc-header-bar">
     & $measureGap $navHtmlIdx $headerBarStartIdx '$navHtml -> cc-header-bar'
 
-    # ---- Pair D: </div> of cc-header-bar -> <div id="cc-connection-banner"> ----
+    # Pair D: </div> of cc-header-bar -> <div id="cc-connection-banner">
     & $measureGap $headerBarEndIdx $connectionStartIdx 'cc-header-bar -> cc-connection-banner'
 
-    # ---- Pair E: </div> of cc-connection-banner -> <div id="cc-page-error-banner"> ----
+    # Pair E: </div> of cc-connection-banner -> <div id="cc-page-error-banner">
     & $measureGap $connectionEndIdx $pageErrorStartIdx 'cc-connection-banner -> cc-page-error-banner'
 }
 
-# ----------------------------------------------------------------------------
 # Test-AttributeOrder
-# ----------------------------------------------------------------------------
 # Verifies that attributes on mandated structural elements appear in the
 # order shown in the spec template. Fires MALFORMED_ATTRIBUTE_ORDER on the
 # file's HTML_FILE row for each violation.
@@ -3722,9 +3871,7 @@ function Test-AttributeOrder {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-ActionElementType
-# ----------------------------------------------------------------------------
 # When an element carries any data-action-<event> attribute, the element
 # must be one of:
 #   - An interactive element: button, a, input, select, textarea
@@ -3797,9 +3944,7 @@ function Test-ActionElementType {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-ArgumentPrefixMatch
-# ----------------------------------------------------------------------------
 # For each element that carries both an event attribute and one or more
 # argument attributes, the prefix portion of each argument attribute name
 # must match the prefix portion of the parent action value. When they
@@ -3869,9 +4014,7 @@ function Test-ArgumentPrefixMatch {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-PlatformDataAttributeClosedSet
-# ----------------------------------------------------------------------------
 # data-cc-* attributes belong to a closed platform-owned set. Any data-cc-*
 # attribute name outside the set fires UNREGISTERED_PLATFORM_DATA_ATTRIBUTE
 # on the attribute's row.
@@ -3910,9 +4053,13 @@ function Test-PlatformDataAttributeClosedSet {
     }
 }
 
-# ============================================================================
-# MAIN TOKEN WALKER
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: MAIN TOKEN WALKER
+   ----------------------------------------------------------------------------
+   Walk the token stream for one HTML emission, emitting construct rows
+   and accumulating overlay constructs for post-walk validation.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # Walks the tokenized HTML markup for one emission and emits all per-construct
 # rows along with their drift codes.
@@ -3992,7 +4139,7 @@ function Invoke-HtmlTokenWalk {
         $t = $Tokens[$i]
         $absLine = $FileLine0 + $t.LineOffset
 
-        # ---- Element stack maintenance: handle EndTag ----
+        # Element stack maintenance: handle EndTag
         if ($t.Kind -eq 'EndTag') {
             if ($elementStack.Count -gt 0 -and $elementStack.Peek().Tag -eq $t.TagName) {
                 [void]$elementStack.Pop()
@@ -4000,7 +4147,7 @@ function Invoke-HtmlTokenWalk {
             continue
         }
 
-        # ---- Comment rows ----
+        # Comment rows
         if ($t.Kind -eq 'Comment') {
             $body = $t.Body
             $bodyTrim = if ($null -ne $body) { $body.Trim() } else { '' }
@@ -4057,7 +4204,7 @@ function Invoke-HtmlTokenWalk {
             continue
         }
 
-        # ---- Entity rows ----
+        # Entity rows
         if ($t.Kind -eq 'Entity') {
             $specForm = switch ($t.Form) {
                 'Named'   { 'entity_named' }
@@ -4075,7 +4222,7 @@ function Invoke-HtmlTokenWalk {
             continue
         }
 
-        # ---- Text rows ----
+        # Text rows
         if ($t.Kind -eq 'Text') {
             if (-not [string]::IsNullOrWhiteSpace($t.Raw)) {
                 $parentTag = ''
@@ -4100,7 +4247,7 @@ function Invoke-HtmlTokenWalk {
             continue
         }
 
-        # ---- StartTag / SelfClose tokens ----
+        # StartTag / SelfClose tokens
         if ($t.Kind -ne 'StartTag' -and $t.Kind -ne 'SelfClose') { continue }
 
         # Parse attributes once at the top of the StartTag handler so the
@@ -4111,7 +4258,7 @@ function Invoke-HtmlTokenWalk {
             $attrs = Get-AttributesFromToken -AttrText $t.AttrText
         }
 
-        # ---- Overlay construct discovery (outer overlay element) ----
+        # Overlay construct discovery (outer overlay element)
         # An outer overlay element is a StartTag whose class attribute
         # contains cc-modal-overlay, cc-slide-overlay, or cc-slideup-overlay.
         # Capture the construct entry here so the post-walk structural and
@@ -4201,7 +4348,7 @@ function Invoke-HtmlTokenWalk {
         }
 
         # Inline <style> block forbidden - attach to HTML_FILE row.
-        # Per CC_HTML_Spec section 1.4 carve-out, a <style> block inside
+        # Per the access-denied carve-out, a <style> block inside
         # the Get-AccessDeniedHtml helper is permitted and does not fire.
         if ($t.TagName -eq 'style' -and $t.Kind -eq 'StartTag') {
             if ($ParentFunction -ne 'Get-AccessDeniedHtml' -and
@@ -4237,7 +4384,7 @@ function Invoke-HtmlTokenWalk {
 
         $tagName = $t.TagName
 
-        # ---- Asset references: <link rel="stylesheet" ...> ----
+        # Asset references: <link rel="stylesheet" ...>
         if ($tagName -eq 'link') {
             $rel  = Get-AttributeByName -Attrs $attrs -Name 'rel'
             $href = Get-AttributeByName -Attrs $attrs -Name 'href'
@@ -4301,7 +4448,7 @@ function Invoke-HtmlTokenWalk {
             }
         }
 
-        # ---- Per-attribute row extraction ----
+        # Per-attribute row extraction
         # Pre-pass: detect whether this element has any data-action-<event>
         # attribute. The flag is needed for orphan-argument detection.
         $elementHasEventAttribute = $false
@@ -4553,9 +4700,13 @@ function Invoke-HtmlTokenWalk {
 
     return $result
 }
-# ============================================================================
-# OVERLAY POST-WALK VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: OVERLAY POST-WALK VALIDATION
+   ----------------------------------------------------------------------------
+   Validate the overlay block after the walk: contiguity, per-construct
+   structure, dialog classes, IDs, and purpose comments.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # After the walker collects overlay constructs (one per outer overlay element
 # encountered), run three validators:
@@ -4812,7 +4963,7 @@ function Test-OverlayDialogClass {
 
     return ($dialogClassTokens -contains $expected)
 }
-
+# Validate the overlay block after the token walk completes.
 function Invoke-OverlayPostWalkValidation {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -4822,7 +4973,7 @@ function Invoke-OverlayPostWalkValidation {
 
     if ($null -eq $OverlayConstructs -or $OverlayConstructs.Count -eq 0) { return }
 
-    # ---- Per-construct structural validation ----
+    # Per-construct structural validation
     foreach ($c in $OverlayConstructs) {
         $ok = Test-OverlayConstructStructure -Tokens $Tokens -OuterTokenIdx $c.OuterTokenIdx
         if (-not $ok) {
@@ -4895,7 +5046,7 @@ function Invoke-OverlayPostWalkValidation {
         }
     }
 
-    # ---- Overlay block contiguity ----
+    # Overlay block contiguity
     # Sort overlay constructs by token index. Build their full token-index
     # ranges (outer StartTag through matching EndTag). Between successive
     # ranges, only formatting whitespace and at most one purpose-shaped
@@ -4964,9 +5115,12 @@ function Invoke-OverlayPostWalkValidation {
     }
 }
 
-# ============================================================================
-# DUPLICATE ID CHECK (per-file)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: DUPLICATE ID CHECK
+   ----------------------------------------------------------------------------
+   Flag id values declared more than once within a single page.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # After all rows are emitted for a file, scan its HTML_ID rows and attach
 # DUPLICATE_ID_DECLARATION to every duplicate occurrence beyond the first.
@@ -4988,9 +5142,13 @@ function Invoke-DuplicateIdCheck {
         }
     }
 }
-# ============================================================================
-# ENGINE CARD VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ENGINE CARD VALIDATION
+   ----------------------------------------------------------------------------
+   Validate engine cards against Orchestrator.ProcessRegistry: slug match,
+   ordering, and required registration columns.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # The page chrome may contain an engine-row block with one engine card per
 # active scheduled process registered to the page. Each card has the shape:
@@ -5005,7 +5163,7 @@ function Invoke-DuplicateIdCheck {
 #   - cc_engine_slug, cc_engine_label, cc_page_route, cc_sort_order, run_mode
 #
 # All per-card structural malformations consolidate into MALFORMED_ENGINE_CARD.
-
+# Validate engine cards against Orchestrator.ProcessRegistry.
 function Invoke-EngineCardValidation {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -5054,7 +5212,7 @@ function Invoke-EngineCardValidation {
         }
         if ($null -eq $cardRow) { continue }
 
-        # ---- Card outer-element validation ----
+        # Card outer-element validation
         # Outer element is a <div> carrying exactly class="cc-card-engine"
         # and id="cc-card-engine-<slug>". Any deviation fires
         # MALFORMED_ENGINE_CARD.
@@ -5075,7 +5233,7 @@ function Invoke-EngineCardValidation {
             }
         }
 
-        # ---- Card body structural validation ----
+        # Card body structural validation
         # Three child elements:
         #   1. <span class="cc-engine-label">label text</span>
         #   2. <div  class="cc-engine-bar" id="cc-engine-bar-<slug>"></div>
@@ -5121,7 +5279,7 @@ function Invoke-EngineCardValidation {
             continue
         }
 
-        # ---- Child 1: <span class="cc-engine-label">label text</span> ----
+        # Child 1: <span class="cc-engine-label">label text</span>
         $labelTok = $Tokens[$childIdxs[0]]
         $labelAttrs = if (-not [string]::IsNullOrWhiteSpace($labelTok.AttrText)) {
             Get-AttributesFromToken -AttrText $labelTok.AttrText
@@ -5161,7 +5319,7 @@ function Invoke-EngineCardValidation {
             }
         }
 
-        # ---- Child 2: <div class="cc-engine-bar" id="cc-engine-bar-<slug>"></div> ----
+        # Child 2: <div class="cc-engine-bar" id="cc-engine-bar-<slug>"></div>
         $barTok = $Tokens[$childIdxs[1]]
         $barAttrs = if (-not [string]::IsNullOrWhiteSpace($barTok.AttrText)) {
             Get-AttributesFromToken -AttrText $barTok.AttrText
@@ -5201,7 +5359,7 @@ function Invoke-EngineCardValidation {
             }
         }
 
-        # ---- Child 3: <span class="cc-engine-cd" id="cc-engine-cd-<slug>"></span> ----
+        # Child 3: <span class="cc-engine-cd" id="cc-engine-cd-<slug>"></span>
         $cdTok = $Tokens[$childIdxs[2]]
         $cdAttrs = if (-not [string]::IsNullOrWhiteSpace($cdTok.AttrText)) {
             Get-AttributesFromToken -AttrText $cdTok.AttrText
@@ -5241,7 +5399,7 @@ function Invoke-EngineCardValidation {
             }
         }
 
-        # ---- Registry cross-reference checks ----
+        # Registry cross-reference checks
         $proc = $null
         foreach ($p in $script:processRegistryRows) {
             if ([string]$p.cc_engine_slug -eq $card.Slug) { $proc = $p; break }
@@ -5304,7 +5462,7 @@ function Invoke-EngineCardValidation {
         }
     }
 
-    # ---- Card ordering ----
+    # Card ordering
     # Cards should appear in cc_sort_order ascending.
     $orderedCards = @($cardsOnPage | Sort-Object { $_.TokenIdx })
     $expectedOrder = @($orderedCards | ForEach-Object {
@@ -5331,9 +5489,13 @@ function Invoke-EngineCardValidation {
             -Context "Engine cards on page appear in different order than Orchestrator.ProcessRegistry.cc_sort_order."
     }
 }
-# ============================================================================
-# PAGE CHROME VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: PAGE CHROME VALIDATION
+   ----------------------------------------------------------------------------
+   Validate the header bar, refresh info, and engine row chrome structure
+   against the mandated markup.
+   Prefix: (none)
+   ============================================================================ #>
 #
 # Every page route renders the following chrome shell between the navigation
 # bar and the page-specific content:
@@ -5357,7 +5519,7 @@ function Invoke-EngineCardValidation {
 #   MALFORMED_REFRESH_INFO_STRUCTURE - refresh info block shape
 #   MALFORMED_ENGINE_ROW_STRUCTURE   - engine row container shape
 # Engine card internals are validated by Invoke-EngineCardValidation.
-
+# Validate the header bar, refresh info, and engine row chrome structure.
 function Invoke-PageChromeValidation {
     param(
         [Parameter(Mandatory)]$Tokens
@@ -5367,7 +5529,7 @@ function Invoke-PageChromeValidation {
     if (-not $script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) { return }
     $fileRow = $script:htmlFileRowByFile[$script:CurrentFile]
 
-    # ---- Locate the cc-header-bar element ----
+    # Locate the cc-header-bar element
     $headerBarIdx = -1
     for ($i = 0; $i -lt $Tokens.Count; $i++) {
         $t = $Tokens[$i]
@@ -5378,7 +5540,8 @@ function Invoke-PageChromeValidation {
             break
         }
     }
-    if ($headerBarIdx -lt 0) { return }  # Get-PageShellDrift handles missing case
+    # Get-PageShellDrift handles missing case
+    if ($headerBarIdx -lt 0) { return }
 
     # Validate cc-header-bar's outer-element attributes.
     $hbAttrs = Get-AttributesFromToken -AttrText $Tokens[$headerBarIdx].AttrText
@@ -5402,7 +5565,7 @@ function Invoke-PageChromeValidation {
         return
     }
 
-    # ---- Collect the immediate children of cc-header-bar ----
+    # Collect the immediate children of cc-header-bar
     $hbChildren = @()
     $cursor = $headerBarIdx + 1
     while ($cursor -lt $headerBarEndIdx) {
@@ -5426,7 +5589,7 @@ function Invoke-PageChromeValidation {
         $cursor++
     }
 
-    # ---- Validate first child: unattributed <div> containing $headerHtml ----
+    # Validate first child: unattributed <div> containing $headerHtml
     if ($hbChildren.Count -lt 1) {
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
             -Context "cc-header-bar has no children; expected unattributed <div> wrapping `$headerHtml as the first child."
@@ -5469,7 +5632,7 @@ function Invoke-PageChromeValidation {
         }
     }
 
-    # ---- Validate second child: <div class="cc-header-right"> ----
+    # Validate second child: <div class="cc-header-right">
     if ($hbChildren.Count -lt 2) {
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
             -Context "cc-header-bar is missing its second child; expected <div class=`"cc-header-right`">."
@@ -5503,7 +5666,7 @@ function Invoke-PageChromeValidation {
         }
     }
 
-    # ---- Collect children of cc-header-right ----
+    # Collect children of cc-header-right
     $rightEndIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $rightIdx
     if ($rightEndIdx -le $rightIdx) {
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
@@ -5533,7 +5696,7 @@ function Invoke-PageChromeValidation {
         $cursor++
     }
 
-    # ---- Validate first cc-header-right child: cc-refresh-info ----
+    # Validate first cc-header-right child: cc-refresh-info
     $refreshInfoIdx = -1
     $engineRowIdx = -1
     if ($hrChildren.Count -lt 1) {
@@ -5574,20 +5737,18 @@ function Invoke-PageChromeValidation {
         }
     }
 
-    # ---- Validate cc-refresh-info block ----
+    # Validate cc-refresh-info block
     if ($refreshInfoIdx -ge 0) {
         Test-RefreshInfoBlock -Tokens $Tokens -RefreshInfoIdx $refreshInfoIdx -FileRow $fileRow
     }
 
-    # ---- Validate cc-engine-row container ----
+    # Validate cc-engine-row container
     if ($engineRowIdx -ge 0) {
         Test-EngineRowContainer -Tokens $Tokens -EngineRowIdx $engineRowIdx -FileRow $fileRow
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-RefreshInfoBlock - validate cc-refresh-info structure
-# ----------------------------------------------------------------------------
 # Validates the cc-refresh-info block contains exactly:
 #   <span class="cc-live-indicator"></span>
 #   <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
@@ -5625,7 +5786,7 @@ function Test-RefreshInfoBlock {
         return
     }
 
-    # --- Step 1: cc-live-indicator ---
+    # Step 1: cc-live-indicator
     $step1Idx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($RefreshInfoIdx + 1)
     $liveIndicatorClose = -1
     if ($step1Idx -lt 0 -or $step1Idx -ge $riEndIdx) {
@@ -5666,7 +5827,7 @@ function Test-RefreshInfoBlock {
     }
     if ($liveIndicatorClose -lt 0) { return }
 
-    # --- Step 2: <span>Live</span> ---
+    # Step 2: <span>Live</span>
     $step2Idx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($liveIndicatorClose + 1)
     if ($step2Idx -lt 0 -or $step2Idx -ge $riEndIdx) {
         Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_STRUCTURE' `
@@ -5706,7 +5867,7 @@ function Test-RefreshInfoBlock {
             -Context "The 'Live' span body is '$($liveTextBuilder.ToString())'; spec requires the literal text 'Live'."
     }
 
-    # --- Step 3: literal text " | Updated: " between </span> and the next span ---
+    # Step 3: literal text " | Updated: " between </span> and the next span
     $step3CursorIdx = $liveSpanCloseIdx + 1
     $literalTextBuilder = New-Object System.Text.StringBuilder
     $literalHasInterp = $false
@@ -5738,7 +5899,7 @@ function Test-RefreshInfoBlock {
         }
     }
 
-    # --- Step 4: <span id="cc-last-update" class="cc-last-updated">-</span> ---
+    # Step 4: <span id="cc-last-update" class="cc-last-updated">-</span>
     if ($step4Idx -ge $riEndIdx) {
         Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_STRUCTURE' `
             -Context "cc-refresh-info is missing the <span id=`"cc-last-update`" class=`"cc-last-updated`"> element."
@@ -5793,7 +5954,7 @@ function Test-RefreshInfoBlock {
             -Context "Last-update span body is '$($luTextBuilder.ToString())'; spec requires the literal text '-'."
     }
 
-    # --- Step 5: refresh button ---
+    # Step 5: refresh button
     $step5Idx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($lastUpdateCloseIdx + 1)
     if ($step5Idx -lt 0 -or $step5Idx -ge $riEndIdx) {
         Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_STRUCTURE' `
@@ -5853,7 +6014,7 @@ function Test-RefreshInfoBlock {
             -Context "Refresh button body is not exactly the entity reference '&#8635;'."
     }
 
-    # ---- After the button, there should be nothing significant remaining ----
+    # After the button, there should be nothing significant remaining
     $afterBtnIdx = Find-NextSignificantToken -Tokens $Tokens -StartAt ($btnCloseIdx + 1)
     if ($afterBtnIdx -ge 0 -and $afterBtnIdx -lt $riEndIdx) {
         Add-DriftCode -Row $FileRow -Code 'MALFORMED_REFRESH_INFO_STRUCTURE' `
@@ -5861,9 +6022,7 @@ function Test-RefreshInfoBlock {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Test-EngineRowContainer - validate cc-engine-row container shape
-# ----------------------------------------------------------------------------
 # Validates cc-engine-row's outer container is exactly <div class="cc-engine-row">
 # with no other attributes, and its only permitted children are engine cards.
 # Per-card structure is validated separately by Invoke-EngineCardValidation.
@@ -5932,9 +6091,15 @@ function Test-EngineRowContainer {
         $cursor++
     }
 }
-# ============================================================================
-# FILE DISCOVERY
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Discover host files, load registries, walk each file, validate output,
+   compute occurrence indices, summarize, and write to the database.
+   Prefix: (none)
+   ============================================================================ #>
+
+# -- File Discovery --
 
 Write-Log "Discovering HTML-emitting PS files..."
 
@@ -5965,40 +6130,14 @@ if (-not [string]::IsNullOrEmpty($FileFilter)) {
     Write-Log ("Discovered {0} PS files to scan" -f $psFiles.Count)
 }
 
-# ============================================================================
-# REGISTRY LOADS
-# ============================================================================
+# -- Registry Loads --
 
-Write-Log "Loading Object_Registry mapping for FK resolution..."
-$objectRegistryMap = Get-ObjectRegistryMap `
+Write-Log "Loading Object_Registry classification (registry_id, zone, object_type) for Route/API/Module files..."
+$script:zoneScopeMap = Get-ObjectRegistryZoneScopeMap `
     -ServerInstance $script:XFActsServerInstance `
     -Database       $script:XFActsDatabase `
     -FileType       @('Route','API','Module')
-Write-Log ("  Object_Registry rows loaded: {0}" -f $objectRegistryMap.Count)
-
-Write-Log "Loading Object_Registry type classification per file..."
-try {
-    $typeQuery = @"
-SELECT object_name, object_type
-FROM dbo.Object_Registry
-WHERE object_type IN ('Route','API','Module')
-  AND is_active = 1
-"@
-    $typeResults = Invoke-Sqlcmd -ServerInstance $script:XFActsServerInstance `
-                                 -Database       $script:XFActsDatabase `
-                                 -Query          $typeQuery `
-                                 -QueryTimeout   30 `
-                                 -ApplicationName $script:XFActsAppName `
-                                 -ErrorAction Stop `
-                                 -SuppressProviderContextWarning -TrustServerCertificate
-    foreach ($row in $typeResults) {
-        $script:objectTypeByFile[$row.object_name] = [string]$row.object_type
-    }
-}
-catch {
-    Write-Log "Object_Registry type classification query failed: $($_.Exception.Message)" 'WARN'
-}
-Write-Log ("  Classified file types loaded: {0}" -f $script:objectTypeByFile.Count)
+Write-Log ("  Object_Registry rows loaded: {0}" -f $script:zoneScopeMap.Count)
 
 Write-Log "Loading Component_Registry cc_prefix map for Route/API/Module files..."
 $ccPrefixMap = Get-ComponentRegistryPrefixMap `
@@ -6015,11 +6154,9 @@ Write-Log ("  cc_prefix entries loaded: {0} ({1} distinct prefixes)" -f $script:
 
 $objectRegistryMisses = New-Object 'System.Collections.Generic.HashSet[string]'
 
-# ============================================================================
-# ORCHESTRATOR PROCESS REGISTRY LOAD
-# ============================================================================
-# Engine card validation cross-references Orchestrator.ProcessRegistry.
+# -- Orchestrator ProcessRegistry Load --
 
+# Engine card validation cross-references Orchestrator.ProcessRegistry.
 Write-Log "Loading Orchestrator.ProcessRegistry rows for engine card validation..."
 try {
     # No is_active column on Orchestrator.ProcessRegistry; the run_mode
@@ -6051,9 +6188,7 @@ catch {
 }
 Write-Log ("  ProcessRegistry rows loaded: {0}" -f $script:processRegistryRows.Count)
 
-# ============================================================================
-# PER-FILE WALK
-# ============================================================================
+# -- Per-File Walk --
 
 Write-Log "Walking PS files..."
 
@@ -6088,10 +6223,18 @@ foreach ($fileRec in $psFiles) {
 
     Write-Host (" {0} emission(s) found" -f $emissions.Count) -ForegroundColor Green
 
-    # File classification drives shell validation gating and scope.
+    # File classification drives shell validation gating and scope. Registry
+    # id, zone, and object_type all come from the one combined map. A file
+    # absent from the map is a registration gap: stamp '<undefined>' zone and
+    # record the file so FILE_NOT_REGISTERED is attached to its anchor row.
     $registeredType = $null
-    if ($script:objectTypeByFile.ContainsKey($name)) {
-        $registeredType = $script:objectTypeByFile[$name]
+    if ($script:zoneScopeMap.ContainsKey($name)) {
+        $info = $script:zoneScopeMap[$name]
+        $registeredType = $info.ObjectType
+        $script:CurrentFileZone = if ($info.Zone) { $info.Zone } else { '<undefined>' }
+    } else {
+        $script:CurrentFileZone = '<undefined>'
+        [void]$objectRegistryMisses.Add($name)
     }
     $script:CurrentRegisteredType = $registeredType
 
@@ -6116,6 +6259,12 @@ foreach ($fileRec in $psFiles) {
         -RoutePaths    $routePaths
 
     if (-not $row) { continue }
+
+    # A file absent from Object_Registry surfaces as drift on its anchor row
+    # rather than being silently misclassified.
+    if ($objectRegistryMisses.Contains($name)) {
+        Add-DriftCode -Row $row -Code 'FILE_NOT_REGISTERED'
+    }
 
     $rowsBeforeWalk = $script:rows.Count
     $allOverlayConstructs = New-Object System.Collections.Generic.List[object]
@@ -6155,7 +6304,7 @@ foreach ($fileRec in $psFiles) {
     # Duplicate ID check
     Invoke-DuplicateIdCheck -FileName $name
 
-    # ---- File-wide token-stream validators ----
+    # File-wide token-stream validators
     # These run on every file kind (Route, API, Module) because the
     # offending constructs can appear in any HTML emission. Build the
     # concatenated token stream once and reuse it for all validators
@@ -6215,22 +6364,16 @@ foreach ($fileRec in $psFiles) {
     }
 }
 
-# ============================================================================
-# OUTPUT BOUNDARY VALIDATION
-# ============================================================================
+# -- Output Boundary Validation --
 
 Test-DriftCodesAgainstMasterTable -Rows $script:rows
 
-# ============================================================================
-# OCCURRENCE INDEX COMPUTATION
-# ============================================================================
+# -- Occurrence Index Computation --
 
 Write-Log "Computing occurrence_index for all rows..."
 Set-OccurrenceIndices -Rows $script:rows
 
-# ============================================================================
-# SUMMARY OUTPUT
-# ============================================================================
+# -- Summary Output --
 
 Write-Log ("Total rows generated: {0}" -f $script:rows.Count)
 
@@ -6243,9 +6386,7 @@ if ($script:rows.Count -gt 0) {
     Write-Log ("Rows with drift codes: {0} of {1} ({2:F1}%)" -f $driftedCount, $script:rows.Count, ($driftedCount / [double]$script:rows.Count * 100))
 }
 
-# ============================================================================
-# DATABASE WRITE
-# ============================================================================
+# -- Database Write --
 
 if (-not $Execute) {
     Write-Log "PREVIEW MODE - no rows written to Asset_Registry. Use -Execute to insert." 'WARN'
@@ -6271,6 +6412,15 @@ if ($script:rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($script:rows.Count) rows..."
 try {
+    # Transitional shim: Invoke-AssetRegistryBulkInsert still takes the FK map
+    # as object_name -> registry_id. Project it from the combined zone/scope
+    # map (which now carries RegistryId) until the bulk insert is updated to
+    # accept the combined shape directly, at which point this shim is removed.
+    $objectRegistryMap = @{}
+    foreach ($objName in $script:zoneScopeMap.Keys) {
+        $objectRegistryMap[$objName] = $script:zoneScopeMap[$objName].RegistryId
+    }
+
     $inserted = Invoke-AssetRegistryBulkInsert `
         -ServerInstance     $script:XFActsServerInstance `
         -Database           $script:XFActsDatabase `
@@ -6284,9 +6434,7 @@ catch {
     exit 1
 }
 
-# ============================================================================
-# OBJECT_REGISTRY MISS REPORT
-# ============================================================================
+# -- Object_Registry Miss Report --
 
 if ($objectRegistryMisses.Count -gt 0) {
     Write-Log ("Object_Registry registration gaps detected for {0} file(s):" -f $objectRegistryMisses.Count) 'WARN'
