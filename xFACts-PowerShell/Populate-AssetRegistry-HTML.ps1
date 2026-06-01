@@ -487,7 +487,7 @@ $script:knownPagePrefixes   = New-Object 'System.Collections.Generic.HashSet[str
 #
 # Returns $null only on outright file-read failures. Parse errors are NOT
 # fatal: the AST is still returned even when errors are present.
-function Invoke-PsParse {
+function Invoke-HtmlPsParse {
     param([Parameter(Mandatory)][string]$FilePath)
 
     try {
@@ -6200,7 +6200,7 @@ foreach ($fileRec in $psFiles) {
     $script:CurrentFullPath     = $fullPath
 
     Write-Host "  Parsing $name ..." -NoNewline
-    $parsed = Invoke-PsParse -FilePath $fullPath
+    $parsed = Invoke-HtmlPsParse -FilePath $fullPath
     if ($null -eq $parsed) {
         Write-Host " FAILED" -ForegroundColor Red
         continue
@@ -6412,20 +6412,11 @@ if ($script:rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($script:rows.Count) rows..."
 try {
-    # Transitional shim: Invoke-AssetRegistryBulkInsert still takes the FK map
-    # as object_name -> registry_id. Project it from the combined zone/scope
-    # map (which now carries RegistryId) until the bulk insert is updated to
-    # accept the combined shape directly, at which point this shim is removed.
-    $objectRegistryMap = @{}
-    foreach ($objName in $script:zoneScopeMap.Keys) {
-        $objectRegistryMap[$objName] = $script:zoneScopeMap[$objName].RegistryId
-    }
-
     $inserted = Invoke-AssetRegistryBulkInsert `
         -ServerInstance     $script:XFActsServerInstance `
         -Database           $script:XFActsDatabase `
         -Rows               $script:rows `
-        -ObjectRegistryMap  $objectRegistryMap `
+        -ObjectRegistryMap  $script:zoneScopeMap `
         -Misses             $objectRegistryMisses
     Write-Log ("Inserted {0} rows into dbo.Asset_Registry." -f $inserted) 'SUCCESS'
 }
