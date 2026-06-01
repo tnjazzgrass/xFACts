@@ -1,29 +1,42 @@
-# ============================================================================
-# xFACts Control Center - Business Intelligence API Routes
-# Location: E:\xFACts-ControlCenter\scripts\routes\BusinessIntelligence-API.ps1
-# 
-# API endpoints for the Business Intelligence departmental dashboard.
-# 
-# Notice Recon endpoints query the Notice_Recon AG database via secondary
-# replica using Invoke-AGReadQuery.
-#
-# Endpoints:
-#   GET  /api/business-intelligence/notice-recon        - Today's execution summary
-#   GET  /api/business-intelligence/notice-recon-steps  - Step detail for an execution
-#
-# Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessIntelligence)
-# ============================================================================
+<#
+.SYNOPSIS
+    Business Intelligence API routes for the xFACts Control Center.
 
-# ============================================================================
-# NOTICE RECON - AG secondary reads against Notice_Recon database
-# ============================================================================
+.DESCRIPTION
+    Registers the read-only API endpoints backing the Business Intelligence
+    departmental dashboard. Both endpoints query the Notice_Recon Availability
+    Group database through the secondary replica via Invoke-AGReadQuery: one
+    returns today's per-process execution summary, the other returns the
+    step-level detail for a single execution. Each endpoint returns JSON.
 
-# GET /api/business-intelligence/notice-recon
-# Returns today's process execution summary (one row per process)
+.COMPONENT
+    DeptOps.BusinessIntelligence
+
+.NOTES
+    File Name : BusinessIntelligence-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\BusinessIntelligence-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Read-only Notice Recon endpoints served from the Notice_Recon AG secondary
+   replica. The notice-recon endpoint returns today's execution summary (one
+   row per process); the notice-recon-steps endpoint returns the ordered step
+   detail for a single execution identified by its execution_id query value.
+   Prefix: (none)
+   ============================================================================ #>
+
 Add-PodeRoute -Method Get -Path '/api/business-intelligence/notice-recon' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $results = Invoke-AGReadQuery -Database 'Notice_Recon' -Query @"
-            SELECT 
+            SELECT
                 Execution_ID,
                 Process_Name,
                 Execution_Start_Time,
@@ -66,9 +79,9 @@ Add-PodeRoute -Method Get -Path '/api/business-intelligence/notice-recon' -Authe
     }
 }
 
-# GET /api/business-intelligence/notice-recon-steps?execution_id={id}
-# Returns step-level detail for a specific execution
 Add-PodeRoute -Method Get -Path '/api/business-intelligence/notice-recon-steps' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $executionId = $WebEvent.Query['execution_id']
         if (-not $executionId) {
@@ -77,7 +90,7 @@ Add-PodeRoute -Method Get -Path '/api/business-intelligence/notice-recon-steps' 
         }
 
         $results = Invoke-AGReadQuery -Database 'Notice_Recon' -Query @"
-            SELECT 
+            SELECT
                 Step_Number,
                 Step_Name,
                 Step_Start_Time,
