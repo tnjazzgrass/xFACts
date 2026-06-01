@@ -238,22 +238,6 @@ $HtmlVoidElements = @(
     'meta','param','source','track','wbr'
 )
 
-# Chrome ID exact set: the three platform-wide identifiers permitted verbatim
-# on chrome elements.
-$ChromeIdExactSet = @(
-    'cc-last-update',
-    'cc-connection-banner',
-    'cc-page-error-banner'
-)
-
-# Chrome ID slug prefixes: three prefixes whose remainder must be a kebab-case
-# slug from Orchestrator.ProcessRegistry.
-$ChromeIdSlugPrefixes = @(
-    'cc-card-engine-',
-    'cc-engine-bar-',
-    'cc-engine-cd-'
-)
-
 # Platform-owned data-cc-* attribute closed set. Only these data-cc-*
 # names are valid; anything else fires UNREGISTERED_PLATFORM_DATA_ATTRIBUTE.
 $PlatformDataAttributes = @(
@@ -295,11 +279,8 @@ $DriftDescriptions = [ordered]@{
     'MISSING_NAV_SUBSTITUTION'          = "The first content inside <body> is not the `$navHtml substitution."
     'MISSING_HEADER_BAR'                = "The page header bar is missing as the first content after `$navHtml."
     'FORBIDDEN_HARDCODED_PAGE_HEADER'   = "The page header content is hardcoded instead of the `$headerHtml PowerShell variable substitution."
-    'MISSING_CONNECTION_BANNER'         = "The connection banner placeholder is missing."
-    'FORBIDDEN_BANNER_CONTENT'          = "The connection banner placeholder contains content; it must be empty."
-    'MISSING_PAGE_ERROR_BANNER'         = "The page error banner placeholder is missing."
-    'FORBIDDEN_PAGE_ERROR_BANNER_CONTENT' = "The page error banner placeholder contains content; it must be empty."
-    'PAGE_ERROR_BANNER_ORDER_VIOLATION' = "The page error banner placeholder is not positioned per the page shell ordering rules."
+    'MISSING_BANNER_SUBSTITUTION'       = "The connection and page-error banner chrome is missing; the page shell does not include the `$bannerHtml substitution."
+    'FORBIDDEN_LITERAL_BANNER'          = "A route declares a literal connection or page-error banner div; banners must be included via the `$bannerHtml substitution from Get-ChromeBannersHtml."
     'MALFORMED_BODY_CLOSE'              = "Content appears between the shared script reference and </body>."
     'MALFORMED_PAGE_SHELL_ORDER'        = "The mandated page-shell elements are not in the order shown in the spec template."
     'MALFORMED_PAGE_SHELL_WHITESPACE'   = "Adjacent mandated page-shell elements are not separated by exactly one blank line."
@@ -307,6 +288,7 @@ $DriftDescriptions = [ordered]@{
     'MISSING_BROWSER_TITLE_VAR'         = "The route file does not declare `$browserTitle = Get-PageBrowserTitle ... before its HTML emission."
     'MISSING_NAV_HTML_VAR'              = "The route file does not declare `$navHtml = Get-NavBarHtml ... before its HTML emission."
     'MISSING_HEADER_HTML_VAR'           = "The route file does not declare `$headerHtml = Get-PageHeaderHtml ... before its HTML emission."
+    'MISSING_BANNER_HTML_VAR'           = "The route file does not declare `$bannerHtml = Get-ChromeBannersHtml ... before its HTML emission."
     'FORBIDDEN_ROUTE_LOCAL_HELPER'      = "A function defined inside a route file's ScriptBlock returns HTML; route files emit HTML inline only, helpers live in modules."
 
     # Page chrome codes
@@ -333,7 +315,6 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_HELPER_ASSET_REFERENCE'  = "A helper module function emits a <link> or <script> element; helpers do not declare asset references."
 
     # ID codes
-    'CHROME_ID_OUTSIDE_CLOSED_SET'      = "An ID starting with cc- is not in the chrome ID closed set."
     'CHROME_ID_REUSED_AS_LOCAL'         = "A page-local element carries a chrome ID."
     'MISSING_PREFIX_ID'                 = "A page-local ID does not begin with the page's prefix."
     'CROSS_PAGE_PREFIX_COLLISION'       = "A page-local ID begins with another page's registered prefix."
@@ -349,7 +330,7 @@ $DriftDescriptions = [ordered]@{
     'MISSING_PANEL_PURPOSE_COMMENT'     = "An overlay construct is not preceded by an HTML purpose comment."
     'OVERLAY_BLOCK_NON_CONTIGUOUS'      = "A non-overlay element or non-purpose comment appears within the overlay block; only formatting whitespace and per-construct purpose comments are permitted between constructs."
     'FORBIDDEN_HELPER_PAGE_PREFIX_ID'   = "A helper module function emits HTML with a page-prefixed ID."
-    'HELPER_EMITS_UNREGISTERED_ID'      = "A helper module function emits an ID not in the chrome ID closed set."
+    'FORBIDDEN_HELPER_NON_CHROME_ID'    = "A helper module function emits an ID that is not cc- prefixed; helper-emitted IDs are shared chrome and must carry the cc- prefix."
 
     # Class attribute codes
     'MALFORMED_CLASS_VALUE_WHITESPACE'  = "A class attribute value contains multiple consecutive spaces, leading/trailing whitespace, or tabs."
@@ -1719,29 +1700,13 @@ function Get-ClassValueDriftCodes {
 #   - The literal 'cc-' chrome prefix (platform-shared chrome IDs)
 # An ID with neither prefix is drift.
 #
-# Additionally, an ID starting with 'cc-' must match the chrome ID closed
-# set. Exact members: cc-last-update, cc-connection-banner,
-# cc-page-error-banner. Slug-bearing prefixes:
-# cc-card-engine-<slug>, cc-engine-bar-<slug>, cc-engine-cd-<slug>.
-# Anything else cc-prefixed is CHROME_ID_OUTSIDE_CLOSED_SET.
-
-# Return $true if the supplied ID value is a member of the chrome ID
-# closed set. Slug-bearing IDs are matched on shape only -- the trailing
-# slug is required to be lowercase hyphen-separated kebab, but the
-# slug's existence in Orchestrator.ProcessRegistry is checked separately
-# (ENGINE_SLUG_REGISTRY_MISMATCH).
-function Test-IsChromeId {
-    param([Parameter(Mandatory)][string]$IdValue)
-    if ([string]::IsNullOrEmpty($IdValue)) { return $false }
-    if ($ChromeIdExactSet -contains $IdValue) { return $true }
-    foreach ($p in $ChromeIdSlugPrefixes) {
-        if ($IdValue.StartsWith($p)) {
-            $slug = $IdValue.Substring($p.Length)
-            if ($slug -match '^[a-z][a-z0-9\-]*$') { return $true }
-        }
-    }
-    return $false
-}
+# A chrome ID is any id beginning with 'cc-'. There is no enumerated chrome
+# ID set: validity is structural (the cc- prefix) plus the character-set
+# check. Engine-card IDs (cc-card-engine-<slug>, cc-engine-bar-<slug>,
+# cc-engine-cd-<slug>) have their slug validated against
+# Orchestrator.ProcessRegistry separately (ENGINE_SLUG_REGISTRY_MISMATCH).
+# A well-formed cc- id that names nothing real is caught at resolution time
+# (JS_HTML_ID_UNRESOLVED), not here.
 
 # Validate ID value shape and prefix membership. Returns drift code array.
 function Get-IdValueDriftCodes {
@@ -1758,21 +1723,10 @@ function Get-IdValueDriftCodes {
         [void]$codes.Add('MALFORMED_ID_VALUE')
     }
 
-    # Chrome-prefixed IDs: must be in the closed set.
+    # Chrome-prefixed IDs: any cc- prefixed id is a valid chrome id. No
+    # enumerated set; the cc- prefix is sufficient. (Helper and route/API
+    # emission alike.)
     if ($IdValue.StartsWith('cc-')) {
-        if ($IsHelperEmission) {
-            # Helper-emitted IDs must match the chrome closed set; anything
-            # else is HELPER_EMITS_UNREGISTERED_ID.
-            if (-not (Test-IsChromeId -IdValue $IdValue)) {
-                [void]$codes.Add('HELPER_EMITS_UNREGISTERED_ID')
-            }
-        } else {
-            # Route/API emissions may carry chrome IDs only where the chrome
-            # closed-set membership holds.
-            if (-not (Test-IsChromeId -IdValue $IdValue)) {
-                [void]$codes.Add('CHROME_ID_OUTSIDE_CLOSED_SET')
-            }
-        }
         return @($codes.ToArray())
     }
 
@@ -1782,9 +1736,9 @@ function Get-IdValueDriftCodes {
         if (-not [string]::IsNullOrEmpty($PagePrefix) -and $IdValue.StartsWith("$PagePrefix-")) {
             [void]$codes.Add('FORBIDDEN_HELPER_PAGE_PREFIX_ID')
         }
-        # Helper-emitted IDs that don't carry the cc- prefix at all are
-        # unregistered chrome IDs (the closed set is cc-prefixed).
-        [void]$codes.Add('HELPER_EMITS_UNREGISTERED_ID')
+        # Helper-emitted IDs that don't carry the cc- prefix are not shared
+        # chrome; helpers emit shared chrome only.
+        [void]$codes.Add('FORBIDDEN_HELPER_NON_CHROME_ID')
     } else {
         # Page-local emission: must start with the page's cc_prefix + '-'.
         if ([string]::IsNullOrEmpty($PagePrefix)) {
@@ -3029,8 +2983,7 @@ function Get-PageShellDrift {
         [void]$codes.Add('MALFORMED_DOCTYPE')
         [void]$codes.Add('MISSING_NAV_SUBSTITUTION')
         [void]$codes.Add('MISSING_HEADER_BAR')
-        [void]$codes.Add('MISSING_CONNECTION_BANNER')
-        [void]$codes.Add('MISSING_PAGE_ERROR_BANNER')
+        [void]$codes.Add('MISSING_BANNER_SUBSTITUTION')
         [void]$codes.Add('MISSING_SHARED_SCRIPT_TAG')
         return $codes.ToArray()
     }
@@ -3233,66 +3186,40 @@ function Get-PageShellDrift {
         [void]$codes.Add('FORBIDDEN_HARDCODED_PAGE_HEADER')
     }
 
-    # Connection banner placeholder
-    $connectionBanners = @()
+    # Banner chrome: the connection and page-error banners are emitted by
+    # Get-ChromeBannersHtml and included via the $bannerHtml substitution
+    # (parallel to $navHtml / $headerHtml). The page shell must contain the
+    # $bannerHtml PsInterp token; its absence fires MISSING_BANNER_SUBSTITUTION.
+    $hasBannerSubstitution = $false
     for ($k = 0; $k -lt $Tokens.Count; $k++) {
         $t = $Tokens[$k]
-        if ($t.Kind -ne 'StartTag' -and $t.Kind -ne 'SelfClose') { continue }
-        if ($t.TagName -ne 'div') { continue }
-        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-connection-banner["'']') {
-            $connectionBanners += $k
+        if ($t.Kind -eq 'PsInterp' -and ($t.Raw -eq '$bannerHtml' -or $t.Raw -eq '${bannerHtml}')) {
+            $hasBannerSubstitution = $true
+            break
         }
     }
-    if ($connectionBanners.Count -eq 0) {
-        [void]$codes.Add('MISSING_CONNECTION_BANNER')
-    } else {
-        foreach ($bIdx in $connectionBanners) {
-            if ($Tokens[$bIdx].Kind -eq 'SelfClose') { continue }
-            $closeIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $bIdx
-            if ($closeIdx -le $bIdx) { continue }
-            $hasContent = $false
-            for ($k = $bIdx + 1; $k -lt $closeIdx; $k++) {
-                $bt = $Tokens[$k]
-                if ($bt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($bt.Raw)) { continue }
-                $hasContent = $true
-                break
-            }
-            if ($hasContent) {
-                [void]$codes.Add('FORBIDDEN_BANNER_CONTENT')
-                break
-            }
-        }
+    if (-not $hasBannerSubstitution) {
+        [void]$codes.Add('MISSING_BANNER_SUBSTITUTION')
     }
 
-    # Page error banner placeholder
-    $pageErrorBanners = @()
+    # Literal banner guard: a route must not hand-write a connection or
+    # page-error banner div. The banner markup lives in Get-ChromeBannersHtml;
+    # any literal <div id="cc-connection-banner"> or
+    # <div id="cc-page-error-banner"> in a route file is drift, whether or not
+    # it carries content. Fires FORBIDDEN_LITERAL_BANNER.
+    $literalBannerFound = $false
     for ($k = 0; $k -lt $Tokens.Count; $k++) {
         $t = $Tokens[$k]
         if ($t.Kind -ne 'StartTag' -and $t.Kind -ne 'SelfClose') { continue }
         if ($t.TagName -ne 'div') { continue }
-        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-page-error-banner["'']') {
-            $pageErrorBanners += $k
+        if ((Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-connection-banner["'']') -or
+            (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-page-error-banner["'']')) {
+            $literalBannerFound = $true
+            break
         }
     }
-    if ($pageErrorBanners.Count -eq 0) {
-        [void]$codes.Add('MISSING_PAGE_ERROR_BANNER')
-    } else {
-        foreach ($bIdx in $pageErrorBanners) {
-            if ($Tokens[$bIdx].Kind -eq 'SelfClose') { continue }
-            $closeIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $bIdx
-            if ($closeIdx -le $bIdx) { continue }
-            $hasContent = $false
-            for ($k = $bIdx + 1; $k -lt $closeIdx; $k++) {
-                $bt = $Tokens[$k]
-                if ($bt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($bt.Raw)) { continue }
-                $hasContent = $true
-                break
-            }
-            if ($hasContent) {
-                [void]$codes.Add('FORBIDDEN_PAGE_ERROR_BANNER_CONTENT')
-                break
-            }
-        }
+    if ($literalBannerFound) {
+        [void]$codes.Add('FORBIDDEN_LITERAL_BANNER')
     }
 
     # Shared script tag must be last inside <body>
@@ -3379,6 +3306,7 @@ function Get-PageShellDrift {
 #   $browserTitle = Get-PageBrowserTitle ...
 #   $navHtml      = Get-NavBarHtml ...
 #   $headerHtml   = Get-PageHeaderHtml ...
+#   $bannerHtml   = Get-ChromeBannersHtml ...
 # Any one that's missing fires the corresponding MISSING_*_VAR code on the
 # file's HTML_FILE row.
 #
@@ -3401,6 +3329,7 @@ function Test-RouteVariableAssignments {
         'browserTitle' = @{ Helper = 'Get-PageBrowserTitle'; Code = 'MISSING_BROWSER_TITLE_VAR' }
         'navHtml'      = @{ Helper = 'Get-NavBarHtml';       Code = 'MISSING_NAV_HTML_VAR'     }
         'headerHtml'   = @{ Helper = 'Get-PageHeaderHtml';   Code = 'MISSING_HEADER_HTML_VAR'  }
+        'bannerHtml'   = @{ Helper = 'Get-ChromeBannersHtml'; Code = 'MISSING_BANNER_HTML_VAR' }
     }
 
     # Find every assignment in the AST.
@@ -3536,10 +3465,9 @@ function Test-BodyClassPrefixDiscipline {
 #   5. <body>
 #   6. $navHtml
 #   7. <div class="cc-header-bar">
-#   8. <div id="cc-connection-banner">
-#   9. <div id="cc-page-error-banner">
-#  10. <script src="/js/cc-shared.js">
-#  11. </body>
+#   8. $bannerHtml
+#   9. <script src="/js/cc-shared.js">
+#  10. </body>
 function Test-PageShellOrder {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -3560,10 +3488,6 @@ function Test-PageShellOrder {
                 'div'  {
                     if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']') {
                         [void]$landmarks.Add('header-bar')
-                    } elseif (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-connection-banner["'']') {
-                        [void]$landmarks.Add('connection-banner')
-                    } elseif (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-page-error-banner["'']') {
-                        [void]$landmarks.Add('page-error-banner')
                     }
                     continue
                 }
@@ -3583,6 +3507,10 @@ function Test-PageShellOrder {
             [void]$landmarks.Add('nav-html')
             continue
         }
+        if ($t.Kind -eq 'PsInterp' -and ($t.Raw -eq '$bannerHtml' -or $t.Raw -eq '${bannerHtml}')) {
+            [void]$landmarks.Add('banner-html')
+            continue
+        }
     }
 
     # Filter to landmarks of interest and compare to expected order. Each
@@ -3591,7 +3519,7 @@ function Test-PageShellOrder {
     # already fires MISSING_* for absent ones).
     $expectedOrder = @(
         'doctype','html','head','/head','body','nav-html',
-        'header-bar','connection-banner','page-error-banner',
+        'header-bar','banner-html',
         'shared-script','/body'
     )
 
@@ -3633,7 +3561,7 @@ function Test-PageShellOrder {
 # mandated page-shell elements for whitespace purposes; the blank-line rule
 # does not apply at those boundaries.
 #
-# This validator enforces blank-line discipline on the 5 pairs whose
+# This validator enforces blank-line discipline on the 4 pairs whose
 # endpoints are well-defined single elements:
 #
 #   Inside <head>:
@@ -3642,8 +3570,7 @@ function Test-PageShellOrder {
 #
 #   Inside <body>:
 #     C) $navHtml                 -> <div class="cc-header-bar">
-#     D) </div> of cc-header-bar  -> <div id="cc-connection-banner">
-#     E) </div> of cc-connection  -> <div id="cc-page-error-banner">
+#     D) </div> of cc-header-bar  -> $bannerHtml
 #
 # Boundaries deliberately NOT checked (out of scope, or ambiguous because
 # the endpoint is the "page-specific content" structural slot rather than
@@ -3652,7 +3579,7 @@ function Test-PageShellOrder {
 #   - <html>  -> <head>
 #   - </head> -> <body>
 #   - <body>  -> $navHtml
-#   - page-error-banner end -> page-specific content start
+#   - $bannerHtml end -> page-specific content start
 #   - page-specific content end -> overlay block start (when overlay present)
 #   - overlay block end -> <script>
 #   - page-specific content end -> <script> (when no overlay block)
@@ -3664,7 +3591,7 @@ function Test-PageShellOrder {
 # than one here-string, the synthesized boundary whitespace from
 # concatenation isn't authored content, so this validator silently skips
 # whitespace checks for multi-emission files. Single-emission files get
-# the full 5-pair check.
+# the full 4-pair check.
 function Test-PageShellWhitespace {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -3720,12 +3647,12 @@ function Test-PageShellWhitespace {
 
     # Body landmark locators
     # $navHtml is the PsInterp token whose Raw is '$navHtml' or '${navHtml}'.
+    # $bannerHtml is the PsInterp token whose Raw is '$bannerHtml' or
+    # '${bannerHtml}' (the connection + page-error banner chrome substitution).
     $navHtmlIdx          = -1
     $headerBarStartIdx   = -1
     $headerBarEndIdx     = -1
-    $connectionStartIdx  = -1
-    $connectionEndIdx    = -1
-    $pageErrorStartIdx   = -1
+    $bannerHtmlIdx       = -1
 
     for ($i = 0; $i -lt $Tokens.Count; $i++) {
         $t = $Tokens[$i]
@@ -3733,19 +3660,14 @@ function Test-PageShellWhitespace {
             if ($navHtmlIdx -lt 0) { $navHtmlIdx = $i }
             continue
         }
+        if ($t.Kind -eq 'PsInterp' -and ($t.Raw -eq '$bannerHtml' -or $t.Raw -eq '${bannerHtml}')) {
+            if ($bannerHtmlIdx -lt 0) { $bannerHtmlIdx = $i }
+            continue
+        }
         if ($t.Kind -eq 'StartTag' -and $t.TagName -eq 'div') {
             if ($headerBarStartIdx -lt 0 -and (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']')) {
                 $headerBarStartIdx = $i
                 $headerBarEndIdx   = Find-MatchingClose -Tokens $Tokens -StartTagIdx $i
-                continue
-            }
-            if ($connectionStartIdx -lt 0 -and (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-connection-banner["'']')) {
-                $connectionStartIdx = $i
-                $connectionEndIdx   = Find-MatchingClose -Tokens $Tokens -StartTagIdx $i
-                continue
-            }
-            if ($pageErrorStartIdx -lt 0 -and (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'id\s*=\s*["'']cc-page-error-banner["'']')) {
-                $pageErrorStartIdx = $i
                 continue
             }
         }
@@ -3799,11 +3721,8 @@ function Test-PageShellWhitespace {
     # Pair C: $navHtml -> <div class="cc-header-bar">
     & $measureGap $navHtmlIdx $headerBarStartIdx '$navHtml -> cc-header-bar'
 
-    # Pair D: </div> of cc-header-bar -> <div id="cc-connection-banner">
-    & $measureGap $headerBarEndIdx $connectionStartIdx 'cc-header-bar -> cc-connection-banner'
-
-    # Pair E: </div> of cc-connection-banner -> <div id="cc-page-error-banner">
-    & $measureGap $connectionEndIdx $pageErrorStartIdx 'cc-connection-banner -> cc-page-error-banner'
+    # Pair D: </div> of cc-header-bar -> $bannerHtml
+    & $measureGap $headerBarEndIdx $bannerHtmlIdx 'cc-header-bar -> $bannerHtml'
 }
 
 # Test-AttributeOrder
