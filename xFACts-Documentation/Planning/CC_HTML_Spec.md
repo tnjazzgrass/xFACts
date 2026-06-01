@@ -16,8 +16,7 @@ HTML in the Control Center is emitted from PowerShell route files. Every page ro
 $navHtml
 
     <!-- page header bar -->
-    <!-- connection banner placeholder -->
-    <!-- page error banner placeholder -->
+    <!-- banner chrome ($bannerHtml) -->
     <!-- page-specific content -->
     <!-- overlay block (optional, present only if the page declares overlays) -->
 
@@ -60,8 +59,7 @@ This section is the authoritative reference for the structural order of every ma
 $navHtml
 
     <!-- page header bar (§2.1) -->
-    <!-- connection banner placeholder (§2.4) -->
-    <!-- page error banner placeholder (§2.5) -->
+    <!-- banner chrome ($bannerHtml) (§2.4) -->
     <!-- page-specific content -->
     <!-- overlay block (§5.4, optional) -->
 
@@ -69,7 +67,7 @@ $navHtml
 </body>
 ```
 
-- `<body>` contains, in this exact order: the `$navHtml` substitution; the page header bar (§2.1); the connection banner placeholder (§2.4); the page error banner placeholder (§2.5); page-specific content; the overlay block (§5.4, optional -- present only when the page declares overlay constructs); the single `<script>` tag (§3.2).
+- `<body>` contains, in this exact order: the `$navHtml` substitution; the page header bar (§2.1); the banner chrome `$bannerHtml` substitution (§2.4); page-specific content; the overlay block (§5.4, optional -- present only when the page declares overlay constructs); the single `<script>` tag (§3.2).
 - "Page-specific content" is the structural slot where the page author renders the page's main content. The rules in §6 (classes), §7 (action attributes), §8 (data attributes), §9 (text content), and §10 (comments) govern its contents.
 
 #### 1.2.3 Page-shell whitespace discipline
@@ -95,7 +93,7 @@ The 403 access-denied response is a complete page and is subject to every spec r
 
 ## 2. Page chrome
 
-Every page renders the same structural chrome regardless of page-specific content: header bar, refresh info, optional engine cards, connection banner placeholder, page error banner placeholder. The exact markup is mandated; any deviation is drift.
+Every page renders the same structural chrome regardless of page-specific content: header bar, refresh info, optional engine cards, banner chrome. The exact markup is mandated; any deviation is drift.
 
 ### 2.1 Page header bar
 
@@ -162,13 +160,11 @@ Engine card row structure:
 - The label text matches `Orchestrator.ProcessRegistry.cc_engine_label` for the corresponding process.
 - Engine cards appear in declaration order matching `Orchestrator.ProcessRegistry.cc_sort_order`.
 
-### 2.4 Connection banner placeholder
+### 2.4 Banner chrome
 
-A single `<div id="cc-connection-banner" class="cc-connection-banner"></div>` appears exactly once per page, immediately after the page header bar. The placeholder is empty -- `cc-shared.js` populates it at runtime based on WebSocket state.
+The connection banner and page error banner are included together via the `$bannerHtml` substitution, sourced from `Get-ChromeBannersHtml`. The route file declares `$bannerHtml = Get-ChromeBannersHtml` before the HTML here-string and places the `$bannerHtml` substitution immediately after the page header bar. A route does not write the banner markup itself.
 
-### 2.5 Page error banner placeholder
-
-A single `<div id="cc-page-error-banner" class="cc-page-error-banner"></div>` appears exactly once per page, immediately after the connection banner placeholder. The placeholder is empty -- `cc-shared.js` populates it at runtime when page module loading or initialization fails.
+`$bannerHtml` emits two empty placeholder elements: `<div id="cc-connection-banner" class="cc-connection-banner"></div>` (populated by `cc-shared.js` at runtime based on WebSocket state) and `<div id="cc-page-error-banner" class="cc-page-error-banner"></div>` (populated by `cc-shared.js` when page module loading or initialization fails).
 
 ---
 
@@ -249,7 +245,7 @@ Every identifier in HTML markup carries a prefix that identifies its ownership. 
 - Every `data-action-<event>` value begins with the page's `cc_prefix` followed by `-` (page-owned actions), or with `cc-` (platform-owned chrome actions). No other forms.
 - Every argument attribute name (`data-action-<arg-name>`) begins with the same prefix as its parent element's `data-action-<event>` attribute value. Page-owned action -> page-prefixed argument; `cc-` prefixed action -> `cc-` prefixed argument. See §7.4.
 - Every `data-*` attribute name not in the `data-action-*` family begins with `data-cc-` (platform-owned, defined by this spec or by chrome JavaScript) or `data-<page-prefix>-` (page-owned, defined by the route author). The set of valid platform-owned `data-cc-*` attribute names is the closed set in §14.4. No other forms.
-- The set of valid chrome IDs is the closed set in §5.1. The set of valid chrome action values is governed by `cc-shared.js`. The set of valid platform-owned `data-cc-*` attribute names is the closed set in §14.4. Adding a new platform identifier requires a spec amendment.
+- A chrome ID is any `cc-`-prefixed identifier (§5.1). The set of valid chrome action values is governed by `cc-shared.js`. The set of valid platform-owned `data-cc-*` attribute names is the closed set in §14.4. Adding a new platform-owned `data-cc-*` attribute requires a spec amendment.
 
 ---
 
@@ -257,18 +253,7 @@ Every identifier in HTML markup carries a prefix that identifies its ownership. 
 
 ### 5.1 Chrome IDs
 
-Chrome IDs are platform-wide identifiers used by `cc-shared.js` and `cc-shared.css` to locate specific DOM elements, or emitted by helper modules in `xFACts-CCShared.psm1` (per §11). The set is closed:
-
-| Chrome ID | Purpose |
-|---|---|
-| `cc-last-update` | Timestamp display target. |
-| `cc-connection-banner` | Connection state banner placeholder. |
-| `cc-page-error-banner` | Page boot error banner placeholder. |
-| `cc-card-engine-<slug>` | Engine card outer container. Slug from `Orchestrator.ProcessRegistry.cc_engine_slug`. |
-| `cc-engine-bar-<slug>` | Engine status bar element. |
-| `cc-engine-cd-<slug>` | Engine countdown text element. |
-
-Adding a new chrome ID requires a spec amendment to the table above. Helper-emitted IDs are subject to this same closed set -- a helper emitting an ID not in §5.1 is drift.
+A chrome ID is any identifier beginning with `cc-`. Engine-card IDs carry an additional slug rule (§2.3).
 
 ### 5.2 Page-local IDs
 
@@ -543,7 +528,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 
 - A helper is a function in `xFACts-CCShared.psm1`. Functions defined in route files (or anywhere else) that return HTML are not helpers in the §11 sense; route files emit HTML inline only.
 - Helpers do not declare asset references (no `<link>` or `<script>` elements).
-- Every ID a helper emits is a chrome ID from the closed set in §5.1. Page-prefixed IDs are forbidden in helper-emitted HTML.
+- Every ID a helper emits is `cc-` prefixed (a chrome ID per §5.1). Page-prefixed IDs are forbidden in helper-emitted HTML.
 - Every class a helper emits is `cc-` prefixed per §4. Page-prefixed classes are forbidden in helper-emitted HTML.
 - Every action value a helper emits is `cc-` prefixed per §4 and §7.
 - Every `data-*` attribute a helper emits is in the platform-owned set from §14.4 (`data-cc-*`). Page-prefixed `data-*` names are forbidden in helper-emitted HTML.
@@ -567,9 +552,9 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | Adjacent mandated page-shell elements separated by zero or two-plus blank lines | §1.2.3 |
 | Attributes on a mandated structural element not in template-shown order | §1.2.4 |
 | Page header bar missing or hardcoded instead of `$headerHtml` substitution | §2.1 |
-| Connection banner placeholder missing, populated, or out of order | §2.4 |
-| Page error banner placeholder missing, populated, or out of order | §2.5 |
-| Chrome ID outside the closed set in §5.1 | §5.1 |
+| Route writes a literal connection or page-error banner div instead of the `$bannerHtml` substitution | §2.4 |
+| `$bannerHtml` substitution missing | §2.4 |
+| Chrome ID not `cc-` prefixed where a chrome ID is required | §5.1 |
 | Page-local ID missing its page prefix, using another page's prefix, or containing characters other than lowercase letters, digits, and hyphens | §5.3 |
 | Duplicate ID values on a page | §5.3 |
 | Overlay construct outer overlay element missing its nested `.cc-dialog` direct child | §5.4 |
@@ -607,7 +592,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | Inline event handler attribute (`onclick`, `onchange`, any `on*`) on any element | §7 |
 | Function defined inside a route file's ScriptBlock that returns HTML | §11 |
 | Helper emitting a page-prefixed ID, class, action value, `data-*` attribute, or argument value referencing non-parameter state | §11.1 |
-| Helper emitting an ID not in the §5.1 chrome ID closed set | §5.1, §11.1 |
+| Helper emitting an ID that is not `cc-` prefixed | §5.1, §11.1 |
 
 ---
 
@@ -645,7 +630,7 @@ The chrome classes and platform-owned attributes referenced by this spec are def
 | `cc-engine-bar` | Engine card status bar (§2.3) |
 | `cc-engine-cd` | Engine card countdown text (§2.3) |
 | `cc-connection-banner` | Connection state banner placeholder (§2.4) |
-| `cc-page-error-banner` | Page boot error banner placeholder (§2.5) |
+| `cc-page-error-banner` | Page boot error banner placeholder (§2.4) |
 
 ### 14.2 Overlay construct classes
 
@@ -713,6 +698,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `MISSING_HEADER_BAR` | Page header bar missing or not first content after `$navHtml`. | §2.1 |
 | `FORBIDDEN_HARDCODED_PAGE_HEADER` | Page header hardcoded instead of `$headerHtml`. | §2.1 |
 | `MISSING_HEADER_HTML_VAR` | Route file does not declare `$headerHtml` from `Get-PageHeaderHtml`. | §2.1 |
+| `MISSING_BANNER_HTML_VAR` | Route file does not declare `$bannerHtml` from `Get-ChromeBannersHtml`. | §2.4 |
 | `MALFORMED_HEADER_BAR_STRUCTURE` | Header bar children deviate from the mandated structure. | §2.1 |
 | `MALFORMED_REFRESH_INFO_STRUCTURE` | Refresh info block deviates from mandated markup. | §2.2 |
 | `DUPLICATE_LAST_UPDATE_ID` | `cc-last-update` ID appears more than once. | §2.2 |
@@ -722,11 +708,8 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `ENGINE_CARD_ORDER_MISMATCH` | Engine cards not in `Orchestrator.ProcessRegistry.cc_sort_order` order. | §2.3 |
 | `ENGINE_SLUG_REGISTRY_MISMATCH` | Engine card slug has no matching `cc_engine_slug` in `Orchestrator.ProcessRegistry`. | §2.3 |
 | `MISSING_ENGINE_CARD_REGISTRATION` | `ProcessRegistry` row for an engine card slug has NULL values in required columns (`cc_engine_slug`, `cc_engine_label`, `cc_page_route`, `cc_sort_order`). | §2.3 |
-| `MISSING_CONNECTION_BANNER` | Connection banner placeholder missing. | §2.4 |
-| `FORBIDDEN_BANNER_CONTENT` | Connection banner placeholder contains content. | §2.4 |
-| `MISSING_PAGE_ERROR_BANNER` | Page error banner placeholder missing. | §2.5 |
-| `FORBIDDEN_PAGE_ERROR_BANNER_CONTENT` | Page error banner placeholder contains content. | §2.5 |
-| `PAGE_ERROR_BANNER_ORDER_VIOLATION` | Page error banner not immediately after connection banner. | §2.5 |
+| `MISSING_BANNER_SUBSTITUTION` | The `$bannerHtml` banner chrome substitution is missing. | §2.4 |
+| `FORBIDDEN_LITERAL_BANNER` | A route writes a literal connection or page-error banner div instead of `$bannerHtml`. | §2.4 |
 | `MALFORMED_CSS_LINK` | CSS reference has attributes other than `rel` and `href`. | §3.1 |
 | `MALFORMED_PAGE_CSS_REFERENCE` | First CSS reference is not `/css/<page>.css`. | §3.1 |
 | `MALFORMED_SHARED_CSS_REFERENCE` | Second CSS reference is not `/css/cc-shared.css`. | §3.1 |
@@ -736,7 +719,6 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `MALFORMED_SCRIPT_TAG` | `<script>` tag has attributes other than `src`. | §3.2 |
 | `MISSING_SHARED_SCRIPT_TAG` | The mandated `<script src="/js/cc-shared.js"></script>` reference is missing from the page. | §3.2 |
 | `UNEXPECTED_SCRIPT_TAG` | A page contains more than one non-vendored `<script>` tag; exactly one (`cc-shared.js`) is permitted besides vendored library references (§3.2.2). | §3.2 |
-| `CHROME_ID_OUTSIDE_CLOSED_SET` | An ID starting with `cc-` is not in the §5.1 chrome ID set. | §5.1 |
 | `CHROME_ID_REUSED_AS_LOCAL` | A page-local element carries a chrome ID. | §5.3 |
 | `MISSING_PREFIX_ID` | Page-local ID does not begin with the page's prefix. | §5.3 |
 | `CROSS_PAGE_PREFIX_COLLISION` | Page-local ID begins with another page's prefix. | §5.3 |
@@ -781,7 +763,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `FORBIDDEN_ROUTE_LOCAL_HELPER` | Function defined inside a route file's ScriptBlock that returns HTML. | §11 |
 | `FORBIDDEN_HELPER_ASSET_REFERENCE` | Helper emits a `<link>` or `<script>` element. | §11.1 |
 | `FORBIDDEN_HELPER_PAGE_PREFIX_ID` | Helper emits a page-prefixed ID. | §11.1 |
-| `HELPER_EMITS_UNREGISTERED_ID` | Helper emits an ID not in the §5.1 chrome ID closed set. | §5.1, §11.1 |
+| `FORBIDDEN_HELPER_NON_CHROME_ID` | Helper emits an ID that is not `cc-` prefixed. | §5.1, §11.1 |
 | `FORBIDDEN_HELPER_PAGE_PREFIX_CLASS` | Helper emits a page-prefixed class. | §11.1 |
 | `FORBIDDEN_HELPER_PAGE_ACTION` | Helper emits a page-prefixed action value. | §11.1 |
 | `FORBIDDEN_HELPER_PAGE_DATA_ATTRIBUTE` | Helper emits a page-prefixed `data-*` attribute. | §11.1 |
