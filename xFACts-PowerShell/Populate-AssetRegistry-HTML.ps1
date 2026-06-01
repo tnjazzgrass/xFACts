@@ -4350,12 +4350,49 @@ function Invoke-HtmlTokenWalk {
         # Inline <style> block forbidden - attach to HTML_FILE row.
         # Per the access-denied carve-out, a <style> block inside
         # the Get-AccessDeniedHtml helper is permitted and does not fire.
+        # The carve-out page is self-contained: it defines its own classes
+        # in this <style> block and uses them in its own markup. Emit a
+        # CSS_CLASS DEFINITION row for each class defined here so the
+        # resolver's same-file edge can match the page's own usages. The
+        # carve-out is enforced here (only this function), not in the
+        # resolver, so no other file can self-resolve inline-style classes.
         if ($t.TagName -eq 'style' -and $t.Kind -eq 'StartTag') {
-            if ($ParentFunction -ne 'Get-AccessDeniedHtml' -and
-                $script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) {
-                Add-DriftCode -Row $script:htmlFileRowByFile[$script:CurrentFile] `
-                    -Code 'FORBIDDEN_INLINE_STYLE_BLOCK' `
-                    -Context "Inline <style> block at line $absLine"
+            if ($ParentFunction -ne 'Get-AccessDeniedHtml') {
+                if ($script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) {
+                    Add-DriftCode -Row $script:htmlFileRowByFile[$script:CurrentFile] `
+                        -Code 'FORBIDDEN_INLINE_STYLE_BLOCK' `
+                        -Context "Inline <style> block at line $absLine"
+                }
+            }
+            else {
+                # Accumulate the style block's inner text, then emit one
+                # CSS_CLASS DEFINITION row per bare class selector defined in it.
+                $styleEndIdx = Find-TokenIndex -Tokens $Tokens -Kind 'EndTag' `
+                    -Predicate { param($x) $x.TagName -eq 'style' } -StartAt $i
+                if ($styleEndIdx -gt $i) {
+                    $sbStyle = New-Object System.Text.StringBuilder
+                    for ($k = $i + 1; $k -lt $styleEndIdx; $k++) {
+                        if ($Tokens[$k].Kind -eq 'Text') { [void]$sbStyle.Append($Tokens[$k].Raw) }
+                    }
+                    $styleText = $sbStyle.ToString()
+                    $seenStyleClass = @{}
+                    foreach ($m in [regex]::Matches($styleText, '\.(-?[A-Za-z_][A-Za-z0-9_-]*)')) {
+                        $clsName = $m.Groups[1].Value
+                        if ($seenStyleClass.ContainsKey($clsName)) { continue }
+                        $seenStyleClass[$clsName] = $true
+                        $defRow = New-HtmlRow `
+                            -ComponentType 'CSS_CLASS' `
+                            -ComponentName $clsName `
+                            -ReferenceType 'DEFINITION' `
+                            -Scope         'LOCAL' `
+                            -LineStart     $absLine `
+                            -ColumnStart   $t.ColumnStart `
+                            -Signature     ".$clsName" `
+                            -ParentFunction $ParentFunction `
+                            -RawText       ".$clsName"
+                        $script:rows.Add($defRow)
+                    }
+                }
             }
         }
 
