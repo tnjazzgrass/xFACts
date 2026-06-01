@@ -496,7 +496,7 @@ function cc_handleGlobalClick(e) {
     var processes = window[cc_pagePrefix + '_ENGINE_PROCESSES'];
     if (!processes) return;
 
-    var card = e.target.closest('.cc-engine-card');
+    var card = e.target.closest('.cc-card-engine');
     if (card && card.id) {
         var slug = card.id === 'cc-card-engine'
             ? Object.keys(processes).map(function(k) { return processes[k].slug; })[0]
@@ -875,7 +875,7 @@ function cc_tickEngineIndicator(slug) {
     /* No data yet: waiting state. */
     if (!event) {
         els.bar.className = 'cc-engine-bar cc-disabled';
-        if (els.card) els.card.className = 'cc-engine-card';
+        if (els.card) els.card.className = 'cc-card-engine';
         if (els.cd) els.cd.textContent = '';
         return;
     }
@@ -883,7 +883,7 @@ function cc_tickEngineIndicator(slug) {
     /* STARTED: process is running. */
     if (event.eventType === 'PROCESS_STARTED') {
         els.bar.className = 'cc-engine-bar cc-running';
-        if (els.card) els.card.className = 'cc-engine-card';
+        if (els.card) els.card.className = 'cc-card-engine';
         if (els.cd) els.cd.textContent = 'RUNNING';
         return;
     }
@@ -924,13 +924,13 @@ function cc_tickEngineIndicator(slug) {
 
     /* Determine bar and card classes based on combined state. */
     var barCls;
-    var cardCls = 'cc-engine-card';
+    var cardCls = 'cc-card-engine';
     if (lastFailed || critical) {
         barCls = 'cc-engine-bar cc-critical';
-        cardCls = 'cc-engine-card cc-card-critical';
+        cardCls = 'cc-card-engine cc-card-critical';
     } else if (overdue) {
         barCls = 'cc-engine-bar cc-overdue';
-        cardCls = 'cc-engine-card cc-card-warning';
+        cardCls = 'cc-card-engine cc-card-warning';
     } else {
         barCls = 'cc-engine-bar cc-idle';
     }
@@ -939,7 +939,7 @@ function cc_tickEngineIndicator(slug) {
     if (els.card) els.card.className = cardCls;
     if (els.cd) {
         els.cd.textContent = cdText || '';
-        els.cd.className = (overdue || critical) ? 'cc-engine-countdown cc-cd-overdue' : 'cc-engine-countdown';
+        els.cd.className = (overdue || critical) ? 'cc-engine-cd cc-cd-overdue' : 'cc-engine-cd';
     }
 }
 
@@ -993,7 +993,7 @@ function cc_updateEngineConnectionIndicator(connected) {
    The click is dispatched by cc_handleGlobalClick (delegated on document
    at page boot); cc_showEnginePopup builds and positions the popup;
    cc_closeEnginePopup tears it down. The clickable cursor styling lives
-   in cc-shared.css on .cc-engine-card.
+   in cc-shared.css on .cc-card-engine.
    Prefix: cc
    ============================================================================ */
 
