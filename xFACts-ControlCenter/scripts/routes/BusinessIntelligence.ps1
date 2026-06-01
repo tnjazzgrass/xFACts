@@ -87,6 +87,7 @@ Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentic
 
     $navHtml      = Get-NavBarHtml       -UserContext $ctx -CurrentPageRoute '/departmental/business-intelligence'
     $headerHtml   = Get-PageHeaderHtml   -PageRoute '/departmental/business-intelligence'
+    $bannerHtml   = Get-ChromeBannersHtml
     $browserTitle = Get-PageBrowserTitle -PageRoute '/departmental/business-intelligence'
 
     $html = @"
@@ -115,9 +116,7 @@ $navHtml
         </div>
     </div>
 
-    <div id="cc-connection-banner" class="cc-connection-banner"></div>
-
-    <div id="cc-page-error-banner" class="cc-page-error-banner"></div>
+$bannerHtml
 
     <div id="biz-nr-error" class="biz-nr-error"></div>
 
