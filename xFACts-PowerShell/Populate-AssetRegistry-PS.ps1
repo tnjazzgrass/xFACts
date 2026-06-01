@@ -654,15 +654,6 @@ function Convert-PSCommentsToNormalized {
    Prefix: (none)
    ============================================================================ #>
 
-# Collapse multi-line text to a single line. Used to normalize raw_text and
-# signature values where line breaks would interfere with display.
-function Format-SingleLine {
-    param([string]$Text)
-    if ($null -eq $Text) { return $null }
-    $crlf = "`r`n"; $lf = "`n"; $cr = "`r"
-    return ($Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
-}
-
 # Build a parameter-list signature string from a FunctionDefinitionAst's
 # parameters. Returns "(p1, [string]$p2, [int]$p3 = 0)" form (without the
 # leading function name; the caller prepends).
@@ -4105,20 +4096,12 @@ if ($script:rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($script:rows.Count) rows..."
 try {
-    # Transitional shim: Invoke-AssetRegistryBulkInsert still takes the FK map
-    # as object_name -> registry_id. Project it from the combined zone/scope
-    # map (which now carries RegistryId) until the bulk insert is updated to
-    # accept the combined shape directly, at which point this shim is removed.
-    $objectRegistryMap = @{}
-    foreach ($objName in $objectZoneScopeMap.Keys) {
-        $objectRegistryMap[$objName] = $objectZoneScopeMap[$objName].RegistryId
-    }
 
     $inserted = Invoke-AssetRegistryBulkInsert `
         -ServerInstance     $script:XFActsServerInstance `
         -Database           $script:XFActsDatabase `
         -Rows               $script:rows `
-        -ObjectRegistryMap  $objectRegistryMap `
+        -ObjectRegistryMap  $objectZoneScopeMap `
         -Misses             $objectRegistryMisses
     Write-Log ("Inserted {0} rows into dbo.Asset_Registry." -f $inserted) 'SUCCESS'
 }
