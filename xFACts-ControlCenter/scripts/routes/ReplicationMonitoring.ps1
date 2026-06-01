@@ -104,6 +104,7 @@ Add-PodeRoute -Method Get -Path '/replication-monitoring' -Authentication 'ADLog
     $ctx          = Get-UserContext      -WebEvent $WebEvent
     $navHtml      = Get-NavBarHtml       -UserContext $ctx -CurrentPageRoute '/replication-monitoring'
     $headerHtml   = Get-PageHeaderHtml   -PageRoute '/replication-monitoring'
+    $bannerHtml   = Get-ChromeBannersHtml
     $browserTitle = Get-PageBrowserTitle -PageRoute '/replication-monitoring'
 
     $html = @"
@@ -139,9 +140,7 @@ $navHtml
         </div>
     </div>
 
-    <div id="cc-connection-banner" class="cc-connection-banner"></div>
-
-    <div id="cc-page-error-banner" class="cc-page-error-banner"></div>
+$bannerHtml
 
     <div class="cc-section">
         <div class="cc-section-header">
