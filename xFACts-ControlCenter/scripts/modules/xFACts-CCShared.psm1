@@ -1126,6 +1126,35 @@ function Get-NavBarHtml {
     return $sb.ToString()
 }
 
+function Get-ChromeBannersHtml {
+    [CmdletBinding()]
+    param()
+
+    <#
+    .SYNOPSIS
+        Renders the shared connection and page-error banner placeholders for a CC page.
+
+    .DESCRIPTION
+        Emits the two universal chrome banner placeholders every Control Center
+        page includes: the connection-state banner operated by
+        cc_updateConnectionBanner / cc_showReloadingBanner and the page-boot
+        error banner operated by cc_renderPageError, both in cc-shared.js. Both
+        are emitted as empty <div> elements carrying their fixed cc- chrome id
+        and class; cc-shared.js locates each by id and populates it at runtime.
+        Returned as a single block so a page includes both with one $bannerHtml
+        substitution, parallel to how Get-NavBarHtml and Get-PageHeaderHtml
+        supply the nav bar and page header. Takes no parameters: the
+        placeholders are identical on every page.
+    #>
+
+    $sb = New-Object System.Text.StringBuilder 256
+    [void]$sb.AppendLine('    <div id="cc-connection-banner" class="cc-connection-banner"></div>')
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('    <div id="cc-page-error-banner" class="cc-page-error-banner"></div>')
+
+    return $sb.ToString()
+}
+
 function Get-HomePageSections {
     [CmdletBinding()]
     param(
@@ -3009,6 +3038,7 @@ Export-ModuleMember -Function @(
     'Get-ActionDeniedResponse',
     'Get-CRS5Connection',
     'Get-CachedResult',
+    'Get-ChromeBannersHtml',
     'Get-HomePageSections',
     'Get-NavBarHtml',
     'Get-NavRegistryEntry',
