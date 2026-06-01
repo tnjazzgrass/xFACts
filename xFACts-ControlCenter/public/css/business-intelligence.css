@@ -1,241 +1,295 @@
 /* ============================================================================
-   business-intelligence.css — Business Intelligence Departmental Page
+   xFACts Control Center - Business Intelligence Styles (business-intelligence.css)
    Location: E:\xFACts-ControlCenter\public\css\business-intelligence.css
    Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessIntelligence)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css) and
-               .page-refresh-btn (shared). Kept dept-specific H1 yellow color
-               (#dcdcaa) which distinguishes departmental pages from platform
-               pages. Notice Recon badge styles, status pills, and the
-               #nr-detail-panel ID-scoped width override (1000px) remain
-               page-specific.
+   Page-specific styles for the Business Intelligence departmental page.
+   Universal chrome (nav bar, header bar, refresh info, sections, engine
+   cards, connection banner, slide panels, modals, animations, design
+   tokens) is provided by cc-shared.css per the CC Page Chrome Contract.
+   This file contains only the BI page's local content classes - utility
+   helpers, the tool launcher cards, the Notice Recon process-status
+   badges that replace the icon on the Notice Recon tile, and the status
+   pills used inside the detail slideout.
+
+   All page-local classes are prefixed biz- to make scope visible at a
+   glance: biz-* in HTML or in another CSS file is unambiguously a
+   Business Intelligence page concern. Shared classes (e.g., .cc-section,
+   .cc-dialog) consumed by this page's HTML are defined in cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   CONTENT: UTILITIES
+   CONTENT: TOOL CARDS
+   CONTENT: NOTICE RECON BADGES
+   CONTENT: NOTICE RECON STATUS PILLS
+   CONTENT: ERROR DISPLAY
    ============================================================================ */
 
-/* ── Base ─────────────────────────────────────────────────────────────────── */
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
+/* ============================================================================
+   CONTENT: UTILITIES
+   ----------------------------------------------------------------------------
+   Small page-local helpers. The section-subtitle caption sits inline next
+   to a section title to provide secondary context (e.g., a count or a
+   timestamp). The hidden helper toggles element visibility from JS. Both
+   are page-local for now; if a second page adopts the same pattern they
+   are candidates for promotion to cc-shared.
+   Prefix: biz
+   ============================================================================ */
+
+/* Small caption shown beside a section title for secondary context. */
+.biz-section-subtitle {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
 }
 
-/* ── Header ───────────────────────────────────────────────────────────────── */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 20px;
-}
-h1 {
-    color: #dcdcaa;
-    margin-bottom: 2px;
-    font-size: 24px;
-}
-.page-subtitle {
-    color: #888;
-    font-size: 14px;
-    margin: 0;
-}
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-.refresh-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #888;
-    font-size: 13px;
-}
-.last-updated { color: #4ec9b0; }
-
-/* ── Connection Error ─────────────────────────────────────────────────────── */
-.connection-error {
-    display: none;
-    background: #3c1f1f;
-    border: 1px solid #ef5350;
-    color: #ef9a9a;
-    padding: 10px 16px;
-    border-radius: 6px;
-    margin-bottom: 16px;
-    font-size: 13px;
+/* Generic visibility toggle applied from JS to hide an element. */
+.biz-hidden {
+    display: none !important;
 }
 
-/* ── Sections ─────────────────────────────────────────────────────────────── */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-    margin-bottom: 15px;
-}
-.section-header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
-.section-header h2 {
-    font-size: 14px;
-    font-weight: 600;
-    color: #4ec9b0;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin: 0;
-}
-.section-subtitle {
-    font-size: 12px;
-    color: #888;
-}
-.hidden { display: none !important; }
+/* ============================================================================
+   CONTENT: TOOL CARDS
+   ----------------------------------------------------------------------------
+   The BI page presents its launcher tools as a responsive grid of square
+   cards. Each card has an icon, a label, and a small status caption.
+   Cards may be in a normal (clickable) state or a placeholder state used
+   for tools that are configured but not yet deployed. The Notice Recon
+   tile is a card variant that swaps the icon for a row of process-status
+   badges (see CONTENT: NOTICE RECON BADGES).
+   Prefix: biz
+   ============================================================================ */
 
-/* ── Tool Cards ───────────────────────────────────────────────────────────── */
-.tool-cards {
+/* The responsive grid container that holds the tool cards. */
+.biz-tool-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
 }
-.tool-card {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 16px;
+
+/* Individual tool launcher card. */
+.biz-tool-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-xl);
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.2s;
+    transition: border-color var(--duration-fast);
 }
-.tool-card:hover {
-    border-color: #dcdcaa;
+
+.biz-tool-card:hover { /* hover state - accent the border in the departmental color */
+    border-color: var(--color-accent-departmental);
 }
-.tool-card.placeholder {
+
+/* Placeholder state for a tool card - dimmed and non-interactive. */
+.biz-tool-card-placeholder {
     opacity: 0.4;
     cursor: default;
 }
-.tool-card.placeholder:hover {
-    border-color: #333;
-}
-.tool-icon {
-    font-size: 28px;
-    margin-bottom: 6px;
-}
-.tool-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #d4d4d4;
-    margin-bottom: 4px;
-}
-.tool-status {
-    font-size: 11px;
-    color: #888;
+
+.biz-tool-card-placeholder:hover { /* placeholder hover - suppress the accent */
+    border-color: var(--color-border-divider);
 }
 
-/* ── Notice Recon Tile ────────────────────────────────────────────────────── */
-/* The Notice Recon tile replaces the tool-icon with a row of per-process    */
-/* status badges. Badges are individually clickable; the tile itself is not. */
-.tool-card.notice-recon-tile {
+/* Notice Recon variant of a tool card - disables card-level click. */
+.biz-tool-card-nr {
     cursor: default;
 }
-.tool-card.notice-recon-tile:hover {
-    border-color: #333;
+
+.biz-tool-card-nr:hover { /* Notice Recon hover - suppress the card-level accent */
+    border-color: var(--color-border-divider);
 }
 
-.nr-badges {
+/* The large emoji/icon glyph at the top of a tool card. */
+.biz-tool-icon {
+    font-size: 28px;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* The tool name label below the icon. */
+.biz-tool-label {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* Small status caption below the label (e.g., "Deployed", "Coming soon"). */
+.biz-tool-status {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* ============================================================================
+   CONTENT: NOTICE RECON BADGES
+   ----------------------------------------------------------------------------
+   On the Notice Recon tile the standard tool-icon is replaced with a row
+   of small status badges, one per Notice Recon sub-process. Each badge
+   shows the current state of its process and is individually clickable
+   (the tile itself is not). Badge color encodes process state: success,
+   warning, error, running, pending, future.
+   Prefix: biz
+   ============================================================================ */
+
+/* The horizontal row container that holds the per-process status badges. */
+.biz-nr-badges {
     display: flex;
-    gap: 4px;
+    gap: var(--size-spacing-xs);
     margin-bottom: 10px;
     height: 28px;
     align-items: stretch;
 }
-.nr-badge {
+
+/* Individual process-status badge. */
+.biz-nr-badge {
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 4px;
-    border-radius: 4px;
-    font-size: 10px;
+    padding: 0 var(--size-spacing-xs);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-default);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
     cursor: pointer;
-    border: 1px solid transparent;
+    border: var(--size-border-thin) solid transparent;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: filter 0.15s, border-color 0.15s;
+    transition: filter var(--duration-instant), border-color var(--duration-instant);
 }
-.nr-badge:hover {
+
+.biz-nr-badge:hover { /* hover state - brighten the badge and outline it subtly */
     filter: brightness(1.2);
     border-color: rgba(255, 255, 255, 0.3);
 }
 
-/* Status variants - colors match engine-events.css engine-bar palette */
-.nr-badge.success {
+/* Badge state - process completed successfully (green). */
+.biz-nr-badge-success {
     background: rgba(34, 197, 94, 0.18);
-    color: #22c55e;
+    color: var(--color-status-idle);
     border-color: rgba(34, 197, 94, 0.35);
 }
-.nr-badge.warning {
+
+/* Badge state - process completed with warnings (yellow). */
+.biz-nr-badge-warning {
     background: rgba(220, 220, 170, 0.18);
-    color: #dcdcaa;
+    color: var(--color-accent-departmental);
     border-color: rgba(220, 220, 170, 0.35);
 }
-.nr-badge.error {
+
+/* Badge state - process failed (orange). */
+.biz-nr-badge-error {
     background: rgba(244, 135, 113, 0.18);
-    color: #f48771;
+    color: var(--color-status-critical);
     border-color: rgba(244, 135, 113, 0.35);
 }
-.nr-badge.running {
+
+/* Badge state - process is currently executing (blue). */
+.biz-nr-badge-running {
     background: rgba(86, 156, 214, 0.18);
-    color: #569cd6;
+    color: var(--color-accent-platform);
     border-color: rgba(86, 156, 214, 0.35);
 }
-.nr-badge.pending {
+
+/* Badge state - process has not yet started its scheduled run (gray). */
+.biz-nr-badge-pending {
     background: rgba(68, 68, 68, 0.4);
-    color: #888;
-    border-color: #444;
+    color: var(--color-text-muted);
+    border-color: var(--color-status-disabled);
 }
 
-/* Future-ready badges: process is configured but not yet deployed */
-.nr-badge.future {
+/* Badge state - process is configured but not yet deployed (dimmed italic). */
+.biz-nr-badge-future {
     opacity: 0.5;
     font-style: italic;
 }
 
-/* ── Detail Slideout Width Override ───────────────────────────────────────── */
-/* The shared .slide-panel.wide is 700px which cramps the step detail table. */
-/* Scope the override to this page's detail panel via its ID.                */
-#nr-detail-panel.slide-panel.wide {
-    width: 1000px;
-    right: -1020px;
-}
-#nr-detail-panel.slide-panel.wide.open {
-    right: 0;
-}
+/* ============================================================================
+   CONTENT: NOTICE RECON STATUS PILLS
+   ----------------------------------------------------------------------------
+   Inline status pills used inside the Notice Recon detail slideout's
+   summary stats and steps table. Visually distinct from the badges above:
+   pills are rounder and sit inline with text, badges are taller and
+   represent an entire process. Same color semantics across both.
+   Prefix: biz
+   ============================================================================ */
 
-/* ── Slideout Status Pill ─────────────────────────────────────────────────── */
-/* Used inside the summary stats and steps table in the detail slideout.     */
-.nr-status-pill {
-    font-size: 11px;
+/* Inline status pill rendered inside slideout content. */
+.biz-nr-status-pill {
+    font-size: var(--font-size-body);
     font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 8px;
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-spacing-md);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     display: inline-block;
 }
-.nr-status-pill.success { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
-.nr-status-pill.warning { background: rgba(204, 167, 0, 0.15); color: #cca700; }
-.nr-status-pill.error   { background: rgba(241, 76, 76, 0.15); color: #f14c4c; }
-.nr-status-pill.running { background: rgba(86, 156, 214, 0.15); color: #569cd6; }
-.nr-status-pill.pending { background: rgba(68, 68, 68, 0.4); color: #888; }
+
+/* Pill state - step completed successfully (teal). */
+.biz-nr-status-pill-success {
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+}
+
+/* Pill state - step completed with warnings (amber). */
+.biz-nr-status-pill-warning {
+    background: rgba(204, 167, 0, 0.15);
+    color: #cca700;
+}
+
+/* Pill state - step failed (red). */
+.biz-nr-status-pill-error {
+    background: rgba(241, 76, 76, 0.15);
+    color: #f14c4c;
+}
+
+/* Pill state - step is currently executing (blue). */
+.biz-nr-status-pill-running {
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+}
+
+/* Pill state - step has not yet started (gray). */
+.biz-nr-status-pill-pending {
+    background: rgba(68, 68, 68, 0.4);
+    color: var(--color-text-muted);
+}
+
+/* ============================================================================
+   CONTENT: ERROR DISPLAY
+   ----------------------------------------------------------------------------
+   Page-local error feedback. The data-error strip reports a Notice Recon
+   data-fetch failure and is hidden until JS adds the visible modifier; it
+   is distinct from the shared connection banner, which reflects WebSocket
+   lifecycle state. The step-error text styles an error message inside the
+   detail slideout's per-step table.
+   Prefix: biz
+   ============================================================================ */
+
+/* Page-local data-fetch error strip. Hidden until biz_showError adds the
+   visible modifier on a Notice Recon load failure. */
+.biz-nr-error {
+    display: none;
+    margin: var(--size-spacing-md) 0;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: rgba(241, 76, 76, 0.15);
+    border: var(--size-border-thin) solid rgba(241, 76, 76, 0.4);
+    border-radius: var(--size-radius-default);
+    color: #f14c4c;
+    font-size: var(--font-size-content);
+}
+
+/* Visible state for the data-error strip, toggled from JS. */
+.biz-nr-error-visible {
+    display: block;
+}
+
+/* Error message text inside the slideout's per-step table; supplants the
+   regular message when a step carries an error. */
+.biz-nr-step-error {
+    color: #ef5350;
+}
