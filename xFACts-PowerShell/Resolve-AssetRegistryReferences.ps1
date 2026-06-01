@@ -105,6 +105,94 @@ Initialize-XFActsScript -ScriptName 'Resolve-AssetRegistryReferences' -Execute:$
 # Halt on non-terminating errors so SQL failures surface immediately.
 $script:ErrorActionPreference = 'Stop'
 
+# -- HTML same-file CSS_CLASS edge (self-contained page) --
+
+# Resolves HTML CSS_CLASS USAGE rows against CSS_CLASS DEFINITION rows that
+# live in the SAME file (same component_name, same zone, same file_name) and
+# originate from HTML content (file_type = 'HTML'). This covers a self-
+# contained page that both defines its classes in an inline <style> block and
+# uses them in its own markup -- today, only the Get-AccessDeniedHtml carve-out
+# page (CC_HTML_Spec section 1.4). The carve-out is enforced upstream in the
+# HTML populator (it emits these DEFINITION rows for that one function only),
+# so this edge needs no function-specific clause: it can only match rows the
+# populator was permitted to emit. This edge runs BEFORE EdgeHtmlCssClass so
+# it claims (resolves) these same-file usages first; any usage it does not
+# resolve falls through to the general cross-file edge, which remains the sole
+# owner of the HTML_CSS_CLASS_UNRESOLVED stamp for this tuple. This edge never
+# stamps -- its StampSql is intentionally a no-op.
+$script:EdgeHtmlCssClassSelf = @{
+    Name      = 'HTML -> CSS_CLASS USAGE (same-file)'
+    DriftCode = $null
+    DriftText = $null
+
+    PreviewSql = @"
+SELECT
+    (SELECT COUNT(*)
+     FROM dbo.Asset_Registry AS u
+     WHERE u.component_type = 'CSS_CLASS'
+       AND u.reference_type = 'USAGE'
+       AND u.file_type      = 'HTML'
+       AND u.scope          = '<pending>'
+       AND u.source_file    = '<pending>'
+       AND EXISTS (
+           SELECT 1
+           FROM dbo.Asset_Registry AS d
+           WHERE d.component_type = 'CSS_CLASS'
+             AND d.reference_type = 'DEFINITION'
+             AND d.file_type      = 'HTML'
+             AND d.component_name = u.component_name
+             AND d.zone           = u.zone
+             AND d.file_name      = u.file_name
+       )) AS total_pending,
+    (SELECT COUNT(*)
+     FROM dbo.Asset_Registry AS u
+     CROSS APPLY (
+         SELECT TOP 1 1 AS hit
+         FROM dbo.Asset_Registry AS d
+         WHERE d.component_type = 'CSS_CLASS'
+           AND d.reference_type = 'DEFINITION'
+           AND d.file_type      = 'HTML'
+           AND d.component_name = u.component_name
+           AND d.zone           = u.zone
+           AND d.file_name      = u.file_name
+     ) AS m
+     WHERE u.component_type = 'CSS_CLASS'
+       AND u.reference_type = 'USAGE'
+       AND u.file_type      = 'HTML'
+       AND u.scope          = '<pending>'
+       AND u.source_file    = '<pending>') AS would_resolve;
+"@
+
+    ResolveSql = @"
+UPDATE u
+SET
+    u.source_file = best.def_file_name,
+    u.scope       = best.def_scope
+FROM dbo.Asset_Registry AS u
+CROSS APPLY (
+    SELECT TOP 1
+        d.file_name AS def_file_name,
+        d.scope     AS def_scope
+    FROM dbo.Asset_Registry AS d
+    WHERE d.component_type = 'CSS_CLASS'
+      AND d.reference_type = 'DEFINITION'
+      AND d.file_type      = 'HTML'
+      AND d.component_name = u.component_name
+      AND d.zone           = u.zone
+      AND d.file_name      = u.file_name
+    ORDER BY
+        d.file_name
+) AS best
+WHERE u.component_type = 'CSS_CLASS'
+  AND u.reference_type = 'USAGE'
+  AND u.file_type      = 'HTML'
+  AND u.scope          = '<pending>'
+  AND u.source_file    = '<pending>';
+"@
+
+    StampSql = $null
+}
+
 # -- HTML to CSS_CLASS edge --
 
 # Resolves HTML CSS_CLASS USAGE rows against CSS_CLASS DEFINITION rows from
@@ -561,10 +649,15 @@ WHERE component_type = 'HTML_ID'
 
 # -- Edge collection --
 
-# All five edges in execution order. Order is irrelevant to correctness
-# because each edge operates on a disjoint (component_type, file_type) tuple
-# of USAGE rows. The order shown here is purely for log-output readability.
+# All edges in execution order. For most edges order is irrelevant because
+# each operates on a disjoint (component_type, file_type) tuple of USAGE rows.
+# The one ordering constraint: EdgeHtmlCssClassSelf must precede
+# EdgeHtmlCssClass. Both target the (CSS_CLASS, USAGE, HTML) tuple; the self
+# edge resolves the same-file subset first and never stamps, leaving the
+# general edge as the sole owner of the HTML_CSS_CLASS_UNRESOLVED stamp for
+# any usage the self edge did not resolve.
 $script:Edges = @(
+    $script:EdgeHtmlCssClassSelf,
     $script:EdgeHtmlCssClass,
     $script:EdgeHtmlCssFile,
     $script:EdgeHtmlJsFile,
@@ -661,7 +754,7 @@ function Invoke-EdgeResolution {
     $resolved     = $totalPending - $stillPending
 
     $stamped = 0
-    if ($stillPending -gt 0) {
+    if ($stillPending -gt 0 -and $null -ne $Edge.StampSql) {
         $okB = Invoke-SqlNonQuery -Query $Edge.StampSql
         if (-not $okB) {
             Write-Log ("  {0}: Phase B (stamp) failed" -f $Edge.Name) 'ERROR'
