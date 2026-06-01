@@ -653,7 +653,7 @@ a { color: var(--color-text-link); }
 
 /* A single engine indicator card. Always clickable when present (the
    document-level click handler in cc-shared.js opens the popup). */
-.cc-engine-card {
+.cc-card-engine {
     width: 68px;
     display: flex;
     flex-direction: column;
@@ -669,7 +669,7 @@ a { color: var(--color-text-link); }
 /* State tag indicating an engine card is in a warning state. */
 .cc-card-warning { }
 
-.cc-engine-card.cc-card-warning { /* warning frame coloring (overdue) */
+.cc-card-engine.cc-card-warning { /* warning frame coloring (overdue) */
     border-color: var(--color-accent-departmental);
     background: var(--color-tint-warning);
 }
@@ -677,7 +677,7 @@ a { color: var(--color-text-link); }
 /* State tag indicating an engine card is in a critical state. */
 .cc-card-critical { }
 
-.cc-engine-card.cc-card-critical { /* critical frame coloring */
+.cc-card-engine.cc-card-critical { /* critical frame coloring */
     border-color: var(--color-status-critical);
     background: var(--color-tint-critical);
 }
@@ -738,7 +738,7 @@ a { color: var(--color-text-link); }
 }
 
 /* Engine countdown text (small text below the bar showing time-to-next-run). */
-.cc-engine-countdown {
+.cc-engine-cd {
     font-size: var(--font-size-xs);
     color: var(--color-text-primary);
     font-variant-numeric: tabular-nums;
@@ -749,7 +749,7 @@ a { color: var(--color-text-link); }
 /* State tag indicating an engine countdown is in the overdue state. */
 .cc-cd-overdue { }
 
-.cc-engine-countdown.cc-cd-overdue { /* countdown text styling when engine is overdue */
+.cc-engine-cd.cc-cd-overdue { /* countdown text styling when engine is overdue */
     color: var(--color-status-critical);
 }
 
