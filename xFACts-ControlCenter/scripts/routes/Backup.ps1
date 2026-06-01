@@ -168,6 +168,7 @@ Add-PodeRoute -Method Get -Path '/backup' -Authentication 'ADLogin' -ScriptBlock
     $ctx          = Get-UserContext      -WebEvent $WebEvent
     $navHtml      = Get-NavBarHtml       -UserContext $ctx -CurrentPageRoute '/backup'
     $headerHtml   = Get-PageHeaderHtml   -PageRoute '/backup'
+    $bannerHtml   = Get-ChromeBannersHtml
     $browserTitle = Get-PageBrowserTitle -PageRoute '/backup'
 
     $html = @"
@@ -218,9 +219,7 @@ $navHtml
         </div>
     </div>
 
-    <div id="cc-connection-banner" class="cc-connection-banner"></div>
-
-    <div id="cc-page-error-banner" class="cc-page-error-banner"></div>
+$bannerHtml
 
     <div class="bkp-two-column-layout">
 
