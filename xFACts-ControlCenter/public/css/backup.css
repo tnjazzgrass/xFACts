@@ -431,6 +431,10 @@
     border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
 
+/* Data row in the operation table. Base class carries no styling of its own;
+   the row's interactive state lives in the :hover variant below. */
+.bkp-operation-table-row { }
+
 /* Hover row state for the operation table. */
 .bkp-operation-table-row:hover { /* hover state for any data row in the operation table */
     background: var(--color-bg-card-deep);
@@ -748,6 +752,10 @@
 .bkp-detail-table-td.bkp-status-failed { /* cell text color for failed-status rows */
     color: var(--color-status-critical);
 }
+
+/* Data row in the detail table. Base class carries no styling of its own;
+   the row's interactive state lives in the :hover variant below. */
+.bkp-detail-table-row { }
 
 /* Hover row state for the detail table. */
 .bkp-detail-table-row:hover { /* hover state for any data row in the detail table */
