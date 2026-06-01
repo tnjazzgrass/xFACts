@@ -1223,7 +1223,7 @@ function Test-PrefixMissing {
 # Return $true when an HTML ID string is malformed: it contains characters
 # outside lowercase-letters/digits/hyphens, or (when the file has a registered
 # prefix) it begins with neither the page prefix + '-' nor the chrome 'cc-'.
-# Used by Add-HtmlIdRow to fire JS_HTML_ID_MALFORMED on USAGE rows.
+# Used by Add-JsHtmlIdRow to fire JS_HTML_ID_MALFORMED on USAGE rows.
 function Test-HtmlIdMalformed {
     param([string]$IdName)
     if ([string]::IsNullOrEmpty($IdName)) { return $false }
@@ -1350,7 +1350,7 @@ function Add-JsFileRow {
 }
 
 # Emit the FILE_HEADER row for the file's leading block comment.
-function Add-FileHeaderRow {
+function Add-JsFileHeaderRow {
     param([int]$LineStart, [int]$LineEnd, [string]$RawText, [string]$PurposeDescription)
     $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
     $row = New-JsRow `
@@ -1375,7 +1375,7 @@ function Add-FileHeaderRow {
 # MALFORMED_PREFIX_VALUE, PREFIX_REGISTRY_MISMATCH, DUPLICATE_FOUNDATION,
 # DUPLICATE_CHROME, HOOKS_BANNER_NOT_LAST, and INIT_MISPLACED are added here
 # based on cross-section / cross-file / cross-registry information.
-function Add-CommentBannerRow {
+function Add-JsCommentBannerRow {
     param(
         $Section,
         [int] $PreviousSectionTypeOrderIdx = -1,
@@ -1587,7 +1587,7 @@ function Add-ClassUsageRow {
 }
 
 # Emit an HTML_ID row for an element id defined or referenced from JS.
-function Add-HtmlIdRow {
+function Add-JsHtmlIdRow {
     param(
         [string]$IdName, [string]$ReferenceType,
         [int]$LineStart, [int]$ColumnStart,
@@ -1649,7 +1649,7 @@ function Add-RowsFromHtmlBearingText {
         if ($occ.Kind -eq 'id') {
             if ($occ.Value -match '^\s*\$\{[^}]+\}\s*$') { continue }
             if ($occ.Value -match '^\s*\$\w+\s*$')      { continue }
-            Add-HtmlIdRow -IdName $occ.Value -ReferenceType 'DEFINITION' `
+            Add-JsHtmlIdRow -IdName $occ.Value -ReferenceType 'DEFINITION' `
                 -LineStart $sourceLine -ColumnStart $sourceCol `
                 -Signature "id=`"$($occ.Value)`"" `
                 -ParentFunction $ParentFunction `
@@ -2239,7 +2239,7 @@ function Invoke-JsVisitor {
             # 2. Any function other than <prefix>_init declared inside
             # INITIALIZATION
             # The third firing point (INITIALIZATION not the first FUNCTIONS
-            # banner) fires on the COMMENT_BANNER row in Add-CommentBannerRow.
+            # banner) fires on the COMMENT_BANNER row in Add-JsCommentBannerRow.
             # Files with no registered cc_prefix (cc-shared.js, etc.) skip
             # both checks - there's no init function expected.
             if ($script:CurrentRegistryHasMapping -and
@@ -2863,7 +2863,7 @@ function Invoke-JsVisitor {
                 $arg = $Node.arguments | Select-Object -First 1
                 if ($arg -and $arg.type -eq 'Literal' -and $arg.value -is [string]) {
                     $idName = $arg.value
-                    Add-HtmlIdRow -IdName $idName -ReferenceType 'USAGE' `
+                    Add-JsHtmlIdRow -IdName $idName -ReferenceType 'USAGE' `
                         -LineStart (Get-NodeLine -Node $arg) `
                         -ColumnStart (Get-NodeColumn -Node $arg) `
                         -Signature "getElementById('$idName')" -ParentFunction $parentName `
@@ -2882,7 +2882,7 @@ function Invoke-JsVisitor {
 
                     $idMatches = [regex]::Matches($selector, '#([\w-]+)')
                     foreach ($im in $idMatches) {
-                        Add-HtmlIdRow -IdName $im.Groups[1].Value -ReferenceType 'USAGE' `
+                        Add-JsHtmlIdRow -IdName $im.Groups[1].Value -ReferenceType 'USAGE' `
                             -LineStart (Get-NodeLine -Node $arg) `
                             -ColumnStart (Get-NodeColumn -Node $arg) `
                             -Signature $sig -ParentFunction $parentName -RawText $sig | Out-Null
@@ -2931,7 +2931,7 @@ function Invoke-JsVisitor {
                     $attrVal  = [string]$arg2.value
 
                     if ($attrName -eq 'id' -and -not [string]::IsNullOrWhiteSpace($attrVal)) {
-                        Add-HtmlIdRow -IdName $attrVal -ReferenceType 'DEFINITION' `
+                        Add-JsHtmlIdRow -IdName $attrVal -ReferenceType 'DEFINITION' `
                             -LineStart (Get-NodeLine -Node $arg2) `
                             -ColumnStart (Get-NodeColumn -Node $arg2) `
                             -Signature "setAttribute('id', '$attrVal')" -ParentFunction $parentName `
@@ -3136,7 +3136,7 @@ function Invoke-JsVisitor {
             if ($propName -eq 'id' -and $right.type -eq 'Literal' -and $right.value -is [string]) {
                 $idVal = [string]$right.value
                 if (-not [string]::IsNullOrWhiteSpace($idVal)) {
-                    Add-HtmlIdRow -IdName $idVal -ReferenceType 'DEFINITION' `
+                    Add-JsHtmlIdRow -IdName $idVal -ReferenceType 'DEFINITION' `
                         -LineStart (Get-NodeLine -Node $right) `
                         -ColumnStart (Get-NodeColumn -Node $right) `
                         -Signature "id = '$idVal'" -ParentFunction $parentName `
@@ -3555,7 +3555,7 @@ foreach ($file in $JsFiles) {
                 break
             }
         }
-        $headerRow = Add-FileHeaderRow `
+        $headerRow = Add-JsFileHeaderRow `
             -LineStart          $headerInfo.StartLine `
             -LineEnd            $headerInfo.EndLine `
             -RawText            $headerRawText `
@@ -3619,7 +3619,7 @@ foreach ($file in $JsFiles) {
         $hooksSeenAlready       = ($hooksBannerIdx -ge 0 -and $i -gt $hooksBannerIdx)
         $isFirstFunctionsBanner = ($i -eq $firstFunctionsBannerIdx)
 
-        [void](Add-CommentBannerRow -Section $s `
+        [void](Add-JsCommentBannerRow -Section $s `
             -PreviousSectionTypeOrderIdx $previousSectionTypeOrderIdx `
             -IsLastBanner $isLastBanner `
             -HooksBannerSeen $hooksSeenAlready `
@@ -4053,20 +4053,11 @@ if ($script:rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($script:rows.Count) rows..."
 try {
-    # Transitional shim: Invoke-AssetRegistryBulkInsert still takes the FK map
-    # as object_name -> registry_id. Project it from the combined zone/scope
-    # map (which now carries RegistryId) until the bulk insert is updated to
-    # accept the combined shape directly, at which point this shim is removed.
-    $objectRegistryMap = @{}
-    foreach ($objName in $objectZoneScopeMap.Keys) {
-        $objectRegistryMap[$objName] = $objectZoneScopeMap[$objName].RegistryId
-    }
-
     $inserted = Invoke-AssetRegistryBulkInsert `
         -ServerInstance     $script:XFActsServerInstance `
         -Database           $script:XFActsDatabase `
         -Rows               $script:rows `
-        -ObjectRegistryMap  $objectRegistryMap `
+        -ObjectRegistryMap  $objectZoneScopeMap `
         -Misses             $objectRegistryMisses
     Write-Log ("Inserted {0} rows into dbo.Asset_Registry." -f $inserted) 'SUCCESS'
 }
