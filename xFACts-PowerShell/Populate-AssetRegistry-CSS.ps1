@@ -757,15 +757,6 @@ function Invoke-CssParse {
     }
 }
 
-# Collapse multi-line text to a single line. Used to normalize raw_text and
-# similar storage values where line breaks would interfere with display.
-function Format-SingleLine {
-    param([string]$Text)
-    if ($null -eq $Text) { return $null }
-    $crlf = "`r`n"; $lf = "`n"; $cr = "`r"
-    return ($Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
-}
-
 # Build the full single-line representation of a CSS rule (selector + decls).
 # Used to populate raw_text on CSS_CLASS, CSS_VARIANT, CSS_RULE, and HTML_ID
 # rows so downstream queries can compare rule bodies without re-opening source.
@@ -1070,7 +1061,7 @@ function Add-CssFileRow {
 }
 
 # Emit the FILE_HEADER row for the current file.
-function Add-FileHeaderRow {
+function Add-CssFileHeaderRow {
     param(
         [int]$LineStart, [int]$LineEnd,
         [string]$RawText, [string]$PurposeDescription
@@ -1179,7 +1170,7 @@ function Add-CssClassRow {
 }
 
 # Emit an HTML_ID row for an id selector token.
-function Add-HtmlIdRow {
+function Add-CssHtmlIdRow {
     param(
         [string]$IdName,
         [string]$ReferenceType,
@@ -1295,7 +1286,7 @@ function Add-CssKeyframeRow {
 # MALFORMED_PREFIX_VALUE, PREFIX_REGISTRY_MISMATCH, and
 # SHELL_SECTION_INVALID_PREFIX are added here based on cross-section /
 # cross-registry information.
-function Add-CommentBannerRow {
+function Add-CssCommentBannerRow {
     param([Parameter(Mandatory)] $Section, [Parameter(Mandatory)] [int] $PreviousSectionTypeOrderIdx)
 
     $b = $Section.BannerComment
@@ -1606,7 +1597,7 @@ function Add-RowsForSelector {
     # class side USAGE - the compound isn't a definition of either token.
     if ($primary.Ids.Count -gt 0) {
         foreach ($idName in $primary.Ids) {
-            $idRow = Add-HtmlIdRow -IdName $idName -ReferenceType $primaryReferenceType `
+            $idRow = Add-CssHtmlIdRow -IdName $idName -ReferenceType $primaryReferenceType `
                 -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
                 -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
             if ($idRow) {
@@ -1674,7 +1665,7 @@ function Add-RowsForSelector {
 
         if ($cmp.Ids.Count -gt 0) {
             foreach ($idName in $cmp.Ids) {
-                $idRow = Add-HtmlIdRow -IdName $idName -ReferenceType 'USAGE' `
+                $idRow = Add-CssHtmlIdRow -IdName $idName -ReferenceType 'USAGE' `
                     -LineStart $LineStart -LineEnd $LineEnd -ColumnStart $ColumnStart `
                     -Signature $RuleSelectorText -ParentAtrule $ParentAtrule -RawText $RuleBodyText
                 if ($idRow) {
@@ -1910,7 +1901,7 @@ foreach ($file in $CssFiles) {
         $headerRawText = Format-SingleLine -Text $firstBlock.Text
         [void]$script:CurrentUsedCommentLines.Add([int]$firstBlock.LineStart)
     }
-    $headerRow = Add-FileHeaderRow `
+    $headerRow = Add-CssFileHeaderRow `
         -LineStart           $headerInfo.StartLine `
         -LineEnd             $headerInfo.EndLine `
         -RawText             $headerRawText `
@@ -1923,7 +1914,7 @@ foreach ($file in $CssFiles) {
     # Emit COMMENT_BANNER rows from the section list
     $previousSectionTypeOrderIdx = -1
     foreach ($s in $script:CurrentSections) {
-        [void](Add-CommentBannerRow -Section $s -PreviousSectionTypeOrderIdx $previousSectionTypeOrderIdx)
+        [void](Add-CssCommentBannerRow -Section $s -PreviousSectionTypeOrderIdx $previousSectionTypeOrderIdx)
         if ($s.TypeName) {
             $idx = [array]::IndexOf($script:SectionTypeOrder, $s.TypeName)
             if ($idx -ge 0 -and $idx -gt $previousSectionTypeOrderIdx) {
@@ -2443,20 +2434,12 @@ if ($script:rows.Count -eq 0) {
 
 Write-Log "Bulk-inserting $($script:rows.Count) rows..."
 try {
-    # Transitional shim: Invoke-AssetRegistryBulkInsert still takes the FK map
-    # as object_name -> registry_id. Project it from the combined zone/scope
-    # map (which now carries RegistryId) until the bulk insert is updated to
-    # accept the combined shape directly, at which point this shim is removed.
-    $objectRegistryMap = @{}
-    foreach ($objName in $script:zoneScopeMap.Keys) {
-        $objectRegistryMap[$objName] = $script:zoneScopeMap[$objName].RegistryId
-    }
 
     $inserted = Invoke-AssetRegistryBulkInsert `
         -ServerInstance     $script:XFActsServerInstance `
         -Database           $script:XFActsDatabase `
         -Rows               $script:rows `
-        -ObjectRegistryMap  $objectRegistryMap `
+        -ObjectRegistryMap  $script:zoneScopeMap `
         -Misses             $script:objectRegistryMisses
     Write-Log ("Inserted {0} rows into dbo.Asset_Registry." -f $inserted) 'SUCCESS'
 }
