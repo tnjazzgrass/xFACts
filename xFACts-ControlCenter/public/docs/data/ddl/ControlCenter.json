@@ -93,6 +93,12 @@
                                               ]
                     },
                     {
+                        "name":  "Invoke-AssetRegistryPipeline.ps1",
+                        "description":  "Asset Registry pipeline orchestrator script. Runs the selected populators (CSS, HTML, JS, PS) in parallel as independent processes, then runs the reference resolver once the populators have completed. Writes real-time per-stage status to a JSON file as each stage progresses, enabling the Admin page to poll for progress updates. On a full run, truncates the Asset Registry before launching any stage; selective runs rely on each populator clearing its own rows. Halts before the resolver if a populator fails. Launched fire-and-forget by the /api/admin/asset-registry-pipeline endpoint.",
+                        "module":  "ControlCenter",
+                        "category":  "AdminTools"
+                    },
+                    {
                         "name":  "Invoke-DocPipeline.ps1",
                         "description":  "Documentation pipeline wrapper script. Runs selected documentation steps (Generate DDL Reference, Publish to Confluence, Consolidate Upload Files) in sequence. Writes real-time status to a JSON file after each step completes, enabling the Admin page to poll for per-step progress updates. Launched fire-and-forget by the /api/admin/doc-pipeline endpoint.",
                         "module":  "ControlCenter",
