@@ -72,6 +72,16 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-05-31  Lifted Format-SingleLine into the shared library (was duplicated
+#             identically in the CSS and PS populators). Callers dot-source this
+#             file, so the local definitions are removed.
+# 2026-05-31  FK flag-day: Invoke-AssetRegistryBulkInsert now takes the combined
+#             zone/scope map (file_name -> @{ RegistryId; ... }) and reads
+#             .RegistryId for object_registry_id, instead of a flat
+#             file_name -> registry_id map. All four populators pass their
+#             combined map directly; the transitional projection shims are
+#             removed. Get-ObjectRegistryMap was retired (no remaining callers;
+#             the combined map fully replaces it).
 # 2026-05-31  Get-ObjectRegistryZoneScopeMap now also returns ObjectType
 #             (Route / API / Module / CSS / etc.) so the HTML populator can
 #             classify each host file from the same single query. Additive;
@@ -352,83 +362,17 @@ function Set-OccurrenceIndices {
    Prefix: (none)
    ============================================================================ #>
 
-# Build a (file_name -> registry_id) map from dbo.Object_Registry.
-# Filters by object_type and is_active = 1. Used at the bulk-insert step
-# to populate Asset_Registry.object_registry_id; misses are tracked
-# separately and reported as advisories so the operator knows which files
-# to add to Object_Registry.
-#
-# The -FileType parameter is the populator-facing alias. It accepts either
-# a single value or a string array. Object_Registry classifies files via
-# object_type using the spec's full names: 'CSS' for CSS, 'JavaScript' for
-# JS, 'HTML' for HTML, 'Script' for standalone PowerShell scripts, 'Route'
-# for Pode page route .ps1 files, 'API' for Pode API route .ps1 files,
-# 'Module' for .psm1 helper modules, and 'Config' for .psd1 server config
-# files. The HTML populator passes @('Route','API','Module') because HTML
-# is embedded inside those three file kinds rather than living in standalone
-# files. The mapping from alias to spec name happens here so each populator
-# can pass its native short alias(es).
-function Get-ObjectRegistryMap {
-    param(
-        [Parameter(Mandatory)][string]$ServerInstance,
-        [Parameter(Mandatory)][string]$Database,
-        [Parameter(Mandatory)][ValidateSet('CSS','HTML','JS','PS','Route','API','Module','Config')][string[]]$FileType
-    )
-
-    $objectTypes = New-Object System.Collections.Generic.List[string]
-    foreach ($ft in $FileType) {
-        $mapped = switch ($ft) {
-            'CSS'    { 'CSS' }
-            'HTML'   { 'HTML' }
-            'JS'     { 'JavaScript' }
-            'PS'     { 'Script' }
-            'Route'  { 'Route' }
-            'API'    { 'API' }
-            'Module' { 'Module' }
-            'Config' { 'Config' }
-        }
-        if (-not $objectTypes.Contains($mapped)) { [void]$objectTypes.Add($mapped) }
-    }
-
-    # Build the IN-list with single quotes around each value. All values
-    # come from the closed alias set above, so there is no injection risk
-    # from the -FileType parameter.
-    $inList = ($objectTypes | ForEach-Object { "'$_'" }) -join ', '
-
-    $query = @"
-SELECT object_name, registry_id
-FROM dbo.Object_Registry
-WHERE object_type IN ($inList)
-  AND is_active = 1
-"@
-
-    $map = @{}
-    try {
-        $results = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database `
-                                 -Query $query -QueryTimeout 30 `
-                                 -ApplicationName $script:XFActsAppName `
-                                 -ErrorAction Stop `
-                                 -SuppressProviderContextWarning -TrustServerCertificate
-        foreach ($row in $results) {
-            $map[$row.object_name] = [int]$row.registry_id
-        }
-    }
-    catch {
-        Write-Log "Get-ObjectRegistryMap query failed: $($_.Exception.Message)" 'WARN'
-    }
-
-    return $map
-}
-
 # Build a (file_name -> @{ RegistryId; Zone; Scope; ScopeTier; ObjectType })
-# map from dbo.Object_Registry. Filters by object_type and is_active = 1, same
-# alias-to-object_type mapping as Get-ObjectRegistryMap. Returns the per-file
-# registry_id (for FK linkage on emitted rows) plus the zone, scope, and
-# scope_tier classification the populators use to stamp each emitted row and to
-# select documentation treatment (scope_tier PLATFORM -> full docblocks; SCOPED
-# or unset -> light purpose comment), and the object_type (Route / API / Module
-# / CSS / JavaScript / Script / etc.) used by the HTML populator to classify
-# each host file. ScopeTier and ObjectType are $null when the registry value is
+# map from dbo.Object_Registry. Filters by object_type and is_active = 1. The
+# -FileType parameter is the populator-facing alias (CSS, HTML, JS, PS, Route,
+# API, Module, Config), mapped here to the spec's full object_type names.
+# Returns the per-file registry_id (for FK linkage on emitted rows) plus the
+# zone, scope, and scope_tier classification the populators use to stamp each
+# emitted row and to select documentation treatment (scope_tier PLATFORM ->
+# full docblocks; SCOPED or unset -> light purpose comment), and the
+# object_type (Route / API / Module / CSS / JavaScript / Script / etc.) used by
+# the HTML populator to classify each host file. ScopeTier and ObjectType are
+# $null when the registry value is
 # NULL. A file absent from this map is a registration gap: the calling populator
 # stamps '<undefined>' for zone and scope and flags the file so the gap surfaces
 # as drift rather than being silently misclassified.
@@ -494,9 +438,9 @@ WHERE object_type IN ($inList)
 # value. Files not in Object_Registry are absent from the map (callers
 # detect this via .ContainsKey()).
 #
-# The -FileType parameter accepts either a single value or a string array.
-# Same alias-to-object_type mapping as Get-ObjectRegistryMap: CSS, HTML,
-# JS, PS, Route, API, Module, Config. The HTML populator passes
+# The -FileType parameter accepts either a single value or a string array,
+# using the same populator-facing aliases mapped to object_type names: CSS,
+# HTML, JS, PS, Route, API, Module, Config. The HTML populator passes
 # @('Route','API','Module') because HTML is embedded inside those three
 # file kinds rather than living in standalone files.
 #
@@ -605,9 +549,11 @@ function Get-ComponentRegistryNameSet {
 #
 # The DataTable schema mirrors dbo.Asset_Registry as of the file-format
 # initiative. Cell values pass through Get-NullableValue to convert empty
-# strings to DBNull. Files not in Object_Registry get DBNull for
-# object_registry_id; the missing file_names are accumulated in the
-# -Misses HashSet for the caller to surface as an advisory.
+# strings to DBNull. ObjectRegistryMap is the combined map from
+# Get-ObjectRegistryZoneScopeMap (file_name -> @{ RegistryId; Zone; ... }); the
+# .RegistryId of each entry supplies object_registry_id. Files not in
+# Object_Registry get DBNull for object_registry_id; the missing file_names are
+# accumulated in the -Misses HashSet for the caller to surface as an advisory.
 function Invoke-AssetRegistryBulkInsert {
     param(
         [Parameter(Mandatory)][string]$ServerInstance,
@@ -648,7 +594,7 @@ function Invoke-AssetRegistryBulkInsert {
         $row['file_name'] = $r.FileName
 
         if ($ObjectRegistryMap.ContainsKey($r.FileName)) {
-            $row['object_registry_id'] = [int]$ObjectRegistryMap[$r.FileName]
+            $row['object_registry_id'] = [int]$ObjectRegistryMap[$r.FileName].RegistryId
         } else {
             $row['object_registry_id'] = [System.DBNull]::Value
             [void]$Misses.Add($r.FileName)
@@ -764,6 +710,16 @@ function ConvertTo-CleanCommentText {
 
     if ($compact.Count -eq 0) { return $null }
     return ($compact -join "`n").Trim()
+}
+
+# Collapse all newlines (CRLF, LF, or CR) in a string to single spaces and trim
+# the result, producing a one-line form suitable for signature storage. Returns
+# $null for $null input.
+function Format-SingleLine {
+    param([string]$Text)
+    if ($null -eq $Text) { return $null }
+    $crlf = "`r`n"; $lf = "`n"; $cr = "`r"
+    return ($Text -replace $crlf, ' ' -replace $lf, ' ' -replace $cr, ' ').Trim()
 }
 
 <# ============================================================================
