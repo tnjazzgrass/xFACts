@@ -1,36 +1,43 @@
-# ============================================================================
-# xFACts Control Center - Client Relations API Routes
-# Location: E:\xFACts-ControlCenter\scripts\routes\ClientRelations-API.ps1
-# 
-# API endpoints for the Client Relations dashboard.
-# 
-# Reg F queue endpoint queries crs5_oltp via the secondary replica
-# with server-side caching to minimize production database impact.
-#
-# Endpoints:
-#   GET  /api/client-relations/regf-queue  - Reg F compliance queue (cached)
-#
-# Version: Tracked in dbo.System_Metadata (component: DeptOps.ClientRelations)
-#
-# CHANGELOG
-# ---------
-# 2026-04-07  Replaced query with corrected version matching sp_DM_RegFWorkgroupDaily
-#             Fixed rslt_cd filter (906, was incorrectly 236 in original SP)
-#             Replaced OUTER APPLY TOP 1 with CTE_B MAX() set-based approach
-#             Added actn_cd = 228 filter to AR log subquery
-#             Removed cnsmr_accnt_ar_mssg_txt LIKE filter (actn_cd + rslt_cd sufficient)
-#             Performance: ~1 second (was ~30 seconds)
-# ============================================================================
+<#
+.SYNOPSIS
+    Pode API routes for the Client Relations page.
 
-# ============================================================================
-# REG F COMPLIANCE QUEUE - Cached CRS5 query
-# ============================================================================
+.DESCRIPTION
+    Registers the Client Relations data endpoints consumed by client-relations.js.
+    The Reg F compliance queue endpoint queries crs5_oltp through the configured
+    secondary replica and serves the result from a page-level cache to minimize
+    production database impact, since the underlying query is expensive. Every
+    endpoint calls Test-ActionEndpoint as the universal RBAC hook and returns its
+    payload via Write-PodeJsonResponse.
+
+.COMPONENT
+    DeptOps.ClientRelations
+
+.NOTES
+    File Name : ClientRelations-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes
+
+    FILE ORGANIZATION
+    -----------------
+        ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Client Relations data endpoints. The Reg F compliance queue endpoint
+   returns the full queue as flat account-level rows (the page groups by
+   consumer client-side), served from a page-level cache keyed 'regf_queue'.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authentication 'ADLogin' -ScriptBlock {
+
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
-        # Check for manual refresh request
         $forceRefresh = ($WebEvent.Query['refresh'] -eq 'true')
-        
+
         $results = Get-CachedResult -CacheKey 'regf_queue' -ForceRefresh:$forceRefresh -ScriptBlock {
             Invoke-CRS5ReadQuery -Query @"
                 ;WITH CTE_A AS
@@ -56,8 +63,8 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
                     ,u.UDEFINT_AMT AS CalculatedInterest
                     ,CAST(cab.cnsmr_accnt_bal_amnt AS money) AS CurrentAccountBalanceInDM
                     ,u.UDEFPAY_AMT AS CalculatedPaymentsMade
-                    ,RejectionReason = 
-                        CASE 
+                    ,RejectionReason =
+                        CASE
                             WHEN CAST(u.UDEFSERV_BAL_DUE AS money) = 0
                                 THEN 'Zero Dollar Original Charges Received'
                             WHEN u.UDEFSERV_BAL_DUE IS NULL
@@ -72,28 +79,28 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
                 INNER JOIN dbo.cnsmr_accnt_bal cab ON cab.cnsmr_accnt_id = ca.cnsmr_accnt_id AND cab.bal_nm_id = 2
                 INNER JOIN dbo.crdtr cr ON cr.crdtr_id = ca.crdtr_id
                 INNER JOIN (
-                    SELECT ct.crdtr_id, t.tag_shrt_nm 
+                    SELECT ct.crdtr_id, t.tag_shrt_nm
                     FROM dbo.crdtr_tag ct
-                    INNER JOIN dbo.tag t ON t.tag_id = ct.tag_id 
-                        AND ct.crdtr_tag_sft_delete_flg = 'N' 
+                    INNER JOIN dbo.tag t ON t.tag_id = ct.tag_id
+                        AND ct.crdtr_tag_sft_delete_flg = 'N'
                         AND t.tag_typ_id = 170
                 ) crt ON crt.crdtr_id = cr.crdtr_id
                 INNER JOIN dbo.crdtr_grp cg ON cg.crdtr_grp_id = cr.crdtr_grp_id
                 LEFT JOIN dbo.UDEFCREDITORTRANHIST u ON u.cnsmr_accnt_id = ca.cnsmr_accnt_id
-                INNER JOIN dbo.cnsmr_accnt_tag cat ON cat.cnsmr_accnt_id = ca.cnsmr_accnt_id 
+                INNER JOIN dbo.cnsmr_accnt_tag cat ON cat.cnsmr_accnt_id = ca.cnsmr_accnt_id
                     AND cat.cnsmr_accnt_sft_delete_flg = 'N'
                 INNER JOIN dbo.tag t ON t.tag_id = cat.tag_id
                 INNER JOIN (
-                    SELECT ct.cnsmr_id, t.tag_shrt_nm 
+                    SELECT ct.cnsmr_id, t.tag_shrt_nm
                     FROM dbo.cnsmr_tag ct
-                    INNER JOIN dbo.tag t ON t.tag_id = ct.tag_id 
-                        AND ct.cnsmr_tag_sft_delete_flg = 'N' 
+                    INNER JOIN dbo.tag t ON t.tag_id = ct.tag_id
+                        AND ct.cnsmr_tag_sft_delete_flg = 'N'
                         AND t.tag_typ_id = 204
                 ) tt ON tt.cnsmr_id = c.cnsmr_id
                 LEFT JOIN (
                     SELECT DISTINCT cnsmr_accnt_id,
                         LTRIM(RTRIM(LEFT(
-                            SUBSTRING(cnsmr_accnt_ar_mssg_txt, 55, 15), 
+                            SUBSTRING(cnsmr_accnt_ar_mssg_txt, 55, 15),
                             CHARINDEX(',', SUBSTRING(cnsmr_accnt_ar_mssg_txt, 55, 15) + ',') - 1
                         ))) AS BalAtDOS
                     FROM dbo.cnsmr_accnt_ar_log
@@ -156,9 +163,9 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
                 ORDER BY Letter DESC, RejectDate ASC
 "@
         }
-        
-        # Build response - return flat rows, JS handles consumer grouping
-        # Uses ArrayList to avoid O(n²) array copy on every += append
+
+        # Build response - return flat rows, JS handles consumer grouping.
+        # Uses ArrayList to avoid O(n^2) array copy on every append.
         $rows = [System.Collections.ArrayList]::new()
         foreach ($row in $results) {
             $rows.Add(@{
@@ -186,7 +193,7 @@ Add-PodeRoute -Method Get -Path '/api/client-relations/regf-queue' -Authenticati
                 rejection_reason     = if ($row.RejectionReason -is [DBNull]) { $null } else { $row.RejectionReason }
             }) | Out-Null
         }
-        
+
         Write-PodeJsonResponse -Value @{
             rows      = @($rows)
             count     = $rows.Count
