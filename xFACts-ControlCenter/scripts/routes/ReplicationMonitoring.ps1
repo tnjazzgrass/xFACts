@@ -235,7 +235,7 @@ $bannerHtml
     </div>
 
     <!-- Slideout for the per-section help text opened from the section info icons -->
-    <div id="rpm-slideout-info" class="cc-slide-overlay" data-action-click="rpm-close-info-on-overlay">
+    <div id="rpm-slideout-info" class="cc-slide-overlay" data-action-click="rpm-close-info">
         <div class="cc-dialog cc-dialog-slide">
             <div class="cc-dialog-header">
                 <h3 id="rpm-info-title" class="cc-dialog-title">Help</h3>
