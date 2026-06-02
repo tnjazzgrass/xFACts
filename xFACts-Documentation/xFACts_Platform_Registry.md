@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-01 16:33:35
+Generated: 2026-06-02 04:10:45
 
 ## Module Registry
 
@@ -23,41 +23,41 @@ Generated: 2026-06-01 16:33:35
 
 ## Component Registry
 
-| module_name | component_name | description | doc_page_id | doc_title | doc_json_schema | doc_json_categories | doc_sort_order | doc_section_order |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B2B | B2B | IBM Sterling B2B Integrator workflow monitoring, file transfer tracking, process configuration, and alerting |  |  |  |  |  |  |
-| BatchOps | BatchOps | Real-time Debt Manager batch processing activity, complete pipeline tracking, and execution history | batchops | Batch Monitoring | BatchOps |  | 80 | 1 |
-| BIDATA | BIDATA | Real-time BIDATA nightly build monitoring with process status, duration trending and build history | bidata | BIDATA Monitoring | BIDATA |  | 90 | 1 |
-| ControlCenter | ControlCenter.Admin | Administration page: process timeline, engine controls, platform management tools | controlcenter | Administration |  |  |  |  |
-| ControlCenter | ControlCenter.Home | Home page and documentation hub |  |  |  |  |  |  |
-| ControlCenter | ControlCenter.Platform | Platform Monitoring page: XE event viewer, API request logs | controlcenter | Platform Monitoring |  |  |  |  |
-| ControlCenter | ControlCenter.Shared | Shared Control Center infrastructure: startup, helpers module, engine events | controlcenter | Control Center |  |  | 130 | 1 |
-| ControlCenter | Documentation.Pipeline | Documentation pipeline: DDL reference generation, Confluence publishing, file consolidation | controlcenter |  | ControlCenter |  |  | 2 |
-| ControlCenter | Documentation.Site | Documentation site: navigation, DDL loader, ERD renderer, shared CSS, all HTML narrative/architecture/reference pages | index | xFACts Secrets Revealed |  |  | 0 |  |
-| dbo | Engine.RBAC | Role-based access control and tracking | engine-room |  | dbo | RBAC |  | 3 |
-| dbo | Engine.SharedInfrastructure | Core platform tables and procedures | engine-room | Engine Room | dbo |  | 10 | 1 |
-| DeptOps | DeptOps.ApplicationsIntegration | Applications & Integration departmental page |  |  |  |  |  |  |
-| DeptOps | DeptOps.BusinessIntelligence | Business Intelligence departmental page |  |  |  |  |  |  |
-| DeptOps | DeptOps.BusinessServices | Business Services departmental page |  |  |  |  |  |  |
-| DeptOps | DeptOps.ClientRelations | Client Relations departmental page |  |  |  |  |  |  |
-| DmOps | DmOps | Direct Debt Manager data operations: account-level archive with BIDATA capture and consumer shell purge | dmops | DM Operations | DmOps |  | 105 | 1 |
-| FileOps | FileOps | Real-time SFTP file tracking and escalation management | fileops | File Monitoring | FileOps |  | 100 | 1 |
-| JBoss | JBoss | Real-time JBoss application server health monitoring and management metrics | jboss | JBoss Monitoring | JBoss |  | 60 | 1 |
-| Jira | Jira | Global ticket queue and creation processing | jira | Jira Integration | Jira |  | 120 | 1 |
-| JobFlow | JobFlow | Real-time Debt Manager job and flow level queue activity, flow and ad-hoc job tracking, and execution history | jobflow | Job/Flow Monitoring | JobFlow |  | 70 | 1 |
-| Orchestrator | Engine.Orchestrator | Process orchestration engine with version tracking, credential management, and DDL protection  | engine-room |  | Orchestrator |  |  | 2 |
-| ServerOps | ServerOps.Backup | Real-time SQL backup monitoring, network copy, AWS upload, retention management, and storage utilization | backup | Backup Monitoring | ServerOps | Backup | 40 | 1 |
-| ServerOps | ServerOps.DBCC | Scheduled DBCC integrity operations with per-database scheduling, on-demand execution, constraint tracking, and alerting | dbcc | DBCC Operations | ServerOps | DBCC | 55 | 1 |
-| ServerOps | ServerOps.Disk | Disk space monitoring and health summary alerts |  |  |  |  |  |  |
-| ServerOps | ServerOps.Index | Real-time index queue management, Index discovery, fragmentation scanning, priority-based rebuilds, and statistics maintenance | indexmaint | Index Maintenance | ServerOps | Index | 50 | 1 |
-| ServerOps | ServerOps.Replication | Real-time metrics for agent health, queue depth, end-to-end latency, delivery rate and event tracking | replication | Replication Monitoring | ServerOps | Replication | 30 | 1 |
-| ServerOps | ServerOps.ServerHealth | Real-time SQL Server performance and Activity monitoring, XE event capture, disk health, and server diagnostics | serverhealth | Server Health | ServerOps | Activity,Disk | 20 | 1 |
-| Teams | Teams | Global webhook alert queue and delivery processing | teams | Teams Integration | Teams |  | 110 | 1 |
-| Tools | Tools.BDLImport | Bulk Data Load Tool |  |  |  |  |  |  |
-| Tools | Tools.Catalog | Vendor specification catalogs for API endpoints, XML schemas, and data formats | tools | Tools | Tools |  | 140 | 1 |
-| Tools | Tools.ClientPortal | Consumer and Account Lookup |  |  |  |  |  |  |
-| Tools | Tools.Operations | Operational infrastructure for DM integration tools — server configuration, access control, and import tracking |  |  |  |  |  |  |
-| Tools | Tools.Utilities | Platform maintenance utilities for metadata management, data hygiene, and operational tooling |  |  |  |  |  |  |
+| module_name | component_name | description | cc_prefix | doc_page_id | doc_title | doc_json_schema | doc_json_categories | doc_cc_slug | doc_sort_order | doc_section_order |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B2B | B2B | IBM Sterling B2B Integrator workflow monitoring, file transfer tracking, process configuration, and alerting |  |  |  |  |  |  |  |  |
+| BatchOps | BatchOps | Real-time Debt Manager batch processing activity, complete pipeline tracking, and execution history | bat | batchops | Batch Monitoring | BatchOps |  |  | 80 | 1 |
+| BIDATA | BIDATA | Real-time BIDATA nightly build monitoring with process status, duration trending and build history | bid | bidata | BIDATA Monitoring | BIDATA |  |  | 90 | 1 |
+| ControlCenter | ControlCenter.Admin | Administration page: process timeline, engine controls, platform management tools | adm | controlcenter | Administration |  |  | admin |  |  |
+| ControlCenter | ControlCenter.Home | Home page and documentation hub |  |  |  |  |  |  |  |  |
+| ControlCenter | ControlCenter.Platform | Platform Monitoring page: XE event viewer, API request logs | plt | controlcenter | Platform Monitoring |  |  | platform |  |  |
+| ControlCenter | ControlCenter.Shared | Shared Control Center infrastructure: startup, helpers module, engine events |  | controlcenter | Control Center |  |  |  | 130 | 1 |
+| ControlCenter | Documentation.Pipeline | Documentation pipeline: DDL reference generation, Confluence publishing, file consolidation |  | controlcenter |  | ControlCenter |  |  |  | 2 |
+| ControlCenter | Documentation.Site | Documentation site: navigation, DDL loader, ERD renderer, shared CSS, all HTML narrative/architecture/reference pages |  | index | xFACts Secrets Revealed |  |  |  | 0 |  |
+| dbo | Engine.RBAC | Role-based access control and tracking |  | engine-room |  | dbo | RBAC |  |  | 3 |
+| dbo | Engine.SharedInfrastructure | Core platform tables and procedures |  | engine-room | Engine Room | dbo |  |  | 10 | 1 |
+| DeptOps | DeptOps.ApplicationsIntegration | Applications & Integration departmental page | aai |  |  |  |  |  |  |  |
+| DeptOps | DeptOps.BusinessIntelligence | Business Intelligence departmental page | biz |  |  |  |  |  |  |  |
+| DeptOps | DeptOps.BusinessServices | Business Services departmental page | bsv |  |  |  |  |  |  |  |
+| DeptOps | DeptOps.ClientRelations | Client Relations departmental page | clr |  |  |  |  |  |  |  |
+| DmOps | DmOps | Direct Debt Manager data operations: account-level archive with BIDATA capture and consumer shell purge | dmo | dmops | DM Operations | DmOps |  |  | 105 | 1 |
+| FileOps | FileOps | Real-time SFTP file tracking and escalation management | flm | fileops | File Monitoring | FileOps |  |  | 100 | 1 |
+| JBoss | JBoss | Real-time JBoss application server health monitoring and management metrics | jbm | jboss | JBoss Monitoring | JBoss |  |  | 60 | 1 |
+| Jira | Jira | Global ticket queue and creation processing |  | jira | Jira Integration | Jira |  |  | 120 | 1 |
+| JobFlow | JobFlow | Real-time Debt Manager job and flow level queue activity, flow and ad-hoc job tracking, and execution history | jfm | jobflow | Job/Flow Monitoring | JobFlow |  |  | 70 | 1 |
+| Orchestrator | Engine.Orchestrator | Process orchestration engine with version tracking, credential management, and DDL protection  |  | engine-room |  | Orchestrator |  |  |  | 2 |
+| ServerOps | ServerOps.Backup | Real-time SQL backup monitoring, network copy, AWS upload, retention management, and storage utilization | bkp | backup | Backup Monitoring | ServerOps | Backup |  | 40 | 1 |
+| ServerOps | ServerOps.DBCC | Scheduled DBCC integrity operations with per-database scheduling, on-demand execution, constraint tracking, and alerting | dbc | dbcc | DBCC Operations | ServerOps | DBCC |  | 55 | 1 |
+| ServerOps | ServerOps.Disk | Disk space monitoring and health summary alerts |  |  |  |  |  |  |  |  |
+| ServerOps | ServerOps.Index | Real-time index queue management, Index discovery, fragmentation scanning, priority-based rebuilds, and statistics maintenance | idx | indexmaint | Index Maintenance | ServerOps | Index |  | 50 | 1 |
+| ServerOps | ServerOps.Replication | Real-time metrics for agent health, queue depth, end-to-end latency, delivery rate and event tracking | rpm | replication | Replication Monitoring | ServerOps | Replication |  | 30 | 1 |
+| ServerOps | ServerOps.ServerHealth | Real-time SQL Server performance and Activity monitoring, XE event capture, disk health, and server diagnostics | srv | serverhealth | Server Health | ServerOps | Activity,Disk |  | 20 | 1 |
+| Teams | Teams | Global webhook alert queue and delivery processing |  | teams | Teams Integration | Teams |  |  | 110 | 1 |
+| Tools | Tools.BDLImport | Bulk Data Load Tool | bdl |  |  |  |  |  |  |  |
+| Tools | Tools.Catalog | Vendor specification catalogs for API endpoints, XML schemas, and data formats |  | tools | Tools | Tools |  |  | 140 | 1 |
+| Tools | Tools.ClientPortal | Consumer and Account Lookup | clp |  |  |  |  |  |  |  |
+| Tools | Tools.Operations | Operational infrastructure for DM integration tools — server configuration, access control, and import tracking |  |  |  |  |  |  |  |  |
+| Tools | Tools.Utilities | Platform maintenance utilities for metadata management, data hygiene, and operational tooling |  |  |  |  |  |  |  |  |
 
 ## Object Registry
 
@@ -418,6 +418,58 @@ Generated: 2026-06-01 16:33:35
 | Tools.Utilities | Populate-AssetRegistry-PS.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Populate-AssetRegistry-PS.ps1 | Asset_Registry parser pipeline component for PowerShell source files. Walks every .ps1 and .psm1 file under the xFACts PowerShell roots, parses each via the native PowerShell AST, and emits one Asset_Registry row per cataloged construct. Validates each row against CC_PS_Spec.md rules and attaches drift codes for any deviation. |
 | Tools.Utilities | Resolve-AssetRegistryReferences.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Resolve-AssetRegistryReferences.ps1 | Cross-spec resolution phase of the Asset_Registry pipeline. Runs after the four populators have written DEFINITION and USAGE rows. Resolves every cross-spec USAGE row's source_file and scope against matching DEFINITION rows; emits edge-specific drift codes when references cannot be resolved, and a catch-all UNRESOLVED_REFERENCE code on any row that remains in the <pending> state after the resolve phase completes. |
 | Tools.Utilities | xFACts-AssetRegistryFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-AssetRegistryFunctions.ps1 | Shared function library for the Asset_Registry parser pipeline. Dot-sourced by every populator in the family. Centralizes row construction, drift code attachment, occurrence-index computation, registry loads, bulk insert, banner detection and parsing, file-header parsing, pre-built section list construction, and the generic AST visitor walker. Per-language logic stays in each populator. |
+
+## Nav Registry
+
+| page_route | nav_label | display_title | description | section_key | sort_order | doc_page_id | show_in_nav | show_on_home |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| /admin | Administration | Administration | Process timeline and platform management | admin | 10 | cc/controlcenter-cc-admin | False | False |
+| /platform-monitoring | Platform Monitoring | Platform Monitoring | Measuring the resource impact of xFACts on the server environment | admin | 20 | cc/controlcenter-cc-platform | False | False |
+| /departmental/applications-integration | Applications & Integration | Applications & Integration | Departmental Operations | departmental | 10 |  | True | True |
+| /departmental/business-services | Business Services | Business Services | Departmental Operations | departmental | 20 |  | True | True |
+| /departmental/business-intelligence | Business Intelligence | Business Intelligence | Departmental Operations | departmental | 30 |  | True | True |
+| /departmental/client-relations | Client Relations | Client Relations | Departmental Operations | departmental | 40 |  | True | True |
+| /server-health | Server Health | Server Health | Real-time SQL Server performance and health monitoring | platform | 10 | cc/serverhealth-cc | True | True |
+| /jobflow-monitoring | Job/Flow Monitoring | Job/Flow Monitoring | Real-time Debt Manager queue activity, flow tracking, and execution history | platform | 20 | cc/jobflow-cc | True | True |
+| /batch-monitoring | Batch Monitoring | Batch Monitoring | Real-time Debt Manager batch activity, pipeline tracking, and execution history | platform | 30 | cc/batchops-cc | True | True |
+| /backup | Backup Monitoring | Backup Monitoring | Backup pipeline status, active operations, queue/retention status, storage utilization | platform | 40 | cc/backup-cc | True | True |
+| /index-maintenance | Index Maintenance | Index Maintenance | Process status, queue management, active rebuilds, database overview, schedule management | platform | 50 | cc/indexmaint-cc | True | True |
+| /dbcc-operations | DBCC Operations | DBCC Operations | Live integrity check progress, execution history, schedule overview | platform | 60 | dbcc | True | True |
+| /bidata-monitoring | BIDATA Monitoring | BIDATA Monitoring | Nightly build status, step execution, duration trends, build history | platform | 70 | cc/bidata-cc | True | True |
+| /file-monitoring | File Monitoring | File Monitoring | SFTP file arrival tracking and escalation management | platform | 80 | cc/fileops-cc | True | True |
+| /replication-monitoring | Replication Monitoring | Replication Monitoring | Agent health, queue depth, end-to-end latency, delivery rate, event log | platform | 90 | cc/replication-cc | True | True |
+| /jboss-monitoring | JBoss Monitoring | JBoss Monitoring | JBoss application server health, responsiveness, and management metrics | platform | 100 | cc/jboss-cc | True | True |
+| /dm-operations | DM Operations | DM Operations | Consumer archiving, shell consumer purge, execution history, schedule management | platform | 110 | cc/dmops-cc | True | True |
+| /client-portal | Client Portal | Client Portal | Debt Manager Consumer/Account Lookup | tools | 10 |  | True | True |
+| /bdl-import | BDL Import | BDL Import | Guided bulk data load import into Debt Manager | tools | 20 | guides/bdl-import-guide | False | False |
+
+## Process Registry
+
+| module_name | process_name | description | script_path | procedure_name | execution_mode | dependency_group | interval_seconds | scheduled_time | timeout_seconds | run_mode | allow_concurrent | cc_engine_slug | cc_engine_label | cc_page_route | cc_sort_order |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B2B | Collect-B2BExecution | B2B module collector. Synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE; execution-tracking steps stubbed pending Block 2. | Collect-B2BExecution.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  | 600 | 1 | False |  |  |  |  |
+| BatchOps | Collect-BDLBatchStatus | Monitors BDL file lifecycle from registration through terminal state. Collects new files, updates in-flight status with partition progress, captures DM summary counts, and evaluates stall detection. | Collect-BDLBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | bdl | BDL | /batch-monitoring | 3 |
+| BatchOps | Collect-NBBatchStatus | Monitors NB batch lifecycle from creation through terminal state. Collects new batches, updates in-flight status, tracks merge activity for stall detection. | Collect-NBBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | nb | NB | /batch-monitoring | 1 |
+| BatchOps | Collect-PMTBatchStatus | Payment batch lifecycle tracking - collects all batch types, tracks from creation through terminal state | Collect-PMTBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | pmt | PMT | /batch-monitoring | 2 |
+| BIDATA | Monitor-BIDATABuild | Monitors BIDATA Daily Build job, captures step progress, alerts on completion/failure/not-started | Monitor-BIDATABuild.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 01:00:00 | 600 | 1 | False | bidata | BIDATA | /bidata-monitoring | 1 |
+| JBoss | Collect-JBossMetrics | Collects JBoss application server metrics via Management API | Collect-JBossMetrics.ps1 |  | FIRE_AND_FORGET | 10 | 60 |  | 30 | 1 | False | jboss | JBOSS | /jboss-monitoring | 1 |
+| JobFlow | Monitor-JobFlow | Monitors Debt Manager job flows, tracking execution progress, detecting stalls, validating completions, and alerting on issues. Includes integrated ConfigSync. | Monitor-JobFlow.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  | 600 | 1 | False | jobflow | JOBFLOW | /jobflow-monitoring | 1 |
+| ServerOps | Collect-BackupStatus | Discovers backup completions from msdb across registered servers, inserts tracking records into Backup_FileTracking | Collect-BackupStatus.ps1 |  | WAIT | 10 | 300 |  | 600 | 1 | False | collection | BACKUP | /backup | 1 |
+| ServerOps | Collect-DMVMetrics | Collects DMV health metrics from all registered servers and imports into xFACts Activity_DMV tables | Collect-DMVMetrics.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  |  | 1 | False | dmv | DMV | /server-health | 1 |
+| ServerOps | Collect-ReplicationHealth | Collects replication agent health, queue depth, throughput, events, and tracer token latency from distribution database | Collect-ReplicationHealth.ps1 |  | FIRE_AND_FORGET | 10 | 60 |  |  | 1 | False | replication | REPLICATION | /replication-monitoring | 1 |
+| ServerOps | Collect-ServerHealth | Collects disk space metrics and SQL service start times from all registered servers via CIM/WinRM | Collect-ServerHealth.ps1 |  | FIRE_AND_FORGET | 10 | 3600 |  | 600 | 1 | False | disk | DISK | /server-health | 3 |
+| ServerOps | Collect-XEEvents | Collects Extended Events from all registered servers and imports into xFACts Activity_XE tables | Collect-XEEvents.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  |  | 1 | False | xe | XE | /server-health | 2 |
+| ServerOps | Process-BackupAWSUpload | Uploads completed backup files to AWS S3 based on PENDING status in Backup_FileTracking | Process-BackupAWSUpload.ps1 |  | FIRE_AND_FORGET | 20 | 300 |  |  | 1 | True | awsupload | AWS | /backup | 3 |
+| ServerOps | Process-BackupNetworkCopy | Copies completed backup files from local storage to network share based on PENDING status in Backup_FileTracking | Process-BackupNetworkCopy.ps1 |  | FIRE_AND_FORGET | 20 | 300 |  |  | 1 | True | networkcopy | NETWORK | /backup | 2 |
+| ServerOps | Process-BackupRetention | Deletes backup files past retention based on chain-based policies per database | Process-BackupRetention.ps1 |  | FIRE_AND_FORGET | 20 | 7200 | 21:00:00 | 7200 | 1 | False | retention | RETENTION | /backup | 4 |
+| BatchOps | Send-OpenBatchSummary | Daily pre-maintenance summary notification to Teams with Adaptive Card formatting. Shows open batches across all Debt Manager processing stages. | Send-OpenBatchSummary.ps1 |  | FIRE_AND_FORGET | 30 | 300 | 19:00:00 | 120 | 1 | False | summary | SUMMARY | /batch-monitoring | 4 |
+| DeptOps | Collect-BSReviewRequests | Collects and synchronizes Business Services review request data from Debt Manager into DeptOps tracking table | Collect-BSReviewRequests.ps1 |  | FIRE_AND_FORGET | 30 | 1800 |  |  | 1 | False | collect | COLLECT | /departmental/business-services | 1 |
+| DeptOps | Distribute-BSReviewRequests | Automated distribution of unassigned BS review requests to configured users up to per-user caps | Distribute-BSReviewRequests.ps1 |  | FIRE_AND_FORGET | 30 | 14400 |  |  | 1 | False | distribute | DISTRIBUTE | /departmental/business-services | 2 |
+| FileOps | Scan-SFTPFiles | Scans configured SFTP locations for expected files, logs detection events, and triggers Teams/Jira escalations | Scan-SFTPFiles.ps1 |  | FIRE_AND_FORGET | 30 | 300 |  | 120 | 1 | False | sftp | SFTP | /file-monitoring | 1 |
+| ServerOps | Execute-DBCC | Executes scheduled DBCC operations per DBCC_ScheduleConfig. Checks for due operations on each cycle. | Execute-DBCC.ps1 |  | FIRE_AND_FORGET | 30 | 3600 |  | 86400 | 1 | True | dbcc | DBCC | /dbcc-operations | 1 |
+| ServerOps | Send-DiskHealthSummary | Daily disk health summary notification to Teams with Adaptive Card formatting. Queries latest snapshots, classifies drives by threshold status, and sends color-coded summary. | Send-DiskHealthSummary.ps1 |  | FIRE_AND_FORGET | 30 | 300 | 06:30:00 |  | 1 | False | disksummary | SUMMARY | /server-health | 4 |
+| Jira | Process-JiraTicketQueue | Processes pending Jira tickets from TicketQueue, creates tickets via REST API, handles email fallback | Process-JiraTicketQueue.ps1 |  | WAIT | 99 | 0 |  | 180 | 2 | False |  |  |  |  |
+| Teams | Process-TeamsAlertQueue | Processes pending Teams alerts from AlertQueue, formats Adaptive Cards, and posts to webhooks | Process-TeamsAlertQueue.ps1 |  | WAIT | 99 | 0 |  | 120 | 2 | False |  |  |  |  |
 
 ## Global Configuration
 
