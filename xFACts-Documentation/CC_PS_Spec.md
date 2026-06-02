@@ -376,11 +376,37 @@ The `IMPORTS` section contains dot-source statements and `Import-Module` calls. 
 
 The `ROUTE` section contains `Add-PodeRoute` calls registering web endpoints. Page-route files have exactly one route under `ROUTE: PAGE PATH`; api-route files have one or more routes under `ROUTE: API ENDPOINTS`.
 
-### 11.1 Rules
+### 11.1 Required form
+
+Page route — `Get-UserAccess` first, `Write-PodeHtmlResponse` last:
+
+```powershell
+Add-PodeRoute -Method Get -Path '/example' -Authentication 'ADLogin' -ScriptBlock {
+    $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/example'
+    if (-not $access.HasAccess) {
+        Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/example') -StatusCode 403
+        return
+    }
+    # ...page rendering...
+    Write-PodeHtmlResponse -Value $html
+}
+```
+
+API route — `Test-ActionEndpoint` guard as the first statement of each endpoint, `Write-PodeJsonResponse` last:
+
+```powershell
+Add-PodeRoute -Method Post -Path '/api/example/do-thing' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    # ...action logic...
+    Write-PodeJsonResponse -Value $result
+}
+```
+
+### 11.2 Rules
 
 - Every `Add-PodeRoute` call declares `-Authentication 'ADLogin'`.
 - Page routes call `Get-UserAccess` as the first statement of the scriptblock, before any other work. The result governs whether the route renders the page or returns an access-denied response.
-- Every API route, regardless of HTTP method, calls `Test-ActionEndpoint` somewhere inside the scriptblock. The call is the universal hook point; `Test-ActionEndpoint` is fail-open for endpoints not yet registered in `RBAC_ActionRegistry`, so registration takes effect automatically when added.
+- Every API route, regardless of HTTP method, calls `Test-ActionEndpoint` as the first line of the scriptblock. The call is the universal hook point; `Test-ActionEndpoint` is fail-open for endpoints not yet registered in `RBAC_ActionRegistry`, so registration takes effect automatically when added.
 - Page routes end the scriptblock with `Write-PodeHtmlResponse`.
 - API routes end the scriptblock with `Write-PodeJsonResponse`.
 - Page-route files emit HTML via PowerShell here-strings (`@"..."@`).
@@ -391,7 +417,7 @@ The `ROUTE` section contains `Add-PodeRoute` calls registering web endpoints. Pa
 
 SQL queries embedded in PowerShell files use here-strings (`@"..."@`), not inline single-line string literals.
 
-### 12.1 Canonical form
+### 12.1 Required form
 
 ```powershell
 $results = Invoke-XFActsQuery -Query @"
@@ -488,7 +514,7 @@ Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-
 | Function Inventory list in file header | §2.1 |
 | Deployment block in file header | §2.1 |
 | Inline `===` or `---` divider rules in file header outside the `.NOTES` FILE ORGANIZATION separator | §2.1 |
-| `.NOTES` fields out of canonical order (File Name, Location, FILE ORGANIZATION) | §2.1 |
+| `.NOTES` fields out of required order (File Name, Location, FILE ORGANIZATION) | §2.1 |
 | `.PARAMETER` blocks not matching `param()` order | §2.1, §8.1 |
 | Missing `.COMPONENT` declaration | §2.1 |
 | `.COMPONENT`, `.NOTES`, `.EXAMPLE`, etc. in function docblock | §8.1 |
@@ -543,7 +569,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `MALFORMED_FILE_HEADER` | File header missing, malformed, or keywords out of order. | §2 |
 | `FORBIDDEN_HEADER_KEYWORD` | File header contains a forbidden comment-based-help keyword. | §2.1 |
 | `MALFORMED_NOTES_FIELD` | `.NOTES` block missing required fields or containing extra fields. | §2.1 |
-| `NOTES_FIELD_ORDER_VIOLATION` | `.NOTES` fields appear out of canonical order (File Name, Location, FILE ORGANIZATION). | §2.1 |
+| `NOTES_FIELD_ORDER_VIOLATION` | `.NOTES` fields appear out of required order (File Name, Location, FILE ORGANIZATION). | §2.1 |
 | `PARAMETER_DOC_ORDER_VIOLATION` | `.PARAMETER` blocks do not appear in the same order as the parameters in the `param()` block. Applies to file-header docblocks (§2.1) and PLATFORM-tier function docblocks (§8.3). | §2.1, §8.3 |
 | `MISSING_COMPONENT_DECLARATION` | File header is missing a `.COMPONENT` declaration. | §2.1 |
 | `FORBIDDEN_AUTHOR_IN_HEADER` | File header contains an Author bookkeeping field. | §2.1 |
