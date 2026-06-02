@@ -91,6 +91,19 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-02  Fixed Get-HtmlAttributeOccurrences id/class scanner: the word-
+#             boundary anchor matched the tail of hyphenated attribute names
+#             (e.g. the 'id' in data-action-bsv-group-id="0"), mis-cataloging
+#             the argument value as a malformed HTML id. Replaced \b with a
+#             (?<![\w-]) lookbehind so only standalone class/id attributes
+#             match.
+# 2026-06-02  ENGINE_PROCESSES page-route resolution: Get-PageRouteForJsFile
+#             now reads the real Add-PodeRoute -Path from the JS file's sibling
+#             Route file (via the shared Get-JsRouteFileMap and Get-FirstPode-
+#             RoutePathFromFile) instead of guessing '/'+basename. Nested
+#             routes (e.g. /departmental/...) and pages whose engine-card
+#             processes span multiple components now resolve correctly. Added
+#             the route-file map load and a per-run parse cache in EXECUTION.
 # 2026-05-31  Converted to the Control Center PowerShell file format spec:
 #             block-comment header and section banners, canonical section
 #             order, dedicated CHANGELOG section, single EXECUTION section
@@ -468,16 +481,35 @@ function Convert-AcornCommentsToNormalized {
    Prefix: (none)
    ============================================================================ #>
 
-# Derive the page route for a JS file: '/' plus the basename minus '.js'
-# (e.g. 'batch-monitoring.js' -> '/batch-monitoring'). Used by the
-# ENGINE_PROCESSES validation pass, which only calls this for non-shared
-# files; shared files have no page route.
+# Derive the page route a JS file belongs to. Resolves the JS file's sibling
+# Route file (the page .ps1, via the component join in Get-JsRouteFileMap) and
+# reads that file's registered Add-PodeRoute -Path. This is the authoritative
+# route -- the same value Orchestrator.ProcessRegistry.cc_page_route is keyed
+# on -- so nested routes (e.g. '/departmental/business-services') and pages
+# whose engine-card processes span multiple components resolve correctly.
+# Returns $null when the file has no sibling Route file (shared/vendored files)
+# or the route cannot be read; the caller skips route-dependent validation.
+# Parsed routes are cached per Route file so each is parsed at most once.
 function Get-PageRouteForJsFile {
     param([string]$FileName)
     if ([string]::IsNullOrEmpty($FileName)) { return $null }
-    if ($FileName -notlike '*.js')          { return $null }
-    $base = $FileName -replace '\.js$', ''
-    return "/$base"
+
+    if ($null -eq $script:jsRouteFileMap -or -not $script:jsRouteFileMap.ContainsKey($FileName)) {
+        return $null
+    }
+    $routeFilePath = $script:jsRouteFileMap[$FileName]
+    if ([string]::IsNullOrEmpty($routeFilePath)) { return $null }
+
+    if ($null -eq $script:routePathByFileCache) {
+        $script:routePathByFileCache = @{}
+    }
+    if ($script:routePathByFileCache.ContainsKey($routeFilePath)) {
+        return $script:routePathByFileCache[$routeFilePath]
+    }
+
+    $route = Get-FirstPodeRoutePathFromFile -FilePath $routeFilePath
+    $script:routePathByFileCache[$routeFilePath] = $route
+    return $route
 }
 
 # Pull raw text from the source string by character range. Used to capture
@@ -543,7 +575,14 @@ function Get-HtmlAttributeOccurrences {
     if ($null -eq $Text) { return @() }
 
     $results = New-Object System.Collections.Generic.List[object]
-    $pattern = '\b(class|id)\s*=\s*(["''])([^"'']*)\2'
+    # The (?<![\w-]) lookbehind requires 'class'/'id' to be a standalone HTML
+    # attribute name, not the tail of a longer hyphenated name. Without it a
+    # word boundary matches between the '-' and 'id' of attributes such as
+    # data-action-<prefix>-<arg>-id (e.g. data-action-bsv-group-id="0"),
+    # causing the argument value to be mis-scanned as an HTML id. A real
+    # class/id attribute is always preceded by whitespace, '<', or a quote --
+    # never by a word character or hyphen.
+    $pattern = '(?<![\w-])(class|id)\s*=\s*(["''])([^"'']*)\2'
     $regexMatches = [regex]::Matches($Text, $pattern)
 
     foreach ($m in $regexMatches) {
@@ -3459,6 +3498,21 @@ $componentPrefixMap = Get-ComponentRegistryPrefixMap `
     -Database       $script:XFActsDatabase `
     -FileType       'JS'
 Write-Log ("  Component_Registry prefix rows loaded: {0}" -f $componentPrefixMap.Count)
+
+# js_file_name -> sibling Route file path, used by ENGINE_PROCESSES validation
+# to derive the page route a JS file belongs to. The route literal is read from
+# the Route file's Add-PodeRoute -Path call (the authoritative source), not
+# guessed from the JS filename, so nested routes (e.g. /departmental/...) and
+# pages whose processes span multiple components resolve correctly.
+Write-Log "Loading JS -> Route file map for ENGINE_PROCESSES validation..."
+$script:jsRouteFileMap = Get-JsRouteFileMap `
+    -ServerInstance $script:XFActsServerInstance `
+    -Database       $script:XFActsDatabase
+Write-Log ("  JS -> Route file rows loaded: {0}" -f $script:jsRouteFileMap.Count)
+
+# Per-run cache of route_file_path -> derived page route, so each Route file is
+# parsed at most once even though multiple checks read the current file's route.
+$script:routePathByFileCache = @{}
 
 # -- Pass 2 - Per-File Walk --
 
