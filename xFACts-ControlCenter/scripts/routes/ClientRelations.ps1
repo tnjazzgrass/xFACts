@@ -1,45 +1,106 @@
-# ============================================================================
-# xFACts Control Center - Client Relations Dashboard
-# Location: E:\xFACts-ControlCenter\scripts\routes\ClientRelations.ps1
-#
-# Departmental page for Client Relations team.
-# Components:
-#   - Summary Cards: Total consumers, total accounts, rejection reason breakdown (Live)
-#   - Reg F Queue:   Expandable consumer/account tree with sorting and filtering (Live)
-#
-# CSS: /css/client-relations.css, /css/engine-events.css
-# JS:  /js/client-relations.js, /js/engine-events.js
-# APIs: ClientRelations-API.ps1
-#
-# Version: Tracked in dbo.System_Metadata (component: DeptOps.ClientRelations)
-#
-# CHANGELOG
-# ---------
-# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
-#             Get-NavBarHtml helper. Page H1, subtitle, and browser tab title
-#             now render from RBAC_NavRegistry via Get-PageHeaderHtml and
-#             Get-PageBrowserTitle. Dropped the $access.IsDeptOnly branching
-#             since Get-NavBarHtml already filters nav items by user
-#             permissions (a dept-only user naturally sees only Home + their
-#             dept page). Custom cache indicator preserved (heavy queries
-#             use page-level caching rather than the standard live indicator).
-# ============================================================================
+<#
+.SYNOPSIS
+    Pode route for the Client Relations page (/departmental/client-relations).
+
+.DESCRIPTION
+    Registers the GET /departmental/client-relations route. Performs RBAC access
+    check via Get-UserAccess and returns the Access Denied page on failure.
+    Resolves user context, renders nav, page header, and banner chrome from
+    RBAC_NavRegistry, and emits the Client Relations page HTML following the CC
+    HTML Spec for body attributes, page-local prefixing, and data-action event
+    dispatch. The page shows the Reg F compliance queue: summary cards, reason
+    filter badges, and an expandable consumer/account queue table.
+
+    The page runs a heavy, non-performant query and serves the result from a
+    page-level cache; a content-area cache indicator reports the freshness of
+    the cached result. The standard chrome refresh-info row is used as on every
+    other page.
+
+    During the CC File Format Standardization unified prefix rename migration,
+    this route explicitly imports the xFACts-CCShared module at the top of its
+    scriptblock. This overrides the auto-loaded xFACts-Helpers module for this
+    route's execution so Get-NavBarHtml, Get-PageHeaderHtml, and
+    Get-ChromeBannersHtml emit cc- prefixed chrome classes that match
+    cc-shared.css and cc-shared.js. Once every page has migrated,
+    xFACts-Helpers.psm1 is deleted, Start-ControlCenter.ps1 is updated to load
+    xFACts-CCShared.psm1 at startup, and the explicit Import-Module line in this
+    route is removed.
+
+.COMPONENT
+    DeptOps.ClientRelations
+
+.NOTES
+    File Name : ClientRelations.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes
+
+    FILE ORGANIZATION
+    -----------------
+        CHANGELOG: CHANGE HISTORY
+        ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-driven change history for this page route. Entries appear
+   most-recent first. Each entry begins with the ISO date followed by two
+   spaces and the description; continuation lines align with the start of
+   the description text.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-02  CC File Format Standardization: refactored the page route to
+#             the CC HTML Spec and CC PS Spec. Converted the file header to
+#             comment-based help and the section banners to block-comment
+#             form. Added body cc-section-departmental class and
+#             data-cc-page/data-cc-prefix attributes. Replaced the
+#             engine-events.css/engine-events.js references with cc-shared.css
+#             and the literal /js/cc-shared.js script tag. Replaced the legacy
+#             header chrome with the mandated cc-header-bar / cc-refresh-info
+#             markup and dropped the custom in-header cache indicator: the
+#             page now uses the standard chrome refresh-info row. The custom
+#             cache indicator moved into the content area as a page-local
+#             clr-cache-indicator reporting cached-result freshness. Removed
+#             the page-local connection-error banner (chrome owns the
+#             connection banner). Prefixed all page-local IDs and classes with
+#             clr-; converted section headers to cc-section-header /
+#             cc-section-title. Replaced the inline onclick refresh handler
+#             with the chrome cc-page-refresh data-action; the search input
+#             carries data-action-input="clr-search-queue". Added the explicit
+#             Import-Module of xFACts-CCShared.psm1 inside the route scriptblock
+#             for the migration window.
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   Registers the Client Relations departmental page at
+   GET /departmental/client-relations. Performs RBAC access check, resolves
+   user context, renders nav, header, and banner chrome from RBAC_NavRegistry,
+   and emits the page HTML.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/departmental/client-relations' -Authentication 'ADLogin' -ScriptBlock {
 
-    # --- RBAC Access Check ---
+    # Import the cc- emission helpers. During the CC File Format
+    # Standardization migration this overrides the auto-loaded xFACts-Helpers
+    # module for this route's execution, so Get-NavBarHtml, Get-PageHeaderHtml,
+    # and Get-ChromeBannersHtml emit cc- prefixed chrome classes that match
+    # cc-shared.css and cc-shared.js. Once every page has migrated and
+    # Start-ControlCenter.ps1 loads xFACts-CCShared.psm1 at startup instead of
+    # xFACts-Helpers.psm1, this line is removed.
+    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
+
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/client-relations'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/client-relations') -StatusCode 403
         return
     }
 
-    # --- User context (used by helper for nav rendering) ---
-    $ctx = Get-UserContext -WebEvent $WebEvent
-
-    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
-    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/departmental/client-relations'
+    $ctx          = Get-UserContext      -WebEvent $WebEvent
+    $navHtml      = Get-NavBarHtml       -UserContext $ctx -CurrentPageRoute '/departmental/client-relations'
     $headerHtml   = Get-PageHeaderHtml   -PageRoute '/departmental/client-relations'
+    $bannerHtml   = Get-ChromeBannersHtml
     $browserTitle = Get-PageBrowserTitle -PageRoute '/departmental/client-relations'
 
     $html = @"
@@ -47,64 +108,57 @@ Add-PodeRoute -Method Get -Path '/departmental/client-relations' -Authentication
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/client-relations.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
+
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body>
+<body class="cc-section-departmental" data-cc-page="client-relations" data-cc-prefix="clr">
 $navHtml
 
-    <div class="header-bar">
+    <div class="cc-header-bar">
         <div>
             $headerHtml
         </div>
-        <div class="header-right">
-            <div class="refresh-info">
-                <span id="cache-indicator" class="cache-indicator" title="Serving cached data">&#9679;</span>
-                <span id="cache-label">Cached</span> | Updated: <span id="last-update" class="last-updated">-</span>
-                <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data (bypasses cache)">&#8635;</button>
-            </div>
-            <div class="engine-row" id="engine-row">
-                <!-- Engine cards will be added here when collectors are implemented -->
+        <div class="cc-header-right">
+            <div class="cc-refresh-info">
+                <span class="cc-live-indicator"></span>
+                <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+                <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+$bannerHtml
 
-    <!-- ================================================================ -->
-    <!-- SUMMARY CARDS                                                    -->
-    <!-- ================================================================ -->
-    <div class="section" id="summary-section">
-        <div class="section-header">
-            <h2>Reg F Compliance Queue</h2>
-            <span class="refresh-badge-live" title="Refreshes on live polling timer"><span class="badge-dot"></span></span>
+    <div class="cc-section">
+        <div class="cc-section-header">
+            <h2 class="cc-section-title">Reg F Compliance Queue</h2>
+            <span class="cc-refresh-badge-live" title="Refreshes on live polling timer"><span class="cc-refresh-badge-dot"></span></span>
         </div>
-        <div class="section-body">
-            <div id="summary-loading" class="loading">Loading summary...</div>
-            <div id="summary-cards" class="summary-cards hidden"></div>
+        <div class="clr-section-body">
+            <span id="clr-cache-indicator" class="clr-cache-indicator" title="Serving cached data">Cached: -</span>
+            <div id="clr-summary-loading" class="clr-loading">Loading summary...</div>
+            <div id="clr-summary-cards" class="clr-summary-cards clr-hidden"></div>
         </div>
     </div>
 
-    <!-- ================================================================ -->
-    <!-- QUEUE TABLE (Consumer/Account Tree)                              -->
-    <!-- ================================================================ -->
-    <div class="section" id="queue-section">
-        <div class="section-header">
-            <h2>Queue Detail</h2>
-            <div class="section-controls">
-                <input type="text" id="queue-search" class="search-input" placeholder="Search consumers...">
-                <div id="reason-filters" class="reason-filters"></div>
-                <span class="refresh-badge-live" title="Refreshes on live polling timer"><span class="badge-dot"></span></span>
+    <div class="cc-section">
+        <div class="cc-section-header">
+            <h2 class="cc-section-title">Queue Detail</h2>
+            <div class="cc-section-header-right">
+                <input type="text" id="clr-queue-search" class="clr-search-input" placeholder="Search consumers..." data-action-input="clr-search-queue">
+                <div id="clr-reason-filters" class="clr-reason-filters"></div>
+                <span class="cc-refresh-badge-live" title="Refreshes on live polling timer"><span class="cc-refresh-badge-dot"></span></span>
             </div>
         </div>
-        <div class="section-body section-body-table">
-            <div id="queue-loading" class="loading">Loading queue...</div>
-            <div id="queue-table" class="queue-scroll-container hidden"></div>
+        <div class="clr-section-body clr-section-body-table">
+            <div id="clr-queue-loading" class="clr-loading">Loading queue...</div>
+            <div id="clr-queue-table" class="clr-queue-scroll-container clr-hidden"></div>
         </div>
     </div>
 
-    <script src="/js/client-relations.js"></script>
-    <script src="/js/engine-events.js"></script>
+    <script src="/js/cc-shared.js"></script>
 </body>
 </html>
 "@
