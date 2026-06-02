@@ -1,45 +1,142 @@
-# ============================================================================
-# xFACts Control Center - BIDATA Monitoring API Endpoints
-# Location: E:\xFACts-ControlCenter\scripts\routes\BIDATAMonitoring-API.ps1
-# Version: Tracked in dbo.System_Metadata (component: BIDATA)
-#
-# API endpoints for the BIDATA Monitoring page.
-# Provides data for today's build status, step progress, and historical data.
-#
-# CHANGELOG
-# ---------
-# 2026-05-14  todays-build: replaced hardcoded total_expected_steps = 20 with
-#             a cached live lookup against msdb.dbo.sysjobsteps on the
-#             configured source server. Uses inline Pode-state cache reads
-#             (Lock-PodeObject + Get-PodeState) with key 'bidata_step_count';
-#             TTL configured via GlobalConfig
-#             (cache_ttl_bidata_step_count_seconds, default 12h). On
-#             authoritative-lookup failure, falls back to MAX(step_id) from
-#             the most recent completed build in BIDATA.StepExecution; the
-#             fallback value is NOT cached so a transient source-server
-#             hiccup doesn't poison the cache for the full TTL window.
-# 2026-05-09  step-progress: added live next-step-name lookup for IN_PROGRESS
-#             builds. Queries msdb.dbo.sysjobsteps on the configured source
-#             server (GlobalConfig: bidata_build_source_server) at request
-#             time and returns next_step_name in the response. The query is
-#             best-effort -- failures or missing rows leave the field null
-#             and the UI falls back to its existing "Step N executing" label.
-# ============================================================================
+<#
+.SYNOPSIS
+    BIDATA Monitoring dashboard API endpoints.
 
-# ============================================================================
-# API: Today's Build Status
-# Returns current build status for today, including in-progress builds
-# ============================================================================
+.DESCRIPTION
+    Backing API for the BIDATA Monitoring page. All xFACts reads (today's
+    build status, step progress, duration trend, build history, and per-build
+    or per-date detail) run against the xFACts AG listener through the shared
+    Invoke-XFActsQuery helper. The today's-build endpoint resolves the job's
+    total expected step count from msdb.dbo.sysjobsteps on the configured
+    BIDATA source server, cached via Get-CachedResult; the step-progress
+    endpoint resolves the next running step's name from the same source. Those
+    msdb reads target the specific named server that hosts the BIDATA database
+    and its SQL Agent job, so they use a direct SqlConnection rather than an
+    AG-routed helper (no shared helper targets an arbitrary named server).
+    Endpoints registered by this file:
+
+      GET /api/bidata/todays-build      Today's build status cards
+      GET /api/bidata/step-progress     Step execution detail for the current build
+      GET /api/bidata/build-history     Year/month/day build history rollup
+      GET /api/bidata/duration-trend    Daily build durations for the trend chart
+      GET /api/bidata/build-details     Single build detail by build_id
+      GET /api/bidata/builds-for-date   All builds and steps for one date
+
+.COMPONENT
+    BIDATA
+
+.NOTES
+    File Name : BIDATAMonitoring-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\BIDATAMonitoring-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers the six GET endpoints that back the BIDATA Monitoring dashboard.
+   Each endpoint guards access with Test-ActionEndpoint, runs its parameterized
+   query through the shared xFACts data-access helpers, shapes the result, and
+   returns JSON via Write-PodeJsonResponse. The today's-build and step-progress
+   endpoints additionally read msdb on the configured BIDATA source server via
+   a direct SqlConnection to resolve job step metadata.
+   Prefix: (none)
+   ============================================================================ #>
+
 Add-PodeRoute -Method Get -Path '/api/bidata/todays-build' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=10;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get today's build(s) - there may be multiple attempts
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = @"
-SELECT 
+        # -- Resolve total expected step count first, so the response below is
+        # assembled exactly once. The authoritative source is
+        # msdb.dbo.sysjobsteps on the BIDATA source server, cached via
+        # Get-CachedResult under 'bidata_step_count' (TTL from GlobalConfig
+        # cache_ttl_bidata_step_count_seconds). The cache scriptblock throws on
+        # any authoritative failure, which both keeps the failed lookup out of
+        # the cache (Get-CachedResult only stores the returned value) and hands
+        # control to the catch below, where MAX(step_id) from the most recent
+        # completed build is used as an UNCACHED fallback. A null result means
+        # neither source produced a count; the UI then shows a placeholder.
+        $totalExpectedSteps = $null
+        try {
+            $totalExpectedSteps = Get-CachedResult -CacheKey 'bidata_step_count' -ScriptBlock {
+                $cfgRows = Invoke-XFActsQuery -Query @"
+SELECT
+    MAX(CASE WHEN setting_name = 'bidata_build_source_server' THEN setting_value END) AS source_server,
+    MAX(CASE WHEN setting_name = 'bidata_build_job_name'      THEN setting_value END) AS job_name
+FROM dbo.GlobalConfig
+WHERE setting_name IN ('bidata_build_source_server', 'bidata_build_job_name')
+  AND is_active = 1
+"@
+                $sourceServer = $null
+                $jobNameForSteps = $null
+                if ($cfgRows -and $cfgRows.Count -gt 0) {
+                    $sourceServer    = ConvertTo-SafeValue $cfgRows[0].source_server
+                    $jobNameForSteps = ConvertTo-SafeValue $cfgRows[0].job_name
+                }
+
+                if ([string]::IsNullOrEmpty($sourceServer) -or [string]::IsNullOrEmpty($jobNameForSteps)) {
+                    throw "BIDATA source server or job name not configured"
+                }
+
+                # Direct read of msdb on the named BIDATA source server. No CCShared
+                # helper targets an arbitrary named server: Invoke-XFActsQuery is the
+                # xFACts listener, and Invoke-AGReadQuery routes to whichever replica
+                # is currently secondary -- but msdb is instance-local and the BIDATA
+                # job lives on this specific box regardless of AG role, so the server
+                # name from GlobalConfig is the only correct target.
+                $count = $null
+                $msdbConn = $null
+                try {
+                    $msdbConnString = "Server=$sourceServer;Database=msdb;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=5;"
+                    $msdbConn = New-Object System.Data.SqlClient.SqlConnection($msdbConnString)
+                    $msdbConn.Open()
+                    $msdbCmd = $msdbConn.CreateCommand()
+                    $msdbCmd.CommandText = @"
+SELECT COUNT(*) AS step_count
+FROM msdb.dbo.sysjobs j
+INNER JOIN msdb.dbo.sysjobsteps js ON js.job_id = j.job_id
+WHERE j.name = @job_name
+"@
+                    $msdbCmd.Parameters.AddWithValue("@job_name", $jobNameForSteps) | Out-Null
+                    $msdbCmd.CommandTimeout = 5
+                    $stepResult = $msdbCmd.ExecuteScalar()
+                    if ($stepResult -isnot [DBNull] -and $null -ne $stepResult -and [int]$stepResult -gt 0) {
+                        $count = [int]$stepResult
+                    }
+                }
+                finally {
+                    if ($msdbConn -and $msdbConn.State -eq 'Open') { $msdbConn.Close() }
+                }
+
+                if ($null -eq $count) {
+                    throw "BIDATA step count unavailable from msdb"
+                }
+                return $count
+            }
+        }
+        catch {
+            # Authoritative path failed -- fall back to MAX(step_id) from the most
+            # recent completed build. This runs entirely outside Get-CachedResult,
+            # so the fallback value is never cached and a transient source-server
+            # hiccup cannot poison the cache for the full TTL.
+            $fbRows = Invoke-XFActsQuery -Query @"
+SELECT TOP 1 (SELECT MAX(s.step_id) FROM BIDATA.StepExecution s WHERE s.build_id = b.build_id) AS max_step_id
+FROM BIDATA.BuildExecution b
+WHERE b.status = 'COMPLETED'
+ORDER BY b.build_id DESC
+"@
+            if ($fbRows -and $fbRows.Count -gt 0 -and -not ($fbRows[0].max_step_id -is [DBNull]) -and [int]$fbRows[0].max_step_id -gt 0) {
+                $totalExpectedSteps = [int]$fbRows[0].max_step_id
+            }
+        }
+
+        # -- Today's build(s): there may be multiple attempts for the day. --
+
+        $buildRows = Invoke-XFActsQuery -Query @"
+SELECT
     b.build_id,
     b.build_date,
     b.instance_id,
@@ -58,191 +155,52 @@ WHERE b.build_date = CAST(GETDATE() AS DATE)
   AND b.status NOT IN ('SUPERSEDED')
 ORDER BY b.build_id DESC
 "@
-        $cmd.CommandTimeout = 15
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+
         $builds = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $buildRows) {
             $builds += @{
-                build_id = $row['build_id']
-                build_date = ([DateTime]$row['build_date']).ToString("yyyy-MM-dd")
-                instance_id = if ($row['instance_id'] -is [DBNull]) { $null } else { $row['instance_id'] }
-                start_dttm = if ($row['start_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['start_dttm']).ToString("yyyy-MM-dd HH:mm:ss") }
-                end_dttm = if ($row['end_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['end_dttm']).ToString("yyyy-MM-dd HH:mm:ss") }
-                total_duration_seconds = if ($row['total_duration_seconds'] -is [DBNull]) { $null } else { $row['total_duration_seconds'] }
-                total_duration_formatted = if ($row['total_duration_formatted'] -is [DBNull]) { $null } else { $row['total_duration_formatted'] }
-                step_count = if ($row['step_count'] -is [DBNull]) { 0 } else { $row['step_count'] }
-                status = $row['status']
-                failed_step_id = if ($row['failed_step_id'] -is [DBNull]) { $null } else { $row['failed_step_id'] }
-                failed_step_name = if ($row['failed_step_name'] -is [DBNull]) { $null } else { $row['failed_step_name'] }
-                steps_completed = if ($row['steps_completed'] -is [DBNull]) { 0 } else { $row['steps_completed'] }
+                build_id                 = $row.build_id
+                build_date               = ([DateTime]$row.build_date).ToString("yyyy-MM-dd")
+                instance_id              = ConvertTo-SafeValue $row.instance_id
+                start_dttm               = ConvertTo-SafeDateTime $row.start_dttm
+                end_dttm                 = ConvertTo-SafeDateTime $row.end_dttm
+                total_duration_seconds   = ConvertTo-SafeValue $row.total_duration_seconds
+                total_duration_formatted = ConvertTo-SafeValue $row.total_duration_formatted
+                step_count               = if ($row.step_count -is [DBNull]) { 0 } else { $row.step_count }
+                status                   = $row.status
+                failed_step_id           = ConvertTo-SafeValue $row.failed_step_id
+                failed_step_name         = ConvertTo-SafeValue $row.failed_step_name
+                steps_completed          = if ($row.steps_completed -is [DBNull]) { 0 } else { $row.steps_completed }
             }
         }
-        
-        # Get scheduled start time for reference
-        $schedCmd = $conn.CreateCommand()
-        $schedCmd.CommandText = "SELECT setting_value FROM dbo.GlobalConfig WHERE setting_name = 'bidata_build_job_name' AND is_active = 1"
-        $schedCmd.CommandTimeout = 5
-        $jobName = $schedCmd.ExecuteScalar()
-        if ($null -eq $jobName) { $jobName = "BIDATA Daily Build" }
-        
-        # Get average duration from last 14 days for ETA calculation
-        $avgCmd = $conn.CreateCommand()
-        $avgCmd.CommandText = @"
+
+        # Configured job name for reference (falls back to a default label).
+        $jobNameRows = Invoke-XFActsQuery -Query @"
+SELECT setting_value
+FROM dbo.GlobalConfig
+WHERE setting_name = 'bidata_build_job_name'
+  AND is_active = 1
+"@
+        $jobName = if ($jobNameRows -and $jobNameRows.Count -gt 0 -and -not ($jobNameRows[0].setting_value -is [DBNull])) { $jobNameRows[0].setting_value } else { "BIDATA Daily Build" }
+
+        # Average duration over the last 14 completed builds, for the ETA calculation.
+        $avgRows = Invoke-XFActsQuery -Query @"
 SELECT AVG(total_duration_seconds) AS avg_duration_seconds
 FROM BIDATA.BuildExecution
 WHERE build_date >= DATEADD(DAY, -14, GETDATE())
   AND status = 'COMPLETED'
 "@
-        $avgCmd.CommandTimeout = 10
-        $avgDuration = $avgCmd.ExecuteScalar()
-        $avgDurationSeconds = if ($avgDuration -is [DBNull] -or $null -eq $avgDuration) { $null } else { [int]$avgDuration }
-        
-        $conn.Close()
-        
-        # -- Resolve total step count: check cache; on miss, query authoritative source and cache only if successful --
-        $totalExpectedSteps = $null
-        $cachedValue = $null
-        
-        # Try to read from the cache directly (don't run a scriptblock through Get-CachedResult --
-        # we need control over whether to write back, which Get-CachedResult doesn't provide).
-        try {
-            Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
-                $cache = Get-PodeState -Name 'ApiCache'
-                if ($cache -and $cache.ContainsKey('bidata_step_count')) {
-                    $entry = $cache['bidata_step_count']
-                    $ttlSeconds = 43200  # 12h fallback if config missing
-                    $config = Get-PodeState -Name 'ApiCacheConfig'
-                    if ($config -and $config.ContainsKey('cache_ttl_bidata_step_count_seconds')) {
-                        $ttlSeconds = [int]$config['cache_ttl_bidata_step_count_seconds']
-                    }
-                    $age = ((Get-Date) - $entry.Timestamp).TotalSeconds
-                    if ($age -lt $ttlSeconds) {
-                        $cachedValue = $entry.Data
-                    }
-                }
-            }
+        $avgDurationSeconds = $null
+        if ($avgRows -and $avgRows.Count -gt 0 -and -not ($avgRows[0].avg_duration_seconds -is [DBNull])) {
+            $avgDurationSeconds = [int]$avgRows[0].avg_duration_seconds
         }
-        catch {
-            $cachedValue = $null
-        }
-        
-        if ($null -ne $cachedValue) {
-            $totalExpectedSteps = $cachedValue
-        }
-        else {
-            # Cache miss -- resolve from authoritative source (msdb.dbo.sysjobsteps on the source server).
-            # Read source server and job name from GlobalConfig.
-            $sourceServer = $null
-            $jobNameForSteps = $null
-            try {
-                $cfgConn2 = New-Object System.Data.SqlClient.SqlConnection($connString)
-                $cfgConn2.Open()
-                $cfgCmd2 = $cfgConn2.CreateCommand()
-                $cfgCmd2.CommandText = @"
-SELECT
-    MAX(CASE WHEN setting_name = 'bidata_build_source_server' THEN setting_value END) AS source_server,
-    MAX(CASE WHEN setting_name = 'bidata_build_job_name'      THEN setting_value END) AS job_name
-FROM dbo.GlobalConfig
-WHERE setting_name IN ('bidata_build_source_server', 'bidata_build_job_name')
-  AND is_active = 1
-"@
-                $cfgCmd2.CommandTimeout = 5
-                $cfgReader2 = $cfgCmd2.ExecuteReader()
-                if ($cfgReader2.Read()) {
-                    $sourceServer = if ($cfgReader2['source_server'] -is [DBNull]) { $null } else { [string]$cfgReader2['source_server'] }
-                    $jobNameForSteps = if ($cfgReader2['job_name'] -is [DBNull]) { $null } else { [string]$cfgReader2['job_name'] }
-                }
-                $cfgReader2.Close()
-                $cfgConn2.Close()
-            }
-            catch {
-                $sourceServer = $null
-                $jobNameForSteps = $null
-            }
-            
-            $authoritativeCount = $null
-            if (-not [string]::IsNullOrEmpty($sourceServer) -and -not [string]::IsNullOrEmpty($jobNameForSteps)) {
-                $msdbConn2 = $null
-                try {
-                    $msdbConnString2 = "Server=$sourceServer;Database=msdb;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=5;"
-                    $msdbConn2 = New-Object System.Data.SqlClient.SqlConnection($msdbConnString2)
-                    $msdbConn2.Open()
-                    $msdbCmd2 = $msdbConn2.CreateCommand()
-                    $msdbCmd2.CommandText = @"
-SELECT COUNT(*) AS step_count
-FROM msdb.dbo.sysjobs j
-INNER JOIN msdb.dbo.sysjobsteps js ON js.job_id = j.job_id
-WHERE j.name = @job_name
-"@
-                    $msdbCmd2.Parameters.AddWithValue("@job_name", $jobNameForSteps) | Out-Null
-                    $msdbCmd2.CommandTimeout = 5
-                    $stepResult = $msdbCmd2.ExecuteScalar()
-                    if ($stepResult -isnot [DBNull] -and $null -ne $stepResult -and [int]$stepResult -gt 0) {
-                        $authoritativeCount = [int]$stepResult
-                    }
-                }
-                catch {
-                    $authoritativeCount = $null
-                }
-                finally {
-                    if ($msdbConn2 -and $msdbConn2.State -eq 'Open') { $msdbConn2.Close() }
-                }
-            }
-            
-            if ($null -ne $authoritativeCount) {
-                # Authoritative success -- use it AND write to cache.
-                $totalExpectedSteps = $authoritativeCount
-                try {
-                    Lock-PodeObject -Name 'ApiCache' -ScriptBlock {
-                        $cache = Get-PodeState -Name 'ApiCache'
-                        if ($null -ne $cache) {
-                            $cache['bidata_step_count'] = @{
-                                Data      = $authoritativeCount
-                                Timestamp = Get-Date
-                            }
-                        }
-                    }
-                }
-                catch {
-                    # Cache write failure is non-fatal; the value is already in $totalExpectedSteps
-                }
-            }
-            else {
-                # Authoritative path failed -- fall back to MAX(step_id) from most recent completed build.
-                # NOT cached, so a transient source-server hiccup doesn't poison the cache for the full TTL.
-                try {
-                    $fbConn2 = New-Object System.Data.SqlClient.SqlConnection($connString)
-                    $fbConn2.Open()
-                    $fbCmd2 = $fbConn2.CreateCommand()
-                    $fbCmd2.CommandText = @"
-SELECT TOP 1 (SELECT MAX(s.step_id) FROM BIDATA.StepExecution s WHERE s.build_id = b.build_id) AS max_step_id
-FROM BIDATA.BuildExecution b
-WHERE b.status = 'COMPLETED'
-ORDER BY b.build_id DESC
-"@
-                    $fbCmd2.CommandTimeout = 5
-                    $fbResult = $fbCmd2.ExecuteScalar()
-                    $fbConn2.Close()
-                    if ($fbResult -isnot [DBNull] -and $null -ne $fbResult -and [int]$fbResult -gt 0) {
-                        $totalExpectedSteps = [int]$fbResult
-                    }
-                }
-                catch {
-                    $totalExpectedSteps = $null
-                }
-            }
-        }
-        
-        
+
         Write-PodeJsonResponse -Value @{
-            builds = $builds
-            job_name = $jobName
+            builds               = $builds
+            job_name             = $jobName
             avg_duration_seconds = $avgDurationSeconds
             total_expected_steps = $totalExpectedSteps
-            timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            timestamp            = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
     catch {
@@ -250,81 +208,59 @@ ORDER BY b.build_id DESC
     }
 }
 
-# ============================================================================
-# API: Step Progress
-# Returns step details for the Current Build Execution panel.
-# For IN_PROGRESS builds, also returns next_step_name (live lookup against
-# msdb.dbo.sysjobsteps on the configured source server) so the running row
-# can show the actual step name instead of a positional counter.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/bidata/step-progress' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $buildId = $WebEvent.Query['build_id']
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=10;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # If no build_id specified, get latest for today
+
+        # Resolve the target build: explicit build_id, or the latest for today.
+        $buildStatus = $null
+        $buildStart = $null
         if ([string]::IsNullOrEmpty($buildId)) {
-            $latestCmd = $conn.CreateCommand()
-            $latestCmd.CommandText = @"
+            $latestRows = Invoke-XFActsQuery -Query @"
 SELECT TOP 1 build_id, status, start_dttm
-FROM BIDATA.BuildExecution 
+FROM BIDATA.BuildExecution
 WHERE build_date = CAST(GETDATE() AS DATE)
   AND status NOT IN ('NOT_STARTED', 'SUPERSEDED')
 ORDER BY build_id DESC
 "@
-            $latestCmd.CommandTimeout = 5
-            $latestAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($latestCmd)
-            $latestDataset = New-Object System.Data.DataSet
-            $latestAdapter.Fill($latestDataset) | Out-Null
-            
-            if ($latestDataset.Tables[0].Rows.Count -eq 0) {
-                $conn.Close()
+            if (-not $latestRows -or $latestRows.Count -eq 0) {
                 Write-PodeJsonResponse -Value @{
-                    build_id = $null
-                    build_status = $null
-                    is_running = $false
-                    steps = @()
-                    avg_durations = @{}
+                    build_id                     = $null
+                    build_status                 = $null
+                    is_running                   = $false
+                    steps                        = @()
+                    avg_durations                = @{}
                     current_step_elapsed_seconds = $null
-                    next_step_name = $null
-                    message = "No build found for today"
-                    timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                    next_step_name               = $null
+                    message                      = "No build found for today"
+                    timestamp                    = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
                 }
                 return
             }
-            
-            $buildId = $latestDataset.Tables[0].Rows[0]['build_id']
-            $buildStatus = $latestDataset.Tables[0].Rows[0]['status']
-            $buildStart = if ($latestDataset.Tables[0].Rows[0]['start_dttm'] -is [DBNull]) { $null } else { [DateTime]$latestDataset.Tables[0].Rows[0]['start_dttm'] }
+            $buildId     = $latestRows[0].build_id
+            $buildStatus = $latestRows[0].status
+            $buildStart  = if ($latestRows[0].start_dttm -is [DBNull]) { $null } else { [DateTime]$latestRows[0].start_dttm }
         }
         else {
-            # Get build status for specified build_id
-            $statusCmd = $conn.CreateCommand()
-            $statusCmd.CommandText = "SELECT status, start_dttm FROM BIDATA.BuildExecution WHERE build_id = @build_id"
-            $statusCmd.Parameters.AddWithValue("@build_id", [int]$buildId) | Out-Null
-            $statusCmd.CommandTimeout = 5
-            $statusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($statusCmd)
-            $statusDataset = New-Object System.Data.DataSet
-            $statusAdapter.Fill($statusDataset) | Out-Null
-            
-            if ($statusDataset.Tables[0].Rows.Count -eq 0) {
-                $conn.Close()
+            $statusRows = Invoke-XFActsQuery -Query @"
+SELECT status, start_dttm
+FROM BIDATA.BuildExecution
+WHERE build_id = @build_id
+"@ -Parameters @{ build_id = [int]$buildId }
+            if (-not $statusRows -or $statusRows.Count -eq 0) {
                 Write-PodeJsonResponse -Value @{ error = "Build not found" } -StatusCode 404
                 return
             }
-            $buildStatus = $statusDataset.Tables[0].Rows[0]['status']
-            $buildStart = if ($statusDataset.Tables[0].Rows[0]['start_dttm'] -is [DBNull]) { $null } else { [DateTime]$statusDataset.Tables[0].Rows[0]['start_dttm'] }
+            $buildStatus = $statusRows[0].status
+            $buildStart  = if ($statusRows[0].start_dttm -is [DBNull]) { $null } else { [DateTime]$statusRows[0].start_dttm }
         }
-        
+
         $isRunning = $buildStatus -eq 'IN_PROGRESS'
-        
-        # Get steps for this build
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = @"
-SELECT 
+
+        # Steps for this build.
+        $stepRows = Invoke-XFActsQuery -Query @"
+SELECT
     s.step_id,
     s.step_name,
     s.run_status,
@@ -334,45 +270,39 @@ SELECT
 FROM BIDATA.StepExecution s
 WHERE s.build_id = @build_id
 ORDER BY s.step_id
-"@
-        $cmd.Parameters.AddWithValue("@build_id", $buildId) | Out-Null
-        $cmd.CommandTimeout = 10
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+"@ -Parameters @{ build_id = $buildId }
+
         $steps = @()
         $totalCompletedSeconds = 0
         $maxCapturedStepId = 0
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $stepRows) {
             $steps += @{
-                step_id = $row['step_id']
-                step_name = $row['step_name']
-                run_status = $row['run_status']
-                run_time = if ($row['run_time'] -is [DBNull]) { $null } else { $row['run_time'] }
-                duration_seconds = $row['duration_seconds']
-                duration_formatted = $row['duration_formatted']
+                step_id            = $row.step_id
+                step_name          = $row.step_name
+                run_status         = $row.run_status
+                run_time           = ConvertTo-SafeValue $row.run_time
+                duration_seconds   = $row.duration_seconds
+                duration_formatted = $row.duration_formatted
             }
-            if ($row['duration_seconds'] -isnot [DBNull]) {
-                $totalCompletedSeconds += $row['duration_seconds']
+            if ($row.duration_seconds -isnot [DBNull]) {
+                $totalCompletedSeconds += $row.duration_seconds
             }
-            if ([int]$row['step_id'] -gt $maxCapturedStepId) {
-                $maxCapturedStepId = [int]$row['step_id']
+            if ([int]$row.step_id -gt $maxCapturedStepId) {
+                $maxCapturedStepId = [int]$row.step_id
             }
         }
-        
-        # Calculate current step elapsed time if build is running
+
+        # Current-step elapsed time, only meaningful while running.
         $currentStepElapsed = $null
         if ($isRunning -and $null -ne $buildStart) {
             $totalElapsed = [int]((Get-Date) - $buildStart).TotalSeconds
             $currentStepElapsed = $totalElapsed - $totalCompletedSeconds
             if ($currentStepElapsed -lt 0) { $currentStepElapsed = 0 }
         }
-        
-        # Get average step durations for comparison - use string keys for JSON
-        $avgCmd = $conn.CreateCommand()
-        $avgCmd.CommandText = @"
-SELECT 
+
+        # 14-day average step durations, keyed by step_id string for JSON.
+        $avgRows = Invoke-XFActsQuery -Query @"
+SELECT
     s.step_id,
     s.step_name,
     AVG(s.duration_seconds) AS avg_seconds
@@ -383,30 +313,20 @@ WHERE b.build_date >= DATEADD(DAY, -14, GETDATE())
   AND s.run_status = 1
 GROUP BY s.step_id, s.step_name
 "@
-        $avgCmd.CommandTimeout = 10
-        $avgAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($avgCmd)
-        $avgDataset = New-Object System.Data.DataSet
-        $avgAdapter.Fill($avgDataset) | Out-Null
-        
-        # Use string keys for JSON serialization compatibility
         $avgDurations = @{}
-        foreach ($row in $avgDataset.Tables[0].Rows) {
-            $avgDurations["$($row['step_id'])"] = [int]$row['avg_seconds']
+        foreach ($row in $avgRows) {
+            $avgDurations["$($row.step_id)"] = [int]$row.avg_seconds
         }
-        
-        $conn.Close()
-        
-        # -- Look up the next step's name from sysjobsteps on the source server --
-        # Best-effort: any failure leaves $nextStepName as $null and the UI
-        # falls back to its existing "Step N executing" label.
+
+        # Next running step's name from msdb.dbo.sysjobsteps on the BIDATA source
+        # server. Best-effort: any failure leaves next_step_name null and the UI
+        # falls back to its "Step N executing" label. The msdb read targets the
+        # specific named server hosting the BIDATA job (instance-local; not an AG
+        # database), so it uses a direct SqlConnection -- no shared helper targets
+        # an arbitrary named server.
         $nextStepName = $null
         if ($isRunning -and $maxCapturedStepId -gt 0) {
-            $cfgConn = $null
-            try {
-                $cfgConn = New-Object System.Data.SqlClient.SqlConnection($connString)
-                $cfgConn.Open()
-                $cfgCmd = $cfgConn.CreateCommand()
-                $cfgCmd.CommandText = @"
+            $cfgRows = Invoke-XFActsQuery -Query @"
 SELECT
     MAX(CASE WHEN setting_name = 'bidata_build_source_server' THEN setting_value END) AS source_server,
     MAX(CASE WHEN setting_name = 'bidata_build_job_name'      THEN setting_value END) AS job_name
@@ -414,63 +334,55 @@ FROM dbo.GlobalConfig
 WHERE setting_name IN ('bidata_build_source_server', 'bidata_build_job_name')
   AND is_active = 1
 "@
-                $cfgCmd.CommandTimeout = 5
-                $cfgReader = $cfgCmd.ExecuteReader()
-                $sourceServer = $null
-                $jobNameForLookup = $null
-                if ($cfgReader.Read()) {
-                    $sourceServer = if ($cfgReader['source_server'] -is [DBNull]) { $null } else { [string]$cfgReader['source_server'] }
-                    $jobNameForLookup = if ($cfgReader['job_name'] -is [DBNull]) { $null } else { [string]$cfgReader['job_name'] }
-                }
-                $cfgReader.Close()
-                $cfgConn.Close()
-                
-                if (-not [string]::IsNullOrEmpty($sourceServer) -and -not [string]::IsNullOrEmpty($jobNameForLookup)) {
-                    $nextStepId = $maxCapturedStepId + 1
+            $sourceServer = $null
+            $jobNameForLookup = $null
+            if ($cfgRows -and $cfgRows.Count -gt 0) {
+                $sourceServer     = ConvertTo-SafeValue $cfgRows[0].source_server
+                $jobNameForLookup = ConvertTo-SafeValue $cfgRows[0].job_name
+            }
+
+            if (-not [string]::IsNullOrEmpty($sourceServer) -and -not [string]::IsNullOrEmpty($jobNameForLookup)) {
+                $nextStepId = $maxCapturedStepId + 1
+                $msdbConn = $null
+                try {
                     $msdbConnString = "Server=$sourceServer;Database=msdb;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=5;"
-                    $msdbConn = $null
-                    try {
-                        $msdbConn = New-Object System.Data.SqlClient.SqlConnection($msdbConnString)
-                        $msdbConn.Open()
-                        $msdbCmd = $msdbConn.CreateCommand()
-                        $msdbCmd.CommandText = @"
+                    $msdbConn = New-Object System.Data.SqlClient.SqlConnection($msdbConnString)
+                    $msdbConn.Open()
+                    $msdbCmd = $msdbConn.CreateCommand()
+                    $msdbCmd.CommandText = @"
 SELECT js.step_name
 FROM msdb.dbo.sysjobs j
 INNER JOIN msdb.dbo.sysjobsteps js ON js.job_id = j.job_id
 WHERE j.name = @job_name
   AND js.step_id = @step_id
 "@
-                        $msdbCmd.Parameters.AddWithValue("@job_name", $jobNameForLookup) | Out-Null
-                        $msdbCmd.Parameters.AddWithValue("@step_id", $nextStepId) | Out-Null
-                        $msdbCmd.CommandTimeout = 5
-                        $stepNameResult = $msdbCmd.ExecuteScalar()
-                        if ($stepNameResult -isnot [DBNull] -and $null -ne $stepNameResult) {
-                            $nextStepName = [string]$stepNameResult
-                        }
-                    }
-                    finally {
-                        if ($msdbConn -and $msdbConn.State -eq 'Open') { $msdbConn.Close() }
+                    $msdbCmd.Parameters.AddWithValue("@job_name", $jobNameForLookup) | Out-Null
+                    $msdbCmd.Parameters.AddWithValue("@step_id", $nextStepId) | Out-Null
+                    $msdbCmd.CommandTimeout = 5
+                    $stepNameResult = $msdbCmd.ExecuteScalar()
+                    if ($stepNameResult -isnot [DBNull] -and $null -ne $stepNameResult) {
+                        $nextStepName = [string]$stepNameResult
                     }
                 }
-            }
-            catch {
-                # Best-effort lookup -- leave $nextStepName as $null on any failure
-            }
-            finally {
-                if ($cfgConn -and $cfgConn.State -eq 'Open') { $cfgConn.Close() }
+                catch {
+                    $nextStepName = $null
+                }
+                finally {
+                    if ($msdbConn -and $msdbConn.State -eq 'Open') { $msdbConn.Close() }
+                }
             }
         }
-        
+
         Write-PodeJsonResponse -Value @{
-            build_id = [int]$buildId
-            build_status = $buildStatus
-            is_running = $isRunning
-            steps = $steps
-            avg_durations = $avgDurations
+            build_id                     = [int]$buildId
+            build_status                 = $buildStatus
+            is_running                   = $isRunning
+            steps                        = $steps
+            avg_durations                = $avgDurations
             current_step_elapsed_seconds = $currentStepElapsed
-            next_step_number = $steps.Count + 1
-            next_step_name = $nextStepName
-            timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            next_step_number             = $steps.Count + 1
+            next_step_name               = $nextStepName
+            timestamp                    = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
     catch {
@@ -478,27 +390,19 @@ WHERE j.name = @job_name
     }
 }
 
-# ============================================================================
-# API: Build History
-# Returns all builds grouped by year/month for the history panel
-# Enhanced: includes spark bar widths and monthly summaries
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/bidata/build-history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=10;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get max duration for spark bar scaling
-        $maxCmd = $conn.CreateCommand()
-        $maxCmd.CommandText = "SELECT MAX(total_duration_seconds) FROM BIDATA.BuildExecution WHERE status = 'COMPLETED'"
-        $maxCmd.CommandTimeout = 10
-        $maxDuration = $maxCmd.ExecuteScalar()
-        $maxDurationSeconds = if ($maxDuration -is [DBNull] -or $null -eq $maxDuration) { 18000 } else { [int]$maxDuration }
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = @"
-SELECT 
+        # Max completed duration for spark-bar scaling (default when no data yet).
+        $maxRows = Invoke-XFActsQuery -Query @"
+SELECT MAX(total_duration_seconds) AS max_seconds
+FROM BIDATA.BuildExecution
+WHERE status = 'COMPLETED'
+"@
+        $maxDurationSeconds = if ($maxRows -and $maxRows.Count -gt 0 -and -not ($maxRows[0].max_seconds -is [DBNull])) { [int]$maxRows[0].max_seconds } else { 18000 }
+
+        $rows = Invoke-XFActsQuery -Query @"
+SELECT
     b.build_id,
     b.build_date,
     b.job_name,
@@ -516,20 +420,16 @@ FROM BIDATA.BuildExecution b
 WHERE b.status IN ('COMPLETED', 'FAILED')
 ORDER BY b.build_date DESC, b.build_id DESC
 "@
-        $cmd.CommandTimeout = 30
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        # Group by year and month - use string keys, track stats
+
         $grouped = @{}
         $monthStats = @{}
-        
-        foreach ($row in $dataset.Tables[0].Rows) {
-            $year = "$($row['build_year'])"
-            $month = "$($row['build_month'])"
+        $totalCount = if ($rows) { $rows.Count } else { 0 }
+
+        foreach ($row in $rows) {
+            $year = "$($row.build_year)"
+            $month = "$($row.build_month)"
             $monthKey = "$year-$month"
-            
+
             if (-not $grouped.ContainsKey($year)) {
                 $grouped[$year] = @{}
             }
@@ -537,41 +437,39 @@ ORDER BY b.build_date DESC, b.build_id DESC
                 $grouped[$year][$month] = @()
                 $monthStats[$monthKey] = @{ success = 0; failed = 0; durations = @() }
             }
-            
-            # Track month stats
-            if ($row['status'] -eq 'COMPLETED') {
+
+            if ($row.status -eq 'COMPLETED') {
                 $monthStats[$monthKey].success++
-                if ($row['total_duration_seconds'] -isnot [DBNull]) {
-                    $monthStats[$monthKey].durations += $row['total_duration_seconds']
+                if ($row.total_duration_seconds -isnot [DBNull]) {
+                    $monthStats[$monthKey].durations += $row.total_duration_seconds
                 }
-            } else {
+            }
+            else {
                 $monthStats[$monthKey].failed++
             }
-            
-            # Calculate spark bar width (percentage of max)
+
             $sparkWidth = 0
-            if ($row['total_duration_seconds'] -isnot [DBNull] -and $maxDurationSeconds -gt 0) {
-                $sparkWidth = [int]([math]::Round(($row['total_duration_seconds'] / $maxDurationSeconds) * 100))
+            if ($row.total_duration_seconds -isnot [DBNull] -and $maxDurationSeconds -gt 0) {
+                $sparkWidth = [int]([math]::Round(($row.total_duration_seconds / $maxDurationSeconds) * 100))
             }
-            
+
             $grouped[$year][$month] += @{
-                build_id = $row['build_id']
-                build_date = ([DateTime]$row['build_date']).ToString("yyyy-MM-dd")
-                day_of_month = ([DateTime]$row['build_date']).Day
-                day_name = ([DateTime]$row['build_date']).ToString("ddd")
-                job_name = if ($row['job_name'] -is [DBNull]) { $null } else { $row['job_name'] }
-                instance_id = if ($row['instance_id'] -is [DBNull]) { $null } else { $row['instance_id'] }
-                start_dttm = if ($row['start_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['start_dttm']).ToString("HH:mm") }
-                end_dttm = if ($row['end_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['end_dttm']).ToString("HH:mm") }
-                total_duration_seconds = if ($row['total_duration_seconds'] -is [DBNull]) { $null } else { $row['total_duration_seconds'] }
-                total_duration_formatted = if ($row['total_duration_formatted'] -is [DBNull]) { $null } else { $row['total_duration_formatted'] }
-                status = $row['status']
-                failed_step_name = if ($row['failed_step_name'] -is [DBNull]) { $null } else { $row['failed_step_name'] }
-                spark_width = $sparkWidth
+                build_id                 = $row.build_id
+                build_date               = ([DateTime]$row.build_date).ToString("yyyy-MM-dd")
+                day_of_month             = ([DateTime]$row.build_date).Day
+                day_name                 = ([DateTime]$row.build_date).ToString("ddd")
+                job_name                 = ConvertTo-SafeValue $row.job_name
+                instance_id              = ConvertTo-SafeValue $row.instance_id
+                start_dttm               = if ($row.start_dttm -is [DBNull]) { $null } else { ([DateTime]$row.start_dttm).ToString("HH:mm") }
+                end_dttm                 = if ($row.end_dttm -is [DBNull]) { $null } else { ([DateTime]$row.end_dttm).ToString("HH:mm") }
+                total_duration_seconds   = ConvertTo-SafeValue $row.total_duration_seconds
+                total_duration_formatted = ConvertTo-SafeValue $row.total_duration_formatted
+                status                   = $row.status
+                failed_step_name         = ConvertTo-SafeValue $row.failed_step_name
+                spark_width              = $sparkWidth
             }
         }
-        
-        # Calculate month summaries
+
         $monthSummaries = @{}
         foreach ($key in $monthStats.Keys) {
             $stats = $monthStats[$key]
@@ -580,21 +478,19 @@ ORDER BY b.build_date DESC, b.build_id DESC
                 $avgDuration = [int](($stats.durations | Measure-Object -Average).Average)
             }
             $monthSummaries[$key] = @{
-                success_count = $stats.success
-                failed_count = $stats.failed
-                avg_duration_seconds = $avgDuration
+                success_count          = $stats.success
+                failed_count           = $stats.failed
+                avg_duration_seconds   = $avgDuration
                 avg_duration_formatted = if ($avgDuration) { $h = [int][Math]::Floor($avgDuration / 3600); $m = [int][Math]::Floor(($avgDuration % 3600) / 60); "{0}:{1:D2}" -f $h, $m } else { $null }
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value @{
-            grouped = $grouped
-            month_summaries = $monthSummaries
+            grouped              = $grouped
+            month_summaries      = $monthSummaries
             max_duration_seconds = $maxDurationSeconds
-            total_count = $dataset.Tables[0].Rows.Count
-            timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            total_count          = $totalCount
+            timestamp            = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
     catch {
@@ -602,29 +498,17 @@ ORDER BY b.build_date DESC, b.build_id DESC
     }
 }
 
-# ============================================================================
-# API: Duration Trend
-# Returns daily build durations for charting with configurable range
-# Supports: days parameter OR from/to date range parameters
-# Enhanced: aggregates multiple attempts per day with segments for stacked bars
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/bidata/duration-trend' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $days = $WebEvent.Query['days']
         $fromDate = $WebEvent.Query['from']
         $toDate = $WebEvent.Query['to']
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=10;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $cmd = $conn.CreateCommand()
-        
-        # Check if using custom date range or days-based range
+
+        # Custom date range when both from/to are supplied; otherwise a day count.
         if (-not [string]::IsNullOrEmpty($fromDate) -and -not [string]::IsNullOrEmpty($toDate)) {
-            # Custom date range
-            $cmd.CommandText = @"
-SELECT 
+            $rows = Invoke-XFActsQuery -Query @"
+SELECT
     build_date,
     start_dttm,
     end_dttm,
@@ -636,17 +520,14 @@ WHERE build_date >= @fromDate
   AND status IN ('COMPLETED', 'FAILED')
   AND start_dttm IS NOT NULL
 ORDER BY build_date, start_dttm
-"@
-            $cmd.Parameters.AddWithValue("@fromDate", $fromDate) | Out-Null
-            $cmd.Parameters.AddWithValue("@toDate", $toDate) | Out-Null
+"@ -Parameters @{ fromDate = $fromDate; toDate = $toDate }
         }
         else {
-            # Days-based range (default)
-            if ([string]::IsNullOrEmpty($days) -or $days -eq 'all') { 
+            if ([string]::IsNullOrEmpty($days) -or $days -eq 'all') {
                 $days = 9999
             }
-            $cmd.CommandText = @"
-SELECT 
+            $rows = Invoke-XFActsQuery -Query @"
+SELECT
     build_date,
     start_dttm,
     end_dttm,
@@ -657,47 +538,40 @@ WHERE build_date >= DATEADD(DAY, -@days, GETDATE())
   AND status IN ('COMPLETED', 'FAILED')
   AND start_dttm IS NOT NULL
 ORDER BY build_date, start_dttm
-"@
-            $cmd.Parameters.AddWithValue("@days", [int]$days) | Out-Null
+"@ -Parameters @{ days = [int]$days }
         }
-        
-        $cmd.CommandTimeout = 15
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        # Aggregate by day
+
+        # Aggregate attempts by day.
         $dayData = @{}
-        foreach ($row in $dataset.Tables[0].Rows) {
-            $dateKey = ([DateTime]$row['build_date']).ToString("yyyy-MM-dd")
-            
+        foreach ($row in $rows) {
+            $dateKey = ([DateTime]$row.build_date).ToString("yyyy-MM-dd")
+
             if (-not $dayData.ContainsKey($dateKey)) {
                 $dayData[$dateKey] = @{
-                    date = $dateKey
-                    date_short = ([DateTime]$row['build_date']).ToString("M/d")
-                    attempts = @()
+                    date        = $dateKey
+                    date_short  = ([DateTime]$row.build_date).ToString("M/d")
+                    attempts    = @()
                     first_start = $null
-                    last_end = $null
+                    last_end    = $null
                     has_success = $false
                 }
             }
-            
-            $startDttm = if ($row['start_dttm'] -is [DBNull]) { $null } else { [DateTime]$row['start_dttm'] }
-            $endDttm = if ($row['end_dttm'] -is [DBNull]) { $null } else { [DateTime]$row['end_dttm'] }
-            $durationSec = if ($row['total_duration_seconds'] -is [DBNull]) { 0 } else { $row['total_duration_seconds'] }
-            
+
+            $startDttm   = if ($row.start_dttm -is [DBNull]) { $null } else { [DateTime]$row.start_dttm }
+            $endDttm     = if ($row.end_dttm -is [DBNull]) { $null } else { [DateTime]$row.end_dttm }
+            $durationSec = if ($row.total_duration_seconds -is [DBNull]) { 0 } else { $row.total_duration_seconds }
+
             $dayData[$dateKey].attempts += @{
-                start_dttm = $startDttm
-                end_dttm = $endDttm
+                start_dttm       = $startDttm
+                end_dttm         = $endDttm
                 duration_seconds = $durationSec
-                status = $row['status']
+                status           = $row.status
             }
-            
-            if ($row['status'] -eq 'COMPLETED') {
+
+            if ($row.status -eq 'COMPLETED') {
                 $dayData[$dateKey].has_success = $true
             }
-            
-            # Track first start and last end
+
             if ($startDttm -and (-not $dayData[$dateKey].first_start -or $startDttm -lt $dayData[$dateKey].first_start)) {
                 $dayData[$dateKey].first_start = $startDttm
             }
@@ -705,8 +579,8 @@ ORDER BY build_date, start_dttm
                 $dayData[$dateKey].last_end = $endDttm
             }
         }
-        
-        # Build data points with segments for stacked bars
+
+        # Build data points with execution/gap segments for stacked bars.
         $dataPoints = @()
         foreach ($dateKey in ($dayData.Keys | Sort-Object)) {
             $day = $dayData[$dateKey]
@@ -714,15 +588,13 @@ ORDER BY build_date, start_dttm
             $totalExecutionSeconds = 0
             $totalGapSeconds = 0
             $totalWallClockSeconds = 0
-            
+
             if ($day.first_start -and $day.last_end) {
                 $totalWallClockSeconds = [int]($day.last_end - $day.first_start).TotalSeconds
             }
-            
-            # Build segments (execution time and gaps)
+
             $prevEnd = $null
             foreach ($attempt in $day.attempts) {
-                # Add gap segment if there was a previous attempt
                 if ($prevEnd -and $attempt.start_dttm) {
                     $gapSeconds = [int]($attempt.start_dttm - $prevEnd).TotalSeconds
                     if ($gapSeconds -gt 0) {
@@ -730,51 +602,47 @@ ORDER BY build_date, start_dttm
                         $totalGapSeconds += $gapSeconds
                     }
                 }
-                
-                # Add execution segment
+
                 $segments += @{
-                    type = if ($attempt.status -eq 'COMPLETED') { 'success' } else { 'failed' }
+                    type    = if ($attempt.status -eq 'COMPLETED') { 'success' } else { 'failed' }
                     seconds = $attempt.duration_seconds
                 }
                 $totalExecutionSeconds += $attempt.duration_seconds
-                
+
                 $prevEnd = $attempt.end_dttm
             }
-            
+
             $dataPoints += @{
-                date = $day.date
-                date_short = $day.date_short
-                segments = $segments
-                total_execution_seconds = $totalExecutionSeconds
-                total_gap_seconds = $totalGapSeconds
+                date                     = $day.date
+                date_short               = $day.date_short
+                segments                 = $segments
+                total_execution_seconds  = $totalExecutionSeconds
+                total_gap_seconds        = $totalGapSeconds
                 total_wall_clock_seconds = $totalWallClockSeconds
-                attempt_count = $day.attempts.Count
-                has_success = $day.has_success
-                final_status = if ($day.has_success) { 'COMPLETED' } else { 'FAILED' }
-                # For backward compatibility, also include simple duration
-                duration_seconds = if ($totalWallClockSeconds -gt 0) { $totalWallClockSeconds } else { $totalExecutionSeconds }
+                attempt_count            = $day.attempts.Count
+                has_success              = $day.has_success
+                final_status             = if ($day.has_success) { 'COMPLETED' } else { 'FAILED' }
+                duration_seconds         = if ($totalWallClockSeconds -gt 0) { $totalWallClockSeconds } else { $totalExecutionSeconds }
             }
         }
-        
-        # Calculate stats (using execution time only for meaningful averages)
+
+        # Stats from execution time on successful days.
         $completedDays = $dataPoints | Where-Object { $_.has_success }
         $executionDurations = $completedDays | ForEach-Object { $_.total_execution_seconds }
         $avgSeconds = if ($executionDurations.Count -gt 0) { [int]($executionDurations | Measure-Object -Average).Average } else { $null }
         $minSeconds = if ($executionDurations.Count -gt 0) { ($executionDurations | Measure-Object -Minimum).Minimum } else { $null }
         $maxSeconds = if ($executionDurations.Count -gt 0) { ($executionDurations | Measure-Object -Maximum).Maximum } else { $null }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value @{
             data_points = $dataPoints
-            stats = @{
-                avg_seconds = $avgSeconds
-                min_seconds = $minSeconds
-                max_seconds = $maxSeconds
-                avg_formatted = if ($avgSeconds) { "{0}:{1:D2}:{2:D2}" -f [int]($avgSeconds/3600), [int](($avgSeconds%3600)/60), [int]($avgSeconds%60) } else { $null }
-                count = $dataPoints.Count
+            stats       = @{
+                avg_seconds   = $avgSeconds
+                min_seconds   = $minSeconds
+                max_seconds   = $maxSeconds
+                avg_formatted = if ($avgSeconds) { "{0}:{1:D2}:{2:D2}" -f [int]($avgSeconds / 3600), [int](($avgSeconds % 3600) / 60), [int]($avgSeconds % 60) } else { $null }
+                count         = $dataPoints.Count
             }
-            timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            timestamp   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
     catch {
@@ -782,27 +650,18 @@ ORDER BY build_date, start_dttm
     }
 }
 
-# ============================================================================
-# API: Build Details
-# Returns detailed step information for a specific build (for slideout)
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/bidata/build-details' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $buildId = $WebEvent.Query['build_id']
-        
+
         if ([string]::IsNullOrEmpty($buildId)) {
             Write-PodeJsonResponse -Value @{ error = "build_id is required" } -StatusCode 400
             return
         }
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=10;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get build header info
-        $buildCmd = $conn.CreateCommand()
-        $buildCmd.CommandText = @"
-SELECT 
+
+        $buildRows = Invoke-XFActsQuery -Query @"
+SELECT
     build_id,
     build_date,
     job_name,
@@ -819,40 +678,32 @@ SELECT
     notified_dttm
 FROM BIDATA.BuildExecution
 WHERE build_id = @build_id
-"@
-        $buildCmd.Parameters.AddWithValue("@build_id", [int]$buildId) | Out-Null
-        $buildCmd.CommandTimeout = 10
-        $buildAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($buildCmd)
-        $buildDataset = New-Object System.Data.DataSet
-        $buildAdapter.Fill($buildDataset) | Out-Null
-        
-        if ($buildDataset.Tables[0].Rows.Count -eq 0) {
-            $conn.Close()
+"@ -Parameters @{ build_id = [int]$buildId }
+
+        if (-not $buildRows -or $buildRows.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = "Build not found" } -StatusCode 404
             return
         }
-        
-        $row = $buildDataset.Tables[0].Rows[0]
+
+        $row = $buildRows[0]
         $build = @{
-            build_id = $row['build_id']
-            build_date = ([DateTime]$row['build_date']).ToString("yyyy-MM-dd")
-            job_name = if ($row['job_name'] -is [DBNull]) { $null } else { $row['job_name'] }
-            instance_id = if ($row['instance_id'] -is [DBNull]) { $null } else { $row['instance_id'] }
-            start_dttm = if ($row['start_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['start_dttm']).ToString("yyyy-MM-dd HH:mm:ss") }
-            end_dttm = if ($row['end_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['end_dttm']).ToString("yyyy-MM-dd HH:mm:ss") }
-            total_duration_seconds = if ($row['total_duration_seconds'] -is [DBNull]) { $null } else { $row['total_duration_seconds'] }
-            total_duration_formatted = if ($row['total_duration_formatted'] -is [DBNull]) { $null } else { $row['total_duration_formatted'] }
-            step_count = if ($row['step_count'] -is [DBNull]) { 0 } else { $row['step_count'] }
-            status = $row['status']
-            failed_step_id = if ($row['failed_step_id'] -is [DBNull]) { $null } else { $row['failed_step_id'] }
-            failed_step_name = if ($row['failed_step_name'] -is [DBNull]) { $null } else { $row['failed_step_name'] }
-            notified_dttm = if ($row['notified_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['notified_dttm']).ToString("yyyy-MM-dd HH:mm:ss") }
+            build_id                 = $row.build_id
+            build_date               = ([DateTime]$row.build_date).ToString("yyyy-MM-dd")
+            job_name                 = ConvertTo-SafeValue $row.job_name
+            instance_id              = ConvertTo-SafeValue $row.instance_id
+            start_dttm               = ConvertTo-SafeDateTime $row.start_dttm
+            end_dttm                 = ConvertTo-SafeDateTime $row.end_dttm
+            total_duration_seconds   = ConvertTo-SafeValue $row.total_duration_seconds
+            total_duration_formatted = ConvertTo-SafeValue $row.total_duration_formatted
+            step_count               = if ($row.step_count -is [DBNull]) { 0 } else { $row.step_count }
+            status                   = $row.status
+            failed_step_id           = ConvertTo-SafeValue $row.failed_step_id
+            failed_step_name         = ConvertTo-SafeValue $row.failed_step_name
+            notified_dttm            = ConvertTo-SafeDateTime $row.notified_dttm
         }
-        
-        # Get all steps for this build
-        $stepsCmd = $conn.CreateCommand()
-        $stepsCmd.CommandText = @"
-SELECT 
+
+        $stepRows = Invoke-XFActsQuery -Query @"
+SELECT
     step_id,
     step_name,
     run_status,
@@ -861,29 +712,22 @@ SELECT
 FROM BIDATA.StepExecution
 WHERE build_id = @build_id
 ORDER BY step_id
-"@
-        $stepsCmd.Parameters.AddWithValue("@build_id", [int]$buildId) | Out-Null
-        $stepsCmd.CommandTimeout = 10
-        $stepsAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($stepsCmd)
-        $stepsDataset = New-Object System.Data.DataSet
-        $stepsAdapter.Fill($stepsDataset) | Out-Null
-        
+"@ -Parameters @{ build_id = [int]$buildId }
+
         $steps = @()
-        foreach ($stepRow in $stepsDataset.Tables[0].Rows) {
+        foreach ($stepRow in $stepRows) {
             $steps += @{
-                step_id = $stepRow['step_id']
-                step_name = $stepRow['step_name']
-                run_status = $stepRow['run_status']
-                duration_seconds = $stepRow['duration_seconds']
-                duration_formatted = $stepRow['duration_formatted']
+                step_id            = $stepRow.step_id
+                step_name          = $stepRow.step_name
+                run_status         = $stepRow.run_status
+                duration_seconds   = $stepRow.duration_seconds
+                duration_formatted = $stepRow.duration_formatted
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value @{
-            build = $build
-            steps = $steps
+            build     = $build
+            steps     = $steps
             timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
@@ -892,27 +736,18 @@ ORDER BY step_id
     }
 }
 
-# ============================================================================
-# API: Builds for Date
-# Returns all builds and their steps for a specific date (for slideout with multiple executions)
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/bidata/builds-for-date' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $dateStr = $WebEvent.Query['date']
-        
+
         if ([string]::IsNullOrEmpty($dateStr)) {
             Write-PodeJsonResponse -Value @{ error = "date is required (YYYY-MM-DD)" } -StatusCode 400
             return
         }
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Application Name=xFACts Control Center;Connect Timeout=10;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get all builds for this date (ordered by build_id DESC so most recent first)
-        $buildCmd = $conn.CreateCommand()
-        $buildCmd.CommandText = @"
-SELECT 
+
+        $buildRows = Invoke-XFActsQuery -Query @"
+SELECT
     build_id,
     build_date,
     job_name,
@@ -931,43 +766,34 @@ FROM BIDATA.BuildExecution
 WHERE build_date = @build_date
   AND status NOT IN ('NOT_STARTED', 'SUPERSEDED')
 ORDER BY build_id DESC
-"@
-        $buildCmd.Parameters.AddWithValue("@build_date", $dateStr) | Out-Null
-        $buildCmd.CommandTimeout = 10
-        $buildAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($buildCmd)
-        $buildDataset = New-Object System.Data.DataSet
-        $buildAdapter.Fill($buildDataset) | Out-Null
-        
-        if ($buildDataset.Tables[0].Rows.Count -eq 0) {
-            $conn.Close()
+"@ -Parameters @{ build_date = $dateStr }
+
+        if (-not $buildRows -or $buildRows.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = "No builds found for date: $dateStr" } -StatusCode 404
             return
         }
-        
+
         $builds = @()
-        
-        foreach ($row in $buildDataset.Tables[0].Rows) {
-            $buildId = $row['build_id']
-            
+        foreach ($row in $buildRows) {
+            $buildId = $row.build_id
+
             $build = @{
-                build_id = $buildId
-                build_date = ([DateTime]$row['build_date']).ToString("yyyy-MM-dd")
-                job_name = if ($row['job_name'] -is [DBNull]) { $null } else { $row['job_name'] }
-                instance_id = if ($row['instance_id'] -is [DBNull]) { $null } else { $row['instance_id'] }
-                start_dttm = if ($row['start_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['start_dttm']).ToString("yyyy-MM-dd HH:mm:ss") }
-                end_dttm = if ($row['end_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['end_dttm']).ToString("yyyy-MM-dd HH:mm:ss") }
-                total_duration_seconds = if ($row['total_duration_seconds'] -is [DBNull]) { $null } else { $row['total_duration_seconds'] }
-                total_duration_formatted = if ($row['total_duration_formatted'] -is [DBNull]) { $null } else { $row['total_duration_formatted'] }
-                step_count = if ($row['step_count'] -is [DBNull]) { 0 } else { $row['step_count'] }
-                status = $row['status']
-                failed_step_id = if ($row['failed_step_id'] -is [DBNull]) { $null } else { $row['failed_step_id'] }
-                failed_step_name = if ($row['failed_step_name'] -is [DBNull]) { $null } else { $row['failed_step_name'] }
+                build_id                 = $buildId
+                build_date               = ([DateTime]$row.build_date).ToString("yyyy-MM-dd")
+                job_name                 = ConvertTo-SafeValue $row.job_name
+                instance_id              = ConvertTo-SafeValue $row.instance_id
+                start_dttm               = ConvertTo-SafeDateTime $row.start_dttm
+                end_dttm                 = ConvertTo-SafeDateTime $row.end_dttm
+                total_duration_seconds   = ConvertTo-SafeValue $row.total_duration_seconds
+                total_duration_formatted = ConvertTo-SafeValue $row.total_duration_formatted
+                step_count               = if ($row.step_count -is [DBNull]) { 0 } else { $row.step_count }
+                status                   = $row.status
+                failed_step_id           = ConvertTo-SafeValue $row.failed_step_id
+                failed_step_name         = ConvertTo-SafeValue $row.failed_step_name
             }
-            
-            # Get steps for this build
-            $stepsCmd = $conn.CreateCommand()
-            $stepsCmd.CommandText = @"
-SELECT 
+
+            $stepRows = Invoke-XFActsQuery -Query @"
+SELECT
     step_id,
     step_name,
     run_status,
@@ -976,37 +802,30 @@ SELECT
 FROM BIDATA.StepExecution
 WHERE build_id = @build_id
 ORDER BY step_id
-"@
-            $stepsCmd.Parameters.AddWithValue("@build_id", [int]$buildId) | Out-Null
-            $stepsCmd.CommandTimeout = 10
-            $stepsAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($stepsCmd)
-            $stepsDataset = New-Object System.Data.DataSet
-            $stepsAdapter.Fill($stepsDataset) | Out-Null
-            
+"@ -Parameters @{ build_id = [int]$buildId }
+
             $steps = @()
-            foreach ($stepRow in $stepsDataset.Tables[0].Rows) {
+            foreach ($stepRow in $stepRows) {
                 $steps += @{
-                    step_id = $stepRow['step_id']
-                    step_name = $stepRow['step_name']
-                    run_status = $stepRow['run_status']
-                    duration_seconds = $stepRow['duration_seconds']
-                    duration_formatted = $stepRow['duration_formatted']
+                    step_id            = $stepRow.step_id
+                    step_name          = $stepRow.step_name
+                    run_status         = $stepRow.run_status
+                    duration_seconds   = $stepRow.duration_seconds
+                    duration_formatted = $stepRow.duration_formatted
                 }
             }
-            
+
             $builds += @{
                 build = $build
                 steps = $steps
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value @{
-            date = $dateStr
-            builds = $builds
+            date        = $dateStr
+            builds      = $builds
             build_count = $builds.Count
-            timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            timestamp   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
     catch {
