@@ -72,6 +72,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-02  Added JS-file page-route resolution support: Get-JsRouteFileMap
+#             (js_file_name -> sibling Route file path, via Object_Registry
+#             component join) plus the Pode route-extraction helpers
+#             Get-PodeRoutes, Get-CommandAstName, Get-StringValueFromExpression,
+#             and Get-FirstPodeRoutePathFromFile. The three extraction helpers
+#             were lifted from the HTML populator (identical definitions) so
+#             both the HTML and JS populators resolve Add-PodeRoute -Path from
+#             one shared implementation rather than per-populator copies.
 # 2026-05-31  Lifted Format-SingleLine into the shared library (was duplicated
 #             identically in the CSS and PS populators). Callers dot-source this
 #             file, so the local definitions are removed.
@@ -533,6 +541,56 @@ function Get-ComponentRegistryNameSet {
     }
 
     return $set
+}
+
+# Build a (js_file_name -> route_file_path) map from dbo.Object_Registry.
+# For every active Control Center JavaScript file, resolve the physical path
+# of the Route file (the page .ps1 that registers the Pode page route) that
+# belongs to the same component. A CC page is a component whose objects include
+# one JavaScript file and one Route file; the route literal itself lives inside
+# that Route file's Add-PodeRoute -Path call, so the page route a JS file
+# belongs to is derived by locating its sibling Route file and reading that
+# call (see Get-FirstPodeRoutePathFromFile). Returns js_file_name -> route_path.
+# JS files whose component has no Route object (shared bundles, vendored
+# libraries) are simply absent from the map; the caller treats absence as "no
+# page route" and skips route-dependent validation. The one-Route-per-component
+# invariant holds for every CC page component, so MAX(object_path) collapses the
+# (guaranteed single) route row without ambiguity.
+function Get-JsRouteFileMap {
+    param(
+        [Parameter(Mandatory)][string]$ServerInstance,
+        [Parameter(Mandatory)][string]$Database
+    )
+
+    $query = @"
+SELECT js.object_name AS js_file, MAX(r.object_path) AS route_path
+FROM dbo.Object_Registry js
+JOIN dbo.Object_Registry r
+  ON r.component_name = js.component_name
+ AND r.object_type    = 'Route'
+ AND r.is_active       = 1
+WHERE js.object_type = 'JavaScript'
+  AND js.is_active    = 1
+GROUP BY js.object_name
+"@
+
+    $map = @{}
+    try {
+        $results = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database `
+                                 -Query $query -QueryTimeout 30 `
+                                 -ApplicationName $script:XFActsAppName `
+                                 -ErrorAction Stop `
+                                 -SuppressProviderContextWarning -TrustServerCertificate
+        foreach ($row in $results) {
+            if ($row.route_path -is [System.DBNull]) { continue }
+            $map[$row.js_file] = [string]$row.route_path
+        }
+    }
+    catch {
+        Write-Log "Get-JsRouteFileMap query failed: $($_.Exception.Message)" 'WARN'
+    }
+
+    return $map
 }
 
 <# ============================================================================
@@ -2205,4 +2263,119 @@ function Test-IsConditionallyDefinedPSAst {
         $cursor = $cursor.Parent
     }
     return $false
+}
+
+# Return the bare command name from a CommandAst.
+function Get-CommandAstName {
+    param([Parameter(Mandatory)][System.Management.Automation.Language.CommandAst]$CommandAst)
+    if ($CommandAst.CommandElements.Count -lt 1) { return $null }
+    $first = $CommandAst.CommandElements[0]
+    if ($first -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        return $first.Value
+    }
+    return $first.Extent.Text
+}
+
+# Extract the literal string value from a StringConstantExpressionAst or
+# ExpandableStringExpressionAst. Returns $null for other expression kinds.
+function Get-StringValueFromExpression {
+    param($Expr)
+    if ($null -eq $Expr) { return $null }
+    if ($Expr -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        return $Expr.Value
+    }
+    if ($Expr -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
+        return $Expr.Value
+    }
+    return $null
+}
+
+# Find every Add-PodeRoute call in an AST and return a list of:
+#   .Path        - the -Path parameter's literal string value
+#   .Method      - the -Method parameter's value (Get default)
+#   .ScriptBlock - the ScriptBlockExpressionAst for the handler body
+#   .StartLine   - source line of the Add-PodeRoute call
+function Get-PodeRoutes {
+    param([Parameter(Mandatory)]$Ast)
+
+    $routes = New-Object System.Collections.Generic.List[object]
+    if ($null -eq $Ast) { return $routes }
+
+    $allCommands = $Ast.FindAll({
+        param($n)
+        $n -is [System.Management.Automation.Language.CommandAst]
+    }, $true)
+
+    foreach ($cmd in $allCommands) {
+        $cmdName = Get-CommandAstName -CommandAst $cmd
+        if ($cmdName -ne 'Add-PodeRoute') { continue }
+
+        $path        = $null
+        $method      = 'Get'
+        $scriptBlock = $null
+
+        $elements = $cmd.CommandElements
+        for ($i = 0; $i -lt $elements.Count; $i++) {
+            $el = $elements[$i]
+            if ($el -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
+            $valueExpr = if ($null -ne $el.Argument) {
+                $el.Argument
+            } elseif ($i + 1 -lt $elements.Count) {
+                $elements[$i + 1]
+            } else {
+                $null
+            }
+            switch ($el.ParameterName.ToLower()) {
+                'path' {
+                    $path = Get-StringValueFromExpression -Expr $valueExpr
+                }
+                'method' {
+                    $methodVal = Get-StringValueFromExpression -Expr $valueExpr
+                    if (-not [string]::IsNullOrEmpty($methodVal)) { $method = $methodVal }
+                }
+                'scriptblock' {
+                    if ($valueExpr -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+                        $scriptBlock = $valueExpr
+                    }
+                }
+            }
+        }
+
+        if ([string]::IsNullOrEmpty($path)) { continue }
+
+        $routes.Add([ordered]@{
+            Path        = $path
+            Method      = $method
+            ScriptBlock = $scriptBlock
+            StartLine   = if ($cmd.Extent) { $cmd.Extent.StartLineNumber } else { 0 }
+        })
+    }
+
+    return $routes
+}
+
+# Parse a .ps1 route file and return the -Path of its first Add-PodeRoute
+# call, or $null if the file cannot be parsed or declares no route. Used to
+# derive the page route a Control Center JS file belongs to: the JS file's
+# sibling Route file (resolved via Get-JsRouteFileMap) is parsed here and its
+# registered route path read directly from the Add-PodeRoute call, which is
+# the authoritative source for the route (the same value Orchestrator.Process-
+# Registry.cc_page_route is keyed on). Page route files register exactly one
+# page route, so the first route's path is the page route.
+function Get-FirstPodeRoutePathFromFile {
+    param([Parameter(Mandatory)][string]$FilePath)
+
+    if ([string]::IsNullOrEmpty($FilePath) -or -not (Test-Path -LiteralPath $FilePath)) {
+        return $null
+    }
+
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($FilePath, [ref]$tokens, [ref]$errors)
+    if ($null -eq $ast) { return $null }
+
+    $routes = Get-PodeRoutes -Ast $ast
+    if ($null -eq $routes -or $routes.Count -eq 0) { return $null }
+
+    return $routes[0].Path
 }
