@@ -233,7 +233,6 @@ const rpm_clickActions = {
     'rpm-toggle-correlation':   rpm_toggleCorrelationMode,
     'rpm-open-info':            rpm_openInfoPanelFromTarget,
     'rpm-close-info':           rpm_closeInfoPanel,
-    'rpm-close-info-on-overlay': rpm_closeInfoPanelOnOverlay,
     'rpm-set-agent-filter':     rpm_setEventAgentFilterFromTarget
 };
 
@@ -448,9 +447,18 @@ function rpm_openInfoPanelFromTarget(target) {
 }
 
 /* Closes the help panel. Removes cc-open from the dialog first to start the
-   slide-out transition; removes cc-open from the overlay when the
-   transition finishes so the dimmer stays in place during the slide-out. */
-function rpm_closeInfoPanel() {
+   slide-out transition; removes cc-open from the overlay when the transition
+   finishes so the dimmer stays in place during the slide-out. Wired from the
+   close button and the overlay backdrop via the rpm-close-info click action.
+   The dispatcher passes the matched action element as target. When target is
+   the overlay itself, the click is only a dismiss if it landed directly on the
+   backdrop (event.target === target); a click that bubbled up from the dialog
+   interior is ignored. When target is the close button, the panel always
+   closes. */
+function rpm_closeInfoPanel(target, event) {
+    if (event && target.id === 'rpm-slideout-info' && event.target !== target) {
+        return;
+    }
     var overlay = document.getElementById('rpm-slideout-info');
     var dialog = overlay.querySelector('.cc-dialog');
     dialog.addEventListener('transitionend', function handler() {
@@ -458,15 +466,6 @@ function rpm_closeInfoPanel() {
         overlay.classList.remove('cc-open');
     });
     dialog.classList.remove('cc-open');
-}
-
-/* Closes the help panel only when the overlay backdrop itself is clicked,
-   not when a click lands inside the dialog. Wired up from the overlay via
-   data-action-click="rpm-close-info-on-overlay". */
-function rpm_closeInfoPanelOnOverlay(target, event) {
-    if (event.target === target) {
-        rpm_closeInfoPanel();
-    }
 }
 
 /* ============================================================================
