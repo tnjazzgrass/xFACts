@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-02 08:39:47
+Generated: 2026-06-02 16:55:51
 
 ## Module Registry
 
@@ -545,7 +545,7 @@ Generated: 2026-06-02 08:39:47
 | DmOps | Archive | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
 | DmOps | ShellPurge | alerting_enabled | 1 | BIT | Master switch for shell purge alerting |
 | DmOps | ShellPurge | batch_size | 100000 | INT | Number of shell consumers per batch during full-mode schedule windows |
-| DmOps | ShellPurge | batch_size_reduced | 500 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
+| DmOps | ShellPurge | batch_size_reduced | 1000 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
 | DmOps | ShellPurge | chunk_size | 5000 | INT | Maximum rows per DELETE operation (deleted in chunks of this size) |
 | DmOps | ShellPurge | shell_purge_abort | 0 | BIT | Emergency shutoff. Overrides schedule and enabled flag |
 | DmOps | ShellPurge | target_instance | AVG-PROD-LSNR | VARCHAR | SQL Server instance hosting crs5_oltp for shell purge processing |
