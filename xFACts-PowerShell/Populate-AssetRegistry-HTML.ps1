@@ -99,7 +99,6 @@
     FUNCTIONS: POWERSHELL AST PARSING
     FUNCTIONS: AST CONTEXT HELPERS
     FUNCTIONS: HTML EMISSION DISCOVERY
-    FUNCTIONS: ROUTE DISCOVERY
     FUNCTIONS: HTML TOKENIZER
     FUNCTIONS: ATTRIBUTE PARSER
     FUNCTIONS: CLASS-NAME SPLITTING AND VALIDATION
@@ -126,6 +125,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-02  Removed the local Get-PodeRoutes, Get-CommandAstName, and
+#             Get-StringValueFromExpression definitions; these were lifted to
+#             xFACts-AssetRegistryFunctions.ps1 so the HTML and JS populators
+#             share one Add-PodeRoute -Path extraction implementation. Call
+#             sites (Get-AddPodeRoutePathForScriptBlock and the main-walk route
+#             discovery) now resolve to the shared versions. The now-empty
+#             FUNCTIONS: ROUTE DISCOVERY section and its FILE ORGANIZATION entry
+#             were removed.
 # 2026-05-31  Converted to the Control Center PowerShell file format spec:
 #             block-comment header and section banners, canonical section
 #             order, dedicated CHANGELOG section, single EXECUTION section
@@ -660,30 +667,6 @@ function Get-AddPodeRoutePathForScriptBlock {
     return $null
 }
 
-# Return the bare command name from a CommandAst.
-function Get-CommandAstName {
-    param([Parameter(Mandatory)][System.Management.Automation.Language.CommandAst]$CommandAst)
-    if ($CommandAst.CommandElements.Count -lt 1) { return $null }
-    $first = $CommandAst.CommandElements[0]
-    if ($first -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-        return $first.Value
-    }
-    return $first.Extent.Text
-}
-
-# Extract the literal string value from a StringConstantExpressionAst or
-# ExpandableStringExpressionAst. Returns $null for other expression kinds.
-function Get-StringValueFromExpression {
-    param($Expr)
-    if ($null -eq $Expr) { return $null }
-    if ($Expr -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-        return $Expr.Value
-    }
-    if ($Expr -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
-        return $Expr.Value
-    }
-    return $null
-}
 <# ============================================================================
    FUNCTIONS: HTML EMISSION DISCOVERY
    ----------------------------------------------------------------------------
@@ -994,77 +977,6 @@ function Get-HtmlEmissions {
     return @($combined | Sort-Object { $_.StartLine })
 }
 
-<# ============================================================================
-   FUNCTIONS: ROUTE DISCOVERY
-   ----------------------------------------------------------------------------
-   Find Add-PodeRoute -Path declarations to associate emitted HTML with
-   the page routes it belongs to.
-   Prefix: (none)
-   ============================================================================ #>
-
-# Find every Add-PodeRoute call in a file and return a list of:
-#   .Path       - the -Path parameter's literal string value
-#   .Method     - the -Method parameter's value (Get default)
-#   .ScriptBlock - the ScriptBlockExpressionAst for the handler body
-#   .StartLine  - source line of the Add-PodeRoute call
-function Get-PodeRoutes {
-    param([Parameter(Mandatory)]$Ast)
-
-    $routes = New-Object System.Collections.Generic.List[object]
-    if ($null -eq $Ast) { return $routes }
-
-    $allCommands = $Ast.FindAll({
-        param($n)
-        $n -is [System.Management.Automation.Language.CommandAst]
-    }, $true)
-
-    foreach ($cmd in $allCommands) {
-        $cmdName = Get-CommandAstName -CommandAst $cmd
-        if ($cmdName -ne 'Add-PodeRoute') { continue }
-
-        $path        = $null
-        $method      = 'Get'
-        $scriptBlock = $null
-
-        $elements = $cmd.CommandElements
-        for ($i = 0; $i -lt $elements.Count; $i++) {
-            $el = $elements[$i]
-            if ($el -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
-            $valueExpr = if ($null -ne $el.Argument) {
-                $el.Argument
-            } elseif ($i + 1 -lt $elements.Count) {
-                $elements[$i + 1]
-            } else {
-                $null
-            }
-            switch ($el.ParameterName.ToLower()) {
-                'path' {
-                    $path = Get-StringValueFromExpression -Expr $valueExpr
-                }
-                'method' {
-                    $methodVal = Get-StringValueFromExpression -Expr $valueExpr
-                    if (-not [string]::IsNullOrEmpty($methodVal)) { $method = $methodVal }
-                }
-                'scriptblock' {
-                    if ($valueExpr -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
-                        $scriptBlock = $valueExpr
-                    }
-                }
-            }
-        }
-
-        if ([string]::IsNullOrEmpty($path)) { continue }
-
-        $routes.Add([ordered]@{
-            Path        = $path
-            Method      = $method
-            ScriptBlock = $scriptBlock
-            StartLine   = if ($cmd.Extent) { $cmd.Extent.StartLineNumber } else { 0 }
-        })
-    }
-
-    return $routes
-}
 <# ============================================================================
    FUNCTIONS: HTML TOKENIZER
    ----------------------------------------------------------------------------
