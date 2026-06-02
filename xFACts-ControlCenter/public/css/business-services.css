@@ -1,279 +1,274 @@
 /* ============================================================================
-   xFACts Control Center - Business Services Styles
+   xFACts Control Center - Business Services Styles (business-services.css)
    Location: E:\xFACts-ControlCenter\public\css\business-services.css
    Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessServices)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css) and
-               .section-header-right (shared). Kept @keyframes pulse
-               (.live-indicator), @keyframes spin (.btn-refresh.spinning),
-               and the dept-specific H1 yellow color (#dcdcaa) which
-               distinguishes departmental pages from platform pages.
+   Page-specific styles for the Business Services departmental page.
+   Universal chrome (nav bar, header bar, refresh info, sections, engine
+   cards, connection banner, slide overlays, modals, animations, design
+   tokens) is provided by cc-shared.css per the CC Page Chrome Contract.
+   This file contains only the BS page's local content classes -- the live
+   activity card grid, distribution flip cards with per-user fill bars,
+   group filter badges, the year/month/day history tree, page-local
+   slideout content rendered inside the shared cc-dialog cc-dialog-slide,
+   and the request detail content rendered inside the shared cc-dialog
+   cc-dialog-modal cc-wide.
+
+   All page-local classes are prefixed bsv- to make scope visible at a
+   glance: bsv-* in HTML or in another CSS file is unambiguously a
+   Business Services page concern. Shared classes (e.g., .cc-section,
+   .cc-slide-overlay, .cc-dialog) consumed by this page's HTML are
+   defined in cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: TOP ROW
+   CONTENT: SECTION BODY
+   CONTENT: LIVE ACTIVITY CARDS
+   CONTENT: DISTRIBUTION FLIP CARDS
+   CONTENT: GROUP FILTER BADGES
+   CONTENT: HISTORY TREE
+   CONTENT: SLIDEOUT CONTENT
+   CONTENT: REQUEST DETAIL
+   CONTENT: BUTTONS
+   CONTENT: UTILITIES
    ============================================================================ */
-
-/* Base Layout */
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px 30px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-h1 { color: #dcdcaa; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { font-size: 14px; color: #888; margin: 0; }
-
-/* Header */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 15px;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-.refresh-info { display: flex; align-items: center; gap: 8px; color: #888; font-size: 13px; }
-.last-updated { color: #4ec9b0; }
-
-.live-indicator {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    background: #4ec9b0;
-    border-radius: 50%;
-    margin-right: 6px;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-}
-
-/* Connection Error */
-.connection-error {
-    background: #5a1d1d;
-    border: 1px solid #f14c4c;
-    color: #f14c4c;
-    padding: 10px 15px;
-    border-radius: 4px;
-    margin-bottom: 15px;
-    display: none;
-    font-size: 13px;
-}
-.connection-error.visible { display: block; }
 
 /* ============================================================================
-   SECTION LAYOUT
+   LAYOUT: TOP ROW
+   ----------------------------------------------------------------------------
+   The top row of the BS page splits horizontally into a wide content
+   column on the left (Live Activity cards) and a narrow column on the
+   right (Group Filter badges and the start of the History tree). The
+   width tiers are page-specific: 1fr left, 320px right.
+   Prefix: bsv
    ============================================================================ */
 
-.top-row {
+/* Two-column grid container for the page's top row of sections. */
+.bsv-top-row {
     display: grid;
     grid-template-columns: 1fr 320px;
     gap: 15px;
     margin-bottom: 15px;
 }
 
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    overflow: hidden;
-}
+/* ============================================================================
+   CONTENT: SECTION BODY
+   ----------------------------------------------------------------------------
+   Page-local content wrapper rendered inside each shared .cc-section. The
+   shared .cc-section already provides 15px padding; this inner wrapper adds
+   another 12px around its content for visual separation between the
+   section header and the contained component grid.
+   Prefix: bsv
+   ============================================================================ */
 
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 16px;
-    background: #2d2d2d;
-    border-bottom: 1px solid #404040;
-}
-
-.section-header h2 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #4ec9b0;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.section-controls {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.section-body {
-    padding: 12px;
+/* Inner content wrapper inside each .cc-section container. */
+.bsv-section-body {
+    padding: var(--size-spacing-lg);
 }
 
 /* ============================================================================
-   LIVE ACTIVITY CARDS
+   CONTENT: LIVE ACTIVITY CARDS
+   ----------------------------------------------------------------------------
+   Live Activity is a responsive grid of group-summary cards. Each card
+   shows a group's open/assigned/unassigned/new-today/closed-today counts
+   in a five-cell metric row. Cards adopt warning or critical state
+   colors based on unassigned-count thresholds set by the page JS.
+   Prefix: bsv
    ============================================================================ */
 
-.activity-cards {
+/* Responsive grid container that holds the Live Activity cards. */
+.bsv-activity-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
 }
 
-.activity-card {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 12px;
-    transition: border-color 0.2s;
+/* Individual group-summary card. */
+.bsv-activity-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg);
+    transition: border-color var(--duration-fast);
 }
 
-.activity-card:hover {
-    border-color: #4ec9b0;
+.bsv-activity-card:hover { /* hover state -- accent the border in the shared teal */
+    border-color: var(--color-accent-shared);
 }
 
-.activity-card.card-warning {
+/* State tag marking an activity card as moderate-volume (warning). */
+.bsv-card-warning { }
+
+/* State tag marking an activity card as high-volume (critical). */
+.bsv-card-critical { }
+
+.bsv-activity-card.bsv-card-warning { /* moderate-volume state -- yellow accent and tint */
     border-color: #cca700;
     background: rgba(204, 167, 0, 0.05);
 }
 
-.activity-card.card-critical {
+.bsv-activity-card.bsv-card-critical { /* high-volume state -- red accent and tint */
     border-color: #f14c4c;
     background: rgba(241, 76, 76, 0.05);
 }
 
-.activity-card-title {
-    font-size: 13px;
+/* The group name caption at the top of an activity card. */
+.bsv-activity-card-title {
+    font-size: var(--font-size-content-lg);
     font-weight: 600;
-    color: #4ec9b0;
-    margin-bottom: 8px;
+    color: var(--color-accent-shared);
+    margin-bottom: var(--size-spacing-md);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.activity-card-metrics {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-}
-
-.activity-card-metrics-5 {
+/* Three-column metric grid used by the 5-metric activity cards (top row of 3, last 2 wrap). */
+.bsv-activity-card-metrics-5 {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 6px;
+    gap: var(--size-spacing-sm);
 }
 
-.activity-card-metrics-5 .metric:nth-child(4),
-.activity-card-metrics-5 .metric:nth-child(5) {
-    /* Last two metrics in a centered row beneath the top 3 */
-}
-
-.metric-new { color: #569cd6; }
-
-.metric {
+/* Single metric cell within an activity card. */
+.bsv-metric {
     text-align: center;
 }
 
-.metric-value {
+/* Large numeric value at the top of a metric cell. */
+.bsv-metric-value {
     display: block;
     font-size: 20px;
     font-weight: 700;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     line-height: 1.2;
 }
 
-.metric-label {
+/* Small uppercase label below the metric value. */
+.bsv-metric-label {
     display: block;
-    font-size: 10px;
-    color: #888;
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-.metric-assigned { color: #569cd6; }
-.metric-unassigned { color: #cca700; }
-.metric-completed { color: #4ec9b0; }
+/* Color modifier for the "New Today" metric -- platform blue. */
+.bsv-metric-new {
+    color: var(--color-accent-platform);
+}
+
+/* Color modifier for the "Assigned" metric -- platform blue. */
+.bsv-metric-assigned {
+    color: var(--color-accent-platform);
+}
+
+/* Color modifier for the "Unassigned" metric -- warning amber. */
+.bsv-metric-unassigned {
+    color: #cca700;
+}
+
+/* Color modifier for the "Closed Today" metric -- shared teal. */
+.bsv-metric-completed {
+    color: var(--color-accent-shared);
+}
 
 /* ============================================================================
-   DISTRIBUTION FLIP CARDS
+   CONTENT: DISTRIBUTION FLIP CARDS
+   ----------------------------------------------------------------------------
+   The Distribution section shows one flip card per assignment group. The
+   front of the card displays group-level totals (assigned vs cap, new
+   today, completed today, fill percentage). Clicking the card flips it
+   to reveal a per-user breakdown with individual fill bars. User rows
+   adopt high or full state colors when their assignment fill ratio
+   crosses the page JS thresholds.
+   Prefix: bsv
    ============================================================================ */
 
-.distribution-cards {
+/* Vertical stack container for the flip cards. */
+.bsv-distribution-cards {
     display: flex;
     flex-direction: column;
     gap: 10px;
 }
 
-.flip-card {
+/* The flip card outer container -- establishes 3D perspective and click area. */
+.bsv-flip-card {
+    position: relative;
     perspective: 800px;
     cursor: pointer;
     height: 200px;
 }
 
-.flip-card-front,
-.flip-card-back {
+/* Front face of the flip card (group totals). */
+.bsv-flip-card-front {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
     backface-visibility: hidden;
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 6px;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
     padding: 14px;
     transition: transform 0.6s;
     display: flex;
     flex-direction: column;
-}
-
-.flip-card {
-    position: relative;
-}
-
-.flip-card-front {
     transform: rotateY(0deg);
 }
 
-.flip-card-back {
+/* Back face of the flip card (per-user breakdown, rotated to hide initially). */
+.bsv-flip-card-back {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    padding: 14px;
+    transition: transform 0.6s;
+    display: flex;
+    flex-direction: column;
     transform: rotateY(180deg);
     overflow-y: auto;
 }
 
-.flip-card.flipped .flip-card-front {
+/* State tag marking a flip card as flipped to its back face. */
+.bsv-flipped { }
+
+.bsv-flip-card-front.bsv-flipped { /* flipped state -- front rotates away */
     transform: rotateY(180deg);
 }
 
-.flip-card.flipped .flip-card-back {
+.bsv-flip-card-back.bsv-flipped { /* flipped state -- back rotates into view */
     transform: rotateY(0deg);
 }
 
-.flip-card-title {
-    font-size: 14px;
+/* Group name title at the top of a flip card face. */
+.bsv-flip-card-title {
+    font-size: var(--font-size-heading-sm);
     font-weight: 600;
-    color: #4ec9b0;
-    margin-bottom: 4px;
+    color: var(--color-accent-shared);
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.flip-card-subtitle {
-    font-size: 11px;
-    color: #888;
+/* Subtitle below the title (e.g., user count). */
+.bsv-flip-card-subtitle {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     margin-bottom: 10px;
 }
 
-.flip-card-big-number {
+/* The large "assigned/cap" number that dominates the front of the card. */
+.bsv-flip-card-big-number {
     font-size: 36px;
     font-weight: 700;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     text-align: center;
     flex: 1;
     display: flex;
@@ -281,625 +276,620 @@ h1 { color: #dcdcaa; margin-bottom: 2px; font-size: 24px; }
     justify-content: center;
 }
 
-.flip-card-of {
-    font-size: 16px;
-    color: #666;
-    margin-left: 4px;
+/* Inline "/ N" label appended to the big number to show the cap. */
+.bsv-flip-card-of {
+    font-size: var(--font-size-heading-lg);
+    color: var(--color-text-subtle);
+    margin-left: var(--size-spacing-xs);
     font-weight: 400;
 }
 
-.flip-card-progress {
+/* The progress bar track shown below the big number. */
+.bsv-flip-card-progress {
     height: 16px;
-    background: #333;
-    border-radius: 3px;
-    margin: 8px 0;
+    background: var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    margin: var(--size-spacing-md) 0;
     overflow: hidden;
     position: relative;
 }
 
-.flip-card-progress-fill {
+/* The filled portion of the progress bar (gradient teal). */
+.bsv-flip-card-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #2d6b5e, #266053);
-    border-radius: 3px;
+    background: var(--gradient-progress-default);
+    border-radius: var(--size-radius-sm);
     transition: width 0.5s ease;
 }
 
-.flip-card-progress-text {
+/* Centered text overlay showing the assigned/cap ratio on the progress bar. */
+.bsv-flip-card-progress-text {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 10px;
-    color: #d4d4d4;
+    font-size: var(--font-size-default);
+    color: var(--color-text-primary);
     text-shadow: 0 0 2px #000;
     white-space: nowrap;
 }
 
-.flip-card-footer {
-    font-size: 11px;
-    color: #888;
-    text-align: center;
-}
-
-.flip-card-footer-row {
+/* Two-column footer row inside the flip card showing new/completed counts. */
+.bsv-flip-card-footer-row {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
-    color: #888;
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
 
-.flip-footer-stat { }
-.flip-new { color: #569cd6; }
-.flip-completed { color: #4ec9b0; }
+/* Color modifier on a footer stat for the "new today" count. */
+.bsv-flip-new {
+    color: var(--color-accent-platform);
+}
 
-.flip-card-hint {
-    font-size: 10px;
-    color: #555;
+/* Color modifier on a footer stat for the "completed today" count. */
+.bsv-flip-completed {
+    color: var(--color-accent-shared);
+}
+
+/* Small "click to flip" hint at the bottom of the card face. */
+.bsv-flip-card-hint {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
     text-align: center;
-    margin-top: 4px;
+    margin-top: var(--size-spacing-xs);
 }
 
-/* Distribution user rows (back of card) */
-.dist-user {
-    padding: 6px 0;
-    border-bottom: 1px solid #333;
+/* A single user row on the back of a flip card. */
+.bsv-dist-user {
+    padding: var(--size-spacing-sm) 0;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.dist-user:last-child {
+.bsv-dist-user:last-child { /* last row -- drop the divider */
     border-bottom: none;
 }
 
-.dist-user-name {
-    font-size: 12px;
+/* The user's display name label at the top of a user row. */
+.bsv-dist-user-name {
+    font-size: var(--font-size-content);
     font-weight: 600;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     margin-bottom: 2px;
 }
 
-.dist-user-stats {
+/* State tag marking a distribution user as high-fill (near cap). */
+.bsv-user-high { }
+
+/* State tag marking a distribution user as fully saturated (at or over cap). */
+.bsv-user-full { }
+
+.bsv-dist-user-name.bsv-user-high { /* high-fill state -- name colored in warning amber */
+    color: #cca700;
+}
+
+.bsv-dist-user-name.bsv-user-full { /* fully-saturated state -- name colored in critical red */
+    color: #f14c4c;
+}
+
+/* Two-column stats row showing "assigned/cap" and "completed today" for a user. */
+.bsv-dist-user-stats {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: var(--font-size-body);
     margin-bottom: 3px;
 }
 
-.dist-stat { color: #888; }
-.dist-completed { color: #4ec9b0; }
+/* Left-side stat in a user row (assigned/cap). */
+.bsv-dist-stat {
+    color: var(--color-text-muted);
+}
 
-.dist-user-bar {
+/* Right-side stat in a user row (completed today). */
+.bsv-dist-completed {
+    color: var(--color-accent-shared);
+}
+
+/* Slim progress bar track shown below a user's stats. */
+.bsv-dist-user-bar {
     height: 3px;
-    background: #333;
+    background: var(--color-border-divider);
     border-radius: 2px;
     overflow: hidden;
 }
 
-.dist-user-bar-fill {
+/* Filled portion of a user's progress bar -- default teal gradient. */
+.bsv-dist-user-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, #2d6b5e, #266053);
+    background: var(--gradient-progress-default);
     border-radius: 2px;
     transition: width 0.3s;
 }
 
-.dist-user.user-high .dist-user-bar-fill { background: #cca700; }
-.dist-user.user-full .dist-user-bar-fill { background: #f14c4c; }
-.dist-user.user-high .dist-user-name { color: #cca700; }
-.dist-user.user-full .dist-user-name { color: #f14c4c; }
+.bsv-dist-user-bar-fill.bsv-user-high { /* high-fill state -- solid amber fill */
+    background: #cca700;
+}
+
+.bsv-dist-user-bar-fill.bsv-user-full { /* fully-saturated state -- solid red fill */
+    background: #f14c4c;
+}
 
 /* ============================================================================
-   GROUP FILTER BADGES
+   CONTENT: GROUP FILTER BADGES
+   ----------------------------------------------------------------------------
+   A horizontal row of clickable filter pills that scope the History tree
+   to a specific assignment group (or "All"). The active badge is filled
+   in the shared teal; inactive badges sit muted until hovered.
+   Prefix: bsv
    ============================================================================ */
 
-.group-badges {
+/* Horizontal flex container for the filter badge pills. */
+.bsv-group-badges {
     display: flex;
-    gap: 6px;
+    gap: var(--size-spacing-sm);
     flex-wrap: wrap;
 }
 
-.group-badge {
+/* Individual filter pill. */
+.bsv-group-badge {
     padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 11px;
+    border-radius: var(--size-spacing-lg);
+    font-size: var(--font-size-body);
     font-weight: 600;
-    background: #333;
-    color: #888;
+    background: var(--color-border-divider);
+    color: var(--color-text-muted);
     cursor: pointer;
-    transition: all 0.2s;
-    border: 1px solid transparent;
+    transition: all var(--duration-fast);
+    border: var(--size-border-thin) solid transparent;
 }
 
-.group-badge:hover {
-    background: #404040;
-    color: #d4d4d4;
+.bsv-group-badge:hover { /* hover state -- slightly lighter background and brighter text */
+    background: var(--color-border-default);
+    color: var(--color-text-primary);
 }
 
-.group-badge.active {
-    background: #4ec9b0;
-    color: #1e1e1e;
-    border-color: #4ec9b0;
-}
+/* State tag marking a group filter badge as the active selection. */
+.bsv-active { }
 
-.badge-count {
-    font-size: 12px;
-    color: #888;
+.bsv-group-badge.bsv-active { /* selected state -- filled in the shared teal */
+    background: var(--color-accent-shared);
+    color: var(--color-bg-page);
+    border-color: var(--color-accent-shared);
 }
 
 /* ============================================================================
-   HISTORY TREE
+   CONTENT: HISTORY TREE
+   ----------------------------------------------------------------------------
+   A three-level drill-down tree showing historical request volume by
+   year, month, and day. Each year row expands to a month table; each
+   month row expands inline to a day-level table loaded on demand. Day
+   rows are clickable and open the day-detail slideout (which then drills
+   into per-user request lists).
+   Prefix: bsv
    ============================================================================ */
 
-.history-tree {
-    /* Container for year groups */
+/* Outer container for the year-grouped history rows. */
+.bsv-history-year {
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.history-year {
-    margin-bottom: 4px;
-}
-
-.year-header {
+/* Clickable year header row showing the year label and aggregate stats. */
+.bsv-year-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: #2d2d2d;
-    border-radius: 4px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    background: var(--color-bg-card-hover);
+    border-radius: var(--size-radius-default);
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--duration-fast);
 }
 
-.year-header:hover { background: #353535; }
+.bsv-year-header:hover { /* hover state -- slightly lighter background */
+    background: #353535;
+}
 
-.year-label {
-    font-size: 15px;
+/* The year number label (e.g., "2026"). */
+.bsv-year-label {
+    font-size: var(--font-size-heading-md);
     font-weight: 700;
-    color: #569cd6;
+    color: var(--color-accent-platform);
 }
 
-.year-stats {
+/* Right-aligned stats row inside the year header (received / completed). */
+.bsv-year-stats {
     display: flex;
-    gap: 6px;
-    font-size: 11px;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-body);
     margin-left: auto;
 }
 
-.year-stat {
+/* A single stat span inside the year header. */
+.bsv-year-stat {
     min-width: 120px;
     text-align: right;
-    color: #888;
+    color: var(--color-text-muted);
 }
 
-.year-stat.completed { color: #4ec9b0; }
+/* State tag marking a year-header stat span as the completed-count metric. */
+.bsv-completed { }
 
-.year-content {
-    padding: 4px 0 4px 12px;
+.bsv-year-stat.bsv-completed { /* "completed" stat -- teal color */
+    color: var(--color-accent-shared);
 }
 
-.expand-icon {
-    font-size: 10px;
-    color: #888;
+/* The collapsible content area below a year header that holds the month table. */
+.bsv-year-content {
+    padding: var(--size-spacing-xs) 0 var(--size-spacing-xs) var(--size-spacing-lg);
+}
+
+/* Triangular expand/collapse indicator (rotates between collapsed and expanded states). */
+.bsv-expand-icon {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     width: 14px;
     display: inline-block;
     text-align: center;
 }
 
-.expand-cell {
+/* A small fixed-width cell that hosts the expand-icon at the start of a month row. */
+.bsv-expand-cell {
     width: 24px;
     text-align: center;
 }
 
-/* History Tables */
-.history-table {
+/* The month-by-month table rendered inside an expanded year. */
+.bsv-history-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: var(--font-size-content-lg);
 }
 
-.history-table thead th {
-    background: #2a2a2a;
-    color: #888;
+/* Header cell of the history table. */
+.bsv-history-table-th {
+    background: var(--color-bg-card-deep);
+    color: var(--color-text-muted);
     font-weight: 600;
     text-align: left;
-    padding: 6px 10px;
-    border-bottom: 1px solid #404040;
-    font-size: 11px;
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    font-size: var(--font-size-body);
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
 
-.history-table tbody td {
+/* Body cell of the history table. */
+.bsv-history-table-td {
     padding: 7px 10px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
 }
 
-.month-row {
+/* A clickable month-summary row that expands to show day-level detail. */
+.bsv-month-row {
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--duration-instant);
 }
 
-.month-row:hover { background: #2a2d2e; }
+.bsv-month-row:hover { /* hover state -- slightly tinted row background */
+    background: #2a2d2e;
+}
 
-.month-cell {
+/* The month-name cell in a month row. */
+.bsv-month-cell {
     font-weight: 600;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
 }
 
-.completed-cell { color: #4ec9b0; }
-.assigned-cell { color: #569cd6; }
-.unassigned-cell { color: #cca700; }
-
-.month-details-content {
-    padding: 8px 0;
+/* Color modifier for any cell rendering a "completed" count (teal). */
+.bsv-completed-cell {
+    color: var(--color-accent-shared);
 }
 
-.day-table .day-row {
+/* The collapsible detail row beneath a month row; toggled open to reveal the day-level table. */
+.bsv-month-details { }
+
+/* The expanded inline content area below a month row that holds the day-level table. */
+.bsv-month-details-content {
+    padding: var(--size-spacing-md) 0;
+}
+
+/* A clickable day row within the day-level table (opens the day-detail slideout). */
+.bsv-day-row {
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--duration-instant);
 }
 
-.day-table .day-row:hover { background: #2a2d2e; }
+.bsv-day-row:hover { /* hover state -- slightly tinted row background */
+    background: #2a2d2e;
+}
 
-.row-odd { background: #242424; }
+/* Alternating row stripe applied to odd-indexed day rows for readability. */
+.bsv-row-odd {
+    background: #242424;
+}
 
 /* ============================================================================
-   SLIDEOUT PANEL
+   CONTENT: SLIDEOUT CONTENT
+   ----------------------------------------------------------------------------
+   Page-local content classes rendered inside the shared cc-dialog
+   cc-dialog-slide. The slideout itself (overlay, dialog, header, body) is
+   provided by cc-shared.css. This section defines only the BS-specific
+   content: in-panel sub-section titles, group summary cards, and the
+   user/request tables shown inside the day-detail and user-day-requests
+   views.
+   Prefix: bsv
    ============================================================================ */
 
-.slideout {
-    position: fixed;
-    top: 0;
-    right: -500px;
-    width: 500px;
-    height: 100%;
-    background: #252526;
-    border-left: 1px solid #404040;
-    z-index: 2000;
-    transition: right 0.3s ease;
-    display: flex;
-    flex-direction: column;
-}
-
-.slideout.open { right: 0; }
-
-.slideout-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 1999;
-    display: none;
-}
-
-.slideout-backdrop.visible { display: block; }
-
-.slideout-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 16px;
-    background: #2d2d2d;
-    border-bottom: 1px solid #404040;
-    flex-shrink: 0;
-}
-
-.slideout-header h3 {
-    margin: 0;
-    font-size: 15px;
-    color: #4ec9b0;
-}
-
-.slideout-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 22px;
-    cursor: pointer;
-    padding: 0 4px;
-}
-
-.slideout-close:hover { color: #d4d4d4; }
-
-.slideout-body {
-    padding: 16px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.slideout-section-title {
-    font-size: 12px;
+/* Sub-section title inside the slideout body (e.g., "Group Summary", "Completions by User"). */
+.bsv-slideout-section-title {
+    font-size: var(--font-size-content);
     font-weight: 700;
-    color: #888;
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin: 16px 0 8px 0;
-    padding-bottom: 4px;
-    border-bottom: 1px solid #333;
+    margin: var(--size-spacing-xl) 0 var(--size-spacing-md) 0;
+    padding-bottom: var(--size-spacing-xs);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.slideout-section-title:first-child {
+.bsv-slideout-section-title:first-child { /* first sub-section in the body -- drop top margin */
     margin-top: 0;
 }
 
-/* Slideout group cards */
-.slideout-group-cards {
+/* Horizontal flex container for the per-group summary cards in the day-detail view. */
+.bsv-slideout-group-cards {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-md);
 }
 
-.slideout-group-card {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 8px 10px;
+/* Individual group summary card inside the day-detail slideout. */
+.bsv-slideout-group-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-md) 10px;
     flex: 1;
     min-width: 120px;
 }
 
-.slideout-group-name {
-    font-size: 12px;
+/* The group's short name caption at the top of a slideout group card. */
+.bsv-slideout-group-name {
+    font-size: var(--font-size-content);
     font-weight: 600;
-    color: #4ec9b0;
-    margin-bottom: 4px;
+    color: var(--color-accent-shared);
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.slideout-group-metrics {
+/* Wrapped row of metric spans inside a slideout group card. */
+.bsv-slideout-group-metrics {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 8px;
+    gap: var(--size-spacing-xs) var(--size-spacing-md);
 }
 
-.sg-metric {
-    font-size: 11px;
-    color: #888;
+/* Single metric span inside a slideout group card. */
+.bsv-sg-metric {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
 
-.sg-completed { color: #4ec9b0; }
-.sg-assigned { color: #569cd6; }
-.sg-unassigned { color: #cca700; }
-.sg-received { color: #569cd6; }
+/* Color modifier for the "completed" metric in a slideout group card (teal). */
+.bsv-sg-completed {
+    color: var(--color-accent-shared);
+}
 
-/* Slideout tables */
-.slideout-table {
+/* Color modifier for the "received" metric in a slideout group card (platform blue). */
+.bsv-sg-received {
+    color: var(--color-accent-platform);
+}
+
+/* Data table rendered inside the slideout body (used for the user-day completions and the per-user request list). */
+.bsv-slideout-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
 
-.slideout-table thead th {
-    background: #2a2a2a;
-    color: #888;
+/* Header cell of a slideout-body table. */
+.bsv-slideout-table-th {
+    background: var(--color-bg-card-deep);
+    color: var(--color-text-muted);
     font-weight: 600;
     text-align: left;
-    padding: 5px 8px;
-    border-bottom: 1px solid #404040;
-    font-size: 11px;
+    padding: 5px var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    font-size: var(--font-size-body);
 }
 
-.slideout-table tbody td {
-    padding: 6px 8px;
-    border-bottom: 1px solid #2a2a2a;
+/* Body cell of a slideout-body table. */
+.bsv-slideout-table-td {
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
 }
 
-.user-detail-row {
+/* A clickable user-detail row in the user-day completions table (drills into the user's request list). */
+.bsv-user-detail-row {
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--duration-instant);
 }
 
-.user-detail-row:hover { background: #2a2d2e; }
-
-.slideout-count {
-    font-size: 12px;
-    color: #888;
-    margin-bottom: 8px;
+.bsv-user-detail-row:hover { /* hover state -- slightly tinted row background */
+    background: #2a2d2e;
 }
 
-/* Request table in slideout */
-.requests-table .mono {
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 11px;
+/* Caption above the per-user request table showing the total completed count. */
+.bsv-slideout-count {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-md);
 }
 
-.status-completed {
-    color: #4ec9b0;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.status-open {
-    color: #cca700;
-    font-size: 11px;
-    font-weight: 600;
+/* Monospace cell modifier used for consumer numbers and other ID-shaped values in request tables. */
+.bsv-mono {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
 }
 
 /* ============================================================================
-   MODAL (Request Detail)
+   CONTENT: REQUEST DETAIL
+   ----------------------------------------------------------------------------
+   Page-local content classes rendered inside the shared cc-dialog
+   cc-dialog-modal cc-wide. The modal chrome (overlay, dialog, header, body,
+   close button) is provided by cc-shared.css. This section defines only the
+   BS-specific content: the two-column detail grid showing request metadata,
+   and the comment section showing the optional free-text comment.
+   Prefix: bsv
    ============================================================================ */
 
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 3000;
-}
-
-.modal-dialog {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    width: 100%;
-    max-width: 550px;
-    overflow: hidden;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-}
-
-.modal-wide {
-    max-width: 550px;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 16px;
-    background: #2d2d2d;
-    border-bottom: 1px solid #404040;
-    flex-shrink: 0;
-}
-
-.modal-header h3 {
-    margin: 0;
-    font-size: 15px;
-    color: #4ec9b0;
-}
-
-.modal-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 0 4px;
-}
-
-.modal-close:hover { color: #d4d4d4; }
-
-.modal-body {
-    padding: 16px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-/* Detail grid */
-.detail-grid {
+/* Two-column grid layout for request metadata fields inside the detail modal. */
+.bsv-detail-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-xl);
 }
 
-.detail-field {
+/* A single label/value pair within the detail grid. */
+.bsv-detail-field {
     display: flex;
     flex-direction: column;
     gap: 2px;
 }
 
-.detail-label {
-    font-size: 10px;
-    color: #888;
+/* Small uppercase label above a detail value. */
+.bsv-detail-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
 
-.detail-value {
-    font-size: 13px;
-    color: #d4d4d4;
+/* The metadata value rendered below a detail label. */
+.bsv-detail-value {
+    font-size: var(--font-size-content-lg);
+    color: var(--color-text-primary);
 }
 
-/* Comment section */
-.detail-comment-section {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 12px;
+/* Outer wrapper for the comment block at the bottom of the detail modal. */
+.bsv-detail-comment-section {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg);
 }
 
-.detail-comment-label {
-    font-size: 10px;
-    color: #888;
+/* Small uppercase label above the comment text. */
+.bsv-detail-comment-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    margin-bottom: 6px;
+    margin-bottom: var(--size-spacing-sm);
 }
 
-.detail-comment-text {
-    font-size: 13px;
-    color: #d4d4d4;
+/* The comment body text -- preserves whitespace and wraps long lines. */
+.bsv-detail-comment-text {
+    font-size: var(--font-size-content-lg);
+    color: var(--color-text-primary);
     line-height: 1.5;
     white-space: pre-wrap;
     word-wrap: break-word;
 }
 
-.detail-comment-empty {
-    font-size: 13px;
-    color: #555;
+/* Italic placeholder shown when a request has no comment. */
+.bsv-detail-comment-empty {
+    font-size: var(--font-size-content-lg);
+    color: var(--color-border-strong);
     font-style: italic;
 }
 
 /* ============================================================================
-   BUTTONS
+   CONTENT: BUTTONS
+   ----------------------------------------------------------------------------
+   Page-local button styles. The shared .cc-page-refresh-btn from
+   cc-shared.css handles the manual page refresh control; this section
+   defines BS-specific buttons used inside slideout request rows (the
+   small comment-icon button) and the back-navigation link inside the
+   user request list.
+   Prefix: bsv
    ============================================================================ */
 
-.btn {
-    padding: 6px 14px;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    background: #2d2d2d;
-    color: #d4d4d4;
+/* Base button used in the slideout's request rows and back-navigation. */
+.bsv-btn {
+    padding: var(--size-spacing-sm) 14px;
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
     cursor: pointer;
-    font-size: 13px;
-    transition: all 0.2s;
+    font-size: var(--font-size-content-lg);
+    transition: all var(--duration-fast);
 }
 
-.btn:hover { background: #3d3d3d; border-color: #569cd6; }
-
-.btn-sm { padding: 4px 10px; font-size: 12px; }
-.btn-xs { padding: 2px 6px; font-size: 11px; }
-
-.btn-refresh {
-    font-size: 16px;
-    line-height: 1;
-    padding: 4px 8px;
+.bsv-btn:hover { /* hover state -- slightly lighter background, blue accent border */
+    background: #3d3d3d;
+    border-color: var(--color-accent-platform);
 }
 
-.btn-refresh.spinning {
-    animation: spin 0.5s linear;
+/* Small button size variant. */
+.bsv-btn-sm {
+    padding: var(--size-spacing-xs) 10px;
+    font-size: var(--font-size-content);
 }
 
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+/* Extra-small button size variant (used by the comment-icon button). */
+.bsv-btn-xs {
+    padding: 2px var(--size-spacing-sm);
+    font-size: var(--font-size-body);
 }
 
-.btn-comment {
+/* Comment-icon button shown on request rows that have a comment attached. */
+.bsv-btn-comment {
     background: transparent;
-    border: 1px solid #555;
-    font-size: 13px;
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    font-size: var(--font-size-content-lg);
     padding: 1px 5px;
 }
 
-.btn-comment:hover { border-color: #4ec9b0; }
+.bsv-btn-comment:hover { /* hover state -- accent the border in the shared teal */
+    border-color: var(--color-accent-shared);
+}
 
-.btn-back {
-    margin-top: 12px;
+/* "Back to day summary" link rendered below the per-user request table. */
+.bsv-btn-back {
+    margin-top: var(--size-spacing-lg);
     display: inline-block;
 }
 
 /* ============================================================================
-   UTILITY
+   CONTENT: UTILITIES
+   ----------------------------------------------------------------------------
+   Small helper classes for placeholder/empty states inside content
+   containers. The hidden helper toggles element visibility from JS;
+   loading and no-activity render centered, muted captions while data is
+   in flight or absent.
+   Prefix: bsv
    ============================================================================ */
 
-.loading {
+/* Centered "Loading..." caption shown inside a content container while data is in flight. */
+.bsv-loading {
     text-align: center;
     padding: 30px;
-    color: #888;
-    font-size: 13px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
 }
 
-.no-activity {
+/* Centered empty-state caption shown inside a content container when there's no data to display. */
+.bsv-no-activity {
     text-align: center;
-    padding: 20px;
-    color: #666;
-    font-size: 13px;
+    padding: var(--size-page-padding-y);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-content-lg);
 }
 
-.hidden { display: none !important; }
+/* Generic visibility toggle applied from JS to hide an element. */
+.bsv-hidden {
+    display: none !important;
+}
