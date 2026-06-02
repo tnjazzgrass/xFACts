@@ -156,7 +156,7 @@ $navHtml
     </div>
 
     <!-- Day-detail slideout: per-day group summary and per-user completed requests -->
-    <div id="bsv-slideout-detail" class="cc-slide-overlay">
+    <div id="bsv-slideout-detail" class="cc-slide-overlay" data-action-click="bsv-close-slideout">
         <div class="cc-dialog cc-dialog-slide">
             <div class="cc-dialog-header">
                 <h3 class="cc-dialog-title" id="bsv-detail-slideout-title">Details</h3>
@@ -167,7 +167,7 @@ $navHtml
     </div>
 
     <!-- Request-detail modal: full record and comment for a single tracking id -->
-    <div id="bsv-modal-detail" class="cc-modal-overlay cc-hidden">
+    <div id="bsv-modal-detail" class="cc-modal-overlay cc-hidden" data-action-click="bsv-close-modal">
         <div class="cc-dialog cc-dialog-modal cc-wide">
             <div class="cc-dialog-header">
                 <h3 class="cc-dialog-title" id="bsv-detail-modal-title">Request Detail</h3>
