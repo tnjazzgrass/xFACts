@@ -275,7 +275,7 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 
 ```html
 <!-- Purpose: short description of what this modal does -->
-<div id="<prefix>-modal-<purpose>" class="cc-modal-overlay">
+<div id="<prefix>-modal-<purpose>" class="cc-modal-overlay" data-action-click="<prefix>-close-modal">
     <div class="cc-dialog cc-dialog-modal">
         <div class="cc-dialog-header">
             <h3 class="cc-dialog-title">Title text</h3>
@@ -296,7 +296,7 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 
 ```html
 <!-- Purpose: short description of what this slideout does -->
-<div id="<prefix>-slideout-<purpose>" class="cc-slide-overlay">
+<div id="<prefix>-slideout-<purpose>" class="cc-slide-overlay" data-action-click="<prefix>-close-slideout">
     <div class="cc-dialog cc-dialog-slide">
         <div class="cc-dialog-header">
             <h3 class="cc-dialog-title">Title text</h3>
@@ -316,7 +316,7 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 
 ```html
 <!-- Purpose: short description of what this slide-up panel does -->
-<div id="<prefix>-slideup-<purpose>" class="cc-slideup-overlay">
+<div id="<prefix>-slideup-<purpose>" class="cc-slideup-overlay" data-action-click="<prefix>-close-slideup">
     <div class="cc-dialog cc-dialog-slideup">
         <div class="cc-dialog-header">
             <h3 class="cc-dialog-title">Title text</h3>
@@ -338,6 +338,7 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 - The outer overlay element carries the construct's ID. Modal IDs use `<prefix>-modal-<purpose>`; slideout IDs use `<prefix>-slideout-<purpose>`; slide-up panel IDs use `<prefix>-slideup-<purpose>`. The nested `.cc-dialog` carries no ID.
 - The inner `.cc-dialog` carries a second class identifying its construct: `cc-dialog-modal` inside a `cc-modal-overlay`, `cc-dialog-slide` inside a `cc-slide-overlay`, or `cc-dialog-slideup` inside a `cc-slideup-overlay`.
 - The inner `.cc-dialog` contains a `.cc-dialog-header`, a `.cc-dialog-body`, and optionally a `.cc-dialog-actions` footer, in this order. The header contains exactly one `.cc-dialog-title` element and exactly one `.cc-dialog-close` button.
+- The outer overlay element carries `data-action-click="<prefix>-close-<construct>"` — the same close action as its `.cc-dialog-close` button — so a backdrop click dismisses the construct.
 - All overlay constructs on a page appear in one contiguous block within the page-shell position defined by §1.2.2.
 - Within the overlay block, only formatting whitespace and each construct's preceding purpose comment may appear between constructs. No other HTML elements, no other comments.
 - Each overlay construct is preceded by exactly one HTML purpose comment, placed immediately above the outer overlay element.
@@ -680,7 +681,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 
 | Code | Description | Rule |
 |------|-------------|------|
-| `MALFORMED_DOCTYPE` | DOCTYPE missing or non-canonical casing. | §1.1 |
+| `MALFORMED_DOCTYPE` | DOCTYPE missing or non-conforming casing. | §1.1 |
 | `MALFORMED_HTML_ROOT` | `<html>` root element has attributes. | §1.1 |
 | `MALFORMED_HEAD` | `<head>` contains elements other than `<title>` and `<link>`, or elements not in the order shown. | §1.2.1 |
 | `FORBIDDEN_HARDCODED_TITLE` | `<title>` content is hardcoded instead of `$browserTitle`. | §1.1 |
