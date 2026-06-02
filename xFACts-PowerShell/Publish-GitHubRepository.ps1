@@ -516,11 +516,19 @@ $TableExports = @(
     },
     @{
         Title = "Component Registry"
-        Query = "SELECT module_name, component_name, description, doc_page_id, doc_title, doc_json_schema, doc_json_categories, doc_sort_order, doc_section_order FROM dbo.Component_Registry WHERE is_active = 1 ORDER BY module_name, component_name"
+        Query = "SELECT module_name, component_name, description, cc_prefix, doc_page_id, doc_title, doc_json_schema, doc_json_categories, doc_cc_slug, doc_sort_order, doc_section_order FROM dbo.Component_Registry WHERE is_active = 1 ORDER BY module_name, component_name"
     },
     @{
         Title = "Object Registry"
         Query = "SELECT component_name, object_name, object_category, object_type, object_path, description FROM dbo.Object_Registry WHERE is_active = 1 ORDER BY component_name, object_category, object_type, object_name"
+    },
+    @{
+        Title = "Nav Registry"
+        Query = "SELECT page_route, nav_label, display_title, description, section_key, sort_order, doc_page_id, show_in_nav, show_on_home FROM dbo.RBAC_NavRegistry WHERE is_active = 1 ORDER BY section_key, sort_order, page_route"
+    },
+    @{
+        Title = "Process Registry"
+        Query = "SELECT module_name, process_name, description, script_path, procedure_name, execution_mode, dependency_group, interval_seconds, scheduled_time, timeout_seconds, run_mode, allow_concurrent, cc_engine_slug, cc_engine_label, cc_page_route, cc_sort_order FROM Orchestrator.ProcessRegistry ORDER BY dependency_group, module_name, process_name"
     },
     @{
         Title = "Global Configuration"
