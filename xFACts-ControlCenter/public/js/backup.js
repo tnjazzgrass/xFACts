@@ -88,7 +88,6 @@ const bkp_clickActions = {
     'bkp-open-queue-detail':      bkp_openQueueDetail,
     'bkp-open-retention-detail':  bkp_openRetentionDetail,
     'bkp-modal-close':            bkp_closeDetailModal,
-    'bkp-modal-close-on-overlay': bkp_closeDetailModalOnOverlay,
     'bkp-slideout-close':         bkp_closeRetentionSlideout,
     'bkp-toggle-accordion':       bkp_toggleAccordion
 };
@@ -695,14 +694,22 @@ function bkp_openRetentionDetail(target) {
 
 /* Closes the retention slideout for the given type. Reads the type from
    the clicked element's data-action-bkp-type argument attribute (set on
-   both the overlay and the close button in Backup.ps1). The dialog's
-   cc-open is removed first to start the slide-out transition; the
-   overlay's cc-open is removed when the transition finishes so the
-   dimmer stays in place during the slide-out. */
-function bkp_closeRetentionSlideout(target) {
+   both the overlay and the close button in Backup.ps1) to resolve which
+   slideout to close. Wired from the close button and the overlay backdrop
+   via the bkp-slideout-close click action. When the matched element is the
+   overlay itself, the click is only a dismiss if it landed directly on the
+   backdrop (event.target === target); a click that bubbled up from the
+   dialog interior is ignored. When the matched element is the close button,
+   the slideout always closes. The dialog's cc-open is removed first to start
+   the slide-out transition; the overlay's cc-open is removed when the
+   transition finishes so the dimmer stays in place during the slide-out. */
+function bkp_closeRetentionSlideout(target, event) {
     var type = target.dataset.actionBkpType;
     if (!type) return;
     var overlayId = 'bkp-' + type + '-retention-overlay';
+    if (event && target.id === overlayId && event.target !== target) {
+        return;
+    }
     var overlay = document.getElementById(overlayId);
     var dialog  = overlay.querySelector('.cc-dialog');
     dialog.addEventListener('transitionend', function handler() {
@@ -1097,19 +1104,17 @@ function bkp_openDetailModal(title) {
     document.getElementById('bkp-modal-detail-overlay').classList.remove('cc-hidden');
 }
 
-/* Closes the detail modal. Hides the modal overlay by adding the
-   .hidden class. Wired up from the close button via data-action-click. */
-function bkp_closeDetailModal() {
-    document.getElementById('bkp-modal-detail-overlay').classList.add('cc-hidden');
-}
-
-/* Closes the detail modal only when the overlay itself is clicked (not
-   the dialog inside it). Wired up from the overlay via
-   data-action-click="bkp-modal-close-on-overlay". */
-function bkp_closeDetailModalOnOverlay(target, event) {
-    if (event.target === target) {
-        bkp_closeDetailModal();
+/* Closes the detail modal. Wired from the close button and the overlay backdrop
+   via the bkp-modal-close click action. The dispatcher passes the matched action
+   element as target. When target is the overlay itself, the click is only a
+   dismiss if it landed directly on the backdrop (event.target === target); a
+   click that bubbled up from the dialog interior is ignored. When target is the
+   close button, the modal always closes. */
+function bkp_closeDetailModal(target, event) {
+    if (event && target.id === 'bkp-modal-detail-overlay' && event.target !== target) {
+        return;
     }
+    document.getElementById('bkp-modal-detail-overlay').classList.add('cc-hidden');
 }
 
 /* ============================================================================
