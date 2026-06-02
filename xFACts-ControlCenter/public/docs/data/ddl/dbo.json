@@ -2232,6 +2232,14 @@
                                        },
                                        {
                                            "ordinal":  11,
+                                           "name":  "scope_tier",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  12,
                                            "name":  "is_active",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -2240,7 +2248,7 @@
                                            "description":  "Soft delete flag. 1 = active, 0 = retired/dropped."
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  13,
                                            "name":  "created_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -2249,7 +2257,7 @@
                                            "description":  "When this object was registered. Auto-populated via default."
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  14,
                                            "name":  "created_by",
                                            "dataType":  "varchar",
                                            "length":  "100",
@@ -2257,14 +2265,6 @@
                                            "identity":  false,
                                            "default":  "(suser_sname())",
                                            "description":  "Who registered this object. Auto-populated via SUSER_SNAME() default."
-                                       },
-                                       {
-                                           "ordinal":  14,
-                                           "name":  "scope_tier",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
                                        }
                                    ],
                        "indexes":  [
