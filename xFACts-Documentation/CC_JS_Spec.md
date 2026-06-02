@@ -296,7 +296,10 @@ function <prefix>_openSomething() {
     document.getElementById('<prefix>-modal-something').classList.remove('cc-hidden');
 }
 
-function <prefix>_closeSomething() {
+function <prefix>_closeSomething(target, event) {
+    if (event && target.id === '<prefix>-modal-something' && event.target !== target) {
+        return;
+    }
     document.getElementById('<prefix>-modal-something').classList.add('cc-hidden');
 }
 ```
@@ -315,7 +318,10 @@ function <prefix>_openSomething() {
     });
 }
 
-function <prefix>_closeSomething() {
+function <prefix>_closeSomething(target, event) {
+    if (event && target.id === '<prefix>-slideout-something' && event.target !== target) {
+        return;
+    }
     var overlay = document.getElementById('<prefix>-slideout-something');
     var dialog  = overlay.querySelector('.cc-dialog');
     dialog.addEventListener('transitionend', function handler() {
@@ -331,12 +337,13 @@ function <prefix>_closeSomething() {
 - Dynamic-overlay open and close handlers follow §11.5.1.
 - Static-modal open and close handlers follow §11.5.2.
 - Static slide-overlay open and close handlers follow §11.5.3.
+- Static-overlay close handlers (§11.5.2, §11.5.3) take `(target, event)` and dismiss on a backdrop click — `event.target === target` when `target` is the outer overlay — and on explicit close controls. A click bubbling from the dialog interior is ignored. The dynamic modal (§11.5.1) is exempt: it is removed by its own caller, not dispatched.
 
 ---
 
 ## 12. Event handler binding
 
-Event handlers are attached via `addEventListener`. The canonical pattern is event delegation, including the per-event delegated dispatchers registered inside `<prefix>_init` per §11.3.
+Event handlers are attached via `addEventListener`. The required pattern is event delegation, including the per-event delegated dispatchers registered inside `<prefix>_init` per §11.3.
 
 ### 12.1 Delegation pattern
 
