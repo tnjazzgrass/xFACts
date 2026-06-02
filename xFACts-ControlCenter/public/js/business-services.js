@@ -866,9 +866,16 @@ function bsv_detailRow(label, value) {
     return '<div class="bsv-detail-field"><span class="bsv-detail-label">' + label + '</span><span class="bsv-detail-value">' + cc_escapeHtml(value) + '</span></div>';
 }
 
-/* Closes the request detail modal. Dispatched from the bsv-close-modal click
-   action on the modal close button. */
-function bsv_closeDetailModal() {
+/* Closes the request detail modal. Wired from the close button and the overlay
+   backdrop via the bsv-close-modal click action. The dispatcher passes the
+   matched action element as target. When target is the overlay itself, the click
+   is only a dismiss if it landed directly on the backdrop (event.target ===
+   target); a click that bubbled up from the dialog interior is ignored. When
+   target is the close button, the modal always closes. */
+function bsv_closeDetailModal(target, event) {
+    if (event && target.id === 'bsv-modal-detail' && event.target !== target) {
+        return;
+    }
     document.getElementById('bsv-modal-detail').classList.add('cc-hidden');
 }
 
@@ -902,9 +909,17 @@ function bsv_openSlideout(title) {
 
 /* Closes the slideout panel. Attaches a one-shot transitionend listener to the
    inner cc-dialog that removes cc-open from the overlay once the slide-out
-   transition finishes, then removes cc-open from the dialog to start it.
-   Dispatched from the bsv-close-slideout click action. */
-function bsv_closeSlideout() {
+   transition finishes, then removes cc-open from the dialog to start it. Wired
+   from the close button and the overlay backdrop via the bsv-close-slideout
+   click action. The dispatcher passes the matched action element as target. When
+   target is the overlay itself, the click is only a dismiss if it landed
+   directly on the backdrop (event.target === target); a click that bubbled up
+   from the dialog interior is ignored. When target is the close button, the
+   slideout always closes. */
+function bsv_closeSlideout(target, event) {
+    if (event && target.id === 'bsv-slideout-detail' && event.target !== target) {
+        return;
+    }
     var overlay = document.getElementById('bsv-slideout-detail');
     var dialog = overlay.querySelector('.cc-dialog');
     dialog.addEventListener('transitionend', function handler() {
