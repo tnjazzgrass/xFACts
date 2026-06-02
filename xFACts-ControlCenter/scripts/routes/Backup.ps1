@@ -292,7 +292,7 @@ $bannerHtml
     </div>
 
     <!-- Modal for pipeline and queue file-level detail breakdowns -->
-    <div id="bkp-modal-detail-overlay" class="cc-modal-overlay cc-hidden" data-action-click="bkp-modal-close-on-overlay">
+    <div id="bkp-modal-detail-overlay" class="cc-modal-overlay cc-hidden" data-action-click="bkp-modal-close">
         <div class="cc-dialog cc-dialog-modal cc-wide">
             <div class="cc-dialog-header">
                 <h3 id="bkp-detail-title" class="cc-dialog-title">Detail</h3>
