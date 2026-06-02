@@ -1,161 +1,183 @@
-# ============================================================================
-# xFACts Control Center - Business Services Manager Dashboard
-# Location: E:\xFACts-ControlCenter\scripts\routes\BusinessServices.ps1
-#
-# Manager-only dashboard for Business Services review request operations.
-# Components:
-#   - Live Activity: Real-time group summary cards from CRS5 (Live)
-#   - Distribution:  Flip card showing user assignment status from xFACts (Event)
-#   - History:       Drill-down tree with group filter badges from xFACts (Event)
-#
-# CSS: /css/business-services.css, /css/engine-events.css
-# JS:  /js/business-services.js, /js/engine-events.js
-# APIs: BusinessServices-API.ps1
-#
-# Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessServices)
-#
-# CHANGELOG
-# ---------
+<#
+.SYNOPSIS
+    Business Services departmental dashboard page route.
+
+.DESCRIPTION
+    Manager dashboard for Business Services review request operations. Renders
+    three sections: Live Activity (real-time group summary cards polled from
+    CRS5), Distribution (per-group flip cards showing user assignment status
+    from xFACts, refreshed on engine events), and Request History (a
+    year/month/day drill-down with group filter badges from xFACts, refreshed
+    on engine events). The page consumes engine events for the
+    Collect-BSReviewRequests and Distribute-BSReviewRequests orchestrator
+    processes via the shared chrome. Page chrome, nav, header, banners, and
+    overlays are supplied by xFACts-CCShared.psm1 and cc-shared.css/js.
+
+.COMPONENT
+    DeptOps.BusinessServices
+
+.NOTES
+    File Name : BusinessServices.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\BusinessServices.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this route file, most recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-02  Refactored to the CC File Format standard: adopted the cc- chrome
+#             contract (cc-header-bar, cc-refresh-info, cc-engine-row, cc-section,
+#             cc-slide-overlay, cc-modal-overlay), data-cc-page / data-cc-prefix
+#             body attributes, data-action-* event wiring in place of inline
+#             onclick handlers, the unified overlay constructs (slideout and
+#             modal), and the single cc-shared.js script reference. Page-local
+#             content classes carry the bsv- prefix.
 # 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
-#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
-#             browser tab title now render from RBAC_NavRegistry via
-#             Get-PageHeaderHtml and Get-PageBrowserTitle. Dropped the
-#             $access.IsDeptOnly branching since Get-NavBarHtml already
-#             filters nav items by user permissions (a dept-only user
-#             naturally sees only Home + their dept page).
-# ============================================================================
+#             Get-NavBarHtml. Page H1 link, title, subtitle, and browser tab
+#             title now render from RBAC_NavRegistry via Get-PageHeaderHtml and
+#             Get-PageBrowserTitle.
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   Registers the GET /departmental/business-services page route. Performs the
+   page-level RBAC access check, resolves the user context and the shared
+   nav / header / banner fragments, and emits the page HTML shell with the
+   Live Activity, Distribution, and History sections plus the day-detail
+   slideout and request-detail modal overlays.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authentication 'ADLogin' -ScriptBlock {
+    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
 
-    # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/business-services'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/business-services') -StatusCode 403
         return
     }
 
-    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
-
-    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
-    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/departmental/business-services'
-    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/departmental/business-services'
+    $navHtml = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/departmental/business-services'
+    $headerHtml = Get-PageHeaderHtml -PageRoute '/departmental/business-services'
     $browserTitle = Get-PageBrowserTitle -PageRoute '/departmental/business-services'
+    $bannerHtml = Get-ChromeBannersHtml
 
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/business-services.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
+
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body>
+<body class="cc-section-departmental" data-cc-page="business-services" data-cc-prefix="bsv">
 $navHtml
 
-    <div class="header-bar">
+    <div class="cc-header-bar">
         <div>
             $headerHtml
         </div>
-        <div class="header-right">
-            <div class="refresh-info">
-                <span class="live-indicator"></span>
-                <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-                <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>
+        <div class="cc-header-right">
+            <div class="cc-refresh-info">
+                <span class="cc-live-indicator"></span>
+                <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+                <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
-            <div class="engine-row">
-                <div class="engine-card" id="card-engine-collect">
-                    <span class="engine-label">Collect</span>
-                    <div class="engine-bar disabled" id="engine-bar-collect"></div>
-                    <span class="engine-countdown" id="engine-cd-collect">&nbsp;</span>
+            <div class="cc-engine-row">
+                <div class="cc-card-engine" id="cc-card-engine-collect">
+                    <span class="cc-engine-label">Collect</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-collect"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-collect"></span>
                 </div>
-                <div class="engine-card" id="card-engine-distribute">
-                    <span class="engine-label">Distribute</span>
-                    <div class="engine-bar disabled" id="engine-bar-distribute"></div>
-                    <span class="engine-countdown" id="engine-cd-distribute">&nbsp;</span>
+                <div class="cc-card-engine" id="cc-card-engine-distribute">
+                    <span class="cc-engine-label">Distribute</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-distribute"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-distribute"></span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+    $bannerHtml
 
-    <!-- ================================================================ -->
-    <!-- LIVE ACTIVITY + DISTRIBUTION ROW                                 -->
-    <!-- ================================================================ -->
-    <div class="top-row">
-        <!-- Live Activity Cards -->
-        <div class="section" id="live-activity-section">
-            <div class="section-header">
-                <h2>Live Activity</h2>
-                <span class="refresh-badge-live" title="Refreshes on live polling timer"><span class="badge-dot"></span></span>
+    <div class="bsv-top-row">
+        <div class="cc-section" id="bsv-live-activity-section">
+            <div class="cc-section-header">
+                <h2 class="cc-section-title">Live Activity</h2>
+                <div class="cc-section-header-right">
+                    <span class="cc-refresh-badge-live" title="Refreshes on live polling timer"><span class="cc-refresh-badge-dot"></span></span>
+                </div>
             </div>
-            <div class="section-body">
-                <div id="live-activity-loading" class="loading">Loading live activity...</div>
-                <div id="live-activity-cards" class="activity-cards hidden"></div>
+            <div class="bsv-section-body">
+                <div id="bsv-connection-error" class="bsv-no-activity bsv-hidden"></div>
+                <div id="bsv-live-activity-loading" class="bsv-loading">Loading live activity...</div>
+                <div id="bsv-live-activity-cards" class="bsv-activity-cards bsv-hidden"></div>
             </div>
         </div>
 
-        <!-- Distribution Flip Card -->
-        <div class="section section-narrow" id="distribution-section">
-            <div class="section-header">
-                <h2>Distribution</h2>
-                <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+        <div class="cc-section" id="bsv-distribution-section">
+            <div class="cc-section-header">
+                <h2 class="cc-section-title">Distribution</h2>
+                <div class="cc-section-header-right">
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+                </div>
             </div>
-            <div class="section-body">
-                <div id="distribution-loading" class="loading">Loading...</div>
-                <div id="distribution-cards" class="distribution-cards hidden"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- HISTORY SECTION                                                  -->
-    <!-- ================================================================ -->
-    <div class="section" id="history-section">
-        <div class="section-header">
-            <h2>Request History</h2>
-            <div class="section-header-right">
-                <div id="group-badges" class="group-badges"></div>
-                <span id="history-count" class="badge-count"></span>
-                <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
-            </div>
-        </div>
-        <div class="section-body">
-            <div id="history-loading" class="loading">Loading history...</div>
-            <div id="history-tree" class="hidden"></div>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- SLIDEOUT PANEL (day details, user requests)                      -->
-    <!-- ================================================================ -->
-    <div id="slideout" class="slideout">
-        <div class="slideout-header">
-            <h3 id="slideout-title">Details</h3>
-            <button class="slideout-close" onclick="closeSlideout()">&times;</button>
-        </div>
-        <div id="slideout-body" class="slideout-body"></div>
-    </div>
-    <div id="slideout-backdrop" class="slideout-backdrop" onclick="closeSlideout()"></div>
-
-    <!-- ================================================================ -->
-    <!-- REQUEST DETAIL MODAL (comment view)                              -->
-    <!-- ================================================================ -->
-    <div id="detail-modal" class="modal-overlay hidden">
-        <div class="modal-dialog modal-wide">
-            <div class="modal-header">
-                <h3 id="detail-modal-title">Request Detail</h3>
-                <button class="modal-close" onclick="closeDetailModal()">&times;</button>
-            </div>
-            <div id="detail-modal-body" class="modal-body">
-                <div class="loading">Loading...</div>
+            <div class="bsv-section-body">
+                <div id="bsv-distribution-loading" class="bsv-loading">Loading...</div>
+                <div id="bsv-distribution-cards" class="bsv-distribution-cards bsv-hidden"></div>
             </div>
         </div>
     </div>
 
-    <script src="/js/business-services.js"></script>
-    <script src="/js/engine-events.js"></script>
+    <div class="cc-section" id="bsv-history-section">
+        <div class="cc-section-header">
+            <h2 class="cc-section-title">Request History</h2>
+            <div class="cc-section-header-right">
+                <div id="bsv-group-badges" class="bsv-group-badges"></div>
+                <span id="bsv-history-count" class="cc-section-title"></span>
+                <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+            </div>
+        </div>
+        <div class="bsv-section-body">
+            <div id="bsv-history-loading" class="bsv-loading">Loading history...</div>
+            <div id="bsv-history-tree" class="bsv-hidden"></div>
+        </div>
+    </div>
+
+    <!-- Day-detail slideout: per-day group summary and per-user completed requests -->
+    <div id="bsv-slideout-detail" class="cc-slide-overlay">
+        <div class="cc-dialog cc-dialog-slide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="bsv-detail-slideout-title">Details</h3>
+                <button class="cc-dialog-close" data-action-click="bsv-close-slideout">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="bsv-detail-slideout-body"></div>
+        </div>
+    </div>
+
+    <!-- Request-detail modal: full record and comment for a single tracking id -->
+    <div id="bsv-modal-detail" class="cc-modal-overlay cc-hidden">
+        <div class="cc-dialog cc-dialog-modal cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="bsv-detail-modal-title">Request Detail</h3>
+                <button class="cc-dialog-close" data-action-click="bsv-close-modal">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="bsv-detail-modal-body"></div>
+        </div>
+    </div>
+
+    <script src="/js/cc-shared.js"></script>
 </body>
 </html>
 "@
