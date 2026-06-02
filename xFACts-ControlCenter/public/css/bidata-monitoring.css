@@ -1,60 +1,48 @@
 /* ============================================================================
-   xFACts Control Center - BIDATA Monitoring Styles
+   xFACts Control Center - BIDATA Monitoring Styles (bidata-monitoring.css)
    Location: E:\xFACts-ControlCenter\public\css\bidata-monitoring.css
    Version: Tracked in dbo.System_Metadata (component: BIDATA)
 
    Page-specific styles for the BIDATA Daily Build monitoring dashboard.
-   Universal chrome (body, h1, header-bar, refresh-info, sections, engine
-   cards, connection banner, animations, slide-panel system, modal system)
-   is provided by engine-events.css per the CC Page Chrome Contract
-   (Development Guidelines Section 5.12).
+   Universal chrome (nav bar, header bar, refresh info, sections, engine
+   cards, connection banner, slide panels, modals, animations, design
+   tokens) is provided by cc-shared.css per the CC Page Chrome Contract.
+   This file contains only the BIDATA page's local content classes -- the
+   two-column layout, live activity status cards, build-execution step
+   rows, the duration-trend bar chart, the custom date-range modal body,
+   the build-history year/month/day tree, and the build-detail slideout
+   sub-components.
 
-   CHANGELOG
-   ---------
-   2026-04-30  Phase 4 (Standardization): full alignment to shared
-               infrastructure. Stripped:
-                 - Box-sizing reset, body, h1, page-subtitle (now shared)
-                 - .header-bar, .header-right, .refresh-info,
-                   .live-indicator, .last-updated (now shared)
-                 - .connection-error block (replaced by shared
-                   .connection-banner)
-                 - @keyframes pulse, @keyframes spin, .spinning-gear
-                   (now shared)
-                 - Base .section, .section-header, .section-title rules
-                   (now shared)
-                 - Entire page-local slideout block: .slideout-overlay,
-                   .slideout, .slideout-content, .slideout-header,
-                   .slideout-close, .slideout-body (replaced by shared
-                   .slide-panel-* from engine-events.css)
-                 - Entire page-local date range modal block:
-                   .modal-overlay, .modal-content, .modal-header,
-                   .modal-close, .modal-body, .modal-footer, .modal-btn,
-                   .modal-btn-cancel, .modal-btn-apply (replaced by shared
-                   .xf-modal-* from engine-events.css)
-                 - Orphan .refresh-badge rule (no element references it;
-                   page uses .refresh-badge-event/-action which are shared)
-               Restructured Build Execution and Build History height
-               management: removed fixed height: 550px on .execution-content
-               and max-height: calc(100vh - 380px) on .section-history.
-               Both sections now use shared .section-fill from
-               engine-events.css to consume remaining vertical space
-               within the viewport-constrained body and scroll internally.
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin (now in engine-events.css), engine-card/engine-row/
-               engine-bar/engine-label/engine-countdown block (shared), and
-               ::-webkit-scrollbar rules (shared). Consolidated duplicate
-               @keyframes spin (was defined twice) and duplicate .spinning-gear
-               (was defined twice with different durations -- kept 1s, the
-               cascade winner). Kept @keyframes pulse (.live-indicator).
+   All page-local classes are prefixed bid- to make scope visible at a
+   glance: bid-* in HTML or in another CSS file is unambiguously a BIDATA
+   page concern. Shared classes (e.g., .cc-section, .cc-dialog-body)
+   consumed by this page's HTML are defined in cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: TWO COLUMN GRID
+   CONTENT: LOADING AND EMPTY STATES
+   CONTENT: LIVE ACTIVITY
+   CONTENT: BUILD EXECUTION
+   CONTENT: DURATION TREND
+   CONTENT: DATE RANGE MODAL CONTENT
+   CONTENT: BUILD HISTORY
+   CONTENT: BUILD DETAIL SLIDEOUT CONTENT
    ============================================================================ */
-
 
 /* ============================================================================
-   GRID LAYOUT
-   Top-level layout for the BIDATA page content area. Two equal columns.
+   LAYOUT: TWO COLUMN GRID
+   ----------------------------------------------------------------------------
+   Top-level layout for the BIDATA page content area. Two equal columns:
+   Live Activity and Build Execution on the left, Duration Trend and Build
+   History on the right. On viewports narrower than 1200px the grid
+   collapses to a single column via the @media rule at the bottom of the
+   section.
+   Prefix: bid
    ============================================================================ */
 
-.grid-layout {
+/* The two-column grid container that holds the left and right page columns. */
+.bid-grid-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 15px;
@@ -62,120 +50,244 @@
     min-height: 0;
 }
 
-.grid-column {
+/* A single grid column (vertical flex stack of its sections). */
+.bid-grid-column {
     display: flex;
     flex-direction: column;
     gap: 15px;
     min-height: 0;
 }
 
+/* Collapses the two-column grid to a single column at narrow viewport widths. */
+@media (max-width: 1200px) {
+    /* Stacks the two-column grid vertically on narrower viewports. */
+    .bid-grid-layout {
+        grid-template-columns: 1fr;
+    }
+}
 
 /* ============================================================================
-   LOADING & EMPTY STATES
+   CONTENT: LOADING AND EMPTY STATES
+   ----------------------------------------------------------------------------
+   Inline placeholders shown while a section's content is loading or when a
+   section has no rows to display. Page-local because the wording and
+   padding vary by context; cc-shared's slide-empty is a different
+   panel-internal treatment.
+   Prefix: bid
    ============================================================================ */
 
-.loading { color: #888; text-align: center; padding: 30px; }
-.no-data { color: #666; text-align: center; padding: 30px; font-style: italic; }
+/* Centered muted placeholder shown while a section's content is loading. */
+.bid-loading {
+    color: var(--color-text-muted);
+    text-align: center;
+    padding: 30px;
+}
 
+/* Centered italic placeholder shown when a section has no data to display. */
+.bid-no-data {
+    color: var(--color-text-subtle);
+    text-align: center;
+    padding: 30px;
+    font-style: italic;
+}
 
 /* ============================================================================
-   LIVE ACTIVITY - Pipeline Card Style
+   CONTENT: LIVE ACTIVITY
+   ----------------------------------------------------------------------------
    Top-left section. Shows today's build status as a row of status cards.
+   Each card carries a status state tag (completed, failed, running,
+   waiting) that drives its frame color, icon color, and value color. The
+   status badge pill renders the textual status; the running variant adds a
+   spinning gear.
+   Prefix: bid
    ============================================================================ */
 
-.activity-grid {
+/* Flex container holding the row of live-activity status cards. */
+.bid-activity-grid {
     display: flex;
-    gap: 12px;
+    gap: var(--size-spacing-lg);
     flex-wrap: wrap;
 }
 
-.activity-card {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 12px 15px;
+/* Individual live-activity status card. */
+.bid-activity-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg) 15px;
     min-width: 120px;
     flex: 1;
 }
 
-.activity-card-header {
+/* State tag indicating an activity card reflects a completed build. */
+.bid-status-completed { }
+
+.bid-activity-card.bid-status-completed { /* completed-state frame coloring */
+    border-color: var(--color-accent-shared);
+}
+
+/* State tag indicating an activity card reflects a failed build. */
+.bid-status-failed { }
+
+.bid-activity-card.bid-status-failed { /* failed-state frame coloring */
+    border-color: #f44747;
+}
+
+/* State tag indicating an activity card reflects a running build. */
+.bid-status-running { }
+
+.bid-activity-card.bid-status-running { /* running-state frame coloring */
+    border-color: var(--color-accent-platform);
+}
+
+/* State tag indicating an activity card reflects a waiting (no build) state. */
+.bid-status-waiting { }
+
+.bid-activity-card.bid-status-waiting { /* waiting-state frame coloring */
+    border-color: var(--color-text-subtle);
+}
+
+/* Header row of an activity card (name on the left, icon or badge on the right). */
+.bid-activity-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-md);
     min-height: 22px;
 }
 
-.activity-card .activity-icon { font-size: 16px; opacity: 0.6; }
-.activity-card .activity-name {
-    font-size: 11px;
-    color: #888;
+/* Icon glyph at the right of an activity card header. */
+.bid-activity-icon {
+    font-size: var(--font-size-heading-lg);
+    opacity: 0.6;
+}
+
+.bid-activity-icon.bid-status-completed { /* icon color when card is in completed state */
+    color: var(--color-accent-shared);
+}
+
+.bid-activity-icon.bid-status-failed { /* icon color when card is in failed state */
+    color: #f44747;
+}
+
+.bid-activity-icon.bid-status-running { /* icon color when card is in running state */
+    color: var(--color-accent-platform);
+}
+
+.bid-activity-icon.bid-status-waiting { /* icon color when card is in waiting state */
+    color: var(--color-text-subtle);
+}
+
+/* Activity name label (uppercase, muted, above the value). */
+.bid-activity-name {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-.activity-card-body { font-size: 11px; }
-
-.activity-card .activity-value {
-    font-size: 16px;
-    font-weight: 500;
-    margin-bottom: 4px;
+/* Body container of an activity card (value and detail). */
+.bid-activity-card-body {
+    font-size: var(--font-size-body);
 }
 
-.activity-card .activity-detail {
-    color: #666;
+/* Activity value text (the prominent value line in a card body). */
+.bid-activity-value {
+    font-size: var(--font-size-heading-lg);
+    font-weight: 500;
+    margin-bottom: var(--size-spacing-xs);
+}
+
+.bid-activity-value.bid-status-completed { /* value color when card is in completed state */
+    color: var(--color-accent-shared);
+}
+
+.bid-activity-value.bid-status-failed { /* value color when card is in failed state */
+    color: #f44747;
+}
+
+.bid-activity-value.bid-status-running { /* value color when card is in running state */
+    color: var(--color-accent-platform);
+}
+
+.bid-activity-value.bid-status-waiting { /* value color when card is in waiting state */
+    color: var(--color-text-subtle);
+}
+
+/* Activity detail caption below the value (small, dim). */
+.bid-activity-detail {
+    color: var(--color-text-subtle);
     line-height: 1.4;
 }
 
-/* Build status badge pill (replaces Unicode status icons) */
-.build-status-badge {
+/* Build status badge pill (small uppercase status indicator in a card header). */
+.bid-build-status-badge {
     display: inline-block;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 9px;
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-sm);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
-.build-status-badge.completed { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.build-status-badge.failed    { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.build-status-badge.running   { background: rgba(86, 156, 214, 0.2); color: #569cd6; display: inline-flex; align-items: center; gap: 5px; }
-.build-status-badge.waiting   { background: rgba(102, 102, 102, 0.2); color: #888; }
 
-/* Status-colored borders - all cards in a set match */
-.activity-card.status-completed { border-color: #4ec9b0; }
-.activity-card.status-completed .activity-icon { color: #4ec9b0; }
-.activity-card.status-completed .activity-value { color: #4ec9b0; }
+/* State tag marking a build status badge as the completed state. */
+.bid-completed { }
 
-.activity-card.status-failed { border-color: #f44747; }
-.activity-card.status-failed .activity-icon { color: #f44747; }
-.activity-card.status-failed .activity-value { color: #f44747; }
+.bid-build-status-badge.bid-completed { /* completed badge -- teal pill */
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
 
-.activity-card.status-running { border-color: #569cd6; }
-.activity-card.status-running .activity-icon { color: #569cd6; }
-.activity-card.status-running .activity-value { color: #569cd6; }
+/* State tag marking a build status badge as the failed state. */
+.bid-failed { }
 
-.activity-card.status-waiting { border-color: #666; }
-.activity-card.status-waiting .activity-icon { color: #666; }
-.activity-card.status-waiting .activity-value { color: #666; }
+.bid-build-status-badge.bid-failed { /* failed badge -- orange pill */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
 
+/* State tag marking a build status badge as the running state. */
+.bid-running { }
+
+.bid-build-status-badge.bid-running { /* running badge -- blue pill with inline gear */
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* State tag marking a build status badge as the waiting state. */
+.bid-waiting { }
+
+.bid-build-status-badge.bid-waiting { /* waiting badge -- gray pill */
+    background: rgba(102, 102, 102, 0.2);
+    color: var(--color-text-muted);
+}
 
 /* ============================================================================
-   BUILD EXECUTION
+   CONTENT: BUILD EXECUTION
+   ----------------------------------------------------------------------------
    Bottom-left section. Shows step-by-step execution detail for today's
-   build. Uses shared .section-fill to consume remaining vertical space
-   in the left column and scroll internally.
+   build as a list of step rows with status badge, name, start/end times,
+   duration, and a 14-day variance pill. The empty state shows a centered
+   placeholder. Rows carry header / failed / running state tags. Uses the
+   shared .cc-fill section behavior to consume remaining vertical space.
+   Prefix: bid
    ============================================================================ */
 
-.execution-content {
+/* Scrollable container for the build-execution step list. */
+.bid-execution-content {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
 }
 
-.no-active-build {
+/* Centered placeholder shown when there is no build to display steps for. */
+.bid-no-active-build {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -184,38 +296,75 @@
     text-align: center;
 }
 
-.no-active-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
-.no-active-text { font-size: 16px; color: #888; margin-bottom: 6px; }
-.no-active-subtext { font-size: 12px; color: #666; }
+/* Large icon glyph in the no-active-build placeholder. */
+.bid-no-active-icon {
+    font-size: 40px;
+    margin-bottom: var(--size-spacing-lg);
+    opacity: 0.5;
+}
 
-.execution-list { display: flex; flex-direction: column; gap: 2px; }
+/* Primary text line in the no-active-build placeholder. */
+.bid-no-active-text {
+    font-size: var(--font-size-heading-lg);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-sm);
+}
 
-.step-row {
+/* Secondary caption in the no-active-build placeholder. */
+.bid-no-active-subtext {
+    font-size: var(--font-size-content);
+    color: var(--color-text-subtle);
+}
+
+/* Vertical flex list of execution step rows. */
+.bid-execution-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* A single execution step row (status badge, name, times, duration, variance). */
+.bid-step-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    background-color: #2d2d2d;
-    border-radius: 3px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-sm) 10px;
+    background-color: var(--color-bg-card-hover);
+    border-radius: var(--size-radius-sm);
 }
 
-.step-row.step-header {
-    background-color: #252526;
-    font-size: 11px;
-    color: #888;
+/* State tag marking a step row as the column-header row. */
+.bid-step-header { }
+
+.bid-step-row.bid-step-header { /* column-header row styling for the step list */
+    background-color: var(--color-bg-card);
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     letter-spacing: 0.5px;
-    padding: 8px 10px;
-    border-bottom: 1px solid #404040;
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.step-row.step-failed  { background-color: rgba(244, 71, 71, 0.05); }
-.step-row.step-running { background-color: rgba(220, 220, 170, 0.05); }
+/* State tag marking a step row as a failed step. */
+.bid-step-failed { }
 
-.step-status-badge {
+.bid-step-row.bid-step-failed { /* failed-step row tint */
+    background-color: rgba(244, 71, 71, 0.05);
+}
+
+/* State tag marking a step row as the currently-running step. */
+.bid-step-running { }
+
+.bid-step-row.bid-step-running { /* running-step row tint */
+    background-color: rgba(220, 220, 170, 0.05);
+}
+
+/* Step status badge pill (fixed-width status indicator at the left of a step row). */
+.bid-step-status-badge {
     display: inline-block;
     padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 8px;
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -223,73 +372,152 @@
     text-align: center;
     flex-shrink: 0;
 }
-.step-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.step-status-badge.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.step-status-badge.running { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
 
-.step-name { flex: 1; color: #d4d4d4; font-size: 12px; min-width: 0; }
+/* State tag marking a step status badge as the success state. */
+.bid-success { }
 
-.step-time {
+.bid-step-status-badge.bid-success { /* success badge -- teal pill */
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
+
+.bid-step-status-badge.bid-failed { /* failed badge -- orange pill */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+.bid-step-status-badge.bid-running { /* running badge -- blue pill */
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+}
+
+/* Step name cell (flexible width, primary text). */
+.bid-step-name {
+    flex: 1;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    min-width: 0;
+}
+
+/* Step time cell (fixed-width centered start/end time). */
+.bid-step-time {
     width: 80px;
     text-align: center;
-    color: #888;
-    font-size: 12px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
     flex-shrink: 0;
 }
 
-.step-duration-col {
+/* Step duration cell (fixed-width right-aligned duration). */
+.bid-step-duration-col {
     width: 70px;
     text-align: right;
-    color: #888;
-    font-size: 12px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
     flex-shrink: 0;
 }
 
-.step-duration-running { color: #dcdcaa; }
+/* State tag marking a duration cell as belonging to the running step. */
+.bid-step-duration-running { }
 
-.step-variance-col {
+.bid-step-duration-col.bid-step-duration-running { /* running-step duration text color */
+    color: var(--color-accent-departmental);
+}
+
+/* Step variance cell (fixed-width right-aligned 14-day variance pill host). */
+.bid-step-variance-col {
     width: 75px;
     text-align: right;
     flex-shrink: 0;
 }
 
-.step-comparison { font-size: 10px; padding: 1px 5px; border-radius: 3px; display: inline-block; }
-.step-comparison.slower  { color: #f44747; background-color: rgba(244, 71, 71, 0.2); }
-.step-comparison.faster  { color: #4ec9b0; background-color: rgba(78, 201, 176, 0.2); }
-.step-comparison.neutral { color: #888;    background-color: rgba(136, 136, 136, 0.2); }
-
-
-/* ============================================================================
-   DURATION TREND
-   Top-right section. Bar chart showing build durations over time, with
-   selectable date ranges and a custom-range modal trigger.
-   ============================================================================ */
-
-.trend-controls { display: flex; gap: 5px; align-items: center; }
-
-.trend-btn {
-    background-color: #333;
-    border: 1px solid #404040;
-    color: #888;
-    padding: 4px 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 12px;
-    transition: all 0.2s;
+/* Variance comparison pill (percentage faster/slower vs. 14-day average). */
+.bid-step-comparison {
+    font-size: var(--font-size-default);
+    padding: 1px 5px;
+    border-radius: var(--size-radius-sm);
+    display: inline-block;
 }
 
-.trend-btn:hover  { background-color: #404040; color: #d4d4d4; }
-.trend-btn.active { background-color: #4ec9b0; border-color: #4ec9b0; color: #1e1e1e; }
+/* State tag marking a comparison pill as slower-than-average. */
+.bid-slower { }
 
-.trend-chart-area {
+.bid-step-comparison.bid-slower { /* slower-than-average -- red */
+    color: #f44747;
+    background-color: rgba(244, 71, 71, 0.2);
+}
+
+/* State tag marking a comparison pill as faster-than-average. */
+.bid-faster { }
+
+.bid-step-comparison.bid-faster { /* faster-than-average -- teal */
+    color: var(--color-accent-shared);
+    background-color: rgba(78, 201, 176, 0.2);
+}
+
+/* State tag marking a comparison pill as neutral (no meaningful variance). */
+.bid-neutral { }
+
+.bid-step-comparison.bid-neutral { /* neutral variance -- muted */
+    color: var(--color-text-muted);
+    background-color: rgba(136, 136, 136, 0.2);
+}
+
+/* ============================================================================
+   CONTENT: DURATION TREND
+   ----------------------------------------------------------------------------
+   Top-right section. Bar chart of build durations over time with selectable
+   date ranges and a custom-range modal trigger. Bars render either as a
+   single success/failed bar or as a stacked multi-segment bar (multiple
+   attempts in one day). Date labels appear below the bars for ranges of 30
+   days or fewer. A stats row summarizes avg/min/max/day-count.
+   Prefix: bid
+   ============================================================================ */
+
+/* Flex row of date-range control buttons. */
+.bid-trend-controls {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+/* A single date-range control button. */
+.bid-trend-btn {
+    background-color: var(--color-bg-card-deep);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-xs) 10px;
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    font-size: var(--font-size-content);
+    transition: all var(--duration-fast);
+}
+
+.bid-trend-btn:hover { /* hover state for a trend control button */
+    background-color: var(--color-border-default);
+    color: var(--color-text-primary);
+}
+
+/* State tag marking the currently-selected trend control button. */
+.bid-active { }
+
+.bid-trend-btn.bid-active { /* active (selected) trend control button */
+    background-color: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+    color: var(--color-bg-page);
+}
+
+/* Chart area holding the row of duration bars. */
+.bid-trend-chart-area {
     height: 130px;
     display: flex;
     align-items: flex-end;
-    gap: 3px;
-    margin-bottom: 8px;
+    gap: var(--size-radius-sm);
+    margin-bottom: var(--size-spacing-md);
 }
 
-.trend-bar-wrapper {
+/* Per-bar vertical wrapper (one per day in the chart). */
+.bid-trend-bar-wrapper {
     flex: 1;
     height: 100%;
     display: flex;
@@ -298,7 +526,8 @@
     min-width: 0;
 }
 
-.trend-bar-container {
+/* Clickable container holding a single bar (opens that day's builds). */
+.bid-trend-bar-container {
     flex: 1;
     width: 100%;
     display: flex;
@@ -308,301 +537,533 @@
     padding: 0 1px;
 }
 
-.trend-bar-container:hover .trend-bar,
-.trend-bar-container:hover .trend-bar-stacked {
-    opacity: 0.8;
-    box-shadow: 0 0 8px rgba(78, 201, 176, 0.4);
-}
+/* State tag marking the trend bar currently highlighted (selected day). */
+.bid-highlighted { }
 
-.trend-bar-container.highlighted .trend-bar,
-.trend-bar-container.highlighted .trend-bar-stacked {
-    box-shadow: 0 0 0 2px #569cd6;
-}
-
-/* Enhanced bar styling with gradient, rounded top, and border */
-.trend-bar {
+/* Single-color duration bar (one attempt for the day). */
+.bid-trend-bar {
     width: 100%;
-    border-radius: 3px 3px 0 0;
-    transition: all 0.2s;
+    border-radius: var(--size-radius-sm) var(--size-radius-sm) 0 0;
+    transition: all var(--duration-fast);
     min-height: 4px;
-    border: 1px solid transparent;
+    border: var(--size-border-thin) solid transparent;
     border-bottom: none;
 }
 
-.trend-bar.bar-success {
-    background: linear-gradient(to bottom, #5fd4b8 0%, #4ec9b0 40%, #3da890 100%);
+.bid-trend-bar:hover { /* hover glow on a single-color bar */
+    opacity: 0.8;
+    box-shadow: 0 0 var(--size-spacing-md) rgba(78, 201, 176, 0.4);
+}
+
+.bid-trend-bar.bid-highlighted { /* selected-day outline on a single-color bar */
+    box-shadow: 0 0 0 2px var(--color-accent-platform);
+}
+
+/* State tag marking a bar (or segment) as the success color. */
+.bid-bar-success { }
+
+.bid-trend-bar.bid-bar-success { /* success bar fill (teal gradient) */
+    background: linear-gradient(to bottom, #5fd4b8 0%, var(--color-accent-shared) 40%, #3da890 100%);
     border-color: rgba(78, 201, 176, 0.5);
 }
 
-.trend-bar.bar-failed {
+/* State tag marking a bar (or segment) as the failed color. */
+.bid-bar-failed { }
+
+.bid-trend-bar.bid-bar-failed { /* failed bar fill (red gradient) */
     background: linear-gradient(to bottom, #ff6b6b 0%, #f44747 40%, #cc3636 100%);
     border-color: rgba(244, 71, 71, 0.5);
 }
 
-.trend-bar-stacked {
+/* Stacked multi-segment duration bar (multiple attempts for the day). */
+.bid-trend-bar-stacked {
     width: 100%;
     display: flex;
     flex-direction: column-reverse;
-    border-radius: 3px 3px 0 0;
+    border-radius: var(--size-radius-sm) var(--size-radius-sm) 0 0;
     overflow: hidden;
     min-height: 4px;
-    border: 1px solid rgba(78, 201, 176, 0.5);
+    border: var(--size-border-thin) solid rgba(78, 201, 176, 0.5);
     border-bottom: none;
 }
 
-.trend-bar-segment { width: 100%; }
-.trend-bar-segment.bar-success {
-    background: linear-gradient(to bottom, #5fd4b8 0%, #4ec9b0 50%, #3da890 100%);
+.bid-trend-bar-stacked:hover { /* hover glow on a stacked bar */
+    opacity: 0.8;
+    box-shadow: 0 0 var(--size-spacing-md) rgba(78, 201, 176, 0.4);
 }
-.trend-bar-segment.bar-failed {
+
+.bid-trend-bar-stacked.bid-highlighted { /* selected-day outline on a stacked bar */
+    box-shadow: 0 0 0 2px var(--color-accent-platform);
+}
+
+/* A single segment within a stacked bar. */
+.bid-trend-bar-segment {
+    width: 100%;
+}
+
+.bid-trend-bar-segment.bid-bar-success { /* success segment fill (teal gradient) */
+    background: linear-gradient(to bottom, #5fd4b8 0%, var(--color-accent-shared) 50%, #3da890 100%);
+}
+
+.bid-trend-bar-segment.bid-bar-failed { /* failed segment fill (red gradient) */
     background: linear-gradient(to bottom, #ff6b6b 0%, #f44747 50%, #cc3636 100%);
 }
-.trend-bar-segment.bar-gap {
+
+/* State tag marking a stacked-bar segment as an inter-attempt gap. */
+.bid-bar-gap { }
+
+.bid-trend-bar-segment.bid-bar-gap { /* gap segment fill (dark red gradient) */
     background: linear-gradient(to bottom, #a33 0%, #8b0000 100%);
 }
 
-/* Date labels below bars */
-.trend-date-labels {
+/* Flex row of date labels beneath the trend bars. */
+.bid-trend-date-labels {
     display: flex;
-    gap: 3px;
-    margin-bottom: 12px;
+    gap: var(--size-radius-sm);
+    margin-bottom: var(--size-spacing-lg);
 }
 
-.trend-date-label {
+/* A single date label below a trend bar. */
+.bid-trend-date-label {
     flex: 1;
     text-align: center;
-    font-size: 9px;
-    color: #666;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-subtle);
     min-width: 0;
     overflow: hidden;
 }
 
-.trend-stats {
+/* Stats row beneath the chart summarizing avg/min/max/day-count. */
+.bid-trend-stats {
     display: flex;
     justify-content: center;
     gap: 30px;
     padding-top: 10px;
-    border-top: 1px solid #404040;
+    border-top: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.stat { display: flex; align-items: baseline; gap: 6px; }
-.stat-label { font-size: 11px; color: #888; text-transform: uppercase; }
-.stat-value { font-size: 14px; color: #4ec9b0; font-weight: 500; }
-
-
-/* ============================================================================
-   DATE RANGE MODAL CONTENT
-   Sub-components rendered inside the shared xf-modal-body when the user
-   clicks the Custom button in the Duration Trend controls. The outer
-   modal container itself uses .xf-modal-overlay/.xf-modal/.xf-modal-header/
-   .xf-modal-body/.xf-modal-actions from engine-events.css.
-   ============================================================================ */
-
-.date-field { display: flex; flex-direction: column; gap: 5px; }
-.date-field label { font-size: 11px; color: #888; text-transform: uppercase; }
-
-.date-field input {
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 8px 12px;
-    color: #d4d4d4;
-    font-size: 14px;
-}
-
-.date-field input:focus { outline: none; border-color: #4ec9b0; }
-
-
-/* ============================================================================
-   BUILD HISTORY
-   Bottom-right section. Hierarchical year/month/day expansion of past
-   builds with summary tables. Uses shared .section-fill to consume
-   remaining vertical space in the right column and scroll internally.
-   ============================================================================ */
-
-.history-content { flex: 1; overflow-y: auto; min-height: 0; }
-
-.history-count { font-size: 11px; color: #888; }
-.history-tree  { font-size: 13px; }
-.history-year  { margin-bottom: 8px; }
-
-.year-header {
+/* A single stat item (label + value pair). */
+.bid-stat {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    cursor: pointer;
-    border-radius: 4px;
-    background-color: #2d2d2d;
-    border: 1px solid #404040;
-    transition: background-color 0.2s;
+    align-items: baseline;
+    gap: var(--size-spacing-sm);
 }
 
-.year-header:hover { background-color: #353535; }
-.expand-icon { color: #888; font-size: 10px; width: 12px; }
-.year-label { font-weight: 700; color: #569cd6; font-size: 18px; letter-spacing: 1px; }
-.year-header .year-stats { margin-left: auto; display: flex; gap: 6px; font-size: 11px; }
-.year-header .year-stat  { min-width: 120px; text-align: right; color: #888; }
-.year-header .year-stat.success { color: #4ec9b0; }
-.year-header .year-stat.failed  { color: #f48771; }
-
-.year-content { margin-left: 10px; margin-top: 8px; }
-
-/* Month Summary Table */
-.month-summary-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-bottom: 8px;
+/* The label half of a stat item (uppercase, muted). */
+.bid-stat-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
 }
 
-.month-summary-table th {
-    text-align: left;
-    padding: 6px 10px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+/* The value half of a stat item (accent-colored). */
+.bid-stat-value {
+    font-size: var(--font-size-heading-sm);
+    color: var(--color-accent-shared);
     font-weight: 500;
 }
 
-.month-summary-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* ============================================================================
+   CONTENT: DATE RANGE MODAL CONTENT
+   ----------------------------------------------------------------------------
+   Sub-components rendered inside the shared cc-dialog-body when the user
+   clicks the Custom button in the Duration Trend controls. The outer modal
+   container itself uses the shared .cc-modal-overlay / .cc-dialog /
+   .cc-dialog-modal classes from cc-shared.css; these classes style only the
+   two date fields inside the body.
+   Prefix: bid
+   ============================================================================ */
+
+/* A single labeled date field (label stacked above the input). */
+.bid-date-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
 
-.month-summary-table tr.month-row {
+/* The label above a date field input. */
+.bid-date-field-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+}
+
+/* The date input control inside a date field. */
+.bid-date-field-input {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-heading-sm);
+}
+
+.bid-date-field-input:focus { /* focus state for a date input */
+    outline: none;
+    border-color: var(--color-accent-shared);
+}
+
+/* ============================================================================
+   CONTENT: BUILD HISTORY
+   ----------------------------------------------------------------------------
+   Bottom-right section. Hierarchical year / month / day expansion of past
+   builds. Each year header is clickable to expand its month-summary table;
+   each month row is clickable to expand a daily-builds table. Status badges
+   and duration cells carry success / failed state tags. Uses the shared
+   .cc-fill section behavior to consume remaining vertical space.
+   Prefix: bid
+   ============================================================================ */
+
+/* Scrollable container for the build-history tree. */
+.bid-history-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* Build count caption shown in the section header. */
+.bid-history-count {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* The history tree root container. */
+.bid-history-tree {
+    font-size: var(--font-size-content-lg);
+}
+
+/* A single year group within the history tree. */
+.bid-history-year {
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Clickable year header row (expand icon, year label, year stats). */
+.bid-year-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) 10px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    border-radius: var(--size-radius-default);
+    background-color: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    transition: background-color var(--duration-fast);
 }
 
-.month-summary-table tr.month-row:hover td { background: #2d2d2d; }
+.bid-year-header:hover { /* hover state for a year header row */
+    background-color: #353535;
+}
 
-.month-summary-table .expand-cell { width: 24px; text-align: center; }
-.month-summary-table .month-cell   { font-weight: 500; }
-.month-summary-table .success-cell { color: #4ec9b0; }
-.month-summary-table .fail-cell    { color: #f44747; }
-.month-summary-table .avg-cell     { color: #888; }
+/* Triangular expand/collapse indicator icon. */
+.bid-expand-icon {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
+    width: var(--size-spacing-lg);
+}
 
-/* Month details row (expanded content) */
-.month-details td {
-    padding: 0 0 12px 20px;
+/* Year label text in a year header (large, blue, letter-spaced). */
+.bid-year-label {
+    font-weight: 700;
+    color: var(--color-accent-platform);
+    font-size: 18px;
+    letter-spacing: 1px;
+}
+
+/* Right-aligned stats group inside a year header. */
+.bid-year-stats {
+    margin-left: auto;
+    display: flex;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-body);
+}
+
+/* A single stat in the year header stats group. */
+.bid-year-stat {
+    min-width: 120px;
+    text-align: right;
+    color: var(--color-text-muted);
+}
+
+/* State tag marking a year stat as the success count. */
+.bid-success { }
+
+.bid-year-stat.bid-success { /* success-count year stat -- teal */
+    color: var(--color-accent-shared);
+}
+
+.bid-year-stat.bid-failed { /* failed-count year stat -- orange */
+    color: var(--color-status-critical);
+}
+
+/* Indented container for a year's expanded month content. */
+.bid-year-content {
+    margin-left: 10px;
+    margin-top: var(--size-spacing-md);
+}
+
+/* Month-summary table (one row per month within an expanded year). */
+.bid-month-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Header cell in the month-summary table. */
+.bid-month-summary-table-th {
+    text-align: left;
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+/* Data cell in the month-summary table. */
+.bid-month-summary-table-td {
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
+}
+
+/* Clickable month row that expands the daily-builds table. */
+.bid-month-row {
+    cursor: pointer;
+    transition: background-color var(--duration-fast);
+}
+
+.bid-month-row:hover { /* hover state for a clickable month row */
+    background: var(--color-bg-card-hover);
+}
+
+/* Narrow expand-icon cell at the left of a month row. */
+.bid-expand-cell {
+    width: 24px;
+    text-align: center;
+}
+
+/* Month-name cell in the month-summary table. */
+.bid-month-cell {
+    font-weight: 500;
+}
+
+/* Success-count cell in the month-summary table. */
+.bid-success-cell {
+    color: var(--color-accent-shared);
+}
+
+/* Failed-count cell in the month-summary table. */
+.bid-fail-cell {
+    color: #f44747;
+}
+
+/* Average-duration cell in the month-summary table. */
+.bid-avg-cell {
+    color: var(--color-text-muted);
+}
+
+/* Expanded daily-builds detail cell (hosts the per-day history table). */
+.bid-month-details {
+    padding: 0 0 var(--size-spacing-lg) var(--size-spacing-2xl);
     background: transparent;
 }
 
-.month-details .history-table { margin-top: 8px; }
-
-.history-table {
+/* Per-day history table inside an expanded month. */
+.bid-history-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
+    margin-top: var(--size-spacing-md);
 }
 
-.history-table th {
+/* Sticky header cell in the per-day history table. */
+.bid-history-table-th {
     text-align: left;
-    padding: 8px 10px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
     position: sticky;
     top: 0;
-    background: #252526;
+    background: var(--color-bg-card);
 }
 
-.history-table td {
-    padding: 6px 10px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* Data cell in the per-day history table. */
+.bid-history-table-td {
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
 
-.history-table tr:hover td {
-    background: #2d2d2d;
+/* Clickable data row in the per-day history table (opens that day's builds). */
+.bid-history-table-row {
     cursor: pointer;
 }
 
-.history-table tr.row-odd td { background: rgba(255, 255, 255, 0.02); }
-.history-table tr.row-odd:hover td { background: #2d2d2d; }
+.bid-history-table-row:hover { /* hover state for a history table data row */
+    background: var(--color-bg-card-hover);
+}
 
-/* Status badge in history table */
-.history-status-badge {
+/* State tag marking a history table row as the odd (alternating) row. */
+.bid-row-odd { }
+
+.bid-history-table-row.bid-row-odd { /* alternating odd-row background tint */
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* History status badge pill (small uppercase indicator in the history table). */
+.bid-history-status-badge {
     display: inline-block;
     padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 8px;
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
-.history-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.history-status-badge.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
 
-.duration-cell { font-weight: 500; }
-.duration-cell.success { color: #4ec9b0; }
-.duration-cell.failed  { color: #f44747; }
+.bid-history-status-badge.bid-success { /* success badge -- teal pill */
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
 
+.bid-history-status-badge.bid-failed { /* failed badge -- orange pill */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Duration cell in the per-day history table (carries a status state tag). */
+.bid-duration-cell {
+    font-weight: 500;
+}
+
+.bid-duration-cell.bid-success { /* duration text color for a successful build */
+    color: var(--color-accent-shared);
+}
+
+.bid-duration-cell.bid-failed { /* duration text color for a failed build */
+    color: #f44747;
+}
 
 /* ============================================================================
-   SLIDEOUT BODY CONTENT
-   Sub-components rendered inside the shared slide-panel-body when
-   displaying build details. The outer panel itself uses
-   .slide-panel-overlay/.slide-panel/.slide-panel-header/.slide-panel-body
-   from engine-events.css (default 550px width).
+   CONTENT: BUILD DETAIL SLIDEOUT CONTENT
+   ----------------------------------------------------------------------------
+   Sub-components rendered inside the shared cc-dialog-body of the build
+   detail slideout. The outer panel uses the shared .cc-slide-overlay /
+   .cc-dialog / .cc-dialog-slide classes from cc-shared.css. These classes
+   style the per-build summary grid, the step-detail table, and the
+   multi-attempt separators. Page-local until a second page proves
+   cross-page reuse.
+   Prefix: bid
    ============================================================================ */
 
-.detail-section { margin-bottom: 20px; }
+/* A titled detail section inside the slideout body. */
+.bid-detail-section {
+    margin-bottom: var(--size-spacing-2xl);
+}
 
-.detail-section h3 {
-    font-size: 12px;
-    color: #4ec9b0;
+/* Section title inside a detail section (uppercase, teal, underlined). */
+.bid-detail-section-title {
+    font-size: var(--font-size-content);
+    color: var(--color-accent-shared);
     text-transform: uppercase;
-    margin-bottom: 12px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #404040;
+    margin-bottom: var(--size-spacing-lg);
+    padding-bottom: var(--size-spacing-sm);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     letter-spacing: 0.5px;
 }
 
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.detail-item { display: flex; flex-direction: column; gap: 3px; }
-.detail-item.full-width { grid-column: 1 / -1; }
-.detail-item .label { font-size: 10px; color: #888; text-transform: uppercase; }
-.detail-item .value { font-size: 13px; color: #d4d4d4; }
-.detail-item .value.status-completed { color: #4ec9b0; }
-.detail-item .value.status-failed    { color: #f44747; }
-.detail-item .value.error            { color: #f44747; }
+/* Two-column grid of detail items within a detail section. */
+.bid-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
 
-/* Slideout step table - no row highlighting, colored status icons */
-.step-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.step-table th {
+/* A single detail item (label stacked above value). */
+.bid-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-radius-sm);
+}
+
+/* Modifier tag spanning a detail item across both grid columns. */
+.bid-full-width { }
+
+.bid-detail-item.bid-full-width { /* detail item spanning the full grid width */
+    grid-column: 1 / -1;
+}
+
+/* The label half of a detail item (small, uppercase, muted). */
+.bid-detail-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+}
+
+/* The value half of a detail item (primary text). */
+.bid-detail-value {
+    font-size: var(--font-size-content-lg);
+    color: var(--color-text-primary);
+}
+
+.bid-detail-value.bid-status-completed { /* value color for a completed build */
+    color: var(--color-accent-shared);
+}
+
+.bid-detail-value.bid-status-failed { /* value color for a failed build */
+    color: #f44747;
+}
+
+/* State tag marking a detail value as an error string. */
+.bid-error { }
+
+.bid-detail-value.bid-error { /* error-string value -- red */
+    color: #f44747;
+}
+
+/* Step-detail table inside the slideout (no row highlighting, colored status badges). */
+.bid-step-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Header cell in the step-detail table. */
+.bid-step-table-th {
     text-align: left;
-    padding: 8px 10px;
-    background-color: #1e1e1e;
-    color: #888;
+    padding: var(--size-spacing-md) 10px;
+    background-color: var(--color-bg-page);
+    color: var(--color-text-muted);
     font-weight: 500;
     text-transform: uppercase;
-    font-size: 10px;
-}
-.step-table td { padding: 8px 10px; border-bottom: 1px solid #333; color: #d4d4d4; }
-.step-table .status-cell { text-align: center; }
-
-/* Build separator in slideout for multiple executions */
-.build-separator {
-    border-top: 2px solid #404040;
-    margin: 20px 0;
-    padding-top: 20px;
+    font-size: var(--font-size-default);
 }
 
-.build-attempt-header {
-    font-size: 13px;
+/* Data cell in the step-detail table. */
+.bid-step-table-td {
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
+}
+
+/* Layout tag centering a step-detail table cell's content. */
+.bid-status-cell { }
+
+.bid-step-table-td.bid-status-cell { /* centered status-badge cell */
+    text-align: center;
+}
+
+/* Horizontal separator between multiple build attempts in the slideout. */
+.bid-build-separator {
+    border-top: 2px solid var(--color-border-default);
+    margin: var(--size-spacing-2xl) 0;
+    padding-top: var(--size-spacing-2xl);
+}
+
+/* Attempt header label shown above each build when multiple attempts exist. */
+.bid-build-attempt-header {
+    font-size: var(--font-size-content-lg);
     font-weight: 600;
-    color: #569cd6;
+    color: var(--color-accent-platform);
     margin-bottom: 15px;
-}
-
-
-/* ============================================================================
-   RESPONSIVE
-   ============================================================================ */
-
-@media (max-width: 1200px) {
-    .grid-layout { grid-template-columns: 1fr; }
-    .activity-grid { flex-wrap: wrap; }
 }
