@@ -1,26 +1,55 @@
-# ============================================================================
-# xFACts Control Center - DM Operations API
-# Location: E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1
-# 
-# API endpoints for DM Operations monitoring data.
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.DmOperations)
-# ============================================================================
+<#
+.SYNOPSIS
+    Provides the DM Operations dashboard's JSON API endpoints.
 
-# Note: Get-RemainingCounts and $DmOpsRemainingCache are defined in xFACts-Helpers.psm1
+.DESCRIPTION
+    API routes backing the Control Center DM Operations dashboard. Exposes read
+    endpoints for per-process lifetime totals, today's running totals, daily
+    execution history, per-day batch lists, per-batch detail, and the weekly
+    execution-window schedule grids for the unified consumer archive and the
+    consumer shell purge, plus the per-process environment badges. Action
+    endpoints toggle the per-process abort flag, write schedule grid cells, and
+    perform an admin-gated manual process launch. Every endpoint queries the
+    xFActs AG listener through the shared data-access helpers, runs the
+    action-permission hook, and returns JSON.
 
-# ----------------------------------------------------------------------------
+.COMPONENT
+    DmOps
+
+.NOTES
+    File Name : DmOperations-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers the GET and POST endpoints under /api/dmops, each gated by ADLogin
+   authentication and the Test-ActionEndpoint permission hook and returning a
+   JSON response. Read endpoints use Invoke-XFActsQuery against the AG listener;
+   schedule and abort writes use Invoke-XFActsNonQuery. Archive and shell purge
+   are independent processes; each is represented by its own self-contained
+   response object.
+   Prefix: (none)
+   ============================================================================ #>
+
 # GET /api/dmops/lifetime-totals
-# Returns cumulative totals, abort flags, and remaining counts (TC_ARCH gated).
-# Subtractive math returns counts processed since the OLTP baseline was sampled.
-# ----------------------------------------------------------------------------
+# Returns per-process self-contained objects (Archive, ShellPurge). Each object
+# carries cumulative totals, its abort flag, its TC_ARCH-gated remaining counts
+# (subtractive math returns counts processed since the OLTP baseline was
+# sampled), and the admin CanLaunch gate flag.
 Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
+        $ctx = Get-UserContext -WebEvent $WebEvent
+        $canLaunch = [bool]$ctx.IsAdmin
 
-        $query = @"
-            -- Archive lifetime totals (consumer-driven; account counts retained as secondary metric)
+        # Archive lifetime totals (consumer-driven; account counts retained as secondary metric)
+        $archRows = Invoke-XFActsQuery -Query @"
             SELECT
                 ISNULL(SUM(CASE WHEN status = 'Success' THEN consumer_count ELSE 0 END), 0) AS archive_consumers,
                 ISNULL(SUM(CASE WHEN status = 'Success' THEN account_count  ELSE 0 END), 0) AS archive_accounts,
@@ -31,9 +60,12 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
                 MIN(batch_start_dttm) AS archive_first_batch,
                 MAX(batch_start_dttm) AS archive_last_batch
             FROM DmOps.Archive_BatchLog
-            WHERE status IN ('Success', 'Failed');
+            WHERE status IN ('Success', 'Failed')
+"@
+        $archRow = $archRows[0]
 
-            -- ShellPurge lifetime totals (naturally-occurring shells only)
+        # ShellPurge lifetime totals (naturally-occurring shells only)
+        $purgeRows = Invoke-XFActsQuery -Query @"
             SELECT
                 ISNULL(SUM(CASE WHEN status = 'Success' THEN consumer_count ELSE 0 END), 0) AS purge_consumers,
                 ISNULL(SUM(CASE WHEN status = 'Success' THEN total_rows_deleted ELSE 0 END), 0) AS purge_rows,
@@ -42,125 +74,117 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
                 MIN(batch_start_dttm) AS purge_first_batch,
                 MAX(batch_start_dttm) AS purge_last_batch
             FROM DmOps.ShellPurge_BatchLog
-            WHERE status IN ('Success', 'Failed');
+            WHERE status IN ('Success', 'Failed')
+"@
+        $purgeRow = $purgeRows[0]
 
-            -- Current abort flags
+        # Current abort flags
+        $abortRows = Invoke-XFActsQuery -Query @"
             SELECT setting_name, setting_value
             FROM dbo.GlobalConfig
             WHERE module_name = 'DmOps'
               AND setting_name IN ('archive_abort', 'shell_purge_abort')
-              AND is_active = 1;
+              AND is_active = 1
 "@
 
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-
-        $conn.Close()
-
-        # Archive totals
-        $archRow = $dataset.Tables[0].Rows[0]
-        $archive = [PSCustomObject]@{
-            Consumers     = if ($archRow['archive_consumers']    -is [DBNull]) { 0 } else { [long]$archRow['archive_consumers'] }
-            Accounts      = if ($archRow['archive_accounts']     -is [DBNull]) { 0 } else { [long]$archRow['archive_accounts'] }
-            RowsDeleted   = if ($archRow['archive_rows']         -is [DBNull]) { 0 } else { [long]$archRow['archive_rows'] }
-            Exceptions    = if ($archRow['archive_exceptions']   -is [DBNull]) { 0 } else { [long]$archRow['archive_exceptions'] }
-            Batches       = if ($archRow['archive_batches']      -is [DBNull]) { 0 } else { [int]$archRow['archive_batches'] }
-            FailedBatches = if ($archRow['archive_failed_batches'] -is [DBNull]) { 0 } else { [int]$archRow['archive_failed_batches'] }
-            FirstBatch    = if ($archRow['archive_first_batch']  -is [DBNull]) { $null } else { $archRow['archive_first_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
-            LastBatch     = if ($archRow['archive_last_batch']   -is [DBNull]) { $null } else { $archRow['archive_last_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
-        }
-
-        # ShellPurge totals
-        $purgeRow = $dataset.Tables[1].Rows[0]
-        $shellPurge = [PSCustomObject]@{
-            Consumers     = if ($purgeRow['purge_consumers']     -is [DBNull]) { 0 } else { [long]$purgeRow['purge_consumers'] }
-            RowsDeleted   = if ($purgeRow['purge_rows']          -is [DBNull]) { 0 } else { [long]$purgeRow['purge_rows'] }
-            Batches       = if ($purgeRow['purge_batches']       -is [DBNull]) { 0 } else { [int]$purgeRow['purge_batches'] }
-            FailedBatches = if ($purgeRow['purge_failed_batches'] -is [DBNull]) { 0 } else { [int]$purgeRow['purge_failed_batches'] }
-            FirstBatch    = if ($purgeRow['purge_first_batch']   -is [DBNull]) { $null } else { $purgeRow['purge_first_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
-            LastBatch     = if ($purgeRow['purge_last_batch']    -is [DBNull]) { $null } else { $purgeRow['purge_last_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
-        }
-
-        # Abort flags
         $archiveAbort = $false
         $shellPurgeAbort = $false
-        foreach ($row in $dataset.Tables[2].Rows) {
+        foreach ($row in $abortRows) {
             $name = [string]$row['setting_name']
-            $val = [string]$row['setting_value']
+            $val  = [string]$row['setting_value']
             if ($name -eq 'archive_abort'     -and $val -eq '1') { $archiveAbort = $true }
             if ($name -eq 'shell_purge_abort' -and $val -eq '1') { $shellPurgeAbort = $true }
         }
 
-        # Remaining counts (cached, subtractive) — non-blocking
-        # If crs5_oltp is unreachable, remaining returns nulls but everything else still works
-        $remaining = [PSCustomObject]@{
-            ArchiveConsumersBaseline      = $null
-            ArchiveAccountsBaseline       = $null
-            ShellBaseline                 = $null
-            BaselineDttm                  = $null
-            ArchiveConsumersSinceBaseline = 0
-            ArchiveAccountsSinceBaseline  = 0
-            ShellSinceBaseline            = 0
-            Error                         = $null
-        }
+        # Remaining counts (cached, subtractive) -- non-blocking. If crs5_oltp
+        # is unreachable, remaining baselines stay null but everything else
+        # still works. BaselineDttm and Error come from the single
+        # Get-RemainingCounts cache call and are surfaced inside each process's
+        # own Remaining object so each object is self-describing.
+        $archiveConsumersBaseline = $null
+        $archiveAccountsBaseline  = $null
+        $shellBaseline            = $null
+        $baselineDttm             = $null
+        $archiveConsumersSince    = 0
+        $archiveAccountsSince     = 0
+        $shellSince               = 0
+        $remainingError           = $null
 
         try {
             $cache = Get-RemainingCounts
-            $remaining.ArchiveConsumersBaseline = $cache.ArchiveConsumersRemaining
-            $remaining.ArchiveAccountsBaseline  = $cache.ArchiveAccountsRemaining
-            $remaining.ShellBaseline            = $cache.ShellRemaining
-            $remaining.BaselineDttm             = if ($cache.BaselineDttm) { $cache.BaselineDttm.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
+            $archiveConsumersBaseline = $cache.ArchiveConsumersRemaining
+            $archiveAccountsBaseline  = $cache.ArchiveAccountsRemaining
+            $shellBaseline            = $cache.ShellRemaining
+            $baselineDttm             = if ($cache.BaselineDttm) { $cache.BaselineDttm.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
 
             # Subtractive counts: consumers/accounts processed since baseline
             if ($cache.BaselineDttm) {
-                $subtractiveConn = New-Object System.Data.SqlClient.SqlConnection($connString)
-                $subtractiveConn.Open()
-
-                $subtractiveQuery = @"
+                $sinceRows = Invoke-XFActsQuery -Query @"
                     SELECT
                         ISNULL(SUM(consumer_count), 0) AS archive_consumers_since,
                         ISNULL(SUM(account_count),  0) AS archive_accounts_since
                     FROM DmOps.Archive_BatchLog
                     WHERE status = 'Success'
-                      AND batch_start_dttm > @BaselineDttm;
+                      AND batch_start_dttm > @BaselineDttm
+"@ -Parameters @{ BaselineDttm = $cache.BaselineDttm }
+                $archiveConsumersSince = [long]$sinceRows[0]['archive_consumers_since']
+                $archiveAccountsSince  = [long]$sinceRows[0]['archive_accounts_since']
 
+                $shellSinceRows = Invoke-XFActsQuery -Query @"
                     SELECT
                         ISNULL(SUM(consumer_count), 0) AS purge_since_baseline
                     FROM DmOps.ShellPurge_BatchLog
                     WHERE status = 'Success'
-                      AND batch_start_dttm > @BaselineDttm;
-"@
-                $subtractiveCmd = $subtractiveConn.CreateCommand()
-                $subtractiveCmd.CommandText = $subtractiveQuery
-                $subtractiveCmd.CommandTimeout = 10
-                $subtractiveCmd.Parameters.AddWithValue("@BaselineDttm", $cache.BaselineDttm) | Out-Null
-
-                $subtractiveAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($subtractiveCmd)
-                $subtractiveDs = New-Object System.Data.DataSet
-                $subtractiveAdapter.Fill($subtractiveDs) | Out-Null
-                $subtractiveConn.Close()
-
-                $remaining.ArchiveConsumersSinceBaseline = [long]$subtractiveDs.Tables[0].Rows[0]['archive_consumers_since']
-                $remaining.ArchiveAccountsSinceBaseline  = [long]$subtractiveDs.Tables[0].Rows[0]['archive_accounts_since']
-                $remaining.ShellSinceBaseline            = [long]$subtractiveDs.Tables[1].Rows[0]['purge_since_baseline']
+                      AND batch_start_dttm > @BaselineDttm
+"@ -Parameters @{ BaselineDttm = $cache.BaselineDttm }
+                $shellSince = [long]$shellSinceRows[0]['purge_since_baseline']
             }
         }
         catch {
-            $remaining.Error = $_.Exception.Message
-            Write-Host "WARNING: Remaining counts failed: $($_.Exception.Message)"
+            $remainingError = $_.Exception.Message
+        }
+
+        $archive = [PSCustomObject]@{
+            Consumers     = if ($archRow['archive_consumers']      -is [DBNull]) { 0 } else { [long]$archRow['archive_consumers'] }
+            Accounts      = if ($archRow['archive_accounts']       -is [DBNull]) { 0 } else { [long]$archRow['archive_accounts'] }
+            RowsDeleted   = if ($archRow['archive_rows']           -is [DBNull]) { 0 } else { [long]$archRow['archive_rows'] }
+            Exceptions    = if ($archRow['archive_exceptions']     -is [DBNull]) { 0 } else { [long]$archRow['archive_exceptions'] }
+            Batches       = if ($archRow['archive_batches']        -is [DBNull]) { 0 } else { [int]$archRow['archive_batches'] }
+            FailedBatches = if ($archRow['archive_failed_batches'] -is [DBNull]) { 0 } else { [int]$archRow['archive_failed_batches'] }
+            FirstBatch    = if ($archRow['archive_first_batch']    -is [DBNull]) { $null } else { $archRow['archive_first_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
+            LastBatch     = if ($archRow['archive_last_batch']     -is [DBNull]) { $null } else { $archRow['archive_last_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
+            Aborted       = $archiveAbort
+            CanLaunch     = $canLaunch
+            Remaining     = [PSCustomObject]@{
+                ConsumersBaseline      = $archiveConsumersBaseline
+                AccountsBaseline       = $archiveAccountsBaseline
+                BaselineDttm           = $baselineDttm
+                ConsumersSinceBaseline = $archiveConsumersSince
+                AccountsSinceBaseline  = $archiveAccountsSince
+                Error                  = $remainingError
+            }
+        }
+
+        $shellPurge = [PSCustomObject]@{
+            Consumers     = if ($purgeRow['purge_consumers']      -is [DBNull]) { 0 } else { [long]$purgeRow['purge_consumers'] }
+            RowsDeleted   = if ($purgeRow['purge_rows']           -is [DBNull]) { 0 } else { [long]$purgeRow['purge_rows'] }
+            Batches       = if ($purgeRow['purge_batches']        -is [DBNull]) { 0 } else { [int]$purgeRow['purge_batches'] }
+            FailedBatches = if ($purgeRow['purge_failed_batches'] -is [DBNull]) { 0 } else { [int]$purgeRow['purge_failed_batches'] }
+            FirstBatch    = if ($purgeRow['purge_first_batch']    -is [DBNull]) { $null } else { $purgeRow['purge_first_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
+            LastBatch     = if ($purgeRow['purge_last_batch']     -is [DBNull]) { $null } else { $purgeRow['purge_last_batch'].ToString("yyyy-MM-dd HH:mm:ss") }
+            Aborted       = $shellPurgeAbort
+            CanLaunch     = $canLaunch
+            Remaining     = [PSCustomObject]@{
+                Baseline      = $shellBaseline
+                BaselineDttm  = $baselineDttm
+                SinceBaseline = $shellSince
+                Error         = $remainingError
+            }
         }
 
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
-            Archive           = $archive
-            ShellPurge        = $shellPurge
-            ArchiveAborted    = $archiveAbort
-            ShellPurgeAborted = $shellPurgeAbort
-            Remaining         = $remaining
+            Archive    = $archive
+            ShellPurge = $shellPurge
         })
     }
     catch {
@@ -168,19 +192,14 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/today
 # Returns today's running totals for both processes (with exception_count
-# and bidata_status mix for Archive)
-# ----------------------------------------------------------------------------
+# and bidata_status mix for Archive).
 Add-PodeRoute -Method Get -Path '/api/dmops/today' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-
-        $query = @"
-            -- Archive today
+        # Archive today
+        $archRows = Invoke-XFActsQuery -Query @"
             SELECT
                 COUNT(*) AS batches,
                 ISNULL(SUM(CASE WHEN status = 'Success' THEN consumer_count ELSE 0 END), 0) AS consumers,
@@ -194,9 +213,12 @@ Add-PodeRoute -Method Get -Path '/api/dmops/today' -Authentication 'ADLogin' -Sc
                 SUM(CASE WHEN schedule_mode = 'Reduced' THEN 1 ELSE 0 END) AS reduced_batches
             FROM DmOps.Archive_BatchLog
             WHERE status IN ('Success', 'Failed')
-              AND CAST(batch_start_dttm AS DATE) = CAST(GETDATE() AS DATE);
+              AND CAST(batch_start_dttm AS DATE) = CAST(GETDATE() AS DATE)
+"@
+        $archRow = $archRows[0]
 
-            -- ShellPurge today
+        # ShellPurge today
+        $purgeRows = Invoke-XFActsQuery -Query @"
             SELECT
                 COUNT(*) AS batches,
                 ISNULL(SUM(CASE WHEN status = 'Success' THEN consumer_count ELSE 0 END), 0) AS consumers,
@@ -207,21 +229,9 @@ Add-PodeRoute -Method Get -Path '/api/dmops/today' -Authentication 'ADLogin' -Sc
                 SUM(CASE WHEN schedule_mode = 'Reduced' THEN 1 ELSE 0 END) AS reduced_batches
             FROM DmOps.ShellPurge_BatchLog
             WHERE status IN ('Success', 'Failed')
-              AND CAST(batch_start_dttm AS DATE) = CAST(GETDATE() AS DATE);
+              AND CAST(batch_start_dttm AS DATE) = CAST(GETDATE() AS DATE)
 "@
-
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-
-        $conn.Close()
-
-        $archRow = $dataset.Tables[0].Rows[0]
-        $purgeRow = $dataset.Tables[1].Rows[0]
+        $purgeRow = $purgeRows[0]
 
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Archive = [PSCustomObject]@{
@@ -252,20 +262,15 @@ Add-PodeRoute -Method Get -Path '/api/dmops/today' -Authentication 'ADLogin' -Sc
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/execution-history
-# Returns daily aggregated totals grouped by year/month/day for accordion display.
-# Day-level aggregates include exception_count totals and bidata_failed counts
-# (Archive) for use in the at-a-glance row.
-# ----------------------------------------------------------------------------
+# Returns daily aggregated totals grouped by year/month/day for accordion
+# display. Day-level aggregates include exception_count totals and
+# bidata_failed counts (Archive) for use in the at-a-glance row.
 Add-PodeRoute -Method Get -Path '/api/dmops/execution-history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-
-        $query = @"
-            -- Archive daily summary
+        # Archive daily summary
+        $archRows = Invoke-XFActsQuery -Query @"
             SELECT
                 YEAR(batch_start_dttm) AS run_year,
                 MONTH(batch_start_dttm) AS run_month,
@@ -285,9 +290,11 @@ Add-PodeRoute -Method Get -Path '/api/dmops/execution-history' -Authentication '
             WHERE status IN ('Success', 'Failed')
             GROUP BY YEAR(batch_start_dttm), MONTH(batch_start_dttm),
                      CAST(batch_start_dttm AS DATE), DATENAME(dw, batch_start_dttm)
-            ORDER BY run_date DESC;
+            ORDER BY run_date DESC
+"@
 
-            -- ShellPurge daily summary
+        # ShellPurge daily summary
+        $purgeRows = Invoke-XFActsQuery -Query @"
             SELECT
                 YEAR(batch_start_dttm) AS run_year,
                 MONTH(batch_start_dttm) AS run_month,
@@ -304,54 +311,44 @@ Add-PodeRoute -Method Get -Path '/api/dmops/execution-history' -Authentication '
             WHERE status IN ('Success', 'Failed')
             GROUP BY YEAR(batch_start_dttm), MONTH(batch_start_dttm),
                      CAST(batch_start_dttm AS DATE), DATENAME(dw, batch_start_dttm)
-            ORDER BY run_date DESC;
+            ORDER BY run_date DESC
 "@
-
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 15
-
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-
-        $conn.Close()
 
         # Archive history
         $archiveDays = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $archRows) {
             $archiveDays += [PSCustomObject]@{
-                run_year       = [int]$row['run_year']
-                run_month      = [int]$row['run_month']
-                run_date       = $row['run_date'].ToString("yyyy-MM-dd")
-                day_of_week    = [string]$row['day_of_week']
-                batches        = [int]$row['batches']
-                consumers      = [long]$row['total_consumers']
-                accounts       = [long]$row['total_accounts']
-                rows_deleted   = [long]$row['total_rows']
-                exceptions     = [long]$row['total_exceptions']
-                failed_batches = [int]$row['failed_batches']
-                bidata_failed  = [int]$row['bidata_failed']
-                total_seconds  = if ($row['total_seconds'] -is [DBNull]) { 0 } else { [long]$row['total_seconds'] }
-                full_batches   = [int]$row['full_batches']
+                run_year        = [int]$row['run_year']
+                run_month       = [int]$row['run_month']
+                run_date        = $row['run_date'].ToString("yyyy-MM-dd")
+                day_of_week     = [string]$row['day_of_week']
+                batches         = [int]$row['batches']
+                consumers       = [long]$row['total_consumers']
+                accounts        = [long]$row['total_accounts']
+                rows_deleted    = [long]$row['total_rows']
+                exceptions      = [long]$row['total_exceptions']
+                failed_batches  = [int]$row['failed_batches']
+                bidata_failed   = [int]$row['bidata_failed']
+                total_seconds   = if ($row['total_seconds'] -is [DBNull]) { 0 } else { [long]$row['total_seconds'] }
+                full_batches    = [int]$row['full_batches']
                 reduced_batches = [int]$row['reduced_batches']
             }
         }
 
         # ShellPurge history
         $shellPurgeDays = @()
-        foreach ($row in $dataset.Tables[1].Rows) {
+        foreach ($row in $purgeRows) {
             $shellPurgeDays += [PSCustomObject]@{
-                run_year       = [int]$row['run_year']
-                run_month      = [int]$row['run_month']
-                run_date       = $row['run_date'].ToString("yyyy-MM-dd")
-                day_of_week    = [string]$row['day_of_week']
-                batches        = [int]$row['batches']
-                consumers      = [long]$row['total_consumers']
-                rows_deleted   = [long]$row['total_rows']
-                failed_batches = [int]$row['failed_batches']
-                total_seconds  = if ($row['total_seconds'] -is [DBNull]) { 0 } else { [long]$row['total_seconds'] }
-                full_batches   = [int]$row['full_batches']
+                run_year        = [int]$row['run_year']
+                run_month       = [int]$row['run_month']
+                run_date        = $row['run_date'].ToString("yyyy-MM-dd")
+                day_of_week     = [string]$row['day_of_week']
+                batches         = [int]$row['batches']
+                consumers       = [long]$row['total_consumers']
+                rows_deleted    = [long]$row['total_rows']
+                failed_batches  = [int]$row['failed_batches']
+                total_seconds   = if ($row['total_seconds'] -is [DBNull]) { 0 } else { [long]$row['total_seconds'] }
+                full_batches    = [int]$row['full_batches']
                 reduced_batches = [int]$row['reduced_batches']
             }
         }
@@ -366,11 +363,10 @@ Add-PodeRoute -Method Get -Path '/api/dmops/execution-history' -Authentication '
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/archive/batches-by-day?date=YYYY-MM-DD
 # Returns the individual Archive batches for the given date.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/dmops/archive/batches-by-day' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $date = $WebEvent.Query['date']
         if ([string]::IsNullOrEmpty($date)) {
@@ -423,11 +419,10 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/batches-by-day' -Authenticat
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/shellpurge/batches-by-day?date=YYYY-MM-DD
 # Returns the individual ShellPurge batches for the given date.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batches-by-day' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $date = $WebEvent.Query['date']
         if ([string]::IsNullOrEmpty($date)) {
@@ -475,12 +470,11 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batches-by-day' -Authenti
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/archive/batch-detail/:batchId
 # Returns Archive_BatchDetail rows for a specific batch (for the slide-out
-# step-by-step view).
-# ----------------------------------------------------------------------------
+# step-by-step view), with the batch summary for the slide-out header.
 Add-PodeRoute -Method Get -Path '/api/dmops/archive/batch-detail/:batchId' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $batchId = $WebEvent.Parameters['batchId']
         if ([string]::IsNullOrEmpty($batchId)) {
@@ -488,7 +482,6 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/batch-detail/:batchId' -Auth
             return
         }
 
-        # Pull batch summary alongside detail rows for the slide-out header
         $summary = Invoke-XFActsQuery -Query @"
             SELECT
                 batch_id, batch_start_dttm, batch_end_dttm,
@@ -561,11 +554,11 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/batch-detail/:batchId' -Auth
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/shellpurge/batch-detail/:batchId
-# Returns ShellPurge_BatchDetail rows for a specific batch.
-# ----------------------------------------------------------------------------
+# Returns ShellPurge_BatchDetail rows for a specific batch, with the batch
+# summary for the slide-out header.
 Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batch-detail/:batchId' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $batchId = $WebEvent.Parameters['batchId']
         if ([string]::IsNullOrEmpty($batchId)) {
@@ -640,17 +633,12 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/batch-detail/:batchId' -A
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/archive/schedule
-# Returns the 7x24 archive schedule grid (tinyint: 0=blocked, 1=full, 2=reduced)
-# ----------------------------------------------------------------------------
+# Returns the 7x24 archive schedule grid (tinyint: 0=blocked, 1=full, 2=reduced).
 Add-PodeRoute -Method Get -Path '/api/dmops/archive/schedule' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-
-        $query = @"
+        $rows = Invoke-XFActsQuery -Query @"
             SELECT
                 day_of_week,
                 hr00, hr01, hr02, hr03, hr04, hr05, hr06, hr07,
@@ -660,18 +648,8 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/schedule' -Authentication 'A
             ORDER BY day_of_week
 "@
 
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-
-        $conn.Close()
-
         $schedule = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $daySchedule = [PSCustomObject]@{
                 DayOfWeek = [int]$row['day_of_week']
             }
@@ -689,17 +667,12 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/schedule' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/shellpurge/schedule
-# Returns the 7x24 shell purge schedule grid (tinyint: 0=blocked, 1=full, 2=reduced)
-# ----------------------------------------------------------------------------
+# Returns the 7x24 shell purge schedule grid (tinyint: 0=blocked, 1=full, 2=reduced).
 Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/schedule' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-
-        $query = @"
+        $rows = Invoke-XFActsQuery -Query @"
             SELECT
                 day_of_week,
                 hr00, hr01, hr02, hr03, hr04, hr05, hr06, hr07,
@@ -709,18 +682,8 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/schedule' -Authentication
             ORDER BY day_of_week
 "@
 
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-
-        $conn.Close()
-
         $schedule = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $daySchedule = [PSCustomObject]@{
                 DayOfWeek = [int]$row['day_of_week']
             }
@@ -738,12 +701,11 @@ Add-PodeRoute -Method Get -Path '/api/dmops/shellpurge/schedule' -Authentication
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/dmops/schedule/update-batch
-# Updates multiple hour cells in either Archive or ShellPurge schedule
+# Updates multiple hour cells in either the Archive or ShellPurge schedule
+# atomically in a single transactional batch.
 # Body: { Process: 'archive'|'shellpurge', Updates: [{ DayOfWeek, Hour, Value }, ...] }
 # Value: 0=blocked, 1=full, 2=reduced
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/dmops/schedule/update-batch' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
@@ -763,90 +725,84 @@ Add-PodeRoute -Method Post -Path '/api/dmops/schedule/update-batch' -Authenticat
 
         $tableName = if ($process -eq 'archive') { 'DmOps.Archive_Schedule' } else { 'DmOps.ShellPurge_Schedule' }
 
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
+        $currentUser = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # Get current user for audit
-        $currentUser = $WebEvent.Auth.User.Name
-        if ([string]::IsNullOrEmpty($currentUser)) {
-            $currentUser = "Unknown"
+        # Build one transactional batch that applies every cell update in a
+        # single round trip. Each update contributes its own parameterized
+        # statement; the surrounding transaction preserves all-or-nothing
+        # semantics. Hour and day are validated before use; the hour column
+        # name and the table name are validated identifiers.
+        $statements = [System.Collections.ArrayList]::new()
+        $parameters = @{
+            ModifiedBy = $currentUser
         }
 
-        $transaction = $conn.BeginTransaction()
+        $i = 0
+        foreach ($update in $updates) {
+            $dayOfWeek = [int]$update.DayOfWeek
+            $hour      = [int]$update.Hour
+            $value     = [int]$update.Value
 
-        try {
-            $totalRowsAffected = 0
-
-            foreach ($update in $updates) {
-                $dayOfWeek = [int]$update.DayOfWeek
-                $hour = [int]$update.Hour
-                $value = [int]$update.Value
-
-                if ($dayOfWeek -lt 1 -or $dayOfWeek -gt 7) {
-                    throw "Invalid day of week: $dayOfWeek"
-                }
-                if ($hour -lt 0 -or $hour -gt 23) {
-                    throw "Invalid hour: $hour"
-                }
-                if ($value -lt 0 -or $value -gt 2) {
-                    throw "Invalid value: $value (must be 0, 1, or 2)"
-                }
-
-                $hourColumn = "hr" + $hour.ToString("00")
-
-                $query = @"
-                    UPDATE $tableName
-                    SET $hourColumn = @Value,
-                        modified_dttm = GETDATE(),
-                        modified_by = @ModifiedBy
-                    WHERE day_of_week = @DayOfWeek
-"@
-
-                $cmd = $conn.CreateCommand()
-                $cmd.Transaction = $transaction
-                $cmd.CommandText = $query
-                $cmd.CommandTimeout = 10
-                $cmd.Parameters.AddWithValue("@Value", $value) | Out-Null
-                $cmd.Parameters.AddWithValue("@DayOfWeek", $dayOfWeek) | Out-Null
-                $cmd.Parameters.AddWithValue("@ModifiedBy", $currentUser) | Out-Null
-
-                $rowsAffected = $cmd.ExecuteNonQuery()
-                $totalRowsAffected += $rowsAffected
+            if ($dayOfWeek -lt 1 -or $dayOfWeek -gt 7) {
+                Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid day of week: $dayOfWeek" }) -StatusCode 400
+                return
+            }
+            if ($hour -lt 0 -or $hour -gt 23) {
+                Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid hour: $hour" }) -StatusCode 400
+                return
+            }
+            if ($value -lt 0 -or $value -gt 2) {
+                Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid value: $value (must be 0, 1, or 2)" }) -StatusCode 400
+                return
             }
 
-            $transaction.Commit()
+            $hourColumn = "hr" + $hour.ToString("00")
+            $valueParam = "Value$i"
+            $dayParam   = "Day$i"
 
-            $conn.Close()
+            [void]$statements.Add(@"
+    UPDATE $tableName
+    SET $hourColumn = @$valueParam,
+        modified_dttm = GETDATE(),
+        modified_by = @ModifiedBy
+    WHERE day_of_week = @$dayParam;
+"@)
+            $parameters[$valueParam] = $value
+            $parameters[$dayParam]   = $dayOfWeek
+            $i++
+        }
 
-            Write-PodeJsonResponse -Value ([PSCustomObject]@{
-                Success      = $true
-                Process      = $process
-                UpdateCount  = $updates.Count
-                RowsAffected = $totalRowsAffected
-                ModifiedBy   = $currentUser
-            })
-        }
-        catch {
-            $transaction.Rollback()
-            throw
-        }
+        $batchBody = $statements -join "`n"
+        $query = @"
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+$batchBody
+COMMIT TRANSACTION;
+"@
+
+        $rowsAffected = Invoke-XFActsNonQuery -Query $query -Parameters $parameters
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{
+            Success      = $true
+            Process      = $process
+            UpdateCount  = $updates.Count
+            RowsAffected = $rowsAffected
+            ModifiedBy   = $currentUser
+        })
     }
     catch {
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/dmops/target-servers
 # Returns the configured target_instance for Archive and ShellPurge along with
 # the environment classification from ServerRegistry. Used by the page header
-# to display per-process environment badges (TEST / PROD / Unknown).
-#
-# Read-only, no caching — the values change rarely but should reflect the
-# current GlobalConfig immediately when admins update them.
-# ----------------------------------------------------------------------------
+# to display per-process environment badges (TEST / PROD / Unknown). Read-only,
+# no caching -- the values change rarely but should reflect the current
+# GlobalConfig immediately when admins update them.
 Add-PodeRoute -Method Get -Path '/api/dmops/target-servers' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $rows = Invoke-XFActsQuery -Query @"
             SELECT
@@ -891,12 +847,10 @@ Add-PodeRoute -Method Get -Path '/api/dmops/target-servers' -Authentication 'ADL
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/dmops/abort
-# Toggles the abort flag for archive or shell purge
+# Toggles the abort flag for archive or shell purge. Updates the GlobalConfig
+# setting_value and logs the change to ActionAuditLog.
 # Body: { Process: 'archive'|'shellpurge', Abort: true|false }
-# Updates GlobalConfig setting_value, logs change to ActionAuditLog
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/dmops/abort' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
@@ -936,8 +890,8 @@ Add-PodeRoute -Method Post -Path '/api/dmops/abort' -Authentication 'ADLogin' -S
             return
         }
 
-        $configId = [int]$currentSetting[0].config_id
-        $oldValue = [string]$currentSetting[0].setting_value
+        $configId = [int]$currentSetting[0]['config_id']
+        $oldValue = [string]$currentSetting[0]['setting_value']
 
         # Update the setting value
         Invoke-XFActsNonQuery -Query @"
@@ -964,6 +918,50 @@ Add-PodeRoute -Method Post -Path '/api/dmops/abort' -Authentication 'ADLogin' -S
             Success = $true
             Process = $process
             Abort   = $abort
+        })
+    }
+    catch {
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
+    }
+}
+
+# POST /api/dmops/launch-process
+# Admin-gated manual launch of the archive or shell purge execution script.
+# Body: { Process: 'archive'|'shell' }
+Add-PodeRoute -Method Post -Path '/api/dmops/launch-process' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $body = $WebEvent.Data
+        $processName = $body.Process
+
+        $scriptMap = @{
+            'archive' = 'Execute-DmConsumerArchive.ps1'
+            'shell'   = 'Execute-DmShellPurge.ps1'
+        }
+
+        if (-not $scriptMap.ContainsKey($processName)) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid process: $processName" }) -StatusCode 400
+            return
+        }
+
+        $scriptPath = Join-Path 'E:\xFACts-PowerShell' $scriptMap[$processName]
+        if (-not (Test-Path $scriptPath)) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Script not found: $($scriptMap[$processName])" }) -StatusCode 500
+            return
+        }
+
+        $arguments = "-ExecutionPolicy Bypass -File `"$scriptPath`" -Execute"
+        Start-Process -FilePath "powershell.exe" `
+            -ArgumentList $arguments `
+            -WorkingDirectory 'E:\xFACts-PowerShell' `
+            -WindowStyle Hidden `
+            -PassThru | Out-Null
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{
+            Success = $true
+            Process = $processName
+            Script  = $scriptMap[$processName]
+            Message = "$processName launched successfully"
         })
     }
     catch {
