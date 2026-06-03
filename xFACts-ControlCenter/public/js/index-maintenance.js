@@ -1,1411 +1,1456 @@
-// ============================================================================
-// xFACts Control Center - Index Maintenance JavaScript
-// Location: E:\xFACts-ControlCenter\static\js\index-maintenance.js
-// Version: Tracked in dbo.System_Metadata (component: ServerOps.Index)
-// ============================================================================
+/* ============================================================================
+   xFACts Control Center - Index Maintenance Client Logic (index-maintenance.js)
+   Location: E:\xFACts-ControlCenter\public\js\index-maintenance.js
+   Version: Tracked in dbo.System_Metadata (component: ServerOps.Index)
 
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
+   Client-side logic for the Index Maintenance dashboard. Loads and renders
+   live activity, process status, the index queue, active rebuild execution,
+   and the database overview; drives the detail slideouts for each engine
+   process and the queue; manages the interactive per-database maintenance
+   schedule grid with click-drag editing; and gates the admin-only manual
+   launch flow on a server-provided per-process flag. Engine indicator cards,
+   the shared fetch wrapper, connection banners, and page-refresh chrome are
+   provided by cc-shared.js.
 
-// Engine events — process map for shared WebSocket module (engine-events.js)
-// NOTE: These processes are not yet registered in the Orchestrator. Engine
-// cards will remain in disabled state until processes are registered and
-// sending events. See backlog for orchestration design session.
-var ENGINE_PROCESSES = {
-    'Sync-IndexRegistry':       { slug: 'sync'},
-    'Scan-IndexFragmentation':  { slug: 'scan'},
-    'Execute-IndexMaintenance': { slug: 'execute'},
-    'Update-IndexStatistics':   { slug: 'stats'}
+   FILE ORGANIZATION
+   -----------------
+   CONSTANTS: ENGINE PROCESSES
+   CONSTANTS: PROCESS METADATA
+   CONSTANTS: ACTION DISPATCH TABLES
+   STATE: POLLING STATE
+   STATE: SCHEDULE DRAG STATE
+   FUNCTIONS: INITIALIZATION
+   FUNCTIONS: ACTION DISPATCH
+   FUNCTIONS: FORMATTING UTILITIES
+   FUNCTIONS: OVERLAY OPEN AND CLOSE
+   FUNCTIONS: LIVE ACTIVITY
+   FUNCTIONS: PROCESS STATUS
+   FUNCTIONS: MANUAL LAUNCH
+   FUNCTIONS: PROCESS DETAIL SLIDEOUTS
+   FUNCTIONS: ACTIVE EXECUTION
+   FUNCTIONS: QUEUE
+   FUNCTIONS: DATABASE OVERVIEW
+   FUNCTIONS: SCHEDULE EDITOR
+   FUNCTIONS: SCHEDULE DRAG SELECTION
+   FUNCTIONS: REFRESH AND POLLING
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
+   ============================================================================ */
+
+/* ============================================================================
+   CONSTANTS: ENGINE PROCESSES
+   ----------------------------------------------------------------------------
+   Maps Orchestrator.ProcessRegistry process names to their engine-card slugs
+   so cc-shared.js can route WebSocket engine events to the correct card.
+   Declared with var per the engine-processes rule.
+   Prefix: idx
+   ============================================================================ */
+
+/* Engine process-to-slug map consumed by cc-shared.js for engine-card events. */
+var idx_ENGINE_PROCESSES = {
+    'Sync-IndexRegistry':       { slug: 'sync' },
+    'Scan-IndexFragmentation':  { slug: 'scan' },
+    'Execute-IndexMaintenance': { slug: 'execute' },
+    'Update-IndexStatistics':   { slug: 'stats' }
 };
 
-// Live polling (Refresh Architecture)
-var PAGE_REFRESH_INTERVAL = 5;    // Default; overridden by GlobalConfig on load
+/* ============================================================================
+   CONSTANTS: PROCESS METADATA
+   ----------------------------------------------------------------------------
+   Display lookups for the four engine processes: human-readable card titles,
+   per-process metric labels, and the short badge labels used on the admin
+   launch control and the launch confirmation dialog.
+   Prefix: idx
+   ============================================================================ */
 
-// Page hooks for engine-events.js shared module
-function onPageResumed() { pageRefresh(); }
-function onSessionExpired() { stopPolling(); }
-var livePollingTimer = null;
-var pageLoadDate = new Date().toDateString();
+/* Human-readable process-card titles keyed by process name. */
+const idx_processDescriptions = {
+    'SYNC':    'Registry Sync',
+    'SCAN':    'Frag Scan',
+    'EXECUTE': 'Rebuild',
+    'STATS':   'Stats Update'
+};
 
-// ----------------------------------------------------------------------------
-// State
-// ----------------------------------------------------------------------------
-let consecutiveErrors = 0;
-let currentScheduleDatabaseId = null;
-let currentScheduleDatabaseName = null;
+/* Per-process metric row labels keyed by process name. */
+const idx_processMetricLabels = {
+    'SYNC':    { processed: 'Updated',   added: 'New',       skipped: 'Dropped' },
+    'SCAN':    { processed: 'Scanned',   added: 'Queued',    skipped: 'Removed' },
+    'EXECUTE': { processed: 'Rebuilt',   added: 'Succeeded', skipped: 'Deferred' },
+    'STATS':   { processed: 'Evaluated', added: 'Updated',   skipped: 'Skipped' }
+};
 
-// Drag selection state for schedule
-let isDragging = false;
-let dragStartCell = null;
-let dragSelectedCells = [];
-let dragTargetValue = null;
-let dragScheduleType = null;
+/* Short labels for the admin launch badge keyed by process name. */
+const idx_badgeLabels = {
+    'SYNC':    'Sync',
+    'SCAN':    'Scan',
+    'EXECUTE': 'Execute',
+    'STATS':   'Stats'
+};
 
-// ----------------------------------------------------------------------------
-// Utility Functions
-// ----------------------------------------------------------------------------
-function formatDuration(seconds) {
-    if (seconds === null || seconds === undefined) return '-';
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    if (seconds < 3600) {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.round(seconds % 60);
-        return `${mins}m ${secs}s`;
+/* Full labels for the launch confirmation dialog keyed by process name. */
+const idx_launchLabels = {
+    'SYNC':    'Registry Sync',
+    'SCAN':    'Frag Scan',
+    'EXECUTE': 'Rebuild',
+    'STATS':   'Stats Update'
+};
+
+/* Maps a process name to its detail-slideout open action. */
+const idx_processDetailActions = {
+    'SYNC':    'idx-open-sync',
+    'SCAN':    'idx-open-scan',
+    'EXECUTE': 'idx-open-execute',
+    'STATS':   'idx-open-stats'
+};
+
+/* ============================================================================
+   CONSTANTS: ACTION DISPATCH TABLES
+   ----------------------------------------------------------------------------
+   Per-event dispatch tables mapping this page's data-action-<event> values to
+   handler functions. Registered as delegated listeners on document.body in
+   idx_init. Keys carry the idx- page prefix; values are bare function
+   references defined in this file.
+   Prefix: idx
+   ============================================================================ */
+
+/* Click-action dispatch table for the page. */
+const idx_clickActions = {
+    'idx-open-queue-details': idx_openQueueDetails,
+    'idx-close-queue':        idx_closeQueue,
+    'idx-open-sync':          idx_openSyncDetails,
+    'idx-close-sync':         idx_closeSync,
+    'idx-open-scan':          idx_openScanDetails,
+    'idx-close-scan':         idx_closeScan,
+    'idx-open-execute':       idx_openExecuteDetails,
+    'idx-close-execute':      idx_closeExecute,
+    'idx-open-stats':         idx_openStatsDetails,
+    'idx-close-stats':        idx_closeStats,
+    'idx-open-schedule':      idx_openSchedule,
+    'idx-close-schedule':     idx_closeSchedule,
+    'idx-confirm-launch':     idx_confirmLaunch,
+    'idx-execute-launch':     idx_executeLaunch,
+    'idx-close-launch':       idx_closeLaunch
+};
+
+/* ============================================================================
+   STATE: POLLING STATE
+   ----------------------------------------------------------------------------
+   Mutable runtime state for the page's live-polling timer, the configured
+   refresh interval, and the page-load date used to force a daily reload.
+   Prefix: idx
+   ============================================================================ */
+
+/* Live-polling interval in seconds; overwritten from GlobalConfig on init. */
+var idx_pageRefreshInterval = 5;
+
+/* Handle for the live-polling setInterval, or null when not polling. */
+var idx_livePollingTimer = null;
+
+/* The date the page was loaded, used to trigger a reload on date rollover. */
+var idx_pageLoadDate = new Date().toDateString();
+
+/* ============================================================================
+   STATE: SCHEDULE DRAG STATE
+   ----------------------------------------------------------------------------
+   Mutable state backing the click-drag selection in the maintenance schedule
+   grid: the database currently being edited and the in-progress drag
+   selection (active flag, collected cells, target value, and schedule type).
+   Prefix: idx
+   ============================================================================ */
+
+/* The DatabaseId whose schedule is currently open in the slideout. */
+var idx_currentScheduleDatabaseId = null;
+
+/* The database name currently open in the schedule slideout. */
+var idx_currentScheduleDatabaseName = null;
+
+/* Whether a schedule-cell drag selection is currently in progress. */
+var idx_isDragging = false;
+
+/* The cells collected in the active drag selection. */
+var idx_dragSelectedCells = [];
+
+/* The target allowed/blocked value being applied by the active drag. */
+var idx_dragTargetValue = null;
+
+/* The schedule type ('standard' or 'holiday') of the active drag. */
+var idx_dragScheduleType = null;
+
+/* ============================================================================
+   FUNCTIONS: INITIALIZATION
+   ----------------------------------------------------------------------------
+   The page boot function invoked by the cc-shared.js bootloader after this
+   module loads. Registers the page's delegated listeners, performs the
+   initial data load, connects engine events, and starts polling.
+   Prefix: idx
+   ============================================================================ */
+
+/* Page boot entry point invoked by cc-shared.js after the module loads. */
+function idx_init() {
+    /* Register the delegated click dispatcher for the page's actions. */
+    document.body.addEventListener('click', idx_handleClick);
+
+    /* Document-level mouse listeners drive the schedule-grid drag selection.
+       Document-level binding is permitted for delegation; the grid itself is
+       rendered dynamically, so per-cell binding is avoided. */
+    document.addEventListener('mousedown', idx_handleScheduleMouseDown);
+    document.addEventListener('mouseover', idx_handleScheduleMouseOver);
+    document.addEventListener('mouseup', idx_handleScheduleMouseUp);
+
+    /* Load the configured refresh interval, then do the initial render. */
+    idx_loadRefreshInterval().then(function() {
+        idx_refreshAll();
+        idx_startLivePolling();
+    });
+
+    /* Connect engine events via the shared module (also wires engine-card
+       clicks at the document level inside cc-shared.js). */
+    cc_connectEngineEvents();
+
+    /* Force a reload on date rollover so day-scoped views stay current. */
+    idx_startAutoRefresh();
+
+    /* Fallback refresh for event-driven sections until orchestration is
+       live and engine events drive them. */
+    setInterval(idx_refreshEventSections, 30000);
+}
+
+/* ============================================================================
+   FUNCTIONS: ACTION DISPATCH
+   ----------------------------------------------------------------------------
+   The delegated click dispatcher that routes the page's data-action-click
+   values to their handler functions via the idx_clickActions table.
+   Registered on document.body in idx_init.
+   Prefix: idx
+   ============================================================================ */
+
+/* Delegated click dispatcher. Resolves the nearest element carrying a
+   data-action-click attribute and routes idx- actions to their handlers. */
+function idx_handleClick(event) {
+    var target = event.target.closest('[data-action-click]');
+    if (!target) {
+        return;
     }
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${mins}m`;
+    var action = target.getAttribute('data-action-click');
+    if (!action || action.indexOf('idx-') !== 0) {
+        return;
+    }
+    var handler = idx_clickActions[action];
+    if (handler) {
+        handler(target, event);
+    }
 }
 
-function formatDurationMs(ms) {
+/* ============================================================================
+   FUNCTIONS: FORMATTING UTILITIES
+   ----------------------------------------------------------------------------
+   Local display formatters for durations, counts, and timestamps used across
+   the page's render functions.
+   Prefix: idx
+   ============================================================================ */
+
+/* Formats a second count as a compact duration string. */
+function idx_formatDuration(seconds) {
+    if (seconds === null || seconds === undefined) return '-';
+    if (seconds < 60) return Math.round(seconds) + 's';
+    if (seconds < 3600) {
+        var mins = Math.floor(seconds / 60);
+        var secs = Math.round(seconds % 60);
+        return mins + 'm ' + secs + 's';
+    }
+    var hours = Math.floor(seconds / 3600);
+    var hmins = Math.floor((seconds % 3600) / 60);
+    return hours + 'h ' + hmins + 'm';
+}
+
+/* Formats a millisecond count as a compact duration string. */
+function idx_formatDurationMs(ms) {
     if (ms === null || ms === undefined) return '-';
-    if (ms < 1000) return `${ms}ms`;
-    return formatDuration(ms / 1000);
+    if (ms < 1000) return ms + 'ms';
+    return idx_formatDuration(ms / 1000);
 }
 
-function formatNumber(num) {
+/* Formats a number with locale thousands separators, or '-' when absent. */
+function idx_formatNumber(num) {
     if (num === null || num === undefined) return '-';
     return num.toLocaleString();
 }
 
-function formatTimeAgo(seconds) {
+/* Formats a second count as a relative "time ago" string. */
+function idx_formatTimeAgo(seconds) {
     if (seconds === null || seconds === undefined) return '-';
     if (seconds < 60) return 'just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm ago';
+    return Math.floor(seconds / 86400) + 'd ago';
 }
 
-function formatDateTime(dateStr) {
+/* Formats a date string as a full locale date-time, or '-' when absent. */
+function idx_formatDateTime(dateStr) {
     if (!dateStr) return '-';
-    const date = new Date(dateStr);
+    var date = new Date(dateStr);
     return date.toLocaleString();
 }
 
-function formatDateShort(dateStr) {
+/* Formats a date string compactly: time today, 'Yesterday', Nd ago, or date. */
+function idx_formatDateShort(dateStr) {
     if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
+    var date = new Date(dateStr);
+    var now = new Date();
+    var diffMs = now - date;
+    var diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     if (diffDays === 0) {
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else if (diffDays === 1) {
         return 'Yesterday';
     } else if (diffDays < 7) {
-        return `${diffDays}d ago`;
-    } else {
-        return date.toLocaleDateString();
+        return diffDays + 'd ago';
     }
+    return date.toLocaleDateString();
 }
 
-function showError(message) {
-    const errorDiv = document.getElementById('connection-error');
-    errorDiv.textContent = message;
-    errorDiv.classList.add('visible');
+/* Formats an hour (0-23) as a compact 12-hour label (e.g. '12a', '3p'). */
+function idx_formatHour(h) {
+    if (h === 0) return '12a';
+    if (h < 12) return h + 'a';
+    if (h === 12) return '12p';
+    return (h - 12) + 'p';
 }
 
-function clearError() {
-    const errorDiv = document.getElementById('connection-error');
-    errorDiv.classList.remove('visible');
+/* Writes the current time into the shared last-update chrome element. */
+function idx_updateTimestamp() {
+    var el = document.getElementById('cc-last-update');
+    if (el) el.textContent = new Date().toLocaleTimeString();
 }
 
-function updateLastUpdate() {
-    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+/* ============================================================================
+   FUNCTIONS: OVERLAY OPEN AND CLOSE
+   ----------------------------------------------------------------------------
+   Open and close handlers for the six detail slideouts and the launch modal.
+   Slideouts follow the static slide-overlay pattern (cc-open on overlay then
+   dialog); the launch modal follows the static-modal pattern (cc-hidden
+   toggle). Close handlers dismiss on backdrop click and explicit controls.
+   Prefix: idx
+   ============================================================================ */
+
+/* Opens a slideout by id using the static slide-overlay pattern. */
+function idx_openSlideout(slideoutId) {
+    var overlay = document.getElementById(slideoutId);
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
 }
 
-// ----------------------------------------------------------------------------
-// Slideout Panel Functions
-// ----------------------------------------------------------------------------
-function openPanel(panelId) {
-    document.getElementById(panelId + '-overlay').classList.add('open');
-    document.getElementById(panelId + '-panel').classList.add('open');
+/* Closes a slideout by id using the static slide-overlay pattern. */
+function idx_closeSlideout(slideoutId, target, event) {
+    if (event && target.id === slideoutId && event.target !== target) {
+        return;
+    }
+    var overlay = document.getElementById(slideoutId);
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
 }
 
-function closePanel(panelId) {
-    document.getElementById(panelId + '-overlay').classList.remove('open');
-    document.getElementById(panelId + '-panel').classList.remove('open');
+/* Closes the queue details slideout. */
+function idx_closeQueue(target, event) {
+    idx_closeSlideout('idx-slideout-queue', target, event);
 }
 
-function closeQueuePanel() { closePanel('queue'); }
-function closeSyncPanel() { closePanel('sync'); }
-function closeScanPanel() { closePanel('scan'); }
-function closeExecutePanel() { closePanel('execute'); }
-function closeStatsPanel() { closePanel('stats'); }
-function closeSchedulePanel() { 
-    closePanel('schedule'); 
-    currentScheduleDatabaseId = null;
-    currentScheduleDatabaseName = null;
+/* Closes the sync details slideout. */
+function idx_closeSync(target, event) {
+    idx_closeSlideout('idx-slideout-sync', target, event);
 }
 
-// ----------------------------------------------------------------------------
-// Live Activity Widget
-// ----------------------------------------------------------------------------
-async function loadLiveActivity() {
+/* Closes the scan details slideout. */
+function idx_closeScan(target, event) {
+    idx_closeSlideout('idx-slideout-scan', target, event);
+}
+
+/* Closes the execute details slideout. */
+function idx_closeExecute(target, event) {
+    idx_closeSlideout('idx-slideout-execute', target, event);
+}
+
+/* Closes the stats details slideout. */
+function idx_closeStats(target, event) {
+    idx_closeSlideout('idx-slideout-stats', target, event);
+}
+
+/* Closes the schedule slideout and clears the active schedule database. */
+function idx_closeSchedule(target, event) {
+    if (event && target.id === 'idx-slideout-schedule' && event.target !== target) {
+        return;
+    }
+    idx_closeSlideout('idx-slideout-schedule', target, event);
+    idx_currentScheduleDatabaseId = null;
+    idx_currentScheduleDatabaseName = null;
+}
+
+/* ============================================================================
+   FUNCTIONS: LIVE ACTIVITY
+   ----------------------------------------------------------------------------
+   Loads and renders the live-activity widget: either the currently-running
+   processes or, when idle, the last completed activity with its status.
+   Prefix: idx
+   ============================================================================ */
+
+/* Loads and renders the live-activity widget. */
+async function idx_loadLiveActivity() {
     try {
-        const data = await engineFetch('/api/index/live-activity');
+        var data = await cc_engineFetch('/api/index/live-activity');
         if (!data) return;
-        
-        const container = document.getElementById('live-activity');
-        
+
+        var container = document.getElementById('idx-live-activity');
+
         if (data.IsRunning && data.RunningProcesses.length > 0) {
-            let html = '<div class="activity-stack">';
-            
-            for (const proc of data.RunningProcesses) {
-                html += `
-                    <div class="activity-widget running">
-                        <div class="activity-header">
-                            <div class="activity-title">${proc.ProcessName}</div>
-                            <span class="activity-badge running"><span class="spinning-gear">&#9881;</span> Running</span>
-                        </div>
-                        <div class="activity-stats">
-                            <div class="activity-stat">
-                                <span class="label">Elapsed:</span>
-                                <span class="value">${formatDuration(proc.ElapsedSeconds)}</span>
-                            </div>
-                            <div class="activity-stat">
-                                <span class="label">Completed:</span>
-                                <span class="value">${formatNumber(proc.CompletedCount)} indexes</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
+            var runningHtml = '<div class="idx-activity-stack">';
+            for (var i = 0; i < data.RunningProcesses.length; i++) {
+                var proc = data.RunningProcesses[i];
+                runningHtml +=
+                    '<div class="idx-activity-widget idx-running">' +
+                        '<div class="idx-activity-header">' +
+                            '<div class="idx-activity-title">' + cc_escapeHtml(proc.ProcessName) + '</div>' +
+                            '<span class="idx-activity-badge idx-running"><span class="cc-spinning-gear">&#9881;</span> Running</span>' +
+                        '</div>' +
+                        '<div class="idx-activity-stats">' +
+                            '<div class="idx-activity-stat">' +
+                                '<span>Elapsed:</span>' +
+                                '<span class="idx-activity-stat-value">' + idx_formatDuration(proc.ElapsedSeconds) + '</span>' +
+                            '</div>' +
+                            '<div class="idx-activity-stat">' +
+                                '<span>Completed:</span>' +
+                                '<span class="idx-activity-stat-value">' + idx_formatNumber(proc.CompletedCount) + ' indexes</span>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
             }
-            
-            html += '</div>';
-            container.innerHTML = html;
+            runningHtml += '</div>';
+            container.innerHTML = runningHtml;
         } else if (data.LastActivity) {
-            const la = data.LastActivity;
-            const badgeClass = la.LastStatus === 'SUCCESS' ? 'success' : 
-                              la.LastStatus === 'FAILED' ? 'failed' : 
-                              la.LastStatus === 'PARTIAL' ? 'partial' : 'unknown';
-            const widgetClass = la.LastStatus === 'FAILED' ? 'idle-failed' :
-                               la.LastStatus === 'PARTIAL' ? 'idle-partial' : '';
-            
-            container.innerHTML = `
-                <div class="activity-widget ${widgetClass}">
-                    <div class="activity-header">
-                        <div class="activity-title">Last Activity</div>
-                        <span class="activity-badge ${badgeClass}">${la.LastStatus}</span>
-                    </div>
-                    <div class="activity-stats">
-                        <div class="activity-stat">
-                            <span class="value">${la.ProcessName}</span>
-                            <span class="label">completed ${formatTimeAgo(la.SecondsAgo)}</span>
-                        </div>
-                        <div class="activity-stat">
-                            <span class="label">Duration:</span>
-                            <span class="value">${formatDuration(la.DurationSeconds)}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
+            var la = data.LastActivity;
+            var badgeState = la.LastStatus === 'SUCCESS' ? 'idx-success' :
+                             la.LastStatus === 'FAILED' ? 'idx-failed' :
+                             la.LastStatus === 'PARTIAL' ? 'idx-partial' : 'idx-unknown';
+            var widgetState = la.LastStatus === 'FAILED' ? ' idx-idle-failed' :
+                              la.LastStatus === 'PARTIAL' ? ' idx-idle-partial' : '';
+            container.innerHTML =
+                '<div class="idx-activity-widget' + widgetState + '">' +
+                    '<div class="idx-activity-header">' +
+                        '<div class="idx-activity-title">Last Activity</div>' +
+                        '<span class="idx-activity-badge ' + badgeState + '">' + cc_escapeHtml(la.LastStatus) + '</span>' +
+                    '</div>' +
+                    '<div class="idx-activity-stats">' +
+                        '<div class="idx-activity-stat">' +
+                            '<span class="idx-activity-stat-value">' + cc_escapeHtml(la.ProcessName) + '</span>' +
+                            '<span>completed ' + idx_formatTimeAgo(la.SecondsAgo) + '</span>' +
+                        '</div>' +
+                        '<div class="idx-activity-stat">' +
+                            '<span>Duration:</span>' +
+                            '<span class="idx-activity-stat-value">' + idx_formatDuration(la.DurationSeconds) + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
         } else {
-            container.innerHTML = '<div class="no-active">No activity recorded</div>';
+            container.innerHTML = '<div class="idx-no-active">No activity recorded</div>';
         }
-        
-        clearError();
-        consecutiveErrors = 0;
     } catch (error) {
         console.error('Error loading live activity:', error);
-        consecutiveErrors++;
-        if (consecutiveErrors >= 3) {
-            showError('Connection lost. Retrying...');
-        }
     }
 }
 
-// ----------------------------------------------------------------------------
-// Process Status Cards
-// ----------------------------------------------------------------------------
-async function loadProcessStatus() {
+/* ============================================================================
+   FUNCTIONS: PROCESS STATUS
+   ----------------------------------------------------------------------------
+   Loads and renders the four process-status cards. Each card is a button so
+   it can carry a click action that opens the matching detail slideout; the
+   admin launch badge is rendered only when the server marks the process
+   CanLaunch for the current user.
+   Prefix: idx
+   ============================================================================ */
+
+/* Loads and renders the process-status cards. */
+async function idx_loadProcessStatus() {
     try {
-        const processes = await engineFetch('/api/index/process-status');
+        var processes = await cc_engineFetch('/api/index/process-status');
         if (!processes) return;
-        
-        const container = document.getElementById('process-status');
-        
+
+        var container = document.getElementById('idx-process-status');
+
         if (!processes || processes.length === 0) {
-            container.innerHTML = '<div class="loading">No process data available</div>';
+            container.innerHTML = '<div class="cc-slide-empty">No process data available</div>';
             return;
         }
-        
-        const processDescriptions = {
-            'SYNC': 'Registry Sync',
-            'SCAN': 'Frag Scan',
-            'EXECUTE': 'Rebuild',
-            'STATS': 'Stats Update'
-        };
-        
-        const processMetricLabels = {
-            'SYNC': { processed: 'Updated', added: 'New', skipped: 'Dropped' },
-            'SCAN': { processed: 'Scanned', added: 'Queued', skipped: 'Removed' },
-            'EXECUTE': { processed: 'Rebuilt', added: 'Succeeded', skipped: 'Deferred' },
-            'STATS': { processed: 'Evaluated', added: 'Updated', skipped: 'Skipped' }
-        };
-        
-        const badgeLabels = {
-            'SYNC': 'Sync',
-            'SCAN': 'Scan',
-            'EXECUTE': 'Execute',
-            'STATS': 'Stats'
-        };
-        
-        let html = '';
-        
-        for (const proc of processes) {
-            const statusClass = proc.LastStatus ? proc.LastStatus.toLowerCase().replace('_', '-') : '';
-            const labels = processMetricLabels[proc.ProcessName] || { processed: 'Processed', added: 'Added', skipped: 'Skipped' };
-            const clickHandler = getProcessClickHandler(proc.ProcessName);
-            
-            // Admin launch badge (only rendered for admin users)
-            const badge = window.isAdmin
-                ? `<div class="admin-launch-badge" onclick="event.stopPropagation(); confirmLaunch('${proc.ProcessName}')" title="Launch ${badgeLabels[proc.ProcessName] || proc.ProcessName}">${badgeLabels[proc.ProcessName] || proc.ProcessName}</div>`
-                : '';
-            
-            html += `
-                <div class="process-card clickable ${statusClass}" onclick="${clickHandler}">
-                    <div class="process-header">
-                        <span class="process-name">${processDescriptions[proc.ProcessName] || proc.ProcessName}</span>
-                        <span class="process-status ${statusClass}">${proc.LastStatus || 'N/A'}</span>
-                    </div>
-                    <div class="process-metrics">
-                        <div class="process-metric">
-                            <span class="label">Last Run</span>
-                            <span class="value">${formatDateShort(proc.CompletedDttm)}</span>
-                        </div>
-                        <div class="process-metric">
-                            <span class="label">${labels.processed}</span>
-                            <span class="value">${formatNumber(proc.ItemsProcessed)}</span>
-                        </div>
-                        <div class="process-metric">
-                            <span class="label">Duration</span>
-                            <span class="value">${formatDuration(proc.DurationSeconds)}</span>
-                        </div>
-                    </div>
-                    ${badge}
-                </div>
-            `;
+
+        var html = '';
+        for (var i = 0; i < processes.length; i++) {
+            var proc = processes[i];
+            var statusState = proc.LastStatus ? 'idx-' + proc.LastStatus.toLowerCase().replace('_', '-') : '';
+            var labels = idx_processMetricLabels[proc.ProcessName] || { processed: 'Processed', added: 'Added', skipped: 'Skipped' };
+            var openAction = idx_processDetailActions[proc.ProcessName] || '';
+
+            /* Admin launch badge: rendered only when the server flags the
+               process CanLaunch for this user. The launch endpoint enforces
+               the real permission check. */
+            var badge = '';
+            if (proc.CanLaunch) {
+                var badgeLabel = idx_badgeLabels[proc.ProcessName] || proc.ProcessName;
+                badge =
+                    '<button class="idx-admin-launch-badge" data-action-click="idx-confirm-launch" ' +
+                    'data-action-idx-process="' + cc_escapeHtml(proc.ProcessName) + '" ' +
+                    'title="Launch ' + cc_escapeHtml(badgeLabel) + '">' + cc_escapeHtml(badgeLabel) + '</button>';
+            }
+
+            html +=
+                '<div class="idx-process-card ' + statusState + '">' +
+                    '<button class="idx-process-card-hit" data-action-click="' + openAction + '" ' +
+                    'title="View ' + cc_escapeHtml(idx_processDescriptions[proc.ProcessName] || proc.ProcessName) + ' details"></button>' +
+                    '<div class="idx-process-header">' +
+                        '<span class="idx-process-name">' + cc_escapeHtml(idx_processDescriptions[proc.ProcessName] || proc.ProcessName) + '</span>' +
+                        '<span class="idx-process-status ' + statusState + '">' + cc_escapeHtml(proc.LastStatus || 'N/A') + '</span>' +
+                    '</div>' +
+                    '<div class="idx-process-metrics">' +
+                        '<div class="idx-process-metric">' +
+                            '<span class="idx-process-metric-label">Last Run</span>' +
+                            '<span class="idx-process-metric-value">' + idx_formatDateShort(proc.CompletedDttm) + '</span>' +
+                        '</div>' +
+                        '<div class="idx-process-metric">' +
+                            '<span class="idx-process-metric-label">' + cc_escapeHtml(labels.processed) + '</span>' +
+                            '<span class="idx-process-metric-value">' + idx_formatNumber(proc.ItemsProcessed) + '</span>' +
+                        '</div>' +
+                        '<div class="idx-process-metric">' +
+                            '<span class="idx-process-metric-label">Duration</span>' +
+                            '<span class="idx-process-metric-value">' + idx_formatDuration(proc.DurationSeconds) + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                    badge +
+                '</div>';
         }
-        
+
         container.innerHTML = html;
-        updateLastUpdate();
+        idx_updateTimestamp();
     } catch (error) {
         console.error('Error loading process status:', error);
     }
 }
 
-function getProcessClickHandler(processName) {
-    switch (processName) {
-        case 'SYNC': return 'openSyncDetails()';
-        case 'SCAN': return 'openScanDetails()';
-        case 'EXECUTE': return 'openExecuteDetails()';
-        case 'STATS': return 'openStatsDetails()';
-        default: return '';
+/* ============================================================================
+   FUNCTIONS: MANUAL LAUNCH
+   ----------------------------------------------------------------------------
+   The admin manual-launch flow: a confirmation modal, the launch request, and
+   the result display. Visibility of the launch control is server-gated; the
+   launch endpoint performs the authoritative permission check.
+   Prefix: idx
+   ============================================================================ */
+
+/* Opens the launch confirmation modal for the clicked process. */
+function idx_confirmLaunch(target) {
+    var processName = target.getAttribute('data-action-idx-process');
+    var label = idx_launchLabels[processName] || processName;
+
+    document.getElementById('idx-modal-launch-body').innerHTML =
+        '<p class="cc-dialog-paragraph">Launch <span class="cc-dialog-strong">' + cc_escapeHtml(label) + '</span>?</p>' +
+        '<p class="cc-dialog-paragraph cc-last">This will execute with the -Execute flag.</p>';
+
+    document.getElementById('idx-modal-launch-footer').innerHTML =
+        '<button class="cc-dialog-btn-cancel" data-action-click="idx-close-launch">Cancel</button>' +
+        '<button class="cc-dialog-btn-primary" data-action-click="idx-execute-launch" ' +
+        'data-action-idx-process="' + cc_escapeHtml(processName) + '">Launch</button>';
+
+    document.getElementById('idx-modal-launch').classList.remove('cc-hidden');
+}
+
+/* Closes the launch confirmation modal. */
+function idx_closeLaunch(target, event) {
+    if (event && target.id === 'idx-modal-launch' && event.target !== target) {
+        return;
     }
+    document.getElementById('idx-modal-launch').classList.add('cc-hidden');
 }
 
-// ----------------------------------------------------------------------------
-// Admin: Manual Process Launch
-// ----------------------------------------------------------------------------
-const launchLabels = { 'SYNC': 'Registry Sync', 'SCAN': 'Frag Scan', 'EXECUTE': 'Rebuild', 'STATS': 'Stats Update' };
-
-function confirmLaunch(processName) {
-    const label = launchLabels[processName] || processName;
-    document.getElementById('launch-modal-body').innerHTML =
-        `<div style="font-size:14px; margin-bottom:8px;">Launch <strong>${label}</strong>?</div>` +
-        `<div style="font-size:11px; color:#888;">This will execute with the -Execute flag.</div>`;
-    document.getElementById('launch-modal-footer').innerHTML =
-        `<button class="btn btn-secondary btn-sm" onclick="closeLaunchModal()">Cancel</button>` +
-        `<button class="btn btn-primary btn-sm" onclick="executeLaunch('${processName}')">Launch</button>`;
-    document.getElementById('launch-modal').classList.remove('hidden');
-}
-
-function closeLaunchModal() {
-    document.getElementById('launch-modal').classList.add('hidden');
-}
-
-async function executeLaunch(processName) {
-    const footer = document.getElementById('launch-modal-footer');
-    footer.innerHTML = '<button class="btn btn-secondary btn-sm" disabled>Launching...</button>';
+/* Sends the launch request for the confirmed process and shows the result. */
+async function idx_executeLaunch(target) {
+    var processName = target.getAttribute('data-action-idx-process');
+    var footer = document.getElementById('idx-modal-launch-footer');
+    footer.innerHTML = '<button class="cc-dialog-btn-cancel" disabled>Launching...</button>';
     try {
-        const result = await engineFetch('/api/index/launch-process', {
+        var result = await cc_engineFetch('/api/index/launch-process', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ Process: processName })
         });
         if (!result) return;
         if (result.Error) {
-            document.getElementById('launch-modal-body').innerHTML =
-                `<div style="color:#f14c4c;">${result.Error}</div>`;
+            document.getElementById('idx-modal-launch-body').innerHTML =
+                '<p class="cc-dialog-paragraph cc-last">' + cc_escapeHtml(result.Error) + '</p>';
         } else {
-            document.getElementById('launch-modal-body').innerHTML =
-                `<div style="color:#4ec9b0;">&#10003; ${result.Message}</div>`;
+            document.getElementById('idx-modal-launch-body').innerHTML =
+                '<p class="cc-dialog-paragraph cc-last cc-dialog-strong">&#10003; ' + cc_escapeHtml(result.Message) + '</p>';
         }
-        footer.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeLaunchModal()">Close</button>';
+        footer.innerHTML = '<button class="cc-dialog-btn-cancel" data-action-click="idx-close-launch">Close</button>';
     } catch (err) {
-        document.getElementById('launch-modal-body').innerHTML =
-            `<div style="color:#f14c4c;">Failed: ${err.message}</div>`;
-        footer.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeLaunchModal()">Close</button>';
+        document.getElementById('idx-modal-launch-body').innerHTML =
+            '<p class="cc-dialog-paragraph cc-last">Failed: ' + cc_escapeHtml(err.message) + '</p>';
+        footer.innerHTML = '<button class="cc-dialog-btn-cancel" data-action-click="idx-close-launch">Close</button>';
     }
 }
 
-// ----------------------------------------------------------------------------
-// Process Detail Slideouts
-// ----------------------------------------------------------------------------
-async function openSyncDetails() {
-    openPanel('sync');
-    const body = document.getElementById('sync-panel-body');
-    body.innerHTML = '<div class="loading">Loading...</div>';
-    
+/* ============================================================================
+   FUNCTIONS: PROCESS DETAIL SLIDEOUTS
+   ----------------------------------------------------------------------------
+   Open handlers for the four engine-process detail slideouts (sync, scan,
+   execute, stats). Each opens its slideout, fetches the last run's detail,
+   and renders summary stats plus per-database and per-index tables.
+   Prefix: idx
+   ============================================================================ */
+
+/* Opens and populates the registry-sync detail slideout. */
+async function idx_openSyncDetails() {
+    idx_openSlideout('idx-slideout-sync');
+    var body = document.getElementById('idx-slideout-sync-body');
+    body.innerHTML = '<div class="cc-slide-empty">Loading...</div>';
     try {
-        const data = await engineFetch('/api/index/sync-details');
+        var data = await cc_engineFetch('/api/index/sync-details');
         if (!data) return;
-        
-        let html = '';
-        
-        // Summary section
-        html += `
-            <div class="slideout-section">
-                <div class="slideout-section-title">Run Summary</div>
-                <div class="slideout-summary">
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalUpdated)}</div>
-                        <div class="slideout-stat-label">Updated</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalAdded)}</div>
-                        <div class="slideout-stat-label">New</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalDropped)}</div>
-                        <div class="slideout-stat-label">Dropped</div>
-                    </div>
-                </div>
-                <div style="font-size: 12px; color: #888; margin-bottom: 10px;">
-                    Run: ${formatDateTime(data.Summary.StartedDttm)} | Duration: ${formatDuration(data.Summary.DurationSeconds)}
-                </div>
-            </div>
-        `;
-        
-        // By database section
+
+        var html =
+            '<div class="cc-slide-section">' +
+                '<div class="cc-slide-section-title">Run Summary</div>' +
+                '<div class="cc-slide-summary">' +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalUpdated), 'Updated') +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalAdded), 'New') +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalDropped), 'Dropped') +
+                '</div>' +
+                idx_runMetaLine(data.Summary.StartedDttm, data.Summary.DurationSeconds) +
+            '</div>';
+
         if (data.ByDatabase && data.ByDatabase.length > 0) {
-            html += `
-                <div class="slideout-section">
-                    <div class="slideout-section-title">By Database</div>
-                    <table class="slideout-table">
-                        <thead>
-                            <tr>
-                                <th>Server</th>
-                                <th>Database</th>
-                                <th>Updated</th>
-                                <th>New</th>
-                                <th>Dropped</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            for (const db of data.ByDatabase) {
-                html += `
-                    <tr>
-                        <td>${db.ServerName}</td>
-                        <td>${db.DatabaseName}</td>
-                        <td>${formatNumber(db.ItemsProcessed)}</td>
-                        <td>${formatNumber(db.ItemsAdded)}</td>
-                        <td>${formatNumber(db.ItemsSkipped)}</td>
-                    </tr>
-                `;
+            html += idx_sectionTableOpen('By Database', ['Server', 'Database', 'Updated', 'New', 'Dropped']);
+            for (var i = 0; i < data.ByDatabase.length; i++) {
+                var db = data.ByDatabase[i];
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(db.ServerName) + idx_td(db.DatabaseName) +
+                    idx_td(idx_formatNumber(db.ItemsProcessed)) + idx_td(idx_formatNumber(db.ItemsAdded)) +
+                    idx_td(idx_formatNumber(db.ItemsSkipped)) + '</tr>';
             }
             html += '</tbody></table></div>';
         }
-        
-        // Added indexes section
+
         if (data.AddedIndexes && data.AddedIndexes.length > 0) {
-            html += `
-                <div class="slideout-section">
-                    <div class="slideout-section-title">Newly Discovered Indexes</div>
-                    <table class="slideout-table">
-                        <thead>
-                            <tr>
-                                <th>Database</th>
-                                <th>Table</th>
-                                <th>Index</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            for (const idx of data.AddedIndexes) {
-                html += `
-                    <tr>
-                        <td>${idx.DatabaseName}</td>
-                        <td>${idx.TableName}</td>
-                        <td>${idx.IndexName}</td>
-                    </tr>
-                `;
+            html += idx_sectionTableOpen('Newly Discovered Indexes', ['Database', 'Table', 'Index']);
+            for (var j = 0; j < data.AddedIndexes.length; j++) {
+                var ai = data.AddedIndexes[j];
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(ai.DatabaseName) + idx_td(ai.TableName) + idx_td(ai.IndexName) + '</tr>';
             }
             html += '</tbody></table></div>';
         }
-        
-        // Dropped indexes section
+
         if (data.DroppedIndexes && data.DroppedIndexes.length > 0) {
-            html += `
-                <div class="slideout-section">
-                    <div class="slideout-section-title">Dropped Indexes Detected</div>
-                    <table class="slideout-table">
-                        <thead>
-                            <tr>
-                                <th>Database</th>
-                                <th>Table</th>
-                                <th>Index</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            for (const idx of data.DroppedIndexes) {
-                html += `
-                    <tr>
-                        <td>${idx.DatabaseName}</td>
-                        <td>${idx.TableName}</td>
-                        <td>${idx.IndexName}</td>
-                    </tr>
-                `;
+            html += idx_sectionTableOpen('Dropped Indexes Detected', ['Database', 'Table', 'Index']);
+            for (var k = 0; k < data.DroppedIndexes.length; k++) {
+                var di = data.DroppedIndexes[k];
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(di.DatabaseName) + idx_td(di.TableName) + idx_td(di.IndexName) + '</tr>';
             }
             html += '</tbody></table></div>';
         }
-        
-        if (!data.ByDatabase?.length && !data.AddedIndexes?.length && !data.DroppedIndexes?.length) {
-            html += '<div class="slideout-empty">No detailed data available for last run</div>';
+
+        var hasDetail = (data.ByDatabase && data.ByDatabase.length) ||
+                        (data.AddedIndexes && data.AddedIndexes.length) ||
+                        (data.DroppedIndexes && data.DroppedIndexes.length);
+        if (!hasDetail) {
+            html += '<div class="cc-slide-empty">No detailed data available for last run</div>';
         }
-        
+
         body.innerHTML = html;
     } catch (error) {
-        body.innerHTML = `<div class="slideout-empty">Error loading sync details: ${error.message}</div>`;
+        body.innerHTML = '<div class="cc-slide-empty">Error loading sync details: ' + cc_escapeHtml(error.message) + '</div>';
     }
 }
 
-async function openScanDetails() {
-    openPanel('scan');
-    const body = document.getElementById('scan-panel-body');
-    body.innerHTML = '<div class="loading">Loading...</div>';
-    
+/* Opens and populates the fragmentation-scan detail slideout. */
+async function idx_openScanDetails() {
+    idx_openSlideout('idx-slideout-scan');
+    var body = document.getElementById('idx-slideout-scan-body');
+    body.innerHTML = '<div class="cc-slide-empty">Loading...</div>';
     try {
-        const data = await engineFetch('/api/index/scan-details');
+        var data = await cc_engineFetch('/api/index/scan-details');
         if (!data) return;
-        
-        let html = '';
-        
-        // Summary section
-        html += `
-            <div class="slideout-section">
-                <div class="slideout-section-title">Run Summary</div>
-                <div class="slideout-summary">
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalScanned)}</div>
-                        <div class="slideout-stat-label">Scanned</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalQueued)}</div>
-                        <div class="slideout-stat-label">Queued</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalRemoved)}</div>
-                        <div class="slideout-stat-label">Removed</div>
-                    </div>
-                </div>
-                <div style="font-size: 12px; color: #888; margin-bottom: 10px;">
-                    Run: ${formatDateTime(data.Summary.StartedDttm)} | Duration: ${formatDuration(data.Summary.DurationSeconds)}
-                </div>
-            </div>
-        `;
-        
-        // Scanned indexes - sorted by fragmentation descending
+
+        var html =
+            '<div class="cc-slide-section">' +
+                '<div class="cc-slide-section-title">Run Summary</div>' +
+                '<div class="cc-slide-summary">' +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalScanned), 'Scanned') +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalQueued), 'Queued') +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalRemoved), 'Removed') +
+                '</div>' +
+                idx_runMetaLine(data.Summary.StartedDttm, data.Summary.DurationSeconds) +
+            '</div>';
+
         if (data.ScannedIndexes && data.ScannedIndexes.length > 0) {
-            html += `
-                <div class="slideout-section">
-                    <div class="slideout-section-title">Fragmentation Found (${data.ScannedIndexes.length} indexes)</div>
-                    <table class="slideout-table">
-                        <thead>
-                            <tr>
-                                <th>Server</th>
-                                <th>Database</th>
-                                <th>Index</th>
-                                <th>Frag%</th>
-                                <th>Pages</th>
-                                <th style="text-align:center;">Queued</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            for (const idx of data.ScannedIndexes) {
-                const fragPct = parseFloat(idx.FragmentationPct) || 0;
-                const queuedIndicator = idx.WasQueued ? '<span style="color:#4ec9b0;">&#10004;</span>' : '';
-                html += `
-                    <tr>
-                        <td>${idx.ServerName}</td>
-                        <td>${idx.DatabaseName}</td>
-                        <td title="${idx.SchemaName}.${idx.TableName}">${idx.IndexName}</td>
-                        <td>${fragPct.toFixed(1)}%</td>
-                        <td>${formatNumber(idx.PageCount)}</td>
-                        <td style="text-align:center;">${queuedIndicator}</td>
-                    </tr>
-                `;
+            html += idx_sectionTableOpen('Fragmentation Found (' + data.ScannedIndexes.length + ' indexes)',
+                ['Server', 'Database', 'Index', 'Frag%', 'Pages', 'Queued']);
+            for (var i = 0; i < data.ScannedIndexes.length; i++) {
+                var idxRow = data.ScannedIndexes[i];
+                var fragPct = parseFloat(idxRow.FragmentationPct) || 0;
+                var queued = idxRow.WasQueued ? '<span class="cc-dialog-strong">&#10004;</span>' : '';
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(idxRow.ServerName) + idx_td(idxRow.DatabaseName) +
+                    idx_tdTitle(idxRow.IndexName, idxRow.SchemaName + '.' + idxRow.TableName) +
+                    idx_td(fragPct.toFixed(1) + '%') + idx_td(idx_formatNumber(idxRow.PageCount)) +
+                    '<td class="cc-slide-table-td cc-align-right">' + queued + '</td>' + '</tr>';
             }
             html += '</tbody></table></div>';
         } else {
-            html += '<div class="slideout-empty">No indexes were scanned in the last run</div>';
+            html += '<div class="cc-slide-empty">No indexes were scanned in the last run</div>';
         }
-        
+
         body.innerHTML = html;
     } catch (error) {
-        body.innerHTML = `<div class="slideout-empty">Error loading scan details: ${error.message}</div>`;
+        body.innerHTML = '<div class="cc-slide-empty">Error loading scan details: ' + cc_escapeHtml(error.message) + '</div>';
     }
 }
 
-async function openExecuteDetails() {
-    openPanel('execute');
-    const body = document.getElementById('execute-panel-body');
-    body.innerHTML = '<div class="loading">Loading...</div>';
-    
+/* Opens and populates the index-maintenance (rebuild) detail slideout. */
+async function idx_openExecuteDetails() {
+    idx_openSlideout('idx-slideout-execute');
+    var body = document.getElementById('idx-slideout-execute-body');
+    body.innerHTML = '<div class="cc-slide-empty">Loading...</div>';
     try {
-        const data = await engineFetch('/api/index/execute-details');
+        var data = await cc_engineFetch('/api/index/execute-details');
         if (!data) return;
-        
-        let html = '';
-        
-        // Summary section
-        html += `
-            <div class="slideout-section">
-                <div class="slideout-section-title">Run Summary</div>
-                <div class="slideout-summary">
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalRebuilt)}</div>
-                        <div class="slideout-stat-label">Rebuilt</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalFailed)}</div>
-                        <div class="slideout-stat-label">Failed</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary.TotalDeferred)}</div>
-                        <div class="slideout-stat-label">Deferred</div>
-                    </div>
-                </div>
-                <div style="font-size: 12px; color: #888; margin-bottom: 10px;">
-                    Run: ${formatDateTime(data.Summary.StartedDttm)} | Duration: ${formatDuration(data.Summary.DurationSeconds)}
-                </div>
-            </div>
-        `;
-        
-        // Rebuilt indexes
+
+        var html =
+            '<div class="cc-slide-section">' +
+                '<div class="cc-slide-section-title">Run Summary</div>' +
+                '<div class="cc-slide-summary">' +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalRebuilt), 'Rebuilt') +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalFailed), 'Failed') +
+                    idx_statCard(idx_formatNumber(data.Summary.TotalDeferred), 'Deferred') +
+                '</div>' +
+                idx_runMetaLine(data.Summary.StartedDttm, data.Summary.DurationSeconds) +
+            '</div>';
+
         if (data.RebuiltIndexes && data.RebuiltIndexes.length > 0) {
-            html += `
-                <div class="slideout-section">
-                    <div class="slideout-section-title">Rebuilt Indexes</div>
-                    <table class="slideout-table">
-                        <thead>
-                            <tr>
-                                <th>Server</th>
-                                <th>Database</th>
-                                <th>Index</th>
-                                <th>Before</th>
-                                <th>After</th>
-                                <th>Duration</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            for (const idx of data.RebuiltIndexes) {
-                html += `
-                    <tr>
-                        <td>${idx.ServerName}</td>
-                        <td>${idx.DatabaseName}</td>
-                        <td title="${idx.SchemaName}.${idx.TableName}">${idx.IndexName}</td>
-                        <td>${idx.FragmentationBefore.toFixed(1)}%</td>
-                        <td>${idx.FragmentationAfter !== null ? idx.FragmentationAfter.toFixed(1) + '%' : '-'}</td>
-                        <td>${formatDuration(idx.DurationSeconds)}</td>
-                    </tr>
-                `;
+            html += idx_sectionTableOpen('Rebuilt Indexes',
+                ['Server', 'Database', 'Index', 'Before', 'After', 'Duration']);
+            for (var i = 0; i < data.RebuiltIndexes.length; i++) {
+                var ri = data.RebuiltIndexes[i];
+                var after = ri.FragmentationAfter !== null ? ri.FragmentationAfter.toFixed(1) + '%' : '-';
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(ri.ServerName) + idx_td(ri.DatabaseName) +
+                    idx_tdTitle(ri.IndexName, ri.SchemaName + '.' + ri.TableName) +
+                    idx_td(ri.FragmentationBefore.toFixed(1) + '%') + idx_td(after) +
+                    idx_td(idx_formatDuration(ri.DurationSeconds)) + '</tr>';
             }
             html += '</tbody></table></div>';
         } else {
-            html += '<div class="slideout-empty">No indexes were rebuilt in the last run</div>';
+            html += '<div class="cc-slide-empty">No indexes were rebuilt in the last run</div>';
         }
-        
+
         body.innerHTML = html;
     } catch (error) {
-        body.innerHTML = `<div class="slideout-empty">Error loading execute details: ${error.message}</div>`;
+        body.innerHTML = '<div class="cc-slide-empty">Error loading execute details: ' + cc_escapeHtml(error.message) + '</div>';
     }
 }
 
-async function openStatsDetails() {
-    openPanel('stats');
-    const body = document.getElementById('stats-panel-body');
-    body.innerHTML = '<div class="loading">Loading...</div>';
-    
+/* Opens and populates the statistics-update detail slideout. */
+async function idx_openStatsDetails() {
+    idx_openSlideout('idx-slideout-stats');
+    var body = document.getElementById('idx-slideout-stats-body');
+    body.innerHTML = '<div class="cc-slide-empty">Loading...</div>';
     try {
-        const data = await engineFetch('/api/index/stats-details');
+        var data = await cc_engineFetch('/api/index/stats-details');
         if (!data) return;
-        
-        let html = '';
-        
-        // Summary section
-        html += `
-            <div class="slideout-section">
-                <div class="slideout-section-title">Run Summary</div>
-                <div class="slideout-summary">
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.Summary?.TotalEvaluated || 0)}</div>
-                        <div class="slideout-stat-label">Evaluated</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.TotalModifications)}</div>
-                        <div class="slideout-stat-label">Modifications</div>
-                    </div>
-                    <div class="slideout-stat">
-                        <div class="slideout-stat-value">${formatNumber(data.TotalStaleness)}</div>
-                        <div class="slideout-stat-label">Staleness</div>
-                    </div>
-                </div>
-                <div style="font-size: 12px; color: #888; margin-bottom: 10px;">
-                    Run: ${formatDateTime(data.Summary?.StartedDttm)} | Duration: ${formatDuration(data.Summary?.DurationSeconds || 0)}
-                </div>
-            </div>
-        `;
-        
-        // By database section
+
+        var evaluated = data.Summary ? data.Summary.TotalEvaluated : 0;
+        var started = data.Summary ? data.Summary.StartedDttm : null;
+        var dur = data.Summary ? data.Summary.DurationSeconds : 0;
+
+        var html =
+            '<div class="cc-slide-section">' +
+                '<div class="cc-slide-section-title">Run Summary</div>' +
+                '<div class="cc-slide-summary">' +
+                    idx_statCard(idx_formatNumber(evaluated || 0), 'Evaluated') +
+                    idx_statCard(idx_formatNumber(data.TotalModifications), 'Modifications') +
+                    idx_statCard(idx_formatNumber(data.TotalStaleness), 'Staleness') +
+                '</div>' +
+                idx_runMetaLine(started, dur || 0) +
+            '</div>';
+
         if (data.ByDatabase && data.ByDatabase.length > 0) {
-            html += `
-                <div class="slideout-section">
-                    <div class="slideout-section-title">By Database</div>
-                    <table class="slideout-table">
-                        <thead>
-                            <tr>
-                                <th>Server</th>
-                                <th>Database</th>
-                                <th>Modifications</th>
-                                <th>Staleness</th>
-                                <th>Duration</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            for (const db of data.ByDatabase) {
-                html += `
-                    <tr>
-                        <td>${db.ServerName}</td>
-                        <td>${db.DatabaseName}</td>
-                        <td>${formatNumber(db.ModificationCount)}</td>
-                        <td>${db.StalenessCount > 0 ? formatNumber(db.StalenessCount) : '-'}</td>
-                        <td>${formatDurationMs(db.DurationMs)}</td>
-                    </tr>
-                `;
+            html += idx_sectionTableOpen('By Database',
+                ['Server', 'Database', 'Modifications', 'Staleness', 'Duration']);
+            for (var i = 0; i < data.ByDatabase.length; i++) {
+                var db = data.ByDatabase[i];
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(db.ServerName) + idx_td(db.DatabaseName) +
+                    idx_td(idx_formatNumber(db.ModificationCount)) +
+                    idx_td(db.StalenessCount > 0 ? idx_formatNumber(db.StalenessCount) : '-') +
+                    idx_td(idx_formatDurationMs(db.DurationMs)) + '</tr>';
             }
             html += '</tbody></table></div>';
         }
-        
-        // Failures section (only if any exist)
+
         if (data.Failures && data.Failures.length > 0) {
-            html += `
-                <div class="slideout-section">
-                    <div class="slideout-section-title" style="color: #f48771;">Failures (${data.Failures.length})</div>
-                    <table class="slideout-table">
-                        <thead>
-                            <tr>
-                                <th>Database</th>
-                                <th>Stat Name</th>
-                                <th>Error</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            for (const fail of data.Failures) {
-                html += `
-                    <tr>
-                        <td>${fail.DatabaseName}</td>
-                        <td>${fail.StatName || '-'}</td>
-                        <td style="color: #f48771; font-size: 11px;">${fail.ErrorMessage || '-'}</td>
-                    </tr>
-                `;
+            html += idx_sectionTableOpen('Failures (' + data.Failures.length + ')',
+                ['Database', 'Stat Name', 'Error']);
+            for (var j = 0; j < data.Failures.length; j++) {
+                var fail = data.Failures[j];
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(fail.DatabaseName) + idx_td(fail.StatName || '-') +
+                    idx_td(fail.ErrorMessage || '-') + '</tr>';
             }
             html += '</tbody></table></div>';
         }
-        
-        if (!data.ByDatabase?.length) {
-            html += '<div class="slideout-empty">No detailed data available for last run</div>';
+
+        if (!(data.ByDatabase && data.ByDatabase.length)) {
+            html += '<div class="cc-slide-empty">No detailed data available for last run</div>';
         }
-        
+
         body.innerHTML = html;
     } catch (error) {
-        body.innerHTML = `<div class="slideout-empty">Error loading stats details: ${error.message}</div>`;
+        body.innerHTML = '<div class="cc-slide-empty">Error loading stats details: ' + cc_escapeHtml(error.message) + '</div>';
     }
 }
 
-// ----------------------------------------------------------------------------
-// Active Execution (Real-time Rebuild Progress)
-// ----------------------------------------------------------------------------
-async function loadActiveExecution() {
+/* Builds a slide-summary stat card with the given value and label. */
+function idx_statCard(value, label) {
+    return '<div class="cc-slide-stat">' +
+        '<div class="cc-slide-stat-value">' + value + '</div>' +
+        '<div class="cc-slide-stat-label">' + cc_escapeHtml(label) + '</div>' +
+    '</div>';
+}
+
+/* Builds the run meta line (start time and duration) for a detail summary. */
+function idx_runMetaLine(startedDttm, durationSeconds) {
+    return '<div class="cc-slide-section-title">Run: ' + idx_formatDateTime(startedDttm) +
+        ' | Duration: ' + idx_formatDuration(durationSeconds) + '</div>';
+}
+
+/* Opens a slide section containing a table with the given title and headers. */
+function idx_sectionTableOpen(title, headers) {
+    var head = '';
+    for (var i = 0; i < headers.length; i++) {
+        head += '<th class="cc-slide-table-th">' + cc_escapeHtml(headers[i]) + '</th>';
+    }
+    return '<div class="cc-slide-section">' +
+        '<div class="cc-slide-section-title">' + cc_escapeHtml(title) + '</div>' +
+        '<table class="cc-slide-table"><thead><tr>' + head + '</tr></thead><tbody>';
+}
+
+/* Builds a slide-table data cell. */
+function idx_td(value) {
+    return '<td class="cc-slide-table-td">' + cc_escapeHtml(value) + '</td>';
+}
+
+/* Builds a slide-table data cell with a hover title. */
+function idx_tdTitle(value, title) {
+    return '<td class="cc-slide-table-td" title="' + cc_escapeHtml(title) + '">' + cc_escapeHtml(value) + '</td>';
+}
+
+/* ============================================================================
+   FUNCTIONS: ACTIVE EXECUTION
+   ----------------------------------------------------------------------------
+   Loads and renders real-time rebuild progress cards, one per in-flight
+   index rebuild, with a progress bar and step/row/elapsed/ETA stats.
+   Prefix: idx
+   ============================================================================ */
+
+/* Loads and renders the active-execution rebuild cards. */
+async function idx_loadActiveExecution() {
     try {
-        const data = await engineFetch('/api/index/active-execution');
+        var data = await cc_engineFetch('/api/index/active-execution');
         if (!data) return;
-        
-        const container = document.getElementById('active-execution');
-        
+
+        var container = document.getElementById('idx-active-execution');
+
         if (!data.IsExecuting || !data.ActiveRebuilds || data.ActiveRebuilds.length === 0) {
-            container.innerHTML = '<div class="no-active">No index rebuilds currently in progress</div>';
+            container.innerHTML = '<div class="idx-no-active">No index rebuilds currently in progress</div>';
             return;
         }
-        
-        let html = '';
-        
-        for (const rebuild of data.ActiveRebuilds) {
-            html += `
-                <div class="rebuild-card">
-                    <div class="rebuild-header">
-                        <div>
-                            <div class="rebuild-index">${rebuild.IndexName}</div>
-                            <div class="rebuild-location">${rebuild.ServerName} / ${rebuild.DatabaseName}</div>
-                        </div>
-                        <div class="rebuild-percent">${rebuild.PercentComplete.toFixed(1)}%</div>
-                    </div>
-                    <div class="rebuild-progress-bar">
-                        <div class="rebuild-progress-fill" style="width: ${rebuild.PercentComplete}%"></div>
-                    </div>
-                    <div class="rebuild-stats">
-                        <div class="rebuild-stat">
-                            <span class="label">Step:</span>
-                            <span class="value">${rebuild.CurrentStep}</span>
-                        </div>
-                        <div class="rebuild-stat">
-                            <span class="label">Rows:</span>
-                            <span class="value">${formatNumber(rebuild.RowsProcessed)} / ${formatNumber(rebuild.TotalRows)}</span>
-                        </div>
-                        <div class="rebuild-stat">
-                            <span class="label">Elapsed:</span>
-                            <span class="value">${formatDuration(rebuild.ElapsedSeconds)}</span>
-                        </div>
-                        <div class="rebuild-stat">
-                            <span class="label">ETA:</span>
-                            <span class="value">${formatDuration(rebuild.EstimatedSecondsLeft)}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
+
+        container.innerHTML = '';
+        for (var i = 0; i < data.ActiveRebuilds.length; i++) {
+            var rebuild = data.ActiveRebuilds[i];
+            var card = document.createElement('div');
+            card.className = 'idx-rebuild-card';
+            card.innerHTML =
+                '<div class="idx-rebuild-header">' +
+                    '<div>' +
+                        '<div class="idx-rebuild-index">' + cc_escapeHtml(rebuild.IndexName) + '</div>' +
+                        '<div class="idx-rebuild-location">' + cc_escapeHtml(rebuild.ServerName) + ' / ' + cc_escapeHtml(rebuild.DatabaseName) + '</div>' +
+                    '</div>' +
+                    '<div class="idx-rebuild-percent">' + rebuild.PercentComplete.toFixed(1) + '%</div>' +
+                '</div>' +
+                '<div class="idx-rebuild-progress-bar">' +
+                    '<div class="idx-rebuild-progress-fill"></div>' +
+                '</div>' +
+                '<div class="idx-rebuild-stats">' +
+                    '<div class="idx-rebuild-stat"><span>Step:</span> <span class="idx-rebuild-stat-value">' + cc_escapeHtml(rebuild.CurrentStep) + '</span></div>' +
+                    '<div class="idx-rebuild-stat"><span>Rows:</span> <span class="idx-rebuild-stat-value">' + idx_formatNumber(rebuild.RowsProcessed) + ' / ' + idx_formatNumber(rebuild.TotalRows) + '</span></div>' +
+                    '<div class="idx-rebuild-stat"><span>Elapsed:</span> <span class="idx-rebuild-stat-value">' + idx_formatDuration(rebuild.ElapsedSeconds) + '</span></div>' +
+                    '<div class="idx-rebuild-stat"><span>ETA:</span> <span class="idx-rebuild-stat-value">' + idx_formatDuration(rebuild.EstimatedSecondsLeft) + '</span></div>' +
+                '</div>';
+            /* Progress width is a runtime-computed value with no class
+               equivalent; set it as a style property after insertion. */
+            var fill = card.querySelector('.idx-rebuild-progress-fill');
+            fill.style.width = rebuild.PercentComplete + '%';
+            container.appendChild(card);
         }
-        
-        container.innerHTML = html;
     } catch (error) {
         console.error('Error loading active execution:', error);
     }
 }
 
-// ----------------------------------------------------------------------------
-// Queue Summary (Clickable to open details) - Compact format
-// ----------------------------------------------------------------------------
-async function loadQueueSummary() {
+/* ============================================================================
+   FUNCTIONS: QUEUE
+   ----------------------------------------------------------------------------
+   Loads and renders the compact queue summary (clickable to open the full
+   queue detail slideout) and the queue detail table inside the slideout.
+   Prefix: idx
+   ============================================================================ */
+
+/* Loads and renders the compact index-queue summary. */
+async function idx_loadQueueSummary() {
     try {
-        const summary = await engineFetch('/api/index/queue-summary');
+        var summary = await cc_engineFetch('/api/index/queue-summary');
         if (!summary) return;
-        
-        const container = document.getElementById('queue-summary');
-        
+
+        var container = document.getElementById('idx-queue-summary');
+
         if (!summary || summary.length === 0) {
-            container.innerHTML = '<div class="queue-empty">Queue is empty</div>';
-            container.onclick = openQueueDetails;
-            container.classList.add('clickable');
+            container.innerHTML = idx_queueEmptyButton();
             return;
         }
-        
-        // Build lookup by status
-        const byStatus = {};
-        let total = null;
-        for (const item of summary) {
+
+        var byStatus = {};
+        var total = null;
+        for (var i = 0; i < summary.length; i++) {
+            var item = summary[i];
             if (item.Status === 'TOTAL') {
                 total = item;
             } else {
                 byStatus[item.Status] = item;
             }
         }
-        
-        // If total exists but has 0 items, show empty state
+
         if (total && total.ItemCount === 0) {
-            container.innerHTML = '<div class="queue-empty">Queue is empty</div>';
-            container.onclick = openQueueDetails;
-            container.classList.add('clickable');
+            container.innerHTML = idx_queueEmptyButton();
             return;
         }
-        
-        const pending = byStatus['PENDING'] || { ItemCount: 0 };
-        const scheduled = byStatus['SCHEDULED'] || { ItemCount: 0 };
-        const deferred = byStatus['DEFERRED'] || { ItemCount: 0 };
-        
-        // Make whole container clickable
-        container.onclick = openQueueDetails;
-        container.classList.add('clickable');
-        
-        let html = '<div class="queue-summary-grid">';
-        
-        html += `
-            <div class="queue-stat-card pending">
-                <div class="queue-stat-value">${pending.ItemCount}</div>
-                <div class="queue-stat-label">Pending</div>
-            </div>
-            <div class="queue-stat-card scheduled">
-                <div class="queue-stat-value">${scheduled.ItemCount}</div>
-                <div class="queue-stat-label">Scheduled</div>
-            </div>
-            <div class="queue-stat-card deferred">
-                <div class="queue-stat-value">${deferred.ItemCount}</div>
-                <div class="queue-stat-label">Deferred</div>
-            </div>
-        `;
-        
-        html += '</div>';
-        
-        // Text totals line
+
+        var pending = byStatus['PENDING'] || { ItemCount: 0 };
+        var scheduled = byStatus['SCHEDULED'] || { ItemCount: 0 };
+        var deferred = byStatus['DEFERRED'] || { ItemCount: 0 };
+
+        var html = '<button class="idx-clickable" data-action-click="idx-open-queue-details">' +
+            '<div class="idx-queue-summary-grid">' +
+                '<div class="idx-queue-stat-card">' +
+                    '<div class="idx-queue-stat-value idx-pending">' + pending.ItemCount + '</div>' +
+                    '<div class="idx-queue-stat-label">Pending</div>' +
+                '</div>' +
+                '<div class="idx-queue-stat-card">' +
+                    '<div class="idx-queue-stat-value idx-scheduled">' + scheduled.ItemCount + '</div>' +
+                    '<div class="idx-queue-stat-label">Scheduled</div>' +
+                '</div>' +
+                '<div class="idx-queue-stat-card">' +
+                    '<div class="idx-queue-stat-value idx-deferred">' + deferred.ItemCount + '</div>' +
+                    '<div class="idx-queue-stat-label">Deferred</div>' +
+                '</div>' +
+            '</div>';
+
         if (total) {
-            html += `
-                <div class="queue-totals-line">
-                    TOTAL ITEMS: ${total.ItemCount}  ·  TOTAL PAGES: ${formatNumber(total.TotalPages)}  ·  EST. RUNTIME: ${formatDuration(total.TotalSecondsOnline)}
-                </div>
-            `;
+            html += '<div class="idx-queue-totals-line">' +
+                '<span class="idx-total-item"><span class="idx-total-label">TOTAL ITEMS:</span> <span class="idx-total-value">' + total.ItemCount + '</span></span>' +
+                '<span class="idx-total-item"><span class="idx-total-label">TOTAL PAGES:</span> <span class="idx-total-value">' + idx_formatNumber(total.TotalPages) + '</span></span>' +
+                '<span class="idx-total-item"><span class="idx-total-label">EST. RUNTIME:</span> <span class="idx-total-value">' + idx_formatDuration(total.TotalSecondsOnline) + '</span></span>' +
+            '</div>';
         }
-        
+
+        html += '</button>';
         container.innerHTML = html;
     } catch (error) {
         console.error('Error loading queue summary:', error);
-        document.getElementById('queue-summary').innerHTML = '<div class="queue-empty">Error loading queue</div>';
+        document.getElementById('idx-queue-summary').innerHTML = idx_queueEmptyButton();
     }
 }
 
-// ----------------------------------------------------------------------------
-// Queue Details Slideout
-// ----------------------------------------------------------------------------
-async function openQueueDetails() {
-    openPanel('queue');
-    const body = document.getElementById('queue-panel-body');
-    body.innerHTML = '<div class="loading">Loading...</div>';
-    
+/* Builds the empty-queue clickable button shown when the queue has no items. */
+function idx_queueEmptyButton() {
+    return '<button class="idx-clickable" data-action-click="idx-open-queue-details">' +
+        '<div class="cc-slide-empty">Queue is empty</div></button>';
+}
+
+/* Opens and populates the queue detail slideout. */
+async function idx_openQueueDetails() {
+    idx_openSlideout('idx-slideout-queue');
+    var body = document.getElementById('idx-slideout-queue-body');
+    body.innerHTML = '<div class="cc-slide-empty">Loading...</div>';
     try {
-        const items = await engineFetch('/api/index/queue-details');
+        var items = await cc_engineFetch('/api/index/queue-details');
         if (!items) return;
-        
+
         if (!items || items.length === 0) {
-            body.innerHTML = '<div class="slideout-empty">Queue is empty</div>';
+            body.innerHTML = '<div class="cc-slide-empty">Queue is empty</div>';
             return;
         }
-        
-        let html = `
-            <table class="slideout-table">
-                <thead>
-                    <tr>
-                        <th>Database</th>
-                        <th>Index</th>
-                        <th>Frag%</th>
-                        <th>Pages</th>
-                        <th>Est.</th>
-                        <th>Status</th>
-                        <th>Pri</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-        
-        for (const item of items) {
-            const statusClass = item.Status.toLowerCase().replace('_', '-');
-            html += `
-                <tr>
-                    <td title="${item.ServerName}">${item.DatabaseName}</td>
-                    <td title="${item.SchemaName}.${item.TableName}.${item.IndexName}">${item.IndexName}</td>
-                    <td>${item.FragmentationPct.toFixed(1)}%</td>
-                    <td>${formatNumber(item.PageCount)}</td>
-                    <td>${formatDuration(item.EstimatedSecondsOnline)}</td>
-                    <td><span class="status-badge ${statusClass}">${item.Status}</span></td>
-                    <td>${item.PriorityScore}</td>
-                </tr>
-            `;
+
+        var html = '<table class="cc-slide-table"><thead><tr>' +
+            '<th class="cc-slide-table-th">Database</th>' +
+            '<th class="cc-slide-table-th">Index</th>' +
+            '<th class="cc-slide-table-th">Frag%</th>' +
+            '<th class="cc-slide-table-th">Pages</th>' +
+            '<th class="cc-slide-table-th">Est.</th>' +
+            '<th class="cc-slide-table-th">Status</th>' +
+            '<th class="cc-slide-table-th">Pri</th>' +
+            '</tr></thead><tbody>';
+
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            var statusState = 'idx-' + item.Status.toLowerCase().replace('_', '-');
+            html += '<tr class="cc-slide-table-row">' +
+                idx_tdTitle(item.DatabaseName, item.ServerName) +
+                idx_tdTitle(item.IndexName, item.SchemaName + '.' + item.TableName + '.' + item.IndexName) +
+                idx_td(item.FragmentationPct.toFixed(1) + '%') +
+                idx_td(idx_formatNumber(item.PageCount)) +
+                idx_td(idx_formatDuration(item.EstimatedSecondsOnline)) +
+                '<td class="cc-slide-table-td"><span class="idx-status-badge ' + statusState + '">' + cc_escapeHtml(item.Status) + '</span></td>' +
+                idx_td(item.PriorityScore) + '</tr>';
         }
-        
+
         html += '</tbody></table>';
         body.innerHTML = html;
     } catch (error) {
-        body.innerHTML = `<div class="slideout-empty">Error loading queue details: ${error.message}</div>`;
+        body.innerHTML = '<div class="cc-slide-empty">Error loading queue details: ' + cc_escapeHtml(error.message) + '</div>';
     }
 }
 
-// ----------------------------------------------------------------------------
-// Database Overview (grouped by maintenance type)
-// ----------------------------------------------------------------------------
-async function loadDatabaseHealth() {
+/* ============================================================================
+   FUNCTIONS: DATABASE OVERVIEW
+   ----------------------------------------------------------------------------
+   Loads and renders the database overview grouped into index-maintenance and
+   statistics-only databases, with per-row health indicators and a schedule
+   icon that opens the per-database schedule editor.
+   Prefix: idx
+   ============================================================================ */
+
+/* Loads and renders the database overview. */
+async function idx_loadDatabaseHealth() {
     try {
-        const data = await engineFetch('/api/index/database-health');
+        var data = await cc_engineFetch('/api/index/database-health');
         if (!data) return;
-        
-        const container = document.getElementById('database-health');
-        
+
+        var container = document.getElementById('idx-database-health');
+
         if (!data.Databases || data.Databases.length === 0) {
-            container.innerHTML = '<div class="health-empty">No databases registered</div>';
+            container.innerHTML = '<div class="cc-slide-empty">No databases registered</div>';
             return;
         }
-        
-        // Separate into Index Maintenance and Statistics Only groups
-        const indexMaintenanceDbs = data.Databases.filter(db => db.IndexMaintenanceEnabled);
-        const statsOnlyDbs = data.Databases.filter(db => !db.IndexMaintenanceEnabled && db.StatsMaintenanceEnabled);
-        
-        let html = '';
-        
-        // Index Maintenance Group
-        if (indexMaintenanceDbs.length > 0) {
-            html += `
-                <div class="database-group">
-                    <div class="database-group-header">Index Maintenance</div>
-                    <table class="health-table">
-                        <thead>
-                            <tr>
-                                <th>Server</th>
-                                <th></th>
-                                <th>Database</th>
-                                <th>Total</th>
-                                <th>Frag</th>
-                                <th>Queue</th>
-                                <th>Last Scan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            
-            for (const db of indexMaintenanceDbs) {
-                let healthClass = 'good';
-                if (db.InQueue > 0) healthClass = 'warning';
-                if (db.InQueue > 10) healthClass = 'critical';
-                
-                html += `
-                    <tr>
-                        <td>
-                            <span class="health-indicator ${healthClass}"></span>
-                            ${db.ServerName}
-                        </td>
-                        <td class="schedule-icon-cell">
-                            <span class="schedule-icon" onclick="openSchedule(${db.DatabaseId}, '${db.ServerName}', '${db.DatabaseName}')" title="View/Edit Schedule">📅</span>
-                        </td>
-                        <td>${db.DatabaseName}</td>
-                        <td>${formatNumber(db.TotalIndexes)}</td>
-                        <td>${db.FragmentedCount}</td>
-                        <td>${db.InQueue}</td>
-                        <td>${formatDateShort(db.LastScanDate)}</td>
-                    </tr>
-                `;
+
+        var indexDbs = data.Databases.filter(function(db) { return db.IndexMaintenanceEnabled; });
+        var statsDbs = data.Databases.filter(function(db) { return !db.IndexMaintenanceEnabled && db.StatsMaintenanceEnabled; });
+
+        var html = '';
+
+        if (indexDbs.length > 0) {
+            html += '<div class="idx-database-group">' +
+                '<div class="idx-database-group-header">Index Maintenance</div>' +
+                '<table class="cc-slide-table"><thead><tr>' +
+                    '<th class="cc-slide-table-th">Server</th>' +
+                    '<th class="cc-slide-table-th"></th>' +
+                    '<th class="cc-slide-table-th">Database</th>' +
+                    '<th class="cc-slide-table-th">Total</th>' +
+                    '<th class="cc-slide-table-th">Frag</th>' +
+                    '<th class="cc-slide-table-th">Queue</th>' +
+                    '<th class="cc-slide-table-th">Last Scan</th>' +
+                '</tr></thead><tbody>';
+            for (var i = 0; i < indexDbs.length; i++) {
+                var db = indexDbs[i];
+                var healthState = 'idx-good';
+                if (db.InQueue > 0) healthState = 'idx-warning';
+                if (db.InQueue > 10) healthState = 'idx-critical';
+                html += '<tr class="cc-slide-table-row">' +
+                    '<td class="cc-slide-table-td"><span class="idx-health-indicator ' + healthState + '"></span>' + cc_escapeHtml(db.ServerName) + '</td>' +
+                    '<td class="cc-slide-table-td idx-schedule-icon-cell">' +
+                        '<button class="idx-schedule-icon" data-action-click="idx-open-schedule" ' +
+                        'data-action-idx-database-id="' + cc_escapeHtml(db.DatabaseId) + '" ' +
+                        'data-action-idx-server="' + cc_escapeHtml(db.ServerName) + '" ' +
+                        'data-action-idx-database="' + cc_escapeHtml(db.DatabaseName) + '" ' +
+                        'title="View/Edit Schedule">&#128197;</button>' +
+                    '</td>' +
+                    idx_td(db.DatabaseName) +
+                    idx_td(idx_formatNumber(db.TotalIndexes)) +
+                    idx_td(db.FragmentedCount) +
+                    idx_td(db.InQueue) +
+                    idx_td(idx_formatDateShort(db.LastScanDate)) + '</tr>';
             }
-            
             html += '</tbody></table></div>';
         }
-        
-        // Statistics Only Group
-        if (statsOnlyDbs.length > 0) {
-            html += `
-                <div class="database-group">
-                    <div class="database-group-header">Statistics Only</div>
-                    <table class="health-table">
-                        <thead>
-                            <tr>
-                                <th>Server</th>
-                                <th>Database</th>
-                                <th>Total</th>
-                                <th>Last Scan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            
-            for (const db of statsOnlyDbs) {
-                html += `
-                    <tr>
-                        <td>${db.ServerName}</td>
-                        <td>${db.DatabaseName}</td>
-                        <td>${formatNumber(db.TotalIndexes)}</td>
-                        <td>${formatDateShort(db.LastScanDate)}</td>
-                    </tr>
-                `;
+
+        if (statsDbs.length > 0) {
+            html += '<div class="idx-database-group">' +
+                '<div class="idx-database-group-header">Statistics Only</div>' +
+                '<table class="cc-slide-table"><thead><tr>' +
+                    '<th class="cc-slide-table-th">Server</th>' +
+                    '<th class="cc-slide-table-th">Database</th>' +
+                    '<th class="cc-slide-table-th">Total</th>' +
+                    '<th class="cc-slide-table-th">Last Scan</th>' +
+                '</tr></thead><tbody>';
+            for (var j = 0; j < statsDbs.length; j++) {
+                var sdb = statsDbs[j];
+                html += '<tr class="cc-slide-table-row">' +
+                    idx_td(sdb.ServerName) + idx_td(sdb.DatabaseName) +
+                    idx_td(idx_formatNumber(sdb.TotalIndexes)) +
+                    idx_td(idx_formatDateShort(sdb.LastScanDate)) + '</tr>';
             }
-            
             html += '</tbody></table></div>';
         }
-        
+
         container.innerHTML = html;
     } catch (error) {
         console.error('Error loading database health:', error);
     }
 }
 
-// ----------------------------------------------------------------------------
-// Schedule Modal
-// ----------------------------------------------------------------------------
+/* ============================================================================
+   FUNCTIONS: SCHEDULE EDITOR
+   ----------------------------------------------------------------------------
+   Opens the per-database maintenance schedule slideout and renders the
+   interactive standard and holiday schedule grids of toggleable hour cells.
+   Prefix: idx
+   ============================================================================ */
 
-async function openSchedule(databaseId, serverName, databaseName) {
-    currentScheduleDatabaseId = databaseId;
-    currentScheduleDatabaseName = databaseName;
-    
-    document.getElementById('schedule-panel-title').textContent = 
-        `Maintenance Schedule: ${serverName} / ${databaseName}`;
-    
-    openPanel('schedule');
-    const body = document.getElementById('schedule-panel-body');
-    body.innerHTML = '<div class="loading">Loading schedule...</div>';
-    
+/* Opens the schedule slideout for a database and loads its schedule. */
+async function idx_openSchedule(target) {
+    var databaseId = target.getAttribute('data-action-idx-database-id');
+    var serverName = target.getAttribute('data-action-idx-server');
+    var databaseName = target.getAttribute('data-action-idx-database');
+
+    idx_currentScheduleDatabaseId = databaseId;
+    idx_currentScheduleDatabaseName = databaseName;
+
+    document.getElementById('idx-slideout-schedule-title').textContent =
+        'Maintenance Schedule: ' + serverName + ' / ' + databaseName;
+
+    idx_openSlideout('idx-slideout-schedule');
+    var body = document.getElementById('idx-slideout-schedule-body');
+    body.innerHTML = '<div class="cc-slide-empty">Loading schedule...</div>';
+
     try {
-        const data = await engineFetch(`/api/index/schedule/${databaseId}`);
+        var data = await cc_engineFetch('/api/index/schedule/' + databaseId);
         if (!data) return;
-        
-        renderScheduleGrid(data.Schedule, data.HolidaySchedule);
+        idx_renderScheduleGrid(data.Schedule, data.HolidaySchedule);
     } catch (error) {
-        body.innerHTML = `<div class="slideout-empty">Error loading schedule: ${error.message}</div>`;
+        body.innerHTML = '<div class="cc-slide-empty">Error loading schedule: ' + cc_escapeHtml(error.message) + '</div>';
     }
 }
 
-function renderScheduleGrid(schedule, holidaySchedule) {
-    const body = document.getElementById('schedule-panel-body');
-    
-    function formatHour(h) {
-        if (h === 0) return '12a';
-        if (h < 12) return h + 'a';
-        if (h === 12) return '12p';
-        return (h - 12) + 'p';
-    }
-    
-    let html = `
-        <div class="schedule-container">
-            <div class="schedule-legend">
-                <div class="schedule-legend-item">
-                    <div class="schedule-legend-box allowed"></div>
-                    <span>Maintenance Allowed</span>
-                </div>
-                <div class="schedule-legend-item">
-                    <div class="schedule-legend-box blocked"></div>
-                    <span>Blocked</span>
-                </div>
-                <div class="schedule-legend-item schedule-drag-hint">
-                    <span>💡 Click or drag to select multiple cells</span>
-                </div>
-            </div>
-            
-            <div class="schedule-section-header">Standard Schedule</div>
-            <div class="schedule-grid" data-schedule-type="standard" onmouseup="handleScheduleMouseUp()" onmouseleave="handleScheduleMouseLeave()">
-    `;
-    
-    // Hour labels row
-    html += '<div class="schedule-hour-labels"><div class="schedule-day-label"></div>';
-    for (let h = 0; h < 24; h++) {
-        html += `<div class="schedule-hour-label">${formatHour(h)}</div>`;
+/* Renders the standard and holiday schedule grids into the slideout body. */
+function idx_renderScheduleGrid(schedule, holidaySchedule) {
+    var body = document.getElementById('idx-slideout-schedule-body');
+    var h;
+
+    var html = '<div class="idx-schedule-container">' +
+        '<div class="idx-schedule-legend">' +
+            '<div class="idx-schedule-legend-item"><div class="idx-schedule-legend-box idx-allowed"></div><span>Maintenance Allowed</span></div>' +
+            '<div class="idx-schedule-legend-item"><div class="idx-schedule-legend-box idx-blocked"></div><span>Blocked</span></div>' +
+            '<div class="idx-schedule-legend-item idx-schedule-drag-hint"><span>&#128161; Click or drag to select multiple cells</span></div>' +
+        '</div>' +
+        '<div class="idx-schedule-section-header">Standard Schedule</div>' +
+        '<div class="idx-schedule-grid" data-idx-schedule-type="standard">';
+
+    html += '<div class="idx-schedule-hour-labels"><div class="idx-schedule-day-label"></div>';
+    for (h = 0; h < 24; h++) {
+        html += '<div class="idx-schedule-hour-label">' + idx_formatHour(h) + '</div>';
     }
     html += '</div>';
-    
-    // Day rows
-    for (const day of DAY_ORDER) {
-        const daySchedule = schedule.find(s => s.DayOfWeek === day) || {};
-        
-        html += `<div class="schedule-row">`;
-        html += `<div class="schedule-day-label">${DAY_NAMES[day]}</div>`;
-        html += `<div class="schedule-hours">`;
-        
-        for (let hour = 0; hour < 24; hour++) {
-            const hourKey = `Hr${hour.toString().padStart(2, '0')}`;
-            const isAllowed = daySchedule[hourKey] === true;
-            const cellClass = isAllowed ? 'allowed' : 'blocked';
-            
-            html += `
-                <div class="schedule-cell ${cellClass}" 
-                     data-day="${day}" 
-                     data-hour="${hour}"
-                     data-schedule-type="standard"
-                     onmousedown="handleScheduleMouseDown(event, this, ${day}, ${hour}, 'standard')"
-                     onmouseover="handleScheduleMouseOver(this, ${day}, ${hour}, 'standard')"
-                     title="${DAY_NAMES[day]} ${formatHour(hour)} - ${isAllowed ? 'Allowed' : 'Blocked'}">
-                </div>
-            `;
+
+    for (var d = 0; d < cc_DAY_ORDER.length; d++) {
+        var day = cc_DAY_ORDER[d];
+        var daySchedule = null;
+        for (var s = 0; s < schedule.length; s++) {
+            if (schedule[s].DayOfWeek === day) { daySchedule = schedule[s]; break; }
         }
-        
+        if (!daySchedule) daySchedule = {};
+
+        html += '<div class="idx-schedule-row">' +
+            '<div class="idx-schedule-day-label">' + cc_DAY_NAMES[day] + '</div>' +
+            '<div class="idx-schedule-hours">';
+        for (var hour = 0; hour < 24; hour++) {
+            var hourKey = 'Hr' + (hour < 10 ? '0' + hour : hour);
+            var isAllowed = daySchedule[hourKey] === true;
+            var cellState = isAllowed ? 'idx-allowed' : 'idx-blocked';
+            html += '<div class="idx-schedule-cell ' + cellState + '" ' +
+                'data-idx-day="' + day + '" data-idx-hour="' + hour + '" data-idx-schedule-type="standard" ' +
+                'title="' + cc_DAY_NAMES[day] + ' ' + idx_formatHour(hour) + ' - ' + (isAllowed ? 'Allowed' : 'Blocked') + '"></div>';
+        }
         html += '</div></div>';
     }
-    
     html += '</div>';
-    
-    // Holiday Schedule Section
+
     if (holidaySchedule) {
-        html += `
-            <div class="schedule-section-header">Holiday Schedule</div>
-            <div class="schedule-grid" data-schedule-type="holiday" onmouseup="handleScheduleMouseUp()" onmouseleave="handleScheduleMouseLeave()">
-        `;
-        
-        html += '<div class="schedule-hour-labels"><div class="schedule-day-label"></div>';
-        for (let h = 0; h < 24; h++) {
-            html += `<div class="schedule-hour-label">${formatHour(h)}</div>`;
+        html += '<div class="idx-schedule-section-header">Holiday Schedule</div>' +
+            '<div class="idx-schedule-grid" data-idx-schedule-type="holiday">';
+        html += '<div class="idx-schedule-hour-labels"><div class="idx-schedule-day-label"></div>';
+        for (h = 0; h < 24; h++) {
+            html += '<div class="idx-schedule-hour-label">' + idx_formatHour(h) + '</div>';
         }
         html += '</div>';
-        
-        html += `<div class="schedule-row">`;
-        html += `<div class="schedule-day-label">Holiday</div>`;
-        html += `<div class="schedule-hours">`;
-        
-        for (let hour = 0; hour < 24; hour++) {
-            const hourKey = `Hr${hour.toString().padStart(2, '0')}`;
-            const isAllowed = holidaySchedule[hourKey] === true;
-            const cellClass = isAllowed ? 'allowed' : 'blocked';
-            
-            html += `
-                <div class="schedule-cell ${cellClass}" 
-                     data-hour="${hour}"
-                     data-schedule-type="holiday"
-                     onmousedown="handleScheduleMouseDown(event, this, null, ${hour}, 'holiday')"
-                     onmouseover="handleScheduleMouseOver(this, null, ${hour}, 'holiday')"
-                     title="Holiday ${formatHour(hour)} - ${isAllowed ? 'Allowed' : 'Blocked'}">
-                </div>
-            `;
+        html += '<div class="idx-schedule-row"><div class="idx-schedule-day-label">Holiday</div><div class="idx-schedule-hours">';
+        for (var hh = 0; hh < 24; hh++) {
+            var hKey = 'Hr' + (hh < 10 ? '0' + hh : hh);
+            var hAllowed = holidaySchedule[hKey] === true;
+            var hState = hAllowed ? 'idx-allowed' : 'idx-blocked';
+            html += '<div class="idx-schedule-cell ' + hState + '" ' +
+                'data-idx-hour="' + hh + '" data-idx-schedule-type="holiday" ' +
+                'title="Holiday ' + idx_formatHour(hh) + ' - ' + (hAllowed ? 'Allowed' : 'Blocked') + '"></div>';
         }
-        
-        html += '</div></div>';
-        html += '</div>';
+        html += '</div></div></div>';
     } else {
-        html += '<div class="schedule-no-holiday">No holiday schedule configured for this database.</div>';
+        html += '<div class="idx-schedule-no-holiday">No holiday schedule configured for this database.</div>';
     }
-    
+
     html += '</div>';
     body.innerHTML = html;
 }
 
-// Drag selection handlers
-function handleScheduleMouseDown(event, cell, day, hour, scheduleType) {
+/* ============================================================================
+   FUNCTIONS: SCHEDULE DRAG SELECTION
+   ----------------------------------------------------------------------------
+   Document-delegated click-drag selection for schedule cells. mousedown
+   starts a selection and flips the target value, mouseover extends it, and
+   mouseup commits the batch via the schedule update API. Mouse events are
+   not in the recognized action-attribute set, so they are handled by
+   document-level delegated listeners bound once in idx_init.
+   Prefix: idx
+   ============================================================================ */
+
+/* Begins a drag selection when a schedule cell receives mousedown. */
+function idx_handleScheduleMouseDown(event) {
+    var cell = event.target.closest('.idx-schedule-cell');
+    if (!cell) return;
     event.preventDefault();
-    if (!currentScheduleDatabaseId) return;
-    
-    isDragging = true;
-    dragStartCell = cell;
-    dragSelectedCells = [{ cell, day, hour }];
-    dragScheduleType = scheduleType;
-    
-    const wasAllowed = cell.classList.contains('allowed');
-    dragTargetValue = !wasAllowed;
-    
-    cell.classList.add('drag-selected');
+    if (!idx_currentScheduleDatabaseId) return;
+
+    var day = cell.getAttribute('data-idx-day');
+    var hour = cell.getAttribute('data-idx-hour');
+    var scheduleType = cell.getAttribute('data-idx-schedule-type');
+
+    idx_isDragging = true;
+    idx_dragScheduleType = scheduleType;
+    idx_dragSelectedCells = [{ cell: cell, day: day, hour: hour }];
+
+    var wasAllowed = cell.classList.contains('idx-allowed');
+    idx_dragTargetValue = !wasAllowed;
+
+    cell.classList.add('idx-drag-selected');
 }
 
-function handleScheduleMouseOver(cell, day, hour, scheduleType) {
-    if (!isDragging) return;
-    if (scheduleType !== dragScheduleType) return;
-    
-    const alreadySelected = dragSelectedCells.some(c => c.day === day && c.hour === hour);
+/* Extends the active drag selection as the pointer moves over cells. */
+function idx_handleScheduleMouseOver(event) {
+    if (!idx_isDragging) return;
+    var cell = event.target.closest('.idx-schedule-cell');
+    if (!cell) return;
+
+    var scheduleType = cell.getAttribute('data-idx-schedule-type');
+    if (scheduleType !== idx_dragScheduleType) return;
+
+    var day = cell.getAttribute('data-idx-day');
+    var hour = cell.getAttribute('data-idx-hour');
+
+    var alreadySelected = idx_dragSelectedCells.some(function(c) {
+        return c.day === day && c.hour === hour;
+    });
     if (!alreadySelected) {
-        dragSelectedCells.push({ cell, day, hour });
-        cell.classList.add('drag-selected');
+        idx_dragSelectedCells.push({ cell: cell, day: day, hour: hour });
+        cell.classList.add('idx-drag-selected');
     }
 }
 
-function handleScheduleMouseUp() {
-    if (!isDragging) return;
-    applyDragSelection();
+/* Commits the active drag selection on mouseup anywhere in the document. */
+function idx_handleScheduleMouseUp() {
+    if (!idx_isDragging) return;
+    idx_applyDragSelection();
 }
 
-function handleScheduleMouseLeave() {
-    if (!isDragging) return;
-    applyDragSelection();
-}
-
-async function applyDragSelection() {
-    if (!isDragging || dragSelectedCells.length === 0) {
-        resetDragState();
+/* Applies the collected drag selection by posting a batch schedule update. */
+async function idx_applyDragSelection() {
+    if (!idx_isDragging || idx_dragSelectedCells.length === 0) {
+        idx_resetDragState();
         return;
     }
-    
-    const cellsToUpdate = [...dragSelectedCells];
-    const targetValue = dragTargetValue;
-    const scheduleType = dragScheduleType;
-    
-    resetDragState();
-    
-    cellsToUpdate.forEach(({ cell }) => {
-        cell.classList.add('saving');
-        cell.classList.remove('drag-selected');
+
+    var cellsToUpdate = idx_dragSelectedCells.slice();
+    var targetValue = idx_dragTargetValue;
+    var scheduleType = idx_dragScheduleType;
+
+    idx_resetDragState();
+
+    cellsToUpdate.forEach(function(entry) {
+        entry.cell.classList.add('idx-saving');
+        entry.cell.classList.remove('idx-drag-selected');
     });
-    
-    function formatHour(h) {
-        if (h === 0) return '12a';
-        if (h < 12) return h + 'a';
-        if (h === 12) return '12p';
-        return (h - 12) + 'p';
-    }
-    
+
     try {
-        let apiUrl, requestBody;
-        
+        var apiUrl;
+        var requestBody;
         if (scheduleType === 'holiday') {
             apiUrl = '/api/index/schedule/holiday/update-batch';
             requestBody = {
-                DatabaseId: currentScheduleDatabaseId,
-                Updates: cellsToUpdate.map(({ hour }) => ({
-                    Hour: hour,
-                    Allowed: targetValue
-                }))
+                DatabaseId: idx_currentScheduleDatabaseId,
+                Updates: cellsToUpdate.map(function(entry) {
+                    return { Hour: parseInt(entry.hour, 10), Allowed: targetValue };
+                })
             };
         } else {
             apiUrl = '/api/index/schedule/update-batch';
             requestBody = {
-                DatabaseId: currentScheduleDatabaseId,
-                Updates: cellsToUpdate.map(({ day, hour }) => ({
-                    DayOfWeek: day,
-                    Hour: hour,
-                    Allowed: targetValue
-                }))
+                DatabaseId: idx_currentScheduleDatabaseId,
+                Updates: cellsToUpdate.map(function(entry) {
+                    return { DayOfWeek: parseInt(entry.day, 10), Hour: parseInt(entry.hour, 10), Allowed: targetValue };
+                })
             };
         }
-        
-        await engineFetch(apiUrl, {
+
+        await cc_engineFetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
         });
-        
-        cellsToUpdate.forEach(({ cell, day, hour }) => {
-            cell.classList.remove('saving');
-            cell.classList.toggle('allowed', targetValue);
-            cell.classList.toggle('blocked', !targetValue);
-            
-            const dayLabel = scheduleType === 'holiday' ? 'Holiday' : DAY_NAMES[day];
-            cell.title = `${dayLabel} ${formatHour(hour)} - ${targetValue ? 'Allowed' : 'Blocked'}`;
+
+        cellsToUpdate.forEach(function(entry) {
+            entry.cell.classList.remove('idx-saving');
+            entry.cell.classList.toggle('idx-allowed', targetValue);
+            entry.cell.classList.toggle('idx-blocked', !targetValue);
+            var dayLabel = scheduleType === 'holiday' ? 'Holiday' : cc_DAY_NAMES[parseInt(entry.day, 10)];
+            entry.cell.title = dayLabel + ' ' + idx_formatHour(parseInt(entry.hour, 10)) + ' - ' + (targetValue ? 'Allowed' : 'Blocked');
         });
-        
     } catch (error) {
         console.error('Error updating schedule:', error);
-        
-        cellsToUpdate.forEach(({ cell, day, hour }) => {
-            cell.classList.remove('saving');
-            cell.classList.toggle('allowed', !targetValue);
-            cell.classList.toggle('blocked', targetValue);
-            
-            const dayLabel = scheduleType === 'holiday' ? 'Holiday' : DAY_NAMES[day];
-            cell.title = `${dayLabel} ${formatHour(hour)} - ${!targetValue ? 'Allowed' : 'Blocked'}`;
+        cellsToUpdate.forEach(function(entry) {
+            entry.cell.classList.remove('idx-saving');
+            entry.cell.classList.toggle('idx-allowed', !targetValue);
+            entry.cell.classList.toggle('idx-blocked', targetValue);
+            var dayLabel = scheduleType === 'holiday' ? 'Holiday' : cc_DAY_NAMES[parseInt(entry.day, 10)];
+            entry.cell.title = dayLabel + ' ' + idx_formatHour(parseInt(entry.hour, 10)) + ' - ' + (!targetValue ? 'Allowed' : 'Blocked');
         });
-        
-        alert('Failed to update schedule. Please try again.');
+        cc_showAlert('Failed to update schedule. Please try again.', { title: 'Schedule Update Failed' });
     }
 }
 
-function resetDragState() {
-    isDragging = false;
-    dragStartCell = null;
-    dragTargetValue = null;
-    dragScheduleType = null;
-    
-    dragSelectedCells.forEach(({ cell }) => {
-        cell.classList.remove('drag-selected');
+/* Resets the schedule drag state and clears any lingering selection styling. */
+function idx_resetDragState() {
+    idx_isDragging = false;
+    idx_dragTargetValue = null;
+    idx_dragScheduleType = null;
+    idx_dragSelectedCells.forEach(function(entry) {
+        entry.cell.classList.remove('idx-drag-selected');
     });
-    dragSelectedCells = [];
+    idx_dragSelectedCells = [];
 }
 
-// ----------------------------------------------------------------------------
-// Initialization
-// ----------------------------------------------------------------------------
-// ============================================================================
-// REFRESH ARCHITECTURE
-// ============================================================================
-// Live sections: Live Activity, Active Execution (direct DMV/status queries)
-// Event-driven sections: Process Status, Index Queue, Database Overview
-// NOTE: Engine events won't fire until processes are registered in Orchestrator.
-// Until then, event-driven sections refresh via live polling as fallback.
-// See: Refresh Architecture doc, Section 6.7
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: REFRESH AND POLLING
+   ----------------------------------------------------------------------------
+   The page's live-polling loop, the daily auto-reload, and the grouped
+   refresh functions for live, event-driven, and full-page refreshes. The
+   shared fetch wrapper handles hidden-tab and session-expiry skipping.
+   Prefix: idx
+   ============================================================================ */
 
-async function loadRefreshInterval() {
+/* Loads the configured page refresh interval from GlobalConfig. */
+async function idx_loadRefreshInterval() {
     try {
-        const data = await engineFetch('/api/config/refresh-interval?page=indexmaintenance');
+        var data = await cc_engineFetch('/api/config/refresh-interval?page=indexmaintenance');
         if (data) {
-            // engineFetch handles auth and returns parsed JSON
-            PAGE_REFRESH_INTERVAL = data.interval || 5;
+            idx_pageRefreshInterval = data.interval || 5;
         }
     } catch (e) {
-        // API unavailable — use default
+        /* API unavailable - use default. */
     }
 }
 
-function startLivePolling() {
-    if (livePollingTimer) clearInterval(livePollingTimer);
-    livePollingTimer = setInterval(() => {
-        if (enginePageHidden || engineSessionExpired) return;
-        refreshLiveSections();
-    }, PAGE_REFRESH_INTERVAL * 1000);
+/* Starts the live-polling timer for the live sections. */
+function idx_startLivePolling() {
+    if (idx_livePollingTimer) clearInterval(idx_livePollingTimer);
+    idx_livePollingTimer = setInterval(idx_refreshLiveSections, idx_pageRefreshInterval * 1000);
 }
 
-function stopLivePolling() {
-    if (livePollingTimer) {
-        clearInterval(livePollingTimer);
-        livePollingTimer = null;
+/* Stops the live-polling timer. */
+function idx_stopLivePolling() {
+    if (idx_livePollingTimer) {
+        clearInterval(idx_livePollingTimer);
+        idx_livePollingTimer = null;
     }
 }
 
-function startAutoRefresh() {
-    setInterval(() => {
-        const today = new Date().toDateString();
-        if (today !== pageLoadDate) {
+/* Reloads the page when the calendar date rolls over from the load date. */
+function idx_startAutoRefresh() {
+    setInterval(function() {
+        var today = new Date().toDateString();
+        if (today !== idx_pageLoadDate) {
             window.location.reload();
         }
     }, 60000);
 }
 
-// ── Live sections: refresh on GlobalConfig timer ──
-function refreshLiveSections() {
-    loadLiveActivity();
-    loadActiveExecution();
-    updateTimestamp();
+/* Refreshes the live sections (live activity and active execution). */
+function idx_refreshLiveSections() {
+    idx_loadLiveActivity();
+    idx_loadActiveExecution();
+    idx_updateTimestamp();
 }
 
-// ── Event-driven sections: refresh on orchestrator PROCESS_COMPLETED ──
-// NOTE: Also called on live polling timer as fallback until orchestration is live
-function refreshEventSections() {
-    loadProcessStatus();
-    loadQueueSummary();
-    loadDatabaseHealth();
-    updateTimestamp();
+/* Refreshes the event-driven sections (process status, queue, databases). */
+function idx_refreshEventSections() {
+    idx_loadProcessStatus();
+    idx_loadQueueSummary();
+    idx_loadDatabaseHealth();
+    idx_updateTimestamp();
 }
 
-// ── Manual refresh: everything ──
-function refreshAll() {
-    loadLiveActivity();
-    loadProcessStatus();
-    loadActiveExecution();
-    loadQueueSummary();
-    loadDatabaseHealth();
-    updateTimestamp();
+/* Refreshes every section on the page. */
+function idx_refreshAll() {
+    idx_loadLiveActivity();
+    idx_loadProcessStatus();
+    idx_loadActiveExecution();
+    idx_loadQueueSummary();
+    idx_loadDatabaseHealth();
+    idx_updateTimestamp();
 }
 
-function pageRefresh() {
-    const btn = document.querySelector('.page-refresh-btn');
-    if (btn) {
-        btn.classList.add('spinning');
-        btn.addEventListener('animationend', () => {
-            btn.classList.remove('spinning');
-        }, { once: true });
-    }
-    refreshAll();
+/* ============================================================================
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
+   ----------------------------------------------------------------------------
+   Lifecycle callbacks invoked by cc-shared.js: full refresh on manual page
+   refresh and on tab resume, polling stop on session expiry, and an
+   event-driven refresh when a tracked engine process completes.
+   Prefix: idx
+   ============================================================================ */
+
+/* Invoked by cc-shared.js when the user clicks the page refresh button. */
+function idx_onPageRefresh() {
+    idx_refreshAll();
 }
 
-function updateTimestamp() {
-    const el = document.getElementById('last-update');
-    if (el) el.textContent = new Date().toLocaleTimeString();
+/* Invoked by cc-shared.js when the tab regains visibility. */
+function idx_onPageResumed() {
+    idx_refreshAll();
 }
 
-// Called by engine-events.js when a relevant PROCESS_COMPLETED event arrives
-function onEngineProcessCompleted(processName, event) {
-    refreshEventSections();
+/* Invoked by cc-shared.js when the session is detected as expired. */
+function idx_onSessionExpired() {
+    idx_stopLivePolling();
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-    await loadRefreshInterval();
-    refreshAll();
-    connectEngineEvents();
-    initEngineCardClicks();
-    startLivePolling();
-    startAutoRefresh();
-
-    // Fallback: refresh event-driven sections on a slower timer
-    // until orchestration is live and engine events handle it
-    setInterval(refreshEventSections, 30000);
-});
+/* Invoked by cc-shared.js when a tracked engine process completes. */
+function idx_onEngineProcessCompleted() {
+    idx_refreshEventSections();
+}
