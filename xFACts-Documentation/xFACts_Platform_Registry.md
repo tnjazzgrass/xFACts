@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-02 17:12:43
+Generated: 2026-06-03 07:56:13
 
 ## Module Registry
 
@@ -452,6 +452,8 @@ Generated: 2026-06-02 17:12:43
 | BatchOps | Collect-NBBatchStatus | Monitors NB batch lifecycle from creation through terminal state. Collects new batches, updates in-flight status, tracks merge activity for stall detection. | Collect-NBBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | nb | NB | /batch-monitoring | 1 |
 | BatchOps | Collect-PMTBatchStatus | Payment batch lifecycle tracking - collects all batch types, tracks from creation through terminal state | Collect-PMTBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | pmt | PMT | /batch-monitoring | 2 |
 | BIDATA | Monitor-BIDATABuild | Monitors BIDATA Daily Build job, captures step progress, alerts on completion/failure/not-started | Monitor-BIDATABuild.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 01:00:00 | 600 | 1 | False | bidata | BIDATA | /bidata-monitoring | 1 |
+| DmOps | Execute-DmConsumerArchive | Unified consumer-level archive execution — TC_ARCH-driven batch deletion of consumers from crs5_oltp with BIDATA migration | Execute-DmConsumerArchive.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 07:00:00 | 86400 | 0 | False | archive | ARCHIVE | /dm-operations | 1 |
+| DmOps | Execute-DmShellPurge | Consumer shell purge execution — removes orphaned consumer records with no remaining accounts from crs5_oltp | Execute-DmShellPurge.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 07:00:00 | 86400 | 0 | False | shell | SHELL | /dm-operations | 2 |
 | JBoss | Collect-JBossMetrics | Collects JBoss application server metrics via Management API | Collect-JBossMetrics.ps1 |  | FIRE_AND_FORGET | 10 | 60 |  | 30 | 1 | False | jboss | JBOSS | /jboss-monitoring | 1 |
 | JobFlow | Monitor-JobFlow | Monitors Debt Manager job flows, tracking execution progress, detecting stalls, validating completions, and alerting on issues. Includes integrated ConfigSync. | Monitor-JobFlow.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  | 600 | 1 | False | jobflow | JOBFLOW | /jobflow-monitoring | 1 |
 | ServerOps | Collect-BackupStatus | Discovers backup completions from msdb across registered servers, inserts tracking records into Backup_FileTracking | Collect-BackupStatus.ps1 |  | WAIT | 10 | 300 |  | 600 | 1 | False | collection | BACKUP | /backup | 1 |
@@ -459,6 +461,10 @@ Generated: 2026-06-02 17:12:43
 | ServerOps | Collect-ReplicationHealth | Collects replication agent health, queue depth, throughput, events, and tracer token latency from distribution database | Collect-ReplicationHealth.ps1 |  | FIRE_AND_FORGET | 10 | 60 |  |  | 1 | False | replication | REPLICATION | /replication-monitoring | 1 |
 | ServerOps | Collect-ServerHealth | Collects disk space metrics and SQL service start times from all registered servers via CIM/WinRM | Collect-ServerHealth.ps1 |  | FIRE_AND_FORGET | 10 | 3600 |  | 600 | 1 | False | disk | DISK | /server-health | 3 |
 | ServerOps | Collect-XEEvents | Collects Extended Events from all registered servers and imports into xFACts Activity_XE tables | Collect-XEEvents.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  |  | 1 | False | xe | XE | /server-health | 2 |
+| ServerOps | Execute-IndexMaintenance | Window-aware index rebuild execution engine | Execute-IndexMaintenance.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 20:30:00 | 43200 | 0 | False | execute | EXECUTE | /index-maintenance | 3 |
+| ServerOps | Scan-IndexFragmentation | Scans physical fragmentation levels | Scan-IndexFragmentation.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 19:30:00 | 14400 | 0 | False | scan | SCAN | /index-maintenance | 2 |
+| ServerOps | Sync-IndexRegistry | Discovery and metadata refresh of all indexes | Sync-IndexRegistry.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 19:00:00 | 600 | 0 | False | sync | SYNC | /index-maintenance | 1 |
+| ServerOps | Update-IndexStatistics | Updates statistics on recently rebuilt indexes | Update-IndexStatistics.ps1 |  | FIRE_AND_FORGET | 10 | 300 | 21:30:00 | 14400 | 0 | False | stats | STATS | /index-maintenance | 4 |
 | ServerOps | Process-BackupAWSUpload | Uploads completed backup files to AWS S3 based on PENDING status in Backup_FileTracking | Process-BackupAWSUpload.ps1 |  | FIRE_AND_FORGET | 20 | 300 |  |  | 1 | True | awsupload | AWS | /backup | 3 |
 | ServerOps | Process-BackupNetworkCopy | Copies completed backup files from local storage to network share based on PENDING status in Backup_FileTracking | Process-BackupNetworkCopy.ps1 |  | FIRE_AND_FORGET | 20 | 300 |  |  | 1 | True | networkcopy | NETWORK | /backup | 2 |
 | ServerOps | Process-BackupRetention | Deletes backup files past retention based on chain-based policies per database | Process-BackupRetention.ps1 |  | FIRE_AND_FORGET | 20 | 7200 | 21:00:00 | 7200 | 1 | False | retention | RETENTION | /backup | 4 |
