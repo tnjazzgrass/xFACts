@@ -562,6 +562,7 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 | Overlay construct missing its `.cc-dialog-header`, `.cc-dialog-body`, or required child elements | §5.4 |
 | Overlay construct's inner `.cc-dialog` missing the matching `cc-dialog-modal`, `cc-dialog-slide`, or `cc-dialog-slideup` class | §5.4 |
 | Overlay construct declaration not preceded by an HTML purpose comment | §5.4 |
+| Overlay construct outer element missing a `data-action-click` matching its `.cc-dialog-close` button | §5.4 |
 | Overlay constructs not grouped in one contiguous block | §5.4 |
 | Non-overlay element appearing between overlay constructs in the overlay block | §5.4 |
 | Class name not carrying the page prefix or `cc-` prefix | §4, §6.1 |
@@ -733,6 +734,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `MALFORMED_SLIDEOUT_ID` | Slideout outer element ID does not follow `<prefix>-slideout-<purpose>` form. | §5.4 |
 | `MALFORMED_SLIDEUP_ID` | Slide-up panel outer element ID does not follow `<prefix>-slideup-<purpose>` form. | §5.4 |
 | `MISSING_PANEL_PURPOSE_COMMENT` | Overlay construct not preceded by an HTML purpose comment. | §5.4 |
+| `MISSING_OVERLAY_BACKDROP_CLOSE` | Overlay construct's outer element does not carry a `data-action-click` matching its `.cc-dialog-close` button's close action; a backdrop click will not dismiss the construct. | §5.4 |
 | `OVERLAY_BLOCK_NON_CONTIGUOUS` | Non-overlay element or non-purpose comment appearing within the overlay block. | §5.4 |
 | `MALFORMED_CLASS_VALUE_WHITESPACE` | Class attribute value has leading, trailing, or excess whitespace. | §6.1 |
 | `MALFORMED_CLASS_NAME` | Class name contains characters other than lowercase letters, digits, and hyphens. | §6.1 |
