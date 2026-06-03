@@ -1,42 +1,47 @@
-# ============================================================================
-# xFACts Control Center - Applications & Integration API
-# Location: E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration-API.ps1
-# 
-# API endpoints for the Applications & Integration departmental page.
-# Components:
-#   - BDL Catalog Management: Admin-only CRUD for Catalog_BDLFormatRegistry
-#     and Catalog_BDLElementRegistry
-#   - BDL Department Access: Admin-only department-scoped entity and field
-#     access management via Tools.AccessConfig and Tools.AccessFieldConfig
-#   - DM Job Triggers: Environment-scoped DM scheduled job execution
-#     via ServerRegistry API targeting and ActionAuditLog audit trail
-#
-# Route: /departmental/applications-integration
-# CSS:   /css/applications-integration.css
-# JS:    /js/applications-integration.js
-#
-# Version: Tracked in dbo.System_Metadata (component: DeptOps.ApplicationsIntegration)
-#
-# CHANGELOG
-# ---------
-# 2026-04-13  Added cooldown-check, release-notices, balance-sync endpoints
-#             Added dm_response to refresh-drools success response
-#             Wired ActionAuditLog into BDL catalog management endpoints
-#             Added dm-servers and refresh-drools endpoints for DM job triggers
-# ============================================================================
+<#
+.SYNOPSIS
+    Applications & Integration departmental API endpoints.
 
-# ============================================================================
-# GET /api/apps-int/bdl-formats
-# Returns all BDL format registry entries with element counts.
-# Admin-only.
-# ============================================================================
+.DESCRIPTION
+    Backing API for the Applications & Integration departmental page. Exposes
+    admin-only BDL catalog management endpoints (format and element registry
+    reads and field updates, entity active-state toggles), admin-only BDL
+    department-access endpoints (entity- and field-level grant/revoke via
+    Tools.AccessConfig and Tools.AccessFieldConfig), and the DM job trigger
+    endpoints (tools-server discovery, Refresh Drools, a reusable cooldown
+    check, Release Notices, and Balance Sync) that target DM app servers via
+    the ServerRegistry API and record every execution to dbo.ActionAuditLog.
+    Every endpoint runs the Test-ActionEndpoint permission hook; the BDL
+    endpoints additionally gate on admin context and return JSON.
+
+.COMPONENT
+    DeptOps.ApplicationsIntegration
+
+.NOTES
+    File Name : ApplicationsIntegration-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers the GET and POST endpoints under /api/apps-int, each gated by
+   ADLogin authentication and the Test-ActionEndpoint permission hook. The BDL
+   catalog and department-access endpoints additionally require admin context.
+   Read endpoints query through Invoke-XFActsQuery; writes use
+   Invoke-XFActsNonQuery; DM job triggers call the DM REST API via
+   Invoke-RestMethod and log to ActionAuditLog. All endpoints return JSON via
+   Write-PodeJsonResponse.
+   Prefix: (none)
+   ============================================================================ #>
+
 Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-formats' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -60,18 +65,12 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-formats' -Authentication 'ADL
     }
 }
 
-# ============================================================================
 # GET /api/apps-int/bdl-elements?format_id=X
 # Returns all elements for a given format, ordered by sort_order.
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-elements' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -102,20 +101,14 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-elements' -Authentication 'AD
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/bdl-elements/update
 # Updates a single field on a single element row.
 # Body: { element_id, field_name, new_value }
 # Allowed fields: display_name, is_visible, is_import_required, field_description
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-elements/update' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -142,28 +135,28 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-elements/update' -Authentica
 
         if ($fieldName -in $bitFields) {
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.Catalog_BDLElementRegistry 
-                SET [$fieldName] = @newValue 
+                UPDATE Tools.Catalog_BDLElementRegistry
+                SET [$fieldName] = @newValue
                 WHERE element_id = @elementId
 "@ -Parameters @{ elementId = $elementId; newValue = [int]$newValue }
         }
         else {
             $paramValue = if ([string]::IsNullOrWhiteSpace($newValue)) { [DBNull]::Value } else { $newValue }
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.Catalog_BDLElementRegistry 
-                SET [$fieldName] = @newValue 
+                UPDATE Tools.Catalog_BDLElementRegistry
+                SET [$fieldName] = @newValue
                 WHERE element_id = @elementId
 "@ -Parameters @{ elementId = $elementId; newValue = $paramValue }
         }
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── ActionAuditLog ──────────────────────────────────────────
+        # ActionAuditLog
         try {
             Invoke-XFActsNonQuery -Query @"
-                INSERT INTO dbo.ActionAuditLog 
+                INSERT INTO dbo.ActionAuditLog
                     (page_route, action_type, action_summary, result, executed_by)
-                VALUES 
+                VALUES
                     ('/apps-int', 'CONFIG_CHANGE', @summary, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                 summary    = "Updated $fieldName on element $elementId to: $newValue"
@@ -171,7 +164,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-elements/update' -Authentica
             }
         } catch { }
 
-        Write-PodeJsonResponse -Value @{ 
+        Write-PodeJsonResponse -Value @{
             message    = "Updated $fieldName on element $elementId"
             element_id = $elementId
             field_name = $fieldName
@@ -183,19 +176,13 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-elements/update' -Authentica
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/bdl-format/toggle
 # Toggles is_active on a format registry entry.
 # Body: { format_id, is_active }
 # Admin-only. Requires confirmation on client side.
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/toggle' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -212,8 +199,8 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/toggle' -Authenticati
         }
 
         Invoke-XFActsNonQuery -Query @"
-            UPDATE Tools.Catalog_BDLFormatRegistry 
-            SET is_active = @isActive 
+            UPDATE Tools.Catalog_BDLFormatRegistry
+            SET is_active = @isActive
             WHERE format_id = @formatId
 "@ -Parameters @{ formatId = $formatId; isActive = [int]$isActive }
 
@@ -221,12 +208,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/toggle' -Authenticati
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── ActionAuditLog ──────────────────────────────────────────
+        # ActionAuditLog
         try {
             Invoke-XFActsNonQuery -Query @"
-                INSERT INTO dbo.ActionAuditLog 
+                INSERT INTO dbo.ActionAuditLog
                     (page_route, action_type, action_summary, result, executed_by)
-                VALUES 
+                VALUES
                     ('/apps-int', 'CONFIG_CHANGE', @summary, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                 summary    = "Entity format $formatId $action"
@@ -234,7 +221,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/toggle' -Authenticati
             }
         } catch { }
 
-        Write-PodeJsonResponse -Value @{ 
+        Write-PodeJsonResponse -Value @{
             message   = "Format $formatId $action"
             format_id = $formatId
             is_active = [bool]([int]$isActive)
@@ -245,20 +232,14 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/toggle' -Authenticati
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/bdl-format/update
 # Updates a single field on a format registry entry.
 # Body: { format_id, field_name, new_value }
 # Allowed fields: action_type
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/update' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -282,19 +263,19 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/update' -Authenticati
         }
 
         Invoke-XFActsNonQuery -Query @"
-            UPDATE Tools.Catalog_BDLFormatRegistry 
-            SET [$fieldName] = @newValue 
+            UPDATE Tools.Catalog_BDLFormatRegistry
+            SET [$fieldName] = @newValue
             WHERE format_id = @formatId
 "@ -Parameters @{ formatId = $formatId; newValue = $newValue }
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── ActionAuditLog ──────────────────────────────────────────
+        # ActionAuditLog
         try {
             Invoke-XFActsNonQuery -Query @"
-                INSERT INTO dbo.ActionAuditLog 
+                INSERT INTO dbo.ActionAuditLog
                     (page_route, action_type, action_summary, result, executed_by)
-                VALUES 
+                VALUES
                     ('/apps-int', 'CONFIG_CHANGE', @summary, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                 summary    = "Updated $fieldName to $newValue on format $formatId"
@@ -302,7 +283,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/update' -Authenticati
             }
         } catch { }
 
-        Write-PodeJsonResponse -Value @{ 
+        Write-PodeJsonResponse -Value @{
             message    = "Updated $fieldName on format $formatId"
             format_id  = $formatId
             field_name = $fieldName
@@ -314,23 +295,15 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-format/update' -Authenticati
     }
 }
 
-# ============================================================================
 # DEPARTMENT ACCESS MANAGEMENT ENDPOINTS
-# ============================================================================
 
-# ============================================================================
 # GET /api/apps-int/departments
 # Returns active departments from RBAC_DepartmentRegistry for the
 # department access mode dropdown.
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/apps-int/departments' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -352,18 +325,12 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/departments' -Authentication 'ADL
     }
 }
 
-# ============================================================================
 # GET /api/apps-int/bdl-access?department=X
 # Returns globally active BDL format list with per-department access status.
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-access' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -380,20 +347,20 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-access' -Authentication 'ADLo
             SELECT f.format_id, f.entity_type, f.type_name, f.action_type,
                    ac.config_id,
                    CASE WHEN ac.config_id IS NOT NULL AND ac.is_active = 1 THEN 1 ELSE 0 END AS has_access,
-                   (SELECT COUNT(*) 
-                    FROM Tools.Catalog_BDLElementRegistry e 
+                   (SELECT COUNT(*)
+                    FROM Tools.Catalog_BDLElementRegistry e
                     WHERE e.format_id = f.format_id AND e.is_visible = 1
                    ) AS visible_field_count,
-                   (SELECT COUNT(*) 
+                   (SELECT COUNT(*)
                     FROM Tools.AccessFieldConfig afc
                     INNER JOIN Tools.Catalog_BDLElementRegistry e2
                         ON e2.element_name = afc.element_name AND e2.format_id = f.format_id
                     WHERE afc.config_id = ac.config_id AND afc.is_active = 1 AND e2.is_visible = 1
                    ) AS granted_field_count
             FROM Tools.Catalog_BDLFormatRegistry f
-            LEFT JOIN Tools.AccessConfig ac 
-                ON ac.tool_type = 'BDL' 
-                AND ac.item_key = f.entity_type 
+            LEFT JOIN Tools.AccessConfig ac
+                ON ac.tool_type = 'BDL'
+                AND ac.item_key = f.entity_type
                 AND ac.department_scope = @department
             WHERE f.is_active = 1
             ORDER BY f.entity_type
@@ -406,18 +373,12 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-access' -Authentication 'ADLo
     }
 }
 
-# ============================================================================
 # GET /api/apps-int/bdl-field-access?config_id=X
 # Returns globally visible fields with per-field access status.
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-field-access' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -437,9 +398,9 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-field-access' -Authentication
                    CASE WHEN afc.field_config_id IS NOT NULL AND afc.is_active = 1 THEN 1 ELSE 0 END AS is_granted
             FROM Tools.Catalog_BDLElementRegistry e
             INNER JOIN Tools.AccessConfig ac ON ac.config_id = @configId
-            INNER JOIN Tools.Catalog_BDLFormatRegistry f 
+            INNER JOIN Tools.Catalog_BDLFormatRegistry f
                 ON f.entity_type = ac.item_key AND f.format_id = e.format_id
-            LEFT JOIN Tools.AccessFieldConfig afc 
+            LEFT JOIN Tools.AccessFieldConfig afc
                 ON afc.config_id = @configId AND afc.element_name = e.element_name
             WHERE e.is_visible = 1
             ORDER BY e.sort_order, e.element_name
@@ -452,19 +413,13 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/bdl-field-access' -Authentication
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/bdl-access/toggle
 # Grants or revokes department-level entity access via UPSERT on AccessConfig.
 # Body: { entity_type, department, is_active }
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-access/toggle' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -486,8 +441,8 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-access/toggle' -Authenticati
         $result = Invoke-XFActsQuery -Query @"
             MERGE Tools.AccessConfig AS tgt
             USING (SELECT @toolType AS tool_type, @itemKey AS item_key, @deptScope AS department_scope) AS src
-                ON tgt.tool_type = src.tool_type 
-                AND tgt.item_key = src.item_key 
+                ON tgt.tool_type = src.tool_type
+                AND tgt.item_key = src.item_key
                 AND tgt.department_scope = src.department_scope
             WHEN MATCHED THEN
                 UPDATE SET is_active = @isActive, modified_dttm = GETDATE(), modified_by = @modifiedBy
@@ -506,12 +461,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-access/toggle' -Authenticati
         $configId = if ($result) { $result.config_id } else { $null }
         $action = if ([int]$isActive -eq 1) { "granted" } else { "revoked" }
 
-        # ── ActionAuditLog ──────────────────────────────────────────
+        # ActionAuditLog
         try {
             Invoke-XFActsNonQuery -Query @"
-                INSERT INTO dbo.ActionAuditLog 
+                INSERT INTO dbo.ActionAuditLog
                     (page_route, action_type, action_summary, result, executed_by)
-                VALUES 
+                VALUES
                     ('/apps-int', 'ACCESS_CHANGE', @summary, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                 summary    = "BDL entity access for $entityType $action for $department"
@@ -532,19 +487,13 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-access/toggle' -Authenticati
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/bdl-field-access/toggle
 # Grants or revokes field-level access via UPSERT on AccessFieldConfig.
 # Body: { config_id, element_name, is_active }
 # Admin-only.
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-field-access/toggle' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
             Write-PodeJsonResponse -Value @{ Error = "Admin access required" } -StatusCode 403
@@ -583,12 +532,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-field-access/toggle' -Authen
         $fieldConfigId = if ($result) { $result.field_config_id } else { $null }
         $action = if ([int]$isActive -eq 1) { "granted" } else { "revoked" }
 
-        # ── ActionAuditLog ──────────────────────────────────────────
+        # ActionAuditLog
         try {
             Invoke-XFActsNonQuery -Query @"
-                INSERT INTO dbo.ActionAuditLog 
+                INSERT INTO dbo.ActionAuditLog
                     (page_route, action_type, action_summary, result, executed_by)
-                VALUES 
+                VALUES
                     ('/apps-int', 'ACCESS_CHANGE', @summary, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                 summary    = "Field access for $elementName $action (config_id: $configId)"
@@ -609,24 +558,15 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-field-access/toggle' -Authen
     }
 }
 
-# ============================================================================
 # DM JOB TRIGGER ENDPOINTS
-# ============================================================================
 
-# ============================================================================
 # GET /api/apps-int/dm-servers?environment=X
 # Returns tools-enabled DM app servers for a given environment.
 # Shared endpoint used by all DM job trigger UIs.
 # Uses Get-ToolsServers from xFACts-Helpers.psm1.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/apps-int/dm-servers' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
-
         $environment = $WebEvent.Query['environment']
         if (-not $environment) {
             Write-PodeJsonResponse -Value @{ Error = "environment parameter required" } -StatusCode 400
@@ -642,21 +582,14 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/dm-servers' -Authentication 'ADLo
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/refresh-drools
 # Triggers REFRESH_DROOLS on a single DM app server.
 # Called sequentially by the client for each server in the environment.
 # Body: { environment, server_name, api_base_url }
 # Logs each execution to ActionAuditLog.
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/refresh-drools' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
-
         $body = $WebEvent.Data
         $environment = $body.environment
         $serverName  = $body.server_name
@@ -669,24 +602,24 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/refresh-drools' -Authentication 
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── Get DM API credentials ──────────────────────────────────
+        # Get DM API credentials
         $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
         $apiHeaders = @{
             'Authorization' = $creds.AuthHeader
             'Content-Type'  = 'application/vnd.fico.dm.v1+json'
         }
 
-        # ── Call REFRESH_DROOLS ─────────────────────────────────────
+        # Call REFRESH_DROOLS
         try {
             $response = Invoke-RestMethod -Uri "$apiBaseUrl/scheduledjobs/REFRESH_DROOLS" `
                 -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
 
-            # ── ActionAuditLog — success ────────────────────────────
+            # ActionAuditLog - success
             try {
                 Invoke-XFActsNonQuery -Query @"
-                    INSERT INTO dbo.ActionAuditLog 
+                    INSERT INTO dbo.ActionAuditLog
                         (page_route, action_type, action_summary, environment, result, executed_by)
-                    VALUES 
+                    VALUES
                         ('/apps-int', 'JOB_TRIGGER', @summary, @environment, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                     summary     = "Refresh Drools on $serverName"
@@ -695,7 +628,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/refresh-drools' -Authentication 
                 }
             } catch { }
 
-            $dmResponseText = if ($response) { 
+            $dmResponseText = if ($response) {
                 try { $response | ConvertTo-Json -Depth 3 -Compress } catch { [string]$response }
             } else { $null }
 
@@ -710,12 +643,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/refresh-drools' -Authentication 
         catch {
             $errorMsg = $_.Exception.Message
 
-            # ── ActionAuditLog — failure ────────────────────────────
+            # ActionAuditLog - failure
             try {
                 Invoke-XFActsNonQuery -Query @"
-                    INSERT INTO dbo.ActionAuditLog 
+                    INSERT INTO dbo.ActionAuditLog
                         (page_route, action_type, action_summary, environment, result, error_detail, executed_by)
-                    VALUES 
+                    VALUES
                         ('/apps-int', 'JOB_TRIGGER', @summary, @environment, 'FAILED', @errorDetail, @executedBy)
 "@ -Parameters @{
                     summary     = "Refresh Drools on $serverName"
@@ -738,21 +671,14 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/refresh-drools' -Authentication 
     }
 }
 
-# ============================================================================
 # GET /api/apps-int/cooldown-check?job_name=X&environment=Y
 # Checks ActionAuditLog for the most recent successful execution of a job
 # in the given environment. Returns last execution time, who ran it, and
 # whether the cooldown is still active. Cooldown duration from GlobalConfig.
 # Reusable for any throttled DM job trigger.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/apps-int/cooldown-check' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
-
         $jobName = $WebEvent.Query['job_name']
         $environment = $WebEvent.Query['environment']
 
@@ -819,20 +745,13 @@ Add-PodeRoute -Method Get -Path '/api/apps-int/cooldown-check' -Authentication '
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/release-notices
 # Triggers RELEASE_DOC_REQUESTS on the primary DM app server for a given
 # environment. Single-server operation with cooldown enforcement.
 # Body: { environment }
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
-
         $body = $WebEvent.Data
         $environment = $body.environment
 
@@ -843,7 +762,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── Server-side cooldown enforcement ────────────────────────
+        # Server-side cooldown enforcement
         $cooldownConfig = Invoke-XFActsQuery -Query @"
             SELECT setting_value FROM dbo.GlobalConfig
             WHERE module_name = 'DeptOps' AND category = 'ApplicationsIntegration'
@@ -863,7 +782,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication
             if ($elapsed -lt $cooldownSeconds) {
                 $remaining = [Math]::Ceiling($cooldownSeconds - $elapsed)
                 Write-PodeJsonResponse -Value @{
-                    Error             = "Cooldown active — try again in $remaining seconds"
+                    Error             = "Cooldown active - try again in $remaining seconds"
                     cooldown_active   = $true
                     seconds_remaining = $remaining
                     last_executed_by  = $lastExec[0].executed_by
@@ -872,7 +791,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication
             }
         }
 
-        # ── Get primary server ──────────────────────────────────────
+        # Get primary server
         $servers = Get-ToolsServers -Environment $environment -PrimaryOnly
         if ($servers.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ Error = "No primary API server configured for $environment" } -StatusCode 500
@@ -882,14 +801,14 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication
         $serverName = $servers[0].server_name
         $apiBaseUrl = $servers[0].api_base_url
 
-        # ── Get DM API credentials ──────────────────────────────────
+        # Get DM API credentials
         $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
         $apiHeaders = @{
             'Authorization' = $creds.AuthHeader
             'Content-Type'  = 'application/vnd.fico.dm.v1+json'
         }
 
-        # ── Call RELEASE_DOC_REQUESTS ───────────────────────────────
+        # Call RELEASE_DOC_REQUESTS
         try {
             $response = Invoke-RestMethod -Uri "$apiBaseUrl/scheduledjobs/RELEASE_DOC_REQUESTS" `
                 -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
@@ -898,12 +817,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication
                 try { $response | ConvertTo-Json -Depth 3 -Compress } catch { [string]$response }
             } else { $null }
 
-            # ── ActionAuditLog — success ────────────────────────────
+            # ActionAuditLog - success
             try {
                 Invoke-XFActsNonQuery -Query @"
-                    INSERT INTO dbo.ActionAuditLog 
+                    INSERT INTO dbo.ActionAuditLog
                         (page_route, action_type, action_summary, environment, result, executed_by)
-                    VALUES 
+                    VALUES
                         ('/apps-int', 'JOB_TRIGGER', @summary, @environment, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                     summary     = "Release Notices on $serverName"
@@ -923,12 +842,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication
         catch {
             $errorMsg = $_.Exception.Message
 
-            # ── ActionAuditLog — failure ────────────────────────────
+            # ActionAuditLog - failure
             try {
                 Invoke-XFActsNonQuery -Query @"
-                    INSERT INTO dbo.ActionAuditLog 
+                    INSERT INTO dbo.ActionAuditLog
                         (page_route, action_type, action_summary, environment, result, error_detail, executed_by)
-                    VALUES 
+                    VALUES
                         ('/apps-int', 'JOB_TRIGGER', @summary, @environment, 'FAILED', @errorDetail, @executedBy)
 "@ -Parameters @{
                     summary     = "Release Notices on $serverName"
@@ -951,20 +870,13 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/release-notices' -Authentication
     }
 }
 
-# ============================================================================
 # POST /api/apps-int/balance-sync
 # Triggers UPDATE_BALANCES on the primary DM app server for a given
 # environment. Single-server operation with cooldown enforcement.
 # Body: { environment }
-# ============================================================================
 Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/applications-integration'
-        if (-not $access.HasAccess) {
-            Write-PodeJsonResponse -Value @{ Error = "Access denied" } -StatusCode 403
-            return
-        }
-
         $body = $WebEvent.Data
         $environment = $body.environment
 
@@ -975,7 +887,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'A
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── Server-side cooldown enforcement ────────────────────────
+        # Server-side cooldown enforcement
         $cooldownConfig = Invoke-XFActsQuery -Query @"
             SELECT setting_value FROM dbo.GlobalConfig
             WHERE module_name = 'DeptOps' AND category = 'ApplicationsIntegration'
@@ -995,7 +907,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'A
             if ($elapsed -lt $cooldownSeconds) {
                 $remaining = [Math]::Ceiling($cooldownSeconds - $elapsed)
                 Write-PodeJsonResponse -Value @{
-                    Error             = "Cooldown active — try again in $remaining seconds"
+                    Error             = "Cooldown active - try again in $remaining seconds"
                     cooldown_active   = $true
                     seconds_remaining = $remaining
                     last_executed_by  = $lastExec[0].executed_by
@@ -1004,7 +916,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'A
             }
         }
 
-        # ── Get primary server ──────────────────────────────────────
+        # Get primary server
         $servers = Get-ToolsServers -Environment $environment -PrimaryOnly
         if ($servers.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ Error = "No primary API server configured for $environment" } -StatusCode 500
@@ -1014,14 +926,14 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'A
         $serverName = $servers[0].server_name
         $apiBaseUrl = $servers[0].api_base_url
 
-        # ── Get DM API credentials ──────────────────────────────────
+        # Get DM API credentials
         $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
         $apiHeaders = @{
             'Authorization' = $creds.AuthHeader
             'Content-Type'  = 'application/vnd.fico.dm.v1+json'
         }
 
-        # ── Call UPDATE_BALANCES ────────────────────────────────────
+        # Call UPDATE_BALANCES
         try {
             $response = Invoke-RestMethod -Uri "$apiBaseUrl/scheduledjobs/UPDATE_BALANCES" `
                 -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
@@ -1030,12 +942,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'A
                 try { $response | ConvertTo-Json -Depth 3 -Compress } catch { [string]$response }
             } else { $null }
 
-            # ── ActionAuditLog — success ────────────────────────────
+            # ActionAuditLog - success
             try {
                 Invoke-XFActsNonQuery -Query @"
-                    INSERT INTO dbo.ActionAuditLog 
+                    INSERT INTO dbo.ActionAuditLog
                         (page_route, action_type, action_summary, environment, result, executed_by)
-                    VALUES 
+                    VALUES
                         ('/apps-int', 'JOB_TRIGGER', @summary, @environment, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                     summary     = "Balance Sync on $serverName"
@@ -1055,12 +967,12 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'A
         catch {
             $errorMsg = $_.Exception.Message
 
-            # ── ActionAuditLog — failure ────────────────────────────
+            # ActionAuditLog - failure
             try {
                 Invoke-XFActsNonQuery -Query @"
-                    INSERT INTO dbo.ActionAuditLog 
+                    INSERT INTO dbo.ActionAuditLog
                         (page_route, action_type, action_summary, environment, result, error_detail, executed_by)
-                    VALUES 
+                    VALUES
                         ('/apps-int', 'JOB_TRIGGER', @summary, @environment, 'FAILED', @errorDetail, @executedBy)
 "@ -Parameters @{
                     summary     = "Balance Sync on $serverName"
