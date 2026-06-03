@@ -1,816 +1,1215 @@
 /* ============================================================================
-   xFACts Control Center - Applications & Integration Styles
+   xFACts Control Center - Applications & Integration Styles (applications-integration.css)
    Location: E:\xFACts-ControlCenter\public\css\applications-integration.css
    Version: Tracked in dbo.System_Metadata (component: DeptOps.ApplicationsIntegration)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css) and global
-               ::-webkit-scrollbar rules (shared). Kept .connection-error
-               display-none (page-specific intent — page has no real-time
-               connection logic, this hides the standard banner) and the
-               bdlcat-* slide-up panel rules (page-specific BDL Catalog UI).
-               Inline comments referencing toggle styles in
-               engine-events.css / admin.css remain intentional.
+   Page-specific styles for the Applications & Integration departmental page.
+   Universal chrome (nav bar, header bar, refresh info, sections, connection
+   banner, modals, design tokens) is provided by cc-shared.css per the CC
+   Page Chrome Contract. This file contains only the A&I page's local content
+   classes: the tool-card grid, the two-tier BDL Catalog slide-up dock (a
+   bottom panel plus a side-by-side detail panel), the catalog format list and
+   element table, the page-local toggle switch and inline-edit controls, and
+   the DM job trigger modal content rendered inside the shared cc-dialog.
+
+   All page-local classes are prefixed aai- to make scope visible at a glance.
+   Shared classes (e.g., .cc-section, .cc-modal-overlay, .cc-dialog) consumed
+   by this page's HTML are defined in cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   CONTENT: UTILITIES
+   CONTENT: TOOL CARDS
+   CONTENT: CATALOG DOCK PANEL
+   CONTENT: CATALOG MODE SELECTOR
+   CONTENT: CATALOG PANEL BODY
+   CONTENT: CATALOG FORMAT LIST
+   CONTENT: CATALOG DETAIL PANEL
+   CONTENT: CATALOG ELEMENT TABLE
+   CONTENT: CATALOG ELEMENT BADGES
+   CONTENT: CATALOG INLINE EDIT
+   CONTENT: TOGGLE SWITCH
+   CONTENT: CATALOG STATES
+   CONTENT: DM JOB TRIGGERS
    ============================================================================ */
 
-/* Base Layout */
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { color: #888; font-size: 14px; margin: 0; }
-a { color: #9cdcfe; }
+/* ============================================================================
+   CONTENT: UTILITIES
+   ----------------------------------------------------------------------------
+   Small page-local helpers. The hidden modifier collapses an element out of
+   layout entirely; it is applied server-side to the Administration section
+   for non-admin users and could be applied from JS where a page-local hide
+   is needed.
+   Prefix: aai
+   ============================================================================ */
 
-/* Header Bar */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
+/* Collapses an element out of layout (no reserved space). */
+.aai-hidden {
+    display: none;
 }
 
-/* Connection Error - hidden on this page; no real-time connection logic */
-.connection-error { display: none; }
+/* ============================================================================
+   CONTENT: TOOL CARDS
+   ----------------------------------------------------------------------------
+   The tool-card grid shown in the Debt Manager Tools and Administration
+   sections. Cards are clickable tiles with an icon, a label, and a status
+   line. Placeholder cards are dimmed and non-interactive; admin cards carry
+   a blue accent border.
+   Prefix: aai
+   ============================================================================ */
 
-/* Section Layout */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-    margin-bottom: 16px;
-}
-
-.section-header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-.section-header h2 {
-    margin: 0;
-    font-size: 16px;
-    color: #d4d4d4;
-}
-
-.section-subtitle {
-    font-size: 12px;
-    color: #888;
-}
-
-/* Tool Cards */
-.tool-cards {
+/* Responsive grid container that lays out the tool cards. */
+.aai-tool-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
 }
 
-.tool-card {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 16px;
+/* A single clickable tool-card tile. */
+.aai-tool-card {
+    display: block;
+    width: 100%;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    text-decoration: none;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-xl);
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.2s;
+    transition: border-color var(--duration-fast);
 }
 
-.tool-card:hover {
-    border-color: #dcdcaa;
+.aai-tool-card:hover { /* hover state -- accent the border in departmental yellow */
+    border-color: var(--color-accent-departmental);
 }
 
-.tool-card.placeholder {
+/* State tag marking a tool card as a not-yet-available placeholder. */
+.aai-placeholder { }
+
+.aai-tool-card.aai-placeholder { /* placeholder state -- dimmed and non-interactive */
     opacity: 0.4;
     cursor: default;
 }
 
-.tool-card.placeholder:hover {
-    border-color: #333;
+.aai-tool-card.aai-placeholder:hover { /* placeholder hover -- suppress the border accent */
+    border-color: var(--color-border-divider);
 }
 
-.tool-card.admin-tool {
+/* State tag marking a tool card as an admin-only tool. */
+.aai-admin-tool { }
+
+.aai-tool-card.aai-admin-tool { /* admin-tool state -- subtle blue accent border */
     border-color: rgba(86, 156, 214, 0.3);
 }
 
-.tool-card.admin-tool:hover {
-    border-color: #569cd6;
+.aai-tool-card.aai-admin-tool:hover { /* admin-tool hover -- full blue accent border */
+    border-color: var(--color-accent-platform);
 }
 
-.tool-icon {
+/* The large emoji/glyph icon at the top of a tool card. */
+.aai-tool-icon {
     font-size: 28px;
-    margin-bottom: 6px;
+    margin-bottom: var(--size-spacing-sm);
 }
 
-.tool-label {
-    font-size: 13px;
+/* The tool name label below the icon. */
+.aai-tool-label {
+    font-size: var(--font-size-content-lg);
     font-weight: 600;
-    color: #d4d4d4;
-    margin-bottom: 4px;
+    color: var(--color-text-primary);
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.tool-status {
-    font-size: 11px;
-    color: #888;
+/* The small status caption at the bottom of a tool card. */
+.aai-tool-status {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
 
-.tool-status.admin-badge {
-    color: #569cd6;
+/* Color modifier marking a tool-card status line as an admin badge (blue). */
+.aai-admin-badge {
+    color: var(--color-accent-platform);
 }
 
-/* ============================================================
-   BDL CATALOG MANAGEMENT — Slide-Up Panel (Tier 1)
-   ============================================================ */
+/* ============================================================================
+   CONTENT: CATALOG DOCK PANEL
+   ----------------------------------------------------------------------------
+   The BDL Catalog management dock: a bottom-anchored slide-up panel (Tier 1,
+   format list) with a drag-handle, header, and body. A backdrop dims the page
+   behind it. This is a page-local dock construct, not one of the shared
+   overlay constructs; it pairs with the side-by-side detail panel below.
+   Prefix: aai
+   ============================================================================ */
 
-.bdlcat-backdrop {
+/* Full-viewport dimmer shown behind the open catalog dock. */
+.aai-catalog-backdrop {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.5);
+    background: var(--color-bg-overlay-panel);
     z-index: 1500;
 }
-.bdlcat-backdrop.visible { display: block; }
 
-.bdlcat-panel {
+/* State tag marking the catalog backdrop as visible. */
+.aai-visible { }
+
+.aai-catalog-backdrop.aai-visible { /* visible state -- show the dimmer */
+    display: block;
+}
+
+/* The bottom-anchored slide-up panel that holds the format list. */
+.aai-catalog-panel {
     position: fixed;
     bottom: 0;
-    left: 24px;
+    left: var(--size-page-padding-y);
     width: 720px;
     height: 55vh;
     transform: translateY(100%);
-    background: #1e1e1e;
-    border-top: 1px solid #555;
-    border-radius: 12px 12px 0 0;
+    background: var(--color-bg-page);
+    border-top: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-lg) var(--size-radius-lg) 0 0;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
     transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 1501;
 }
-.bdlcat-panel.visible { transform: translateY(0); }
 
-.bdlcat-handle {
+.aai-catalog-panel.aai-visible { /* visible state -- slide the panel up into view */
+    transform: translateY(0);
+}
+
+/* The drag-handle strip at the top of the panel (click to close). */
+.aai-catalog-handle {
     display: flex;
     justify-content: center;
-    padding: 8px 0 4px;
+    padding: var(--size-spacing-md) 0 var(--size-spacing-xs);
     cursor: pointer;
 }
-.bdlcat-handle-bar {
-    width: 40px;
-    height: 4px;
-    border-radius: 2px;
-    background: #555;
-}
-.bdlcat-handle:hover .bdlcat-handle-bar { background: #888; }
 
-.bdlcat-header {
+.aai-catalog-handle:hover { /* hover state -- brighten the handle affordance */
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* The small pill bar inside the handle strip. */
+.aai-catalog-handle-bar {
+    width: 40px;
+    height: var(--size-radius-default);
+    border-radius: 2px;
+    background: var(--color-border-strong);
+}
+
+/* The panel header row holding the title, count, and close button. */
+.aai-catalog-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 24px 12px;
-    border-bottom: 1px solid #333;
+    padding: var(--size-spacing-xs) var(--size-page-padding-y) var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
     flex-shrink: 0;
 }
-.bdlcat-header-left {
+
+/* Left-side container in the header holding the title and count. */
+.aai-catalog-header-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--size-spacing-lg);
 }
-.bdlcat-title {
-    font-size: 16px;
+
+/* The catalog panel title text. */
+.aai-catalog-title {
+    font-size: var(--font-size-heading-lg);
     font-weight: 600;
-    color: #569cd6;
+    color: var(--color-accent-platform);
     margin: 0;
 }
-.bdlcat-count {
-    font-size: 11px;
-    color: #555;
+
+/* The small count caption beside the title. */
+.aai-catalog-count {
+    font-size: var(--font-size-body);
+    color: var(--color-border-strong);
 }
-.bdlcat-close {
+
+/* The close (X) button in the panel header. */
+.aai-catalog-close {
     background: none;
     border: none;
-    color: #888;
+    color: var(--color-text-muted);
     font-size: 20px;
     cursor: pointer;
-    padding: 0 4px;
+    padding: 0 var(--size-spacing-xs);
 }
-.bdlcat-close:hover { color: #d4d4d4; }
 
-/* ============================================================
-   MODE SELECTOR — Tab bar + Department Dropdown
-   ============================================================ */
+.aai-catalog-close:hover { /* hover state -- brighten the close glyph */
+    color: var(--color-text-primary);
+}
 
-.bdlcat-mode-selector {
-    padding: 8px 20px;
-    border-bottom: 1px solid #333;
+/* ============================================================================
+   CONTENT: CATALOG MODE SELECTOR
+   ----------------------------------------------------------------------------
+   The tab bar and department dropdown at the top of the catalog body that
+   switches between Global Configuration and Department Access modes.
+   Prefix: aai
+   ============================================================================ */
+
+/* Container for the mode tab bar and the optional department dropdown. */
+.aai-catalog-mode-selector {
+    padding: var(--size-spacing-md) var(--size-spacing-2xl);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
     flex-shrink: 0;
 }
 
-.bdlcat-mode-tabs {
+/* Horizontal flex row holding the two mode tabs. */
+.aai-catalog-mode-tabs {
     display: flex;
     gap: 0;
 }
 
-.bdlcat-mode-tab {
+/* A single mode tab button. */
+.aai-catalog-mode-tab {
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
-    color: #888;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 12px;
+    color: var(--color-text-muted);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content);
     font-weight: 600;
-    padding: 6px 16px;
+    padding: var(--size-spacing-sm) var(--size-spacing-xl);
     cursor: pointer;
-    transition: all 0.2s;
-}
-.bdlcat-mode-tab:hover { color: #d4d4d4; }
-.bdlcat-mode-tab.active {
-    color: #569cd6;
-    border-bottom-color: #569cd6;
+    transition: all var(--duration-fast);
 }
 
-.bdlcat-dept-selector {
-    margin-top: 8px;
+.aai-catalog-mode-tab:hover { /* hover state -- brighten the tab label */
+    color: var(--color-text-primary);
 }
 
-.bdlcat-dept-dropdown {
-    background: #252526;
-    border: 1px solid #404040;
-    color: #d4d4d4;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 12px;
+/* State tag marking the active mode tab. */
+.aai-active { }
+
+.aai-catalog-mode-tab.aai-active { /* active state -- blue label and underline */
+    color: var(--color-accent-platform);
+    border-bottom-color: var(--color-accent-platform);
+}
+
+/* Wrapper for the department dropdown shown in Department Access mode. */
+.aai-catalog-dept-selector {
+    margin-top: var(--size-spacing-md);
+}
+
+/* The department selection dropdown. */
+.aai-catalog-dept-dropdown {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content);
     padding: 5px 10px;
-    border-radius: 4px;
+    border-radius: var(--size-radius-default);
     width: 280px;
     outline: none;
     cursor: pointer;
 }
-.bdlcat-dept-dropdown:focus { border-color: #569cd6; }
 
-/* ============================================================
-   PANEL BODY + STATUS
-   ============================================================ */
+.aai-catalog-dept-dropdown:focus { /* focus state -- blue accent border */
+    border-color: var(--color-accent-platform);
+}
 
-.bdlcat-body {
+/* ============================================================================
+   CONTENT: CATALOG PANEL BODY
+   ----------------------------------------------------------------------------
+   The scrollable body region of the catalog panel and the inline status line
+   that reports the result of catalog edits.
+   Prefix: aai
+   ============================================================================ */
+
+/* The scrollable body region holding the format list. */
+.aai-catalog-body {
     flex: 1;
     overflow-y: auto;
-    padding: 12px 20px 20px;
+    padding: var(--size-spacing-lg) var(--size-spacing-2xl) var(--size-spacing-2xl);
 }
 
-.bdlcat-status {
-    font-size: 11px;
-    min-height: 16px;
-    padding: 4px 24px 0;
+/* Inline status line reporting the result of a catalog edit. */
+.aai-catalog-status {
+    font-size: var(--font-size-body);
+    min-height: var(--size-spacing-xl);
+    padding: var(--size-spacing-xs) var(--size-page-padding-y) 0;
 }
-.bdlcat-status.success { color: #4ade80; }
-.bdlcat-status.error { color: #ef4444; }
 
-/* Format List */
+/* State tag marking a status line as a success message. */
+.aai-success { }
 
-.bdlcat-section-label {
-    font-size: 10px;
+.aai-catalog-status.aai-success { /* success state -- green message text */
+    color: #4ade80;
+}
+
+/* State tag marking a status line as an error message. */
+.aai-error { }
+
+.aai-catalog-status.aai-error { /* error state -- red message text */
+    color: #ef4444;
+}
+
+/* ============================================================================
+   CONTENT: CATALOG FORMAT LIST
+   ----------------------------------------------------------------------------
+   The Tier 1 format list rendered in the catalog body: section labels, format
+   rows (each with a name, type, dot leader, stats, and a toggle), and their
+   active/inactive/selected/department states.
+   Prefix: aai
+   ============================================================================ */
+
+/* Uppercase section label separating active and inactive entity groups. */
+.aai-catalog-section-label {
+    font-size: var(--font-size-default);
     font-weight: 600;
     letter-spacing: 1.5px;
     text-transform: uppercase;
-    color: #888;
-    padding: 10px 0 6px;
-}
-.bdlcat-section-label.inactive {
-    color: #555;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid #333;
+    color: var(--color-text-muted);
+    padding: 10px 0 var(--size-spacing-sm);
 }
 
-.bdlcat-format-row {
+/* State tag marking a section label as the inactive-group divider. */
+.aai-inactive { }
+
+.aai-catalog-section-label.aai-inactive { /* inactive-group label -- dimmer text and a top divider */
+    color: var(--color-border-strong);
+    margin-top: var(--size-spacing-lg);
+    padding-top: var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* A single format row in the list. */
+.aai-catalog-format-row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 12px;
-    background: #252526;
-    border: 1px solid #333;
-    border-radius: 5px;
-    margin-bottom: 3px;
-    transition: border-color 0.15s;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    margin-bottom: var(--size-radius-sm);
+    transition: border-color var(--duration-instant);
 }
-.bdlcat-format-row:hover { border-color: #555; }
-.bdlcat-format-row.selected { border-color: rgba(86,156,214,0.4); background: rgba(86,156,214,0.04); }
-.bdlcat-format-row.inactive { opacity: 0.45; }
-.bdlcat-format-row.inactive:hover { opacity: 0.65; }
 
-/* Department mode — ungranted entity rows */
-.bdlcat-format-row.dept-ungranted { opacity: 0.4; }
-.bdlcat-format-row.dept-ungranted:hover { opacity: 0.6; }
+.aai-catalog-format-row:hover { /* hover state -- lighten the border */
+    border-color: var(--color-border-strong);
+}
 
-.bdlcat-format-main {
+/* State tag marking a format row as the current selection. */
+.aai-selected { }
+
+.aai-catalog-format-row.aai-selected { /* selected state -- blue tint border and background */
+    border-color: rgba(86, 156, 214, 0.4);
+    background: rgba(86, 156, 214, 0.04);
+}
+
+.aai-catalog-format-row.aai-inactive { /* inactive entity state -- dimmed row */
+    opacity: 0.45;
+}
+
+.aai-catalog-format-row.aai-inactive:hover { /* inactive-row hover -- partially restore opacity */
+    opacity: 0.65;
+}
+
+/* State tag marking a format row as not granted to the current department. */
+.aai-dept-ungranted { }
+
+.aai-catalog-format-row.aai-dept-ungranted { /* department-ungranted state -- dimmed row */
+    opacity: 0.4;
+}
+
+.aai-catalog-format-row.aai-dept-ungranted:hover { /* ungranted-row hover -- partially restore opacity */
+    opacity: 0.6;
+}
+
+/* The clickable main region of a format row (name, type, dots, stats). */
+.aai-catalog-format-main {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--size-spacing-md);
     cursor: pointer;
     overflow: hidden;
 }
-.bdlcat-format-name {
-    font-size: 13px;
+
+/* The entity-type name in a format row. */
+.aai-catalog-format-name {
+    font-size: var(--font-size-content-lg);
     font-weight: 600;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     white-space: nowrap;
     min-width: 160px;
 }
-.bdlcat-format-type {
-    font-size: 11px;
-    color: #666;
-    white-space: nowrap;
-}
-.bdlcat-format-dots {
-    flex: 1;
-    border-bottom: 1px dotted #333;
-    margin: 0 4px;
-    min-width: 20px;
-}
-.bdlcat-format-stats {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-}
-.bdlcat-stat {
-    font-size: 10px;
-    color: #555;
+
+/* The secondary type-name caption in a format row. */
+.aai-catalog-format-type {
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
     white-space: nowrap;
 }
 
-/* Department mode field count stat */
-.bdlcat-stat.dept-field-stat {
-    color: #4ec9b0;
+/* The dotted leader filling the space between name and stats. */
+.aai-catalog-format-dots {
+    flex: 1;
+    border-bottom: 1px dotted var(--color-border-divider);
+    margin: 0 var(--size-spacing-xs);
+    min-width: var(--size-spacing-2xl);
+}
+
+/* Flex container for the stat spans on the right of a format row. */
+.aai-catalog-format-stats {
+    display: flex;
+    gap: var(--size-spacing-md);
+    flex-shrink: 0;
+}
+
+/* A single stat span (visible/required/total counts) in a format row. */
+.aai-catalog-stat {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    white-space: nowrap;
+}
+
+/* Color modifier marking a stat as the department field-count metric (teal). */
+.aai-dept-field-stat {
+    color: var(--color-accent-shared);
     font-weight: 600;
 }
 
-.bdlcat-format-toggle {
+/* The toggle cell on the right edge of a format row. */
+.aai-catalog-format-toggle {
     flex-shrink: 0;
     padding-left: 10px;
-    border-left: 1px solid #3f3f45;
+    border-left: var(--size-border-thin) solid #3f3f45;
     cursor: pointer;
 }
 
-/* Reuse toggle styles from engine-events.css / admin.css */
-.bdlcat-format-toggle .gc-toggle { display: inline-flex; align-items: center; }
-.bdlcat-toggle-wrap { cursor: pointer; display: inline-flex; align-items: center; }
+/* ============================================================================
+   CONTENT: CATALOG DETAIL PANEL
+   ----------------------------------------------------------------------------
+   The Tier 2 detail panel that expands horizontally beside the format panel
+   when a format is selected, showing that entity's element/field detail.
+   Prefix: aai
+   ============================================================================ */
 
-/* ============================================================
-   BDL CATALOG MANAGEMENT — Detail Slideout (Tier 2)
-   ============================================================ */
-
-.bdlcat-detail {
+/* The side-by-side detail panel (Tier 2), collapsed to zero width by default. */
+.aai-catalog-detail {
     position: fixed;
     bottom: 0;
-    left: 744px;  /* 24px + 720px */
+    left: 744px;
     width: 0;
     height: 55vh;
-    background: #1e1e1e;
-    border-radius: 0 12px 0 0;
+    background: var(--color-bg-page);
+    border-radius: 0 var(--size-radius-lg) 0 0;
     z-index: 1501;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transition: width 0.3s ease;
-}
-.bdlcat-detail.visible {
-    width: 1000px;
-    border-top: 1px solid #555;
-    border-left: 1px solid #333;
+    transition: width var(--duration-default) ease;
 }
 
-.bdlcat-detail-header {
+.aai-catalog-detail.aai-visible { /* visible state -- expand to the detail width with framing borders */
+    width: 1000px;
+    border-top: var(--size-border-thin) solid var(--color-border-strong);
+    border-left: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* The detail panel header row (back button, title, count). */
+.aai-catalog-detail-header {
     display: flex;
     align-items: center;
-    padding: 12px 16px;
-    border-bottom: 1px solid #333;
-    gap: 8px;
+    padding: var(--size-spacing-lg) var(--size-spacing-xl);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    gap: var(--size-spacing-md);
     flex-shrink: 0;
 }
-.bdlcat-detail-back {
+
+/* The back button that returns from detail to the format list. */
+.aai-catalog-detail-back {
     background: none;
     border: none;
-    color: #888;
+    color: var(--color-text-muted);
     font-size: 18px;
     cursor: pointer;
-    padding: 0 4px;
+    padding: 0 var(--size-spacing-xs);
     line-height: 1;
 }
-.bdlcat-detail-back:hover { color: #d4d4d4; }
-.bdlcat-detail-title {
-    font-size: 14px;
+
+.aai-catalog-detail-back:hover { /* hover state -- brighten the back glyph */
+    color: var(--color-text-primary);
+}
+
+/* The detail panel title text. */
+.aai-catalog-detail-title {
+    font-size: var(--font-size-heading-sm);
     font-weight: 600;
-    color: #569cd6;
+    color: var(--color-accent-platform);
     margin: 0;
     flex: 1;
 }
-.bdlcat-detail-count {
-    font-size: 11px;
-    color: #888;
+
+/* The small count caption in the detail header. */
+.aai-catalog-detail-count {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
 
-.bdlcat-detail-body {
+/* The scrollable body region of the detail panel. */
+.aai-catalog-detail-body {
     flex: 1;
     overflow: auto;
-    padding: 8px 12px;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
 }
 
-.bdlcat-detail-status {
-    font-size: 11px;
+/* Inline status line inside the detail panel reporting an edit result. */
+.aai-catalog-detail-status {
+    font-size: var(--font-size-body);
     min-height: 0;
-    padding: 2px 16px;
+    padding: 2px var(--size-spacing-xl);
 }
-.bdlcat-detail-status.success { color: #4ade80; }
-.bdlcat-detail-status.error { color: #ef4444; }
 
-/* Element Table */
+.aai-catalog-detail-status.aai-success { /* success state -- green message text */
+    color: #4ade80;
+}
 
-.bdlcat-element-table {
+.aai-catalog-detail-status.aai-error { /* error state -- red message text */
+    color: #ef4444;
+}
+
+/* ============================================================================
+   CONTENT: CATALOG ELEMENT TABLE
+   ----------------------------------------------------------------------------
+   The element/field table rendered inside the detail panel body. Cells carry
+   page-local classes directly (no element selectors); the header is sticky.
+   Prefix: aai
+   ============================================================================ */
+
+/* The element/field detail table container. */
+.aai-catalog-element-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
-.bdlcat-element-table thead {
+
+/* Sticky header cell of the element table. */
+.aai-catalog-element-th {
+    background: var(--color-bg-card);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    text-align: left;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    white-space: nowrap;
     position: sticky;
     top: 0;
     z-index: 1;
 }
-.bdlcat-element-table th {
-    background: #252526;
-    color: #888;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 6px 8px;
-    text-align: left;
-    border-bottom: 1px solid #404040;
-    white-space: nowrap;
-}
-.bdlcat-th-name { width: 200px; }
-.bdlcat-th-display { width: 160px; }
-.bdlcat-th-toggle { width: 60px; text-align: center !important; }
-.bdlcat-th-desc { width: auto; }
-.bdlcat-th-guidance { width: 180px; }
 
-.bdlcat-element-row {
-    border-bottom: 1px solid #1a1a1a;
-    transition: background 0.1s;
-}
-.bdlcat-element-row:hover { background: rgba(255,255,255,0.02); }
-.bdlcat-element-row.dimmed { opacity: 0.4; }
-.bdlcat-element-row.dimmed:hover { opacity: 0.65; }
-
-.bdlcat-element-row td {
-    padding: 5px 8px;
-    vertical-align: middle;
+/* Width modifier for the element-name header column. */
+.aai-th-name {
+    width: 200px;
 }
 
-.bdlcat-cell-name {
-    font-family: 'Cascadia Code', 'Consolas', monospace;
-    font-size: 11px;
-    color: #d4d4d4;
-    white-space: nowrap;
+/* Width modifier for the display-name header column. */
+.aai-th-display {
+    width: 160px;
 }
-.bdlcat-cell-display {
-    font-size: 12px;
-    color: #ce9178;
-}
-.bdlcat-cell-toggle {
+
+/* Width and alignment modifier for the toggle header columns. */
+.aai-th-toggle {
+    width: 60px;
     text-align: center;
 }
-.bdlcat-cell-desc {
-    font-size: 11px;
-    color: #888;
-}
-.bdlcat-cell-guidance {
-    font-size: 11px;
-    color: #dcdcaa;
+
+/* Width modifier for the description header column. */
+.aai-th-desc {
+    width: auto;
 }
 
-/* Element badges */
-.bdlcat-badge-pk {
-    font-size: 8px;
-    font-weight: 700;
-    background: rgba(86,156,214,0.2);
-    color: #569cd6;
-    border: 1px solid rgba(86,156,214,0.3);
-    border-radius: 2px;
-    padding: 0 3px;
+/* Width modifier for the import-guidance header column. */
+.aai-th-guidance {
+    width: 180px;
+}
+
+/* A data row in the element table. */
+.aai-catalog-element-row {
+    border-bottom: var(--size-border-thin) solid #1a1a1a;
+    transition: background 0.1s;
+}
+
+.aai-catalog-element-row:hover { /* hover state -- faint row highlight */
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* State tag marking an element row as dimmed (not visible / not granted). */
+.aai-dimmed { }
+
+.aai-catalog-element-row.aai-dimmed { /* dimmed state -- reduced opacity */
+    opacity: 0.4;
+}
+
+.aai-catalog-element-row.aai-dimmed:hover { /* dimmed-row hover -- partially restore opacity */
+    opacity: 0.65;
+}
+
+/* A data cell in the element table. */
+.aai-catalog-element-td {
+    padding: 5px var(--size-spacing-md);
     vertical-align: middle;
 }
-.bdlcat-badge-lookup {
-    font-size: 8px;
+
+/* Monospace element-name cell. */
+.aai-catalog-cell-name {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-primary);
+    white-space: nowrap;
+}
+
+/* Display-name cell (rendered in the orange edit-value color). */
+.aai-catalog-cell-display {
+    font-size: var(--font-size-content);
+    color: var(--color-text-pre);
+}
+
+/* Centered toggle cell. */
+.aai-catalog-cell-toggle {
+    text-align: center;
+}
+
+/* Description cell (muted text). */
+.aai-catalog-cell-desc {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* Import-guidance cell (departmental-yellow text). */
+.aai-catalog-cell-guidance {
+    font-size: var(--font-size-body);
+    color: var(--color-accent-departmental);
+}
+
+/* ============================================================================
+   CONTENT: CATALOG ELEMENT BADGES
+   ----------------------------------------------------------------------------
+   Small inline badges shown beside element names and entity types: primary
+   key, lookup, wrapper, fixed-value, hybrid, and import-required markers.
+   Prefix: aai
+   ============================================================================ */
+
+/* Primary-identifier (PK) badge. */
+.aai-catalog-badge-pk {
+    font-size: var(--font-size-xs);
     font-weight: 700;
-    background: rgba(78,201,176,0.15);
-    color: #4ec9b0;
-    border: 1px solid rgba(78,201,176,0.25);
-    border-radius: 2px;
-    padding: 0 3px;
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
+    border-radius: var(--size-radius-xs);
+    padding: 0 var(--size-radius-sm);
     vertical-align: middle;
 }
-.bdlcat-badge-wrapper {
-    font-size: 8px;
+
+/* Lookup-table (LK) badge. */
+.aai-catalog-badge-lookup {
+    font-size: var(--font-size-xs);
     font-weight: 700;
-    background: rgba(220,220,170,0.12);
-    color: #dcdcaa;
-    border: 1px solid rgba(220,220,170,0.25);
-    border-radius: 2px;
-    padding: 0 4px;
-    margin-left: 6px;
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+    border: var(--size-border-thin) solid rgba(78, 201, 176, 0.25);
+    border-radius: var(--size-radius-xs);
+    padding: 0 var(--size-radius-sm);
     vertical-align: middle;
 }
-.bdlcat-badge-fixed {
-    font-size: 8px;
+
+/* Wrapper/container-format badge. */
+.aai-catalog-badge-wrapper {
+    font-size: var(--font-size-xs);
     font-weight: 700;
-    background: rgba(197,134,192,0.12);
+    background: rgba(220, 220, 170, 0.12);
+    color: var(--color-accent-departmental);
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.25);
+    border-radius: var(--size-radius-xs);
+    padding: 0 var(--size-spacing-xs);
+    margin-left: var(--size-spacing-sm);
+    vertical-align: middle;
+}
+
+/* Fixed-value action-type badge. */
+.aai-catalog-badge-fixed {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    background: rgba(197, 134, 192, 0.12);
     color: #c586c0;
-    border: 1px solid rgba(197,134,192,0.25);
-    border-radius: 2px;
-    padding: 0 4px;
-    margin-left: 6px;
-    vertical-align: middle;
-}
-.bdlcat-badge-hybrid {
-    font-size: 8px;
-    font-weight: 700;
-    background: rgba(78,201,176,0.12);
-    color: #4ec9b0;
-    border: 1px solid rgba(78,201,176,0.25);
-    border-radius: 2px;
-    padding: 0 4px;
-    margin-left: 6px;
-    vertical-align: middle;
-}
-.bdlcat-badge-req {
-    font-size: 8px;
-    font-weight: 700;
-    background: rgba(220,220,170,0.12);
-    color: #dcdcaa;
-    border: 1px solid rgba(220,220,170,0.25);
-    border-radius: 2px;
-    padding: 0 3px;
+    border: var(--size-border-thin) solid rgba(197, 134, 192, 0.25);
+    border-radius: var(--size-radius-xs);
+    padding: 0 var(--size-spacing-xs);
+    margin-left: var(--size-spacing-sm);
     vertical-align: middle;
 }
 
-/* Editable text fields */
-.bdlcat-editable {
+/* Hybrid action-type badge. */
+.aai-catalog-badge-hybrid {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    background: rgba(78, 201, 176, 0.12);
+    color: var(--color-accent-shared);
+    border: var(--size-border-thin) solid rgba(78, 201, 176, 0.25);
+    border-radius: var(--size-radius-xs);
+    padding: 0 var(--size-spacing-xs);
+    margin-left: var(--size-spacing-sm);
+    vertical-align: middle;
+}
+
+/* Import-required (REQ) badge. */
+.aai-catalog-badge-req {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    background: rgba(220, 220, 170, 0.12);
+    color: var(--color-accent-departmental);
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.25);
+    border-radius: var(--size-radius-xs);
+    padding: 0 var(--size-radius-sm);
+    vertical-align: middle;
+}
+
+/* ============================================================================
+   CONTENT: CATALOG INLINE EDIT
+   ----------------------------------------------------------------------------
+   Page-local inline-edit controls used in the element table: a click-to-edit
+   text display, the empty-value placeholder, and the edit input with its
+   save and cancel buttons. (Promotion of this pattern to shared cc- chrome is
+   tracked as a platform backlog item.)
+   Prefix: aai
+   ============================================================================ */
+
+/* Click-to-edit text display in a table cell. */
+.aai-catalog-editable {
     cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 3px;
-    transition: background 0.2s;
+    padding: 2px var(--size-spacing-xs);
+    border-radius: var(--size-radius-sm);
+    transition: background var(--duration-fast);
     display: inline-block;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.bdlcat-editable:hover { background: #333; }
 
-.bdlcat-empty-val {
-    color: #444;
-    font-style: italic;
-    font-size: 10px;
+.aai-catalog-editable:hover { /* hover state -- show an editable background affordance */
+    background: var(--color-border-divider);
 }
 
-.bdlcat-edit-input {
+/* Italic placeholder shown when an editable value is empty. */
+.aai-catalog-empty-val {
+    color: #444;
+    font-style: italic;
+    font-size: var(--font-size-default);
+}
+
+/* Wrapper for the inline edit input and its save/cancel buttons. */
+.aai-edit-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-spacing-xs);
+}
+
+/* The inline edit text input. */
+.aai-edit-input {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-accent-platform);
+    color: var(--color-text-pre);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content);
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    outline: none;
     width: 100%;
     min-width: 100px;
     max-width: 260px;
 }
 
-/* Toggle reuse — these come from admin.css / engine-events.css patterns */
-.gc-toggle-track {
+.aai-edit-input:focus { /* focus state -- teal accent border */
+    border-color: var(--color-accent-shared);
+}
+
+/* The save (check) button beside the edit input. */
+.aai-edit-save {
+    background: none;
+    border: none;
+    color: #4ade80;
+    cursor: pointer;
+    font-size: var(--font-size-heading-sm);
+    padding: 2px var(--size-spacing-xs);
+}
+
+.aai-edit-save:hover { /* hover state -- brighter green */
+    color: #22c55e;
+}
+
+/* The cancel (X) button beside the edit input. */
+.aai-edit-cancel {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: var(--font-size-heading-sm);
+    padding: 2px var(--size-spacing-xs);
+}
+
+.aai-edit-cancel:hover { /* hover state -- brighter red */
+    color: #dc2626;
+}
+
+/* ============================================================================
+   CONTENT: TOGGLE SWITCH
+   ----------------------------------------------------------------------------
+   Page-local on/off toggle switch used for entity active-state, field
+   visibility, import-required, and department access grants. (Promotion of
+   this pattern to shared cc- chrome is tracked as a platform backlog item.)
+   Prefix: aai
+   ============================================================================ */
+
+/* Clickable wrapper around a toggle switch. */
+.aai-toggle-wrap {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* The toggle track (the pill the knob slides within). */
+.aai-toggle-track {
     width: 34px;
     height: 18px;
     border-radius: 9px;
     position: relative;
-    transition: background 0.2s;
+    transition: background var(--duration-fast);
     display: inline-block;
 }
-.gc-toggle-track.on {
-    background: rgba(74,222,128,0.3);
-    border: 1px solid rgba(74,222,128,0.4);
+
+/* State tag marking a toggle as on. */
+.aai-on { }
+
+.aai-toggle-track.aai-on { /* on state -- green track */
+    background: rgba(74, 222, 128, 0.3);
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.4);
 }
-.gc-toggle-track.off {
-    background: rgba(239,68,68,0.15);
-    border: 1px solid rgba(239,68,68,0.3);
+
+/* State tag marking a toggle as off. */
+.aai-off { }
+
+.aai-toggle-track.aai-off { /* off state -- red track */
+    background: rgba(239, 68, 68, 0.15);
+    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
 }
-.gc-toggle-knob {
+
+/* The sliding knob inside the toggle track. */
+.aai-toggle-knob {
     width: 14px;
     height: 14px;
     border-radius: 50%;
     position: absolute;
     top: 1px;
-    transition: left 0.2s, background 0.2s;
+    transition: left var(--duration-fast), background var(--duration-fast);
 }
-.gc-toggle-track.on .gc-toggle-knob {
+
+.aai-toggle-knob.aai-on { /* on state -- knob slid right, green */
     left: 17px;
     background: #4ade80;
 }
-.gc-toggle-track.off .gc-toggle-knob {
+
+.aai-toggle-knob.aai-off { /* off state -- knob at left, red */
     left: 2px;
     background: #ef4444;
 }
 
-/* Inline edit controls (reuse gc-edit pattern) */
-.gc-edit-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-.gc-edit-input {
-    background: #1e1e1e;
-    border: 1px solid #569cd6;
-    color: #ce9178;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 12px;
-    padding: 2px 6px;
-    border-radius: 3px;
-    outline: none;
-}
-.gc-edit-input:focus { border-color: #4ec9b0; }
-.gc-edit-save {
-    background: none;
-    border: none;
-    color: #4ade80;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 2px 4px;
-}
-.gc-edit-save:hover { color: #22c55e; }
-.gc-edit-cancel {
-    background: none;
-    border: none;
-    color: #ef4444;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 2px 4px;
-}
-.gc-edit-cancel:hover { color: #dc2626; }
+/* ============================================================================
+   CONTENT: CATALOG STATES
+   ----------------------------------------------------------------------------
+   Loading, error, and empty placeholder states shown inside the catalog
+   panel and detail body while data is in flight or absent.
+   Prefix: aai
+   ============================================================================ */
 
-/* Loading / Error / Empty states */
-.bdlcat-loading {
-    color: #888;
-    font-size: 13px;
-    padding: 20px;
+/* Centered "loading" caption shown while catalog data is in flight. */
+.aai-catalog-loading {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+    padding: var(--size-spacing-2xl);
     text-align: center;
 }
-.bdlcat-error {
+
+/* Centered error caption shown when a catalog load fails. */
+.aai-catalog-error {
     color: #ef4444;
-    font-size: 12px;
-    padding: 20px;
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-2xl);
     text-align: center;
 }
-.bdlcat-empty {
-    color: #555;
-    font-size: 12px;
-    padding: 20px;
+
+/* Centered empty-state caption shown when there is no catalog data. */
+.aai-catalog-empty {
+    color: var(--color-border-strong);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-2xl);
     text-align: center;
     font-style: italic;
 }
 
-/* ============================================================
-   DM JOB TRIGGERS — Modal Styles
-   ============================================================ */
+/* ============================================================================
+   CONTENT: DM JOB TRIGGERS
+   ----------------------------------------------------------------------------
+   Page-local content rendered inside the shared cc-dialog cc-dialog-modal for
+   the DM job trigger flows (Refresh Drools, Release Notices, Balance Sync):
+   environment selection buttons, the per-server progress list, run summaries,
+   and the cooldown display.
+   Prefix: aai
+   ============================================================================ */
 
-/* Environment selection buttons */
-.dmjob-env-buttons {
+/* Flex row of environment selection buttons. */
+.aai-job-env-buttons {
     display: flex;
     gap: 10px;
     justify-content: center;
 }
 
-.dmjob-env-btn {
-    padding: 12px 28px;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    background: #252526;
-    color: #d4d4d4;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 14px;
+/* A single environment selection button. */
+.aai-job-env-btn {
+    padding: var(--size-spacing-lg) 28px;
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    background: var(--color-bg-card);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-heading-sm);
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-fast);
     min-width: 90px;
 }
-.dmjob-env-btn:hover { border-color: #888; }
 
-.dmjob-env-test { border-color: rgba(220,220,170,0.3); color: #dcdcaa; }
-.dmjob-env-test:hover { border-color: #dcdcaa; background: rgba(220,220,170,0.08); }
-
-.dmjob-env-stage { border-color: rgba(206,145,120,0.3); color: #ce9178; }
-.dmjob-env-stage:hover { border-color: #ce9178; background: rgba(206,145,120,0.08); }
-
-.dmjob-env-prod { border-color: rgba(239,68,68,0.3); color: #ef4444; }
-.dmjob-env-prod:hover { border-color: #ef4444; background: rgba(239,68,68,0.08); }
-
-/* Environment highlight in confirm message */
-.dmjob-env-highlight { font-weight: 700; }
-.dmjob-env-highlight.dmjob-env-test { color: #dcdcaa; }
-.dmjob-env-highlight.dmjob-env-stage { color: #ce9178; }
-.dmjob-env-highlight.dmjob-env-prod { color: #ef4444; }
-
-/* Server progress list */
-.dmjob-server-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.aai-job-env-btn:hover { /* hover state -- lighten the border */
+    border-color: var(--color-text-muted);
 }
 
-.dmjob-server-row {
+/* Color modifier for the TEST environment button. */
+.aai-job-env-test {
+    border-color: rgba(220, 220, 170, 0.3);
+    color: var(--color-accent-departmental);
+}
+
+.aai-job-env-test:hover { /* hover state -- full yellow accent and tint */
+    border-color: var(--color-accent-departmental);
+    background: rgba(220, 220, 170, 0.08);
+}
+
+/* Color modifier for the STAGE environment button. */
+.aai-job-env-stage {
+    border-color: rgba(206, 145, 120, 0.3);
+    color: var(--color-text-pre);
+}
+
+.aai-job-env-stage:hover { /* hover state -- full orange accent and tint */
+    border-color: var(--color-text-pre);
+    background: rgba(206, 145, 120, 0.08);
+}
+
+/* Color modifier for the PROD environment button. */
+.aai-job-env-prod {
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.aai-job-env-prod:hover { /* hover state -- full red accent and tint */
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+/* Inline environment-name highlight inside a confirm message. */
+.aai-job-env-highlight {
+    font-weight: 700;
+}
+
+.aai-job-env-highlight.aai-job-env-test { /* TEST highlight -- yellow */
+    color: var(--color-accent-departmental);
+}
+
+.aai-job-env-highlight.aai-job-env-stage { /* STAGE highlight -- orange */
+    color: var(--color-text-pre);
+}
+
+.aai-job-env-highlight.aai-job-env-prod { /* PROD highlight -- red */
+    color: #ef4444;
+}
+
+/* Vertical list of per-server progress rows. */
+.aai-job-server-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-xs);
+}
+
+/* A single server progress row. */
+.aai-job-server-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
-    background: #252526;
-    border: 1px solid #333;
-    border-radius: 4px;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-default);
 }
 
-.dmjob-server-name {
-    font-family: 'Cascadia Code', 'Consolas', monospace;
-    font-size: 12px;
-    color: #d4d4d4;
+/* The monospace server-name label in a progress row. */
+.aai-job-server-name {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-content);
+    color: var(--color-text-primary);
 }
 
-.dmjob-server-status {
-    font-size: 11px;
+/* The status text on the right of a server progress row. */
+.aai-job-server-status {
+    font-size: var(--font-size-body);
     font-weight: 600;
     min-width: 80px;
     text-align: right;
 }
 
-.dmjob-status-pending { color: #555; }
-.dmjob-status-running { color: #dcdcaa; }
-.dmjob-status-success { color: #4ade80; }
-.dmjob-status-failed { color: #ef4444; }
+/* Status color modifier -- pending (gray). */
+.aai-job-status-pending {
+    color: var(--color-border-strong);
+}
 
-/* Final summary */
-.dmjob-summary-success {
+/* Status color modifier -- running (yellow). */
+.aai-job-status-running {
+    color: var(--color-accent-departmental);
+}
+
+/* Status color modifier -- success (green). */
+.aai-job-status-success {
     color: #4ade80;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 0;
 }
 
-.dmjob-summary-failed {
+/* Status color modifier -- failed (red). */
+.aai-job-status-failed {
     color: #ef4444;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 0;
 }
 
-.dmjob-summary-partial {
-    color: #dcdcaa;
-    font-size: 13px;
+/* Final run summary -- all servers succeeded (green). */
+.aai-job-summary-success {
+    color: #4ade80;
+    font-size: var(--font-size-content-lg);
     font-weight: 600;
-    padding: 8px 0;
+    padding: var(--size-spacing-md) 0;
 }
 
-.dmjob-error-detail {
-    font-size: 11px;
-    color: #888;
-    padding: 4px 0 4px 12px;
+/* Final run summary -- all servers failed (red). */
+.aai-job-summary-failed {
+    color: #ef4444;
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    padding: var(--size-spacing-md) 0;
+}
+
+/* Final run summary -- mixed results (yellow). */
+.aai-job-summary-partial {
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    padding: var(--size-spacing-md) 0;
+}
+
+/* Per-server error detail line under a failed summary. */
+.aai-job-error-detail {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-xs) 0 var(--size-spacing-xs) var(--size-spacing-lg);
     border-left: 2px solid #ef4444;
-    margin-top: 4px;
+    margin-top: var(--size-spacing-xs);
 }
 
-/* Cooldown display */
-.dmjob-cooldown-active {
-    margin-top: 12px;
-    padding: 10px 12px;
+/* The cooldown-active notice block in a single-server confirm modal. */
+.aai-job-cooldown-active {
+    margin-top: var(--size-spacing-lg);
+    padding: 10px var(--size-spacing-lg);
     background: rgba(220, 220, 170, 0.08);
-    border: 1px solid rgba(220, 220, 170, 0.2);
-    border-radius: 5px;
-    font-size: 12px;
-    color: #dcdcaa;
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.2);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-content);
+    color: var(--color-accent-departmental);
     line-height: 1.6;
 }
 
-.dmjob-cooldown-icon {
-    font-size: 14px;
+/* The clock icon inside the cooldown notice. */
+.aai-job-cooldown-icon {
+    font-size: var(--font-size-heading-sm);
 }
 
-.dmjob-cooldown-clear {
+/* The "last executed" caption shown when no cooldown is active. */
+.aai-job-cooldown-clear {
     margin-top: 10px;
-    font-size: 11px;
-    color: #666;
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
 }
 
-/* DM API response inline display */
-.dmjob-dm-response {
-    font-size: 10px;
-    color: #888;
+/* Inline DM API response text appended to a success status. */
+.aai-job-dm-response {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     font-weight: 400;
-    margin-left: 6px;
+    margin-left: var(--size-spacing-sm);
+}
+
+/* Muted prompt line above the environment-selection buttons. */
+.aai-job-prompt {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-content);
+    margin: 0 0 var(--size-spacing-lg);
+}
+
+/* Confirmation question text shown before executing a job. */
+.aai-job-confirm-text {
+    margin: 0 0 var(--size-spacing-lg);
+}
+
+/* Status line shown while a job is executing. */
+.aai-job-running-text {
+    margin: 0 0 10px;
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-content);
+}
+
+/* Centered loading caption inside a job modal while data is in flight. */
+.aai-job-loading {
+    text-align: center;
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-lg);
+}
+
+/* Spacing wrapper that holds a job's roll-up summary below the server list. */
+.aai-job-summary-slot {
+    margin-top: var(--size-spacing-lg);
+}
+
+/* Status color modifier -- the primary server in a single-server job (blue). */
+.aai-job-status-primary {
+    color: var(--color-accent-platform);
+}
+
+/* Error message block shown inside a job modal body. */
+.aai-job-modal-error {
+    color: var(--color-text-pre);
+    padding: var(--size-spacing-sm);
+}
+
+/* Neutral notice block shown inside a job modal body. */
+.aai-job-modal-notice {
+    color: var(--color-accent-departmental);
+    padding: var(--size-spacing-sm);
 }
