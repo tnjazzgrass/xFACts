@@ -335,6 +335,7 @@ $DriftDescriptions = [ordered]@{
     'MALFORMED_SLIDEUP_STRUCTURE'       = "A slide-up panel's outer cc-slideup-overlay is missing its nested .cc-dialog child, or the .cc-dialog is missing required child elements."
     'MISSING_DIALOG_CLASS'              = "An overlay construct's inner .cc-dialog does not carry the matching secondary class (cc-dialog-modal inside a modal, cc-dialog-slide inside a slideout, cc-dialog-slideup inside a slide-up panel)."
     'MISSING_PANEL_PURPOSE_COMMENT'     = "An overlay construct is not preceded by an HTML purpose comment."
+    'MISSING_OVERLAY_BACKDROP_CLOSE'    = "An overlay construct's outer element does not carry a data-action-click matching its .cc-dialog-close button's close action; a backdrop click will not dismiss the construct."
     'OVERLAY_BLOCK_NON_CONTIGUOUS'      = "A non-overlay element or non-purpose comment appears within the overlay block; only formatting whitespace and per-construct purpose comments are permitted between constructs."
     'FORBIDDEN_HELPER_PAGE_PREFIX_ID'   = "A helper module function emits HTML with a page-prefixed ID."
     'FORBIDDEN_HELPER_NON_CHROME_ID'    = "A helper module function emits an ID that is not cc- prefixed; helper-emitted IDs are shared chrome and must carry the cc- prefix."
@@ -4338,11 +4339,22 @@ function Invoke-HtmlTokenWalk {
                     $idCodes = @(Get-IdValueDriftCodes -IdValue $a.Value -PagePrefix $PagePrefix -IsHelperEmission $IsHelperEmission)
 
                     # Overlay-ID shape check (single-rooted form,
-                    # <prefix>-modal-<purpose> etc).
+                    # <prefix>-modal-<purpose> etc). An id is treated as an
+                    # overlay-outer id only when its element also carries the
+                    # matching cc-*-overlay class. This prevents a natural
+                    # inner id such as <prefix>-slideout-title (the dialog
+                    # title element, which has no overlay class) from being
+                    # mistaken for an overlay outer and drawing a spurious
+                    # MISSING_PANEL_PURPOSE_COMMENT or MALFORMED_*_ID.
                     $oinfo = Get-OverlayIdInfo -IdValue $a.Value
+                    $elementOverlayClass = $null
+                    $classAttrForOverlayId = Get-AttributeByName -Attrs $attrs -Name 'class'
+                    if ($null -ne $classAttrForOverlayId) {
+                        $elementOverlayClass = Get-OverlayKindFromClass -ClassValue $classAttrForOverlayId.Value
+                    }
                     $purposeText = $null
                     $hasPurpose = $false
-                    if ($null -ne $oinfo.OverlayKind) {
+                    if ($null -ne $oinfo.OverlayKind -and $null -ne $elementOverlayClass) {
                         if ($null -ne $oinfo.DriftCode) { $idCodes += $oinfo.DriftCode }
                         # Purpose comment for overlay outer elements
                         if ($pendingCommentByTokenIdx.ContainsKey($i)) {
@@ -4831,6 +4843,153 @@ function Test-OverlayDialogClass {
 
     return ($dialogClassTokens -contains $expected)
 }
+
+# Test whether the outer overlay element carries a data-action-click that
+# matches its .cc-dialog-close button's data-action-click, per CC_HTML_Spec
+# Sec. 5.4.4 (the backdrop-close rule: a click on the overlay backdrop dismisses
+# the construct via the same close action as the X button). Returns $true on
+# match, $false when the outer action is absent or differs from the close
+# button's action. This function assumes the structural check
+# (Test-OverlayConstructStructure) has already returned $true; it re-walks
+# the same outer-element -> .cc-dialog -> .cc-dialog-header -> .cc-dialog-close
+# path independently to read the two action values.
+#
+# Footer controls (Cancel, Confirm) are deliberately not considered: they
+# carry their own distinct actions, not the close action, and have no bearing
+# on the backdrop-close contract, which is strictly outer-vs-X-button.
+#
+# When the outer element or the close button cannot be located (structural
+# fault), returns $true -- the structural fault is the caller's concern via
+# Test-OverlayConstructStructure.
+function Test-OverlayBackdropClose {
+    param(
+        [Parameter(Mandatory)]$Tokens,
+        [Parameter(Mandatory)][int]$OuterTokenIdx
+    )
+
+    if ($OuterTokenIdx -lt 0 -or $OuterTokenIdx -ge $Tokens.Count) { return $true }
+    $outerTok = $Tokens[$OuterTokenIdx]
+
+    # Outer element's data-action-click.
+    $outerAction = $null
+    if (-not [string]::IsNullOrWhiteSpace($outerTok.AttrText)) {
+        $outerAttrs = Get-AttributesFromToken -AttrText $outerTok.AttrText
+        $outerActionAttr = Get-AttributeByName -Attrs $outerAttrs -Name 'data-action-click'
+        if ($null -ne $outerActionAttr) { $outerAction = $outerActionAttr.Value }
+    }
+
+    $outerCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $OuterTokenIdx
+    if ($outerCloseIdx -le $OuterTokenIdx) { return $true }
+
+    # Locate the single .cc-dialog direct child.
+    $dialogIdx = -1
+    $cursor = $OuterTokenIdx + 1
+    while ($cursor -lt $outerCloseIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment')  { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag')   { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity')   { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $dialogIdx = $cursor
+            break
+        }
+        $cursor++
+    }
+    if ($dialogIdx -lt 0) { return $true }
+
+    $dialogCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $dialogIdx
+    if ($dialogCloseIdx -le $dialogIdx) { return $true }
+
+    # Locate the .cc-dialog-header direct child of .cc-dialog.
+    $headerIdx = -1
+    $cursor = $dialogIdx + 1
+    while ($cursor -lt $dialogCloseIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment')  { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag')   { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity')   { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $hdrTok = $Tokens[$cursor]
+            $hdrFirstClass = $null
+            if (-not [string]::IsNullOrWhiteSpace($hdrTok.AttrText)) {
+                $hdrAttrs = Get-AttributesFromToken -AttrText $hdrTok.AttrText
+                $hdrClass = Get-AttributeByName -Attrs $hdrAttrs -Name 'class'
+                if ($null -ne $hdrClass -and -not [string]::IsNullOrEmpty($hdrClass.Value)) {
+                    $hdrTokens = @($hdrClass.Value.Trim() -split '\s+')
+                    if ($hdrTokens.Count -gt 0) { $hdrFirstClass = $hdrTokens[0] }
+                }
+            }
+            if ($hdrFirstClass -eq 'cc-dialog-header') {
+                $headerIdx = $cursor
+                break
+            }
+            if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+            $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+            if ($childClose -lt 0 -or $childClose -ge $dialogCloseIdx) {
+                $cursor = $dialogCloseIdx
+            } else {
+                $cursor = $childClose + 1
+            }
+            continue
+        }
+        $cursor++
+    }
+    if ($headerIdx -lt 0) { return $true }
+
+    $headerCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $headerIdx
+    if ($headerCloseIdx -le $headerIdx) { return $true }
+
+    # Locate the .cc-dialog-close button within the header and read its
+    # data-action-click.
+    $closeAction = $null
+    $closeFound = $false
+    $cursor = $headerIdx + 1
+    while ($cursor -lt $headerCloseIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $btnTok = $Tokens[$cursor]
+            $btnFirstClass = $null
+            $btnAttrs = $null
+            if (-not [string]::IsNullOrWhiteSpace($btnTok.AttrText)) {
+                $btnAttrs = Get-AttributesFromToken -AttrText $btnTok.AttrText
+                $btnClass = Get-AttributeByName -Attrs $btnAttrs -Name 'class'
+                if ($null -ne $btnClass -and -not [string]::IsNullOrEmpty($btnClass.Value)) {
+                    $btnTokens = @($btnClass.Value.Trim() -split '\s+')
+                    if ($btnTokens.Count -gt 0) { $btnFirstClass = $btnTokens[0] }
+                }
+            }
+            if ($btnFirstClass -eq 'cc-dialog-close') {
+                $closeFound = $true
+                if ($null -ne $btnAttrs) {
+                    $closeActionAttr = Get-AttributeByName -Attrs $btnAttrs -Name 'data-action-click'
+                    if ($null -ne $closeActionAttr) { $closeAction = $closeActionAttr.Value }
+                }
+                break
+            }
+            if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+            $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+            if ($childClose -lt 0 -or $childClose -ge $headerCloseIdx) {
+                $cursor = $headerCloseIdx
+            } else {
+                $cursor = $childClose + 1
+            }
+            continue
+        }
+        $cursor++
+    }
+    if (-not $closeFound) { return $true }
+
+    # The rule: outer carries data-action-click and it equals the close
+    # button's data-action-click. Missing outer action, or a mismatch, is
+    # drift. The close button's own action is validated for resolution
+    # elsewhere; here only the equality of the two values matters.
+    if ([string]::IsNullOrWhiteSpace($outerAction)) { return $false }
+    return ($outerAction -eq $closeAction)
+}
 # Validate the overlay block after the token walk completes.
 function Invoke-OverlayPostWalkValidation {
     param(
@@ -4909,6 +5068,34 @@ function Invoke-OverlayPostWalkValidation {
                             -Code 'MISSING_DIALOG_CLASS' `
                             -Context "Overlay outer element at line $($c.AbsLine) is missing the expected secondary class '$expectedClass' on its inner .cc-dialog."
                     }
+                }
+            }
+
+            # Backdrop-close check (CC_HTML_Spec Sec. 5.4.4): the outer overlay
+            # element must carry a data-action-click matching its
+            # .cc-dialog-close button's close action.
+            $backdropOk = Test-OverlayBackdropClose `
+                -Tokens $Tokens `
+                -OuterTokenIdx $c.OuterTokenIdx
+            if (-not $backdropOk) {
+                $attached = $false
+                if (-not [string]::IsNullOrEmpty($c.IdValue)) {
+                    foreach ($r in $script:rows) {
+                        if ($r.FileName -eq $script:CurrentFile -and
+                            $r.ComponentType -eq 'HTML_ID' -and
+                            $r.ComponentName -eq $c.IdValue -and
+                            $r.LineStart -eq $c.AbsLine) {
+                            Add-DriftCode -Row $r -Code 'MISSING_OVERLAY_BACKDROP_CLOSE' `
+                                -Context "Overlay construct '$($c.IdValue)' outer element does not carry a data-action-click matching its .cc-dialog-close button; a backdrop click will not dismiss it."
+                            $attached = $true
+                            break
+                        }
+                    }
+                }
+                if (-not $attached -and $script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) {
+                    Add-DriftCode -Row $script:htmlFileRowByFile[$script:CurrentFile] `
+                        -Code 'MISSING_OVERLAY_BACKDROP_CLOSE' `
+                        -Context "Overlay outer element at line $($c.AbsLine) does not carry a data-action-click matching its .cc-dialog-close button; a backdrop click will not dismiss it."
                 }
             }
         }
