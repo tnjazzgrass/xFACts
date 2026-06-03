@@ -1,24 +1,48 @@
-# ============================================================================
-# xFACts Control Center - Index Maintenance API
-# Location: E:\xFACts-ControlCenter\scripts\routes\IndexMaintenance-API.ps1
-# 
-# API endpoints for Index Maintenance monitoring data.
-# Version: Tracked in dbo.System_Metadata (component: ServerOps.Index)
-# ============================================================================
+<#
+.SYNOPSIS
+    Provides the Index Maintenance dashboard's JSON API endpoints.
 
-# ----------------------------------------------------------------------------
+.DESCRIPTION
+    API routes backing the Control Center Index Maintenance dashboard. Exposes
+    read endpoints for live activity, process status, active rebuild execution,
+    the index queue and its details, database health, and per-process run
+    details, plus a per-database maintenance-schedule reader and writer and an
+    admin-gated manual process launch. Read endpoints query the xFActs AG
+    listener through the shared data-access helpers; the active-execution
+    endpoint additionally reads live rebuild progress from each maintenance
+    server's own session DMVs. Every endpoint runs the action-permission hook
+    and returns JSON.
+
+.COMPONENT
+    ServerOps.Index
+
+.NOTES
+    File Name : IndexMaintenance-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\IndexMaintenance-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers the GET and POST endpoints under /api/index, each gated by
+   ADLogin authentication and the Test-ActionEndpoint permission hook and
+   returning a JSON response. Read endpoints use Invoke-XFActsQuery against
+   the AG listener; schedule writes use Invoke-XFActsNonQuery; active-execution
+   reads per-server rebuild progress via Invoke-Sqlcmd against each server.
+   Prefix: (none)
+   ============================================================================ #>
+
 # GET /api/index/live-activity
-# Returns current running process info or last activity if idle
-# ----------------------------------------------------------------------------
+# Returns current running process info, or the last completed activity if idle.
 Add-PodeRoute -Method Get -Path '/api/index/live-activity' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Check for any IN_PROGRESS processes
-        $query = @"
-            SELECT 
+        $running = Invoke-XFActsQuery -Query @"
+            SELECT
                 process_name,
                 started_dttm,
                 DATEDIFF(SECOND, started_dttm, GETDATE()) AS elapsed_seconds,
@@ -29,53 +53,41 @@ Add-PodeRoute -Method Get -Path '/api/index/live-activity' -Authentication 'ADLo
               AND started_dttm IS NOT NULL
             ORDER BY started_dttm ASC
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+
         $runningProcesses = @()
-        
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $running) {
             $processName = $row['process_name']
             $startedDttm = $row['started_dttm']
             $elapsedSeconds = [int]$row['elapsed_seconds']
-            
-            # Get live count from Index_Registry based on process type
-            $countQuery = switch ($processName) {
-                'SYNC' { 
-                    "SELECT COUNT(*) AS cnt FROM ServerOps.Index_Registry WHERE usage_captured_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'" 
-                }
-                'SCAN' { 
-                    "SELECT COUNT(*) AS cnt FROM ServerOps.Index_Registry WHERE last_scanned_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'" 
-                }
-                'EXECUTE' { 
-                    # For EXECUTE, items_added is updated in real-time
-                    $null
-                }
-                'STATS' { 
-                    "SELECT COUNT(*) AS cnt FROM ServerOps.Index_Registry WHERE stats_last_updated >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'" 
-                }
-                default { $null }
-            }
-            
+
             $completedCount = 0
             if ($processName -eq 'EXECUTE') {
-                # Use items_added from Index_Status directly
+                # EXECUTE updates items_added in real time; use it directly.
                 $completedCount = if ($row['items_added'] -is [DBNull]) { 0 } else { [int]$row['items_added'] }
             }
-            elseif ($countQuery) {
-                $countCmd = $conn.CreateCommand()
-                $countCmd.CommandText = $countQuery
-                $countCmd.CommandTimeout = 10
-                $countResult = $countCmd.ExecuteScalar()
-                $completedCount = if ($countResult -is [DBNull]) { 0 } else { [int]$countResult }
+            else {
+                # SYNC/SCAN/STATS derive a live count from Index_Registry using
+                # the column that the process advances as it runs.
+                $countColumn = switch ($processName) {
+                    'SYNC'  { 'usage_captured_dttm' }
+                    'SCAN'  { 'last_scanned_dttm' }
+                    'STATS' { 'stats_last_updated' }
+                    default { $null }
+                }
+                if ($countColumn) {
+                    $countQuery = @"
+                        SELECT COUNT(*) AS cnt
+                        FROM ServerOps.Index_Registry
+                        WHERE $countColumn >= @since
+"@
+                    $countResult = Invoke-XFActsQuery -Query $countQuery -Parameters @{ since = $startedDttm }
+                    if ($countResult.Count -gt 0) {
+                        $cntVal = $countResult[0]['cnt']
+                        $completedCount = if ($cntVal -is [DBNull]) { 0 } else { [int]$cntVal }
+                    }
+                }
             }
-            
+
             $runningProcesses += [PSCustomObject]@{
                 ProcessName = $processName
                 StartedDttm = $startedDttm.ToString("yyyy-MM-dd HH:mm:ss")
@@ -83,11 +95,10 @@ Add-PodeRoute -Method Get -Path '/api/index/live-activity' -Authentication 'ADLo
                 CompletedCount = $completedCount
             }
         }
-        
-        # If nothing running, get last completed activity
+
         $lastActivity = $null
         if ($runningProcesses.Count -eq 0) {
-            $lastQuery = @"
+            $last = Invoke-XFActsQuery -Query @"
                 SELECT TOP 1
                     process_name,
                     completed_dttm,
@@ -100,16 +111,8 @@ Add-PodeRoute -Method Get -Path '/api/index/live-activity' -Authentication 'ADLo
                 WHERE completed_dttm IS NOT NULL
                 ORDER BY completed_dttm DESC
 "@
-            $lastCmd = $conn.CreateCommand()
-            $lastCmd.CommandText = $lastQuery
-            $lastCmd.CommandTimeout = 10
-            
-            $lastAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($lastCmd)
-            $lastDataset = New-Object System.Data.DataSet
-            $lastAdapter.Fill($lastDataset) | Out-Null
-            
-            if ($lastDataset.Tables[0].Rows.Count -gt 0) {
-                $lastRow = $lastDataset.Tables[0].Rows[0]
+            if ($last.Count -gt 0) {
+                $lastRow = $last[0]
                 $lastActivity = [PSCustomObject]@{
                     ProcessName = $lastRow['process_name']
                     CompletedDttm = if ($lastRow['completed_dttm'] -is [DBNull]) { $null } else { $lastRow['completed_dttm'].ToString("yyyy-MM-dd HH:mm:ss") }
@@ -121,9 +124,7 @@ Add-PodeRoute -Method Get -Path '/api/index/live-activity' -Authentication 'ADLo
                 }
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             IsRunning = ($runningProcesses.Count -gt 0)
             RunningProcesses = $runningProcesses
@@ -135,18 +136,17 @@ Add-PodeRoute -Method Get -Path '/api/index/live-activity' -Authentication 'ADLo
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/process-status
-# Returns status of all 4 index processes from Index_Status
-# ----------------------------------------------------------------------------
+# Returns the status of all four index processes, with a per-process CanLaunch
+# flag indicating whether the current user may manually launch it.
 Add-PodeRoute -Method Get -Path '/api/index/process-status' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+        $ctx = Get-UserContext -WebEvent $WebEvent
+        $canLaunch = [bool]$ctx.IsAdmin
+
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 process_name,
                 started_dttm,
                 completed_dttm,
@@ -158,27 +158,17 @@ Add-PodeRoute -Method Get -Path '/api/index/process-status' -Authentication 'ADL
                 items_failed,
                 last_error_message
             FROM ServerOps.Index_Status
-            ORDER BY 
-                CASE process_name 
-                    WHEN 'SYNC' THEN 1 
-                    WHEN 'SCAN' THEN 2 
-                    WHEN 'EXECUTE' THEN 3 
-                    WHEN 'STATS' THEN 4 
+            ORDER BY
+                CASE process_name
+                    WHEN 'SYNC' THEN 1
+                    WHEN 'SCAN' THEN 2
+                    WHEN 'EXECUTE' THEN 3
+                    WHEN 'STATS' THEN 4
                 END
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        $conn.Close()
-        
+
         $processes = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $processes += [PSCustomObject]@{
                 ProcessName = $row['process_name']
                 StartedDttm = if ($row['started_dttm'] -is [DBNull]) { $null } else { $row['started_dttm'].ToString("yyyy-MM-dd HH:mm:ss") }
@@ -190,9 +180,10 @@ Add-PodeRoute -Method Get -Path '/api/index/process-status' -Authentication 'ADL
                 ItemsSkipped = if ($row['items_skipped'] -is [DBNull]) { 0 } else { [int]$row['items_skipped'] }
                 ItemsFailed = if ($row['items_failed'] -is [DBNull]) { 0 } else { [int]$row['items_failed'] }
                 LastErrorMessage = if ($row['last_error_message'] -is [DBNull]) { $null } else { $row['last_error_message'] }
+                CanLaunch = $canLaunch
             }
         }
-        
+
         Write-PodeJsonResponse -Value $processes
     }
     catch {
@@ -200,64 +191,48 @@ Add-PodeRoute -Method Get -Path '/api/index/process-status' -Authentication 'ADL
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/active-execution
-# Returns real-time progress of currently executing index rebuild
-# ----------------------------------------------------------------------------
+# Returns real-time progress of any currently executing index rebuild by
+# reading live session DMVs from each maintenance-enabled server.
 Add-PodeRoute -Method Get -Path '/api/index/active-execution' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        # First check if EXECUTE is running
-        $xfactsConnString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $xfactsConn = New-Object System.Data.SqlClient.SqlConnection($xfactsConnString)
-        $xfactsConn.Open()
-        
-        $statusQuery = "SELECT last_status FROM ServerOps.Index_Status WHERE process_name = 'EXECUTE'"
-        $statusCmd = $xfactsConn.CreateCommand()
-        $statusCmd.CommandText = $statusQuery
-        $statusCmd.CommandTimeout = 5
-        $executeStatus = $statusCmd.ExecuteScalar()
-        
+        $statusRows = Invoke-XFActsQuery -Query @"
+            SELECT last_status
+            FROM ServerOps.Index_Status
+            WHERE process_name = 'EXECUTE'
+"@
+        $executeStatus = if ($statusRows.Count -gt 0) { $statusRows[0]['last_status'] } else { $null }
+
         if ($executeStatus -ne 'IN_PROGRESS') {
-            $xfactsConn.Close()
             Write-PodeJsonResponse -Value ([PSCustomObject]@{
                 IsExecuting = $false
                 ActiveRebuilds = @()
             })
             return
         }
-        
-        # Get list of servers that have index maintenance enabled
-        $serverQuery = @"
+
+        $servers = Invoke-XFActsQuery -Query @"
             SELECT DISTINCT sr.server_name
             FROM dbo.ServerRegistry sr
             WHERE sr.is_active = 1
               AND sr.serverops_index_enabled = 1
 "@
-        $serverCmd = $xfactsConn.CreateCommand()
-        $serverCmd.CommandText = $serverQuery
-        $serverCmd.CommandTimeout = 5
-        
-        $serverAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($serverCmd)
-        $serverDataset = New-Object System.Data.DataSet
-        $serverAdapter.Fill($serverDataset) | Out-Null
-        
-        $xfactsConn.Close()
-        
+
         $activeRebuilds = @()
-        
-        # Query each server for active index operations
-        foreach ($serverRow in $serverDataset.Tables[0].Rows) {
+
+        foreach ($serverRow in $servers) {
             $serverName = $serverRow['server_name']
-            
+
             try {
-                $serverConnString = "Server=$serverName;Database=master;Integrated Security=True;Connect Timeout=3;"
-                $serverConn = New-Object System.Data.SqlClient.SqlConnection($serverConnString)
-                $serverConn.Open()
-                
+                # Per-server live rebuild progress comes from that server's own
+                # session DMVs, so this targets each server directly rather than
+                # the AG listener. Invoke-Sqlcmd carries -TrustServerCertificate
+                # and -ApplicationName per the SQL connectivity rules.
                 $progressQuery = @"
                     WITH agg AS
                     (
-                        SELECT qp.session_id, 
+                        SELECT qp.session_id,
                                SUM(qp.[row_count]) AS [RowsProcessed],
                                SUM(qp.[estimate_row_count]) AS [TotalRows],
                                MAX(qp.last_active_time) - MIN(qp.first_active_time) AS [ElapsedMS],
@@ -267,7 +242,7 @@ Add-PodeRoute -Method Get -Path '/api/index/active-execution' -Authentication 'A
                         FROM sys.dm_exec_query_profiles qp
                         WHERE qp.[physical_operator_name] IN (N'Table Scan', N'Clustered Index Scan',
                                                               N'Index Scan', N'Sort')
-                        AND qp.[session_id] IN (SELECT session_id FROM sys.dm_exec_requests 
+                        AND qp.[session_id] IN (SELECT session_id FROM sys.dm_exec_requests
                                                 WHERE command IN ('CREATE INDEX','ALTER INDEX','ALTER TABLE'))
                         GROUP BY qp.session_id
                     ), comp AS
@@ -279,8 +254,8 @@ Add-PodeRoute -Method Get -Path '/api/index/active-execution' -Authentication 'A
                         WHERE [TotalRows] > 0
                     )
                     SELECT c.session_id,
-                           LTRIM(RTRIM(SUBSTRING(t.text, 
-                               CHARINDEX('[', t.text) + 1, 
+                           LTRIM(RTRIM(SUBSTRING(t.text,
+                               CHARINDEX('[', t.text) + 1,
                                CHARINDEX(']', t.text) - CHARINDEX('[', t.text) - 1))) AS [IndexName],
                            DB_NAME(r.database_id) AS [DatabaseName],
                            c.[CurrentStep],
@@ -290,10 +265,10 @@ Add-PodeRoute -Method Get -Path '/api/index/active-execution' -Authentication 'A
                            CONVERT(DECIMAL(5, 2),
                                    ((c.[RowsProcessed] * 1.0) / c.[TotalRows]) * 100) AS [PercentComplete],
                            c.[ElapsedSeconds],
-                           CASE WHEN c.[RowsProcessed] > 0 
+                           CASE WHEN c.[RowsProcessed] > 0
                                 THEN ((c.[ElapsedSeconds] / c.[RowsProcessed]) * c.[RowsLeft])
                                 ELSE 0 END AS [EstimatedSecondsLeft],
-                           CASE WHEN c.[RowsProcessed] > 0 
+                           CASE WHEN c.[RowsProcessed] > 0
                                 THEN DATEADD(SECOND,
                                        ((c.[ElapsedSeconds] / c.[RowsProcessed]) * c.[RowsLeft]),
                                        GETDATE())
@@ -302,39 +277,33 @@ Add-PodeRoute -Method Get -Path '/api/index/active-execution' -Authentication 'A
                     JOIN sys.dm_exec_requests r ON c.session_id = r.session_id
                     CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
 "@
-                
-                $progressCmd = $serverConn.CreateCommand()
-                $progressCmd.CommandText = $progressQuery
-                $progressCmd.CommandTimeout = 10
-                
-                $progressAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($progressCmd)
-                $progressDataset = New-Object System.Data.DataSet
-                $progressAdapter.Fill($progressDataset) | Out-Null
-                
-                $serverConn.Close()
-                
-                foreach ($row in $progressDataset.Tables[0].Rows) {
+
+                $progressRows = Invoke-Sqlcmd -ServerInstance $serverName -Database 'master' `
+                    -Query $progressQuery -QueryTimeout 10 `
+                    -ApplicationName 'xFACts Control Center' -TrustServerCertificate -ErrorAction Stop
+
+                foreach ($row in $progressRows) {
                     $activeRebuilds += [PSCustomObject]@{
                         ServerName = $serverName
-                        DatabaseName = if ($row['DatabaseName'] -is [DBNull]) { 'Unknown' } else { $row['DatabaseName'] }
-                        IndexName = if ($row['IndexName'] -is [DBNull]) { 'Unknown' } else { $row['IndexName'] }
-                        CurrentStep = if ($row['CurrentStep'] -is [DBNull]) { 'Unknown' } else { $row['CurrentStep'] }
-                        TotalRows = if ($row['TotalRows'] -is [DBNull]) { 0 } else { [long]$row['TotalRows'] }
-                        RowsProcessed = if ($row['RowsProcessed'] -is [DBNull]) { 0 } else { [long]$row['RowsProcessed'] }
-                        RowsLeft = if ($row['RowsLeft'] -is [DBNull]) { 0 } else { [long]$row['RowsLeft'] }
-                        PercentComplete = if ($row['PercentComplete'] -is [DBNull]) { 0 } else { [decimal]$row['PercentComplete'] }
-                        ElapsedSeconds = if ($row['ElapsedSeconds'] -is [DBNull]) { 0 } else { [decimal]$row['ElapsedSeconds'] }
-                        EstimatedSecondsLeft = if ($row['EstimatedSecondsLeft'] -is [DBNull]) { 0 } else { [decimal]$row['EstimatedSecondsLeft'] }
-                        EstimatedCompletionTime = if ($row['EstimatedCompletionTime'] -is [DBNull]) { $null } else { $row['EstimatedCompletionTime'].ToString("yyyy-MM-dd HH:mm:ss") }
+                        DatabaseName = if ($row.DatabaseName -is [DBNull]) { 'Unknown' } else { $row.DatabaseName }
+                        IndexName = if ($row.IndexName -is [DBNull]) { 'Unknown' } else { $row.IndexName }
+                        CurrentStep = if ($row.CurrentStep -is [DBNull]) { 'Unknown' } else { $row.CurrentStep }
+                        TotalRows = if ($row.TotalRows -is [DBNull]) { 0 } else { [long]$row.TotalRows }
+                        RowsProcessed = if ($row.RowsProcessed -is [DBNull]) { 0 } else { [long]$row.RowsProcessed }
+                        RowsLeft = if ($row.RowsLeft -is [DBNull]) { 0 } else { [long]$row.RowsLeft }
+                        PercentComplete = if ($row.PercentComplete -is [DBNull]) { 0 } else { [decimal]$row.PercentComplete }
+                        ElapsedSeconds = if ($row.ElapsedSeconds -is [DBNull]) { 0 } else { [decimal]$row.ElapsedSeconds }
+                        EstimatedSecondsLeft = if ($row.EstimatedSecondsLeft -is [DBNull]) { 0 } else { [decimal]$row.EstimatedSecondsLeft }
+                        EstimatedCompletionTime = if ($row.EstimatedCompletionTime -is [DBNull]) { $null } else { $row.EstimatedCompletionTime.ToString("yyyy-MM-dd HH:mm:ss") }
                     }
                 }
             }
             catch {
-                # Server unavailable, skip it
+                # Server unavailable - skip it.
             }
         }
-        
-        # Deduplicate by session characteristics (same index rebuild seen via listener and direct connection)
+
+        # Deduplicate the same rebuild seen via multiple connections.
         $uniqueRebuilds = @()
         if ($activeRebuilds.Count -gt 0) {
             $seen = @{}
@@ -346,7 +315,7 @@ Add-PodeRoute -Method Get -Path '/api/index/active-execution' -Authentication 'A
                 }
             }
         }
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             IsExecuting = $true
             ActiveRebuilds = $uniqueRebuilds
@@ -357,19 +326,14 @@ Add-PodeRoute -Method Get -Path '/api/index/active-execution' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/queue-summary
-# Returns summary counts and totals for the Index_Queue
-# ----------------------------------------------------------------------------
+# Returns per-status counts and totals for the index queue.
 Add-PodeRoute -Method Get -Path '/api/index/queue-summary' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
+        $rows = Invoke-XFActsQuery -Query @"
             WITH QueueSummary AS (
-                SELECT 
+                SELECT
                     status,
                     COUNT(*) AS item_count,
                     SUM(page_count) AS total_pages,
@@ -378,10 +342,10 @@ Add-PodeRoute -Method Get -Path '/api/index/queue-summary' -Authentication 'ADLo
                     MAX(deferral_count) AS max_deferrals
                 FROM ServerOps.Index_Queue
                 GROUP BY status
-                
+
                 UNION ALL
-                
-                SELECT 
+
+                SELECT
                     'TOTAL' AS status,
                     COUNT(*) AS item_count,
                     SUM(page_count) AS total_pages,
@@ -391,29 +355,19 @@ Add-PodeRoute -Method Get -Path '/api/index/queue-summary' -Authentication 'ADLo
                 FROM ServerOps.Index_Queue
             )
             SELECT * FROM QueueSummary
-            ORDER BY 
-                CASE status 
-                    WHEN 'PENDING' THEN 1 
-                    WHEN 'IN_PROGRESS' THEN 2 
-                    WHEN 'SCHEDULED' THEN 3 
-                    WHEN 'DEFERRED' THEN 4 
-                    WHEN 'FAILED' THEN 5 
-                    WHEN 'TOTAL' THEN 99 
+            ORDER BY
+                CASE status
+                    WHEN 'PENDING' THEN 1
+                    WHEN 'IN_PROGRESS' THEN 2
+                    WHEN 'SCHEDULED' THEN 3
+                    WHEN 'DEFERRED' THEN 4
+                    WHEN 'FAILED' THEN 5
+                    WHEN 'TOTAL' THEN 99
                 END
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        $conn.Close()
-        
+
         $summary = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $summary += [PSCustomObject]@{
                 Status = $row['status']
                 ItemCount = if ($row['item_count'] -is [DBNull]) { 0 } else { [int]$row['item_count'] }
@@ -423,7 +377,7 @@ Add-PodeRoute -Method Get -Path '/api/index/queue-summary' -Authentication 'ADLo
                 MaxDeferrals = if ($row['max_deferrals'] -is [DBNull]) { 0 } else { [int]$row['max_deferrals'] }
             }
         }
-        
+
         Write-PodeJsonResponse -Value $summary
     }
     catch {
@@ -431,18 +385,13 @@ Add-PodeRoute -Method Get -Path '/api/index/queue-summary' -Authentication 'ADLo
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/queue-details
-# Returns all items in the Index_Queue with database info
-# ----------------------------------------------------------------------------
+# Returns all items in the index queue with server/database context.
 Add-PodeRoute -Method Get -Path '/api/index/queue-details' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 q.queue_id,
                 sr.server_name,
                 dr.database_name,
@@ -464,19 +413,9 @@ Add-PodeRoute -Method Get -Path '/api/index/queue-details' -Authentication 'ADLo
             JOIN dbo.ServerRegistry sr ON dr.server_id = sr.server_id
             ORDER BY q.priority_score DESC, q.page_count DESC
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 30
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        $conn.Close()
-        
+
         $items = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $items += [PSCustomObject]@{
                 QueueId = [int]$row['queue_id']
                 ServerName = $row['server_name']
@@ -496,7 +435,7 @@ Add-PodeRoute -Method Get -Path '/api/index/queue-details' -Authentication 'ADLo
                 QueuedDttm = if ($row['queued_dttm'] -is [DBNull]) { $null } else { $row['queued_dttm'].ToString("yyyy-MM-dd HH:mm:ss") }
             }
         }
-        
+
         Write-PodeJsonResponse -Value $items
     }
     catch {
@@ -504,19 +443,13 @@ Add-PodeRoute -Method Get -Path '/api/index/queue-details' -Authentication 'ADLo
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/database-health
-# Returns aggregated index health metrics by server/database
-# Includes index_maintenance_enabled and stats_maintenance_enabled for grouping
-# ----------------------------------------------------------------------------
+# Returns aggregated index-health metrics by server/database, including the
+# maintenance-mode flags used for grouping on the dashboard.
 Add-PodeRoute -Method Get -Path '/api/index/database-health' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get fragmentation threshold from config
-        $thresholdQuery = @"
+        $thresholdRows = Invoke-XFActsQuery -Query @"
             SELECT CAST(setting_value AS DECIMAL(5,2)) AS frag_threshold
             FROM dbo.GlobalConfig
             WHERE module_name = 'ServerOps'
@@ -524,14 +457,13 @@ Add-PodeRoute -Method Get -Path '/api/index/database-health' -Authentication 'AD
               AND setting_name = 'index_frag_threshold'
               AND is_active = 1
 "@
-        $thresholdCmd = $conn.CreateCommand()
-        $thresholdCmd.CommandText = $thresholdQuery
-        $thresholdCmd.CommandTimeout = 5
-        $fragThreshold = $thresholdCmd.ExecuteScalar()
-        if ($fragThreshold -is [DBNull] -or $null -eq $fragThreshold) { $fragThreshold = 15.0 }
-        
-        $query = @"
-            SELECT 
+        $fragThreshold = 15.0
+        if ($thresholdRows.Count -gt 0 -and $thresholdRows[0]['frag_threshold'] -isnot [DBNull] -and $null -ne $thresholdRows[0]['frag_threshold']) {
+            $fragThreshold = [decimal]$thresholdRows[0]['frag_threshold']
+        }
+
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 sr.server_id,
                 sr.server_name,
                 dr.database_id,
@@ -539,9 +471,9 @@ Add-PodeRoute -Method Get -Path '/api/index/database-health' -Authentication 'AD
                 dc.index_maintenance_enabled,
                 dc.stats_maintenance_enabled,
                 COUNT(ir.index_id) AS total_indexes,
-                SUM(CASE WHEN ir.current_fragmentation_pct >= $fragThreshold AND ir.is_dropped = 0 THEN 1 ELSE 0 END) AS fragmented_count,
+                SUM(CASE WHEN ir.current_fragmentation_pct >= @fragThreshold AND ir.is_dropped = 0 THEN 1 ELSE 0 END) AS fragmented_count,
                 SUM(CASE WHEN ir.current_fragmentation_pct IS NULL AND ir.is_dropped = 0 THEN 1 ELSE 0 END) AS never_scanned,
-                AVG(CASE WHEN ir.is_dropped = 0 AND ir.current_fragmentation_pct IS NOT NULL 
+                AVG(CASE WHEN ir.is_dropped = 0 AND ir.current_fragmentation_pct IS NOT NULL
                          THEN ir.current_fragmentation_pct ELSE NULL END) AS avg_fragmentation,
                 MAX(ir.last_scanned_dttm) AS last_scan_date,
                 MAX(ir.last_rebuild_dttm) AS last_rebuild_date,
@@ -552,23 +484,13 @@ Add-PodeRoute -Method Get -Path '/api/index/database-health' -Authentication 'AD
             LEFT JOIN ServerOps.Index_Registry ir ON ir.database_id = dr.database_id AND ir.is_dropped = 0
             WHERE (dc.index_maintenance_enabled = 1 OR dc.stats_maintenance_enabled = 1)
               AND dr.is_active = 1
-            GROUP BY sr.server_id, sr.server_name, dr.database_id, dr.database_name, 
+            GROUP BY sr.server_id, sr.server_name, dr.database_id, dr.database_name,
                      dc.index_maintenance_enabled, dc.stats_maintenance_enabled
             ORDER BY sr.server_id, dr.database_id
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 30
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        $conn.Close()
-        
+"@ -Parameters @{ fragThreshold = $fragThreshold }
+
         $databases = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $databases += [PSCustomObject]@{
                 ServerId = [int]$row['server_id']
                 ServerName = $row['server_name']
@@ -585,7 +507,7 @@ Add-PodeRoute -Method Get -Path '/api/index/database-health' -Authentication 'AD
                 InQueue = if ($row['in_queue'] -is [DBNull]) { 0 } else { [int]$row['in_queue'] }
             }
         }
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             FragmentationThreshold = $fragThreshold
             Databases = $databases
@@ -596,35 +518,22 @@ Add-PodeRoute -Method Get -Path '/api/index/database-health' -Authentication 'AD
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/sync-details
-# Returns details from the last SYNC run
-# ----------------------------------------------------------------------------
+# Returns details from the last registry-sync run.
 Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get last SYNC run info
-        $statusQuery = @"
+        $statusRows = Invoke-XFActsQuery -Query @"
             SELECT started_dttm, completed_dttm, last_duration_seconds,
                    items_processed, items_added, items_skipped
             FROM ServerOps.Index_Status
             WHERE process_name = 'SYNC'
 "@
-        $statusCmd = $conn.CreateCommand()
-        $statusCmd.CommandText = $statusQuery
-        $statusCmd.CommandTimeout = 10
-        
-        $statusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($statusCmd)
-        $statusDataset = New-Object System.Data.DataSet
-        $statusAdapter.Fill($statusDataset) | Out-Null
-        
+
         $summary = $null
         $startedDttm = $null
-        if ($statusDataset.Tables[0].Rows.Count -gt 0) {
-            $row = $statusDataset.Tables[0].Rows[0]
+        if ($statusRows.Count -gt 0) {
+            $row = $statusRows[0]
             $startedDttm = if ($row['started_dttm'] -is [DBNull]) { $null } else { $row['started_dttm'] }
             $summary = [PSCustomObject]@{
                 StartedDttm = if ($startedDttm) { $startedDttm.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
@@ -635,11 +544,10 @@ Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLog
                 TotalDropped = if ($row['items_skipped'] -is [DBNull]) { 0 } else { [int]$row['items_skipped'] }
             }
         }
-        
-        # Get by-database breakdown from last run
+
         $byDatabase = @()
         if ($startedDttm) {
-            $dbQuery = @"
+            $dbRows = Invoke-XFActsQuery -Query @"
                 SELECT TOP 50
                     es.server_name AS ServerName,
                     es.database_name AS DatabaseName,
@@ -650,18 +558,10 @@ Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLog
                 JOIN dbo.DatabaseRegistry dr ON es.database_name = dr.database_name
                 JOIN dbo.ServerRegistry sr ON es.server_name = sr.server_name
                 WHERE es.process_name = 'SYNC'
-                  AND es.started_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'
+                  AND es.started_dttm >= @since
                 ORDER BY sr.server_id, dr.database_id
-"@
-            $dbCmd = $conn.CreateCommand()
-            $dbCmd.CommandText = $dbQuery
-            $dbCmd.CommandTimeout = 10
-            
-            $dbAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($dbCmd)
-            $dbDataset = New-Object System.Data.DataSet
-            $dbAdapter.Fill($dbDataset) | Out-Null
-            
-            foreach ($row in $dbDataset.Tables[0].Rows) {
+"@ -Parameters @{ since = $startedDttm }
+            foreach ($row in $dbRows) {
                 $byDatabase += [PSCustomObject]@{
                     ServerName = $row['ServerName']
                     DatabaseName = $row['DatabaseName']
@@ -671,29 +571,20 @@ Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLog
                 }
             }
         }
-        
-        # Get newly added indexes (created since last SYNC started)
+
         $addedIndexes = @()
         if ($startedDttm) {
-            $addedQuery = @"
+            $addedRows = Invoke-XFActsQuery -Query @"
                 SELECT TOP 100
                     dr.database_name AS DatabaseName,
                     ir.table_name AS TableName,
                     ir.index_name AS IndexName
                 FROM ServerOps.Index_Registry ir
                 JOIN dbo.DatabaseRegistry dr ON ir.database_id = dr.database_id
-                WHERE ir.created_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'
+                WHERE ir.created_dttm >= @since
                 ORDER BY dr.database_name, ir.table_name, ir.index_name
-"@
-            $addedCmd = $conn.CreateCommand()
-            $addedCmd.CommandText = $addedQuery
-            $addedCmd.CommandTimeout = 10
-            
-            $addedAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($addedCmd)
-            $addedDataset = New-Object System.Data.DataSet
-            $addedAdapter.Fill($addedDataset) | Out-Null
-            
-            foreach ($row in $addedDataset.Tables[0].Rows) {
+"@ -Parameters @{ since = $startedDttm }
+            foreach ($row in $addedRows) {
                 $addedIndexes += [PSCustomObject]@{
                     DatabaseName = $row['DatabaseName']
                     TableName = $row['TableName']
@@ -701,11 +592,10 @@ Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLog
                 }
             }
         }
-        
-        # Get dropped indexes detected
+
         $droppedIndexes = @()
         if ($startedDttm) {
-            $droppedQuery = @"
+            $droppedRows = Invoke-XFActsQuery -Query @"
                 SELECT TOP 100
                     dr.database_name AS DatabaseName,
                     ir.table_name AS TableName,
@@ -713,18 +603,10 @@ Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLog
                 FROM ServerOps.Index_Registry ir
                 JOIN dbo.DatabaseRegistry dr ON ir.database_id = dr.database_id
                 WHERE ir.is_dropped = 1
-                  AND ir.dropped_detected_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'
+                  AND ir.dropped_detected_dttm >= @since
                 ORDER BY dr.database_name, ir.table_name, ir.index_name
-"@
-            $droppedCmd = $conn.CreateCommand()
-            $droppedCmd.CommandText = $droppedQuery
-            $droppedCmd.CommandTimeout = 10
-            
-            $droppedAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($droppedCmd)
-            $droppedDataset = New-Object System.Data.DataSet
-            $droppedAdapter.Fill($droppedDataset) | Out-Null
-            
-            foreach ($row in $droppedDataset.Tables[0].Rows) {
+"@ -Parameters @{ since = $startedDttm }
+            foreach ($row in $droppedRows) {
                 $droppedIndexes += [PSCustomObject]@{
                     DatabaseName = $row['DatabaseName']
                     TableName = $row['TableName']
@@ -732,9 +614,7 @@ Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLog
                 }
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Summary = $summary
             ByDatabase = $byDatabase
@@ -747,37 +627,23 @@ Add-PodeRoute -Method Get -Path '/api/index/sync-details' -Authentication 'ADLog
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/scan-details
-# Returns details from the last SCAN run - what fragmentation was found
-# Uses Index_Registry for indexes not yet rebuilt, Index_ExecutionLog for those already processed
-# ----------------------------------------------------------------------------
+# Returns details from the last fragmentation-scan run.
 Add-PodeRoute -Method Get -Path '/api/index/scan-details' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get last SCAN run info
-        $statusQuery = @"
+        $statusRows = Invoke-XFActsQuery -Query @"
             SELECT started_dttm, completed_dttm, last_duration_seconds,
                    items_processed, items_added, items_skipped
             FROM ServerOps.Index_Status
             WHERE process_name = 'SCAN'
 "@
-        $statusCmd = $conn.CreateCommand()
-        $statusCmd.CommandText = $statusQuery
-        $statusCmd.CommandTimeout = 10
-        
-        $statusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($statusCmd)
-        $statusDataset = New-Object System.Data.DataSet
-        $statusAdapter.Fill($statusDataset) | Out-Null
-        
+
         $summary = $null
         $startedDttm = $null
         $completedDttm = $null
-        if ($statusDataset.Tables[0].Rows.Count -gt 0) {
-            $row = $statusDataset.Tables[0].Rows[0]
+        if ($statusRows.Count -gt 0) {
+            $row = $statusRows[0]
             $startedDttm = if ($row['started_dttm'] -is [DBNull]) { $null } else { $row['started_dttm'] }
             $completedDttm = if ($row['completed_dttm'] -is [DBNull]) { $null } else { $row['completed_dttm'] }
             $summary = [PSCustomObject]@{
@@ -789,29 +655,25 @@ Add-PodeRoute -Method Get -Path '/api/index/scan-details' -Authentication 'ADLog
                 TotalRemoved = if ($row['items_skipped'] -is [DBNull]) { 0 } else { [int]$row['items_skipped'] }
             }
         }
-        
-        # Get indexes scanned during the scan window
-        # If last_rebuild_dttm > last_scanned_dttm, use fragmentation_pct_before from Index_ExecutionLog
-        # Otherwise use current_fragmentation_pct from Index_Registry
-        # Check actual queue presence or execution log to determine if index was queued
+
         $scannedIndexes = @()
         if ($startedDttm -and $completedDttm) {
-            $scannedQuery = @"
-                SELECT 
+            $scannedRows = Invoke-XFActsQuery -Query @"
+                SELECT
                     sr.server_name AS ServerName,
                     dr.database_name AS DatabaseName,
                     ir.schema_name AS SchemaName,
                     ir.table_name AS TableName,
                     ir.index_name AS IndexName,
-                    CASE 
-                        WHEN ir.last_rebuild_dttm IS NULL OR ir.last_rebuild_dttm < ir.last_scanned_dttm 
+                    CASE
+                        WHEN ir.last_rebuild_dttm IS NULL OR ir.last_rebuild_dttm < ir.last_scanned_dttm
                         THEN ir.current_fragmentation_pct
                         ELSE COALESCE(el.fragmentation_pct_before, ir.current_fragmentation_pct)
                     END AS FragmentationPct,
                     ir.current_page_count AS PageCount,
-                    CASE 
+                    CASE
                         WHEN iq.registry_id IS NOT NULL THEN 1
-                        WHEN el.registry_id IS NOT NULL AND el.started_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))' THEN 1
+                        WHEN el.registry_id IS NOT NULL AND el.started_dttm >= @since THEN 1
                         ELSE 0
                     END AS WasQueued,
                     sr.server_id,
@@ -819,31 +681,23 @@ Add-PodeRoute -Method Get -Path '/api/index/scan-details' -Authentication 'ADLog
                 FROM ServerOps.Index_Registry ir
                 JOIN dbo.DatabaseRegistry dr ON ir.database_id = dr.database_id
                 JOIN dbo.ServerRegistry sr ON dr.server_id = sr.server_id
-                LEFT JOIN ServerOps.Index_ExecutionLog el 
+                LEFT JOIN ServerOps.Index_ExecutionLog el
                     ON el.registry_id = ir.registry_id
                     AND CAST(el.started_dttm AS DATE) = CAST(ir.last_rebuild_dttm AS DATE)
                     AND el.status = 'SUCCESS'
                 LEFT JOIN ServerOps.Index_Queue iq
                     ON iq.registry_id = ir.registry_id
-                WHERE ir.last_scanned_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'
-                  AND ir.last_scanned_dttm <= '$($completedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'
+                WHERE ir.last_scanned_dttm >= @since
+                  AND ir.last_scanned_dttm <= @until
                   AND ir.is_dropped = 0
-                ORDER BY sr.server_id, dr.database_id, 
-                    CASE 
-                        WHEN ir.last_rebuild_dttm IS NULL OR ir.last_rebuild_dttm < ir.last_scanned_dttm 
+                ORDER BY sr.server_id, dr.database_id,
+                    CASE
+                        WHEN ir.last_rebuild_dttm IS NULL OR ir.last_rebuild_dttm < ir.last_scanned_dttm
                         THEN ir.current_fragmentation_pct
                         ELSE COALESCE(el.fragmentation_pct_before, ir.current_fragmentation_pct)
                     END DESC
-"@
-            $scannedCmd = $conn.CreateCommand()
-            $scannedCmd.CommandText = $scannedQuery
-            $scannedCmd.CommandTimeout = 30
-            
-            $scannedAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($scannedCmd)
-            $scannedDataset = New-Object System.Data.DataSet
-            $scannedAdapter.Fill($scannedDataset) | Out-Null
-            
-            foreach ($row in $scannedDataset.Tables[0].Rows) {
+"@ -Parameters @{ since = $startedDttm; until = $completedDttm }
+            foreach ($row in $scannedRows) {
                 $scannedIndexes += [PSCustomObject]@{
                     ServerName = $row['ServerName']
                     DatabaseName = $row['DatabaseName']
@@ -856,9 +710,7 @@ Add-PodeRoute -Method Get -Path '/api/index/scan-details' -Authentication 'ADLog
                 }
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Summary = $summary
             ScannedIndexes = $scannedIndexes
@@ -869,35 +721,22 @@ Add-PodeRoute -Method Get -Path '/api/index/scan-details' -Authentication 'ADLog
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/execute-details
-# Returns details from the last EXECUTE run
-# ----------------------------------------------------------------------------
+# Returns details from the last index-maintenance (rebuild) run.
 Add-PodeRoute -Method Get -Path '/api/index/execute-details' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get last EXECUTE run info
-        $statusQuery = @"
+        $statusRows = Invoke-XFActsQuery -Query @"
             SELECT started_dttm, completed_dttm, last_duration_seconds,
                    items_processed, items_added, items_skipped, items_failed
             FROM ServerOps.Index_Status
             WHERE process_name = 'EXECUTE'
 "@
-        $statusCmd = $conn.CreateCommand()
-        $statusCmd.CommandText = $statusQuery
-        $statusCmd.CommandTimeout = 10
-        
-        $statusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($statusCmd)
-        $statusDataset = New-Object System.Data.DataSet
-        $statusAdapter.Fill($statusDataset) | Out-Null
-        
+
         $summary = $null
         $startedDttm = $null
-        if ($statusDataset.Tables[0].Rows.Count -gt 0) {
-            $row = $statusDataset.Tables[0].Rows[0]
+        if ($statusRows.Count -gt 0) {
+            $row = $statusRows[0]
             $startedDttm = if ($row['started_dttm'] -is [DBNull]) { $null } else { $row['started_dttm'] }
             $summary = [PSCustomObject]@{
                 StartedDttm = if ($startedDttm) { $startedDttm.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
@@ -908,12 +747,11 @@ Add-PodeRoute -Method Get -Path '/api/index/execute-details' -Authentication 'AD
                 TotalDeferred = if ($row['items_skipped'] -is [DBNull]) { 0 } else { [int]$row['items_skipped'] }
             }
         }
-        
-        # Get rebuilt indexes from last run
+
         $rebuiltIndexes = @()
         if ($startedDttm) {
-            $rebuildQuery = @"
-                SELECT 
+            $rebuildRows = Invoke-XFActsQuery -Query @"
+                SELECT
                     sr.server_name AS ServerName,
                     dr.database_name AS DatabaseName,
                     el.schema_name AS SchemaName,
@@ -926,19 +764,11 @@ Add-PodeRoute -Method Get -Path '/api/index/execute-details' -Authentication 'AD
                 FROM ServerOps.Index_ExecutionLog el
                 JOIN dbo.DatabaseRegistry dr ON el.database_id = dr.database_id
                 JOIN dbo.ServerRegistry sr ON dr.server_id = sr.server_id
-                WHERE el.started_dttm >= '$($startedDttm.ToString("yyyy-MM-dd HH:mm:ss"))'
+                WHERE el.started_dttm >= @since
                   AND el.status IN ('SUCCESS', 'PARTIAL')
                 ORDER BY sr.server_id, dr.database_id, el.started_dttm
-"@
-            $rebuildCmd = $conn.CreateCommand()
-            $rebuildCmd.CommandText = $rebuildQuery
-            $rebuildCmd.CommandTimeout = 10
-            
-            $rebuildAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($rebuildCmd)
-            $rebuildDataset = New-Object System.Data.DataSet
-            $rebuildAdapter.Fill($rebuildDataset) | Out-Null
-            
-            foreach ($row in $rebuildDataset.Tables[0].Rows) {
+"@ -Parameters @{ since = $startedDttm }
+            foreach ($row in $rebuildRows) {
                 $rebuiltIndexes += [PSCustomObject]@{
                     ServerName = $row['ServerName']
                     DatabaseName = $row['DatabaseName']
@@ -952,9 +782,7 @@ Add-PodeRoute -Method Get -Path '/api/index/execute-details' -Authentication 'AD
                 }
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Summary = $summary
             RebuiltIndexes = $rebuiltIndexes
@@ -965,35 +793,22 @@ Add-PodeRoute -Method Get -Path '/api/index/execute-details' -Authentication 'AD
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/stats-details
-# Returns details from the last STATS run - summary by database plus failures
-# ----------------------------------------------------------------------------
+# Returns details from the last statistics-update run: summary by database
+# plus any failures.
 Add-PodeRoute -Method Get -Path '/api/index/stats-details' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get last STATS run info
-        $statusQuery = @"
+        $statusRows = Invoke-XFActsQuery -Query @"
             SELECT started_dttm, completed_dttm, last_duration_seconds,
                    items_processed, items_added, items_skipped, items_failed
             FROM ServerOps.Index_Status
             WHERE process_name = 'STATS'
 "@
-        $statusCmd = $conn.CreateCommand()
-        $statusCmd.CommandText = $statusQuery
-        $statusCmd.CommandTimeout = 10
-        
-        $statusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($statusCmd)
-        $statusDataset = New-Object System.Data.DataSet
-        $statusAdapter.Fill($statusDataset) | Out-Null
-        
+
         $summary = $null
-        $lastRunId = $null
-        if ($statusDataset.Tables[0].Rows.Count -gt 0) {
-            $row = $statusDataset.Tables[0].Rows[0]
+        if ($statusRows.Count -gt 0) {
+            $row = $statusRows[0]
             $summary = [PSCustomObject]@{
                 StartedDttm = if ($row['started_dttm'] -is [DBNull]) { $null } else { $row['started_dttm'].ToString("yyyy-MM-dd HH:mm:ss") }
                 CompletedDttm = if ($row['completed_dttm'] -is [DBNull]) { $null } else { $row['completed_dttm'].ToString("yyyy-MM-dd HH:mm:ss") }
@@ -1004,19 +819,17 @@ Add-PodeRoute -Method Get -Path '/api/index/stats-details' -Authentication 'ADLo
                 TotalFailed = if ($row['items_failed'] -is [DBNull]) { 0 } else { [int]$row['items_failed'] }
             }
         }
-        
-        # Get max run_id for last run
-        $runIdQuery = "SELECT MAX(run_id) AS LastRunId FROM ServerOps.Index_StatsExecutionLog"
-        $runIdCmd = $conn.CreateCommand()
-        $runIdCmd.CommandText = $runIdQuery
-        $runIdCmd.CommandTimeout = 10
-        $lastRunId = $runIdCmd.ExecuteScalar()
-        
-        # Get summary by database for last run
+
+        $runIdRows = Invoke-XFActsQuery -Query @"
+            SELECT MAX(run_id) AS LastRunId FROM ServerOps.Index_StatsExecutionLog
+"@
+        $lastRunId = if ($runIdRows.Count -gt 0) { $runIdRows[0]['LastRunId'] } else { $null }
+        $hasRun = ($null -ne $lastRunId -and $lastRunId -isnot [DBNull])
+
         $byDatabase = @()
-        if ($lastRunId -and $lastRunId -isnot [DBNull]) {
-            $dbQuery = @"
-                SELECT 
+        if ($hasRun) {
+            $dbRows = Invoke-XFActsQuery -Query @"
+                SELECT
                     sr.server_name AS ServerName,
                     sel.database_name,
                     SUM(CASE WHEN sel.update_type = 'MODIFICATION' THEN 1 ELSE 0 END) AS ModificationCount,
@@ -1025,20 +838,12 @@ Add-PodeRoute -Method Get -Path '/api/index/stats-details' -Authentication 'ADLo
                 FROM ServerOps.Index_StatsExecutionLog sel
                 JOIN dbo.DatabaseRegistry dr ON sel.database_id = dr.database_id
                 JOIN dbo.ServerRegistry sr ON dr.server_id = sr.server_id
-                WHERE sel.run_id = $lastRunId
+                WHERE sel.run_id = @runId
                   AND sel.status IN ('SUCCESS', 'SKIPPED')
                 GROUP BY sr.server_name, sel.database_name, sr.server_id, dr.database_id
                 ORDER BY sr.server_id, dr.database_id
-"@
-            $dbCmd = $conn.CreateCommand()
-            $dbCmd.CommandText = $dbQuery
-            $dbCmd.CommandTimeout = 10
-            
-            $dbAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($dbCmd)
-            $dbDataset = New-Object System.Data.DataSet
-            $dbAdapter.Fill($dbDataset) | Out-Null
-            
-            foreach ($row in $dbDataset.Tables[0].Rows) {
+"@ -Parameters @{ runId = $lastRunId }
+            foreach ($row in $dbRows) {
                 $byDatabase += [PSCustomObject]@{
                     ServerName = $row['ServerName']
                     DatabaseName = $row['database_name']
@@ -1048,55 +853,37 @@ Add-PodeRoute -Method Get -Path '/api/index/stats-details' -Authentication 'ADLo
                 }
             }
         }
-        
-        # Get totals for summary cards
+
         $totalModifications = 0
         $totalStaleness = 0
-        if ($lastRunId -and $lastRunId -isnot [DBNull]) {
-            $totalsQuery = @"
-                SELECT 
+        if ($hasRun) {
+            $totalsRows = Invoke-XFActsQuery -Query @"
+                SELECT
                     SUM(CASE WHEN update_type = 'MODIFICATION' AND status = 'SUCCESS' THEN 1 ELSE 0 END) AS TotalModifications,
                     SUM(CASE WHEN update_type = 'STALENESS' AND status = 'SUCCESS' THEN stats_count ELSE 0 END) AS TotalStaleness
                 FROM ServerOps.Index_StatsExecutionLog
-                WHERE run_id = $lastRunId
-"@
-            $totalsCmd = $conn.CreateCommand()
-            $totalsCmd.CommandText = $totalsQuery
-            $totalsCmd.CommandTimeout = 10
-            
-            $totalsAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($totalsCmd)
-            $totalsDataset = New-Object System.Data.DataSet
-            $totalsAdapter.Fill($totalsDataset) | Out-Null
-            
-            if ($totalsDataset.Tables[0].Rows.Count -gt 0) {
-                $totRow = $totalsDataset.Tables[0].Rows[0]
+                WHERE run_id = @runId
+"@ -Parameters @{ runId = $lastRunId }
+            if ($totalsRows.Count -gt 0) {
+                $totRow = $totalsRows[0]
                 $totalModifications = if ($totRow['TotalModifications'] -is [DBNull]) { 0 } else { [int]$totRow['TotalModifications'] }
                 $totalStaleness = if ($totRow['TotalStaleness'] -is [DBNull]) { 0 } else { [int]$totRow['TotalStaleness'] }
             }
         }
-        
-        # Get failures from last run
+
         $failures = @()
-        if ($lastRunId -and $lastRunId -isnot [DBNull]) {
-            $failQuery = @"
-                SELECT 
+        if ($hasRun) {
+            $failRows = Invoke-XFActsQuery -Query @"
+                SELECT
                     database_name,
                     stat_name,
                     error_message
                 FROM ServerOps.Index_StatsExecutionLog
-                WHERE run_id = $lastRunId
+                WHERE run_id = @runId
                   AND status = 'FAILED'
                 ORDER BY database_name, stat_name
-"@
-            $failCmd = $conn.CreateCommand()
-            $failCmd.CommandText = $failQuery
-            $failCmd.CommandTimeout = 10
-            
-            $failAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($failCmd)
-            $failDataset = New-Object System.Data.DataSet
-            $failAdapter.Fill($failDataset) | Out-Null
-            
-            foreach ($row in $failDataset.Tables[0].Rows) {
+"@ -Parameters @{ runId = $lastRunId }
+            foreach ($row in $failRows) {
                 $failures += [PSCustomObject]@{
                     DatabaseName = $row['database_name']
                     StatName = if ($row['stat_name'] -is [DBNull]) { $null } else { $row['stat_name'] }
@@ -1104,9 +891,7 @@ Add-PodeRoute -Method Get -Path '/api/index/stats-details' -Authentication 'ADLo
                 }
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Summary = $summary
             TotalModifications = $totalModifications
@@ -1120,22 +905,16 @@ Add-PodeRoute -Method Get -Path '/api/index/stats-details' -Authentication 'ADLo
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/index/schedule/:databaseId
-# Returns the maintenance schedule for a specific database (7 days x 24 hours)
-# Also returns the holiday schedule (single row x 24 hours)
-# ----------------------------------------------------------------------------
+# Returns the weekly maintenance schedule (7 days x 24 hours) and the holiday
+# schedule (single row x 24 hours) for a database.
 Add-PodeRoute -Method Get -Path '/api/index/schedule/:databaseId' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $databaseId = [int]$WebEvent.Parameters['databaseId']
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get standard weekly schedule
-        $query = @"
-            SELECT 
+
+        $scheduleRows = Invoke-XFActsQuery -Query @"
+            SELECT
                 day_of_week,
                 hr00, hr01, hr02, hr03, hr04, hr05, hr06, hr07,
                 hr08, hr09, hr10, hr11, hr12, hr13, hr14, hr15,
@@ -1143,101 +922,43 @@ Add-PodeRoute -Method Get -Path '/api/index/schedule/:databaseId' -Authenticatio
             FROM ServerOps.Index_DatabaseSchedule
             WHERE database_id = @DatabaseId
             ORDER BY day_of_week
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@DatabaseId", $databaseId) | Out-Null
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+"@ -Parameters @{ DatabaseId = $databaseId }
+
         $schedule = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
-            $daySchedule = [PSCustomObject]@{
+        foreach ($row in $scheduleRows) {
+            $schedule += [PSCustomObject]@{
                 DayOfWeek = [int]$row['day_of_week']
-                Hr00 = [bool]$row['hr00']
-                Hr01 = [bool]$row['hr01']
-                Hr02 = [bool]$row['hr02']
-                Hr03 = [bool]$row['hr03']
-                Hr04 = [bool]$row['hr04']
-                Hr05 = [bool]$row['hr05']
-                Hr06 = [bool]$row['hr06']
-                Hr07 = [bool]$row['hr07']
-                Hr08 = [bool]$row['hr08']
-                Hr09 = [bool]$row['hr09']
-                Hr10 = [bool]$row['hr10']
-                Hr11 = [bool]$row['hr11']
-                Hr12 = [bool]$row['hr12']
-                Hr13 = [bool]$row['hr13']
-                Hr14 = [bool]$row['hr14']
-                Hr15 = [bool]$row['hr15']
-                Hr16 = [bool]$row['hr16']
-                Hr17 = [bool]$row['hr17']
-                Hr18 = [bool]$row['hr18']
-                Hr19 = [bool]$row['hr19']
-                Hr20 = [bool]$row['hr20']
-                Hr21 = [bool]$row['hr21']
-                Hr22 = [bool]$row['hr22']
-                Hr23 = [bool]$row['hr23']
+                Hr00 = [bool]$row['hr00']; Hr01 = [bool]$row['hr01']; Hr02 = [bool]$row['hr02']; Hr03 = [bool]$row['hr03']
+                Hr04 = [bool]$row['hr04']; Hr05 = [bool]$row['hr05']; Hr06 = [bool]$row['hr06']; Hr07 = [bool]$row['hr07']
+                Hr08 = [bool]$row['hr08']; Hr09 = [bool]$row['hr09']; Hr10 = [bool]$row['hr10']; Hr11 = [bool]$row['hr11']
+                Hr12 = [bool]$row['hr12']; Hr13 = [bool]$row['hr13']; Hr14 = [bool]$row['hr14']; Hr15 = [bool]$row['hr15']
+                Hr16 = [bool]$row['hr16']; Hr17 = [bool]$row['hr17']; Hr18 = [bool]$row['hr18']; Hr19 = [bool]$row['hr19']
+                Hr20 = [bool]$row['hr20']; Hr21 = [bool]$row['hr21']; Hr22 = [bool]$row['hr22']; Hr23 = [bool]$row['hr23']
             }
-            $schedule += $daySchedule
         }
-        
-        # Get holiday schedule
-        $holidayQuery = @"
-            SELECT 
+
+        $holidayRows = Invoke-XFActsQuery -Query @"
+            SELECT
                 hr00, hr01, hr02, hr03, hr04, hr05, hr06, hr07,
                 hr08, hr09, hr10, hr11, hr12, hr13, hr14, hr15,
                 hr16, hr17, hr18, hr19, hr20, hr21, hr22, hr23
             FROM ServerOps.Index_HolidaySchedule
             WHERE database_id = @DatabaseId
-"@
-        
-        $holidayCmd = $conn.CreateCommand()
-        $holidayCmd.CommandText = $holidayQuery
-        $holidayCmd.CommandTimeout = 10
-        $holidayCmd.Parameters.AddWithValue("@DatabaseId", $databaseId) | Out-Null
-        
-        $holidayAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($holidayCmd)
-        $holidayDataset = New-Object System.Data.DataSet
-        $holidayAdapter.Fill($holidayDataset) | Out-Null
-        
+"@ -Parameters @{ DatabaseId = $databaseId }
+
         $holidaySchedule = $null
-        if ($holidayDataset.Tables[0].Rows.Count -gt 0) {
-            $row = $holidayDataset.Tables[0].Rows[0]
+        if ($holidayRows.Count -gt 0) {
+            $row = $holidayRows[0]
             $holidaySchedule = [PSCustomObject]@{
-                Hr00 = [bool]$row['hr00']
-                Hr01 = [bool]$row['hr01']
-                Hr02 = [bool]$row['hr02']
-                Hr03 = [bool]$row['hr03']
-                Hr04 = [bool]$row['hr04']
-                Hr05 = [bool]$row['hr05']
-                Hr06 = [bool]$row['hr06']
-                Hr07 = [bool]$row['hr07']
-                Hr08 = [bool]$row['hr08']
-                Hr09 = [bool]$row['hr09']
-                Hr10 = [bool]$row['hr10']
-                Hr11 = [bool]$row['hr11']
-                Hr12 = [bool]$row['hr12']
-                Hr13 = [bool]$row['hr13']
-                Hr14 = [bool]$row['hr14']
-                Hr15 = [bool]$row['hr15']
-                Hr16 = [bool]$row['hr16']
-                Hr17 = [bool]$row['hr17']
-                Hr18 = [bool]$row['hr18']
-                Hr19 = [bool]$row['hr19']
-                Hr20 = [bool]$row['hr20']
-                Hr21 = [bool]$row['hr21']
-                Hr22 = [bool]$row['hr22']
-                Hr23 = [bool]$row['hr23']
+                Hr00 = [bool]$row['hr00']; Hr01 = [bool]$row['hr01']; Hr02 = [bool]$row['hr02']; Hr03 = [bool]$row['hr03']
+                Hr04 = [bool]$row['hr04']; Hr05 = [bool]$row['hr05']; Hr06 = [bool]$row['hr06']; Hr07 = [bool]$row['hr07']
+                Hr08 = [bool]$row['hr08']; Hr09 = [bool]$row['hr09']; Hr10 = [bool]$row['hr10']; Hr11 = [bool]$row['hr11']
+                Hr12 = [bool]$row['hr12']; Hr13 = [bool]$row['hr13']; Hr14 = [bool]$row['hr14']; Hr15 = [bool]$row['hr15']
+                Hr16 = [bool]$row['hr16']; Hr17 = [bool]$row['hr17']; Hr18 = [bool]$row['hr18']; Hr19 = [bool]$row['hr19']
+                Hr20 = [bool]$row['hr20']; Hr21 = [bool]$row['hr21']; Hr22 = [bool]$row['hr22']; Hr23 = [bool]$row['hr23']
             }
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             DatabaseId = $databaseId
             Schedule = $schedule
@@ -1249,21 +970,18 @@ Add-PodeRoute -Method Get -Path '/api/index/schedule/:databaseId' -Authenticatio
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/index/schedule/update
-# Toggles a single hour cell in the maintenance schedule
+# Toggles a single hour cell in the weekly maintenance schedule.
 # Body: { DatabaseId, DayOfWeek, Hour, Allowed }
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/index/schedule/update' -Authentication 'ADLogin' -ScriptBlock {
-        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-        try {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
         $body = $WebEvent.Data
         $databaseId = [int]$body.DatabaseId
         $dayOfWeek = [int]$body.DayOfWeek
         $hour = [int]$body.Hour
         $allowed = [bool]$body.Allowed
-        
-        # Validate inputs
+
         if ($dayOfWeek -lt 0 -or $dayOfWeek -gt 6) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid day of week" }) -StatusCode 400
             return
@@ -1272,46 +990,35 @@ Add-PodeRoute -Method Post -Path '/api/index/schedule/update' -Authentication 'A
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid hour" }) -StatusCode 400
             return
         }
-        
-        # Build the column name
+
+        # Hour resolves to a fixed column name; validated 0-23 above so the
+        # interpolation is a safe identifier, not user-supplied value text.
         $hourColumn = "hr" + $hour.ToString("00")
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get current user for audit
+
         $currentUser = $WebEvent.Auth.User.Name
         if ([string]::IsNullOrEmpty($currentUser)) {
             $currentUser = "Unknown"
         }
-        
-        $query = @"
+
+        $rowsAffected = Invoke-XFActsNonQuery -Query @"
             UPDATE ServerOps.Index_DatabaseSchedule
             SET $hourColumn = @Allowed,
                 modified_dttm = GETDATE(),
                 modified_by = @ModifiedBy
             WHERE database_id = @DatabaseId
               AND day_of_week = @DayOfWeek
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@Allowed", $allowed) | Out-Null
-        $cmd.Parameters.AddWithValue("@DatabaseId", $databaseId) | Out-Null
-        $cmd.Parameters.AddWithValue("@DayOfWeek", $dayOfWeek) | Out-Null
-        $cmd.Parameters.AddWithValue("@ModifiedBy", $currentUser) | Out-Null
-        
-        $rowsAffected = $cmd.ExecuteNonQuery()
-        
-        $conn.Close()
-        
+"@ -Parameters @{
+            Allowed = $allowed
+            ModifiedBy = $currentUser
+            DatabaseId = $databaseId
+            DayOfWeek = $dayOfWeek
+        }
+
         if ($rowsAffected -eq 0) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Schedule record not found" }) -StatusCode 404
             return
         }
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Success = $true
             DatabaseId = $databaseId
@@ -1326,170 +1033,79 @@ Add-PodeRoute -Method Post -Path '/api/index/schedule/update' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/index/schedule/update-batch
-# Updates multiple hour cells in the maintenance schedule in a single call
+# Updates multiple weekly-schedule hour cells atomically in a single statement.
 # Body: { DatabaseId, Updates: [{ DayOfWeek, Hour, Allowed }, ...] }
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/index/schedule/update-batch' -Authentication 'ADLogin' -ScriptBlock {
-        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-        try {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
         $body = $WebEvent.Data
         $databaseId = [int]$body.DatabaseId
         $updates = $body.Updates
-        
-        if (-not $updates -or $updates.Count -eq 0) {
-            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "No updates provided" }) -StatusCode 400
-            return
-        }
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get current user for audit
-        $currentUser = $WebEvent.Auth.User.Name
-        if ([string]::IsNullOrEmpty($currentUser)) {
-            $currentUser = "Unknown"
-        }
-        
-        # Begin transaction for atomic update
-        $transaction = $conn.BeginTransaction()
-        
-        try {
-            $totalRowsAffected = 0
-            
-            foreach ($update in $updates) {
-                $dayOfWeek = [int]$update.DayOfWeek
-                $hour = [int]$update.Hour
-                $allowed = [bool]$update.Allowed
-                
-                # Validate inputs
-                if ($dayOfWeek -lt 1 -or $dayOfWeek -gt 7) {
-                    throw "Invalid day of week: $dayOfWeek"
-                }
-                if ($hour -lt 0 -or $hour -gt 23) {
-                    throw "Invalid hour: $hour"
-                }
-                
-                # Build the column name
-                $hourColumn = "hr" + $hour.ToString("00")
-                
-                $query = @"
-                    UPDATE ServerOps.Index_DatabaseSchedule
-                    SET $hourColumn = @Allowed,
-                        modified_dttm = GETDATE(),
-                        modified_by = @ModifiedBy
-                    WHERE database_id = @DatabaseId
-                      AND day_of_week = @DayOfWeek
-"@
-                
-                $cmd = $conn.CreateCommand()
-                $cmd.Transaction = $transaction
-                $cmd.CommandText = $query
-                $cmd.CommandTimeout = 10
-                $cmd.Parameters.AddWithValue("@Allowed", $allowed) | Out-Null
-                $cmd.Parameters.AddWithValue("@DatabaseId", $databaseId) | Out-Null
-                $cmd.Parameters.AddWithValue("@DayOfWeek", $dayOfWeek) | Out-Null
-                $cmd.Parameters.AddWithValue("@ModifiedBy", $currentUser) | Out-Null
-                
-                $rowsAffected = $cmd.ExecuteNonQuery()
-                $totalRowsAffected += $rowsAffected
-            }
-            
-            # Commit transaction
-            $transaction.Commit()
-            
-            $conn.Close()
-            
-            Write-PodeJsonResponse -Value ([PSCustomObject]@{
-                Success = $true
-                DatabaseId = $databaseId
-                UpdateCount = $updates.Count
-                RowsAffected = $totalRowsAffected
-                ModifiedBy = $currentUser
-            })
-        }
-        catch {
-            # Rollback on error
-            $transaction.Rollback()
-            throw
-        }
-    }
-    catch {
-        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
-    }
-}
 
-# ----------------------------------------------------------------------------
-# POST /api/index/schedule/holiday/update-batch
-# Updates multiple hour cells in the holiday schedule in a single call
-# Body: { DatabaseId, Updates: [{ Hour, Allowed }, ...] }
-# Note: No DayOfWeek needed since holiday schedule is a single row
-# ----------------------------------------------------------------------------
-Add-PodeRoute -Method Post -Path '/api/index/schedule/holiday/update-batch' -Authentication 'ADLogin' -ScriptBlock {
-        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-        try {
-        $body = $WebEvent.Data
-        $databaseId = [int]$body.DatabaseId
-        $updates = $body.Updates
-        
         if (-not $updates -or $updates.Count -eq 0) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "No updates provided" }) -StatusCode 400
             return
         }
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        # Get current user for audit
+
         $currentUser = $WebEvent.Auth.User.Name
         if ([string]::IsNullOrEmpty($currentUser)) {
             $currentUser = "Unknown"
         }
-        
-        # Build SET clause dynamically for all hours being updated
-        $setClauses = @()
+
+        # Build one transactional batch that applies every cell update in a
+        # single round trip. Each update contributes its own parameterized
+        # statement; the surrounding transaction preserves all-or-nothing
+        # semantics. Hour and day are validated before use; the hour column
+        # name is a validated identifier.
+        $statements = [System.Collections.ArrayList]::new()
+        $parameters = @{
+            DatabaseId = $databaseId
+            ModifiedBy = $currentUser
+        }
+
+        $i = 0
         foreach ($update in $updates) {
+            $dayOfWeek = [int]$update.DayOfWeek
             $hour = [int]$update.Hour
-            $allowed = if ([bool]$update.Allowed) { 1 } else { 0 }
-            
-            if ($hour -lt 0 -or $hour -gt 23) {
-                Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid hour: $hour" }) -StatusCode 400
-                $conn.Close()
+            $allowed = [bool]$update.Allowed
+
+            if ($dayOfWeek -lt 1 -or $dayOfWeek -gt 7) {
+                Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid day of week: $dayOfWeek" }) -StatusCode 400
                 return
             }
-            
+            if ($hour -lt 0 -or $hour -gt 23) {
+                Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid hour: $hour" }) -StatusCode 400
+                return
+            }
+
             $hourColumn = "hr" + $hour.ToString("00")
-            $setClauses += "$hourColumn = $allowed"
+            $allowedParam = "Allowed$i"
+            $dayParam = "Day$i"
+
+            [void]$statements.Add(@"
+    UPDATE ServerOps.Index_DatabaseSchedule
+    SET $hourColumn = @$allowedParam,
+        modified_dttm = GETDATE(),
+        modified_by = @ModifiedBy
+    WHERE database_id = @DatabaseId
+      AND day_of_week = @$dayParam;
+"@)
+            $parameters[$allowedParam] = $allowed
+            $parameters[$dayParam] = $dayOfWeek
+            $i++
         }
-        
-        $setClause = $setClauses -join ", "
-        
+
+        $batchBody = $statements -join "`n"
         $query = @"
-            UPDATE ServerOps.Index_HolidaySchedule
-            SET $setClause,
-                modified_dttm = GETDATE(),
-                modified_by = @ModifiedBy
-            WHERE database_id = @DatabaseId
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+$batchBody
+COMMIT TRANSACTION;
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@DatabaseId", $databaseId) | Out-Null
-        $cmd.Parameters.AddWithValue("@ModifiedBy", $currentUser) | Out-Null
-        
-        $rowsAffected = $cmd.ExecuteNonQuery()
-        
-        $conn.Close()
-        
-        if ($rowsAffected -eq 0) {
-            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Holiday schedule record not found" }) -StatusCode 404
-            return
-        }
-        
+
+        $rowsAffected = Invoke-XFActsNonQuery -Query $query -Parameters $parameters
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             Success = $true
             DatabaseId = $databaseId
@@ -1503,6 +1119,83 @@ Add-PodeRoute -Method Post -Path '/api/index/schedule/holiday/update-batch' -Aut
     }
 }
 
+# POST /api/index/schedule/holiday/update-batch
+# Updates multiple holiday-schedule hour cells in a single statement.
+# Body: { DatabaseId, Updates: [{ Hour, Allowed }, ...] }
+Add-PodeRoute -Method Post -Path '/api/index/schedule/holiday/update-batch' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $body = $WebEvent.Data
+        $databaseId = [int]$body.DatabaseId
+        $updates = $body.Updates
+
+        if (-not $updates -or $updates.Count -eq 0) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "No updates provided" }) -StatusCode 400
+            return
+        }
+
+        $currentUser = $WebEvent.Auth.User.Name
+        if ([string]::IsNullOrEmpty($currentUser)) {
+            $currentUser = "Unknown"
+        }
+
+        # Build the SET clause from validated hour columns. Each hour resolves
+        # to a fixed column name and a parameterized allowed value.
+        $setClauses = @()
+        $parameters = @{
+            DatabaseId = $databaseId
+            ModifiedBy = $currentUser
+        }
+
+        $i = 0
+        foreach ($update in $updates) {
+            $hour = [int]$update.Hour
+            $allowed = if ([bool]$update.Allowed) { 1 } else { 0 }
+
+            if ($hour -lt 0 -or $hour -gt 23) {
+                Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid hour: $hour" }) -StatusCode 400
+                return
+            }
+
+            $hourColumn = "hr" + $hour.ToString("00")
+            $allowedParam = "Allowed$i"
+            $setClauses += "$hourColumn = @$allowedParam"
+            $parameters[$allowedParam] = $allowed
+            $i++
+        }
+
+        $setClause = $setClauses -join ", "
+        $query = @"
+            UPDATE ServerOps.Index_HolidaySchedule
+            SET $setClause,
+                modified_dttm = GETDATE(),
+                modified_by = @ModifiedBy
+            WHERE database_id = @DatabaseId
+"@
+
+        $rowsAffected = Invoke-XFActsNonQuery -Query $query -Parameters $parameters
+
+        if ($rowsAffected -eq 0) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Holiday schedule record not found" }) -StatusCode 404
+            return
+        }
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{
+            Success = $true
+            DatabaseId = $databaseId
+            UpdateCount = $updates.Count
+            RowsAffected = $rowsAffected
+            ModifiedBy = $currentUser
+        })
+    }
+    catch {
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
+    }
+}
+
+# POST /api/index/launch-process
+# Admin-gated manual launch of one of the four index maintenance scripts.
+# Body: { Process }
 Add-PodeRoute -Method Post -Path '/api/index/launch-process' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
@@ -1545,9 +1238,3 @@ Add-PodeRoute -Method Post -Path '/api/index/launch-process' -Authentication 'AD
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
     }
 }
-
-
-
-
-
-
