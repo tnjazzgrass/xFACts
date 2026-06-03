@@ -1,247 +1,221 @@
 /* ============================================================================
-   xFACts Control Center - DM Operations Styles
+   xFACts Control Center - DM Operations Styles (dm-operations.css)
    Location: E:\xFACts-ControlCenter\public\css\dm-operations.css
-   Version: Tracked in dbo.System_Metadata (component: DmOps.Archive)
+   Version: Tracked in dbo.System_Metadata (component: DmOps)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css), .engine-row
-               stub (shared), .page-refresh-btn (shared), .section-header-right
-               (shared), .refresh-badge-event (shared 10px adopted for
-               consistency), .connection-banner block (shared rules apply via
-               class names set by engine-events.js), and .idle-overlay/
-               .idle-message (shared).
-               Slide-panel rules retained as page-specific because this page's
-               JS uses the .active activation class (engine-events.css uses
-               .open). Future cleanup: align JS to .open and strip these.
+   Page-specific content styles for the DM Operations dashboard: lifetime
+   summary cards, per-process Today stat grids, environment and status
+   badges, the admin control cluster, the year/month/day execution-history
+   accordion, per-day batch tables, the batch-detail slideout body, and the
+   click-and-drag schedule modal grid. Page chrome (header bar, sections,
+   refresh info, engine cards, overlays) is consumed from cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE LAYOUT
+   CONTENT: LIFETIME SUMMARY CARDS
+   CONTENT: ADMIN CONTROLS
+   CONTENT: TARGET SERVER BADGE
+   CONTENT: TODAY STATS
+   CONTENT: INLINE STATUS BADGES
+   CONTENT: DELETE-ORDER PREFIX
+   CONTENT: EXECUTION HISTORY ACCORDION
+   CONTENT: BATCH TABLE
+   CONTENT: BATCH DETAIL SLIDEOUT
+   CONTENT: SCHEDULE MODAL GRID
    ============================================================================ */
 
-/* Base Layout */
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { color: #888; font-size: 14px; margin: 0; }
-a { color: #9cdcfe; }
+/* ============================================================================
+   LAYOUT: PAGE LAYOUT
+   ----------------------------------------------------------------------------
+   The two-column grid that places the Archive column beside the Shell Purge
+   column below the full-width Lifetime Totals section.
+   Prefix: dmo
+   ============================================================================ */
 
-/* ----------------------------------------------------------------------------
-   Header Bar
-   ---------------------------------------------------------------------------- */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-}
-
-.header-bar h1 a {
-    color: #569cd6;
-    text-decoration: none;
-}
-
-.header-bar h1 a:hover {
-    color: #9cdcfe;
-}
-
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-}
-
-.refresh-info {
-    font-size: 12px;
-    color: #888;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.live-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #4ec9b0;
-    display: inline-block;
-    animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-}
-
-.last-updated { color: #569cd6; }
-
-/* Connection Error legacy (replaced by shared connection-banner classes) */
-.connection-error { display: none; }
-
-/* ----------------------------------------------------------------------------
-   Section Layout (matching DBCC framed pattern)
-   ---------------------------------------------------------------------------- */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-    margin-bottom: 16px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.section-fill {
-    flex: 1;
-    flex-shrink: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
-
-.section-title {
-    color: #4ec9b0;
-    font-size: 14px;
-    font-weight: 600;
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-/* Two Column Layout */
-.two-column-layout {
+/* The two-column grid holding the Archive and Shell Purge columns side by side. */
+.dmo-two-column-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: var(--size-spacing-xl);
+    align-items: start;
 }
 
-.loading {
-    color: #888;
-    font-size: 13px;
-    padding: 20px;
-    text-align: center;
+/* A single column within the two-column layout (stacks its sections vertically). */
+.dmo-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
-.no-activity {
-    color: #666;
-    font-size: 13px;
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-}
+/* ============================================================================
+   CONTENT: LIFETIME SUMMARY CARDS
+   ----------------------------------------------------------------------------
+   The grid of cumulative-total cards in the Lifetime Totals section. Each
+   card shows a label, a large value, and an optional sub-line. Value color
+   variants distinguish archive, purge, remaining, and danger figures.
+   Prefix: dmo
+   ============================================================================ */
 
-/* ----------------------------------------------------------------------------
-   Lifetime Summary Cards
-   ---------------------------------------------------------------------------- */
-.summary-cards {
+/* The responsive grid container for the lifetime summary cards. */
+.dmo-summary-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
+    gap: var(--size-spacing-lg);
 }
 
-.summary-card {
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 16px;
+/* A single lifetime summary card. */
+.dmo-summary-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-xl);
     text-align: center;
 }
 
-.summary-card-label {
-    font-size: 11px;
-    color: #888;
+/* The small uppercase label at the top of a summary card. */
+.dmo-summary-card-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 6px;
+    margin-bottom: var(--size-spacing-sm);
 }
 
-.summary-card-value {
-    font-size: 24px;
+/* The large numeric value in a summary card. */
+.dmo-summary-card-value {
+    font-size: var(--font-size-h1);
     font-weight: 600;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
 }
 
-.summary-card-value.archive { color: #569cd6; }
-.summary-card-value.purge { color: #c586c0; }
-.summary-card-value.remaining { color: #dcdcaa; }
-.summary-card-value.danger { color: #f48771; }
+/* Color tag marking a summary value as an archive figure. */
+.dmo-archive { }
 
-.summary-card-sub {
-    font-size: 11px;
-    color: #666;
-    margin-top: 4px;
+.dmo-summary-card-value.dmo-archive { /* archive figure (blue) */
+    color: var(--color-accent-platform);
 }
 
-/* ----------------------------------------------------------------------------
-   Action Buttons (Abort, Schedule)
-   ---------------------------------------------------------------------------- */
-.action-btn {
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 12px;
+/* Color tag marking a summary value as a shell purge figure. */
+.dmo-purge { }
+
+.dmo-summary-card-value.dmo-purge { /* shell purge figure (purple) */
+    color: #c586c0;
+}
+
+/* Color tag marking a summary value as a remaining-count figure. */
+.dmo-remaining { }
+
+.dmo-summary-card-value.dmo-remaining { /* remaining-count figure (yellow) */
+    color: var(--color-accent-departmental);
+}
+
+/* Color tag marking a summary value as a danger figure. */
+.dmo-danger { }
+
+.dmo-summary-card-value.dmo-danger { /* danger figure (red-orange) */
+    color: var(--color-status-critical);
+}
+
+/* The small sub-line beneath a summary card value. */
+.dmo-summary-card-sub {
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
+    margin-top: var(--size-spacing-xs);
+}
+
+/* ============================================================================
+   CONTENT: ADMIN CONTROLS
+   ----------------------------------------------------------------------------
+   The admin-only control cluster rendered by dm-operations.js into each
+   Today section header when the process-status API reports the user may
+   manage processes. Holds the Schedule, Abort, and Launch buttons. Hidden
+   for non-admins because the page module never populates it.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The container that holds the admin Schedule, Abort, and Launch buttons. */
+.dmo-admin-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+}
+
+/* The shared base style for an admin control button. */
+.dmo-action-btn {
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-content);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-fast);
 }
 
-.abort-btn {
+/* The Abort button (toggles the per-process abort flag). */
+.dmo-abort-btn {
     background: #3d2020;
-    border: 1px solid #6d3030;
-    color: #f48771;
+    border: var(--size-border-thin) solid var(--color-button-danger-bg);
+    color: var(--color-status-critical);
 }
 
-.abort-btn:hover {
+.dmo-abort-btn:hover { /* hover state for the abort button */
     background: #4d2525;
-    border-color: #f48771;
+    border-color: var(--color-status-critical);
 }
 
-.abort-btn.active {
-    background: #f48771;
-    color: #1e1e1e;
-    border-color: #f48771;
+/* State tag marking the abort button as currently active (abort engaged). */
+.dmo-active { }
+
+.dmo-abort-btn.dmo-active { /* abort is engaged (solid red-orange fill) */
+    background: var(--color-status-critical);
+    color: var(--color-bg-page);
+    border-color: var(--color-status-critical);
     font-weight: 600;
 }
 
-.abort-btn.active:hover {
+.dmo-abort-btn.dmo-active:hover { /* hover state while abort is engaged */
     background: #f4a771;
 }
 
-.schedule-btn {
-    background: #252526;
-    border: 1px solid #404040;
-    color: #888;
+/* The Schedule button (opens the per-process schedule modal). */
+.dmo-schedule-btn {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
 }
 
-.schedule-btn:hover {
-    color: #d4d4d4;
-    border-color: #569cd6;
+.dmo-schedule-btn:hover { /* hover state for the schedule button */
+    color: var(--color-text-primary);
+    border-color: var(--color-accent-platform);
 }
 
-/* ----------------------------------------------------------------------------
-   Target Server Badge
-   Per-process environment indicator shown in Today section headers.
-   Border-and-text-only style (no fill); color reflects environment classification
-   from ServerRegistry. Sized to align with adjacent Schedule and Abort buttons.
-   ---------------------------------------------------------------------------- */
-.target-server-badge {
+/* The Launch button (manually triggers the process execution script). */
+.dmo-launch-btn {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-accent-shared);
+}
+
+.dmo-launch-btn:hover { /* hover state for the launch button */
+    color: var(--color-text-primary);
+    border-color: var(--color-accent-shared);
+}
+
+/* ============================================================================
+   CONTENT: TARGET SERVER BADGE
+   ----------------------------------------------------------------------------
+   Per-process environment indicator shown in Today section headers. A
+   border-and-text-only badge (no fill) whose color reflects the target
+   server's environment classification from ServerRegistry. Sized to align
+   with the adjacent admin control buttons.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The environment badge shown beside each process's Today header. */
+.dmo-target-badge {
     display: inline-block;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 12px;
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-content);
     font-weight: 600;
     background: transparent;
     text-transform: uppercase;
@@ -250,692 +224,751 @@ a { color: #9cdcfe; }
     line-height: 1;
 }
 
-.target-server-badge.env-test {
-    color: #dcdcaa;
-    border: 1px solid #dcdcaa;
+/* Environment tag marking the target server as a TEST environment. */
+.dmo-env-test { }
+
+.dmo-target-badge.dmo-env-test { /* TEST environment (yellow) */
+    color: var(--color-accent-departmental);
+    border: var(--size-border-thin) solid var(--color-accent-departmental);
 }
 
-.target-server-badge.env-prod {
-    color: #f48771;
-    border: 1px solid #f48771;
+/* Environment tag marking the target server as a PROD environment. */
+.dmo-env-prod { }
+
+.dmo-target-badge.dmo-env-prod { /* PROD environment (red-orange) */
+    color: var(--color-status-critical);
+    border: var(--size-border-thin) solid var(--color-status-critical);
 }
 
-.target-server-badge.env-unknown {
-    color: #888;
-    border: 1px solid #888;
+/* Environment tag marking the target server as unknown/unclassified. */
+.dmo-env-unknown { }
+
+.dmo-target-badge.dmo-env-unknown { /* unknown environment (gray) */
+    color: var(--color-text-muted);
+    border: var(--size-border-thin) solid var(--color-text-muted);
 }
 
-/* ----------------------------------------------------------------------------
-   Today Stats
-   ---------------------------------------------------------------------------- */
-.today-stats {
+/* ============================================================================
+   CONTENT: TODAY STATS
+   ----------------------------------------------------------------------------
+   The compact stat grid shown in each process's Today section: a responsive
+   row of value/label pairs with color variants, plus an inline schedule-mode
+   breakdown caption.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The responsive grid container for today's stat tiles. */
+.dmo-today-stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: 8px;
+    gap: var(--size-spacing-md);
 }
 
-.today-stat {
+/* A single today-stat tile (value over label). */
+.dmo-today-stat {
     text-align: center;
-    padding: 8px 4px;
+    padding: var(--size-spacing-md) var(--size-spacing-xs);
 }
 
-.today-stat-value {
+/* The large numeric value in a today-stat tile. */
+.dmo-today-stat-value {
     font-size: 20px;
     font-weight: 600;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
 }
 
-.today-stat-label {
-    font-size: 10px;
-    color: #888;
+/* Color tag marking a today-stat value as an archive figure. */
+.dmo-today-stat-value.dmo-archive { /* archive figure (blue) */
+    color: var(--color-accent-platform);
+}
+
+/* Color tag marking a today-stat value as a shell purge figure. */
+.dmo-today-stat-value.dmo-purge { /* shell purge figure (purple) */
+    color: #c586c0;
+}
+
+/* Warn tag marking a today-stat value as a warning figure. */
+.dmo-warn { }
+
+.dmo-today-stat-value.dmo-warn { /* warning figure (yellow) */
+    color: var(--color-accent-departmental);
+}
+
+/* Danger tag marking a today-stat value as a danger figure. */
+.dmo-today-stat-value.dmo-danger { /* danger figure (red-orange) */
+    color: var(--color-status-critical);
+}
+
+/* The small uppercase label below a today-stat value. */
+.dmo-today-stat-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     margin-top: 2px;
 }
 
-.today-stat-value.archive { color: #569cd6; }
-.today-stat-value.purge { color: #c586c0; }
-.today-stat-value.warn { color: #dcdcaa; }
-.today-stat-value.danger { color: #f48771; }
-
-.today-mode-breakdown {
-    font-size: 10px;
-    color: #666;
+/* The schedule-mode breakdown caption shown under a today-stat. */
+.dmo-today-mode-breakdown {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
     margin-top: 2px;
 }
-.today-mode-breakdown .full { color: #4ec9b0; }
-.today-mode-breakdown .reduced { color: #dcdcaa; }
 
-/* ----------------------------------------------------------------------------
-   Inline Status Badges (used by today stats, batch rows, batch detail slide-out)
-   ---------------------------------------------------------------------------- */
-.status-badge,
-.bidata-badge,
-.mode-badge {
+/* Mode tag marking a breakdown figure as full-mode batches. */
+.dmo-full { }
+
+.dmo-today-mode-breakdown.dmo-full { /* full-mode batch count (teal) */
+    color: var(--color-accent-shared);
+}
+
+/* Mode tag marking a breakdown figure as reduced-mode batches. */
+.dmo-reduced { }
+
+.dmo-today-mode-breakdown.dmo-reduced { /* reduced-mode batch count (yellow) */
+    color: var(--color-accent-departmental);
+}
+
+/* ============================================================================
+   CONTENT: INLINE STATUS BADGES
+   ----------------------------------------------------------------------------
+   Small inline pill badges used by today stats, batch rows, and the batch
+   detail slideout: the batch status badge, the BIDATA migration status
+   badge, and the schedule-mode badge. Each shares a common pill shape with
+   per-state color compounds.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The batch status pill badge (success/failed/skipped/running/unknown). */
+.dmo-status-badge {
     display: inline-block;
-    font-size: 10px;
+    font-size: var(--font-size-default);
     font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 3px;
-    border: 1px solid transparent;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    border: var(--size-border-thin) solid transparent;
     text-transform: uppercase;
     letter-spacing: 0.3px;
     line-height: 14px;
 }
 
-/* Status: success/failed/skipped/running */
-.status-badge.success { color: #4ec9b0; background: #1f3a30; border-color: #2d5a47; }
-.status-badge.failed  { color: #f48771; background: #3d2020; border-color: #6d3030; }
-.status-badge.skipped { color: #888;    background: #2a2a2a; border-color: #404040; }
-.status-badge.running { color: #569cd6; background: #1f2a3a; border-color: #2d4d6e; }
-.status-badge.unknown { color: #666;    background: #252526; border-color: #404040; }
+/* State tag marking a badge as a success state. */
+.dmo-success { }
 
-/* BIDATA migration status */
-.bidata-badge.success { color: #4ec9b0; background: #1f3a30; border-color: #2d5a47; }
-.bidata-badge.failed  { color: #f48771; background: #3d2020; border-color: #6d3030; }
-.bidata-badge.skipped { color: #888;    background: #2a2a2a; border-color: #404040; }
-.bidata-badge.running { color: #569cd6; background: #1f2a3a; border-color: #2d4d6e; }
-.bidata-badge.unknown { color: #666;    background: #252526; border-color: #404040; }
-
-/* Schedule mode: full / reduced / manual / retry */
-.mode-badge.full    { color: #4ec9b0; background: #1f3a30; border-color: #2d5a47; }
-.mode-badge.reduced { color: #dcdcaa; background: #3d3520; border-color: #5a4d28; }
-.mode-badge.manual  { color: #c586c0; background: #2e1f3d; border-color: #4d3a5a; }
-.mode-badge.retry   { color: #569cd6; background: #1f2a3a; border-color: #2d4d6e; }
-.mode-badge.unknown { color: #666;    background: #252526; border-color: #404040; }
-
-/* delete_order prefix coloring (Archive Phase 2 / UDEFs / BIDATA / Consumer halves)
-   A = account-level Phase 2, AU = account-level UDEF, AB = BIDATA migration,
-   C = consumer-level Phase 2, CU = consumer-level UDEF */
-.order-prefix {
-    display: inline-block;
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-weight: 700;
-    padding: 0 4px;
-    border-radius: 2px;
-    margin-right: 1px;
-    font-size: 11px;
+.dmo-status-badge.dmo-success { /* success state (teal) */
+    color: var(--color-accent-shared);
+    background: #1f3a30;
+    border-color: #2d5a47;
 }
-.order-prefix.order-a   { color: #569cd6; background: #1f2a3a; }
-.order-prefix.order-au  { color: #9cdcfe; background: #1f2a3a; }
-.order-prefix.order-ab  { color: #4ec9b0; background: #1f3a30; }
-.order-prefix.order-c   { color: #c586c0; background: #2e1f3d; }
-.order-prefix.order-cu  { color: #d8a8d8; background: #2e1f3d; }
 
-/* ----------------------------------------------------------------------------
-   Execution History — Year/Month/Day Accordion
-   ---------------------------------------------------------------------------- */
-.history-tree {
-    font-size: 13px;
-    /* Viewport constraint: history scrolls internally so abort buttons,
-       totals tiles, and Today section stay visible regardless of how many
-       batches are expanded. Offset accounts for: nav (40), page padding (40),
-       header bar (~80), lifetime totals (~120), Today section (~120),
-       section chrome (~40). Adjust if the layout above changes. */
+/* State tag marking a badge as a failed state. */
+.dmo-failed { }
+
+.dmo-status-badge.dmo-failed { /* failed state (red-orange) */
+    color: var(--color-status-critical);
+    background: #3d2020;
+    border-color: var(--color-button-danger-bg);
+}
+
+/* State tag marking a badge as a skipped state. */
+.dmo-skipped { }
+
+.dmo-status-badge.dmo-skipped { /* skipped state (gray) */
+    color: var(--color-text-muted);
+    background: var(--color-bg-card-deep);
+    border-color: var(--color-border-default);
+}
+
+/* State tag marking a badge as a running state. */
+.dmo-running { }
+
+.dmo-status-badge.dmo-running { /* running state (blue) */
+    color: var(--color-accent-platform);
+    background: #1f2a3a;
+    border-color: #2d4d6e;
+}
+
+/* State tag marking a badge as an unknown state. */
+.dmo-unknown { }
+
+.dmo-status-badge.dmo-unknown { /* unknown state (subtle gray) */
+    color: var(--color-text-subtle);
+    background: var(--color-bg-card);
+    border-color: var(--color-border-default);
+}
+
+/* The BIDATA migration status pill badge. */
+.dmo-bidata-badge {
+    display: inline-block;
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    border: var(--size-border-thin) solid transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 14px;
+}
+
+.dmo-bidata-badge.dmo-success { /* BIDATA success state (teal) */
+    color: var(--color-accent-shared);
+    background: #1f3a30;
+    border-color: #2d5a47;
+}
+
+.dmo-bidata-badge.dmo-failed { /* BIDATA failed state (red-orange) */
+    color: var(--color-status-critical);
+    background: #3d2020;
+    border-color: var(--color-button-danger-bg);
+}
+
+.dmo-bidata-badge.dmo-skipped { /* BIDATA skipped state (gray) */
+    color: var(--color-text-muted);
+    background: var(--color-bg-card-deep);
+    border-color: var(--color-border-default);
+}
+
+.dmo-bidata-badge.dmo-running { /* BIDATA running state (blue) */
+    color: var(--color-accent-platform);
+    background: #1f2a3a;
+    border-color: #2d4d6e;
+}
+
+.dmo-bidata-badge.dmo-unknown { /* BIDATA unknown state (subtle gray) */
+    color: var(--color-text-subtle);
+    background: var(--color-bg-card);
+    border-color: var(--color-border-default);
+}
+
+/* The schedule-mode pill badge (full/reduced/manual/retry/unknown). */
+.dmo-mode-badge {
+    display: inline-block;
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    border: var(--size-border-thin) solid transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 14px;
+}
+
+.dmo-mode-badge.dmo-full { /* full-mode badge (teal) */
+    color: var(--color-accent-shared);
+    background: #1f3a30;
+    border-color: #2d5a47;
+}
+
+.dmo-mode-badge.dmo-reduced { /* reduced-mode badge (yellow) */
+    color: var(--color-accent-departmental);
+    background: #3d3520;
+    border-color: #5a4d28;
+}
+
+/* Mode tag marking a badge as a manual-run badge. */
+.dmo-manual { }
+
+.dmo-mode-badge.dmo-manual { /* manual-run badge (purple) */
+    color: #c586c0;
+    background: #2e1f3d;
+    border-color: #4d3a5a;
+}
+
+/* Mode tag marking a badge as a retry badge. */
+.dmo-retry { }
+
+.dmo-mode-badge.dmo-retry { /* retry badge (blue) */
+    color: var(--color-accent-platform);
+    background: #1f2a3a;
+    border-color: #2d4d6e;
+}
+
+.dmo-mode-badge.dmo-unknown { /* unknown-mode badge (subtle gray) */
+    color: var(--color-text-subtle);
+    background: var(--color-bg-card);
+    border-color: var(--color-border-default);
+}
+
+/* ============================================================================
+   CONTENT: DELETE-ORDER PREFIX
+   ----------------------------------------------------------------------------
+   Monospace colored prefix chips for the batch-detail delete_order column.
+   Distinguishes account-level Phase 2 (A), account-level UDEF (AU), BIDATA
+   migration (AB), consumer-level Phase 2 (C), and consumer-level UDEF (CU)
+   delete passes.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The monospace delete-order prefix chip. */
+.dmo-order-prefix {
+    display: inline-block;
+    font-family: var(--font-family-monospace);
+    font-weight: 700;
+    padding: 0 var(--size-spacing-xs);
+    border-radius: var(--size-radius-xs);
+    margin-right: 1px;
+    font-size: var(--font-size-body);
+}
+
+/* Order tag marking an account-level Phase 2 (A) delete pass. */
+.dmo-order-a { }
+
+.dmo-order-prefix.dmo-order-a { /* account-level Phase 2 (blue) */
+    color: var(--color-accent-platform);
+    background: #1f2a3a;
+}
+
+/* Order tag marking an account-level UDEF (AU) delete pass. */
+.dmo-order-au { }
+
+.dmo-order-prefix.dmo-order-au { /* account-level UDEF (light blue) */
+    color: var(--color-text-link);
+    background: #1f2a3a;
+}
+
+/* Order tag marking a BIDATA migration (AB) delete pass. */
+.dmo-order-ab { }
+
+.dmo-order-prefix.dmo-order-ab { /* BIDATA migration (teal) */
+    color: var(--color-accent-shared);
+    background: #1f3a30;
+}
+
+/* Order tag marking a consumer-level Phase 2 (C) delete pass. */
+.dmo-order-c { }
+
+.dmo-order-prefix.dmo-order-c { /* consumer-level Phase 2 (purple) */
+    color: #c586c0;
+    background: #2e1f3d;
+}
+
+/* Order tag marking a consumer-level UDEF (CU) delete pass. */
+.dmo-order-cu { }
+
+.dmo-order-prefix.dmo-order-cu { /* consumer-level UDEF (light purple) */
+    color: #d8a8d8;
+    background: #2e1f3d;
+}
+
+/* ============================================================================
+   CONTENT: EXECUTION HISTORY ACCORDION
+   ----------------------------------------------------------------------------
+   The year/month/day accordion in each process's History section. Years
+   expand to a month summary table; month rows expand to a day table; day
+   rows expand to a per-day batch table. Internal scroll keeps the abort
+   controls, totals, and Today section visible regardless of expansion.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The scrollable container holding the year/month/day accordion. */
+.dmo-history-tree {
+    font-size: var(--font-size-content-lg);
     max-height: calc(100vh - 600px);
     overflow-y: auto;
     overflow-x: hidden;
 }
 
-/* Year header */
-.history-year {
-    margin-bottom: 4px;
+/* A single expandable year group. */
+.dmo-history-year {
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.year-header {
+/* The clickable year header row. */
+.dmo-year-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) 10px;
     cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.15s;
+    border-radius: var(--size-radius-default);
+    transition: background var(--duration-instant);
 }
 
-.year-header:hover {
-    background: #2a2a2a;
+.dmo-year-header:hover { /* hover state for the year header */
+    background: var(--color-bg-card-deep);
 }
 
-.year-label {
+/* The year label text in a year header. */
+.dmo-year-label {
     font-weight: 700;
     font-size: 18px;
-    color: #569cd6;
+    color: var(--color-accent-platform);
     letter-spacing: 1px;
 }
 
-.year-stats {
+/* The right-aligned at-a-glance stats group in a year header. */
+.dmo-year-stats {
     display: flex;
-    gap: 16px;
+    gap: var(--size-spacing-xl);
     margin-left: auto;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
 
-.year-stat { color: #888; }
-.year-stat.processed { color: #569cd6; }
-.year-stat.failed { color: #f48771; }
+/* A single stat figure in a year header. */
+.dmo-year-stat {
+    color: var(--color-text-muted);
+}
 
-.year-content {
+/* Stat tag marking a year stat as a processed-count figure. */
+.dmo-processed { }
+
+.dmo-year-stat.dmo-processed { /* processed-count figure (blue) */
+    color: var(--color-accent-platform);
+}
+
+.dmo-year-stat.dmo-failed { /* failed-count figure (red-orange) */
+    color: var(--color-status-critical);
+}
+
+/* The expanded content area beneath a year header. */
+.dmo-year-content {
+    display: block;
     margin-left: 10px;
-    margin-top: 4px;
+    margin-top: var(--size-spacing-xs);
 }
 
-/* Month summary table */
-.month-summary-table {
+/* State tag marking an accordion body as collapsed (hidden). */
+.dmo-collapsed { }
+
+.dmo-year-content.dmo-collapsed { /* collapsed year body (hidden) */
+    display: none;
+}
+
+/* The month summary table inside an expanded year. */
+.dmo-month-summary-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
-    margin-bottom: 4px;
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.month-summary-table th {
+/* Header cell in the month summary table. */
+.dmo-month-summary-th {
     text-align: left;
-    padding: 6px 10px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
 }
 
-.month-summary-table th.right,
-.month-summary-table td.right {
+/* Layout tag right-aligning a month summary cell. */
+.dmo-right { }
+
+.dmo-month-summary-th.dmo-right { /* right-aligned numeric header cell */
     text-align: right;
 }
 
-.month-summary-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* Data cell in the month summary table. */
+.dmo-month-summary-td {
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
 
-.month-summary-table tr.month-row {
+.dmo-month-summary-td.dmo-right { /* right-aligned numeric data cell */
+    text-align: right;
+}
+
+/* A clickable month row in the month summary table. */
+.dmo-month-row {
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-fast);
 }
 
-.month-summary-table tr.month-row:hover td {
-    background: #2d2d2d;
+.dmo-month-row:hover { /* hover state for a clickable month row */
+    background: var(--color-bg-card-hover);
 }
 
-.month-summary-table .expand-cell { width: 24px; text-align: center; }
-.month-summary-table .month-cell { font-weight: 500; }
-.month-summary-table .fail-cell { color: #f48771; }
-
-/* Month details (expanded day table) */
-.month-details td {
-    padding: 0 0 12px 20px;
-    background: transparent;
-}
-
-.month-details-content { padding-top: 4px; }
-
-/* Day table inside month expand */
-.day-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-
-.day-table th {
-    text-align: left;
-    padding: 4px 8px;
-    color: #888;
-    font-weight: 500;
-    font-size: 11px;
-    border-bottom: 1px solid #404040;
-}
-
-.day-table th.right,
-.day-table td.right {
-    text-align: right;
-}
-
-.day-table td {
-    padding: 4px 8px;
-    border-bottom: 1px solid #333;
-}
-
-.day-table tr:hover { background: #2a2a2a; }
-.day-table tr.row-failed td { color: #f48771; }
-
-.day-table .expand-cell {
+/* The expand-arrow cell in a month or day table. */
+.dmo-expand-cell {
     width: 24px;
     text-align: center;
 }
 
-/* Day rows are clickable and expand to show per-batch sub-table */
-.day-table tr.day-row {
+/* The month-name cell in the month summary table. */
+.dmo-month-cell {
+    font-weight: 500;
+}
+
+/* Cell tag marking a count as a failure figure. */
+.dmo-fail-cell {
+    color: var(--color-status-critical);
+}
+
+/* The expanded month-details row container. */
+.dmo-month-details {
+    display: table-row;
+    padding: 0 0 var(--size-spacing-lg) var(--size-spacing-2xl);
+    background: transparent;
+}
+
+.dmo-month-details.dmo-collapsed { /* collapsed month-details row (hidden) */
+    display: none;
+}
+
+/* The inner wrapper for expanded month-details content. */
+.dmo-month-details-content {
+    padding-top: var(--size-spacing-xs);
+}
+
+/* The day table inside an expanded month. */
+.dmo-day-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Header cell in the day table. */
+.dmo-day-table-th {
+    text-align: left;
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    color: var(--color-text-muted);
+    font-weight: 500;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+.dmo-day-table-th.dmo-right { /* right-aligned numeric day header cell */
+    text-align: right;
+}
+
+/* Data cell in the day table. */
+.dmo-day-table-td {
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+.dmo-day-table-td.dmo-right { /* right-aligned numeric day data cell */
+    text-align: right;
+}
+
+/* A clickable day row that expands to a per-day batch table. */
+.dmo-day-row {
     cursor: pointer;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-instant);
 }
 
-.day-table tr.day-row:hover td {
-    background: #2d2d2d;
+.dmo-day-row:hover { /* hover state for a clickable day row */
+    background: var(--color-bg-card-hover);
 }
 
-.day-table tr.day-row.row-warn td {
-    color: #dcdcaa;
+/* Row tag marking a day row as carrying a warning. */
+.dmo-row-warn { }
+
+.dmo-day-row.dmo-row-warn { /* day row with a warning (yellow text) */
+    color: var(--color-accent-departmental);
 }
 
-.day-table .cell-fail {
-    color: #f48771;
-    font-size: 10px;
+/* Cell tag marking a day-table cell as a failure figure. */
+.dmo-cell-fail {
+    color: var(--color-status-critical);
+    font-size: var(--font-size-default);
 }
 
-.day-table .cell-warn {
-    color: #dcdcaa;
+/* Cell tag marking a day-table cell as a warning figure. */
+.dmo-cell-warn {
+    color: var(--color-accent-departmental);
 }
 
-.cell-fail[title], .cell-warn[title] {
-    cursor: help;
-}
-
-/* Per-day batch-list expand row (sub-row beneath a day-row) */
-.day-batches td {
+/* The expanded per-day batch-list row container. */
+.dmo-day-batches {
+    display: table-row;
     padding: 0 0 10px 28px;
     background: transparent;
 }
 
-.day-batches-content {
-    padding-top: 4px;
+.dmo-day-batches.dmo-collapsed { /* collapsed per-day batch-list row (hidden) */
+    display: none;
+}
+
+/* The inner scrollable wrapper for expanded per-day batch content. */
+.dmo-day-batches-content {
+    padding-top: var(--size-spacing-xs);
     max-width: 100%;
     overflow-x: auto;
 }
 
-/* Mode breakdown in tables (legacy mode column variants) */
-.mode-breakdown {
-    font-size: 10px;
-    color: #666;
-}
-.mode-breakdown .full { color: #4ec9b0; }
-.mode-breakdown .reduced { color: #dcdcaa; }
-
-/* Expand icon (shared) */
-.expand-icon {
-    color: #888;
-    font-size: 10px;
-    width: 12px;
+/* The expand/collapse chevron icon used in accordion rows. */
+.dmo-expand-icon {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
+    width: var(--size-spacing-lg);
     flex-shrink: 0;
 }
 
-/* ----------------------------------------------------------------------------
-   Batch Row Table (per-day individual batches under a day-row expand)
-   Two-line header: row 1 has rowspan grouping context fields; row 2 sits
-   under a "Counts" group header for the numeric metrics.
-   ---------------------------------------------------------------------------- */
-.batch-table {
+/* ============================================================================
+   CONTENT: BATCH TABLE
+   ----------------------------------------------------------------------------
+   The per-day individual-batch table shown when a day row expands. A
+   two-line header groups the numeric count columns under a "Counts" group
+   header; batch rows are clickable to open the batch-detail slideout.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The per-day batch table. */
+.dmo-batch-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: var(--font-size-body);
 }
 
-.batch-table thead th {
+/* Header cell in the batch table. */
+.dmo-batch-table-th {
     text-align: left;
-    padding: 4px 6px;
-    color: #888;
+    padding: var(--size-spacing-xs) var(--size-spacing-sm);
+    color: var(--color-text-muted);
     font-weight: 500;
-    font-size: 10px;
-    border-bottom: 1px solid #404040;
+    font-size: var(--font-size-default);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     white-space: nowrap;
     background: #1f1f1f;
 }
 
-.batch-table thead th.right {
+.dmo-batch-table-th.dmo-right { /* right-aligned numeric batch header cell */
     text-align: right;
 }
 
-.batch-table thead th.batch-counts-header {
+/* Header tag marking the grouped "Counts" header cell. */
+.dmo-batch-counts-header { }
+
+.dmo-batch-table-th.dmo-batch-counts-header { /* grouped Counts header (blue, centered) */
     text-align: center;
-    color: #569cd6;
-    border-bottom: 1px solid #2d4d6e;
+    color: var(--color-accent-platform);
+    border-bottom: var(--size-border-thin) solid #2d4d6e;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.4px;
 }
 
-.batch-table tbody td {
-    padding: 5px 6px;
-    border-bottom: 1px solid #2a2a2a;
-    color: #d4d4d4;
+/* Data cell in the batch table. */
+.dmo-batch-table-td {
+    padding: var(--size-spacing-sm) var(--size-spacing-sm);
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
+    color: var(--color-text-primary);
     white-space: nowrap;
 }
 
-.batch-table tbody td.right {
+.dmo-batch-table-td.dmo-right { /* right-aligned numeric batch data cell */
     text-align: right;
 }
 
-.batch-table tbody tr.batch-row {
+/* A clickable batch row that opens the batch-detail slideout. */
+.dmo-batch-row {
     cursor: pointer;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-instant);
 }
 
-.batch-table tbody tr.batch-row:hover td {
-    background: #2d2d2d;
+.dmo-batch-row:hover { /* hover state for a clickable batch row */
+    background: var(--color-bg-card-hover);
 }
 
-.batch-table tbody tr.row-failed td {
-    color: #f48771;
+/* Row tag marking a batch row as failed. */
+.dmo-row-failed { }
+
+.dmo-batch-row.dmo-row-failed { /* failed batch row (red-orange text) */
+    color: var(--color-status-critical);
 }
 
-.batch-table tbody tr.row-warn td {
-    color: #dcdcaa;
+.dmo-batch-row.dmo-row-warn { /* warning batch row (yellow text) */
+    color: var(--color-accent-departmental);
 }
 
-.batch-table .batch-id {
-    font-family: 'Consolas', 'Courier New', monospace;
-    color: #569cd6;
+/* The monospace batch-id cell. */
+.dmo-batch-id {
+    font-family: var(--font-family-monospace);
+    color: var(--color-accent-platform);
     font-weight: 600;
 }
 
-.batch-table .retry-badge {
+/* The retry indicator chip shown beside a retried batch id. */
+.dmo-retry-badge {
     background: #3d3520;
-    color: #dcdcaa;
-    font-size: 9px;
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-sm);
     font-weight: 700;
-    padding: 1px 4px;
-    border-radius: 2px;
-    margin-left: 4px;
-    border: 1px solid #5a4d28;
+    padding: 1px var(--size-spacing-xs);
+    border-radius: var(--size-radius-xs);
+    margin-left: var(--size-spacing-xs);
+    border: var(--size-border-thin) solid #5a4d28;
 }
 
-.batch-table .cell-warn {
-    color: #dcdcaa;
-    font-weight: 600;
+/* ============================================================================
+   CONTENT: BATCH DETAIL SLIDEOUT
+   ----------------------------------------------------------------------------
+   The body content of the batch-detail slideout: a summary header block of
+   labeled fields, an optional error block, and the sortable per-table
+   detail step table.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The summary header block at the top of the batch-detail slideout body. */
+.dmo-batch-detail-header {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg) var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-xl);
+    font-size: var(--font-size-content);
 }
 
-/* ----------------------------------------------------------------------------
-   Schedule Modal — Three State (0=blocked, 1=full, 2=reduced)
-   ---------------------------------------------------------------------------- */
-.schedule-modal-grid .schedule-cell {
-    height: 24px;
-    cursor: pointer;
-}
-
-.schedule-modal-grid .schedule-cell:hover {
-    transform: scale(1.1);
-    z-index: 1;
-}
-
-.schedule-modal-grid .schedule-cell.full:hover { background: #3d7a5d; }
-.schedule-modal-grid .schedule-cell.reduced:hover { background: #4d4528; }
-.schedule-modal-grid .schedule-cell.blocked:hover { background: #4d3535; }
-
-.schedule-modal-grid .schedule-cell.saving {
-    opacity: 0.5;
-    cursor: wait;
-}
-
-.schedule-modal-grid .schedule-cell.drag-selected {
-    box-shadow: 0 0 0 2px #569cd6;
-    transform: scale(1.05);
-    z-index: 2;
-}
-
-.schedule-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    user-select: none;
-}
-
-.schedule-row {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-}
-
-.schedule-day-label {
-    width: 36px;
-    font-size: 10px;
-    color: #888;
-    text-align: right;
-    padding-right: 6px;
-    flex-shrink: 0;
-}
-
-.schedule-hours {
-    display: flex;
-    gap: 1px;
-    flex: 1;
-}
-
-.schedule-cell {
-    flex: 1;
-    height: 18px;
-    border-radius: 2px;
-    cursor: default;
-    transition: all 0.15s;
-    min-width: 0;
-}
-
-.schedule-cell.full {
-    background: #2d5a3d;
-    border: 1px solid #3a7050;
-}
-
-.schedule-cell.reduced {
-    background: #3d3520;
-    border: 1px solid #5a4d28;
-}
-
-.schedule-cell.blocked {
-    background: #3d2d2d;
-    border: 1px solid #5a3838;
-}
-
-.schedule-hour-labels {
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    margin-bottom: 2px;
-}
-
-.schedule-hour-label {
-    flex: 1;
-    font-size: 8px;
-    color: #555;
-    text-align: center;
-    min-width: 0;
-}
-
-.schedule-legend {
-    display: flex;
-    gap: 16px;
-    font-size: 11px;
-    color: #888;
-}
-
-.schedule-legend-item {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.schedule-legend-box {
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-}
-
-.schedule-legend-box.full { background: #2d5a3d; border: 1px solid #4ec9b0; }
-.schedule-legend-box.reduced { background: #3d3520; border: 1px solid #dcdcaa; }
-.schedule-legend-box.blocked { background: #3d2d2d; border: 1px solid #6b4444; }
-
-.schedule-drag-hint {
-    margin-left: auto;
-    font-style: italic;
-    color: #555;
-    font-size: 11px;
-}
-
-.schedule-mode-selector {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 12px;
-    align-items: center;
-}
-
-.schedule-mode-selector label {
-    font-size: 12px;
-    color: #888;
-    margin-right: 4px;
-}
-
-.schedule-mode-btn {
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 11px;
-    cursor: pointer;
-    border: 1px solid #404040;
-    background: #252526;
-    color: #888;
-    transition: all 0.15s;
-}
-
-.schedule-mode-btn.active-full { background: #2d5a3d; border-color: #4ec9b0; color: #4ec9b0; }
-.schedule-mode-btn.active-reduced { background: #3d3520; border-color: #dcdcaa; color: #dcdcaa; }
-.schedule-mode-btn.active-blocked { background: #3d2d2d; border-color: #f48771; color: #f48771; }
-.schedule-mode-btn:hover { border-color: #569cd6; color: #d4d4d4; }
-
-/* ----------------------------------------------------------------------------
-   Slide Panel (page-specific — uses .active activation class)
-   NOTE: engine-events.css defines .slide-panel with .open activation. This
-   page's JS uses .active. Keeping these rules as page-specific. Future
-   cleanup item: align JS to .open and strip these.
-   ---------------------------------------------------------------------------- */
-.slide-panel-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 2000;
-}
-
-.slide-panel-overlay.active { display: block; }
-
-.slide-panel {
-    position: fixed;
-    top: 0;
-    right: -600px;
-    width: 600px;
-    height: 100vh;
-    background: #1e1e1e;
-    border-left: 1px solid #404040;
-    z-index: 2001;
-    transition: right 0.3s ease;
-    display: flex;
-    flex-direction: column;
-}
-
-.slide-panel.active { right: 0; }
-
-.slide-panel.wide { width: 780px; right: -780px; }
-.slide-panel.wide.active { right: 0; }
-
-.slide-panel.extra-wide { width: 980px; right: -980px; }
-.slide-panel.extra-wide.active { right: 0; }
-
-.slide-panel.auto-height {
-    height: auto;
-    max-height: 100vh;
-    top: 50%;
-    transform: translateY(-50%);
-    border: 1px solid #404040;
-    border-radius: 8px;
-}
-
-.slide-panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    border-bottom: 1px solid #404040;
-    flex-shrink: 0;
-}
-
-.slide-panel-header h3 {
-    margin: 0;
-    font-size: 16px;
-    color: #d4d4d4;
-}
-
-.modal-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 0 4px;
-}
-
-.modal-close:hover { color: #d4d4d4; }
-
-.slide-panel-body {
-    padding: 20px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-/* ----------------------------------------------------------------------------
-   Batch Detail Slide-out — header summary + sortable detail table
-   Rendered inside .slide-panel.extra-wide for the BatchDetail step list.
-   ---------------------------------------------------------------------------- */
-.batch-detail-header {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 12px 14px;
-    margin-bottom: 16px;
-    font-size: 12px;
-}
-
-.batch-detail-line {
+/* A line of labeled fields within the summary header. */
+.dmo-batch-detail-line {
     display: flex;
     flex-wrap: wrap;
-    gap: 14px 18px;
-    margin-bottom: 6px;
+    gap: var(--size-spacing-lg) 18px;
+    margin-bottom: var(--size-spacing-sm);
     align-items: center;
 }
 
-.batch-detail-line:last-child {
+/* Position tag marking the last field line in the summary header. */
+.dmo-last { }
+
+.dmo-batch-detail-line.dmo-last { /* last field line (no bottom margin) */
     margin-bottom: 0;
 }
 
-.batch-detail-header .bd-label {
-    color: #888;
-    font-size: 10px;
+/* The small uppercase label of a summary field. */
+.dmo-bd-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
     text-transform: uppercase;
     letter-spacing: 0.4px;
-    margin-right: 4px;
+    margin-right: var(--size-spacing-xs);
 }
 
-.batch-detail-header .bd-value {
-    color: #d4d4d4;
+/* The value of a summary field. */
+.dmo-bd-value {
+    color: var(--color-text-primary);
     font-weight: 500;
 }
 
-.batch-detail-error {
+/* The error block shown when a batch failed. */
+.dmo-batch-detail-error {
     margin-top: 10px;
-    padding: 8px 10px;
+    padding: var(--size-spacing-md) 10px;
     background: #3d2020;
-    color: #f48771;
-    border: 1px solid #6d3030;
-    border-radius: 3px;
-    font-size: 12px;
+    color: var(--color-status-critical);
+    border: var(--size-border-thin) solid var(--color-button-danger-bg);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-content);
     word-break: break-word;
 }
 
-.batch-detail-table {
+/* The sortable per-table step detail table. */
+.dmo-batch-detail-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: var(--font-size-body);
 }
 
-.batch-detail-table thead th {
+/* Sortable header cell in the batch-detail table (sticky to top of body). */
+.dmo-batch-detail-th {
     text-align: left;
-    padding: 5px 6px;
-    color: #888;
+    padding: var(--size-spacing-xs) var(--size-spacing-sm);
+    color: var(--color-text-muted);
     font-weight: 500;
-    font-size: 10px;
-    border-bottom: 1px solid #404040;
+    font-size: var(--font-size-default);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     background: #1f1f1f;
     cursor: pointer;
     user-select: none;
@@ -945,49 +978,288 @@ a { color: #9cdcfe; }
     z-index: 1;
 }
 
-.batch-detail-table thead th.right {
+.dmo-batch-detail-th.dmo-right { /* right-aligned numeric header cell */
     text-align: right;
 }
 
-.batch-detail-table thead th[data-col]:hover {
-    color: #d4d4d4;
+.dmo-batch-detail-th:hover { /* hover state for a sortable header cell */
+    color: var(--color-text-primary);
 }
 
-.batch-detail-table thead th.sorted-asc::after {
+/* Sort tag marking a header cell as sorted ascending. */
+.dmo-sorted-asc { }
+
+.dmo-batch-detail-th.dmo-sorted-asc::after { /* ascending sort indicator arrow */
     content: ' \25B2';
-    color: #569cd6;
-    font-size: 9px;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-sm);
 }
 
-.batch-detail-table thead th.sorted-desc::after {
+/* Sort tag marking a header cell as sorted descending. */
+.dmo-sorted-desc { }
+
+.dmo-batch-detail-th.dmo-sorted-desc::after { /* descending sort indicator arrow */
     content: ' \25BC';
-    color: #569cd6;
-    font-size: 9px;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-sm);
 }
 
-.batch-detail-table tbody td {
-    padding: 4px 6px;
-    border-bottom: 1px solid #2a2a2a;
-    color: #d4d4d4;
+/* Data cell in the batch-detail table. */
+.dmo-batch-detail-td {
+    padding: var(--size-spacing-xs) var(--size-spacing-sm);
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
+    color: var(--color-text-primary);
 }
 
-.batch-detail-table tbody td.right {
+.dmo-batch-detail-td.dmo-right { /* right-aligned numeric data cell */
     text-align: right;
 }
 
-.batch-detail-table tbody tr:hover td {
-    background: #2a2a2a;
+/* A data row in the batch-detail table. */
+.dmo-batch-detail-row { }
+
+.dmo-batch-detail-row:hover { /* hover state for a batch-detail data row */
+    background: var(--color-bg-card-deep);
 }
 
-.batch-detail-table tbody tr.row-failed td {
-    color: #f48771;
+.dmo-batch-detail-row.dmo-row-failed { /* failed step row (red-orange text) */
+    color: var(--color-status-critical);
 }
 
-.batch-detail-table .bd-error-cell {
+/* The truncating error-message cell in the batch-detail table. */
+.dmo-bd-error-cell {
     max-width: 280px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #f48771;
-    font-size: 10px;
+    color: var(--color-status-critical);
+    font-size: var(--font-size-default);
+}
+
+/* ============================================================================
+   CONTENT: SCHEDULE MODAL GRID
+   ----------------------------------------------------------------------------
+   The click-and-drag weekly execution-window editor shown in the schedule
+   modal. A 7-row by 24-hour grid of three-state cells (blocked / full /
+   reduced) with hour labels, a paint-mode selector, and a legend. Shared
+   between the archive and shell purge processes; only the underlying grid
+   data differs.
+   Prefix: dmo
+   ============================================================================ */
+
+/* The paint-mode selector row (choose which state a click paints). */
+.dmo-schedule-mode-selector {
+    display: flex;
+    gap: var(--size-spacing-sm);
+    margin-bottom: var(--size-spacing-lg);
+    align-items: center;
+}
+
+/* The label preceding the paint-mode buttons. */
+.dmo-schedule-mode-label {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    margin-right: var(--size-spacing-xs);
+}
+
+/* A single paint-mode button. */
+.dmo-schedule-mode-btn {
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    border: var(--size-border-thin) solid var(--color-border-default);
+    background: var(--color-bg-card);
+    color: var(--color-text-muted);
+    transition: all var(--duration-instant);
+}
+
+.dmo-schedule-mode-btn:hover { /* hover state for a paint-mode button */
+    border-color: var(--color-accent-platform);
+    color: var(--color-text-primary);
+}
+
+/* Active tag marking the full-mode paint button as selected. */
+.dmo-active-full { }
+
+.dmo-schedule-mode-btn.dmo-active-full { /* full-mode paint selected (teal) */
+    background: #2d5a3d;
+    border-color: var(--color-accent-shared);
+    color: var(--color-accent-shared);
+}
+
+/* Active tag marking the reduced-mode paint button as selected. */
+.dmo-active-reduced { }
+
+.dmo-schedule-mode-btn.dmo-active-reduced { /* reduced-mode paint selected (yellow) */
+    background: #3d3520;
+    border-color: var(--color-accent-departmental);
+    color: var(--color-accent-departmental);
+}
+
+/* Active tag marking the blocked-mode paint button as selected. */
+.dmo-active-blocked { }
+
+.dmo-schedule-mode-btn.dmo-active-blocked { /* blocked-mode paint selected (red-orange) */
+    background: #3d2d2d;
+    border-color: var(--color-status-critical);
+    color: var(--color-status-critical);
+}
+
+/* The hour-number label row above the schedule grid. */
+.dmo-schedule-hour-labels {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    margin-bottom: 2px;
+}
+
+/* A single hour-number label above a grid column. */
+.dmo-schedule-hour-label {
+    flex: 1;
+    font-size: var(--font-size-xs);
+    color: var(--color-border-strong);
+    text-align: center;
+    min-width: 0;
+}
+
+/* The 7-row grid container of schedule rows. */
+.dmo-schedule-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    user-select: none;
+}
+
+/* A single day row in the schedule grid. */
+.dmo-schedule-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* The day-of-week label at the start of a schedule row. */
+.dmo-schedule-day-label {
+    width: 36px;
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
+    text-align: right;
+    padding-right: var(--size-spacing-sm);
+    flex-shrink: 0;
+}
+
+/* The container holding the 24 hour cells of a schedule row. */
+.dmo-schedule-hours {
+    display: flex;
+    gap: 1px;
+    flex: 1;
+}
+
+/* A single hour cell in the schedule grid. */
+.dmo-schedule-cell {
+    flex: 1;
+    height: 24px;
+    border-radius: var(--size-radius-xs);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+    min-width: 0;
+}
+
+.dmo-schedule-cell:hover { /* hover state for a schedule cell (enlarges to preview) */
+    transform: scale(1.1);
+    z-index: 1;
+}
+
+/* State tag marking a schedule cell as full-batch mode. */
+.dmo-schedule-cell.dmo-full { /* full-batch window (green) */
+    background: #2d5a3d;
+    border: var(--size-border-thin) solid #3a7050;
+}
+
+.dmo-schedule-cell.dmo-full:hover { /* hover state for a full-mode cell */
+    background: #3d7a5d;
+}
+
+/* State tag marking a schedule cell as reduced-batch mode. */
+.dmo-schedule-cell.dmo-reduced { /* reduced-batch window (yellow) */
+    background: #3d3520;
+    border: var(--size-border-thin) solid #5a4d28;
+}
+
+.dmo-schedule-cell.dmo-reduced:hover { /* hover state for a reduced-mode cell */
+    background: #4d4528;
+}
+
+/* State tag marking a schedule cell as blocked. */
+.dmo-blocked { }
+
+.dmo-schedule-cell.dmo-blocked { /* blocked window (dark red) */
+    background: #3d2d2d;
+    border: var(--size-border-thin) solid #5a3838;
+}
+
+.dmo-schedule-cell.dmo-blocked:hover { /* hover state for a blocked cell */
+    background: #4d3535;
+}
+
+/* State tag marking a schedule cell as currently saving. */
+.dmo-saving { }
+
+.dmo-schedule-cell.dmo-saving { /* cell write in flight (dimmed, wait cursor) */
+    opacity: 0.5;
+    cursor: wait;
+}
+
+/* State tag marking a schedule cell as part of the active drag selection. */
+.dmo-drag-selected { }
+
+.dmo-schedule-cell.dmo-drag-selected { /* cell under the active click-drag selection */
+    box-shadow: 0 0 0 2px var(--color-accent-platform);
+    transform: scale(1.05);
+    z-index: 2;
+}
+
+/* The legend row below the schedule grid. */
+.dmo-schedule-legend {
+    display: flex;
+    gap: var(--size-spacing-xl);
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* A single legend item (color box + label). */
+.dmo-schedule-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* The color swatch box in a legend item. */
+.dmo-schedule-legend-box {
+    width: 14px;
+    height: 14px;
+    border-radius: var(--size-radius-sm);
+}
+
+.dmo-schedule-legend-box.dmo-full { /* full-mode legend swatch (green) */
+    background: #2d5a3d;
+    border: var(--size-border-thin) solid var(--color-accent-shared);
+}
+
+.dmo-schedule-legend-box.dmo-reduced { /* reduced-mode legend swatch (yellow) */
+    background: #3d3520;
+    border: var(--size-border-thin) solid var(--color-accent-departmental);
+}
+
+.dmo-schedule-legend-box.dmo-blocked { /* blocked-mode legend swatch (dark red) */
+    background: #3d2d2d;
+    border: var(--size-border-thin) solid #6b4444;
+}
+
+/* The italic drag-hint caption beside the legend. */
+.dmo-schedule-drag-hint {
+    margin-left: auto;
+    font-style: italic;
+    color: var(--color-border-strong);
+    font-size: var(--font-size-body);
 }
