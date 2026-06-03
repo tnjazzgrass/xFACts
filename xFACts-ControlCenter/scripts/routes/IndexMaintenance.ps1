@@ -1,151 +1,186 @@
-# ============================================================================
-# xFACts Control Center - Index Maintenance Page
-# Location: E:\xFACts-ControlCenter\scripts\routes\IndexMaintenance.ps1
-#
-# Renders the Index Maintenance monitoring dashboard page.
-# CSS: /css/index-maintenance.css
-# JS:  /js/index-maintenance.js
-# APIs: IndexMaintenance-API.ps1
-#
-# Version: Tracked in dbo.System_Metadata (component: ServerOps.Index)
-#
-# CHANGELOG
-# ---------
+<#
+.SYNOPSIS
+    Renders the Index Maintenance monitoring dashboard page.
+
+.DESCRIPTION
+    Page route for the Control Center Index Maintenance dashboard. Performs the
+    RBAC access check, resolves user context, composes the dynamic nav bar,
+    page header, and chrome banners from the registry helpers, and emits the
+    page shell. The page presents live activity, process status, the index
+    queue, active rebuild execution, and a database overview, with detail
+    slideouts and an admin launch modal. Page behavior and content rendering
+    are driven by index-maintenance.js; styling by index-maintenance.css and
+    cc-shared.css.
+
+.COMPONENT
+    ServerOps.Index
+
+.NOTES
+    File Name : IndexMaintenance.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\IndexMaintenance.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for the Index Maintenance page route.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-03  Refactored to the cc-shared model: cc-section body shell with
+#             data-cc-page/data-cc-prefix, cc-shared.css/js replacing the
+#             legacy engine-events pair, cc- chrome classes, $bannerHtml
+#             chrome, cc- engine cards, and single-rooted cc-dialog overlay
+#             constructs with data-action-click wiring. Admin-only launch
+#             badges are now gated server-side via a per-process flag in the
+#             process-status API rather than a client-side admin flag.
 # 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
 #             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
 #             browser tab title now render from RBAC_NavRegistry via
 #             Get-PageHeaderHtml and Get-PageBrowserTitle.
-# ============================================================================
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   Registers the GET /index-maintenance page route, gated by ADLogin
+   authentication and an RBAC access check, and renders the dashboard shell.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/index-maintenance' -Authentication 'ADLogin' -ScriptBlock {
 
-    # --- RBAC Access Check ---
+    # Import the cc- emission helpers. During the CC File Format
+    # Standardization Section 11.2.4 migration this overrides the auto-loaded
+    # xFACts-Helpers module for this route's execution, so Get-NavBarHtml
+    # and Get-PageHeaderHtml emit cc- prefixed chrome classes that match
+    # cc-shared.css and cc-shared.js. Once every page has migrated and
+    # Start-ControlCenter.ps1 loads xFACts-CCShared.psm1 at startup
+    # instead of xFACts-Helpers.psm1, this line is removed.
+    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
+
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/index-maintenance'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/index-maintenance') -StatusCode 403
         return
     }
 
-    # --- User context (used by helper for nav rendering and isAdmin flag) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
 
-    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
-    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/index-maintenance'
+    $navHtml      = Get-NavBarHtml       -UserContext $ctx -CurrentPageRoute '/index-maintenance'
     $headerHtml   = Get-PageHeaderHtml   -PageRoute '/index-maintenance'
     $browserTitle = Get-PageBrowserTitle -PageRoute '/index-maintenance'
+    $bannerHtml   = Get-ChromeBannersHtml
 
     $html = @"
-
 <!DOCTYPE html>
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/index-maintenance.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
+
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body>
+<body class="cc-section-platform" data-cc-page="index-maintenance" data-cc-prefix="idx">
 $navHtml
 
-    <div class="header-bar">
+    <div class="cc-header-bar">
         <div>
             $headerHtml
         </div>
-        <div class="header-right">
-            <div class="refresh-info">
-                <span class="live-indicator"></span>
-                <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-                <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>
+        <div class="cc-header-right">
+            <div class="cc-refresh-info">
+                <span class="cc-live-indicator"></span>
+                <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+                <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
-            <div class="engine-row">
-                <div class="engine-card" id="card-engine-sync">
-                    <span class="engine-label">Sync</span>
-                    <div class="engine-bar disabled" id="engine-bar-sync"></div>
-                    <span class="engine-countdown" id="engine-cd-sync">&nbsp;</span>
+            <div class="cc-engine-row">
+                <div class="cc-card-engine" id="cc-card-engine-sync">
+                    <span class="cc-engine-label">SYNC</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-sync"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-sync"></span>
                 </div>
-                <div class="engine-card" id="card-engine-scan">
-                    <span class="engine-label">Scan</span>
-                    <div class="engine-bar disabled" id="engine-bar-scan"></div>
-                    <span class="engine-countdown" id="engine-cd-scan">&nbsp;</span>
+                <div class="cc-card-engine" id="cc-card-engine-scan">
+                    <span class="cc-engine-label">SCAN</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-scan"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-scan"></span>
                 </div>
-                <div class="engine-card" id="card-engine-execute">
-                    <span class="engine-label">Execute</span>
-                    <div class="engine-bar disabled" id="engine-bar-execute"></div>
-                    <span class="engine-countdown" id="engine-cd-execute">&nbsp;</span>
+                <div class="cc-card-engine" id="cc-card-engine-execute">
+                    <span class="cc-engine-label">EXECUTE</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-execute"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-execute"></span>
                 </div>
-                <div class="engine-card" id="card-engine-stats">
-                    <span class="engine-label">Stats</span>
-                    <div class="engine-bar disabled" id="engine-bar-stats"></div>
-                    <span class="engine-countdown" id="engine-cd-stats">&nbsp;</span>
+                <div class="cc-card-engine" id="cc-card-engine-stats">
+                    <span class="cc-engine-label">STATS</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-stats"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-stats"></span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+    $bannerHtml
 
-    <!-- Two Column Layout -->
-    <div class="two-column-layout">
+    <div class="idx-two-column-layout">
 
-        <!-- Left Column: Process Status + Index Queue + Active Execution -->
-        <div class="left-column">
+        <div class="idx-left-column">
 
-            <!-- Live Activity Widget -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Live Activity</h2>
-                    <span class="refresh-badge-live" title="Refreshes on live interval"><span class="badge-dot"></span></span>
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Live Activity</h2>
+                    <span class="cc-refresh-badge-live" title="Refreshes on live interval"><span class="cc-refresh-badge-dot"></span></span>
                 </div>
-                <div id="live-activity" class="live-activity-content">
-                    <div class="loading">Loading...</div>
+                <div id="idx-live-activity" class="idx-live-activity-content">
+                    <div class="cc-slide-empty">Loading...</div>
                 </div>
             </div>
 
-            <!-- Process Status Cards -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Process Status</h2>
-                    <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Process Status</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
-                <div id="process-status" class="process-cards">
-                    <div class="loading">Loading...</div>
-                </div>
-            </div>
-
-            <!-- Index Queue (formerly Queue Summary) -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Index Queue</h2>
-                    <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
-                </div>
-                <div id="queue-summary" class="queue-summary-content">
-                    <div class="loading">Loading...</div>
+                <div id="idx-process-status" class="idx-process-cards">
+                    <div class="cc-slide-empty">Loading...</div>
                 </div>
             </div>
 
-            <!-- Active Execution (real-time rebuild progress) -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Active Execution</h2>
-                    <span class="refresh-badge-live" title="Refreshes on live interval"><span class="badge-dot"></span></span>
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Index Queue</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
-                <div id="active-execution" class="active-execution-content">
-                    <div class="loading">Loading...</div>
+                <div id="idx-queue-summary" class="idx-queue-summary-content">
+                    <div class="cc-slide-empty">Loading...</div>
+                </div>
+            </div>
+
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Active Execution</h2>
+                    <span class="cc-refresh-badge-live" title="Refreshes on live interval"><span class="cc-refresh-badge-dot"></span></span>
+                </div>
+                <div id="idx-active-execution" class="idx-active-execution-content">
+                    <div class="cc-slide-empty">Loading...</div>
                 </div>
             </div>
 
         </div>
 
-        <!-- Right Column: Database Overview -->
-        <div class="right-column">
+        <div class="idx-right-column">
 
-            <!-- Database Overview (formerly Database Health) -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Database Overview</h2>
-                    <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Database Overview</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
-                <div id="database-health" class="database-health-content">
-                    <div class="loading">Loading...</div>
+                <div id="idx-database-health" class="idx-database-health-content">
+                    <div class="cc-slide-empty">Loading...</div>
                 </div>
             </div>
 
@@ -153,93 +188,99 @@ $navHtml
 
     </div>
 
-    <script>window.isAdmin = __IS_ADMIN__;</script>
-    <script src="/js/index-maintenance.js"></script>
-    <script src="/js/engine-events.js"></script>
-
-    <!-- Queue Details Slideout -->
-    <div id="queue-overlay" class="slide-panel-overlay" onclick="closeQueuePanel()"></div>
-    <div id="queue-panel" class="slide-panel wide">
-        <div class="slide-panel-header">
-            <h3>Queue Details</h3>
-            <button class="modal-close" onclick="closeQueuePanel()">&times;</button>
-        </div>
-        <div class="slide-panel-body" id="queue-panel-body">
-            <div class="loading">Loading...</div>
+    <!-- Queue details slideout: full index queue table -->
+    <div id="idx-slideout-queue" class="cc-slide-overlay" data-action-click="idx-close-queue">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Queue Details</h3>
+                <button class="cc-dialog-close" data-action-click="idx-close-queue">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="idx-slideout-queue-body">
+                <div class="cc-slide-empty">Loading...</div>
+            </div>
         </div>
     </div>
 
-    <!-- SYNC Details Slideout -->
-    <div id="sync-overlay" class="slide-panel-overlay" onclick="closeSyncPanel()"></div>
-    <div id="sync-panel" class="slide-panel wide">
-        <div class="slide-panel-header">
-            <h3>Registry Sync - Last Run</h3>
-            <button class="modal-close" onclick="closeSyncPanel()">&times;</button>
-        </div>
-        <div class="slide-panel-body" id="sync-panel-body">
-            <div class="loading">Loading...</div>
-        </div>
-    </div>
-
-    <!-- SCAN Details Slideout -->
-    <div id="scan-overlay" class="slide-panel-overlay" onclick="closeScanPanel()"></div>
-    <div id="scan-panel" class="slide-panel wide">
-        <div class="slide-panel-header">
-            <h3>Fragmentation Scan - Last Run</h3>
-            <button class="modal-close" onclick="closeScanPanel()">&times;</button>
-        </div>
-        <div class="slide-panel-body" id="scan-panel-body">
-            <div class="loading">Loading...</div>
+    <!-- Sync details slideout: last registry-sync run -->
+    <div id="idx-slideout-sync" class="cc-slide-overlay" data-action-click="idx-close-sync">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Registry Sync - Last Run</h3>
+                <button class="cc-dialog-close" data-action-click="idx-close-sync">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="idx-slideout-sync-body">
+                <div class="cc-slide-empty">Loading...</div>
+            </div>
         </div>
     </div>
 
-    <!-- EXECUTE Details Slideout -->
-    <div id="execute-overlay" class="slide-panel-overlay" onclick="closeExecutePanel()"></div>
-    <div id="execute-panel" class="slide-panel wide">
-        <div class="slide-panel-header">
-            <h3>Index Maintenance - Last Run</h3>
-            <button class="modal-close" onclick="closeExecutePanel()">&times;</button>
-        </div>
-        <div class="slide-panel-body" id="execute-panel-body">
-            <div class="loading">Loading...</div>
-        </div>
-    </div>
-
-    <!-- STATS Details Slideout -->
-    <div id="stats-overlay" class="slide-panel-overlay" onclick="closeStatsPanel()"></div>
-    <div id="stats-panel" class="slide-panel wide">
-        <div class="slide-panel-header">
-            <h3>Statistics Update - Last Run</h3>
-            <button class="modal-close" onclick="closeStatsPanel()">&times;</button>
-        </div>
-        <div class="slide-panel-body" id="stats-panel-body">
-            <div class="loading">Loading...</div>
+    <!-- Scan details slideout: last fragmentation-scan run -->
+    <div id="idx-slideout-scan" class="cc-slide-overlay" data-action-click="idx-close-scan">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Fragmentation Scan - Last Run</h3>
+                <button class="cc-dialog-close" data-action-click="idx-close-scan">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="idx-slideout-scan-body">
+                <div class="cc-slide-empty">Loading...</div>
+            </div>
         </div>
     </div>
 
-    <!-- Schedule Modal -->
-    <div id="schedule-overlay" class="slide-panel-overlay" onclick="closeSchedulePanel()"></div>
-    <div id="schedule-panel" class="slide-panel wide auto-height">
-        <div class="slide-panel-header">
-            <h3 id="schedule-panel-title">Maintenance Schedule</h3>
-            <button class="modal-close" onclick="closeSchedulePanel()">&times;</button>
-        </div>
-        <div class="slide-panel-body" id="schedule-panel-body">
-            <div class="loading">Loading...</div>
+    <!-- Execute details slideout: last index-maintenance run -->
+    <div id="idx-slideout-execute" class="cc-slide-overlay" data-action-click="idx-close-execute">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Index Maintenance - Last Run</h3>
+                <button class="cc-dialog-close" data-action-click="idx-close-execute">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="idx-slideout-execute-body">
+                <div class="cc-slide-empty">Loading...</div>
+            </div>
         </div>
     </div>
 
-    <!-- Admin Launch Confirmation Modal -->
-    <div id="launch-modal" class="launch-modal-overlay hidden" onclick="closeLaunchModal()">
-        <div class="launch-modal-dialog" onclick="event.stopPropagation()">
-            <div class="launch-modal-body" id="launch-modal-body"></div>
-            <div class="launch-modal-footer" id="launch-modal-footer"></div>
+    <!-- Stats details slideout: last statistics-update run -->
+    <div id="idx-slideout-stats" class="cc-slide-overlay" data-action-click="idx-close-stats">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Statistics Update - Last Run</h3>
+                <button class="cc-dialog-close" data-action-click="idx-close-stats">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="idx-slideout-stats-body">
+                <div class="cc-slide-empty">Loading...</div>
+            </div>
         </div>
     </div>
+
+    <!-- Schedule slideout: per-database maintenance window editor -->
+    <div id="idx-slideout-schedule" class="cc-slide-overlay" data-action-click="idx-close-schedule">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="idx-slideout-schedule-title">Maintenance Schedule</h3>
+                <button class="cc-dialog-close" data-action-click="idx-close-schedule">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="idx-slideout-schedule-body">
+                <div class="cc-slide-empty">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Launch confirmation modal: admin manual process launch -->
+    <div id="idx-modal-launch" class="cc-modal-overlay cc-hidden" data-action-click="idx-close-launch">
+        <div class="cc-dialog cc-dialog-modal">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="idx-modal-launch-title">Launch Process</h3>
+                <button class="cc-dialog-close" data-action-click="idx-close-launch">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="idx-modal-launch-body"></div>
+            <div class="cc-dialog-actions" id="idx-modal-launch-footer"></div>
+        </div>
+    </div>
+
+    <script src="/js/cc-shared.js"></script>
 </body>
 </html>
-
 "@
-    $html = $html.Replace('__IS_ADMIN__', $(if ($ctx.IsAdmin) { 'true' } else { 'false' }))
     Write-PodeHtmlResponse -Value $html
 }
