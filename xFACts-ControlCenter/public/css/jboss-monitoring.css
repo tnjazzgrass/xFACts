@@ -1,78 +1,46 @@
 /* ============================================================================
-   xFACts Control Center - JBoss Monitoring Styles
+   xFACts Control Center - JBoss Monitoring (jboss-monitoring.css)
    Location: E:\xFACts-ControlCenter\public\css\jboss-monitoring.css
-
    Version: Tracked in dbo.System_Metadata (component: JBoss)
 
-   Page-specific styles for the JBoss Monitoring dashboard. Universal
-   chrome (body, h1, header-bar, refresh-info, sections, engine cards,
-   connection banner, animations, modal system) is provided by
-   engine-events.css per the CC Page Chrome Contract (Development
-   Guidelines Section 5.12).
+   Page-specific styles for the JBoss Monitoring dashboard: the three-column
+   application-server grid and the content components that fill each server
+   card (status badges, metric mini-cards, gauge bars, alert and delta rows,
+   the JMS queue accordion and table), plus the server-metric info modal body
+   and the admin DM app-server switch picker. Universal chrome (nav bar,
+   header bar, refresh info, engine cards, sections, overlays) comes from
+   cc-shared.css; this file consumes shared tokens via var(...).
 
-   CHANGELOG
-   ---------
-   2026-04-30  Phase 4 (Chrome Standardization, modal migration): three
-               local modal/dialog systems migrated to the shared
-               xf-modal-* infrastructure in engine-events.css.
-                 - .info-modal-* (help bubbles): chrome stripped, content
-                   now renders inside an xf-modal-body. Info content rules
-                   (.info-list, .info-item, .info-thresholds, .info-green,
-                   .info-yellow, .info-red, .info-icon, .section-info-icon)
-                   retained as page content.
-                 - .dm-modal-* (server switch picker): chrome stripped,
-                   picker buttons and status text retained as content
-                   inside an xf-modal-body. The .locked state moves from
-                   the overlay/modal to the body so the close button can
-                   still be hidden during the switch operation.
-                 - .confirm-overlay / .confirm-dialog: deleted entirely.
-                   Confirm dialogs now use the shared showConfirm() from
-                   engine-events.js with confirmClass=xf-modal-btn-danger
-                   for the destructive switch action.
-   2026-04-30  Phase 4 (Chrome Standardization): stripped duplicated chrome
-               rules now provided by engine-events.css -- box-sizing reset,
-               body, h1, page-subtitle, header-bar, header-right,
-               refresh-info, live-indicator, last-updated, @keyframes pulse,
-               and the legacy .connection-error block. Page now relies on
-               body.section-platform from shared CSS for H1 color.
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css), scrollbar
-               rules (shared version uses subtler colors), .section-header-right
-               (shared), .refresh-badge-event (shared 10px size adopted for
-               consistency), .page-refresh-btn (shared), and orphan @keyframes
-               spin (replaced by shared page-refresh-spin).
-   2026-03-18  Renamed from dm-monitoring.css.
-   2026-03-09  Delta seeding cosmetics: green delta-good class, percentage
-               display for tx counters, cumulative label "since restart",
-               fixed-height card body with scroll, queue accordion default open.
-   2026-03-08  Phase 3: Info modal, delta row styles, queue accordion,
-               removed queue slideout
-   2026-03-08  Phase 2b: Mini-cards, status badges, gauge bars, tooltips
-   2026-03-08  Phase 2: Gauge bars, alert rows, queue table/slideout
-   2026-03-08  Added "Users" badge, server switch modal, confirm dialog
-   2026-03-07  Initial implementation
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: SERVER GRID
+   CONTENT: SERVER CARDS
+   CONTENT: STATUS BADGES
+   CONTENT: MINI-CARDS
+   CONTENT: GAUGE BARS
+   CONTENT: ALERT ROWS
+   CONTENT: DELTA ROWS
+   CONTENT: INFO ICONS
+   CONTENT: INFO MODAL BODY
+   CONTENT: QUEUE ACCORDION
+   CONTENT: QUEUE TABLE
+   CONTENT: CARD FOOTER
+   CONTENT: DC BADGE
+   CONTENT: USERS BADGE
+   CONTENT: NO DATA AND LOADING
+   CONTENT: SWITCH MODAL BODY
    ============================================================================ */
 
-
 /* ============================================================================
-   PAGE LAYOUT OVERRIDE
-   The shared body rule provides viewport-constrained flex layout. JBoss
-   sections size to fill remaining viewport height for the three-column
-   server grid that's the page's primary content.
-   ============================================================================ */
-
-.section {
-    height: calc(100vh - 200px);
-}
-
-
-/* ============================================================================
-   SERVER GRID (Three Column Layout)
+   LAYOUT: SERVER GRID
+   ----------------------------------------------------------------------------
    The page's primary content: three side-by-side server cards filling the
-   section's remaining vertical space.
+   shared section's remaining vertical space.
+   Prefix: jbm
    ============================================================================ */
 
-.server-grid {
+/* Lays out the three server cards in an equal three-column grid that fills available height. */
+.jbm-server-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 15px;
@@ -81,236 +49,442 @@
     min-height: 0;
 }
 
-
 /* ============================================================================
-   SERVER CARDS
-   Each server card is a vertical stack: header (server name + role badge),
-   then a scrollable body containing all the metric mini-cards.
+   CONTENT: SERVER CARDS
+   ----------------------------------------------------------------------------
+   Each server card is a vertical stack: a header (server name + role badge)
+   above a scrollable body that holds the metric mini-cards.
+   Prefix: jbm
    ============================================================================ */
 
-.server-card {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
+/* Frames one server as a vertical flex column with a scrollable body. */
+.jbm-server-card {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
     overflow: hidden;
-    transition: border-color 0.3s;
+    transition: border-color var(--duration-default);
     display: flex;
     flex-direction: column;
     min-height: 0;
 }
-.server-card-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid #404040;
+
+/* Tints the card frame yellow when the server is in a warning state. */
+.jbm-card-warning {
+    border-color: var(--color-accent-departmental);
+    background: rgba(220, 220, 170, 0.03);
+}
+
+/* Tints the card frame red when the server is in a critical state. */
+.jbm-card-critical {
+    border-color: var(--color-status-critical);
+    background: rgba(244, 135, 113, 0.03);
+}
+
+/* Holds the server name and role badge across the top of a card. */
+.jbm-server-card-header {
+    padding: var(--size-spacing-lg) var(--size-spacing-xl);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     display: flex;
     justify-content: space-between;
     align-items: center;
     position: relative;
     flex-shrink: 0;
 }
-.server-name { font-size: 16px; font-weight: 600; color: #569cd6; }
-.server-role { font-size: 11px; color: #888; font-weight: 500; }
-.server-card-body {
-    padding: 12px;
+
+/* Styles the server name in the card header. */
+.jbm-server-name {
+    font-size: var(--font-size-heading-lg);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+}
+
+/* Styles the server role label in the card header. */
+.jbm-server-role {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+/* Scrolls the metric mini-cards within the remaining card height. */
+.jbm-server-card-body {
+    padding: var(--size-spacing-lg);
     overflow-y: auto;
     flex: 1;
     min-height: 0;
 }
-.server-card.card-warning  { border-color: #dcdcaa; background: rgba(220, 220, 170, 0.03); }
-.server-card.card-critical { border-color: #f48771; background: rgba(244, 135, 113, 0.03); }
-
 
 /* ============================================================================
-   STATUS BADGES ROW
-   Top row of each server card -- small pills indicating HTTP, Service,
-   JBoss state, and uptime. Color-coded (ok/warn/fail/neutral).
+   CONTENT: STATUS BADGES
+   ----------------------------------------------------------------------------
+   The top row of each server card: small color-coded pills indicating HTTP,
+   Service, JBoss state, and uptime.
+   Prefix: jbm
    ============================================================================ */
 
-.status-badges-row {
+/* Lays out the status badge pills in a wrapping row. */
+.jbm-status-badges-row {
     display: flex;
-    gap: 6px;
+    gap: var(--size-spacing-sm);
     margin-bottom: 10px;
     flex-wrap: wrap;
 }
 
-.status-badge {
+/* Styles a single status badge pill. */
+.jbm-status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
+    gap: var(--size-spacing-xs);
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-body);
     font-weight: 500;
-    border: 1px solid transparent;
+    border: var(--size-border-thin) solid transparent;
 }
 
-.status-badge.badge-ok      { background: rgba(78, 201, 176, 0.08);  border-color: rgba(78, 201, 176, 0.2);  color: #4ec9b0; }
-.status-badge.badge-warn    { background: rgba(220, 220, 170, 0.08); border-color: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.status-badge.badge-fail    { background: rgba(244, 135, 113, 0.08); border-color: rgba(244, 135, 113, 0.2); color: #f48771; }
-.status-badge.badge-neutral { background: rgba(136, 136, 136, 0.08); border-color: rgba(136, 136, 136, 0.15); color: #888;    }
+/* Colors a status badge for an OK state. */
+.jbm-badge-ok {
+    background: rgba(78, 201, 176, 0.08);
+    border-color: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
 
-.badge-dot {
-    width: 6px;
-    height: 6px;
+/* Colors a status badge for a warning state. */
+.jbm-badge-warn {
+    background: var(--color-tint-warning);
+    border-color: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
+
+/* Colors a status badge for a failure state. */
+.jbm-badge-fail {
+    background: var(--color-tint-critical);
+    border-color: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Colors a status badge for a neutral state. */
+.jbm-badge-neutral {
+    background: rgba(136, 136, 136, 0.08);
+    border-color: rgba(136, 136, 136, 0.15);
+    color: var(--color-text-muted);
+}
+
+/* Renders the small status dot inside a badge. */
+.jbm-badge-dot {
+    width: var(--size-spacing-sm);
+    height: var(--size-spacing-sm);
     border-radius: 50%;
     display: inline-block;
     flex-shrink: 0;
 }
-.badge-dot.dot-ok   { background: #4ec9b0; }
-.badge-dot.dot-warn { background: #dcdcaa; }
-.badge-dot.dot-fail { background: #f48771; }
 
-.badge-text   { font-weight: 600; letter-spacing: 0.2px; }
-.badge-detail { font-weight: 400; color: inherit; opacity: 0.8; font-size: 10px; }
-.badges-spacer { flex: 1; }
-.uptime-label { color: #666; font-weight: 500; margin-right: 3px; }
-.uptime-text  { font-weight: 600; font-size: 11px; }
+/* Colors the badge dot for an OK state. */
+.jbm-dot-ok {
+    background: var(--color-accent-shared);
+}
 
+/* Colors the badge dot for a warning state. */
+.jbm-dot-warn {
+    background: var(--color-accent-departmental);
+}
+
+/* Colors the badge dot for a failure state. */
+.jbm-dot-fail {
+    background: var(--color-status-critical);
+}
+
+/* Styles the badge's primary label text. */
+.jbm-badge-text {
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+/* Styles the badge's secondary detail text. */
+.jbm-badge-detail {
+    font-weight: 400;
+    color: inherit;
+    opacity: 0.8;
+    font-size: var(--font-size-default);
+}
+
+/* Pushes the uptime badge to the right edge of the badges row. */
+.jbm-badges-spacer {
+    flex: 1;
+}
+
+/* Styles the uptime label prefix. */
+.jbm-uptime-label {
+    color: var(--color-text-subtle);
+    font-weight: 500;
+    margin-right: var(--size-radius-sm);
+}
+
+/* Styles the uptime value text. */
+.jbm-uptime-text {
+    font-weight: 600;
+    font-size: var(--font-size-body);
+}
 
 /* ============================================================================
-   MINI-CARDS
+   CONTENT: MINI-CARDS
+   ----------------------------------------------------------------------------
    Inner cards inside each server card (JVM Heap, Threads, DB Pool,
-   Transactions, HTTP Server, JMS Queues). Title + value in header,
-   gauge or row content below.
+   Transactions, HTTP Server, JMS Queues): a title and value in the header,
+   with gauge or row content below.
+   Prefix: jbm
    ============================================================================ */
 
-.mini-card {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 5px;
-    padding: 10px 12px;
-    margin-bottom: 8px;
+/* Frames one metric mini-card inside a server card body. */
+.jbm-mini-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    padding: 10px var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-md);
 }
-.mini-card:last-of-type { margin-bottom: 0; }
 
-.mini-card-header {
+/* Removes the bottom margin on the last mini-card in a body. */
+.jbm-mini-card-last {
+    margin-bottom: 0;
+}
+
+/* Lays out the mini-card title and value on one row. */
+.jbm-mini-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 4px;
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.mini-card-title {
-    font-size: 11px;
+/* Styles the mini-card title text. */
+.jbm-mini-card-title {
+    font-size: var(--font-size-body);
     font-weight: 600;
-    color: #888;
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.4px;
 }
 
-.mini-card-value { font-size: 14px; font-weight: 600; color: #d4d4d4; }
-.mini-card-value.healthy  { color: #4ec9b0; }
-.mini-card-value.warning  { color: #dcdcaa; }
-.mini-card-value.critical { color: #f48771; }
+/* Styles the mini-card primary value. */
+.jbm-mini-card-value {
+    font-size: var(--font-size-heading-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
 
-.mini-card-unit { font-size: 10px; font-weight: 400; color: #888; }
+/* Colors a mini-card value for a healthy state. */
+.jbm-value-healthy {
+    color: var(--color-accent-shared);
+}
 
-.mini-card-detail {
+/* Colors a mini-card value for a warning state. */
+.jbm-value-warning {
+    color: var(--color-accent-departmental);
+}
+
+/* Colors a mini-card value for a critical state. */
+.jbm-value-critical {
+    color: var(--color-status-critical);
+}
+
+/* Styles the small unit suffix next to a mini-card value. */
+.jbm-mini-card-unit {
+    font-size: var(--font-size-default);
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+
+/* Lays out a secondary detail row beneath a mini-card value. */
+.jbm-mini-card-detail {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
-    color: #666;
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
     margin-top: 2px;
 }
-.mini-card-detail span { cursor: default; }
 
-.mini-card-secondary { font-size: 10px; color: #555; margin-top: 4px; }
+/* Styles an individual detail item within a mini-card detail row. */
+.jbm-mini-card-detail-item {
+    cursor: default;
+}
 
-.detail-warn { color: #dcdcaa; font-weight: 500; }
+/* Styles a tertiary secondary line beneath the detail row. */
+.jbm-mini-card-secondary {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    margin-top: var(--size-spacing-xs);
+}
 
+/* Highlights warning text within a detail line. */
+.jbm-detail-warn {
+    color: var(--color-accent-departmental);
+    font-weight: 500;
+}
 
 /* ============================================================================
-   GAUGE BARS
-   Horizontal fill bars for memory/utilization percentages inside
+   CONTENT: GAUGE BARS
+   ----------------------------------------------------------------------------
+   Horizontal fill bars showing memory or utilization percentages inside
    mini-cards.
+   Prefix: jbm
    ============================================================================ */
 
-.gauge-bar {
+/* Frames the gauge track inside a mini-card. */
+.jbm-gauge-bar {
     height: 10px;
-    background: #333;
-    border-radius: 5px;
-    margin: 4px 0;
+    background: var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    margin: var(--size-spacing-xs) 0;
     overflow: hidden;
 }
 
-.gauge-fill {
+/* Fills the gauge track to the current percentage. */
+.jbm-gauge-fill {
     height: 100%;
-    border-radius: 5px;
+    border-radius: var(--size-radius-sm);
     transition: width 0.5s ease;
 }
-.gauge-fill.bar-healthy  { background: #4ec9b0; }
-.gauge-fill.bar-warning  { background: #dcdcaa; }
-.gauge-fill.bar-critical { background: #f48771; }
 
+/* Colors the gauge fill for a healthy level. */
+.jbm-bar-healthy {
+    background: var(--color-accent-shared);
+}
+
+/* Colors the gauge fill for a warning level. */
+.jbm-bar-warning {
+    background: var(--color-accent-departmental);
+}
+
+/* Colors the gauge fill for a critical level. */
+.jbm-bar-critical {
+    background: var(--color-status-critical);
+}
 
 /* ============================================================================
-   ALERT ROWS
-   Inline warning/error strips inside mini-cards (e.g., "threads waiting",
-   "IO queue: N waiting").
+   CONTENT: ALERT ROWS
+   ----------------------------------------------------------------------------
+   Inline warning/error strips inside mini-cards (e.g. threads waiting, IO
+   queue waiting).
+   Prefix: jbm
    ============================================================================ */
 
-.alert-row {
+/* Styles an inline alert strip inside a mini-card. */
+.jbm-alert-row {
     background: rgba(244, 135, 113, 0.06);
-    border: 1px solid rgba(244, 135, 113, 0.2);
-    border-radius: 3px;
-    padding: 5px 8px;
-    margin: 4px 0;
-    font-size: 11px;
-    color: #f48771;
+    border: var(--size-border-thin) solid rgba(244, 135, 113, 0.2);
+    border-radius: var(--size-radius-sm);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    margin: var(--size-spacing-xs) 0;
+    font-size: var(--font-size-body);
+    color: var(--color-status-critical);
     font-weight: 500;
     word-break: break-word;
 }
 
-
 /* ============================================================================
-   DELTA ROWS
-   Per-counter rows inside Transactions and HTTP Server mini-cards. Each
-   row shows a label, a "this cycle" delta indicator, and a cumulative
-   "since restart" total.
+   CONTENT: DELTA ROWS
+   ----------------------------------------------------------------------------
+   Per-counter rows inside the Transactions and HTTP Server mini-cards: a
+   label, a this-cycle delta indicator, and a cumulative since-restart total.
+   Prefix: jbm
    ============================================================================ */
 
-.tx-rows { margin-top: 2px; }
+/* Groups the delta rows within a mini-card. */
+.jbm-tx-rows {
+    margin-top: 2px;
+}
 
-.delta-row {
+/* Lays out a single delta row: label, delta, cumulative. */
+.jbm-delta-row {
     display: flex;
     align-items: center;
-    padding: 3px 0;
-    font-size: 11px;
-    border-bottom: 1px solid rgba(64, 64, 64, 0.4);
+    padding: var(--size-radius-sm) 0;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid rgba(64, 64, 64, 0.4);
 }
-.delta-row:last-child { border-bottom: none; }
 
-.delta-label    { flex: 0 0 80px; color: #888; font-weight: 500; }
-.delta-good     { flex: 1; color: #4ec9b0; font-weight: 500; }
-.delta-info     { flex: 1; color: #d4d4d4; font-weight: 500; }
-.delta-alert    { flex: 1; color: #dcdcaa; font-weight: 600; }
-.delta-critical { flex: 1; color: #f48771; font-weight: 600; }
-.delta-running  { flex: 1; color: #569cd6; font-weight: 600; }
-.delta-zero     { flex: 1; color: #555; }
+/* Removes the bottom border on the last delta row. */
+.jbm-delta-row-last {
+    border-bottom: none;
+}
 
-.delta-pct {
-    color: #555;
-    font-size: 10px;
+/* Styles the fixed-width delta row label. */
+.jbm-delta-label {
+    flex: 0 0 80px;
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+/* Colors a delta value green for a good/throughput counter. */
+.jbm-delta-good {
+    flex: 1;
+    color: var(--color-accent-shared);
+    font-weight: 500;
+}
+
+/* Colors a delta value neutral/informational. */
+.jbm-delta-info {
+    flex: 1;
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* Colors a delta value yellow for an alert counter. */
+.jbm-delta-alert {
+    flex: 1;
+    color: var(--color-accent-departmental);
+    font-weight: 600;
+}
+
+/* Colors a delta value red for a critical counter. */
+.jbm-delta-critical {
+    flex: 1;
+    color: var(--color-status-critical);
+    font-weight: 600;
+}
+
+/* Colors a delta value blue for a running/in-flight counter. */
+.jbm-delta-running {
+    flex: 1;
+    color: var(--color-accent-platform);
+    font-weight: 600;
+}
+
+/* Mutes a delta value when the counter is zero or unknown. */
+.jbm-delta-zero {
+    flex: 1;
+    color: var(--color-border-strong);
+}
+
+/* Styles the small percentage annotation beside a cumulative total. */
+.jbm-delta-pct {
+    color: var(--color-border-strong);
+    font-size: var(--font-size-default);
     font-weight: 400;
-    margin-left: 4px;
+    margin-left: var(--size-spacing-xs);
 }
 
-.delta-cumulative {
+/* Right-aligns the muted cumulative total on a delta row. */
+.jbm-delta-cumulative {
     flex: 0 0 auto;
     text-align: right;
-    color: #555;
-    font-size: 10px;
-    margin-left: 8px;
+    color: var(--color-border-strong);
+    font-size: var(--font-size-default);
+    margin-left: var(--size-spacing-md);
     white-space: nowrap;
 }
 
-
 /* ============================================================================
-   INFO ICONS
-   The "?" buttons next to section titles and mini-card titles that open
-   the help bubble (info modal).
+   CONTENT: INFO ICONS
+   ----------------------------------------------------------------------------
+   The "?" buttons next to section titles and mini-card titles that open the
+   help modal.
+   Prefix: jbm
    ============================================================================ */
 
-.info-icon {
+/* Renders the small "?" help icon button next to a mini-card or section title. */
+.jbm-info-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -318,379 +492,503 @@
     height: 14px;
     border-radius: 50%;
     background: rgba(86, 156, 214, 0.15);
-    border: 1px solid rgba(86, 156, 214, 0.3);
-    color: #569cd6;
-    font-size: 9px;
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
+    color: var(--color-accent-platform);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
     font-weight: 700;
+    padding: 0;
     cursor: pointer;
-    margin-left: 4px;
+    margin-left: var(--size-spacing-xs);
     vertical-align: middle;
-    transition: all 0.2s;
+    transition: all var(--duration-fast);
     text-transform: none;
     letter-spacing: 0;
     line-height: 1;
 }
-.info-icon:hover {
-    background: rgba(86, 156, 214, 0.3);
-    border-color: #569cd6;
-    color: #9cdcfe;
-}
 
-/* Section-level info icon (slightly larger) */
-.section-info-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: rgba(86, 156, 214, 0.15);
-    border: 1px solid rgba(86, 156, 214, 0.3);
-    color: #569cd6;
-    font-size: 11px;
-    font-weight: 700;
-    cursor: pointer;
-    margin-left: 8px;
-    transition: all 0.2s;
-    line-height: 1;
-}
-.section-info-icon:hover {
+.jbm-info-icon:hover { /* hover state for the mini-card help icon */
     background: rgba(86, 156, 214, 0.3);
-    border-color: #569cd6;
-    color: #9cdcfe;
+    border-color: var(--color-accent-platform);
+    color: var(--color-text-link);
 }
-
 
 /* ============================================================================
-   INFO MODAL CONTENT
-   Sub-components rendered inside the shared xf-modal-body when displaying
-   help content. The outer modal container itself uses the shared
-   .xf-modal-overlay / .xf-modal.wide / .xf-modal-header / .xf-modal-body
-   classes from engine-events.css.
+   CONTENT: INFO MODAL BODY
+   ----------------------------------------------------------------------------
+   Sub-components rendered inside the shared dialog body when displaying help
+   content. The outer modal uses the shared cc-modal-overlay / cc-dialog.
+   Prefix: jbm
    ============================================================================ */
 
-/* Threshold reference block (inline color-coded thresholds) */
-.info-thresholds {
+/* Frames an inline color-coded threshold reference block. */
+.jbm-info-thresholds {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--size-spacing-sm);
     margin: 10px 0;
     padding: 10px 14px;
     background: rgba(30, 30, 30, 0.6);
-    border: 1px solid #333;
-    border-radius: 5px;
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
 }
-.info-thresholds span { font-size: 12px; }
 
-.info-green  { color: #4ec9b0; font-weight: 600; }
-.info-yellow { color: #dcdcaa; font-weight: 600; }
-.info-red    { color: #f48771; font-weight: 600; }
+/* Sizes the text within a threshold reference block. */
+.jbm-info-thresholds-line {
+    font-size: var(--font-size-content);
+}
 
-/* Bulleted list of definitions */
-.info-list {
+/* Colors a threshold marker green for a healthy band. */
+.jbm-info-green {
+    color: var(--color-accent-shared);
+    font-weight: 600;
+}
+
+/* Colors a threshold marker yellow for an elevated band. */
+.jbm-info-yellow {
+    color: var(--color-accent-departmental);
+    font-weight: 600;
+}
+
+/* Colors a threshold marker red for a critical band. */
+.jbm-info-red {
+    color: var(--color-status-critical);
+    font-weight: 600;
+}
+
+/* Lays out a bulleted list of definitions in the help body. */
+.jbm-info-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--size-spacing-md);
     margin: 10px 0;
 }
-.info-item {
-    font-size: 12px;
-    padding-left: 12px;
-    border-left: 2px solid #404040;
+
+/* Styles a single definition item in the help list. */
+.jbm-info-item {
+    font-size: var(--font-size-content);
+    padding-left: var(--size-spacing-lg);
+    border-left: 2px solid var(--color-border-default);
     line-height: 1.5;
 }
 
-.info-label { color: #569cd6; font-weight: 600; }
-
+/* Styles an inline definition label within the help body. */
+.jbm-info-label {
+    color: var(--color-accent-platform);
+    font-weight: 600;
+}
 
 /* ============================================================================
-   QUEUE ACCORDION
-   JMS Queues mini-card uses an expandable accordion to show per-queue
-   detail. Active queues table on top; inactive queues hidden behind a
-   secondary toggle.
+   CONTENT: QUEUE ACCORDION
+   ----------------------------------------------------------------------------
+   The JMS Queues mini-card uses an expandable accordion: active queues on
+   top, inactive queues behind a secondary toggle.
+   Prefix: jbm
    ============================================================================ */
 
-.queue-card { cursor: default; }
+/* Marks the JMS Queues mini-card as a non-text-selectable accordion host. */
+.jbm-queue-card {
+    cursor: default;
+}
 
-.queue-accordion-trigger {
+/* Makes the queue mini-card header act as the accordion trigger. */
+.jbm-queue-accordion-trigger {
     cursor: pointer;
     user-select: none;
 }
-.queue-accordion-trigger:hover {
+
+.jbm-queue-accordion-trigger:hover { /* hover affordance on the accordion trigger */
     background: rgba(86, 156, 214, 0.04);
-    margin: -10px -12px;
-    padding: 10px 12px;
-    border-radius: 4px;
+    margin: -10px calc(-1 * var(--size-spacing-lg));
+    padding: 10px var(--size-spacing-lg);
+    border-radius: var(--size-radius-default);
 }
 
-.accordion-arrow {
-    font-size: 10px;
-    color: #666;
-    transition: transform 0.25s ease;
-    margin-left: 8px;
+/* Renders the accordion expand/collapse arrow. */
+.jbm-accordion-arrow {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    transition: transform var(--duration-default) ease;
+    margin-left: var(--size-spacing-md);
 }
-.accordion-arrow.open { transform: rotate(180deg); }
 
-.queue-summary-alert {
+/* Rotates the accordion arrow when the accordion is open. */
+.jbm-accordion-arrow-open {
+    transform: rotate(180deg);
+}
+
+/* Styles a yellow summary strip when queues are backing up. */
+.jbm-queue-summary-alert {
     background: rgba(220, 220, 170, 0.06);
-    border: 1px solid rgba(220, 220, 170, 0.15);
-    border-radius: 3px;
-    padding: 4px 8px;
-    margin: 4px 0;
-    font-size: 11px;
-    color: #dcdcaa;
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.15);
+    border-radius: var(--size-radius-sm);
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    margin: var(--size-spacing-xs) 0;
+    font-size: var(--font-size-body);
+    color: var(--color-accent-departmental);
     font-weight: 500;
 }
 
-.queue-summary-ok {
+/* Styles a muted summary strip when queues are healthy. */
+.jbm-queue-summary-ok {
     background: rgba(78, 201, 176, 0.04);
-    border: 1px solid rgba(78, 201, 176, 0.1);
-    border-radius: 3px;
-    padding: 4px 8px;
-    margin: 4px 0;
-    font-size: 11px;
-    color: #888;
+    border: var(--size-border-thin) solid rgba(78, 201, 176, 0.1);
+    border-radius: var(--size-radius-sm);
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    margin: var(--size-spacing-xs) 0;
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     font-weight: 400;
 }
 
-.queue-accordion-body {
+/* Collapses the accordion body to zero height when closed. */
+.jbm-queue-accordion-body {
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.3s ease;
+    transition: max-height var(--duration-default) ease;
 }
-.queue-accordion-body.open {
+
+/* Expands the accordion body to its scrollable open height. */
+.jbm-queue-accordion-body-open {
     max-height: 400px;
     overflow-y: auto;
-    margin-top: 8px;
-    border-top: 1px solid #333;
-    padding-top: 8px;
+    margin-top: var(--size-spacing-md);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+    padding-top: var(--size-spacing-md);
 }
 
-/* Inline queue table (inside accordion) */
-.queue-table-inline {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 11px;
-}
-.queue-table-inline thead th {
-    text-align: left;
-    padding: 4px 4px;
-    border-bottom: 1px solid #404040;
-    color: #888;
-    font-weight: 600;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-.queue-table-inline th.q-num,
-.queue-table-inline td.q-num { text-align: right; }
-
-.queue-table-inline tbody tr             { border-bottom: 1px solid #2a2a2a; }
-.queue-table-inline tbody tr:hover       { background: rgba(86, 156, 214, 0.04); }
-.queue-table-inline tbody tr.queue-alert { background: rgba(244, 135, 113, 0.06); }
-.queue-table-inline tbody tr.queue-alert td { color: #f48771; }
-.queue-table-inline tbody tr.queue-warn  { background: rgba(220, 220, 170, 0.04); }
-.queue-table-inline tbody tr.queue-warn td.q-name { color: #dcdcaa; }
-
-.queue-table-inline td { padding: 3px 4px; color: #d4d4d4; }
-.queue-table-inline td.q-name {
-    font-family: Consolas, monospace;
-    font-size: 10px;
-    color: #9cdcfe;
-}
-
-/* Queue delta column */
-.queue-table-inline td.q-delta-active { color: #4ec9b0; font-weight: 600; }
-.queue-table-inline td.q-delta-zero   { color: #555; }
-
-/* Inactive queues toggle */
-.queue-inactive-toggle {
-    margin-top: 8px;
-    padding: 5px 0;
-    font-size: 11px;
-    color: #666;
+/* Styles the secondary toggle that reveals inactive queues. */
+.jbm-queue-inactive-toggle {
+    margin-top: var(--size-spacing-md);
+    padding: var(--size-spacing-sm) 0;
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
     cursor: pointer;
     user-select: none;
-    transition: color 0.2s;
+    transition: color var(--duration-fast);
 }
-.queue-inactive-toggle:hover { color: #888; }
 
-.queue-inactive-arrow {
+.jbm-queue-inactive-toggle:hover { /* hover state for the inactive-queues toggle */
+    color: var(--color-text-muted);
+}
+
+/* Renders the inactive-queues toggle arrow. */
+.jbm-queue-inactive-arrow {
     display: inline-block;
-    font-size: 8px;
-    transition: transform 0.2s ease;
+    font-size: var(--font-size-xs);
+    transition: transform var(--duration-fast) ease;
 }
-.queue-inactive-arrow.open { transform: rotate(90deg); }
 
-.queue-inactive-body {
+/* Rotates the inactive-queues arrow when its section is open. */
+.jbm-queue-inactive-arrow-open {
+    transform: rotate(90deg);
+}
+
+/* Collapses the inactive-queues body when closed. */
+.jbm-queue-inactive-body {
     max-height: 0;
     overflow: hidden;
     transition: max-height 0.25s ease;
 }
-.queue-inactive-body.open {
+
+/* Expands the inactive-queues body to its scrollable open height. */
+.jbm-queue-inactive-body-open {
     max-height: 300px;
     overflow-y: auto;
-    margin-top: 4px;
+    margin-top: var(--size-spacing-xs);
 }
 
-/* Mute inactive table rows */
-.queue-inactive-body .queue-table-inline td        { color: #555; }
-.queue-inactive-body .queue-table-inline td.q-name { color: #6a7a8a; }
-
-.queue-idle-msg {
-    font-size: 11px;
-    color: #555;
+/* Styles the idle message shown when a queue has no activity. */
+.jbm-queue-idle-msg {
+    font-size: var(--font-size-body);
+    color: var(--color-border-strong);
     font-style: italic;
-    padding: 4px 0;
+    padding: var(--size-spacing-xs) 0;
 }
 
-
 /* ============================================================================
-   CARD FOOTER
-   Small "Collected: <timestamp>" line at the bottom of each server card.
+   CONTENT: QUEUE TABLE
+   ----------------------------------------------------------------------------
+   The per-queue detail table rendered inside the accordion body. All
+   elements are class-targeted (no element or descendant selectors).
+   Prefix: jbm
    ============================================================================ */
 
-.card-footer {
-    padding: 8px 0 0 0;
-    margin-top: 8px;
-    border-top: 1px solid #333;
-    text-align: right;
-    font-size: 10px;
-    color: #555;
+/* Frames the inline per-queue detail table. */
+.jbm-qtable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-body);
 }
 
-
-/* ============================================================================
-   DC BADGE
-   Small "DC" pill next to the server name when the box is also a domain
-   controller.
-   ============================================================================ */
-
-.dc-badge {
-    font-size: 9px;
+/* Styles a queue table header cell. */
+.jbm-q-th {
+    text-align: left;
+    padding: var(--size-spacing-xs) var(--size-spacing-xs);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 600;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: rgba(86, 156, 214, 0.15);
-    color: #9cdcfe;
-    border: 1px solid rgba(86, 156, 214, 0.3);
+    font-size: var(--font-size-default);
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    margin-left: 8px;
 }
 
+/* Right-aligns a numeric queue table cell. */
+.jbm-q-num {
+    text-align: right;
+}
+
+/* Styles a queue table body row. */
+.jbm-q-row {
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
+}
+
+.jbm-q-row:hover { /* hover highlight on a queue row */
+    background: rgba(86, 156, 214, 0.04);
+}
+
+/* Tints a queue row red when the queue is stuck. */
+.jbm-q-row-alert {
+    background: rgba(244, 135, 113, 0.06);
+}
+
+/* Tints a queue row yellow when the queue is in a warning state. */
+.jbm-q-row-warn {
+    background: rgba(220, 220, 170, 0.04);
+}
+
+/* Styles a queue table body cell. */
+.jbm-q-cell {
+    padding: var(--size-radius-sm) var(--size-spacing-xs);
+    color: var(--color-text-primary);
+}
+
+/* Colors the cells of a stuck (alert) queue row red. */
+.jbm-q-cell-alert {
+    color: var(--color-status-critical);
+}
+
+/* Styles the queue-name cell in monospace. */
+.jbm-q-name {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-default);
+    color: var(--color-text-link);
+}
+
+/* Colors the queue-name cell yellow on a warning row. */
+.jbm-q-name-warn {
+    color: var(--color-accent-departmental);
+}
+
+/* Colors a queue's this-cycle delta cell green when active. */
+.jbm-q-delta-active {
+    color: var(--color-accent-shared);
+    font-weight: 600;
+}
+
+/* Mutes a queue's this-cycle delta cell when zero. */
+.jbm-q-delta-zero {
+    color: var(--color-border-strong);
+}
+
+/* Mutes the cells of an inactive-queue row. */
+.jbm-q-cell-inactive {
+    color: var(--color-border-strong);
+}
+
+/* Mutes the queue-name cell of an inactive-queue row. */
+.jbm-q-name-inactive {
+    color: #6a7a8a;
+}
 
 /* ============================================================================
-   USERS BADGE
-   "Users" pill that appears on the active SharePoint-linked server card.
-   When the viewer is an admin, the badge becomes clickable and opens the
-   server switch picker (dm-modal).
+   CONTENT: CARD FOOTER
+   ----------------------------------------------------------------------------
+   The small "Collected: <timestamp>" line at the bottom of each server card.
+   Prefix: jbm
    ============================================================================ */
 
-.users-badge {
+/* Styles the collected-timestamp footer line on a server card. */
+.jbm-card-footer {
+    padding: var(--size-spacing-md) 0 0 0;
+    margin-top: var(--size-spacing-md);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+    text-align: right;
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+}
+
+/* ============================================================================
+   CONTENT: DC BADGE
+   ----------------------------------------------------------------------------
+   The small "DC" pill next to a server name when the box is also a domain
+   controller.
+   Prefix: jbm
+   ============================================================================ */
+
+/* Renders the small "DC" domain-controller pill beside a server name. */
+.jbm-dc-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-text-link);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-left: var(--size-spacing-md);
+}
+
+/* ============================================================================
+   CONTENT: USERS BADGE
+   ----------------------------------------------------------------------------
+   The "Users" pill on the active SharePoint-linked server card. For admins
+   the badge becomes clickable and opens the switch picker.
+   Prefix: jbm
+   ============================================================================ */
+
+/* Renders the centered "Users" pill on the active server card header. */
+.jbm-users-badge {
     position: absolute;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    font-size: 10px;
+    font-size: var(--font-size-default);
     font-weight: 700;
     padding: 2px 10px;
     border-radius: 10px;
     background: rgba(86, 156, 214, 0.15);
-    color: #569cd6;
-    border: 1px solid rgba(86, 156, 214, 0.35);
+    color: var(--color-accent-platform);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.35);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     user-select: none;
 }
-.users-badge.clickable        { cursor: pointer; transition: all 0.2s; }
-.users-badge.clickable:hover  {
+
+/* Marks the Users badge as clickable for admins. */
+.jbm-users-badge-clickable {
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.jbm-users-badge-clickable:hover { /* hover state for the clickable Users badge */
     background: rgba(86, 156, 214, 0.25);
-    border-color: #569cd6;
-    color: #9cdcfe;
+    border-color: var(--color-accent-platform);
+    color: var(--color-text-link);
 }
 
-
 /* ============================================================================
-   NO DATA / LOADING
+   CONTENT: NO DATA AND LOADING
+   ----------------------------------------------------------------------------
    Placeholder messages shown while server data is loading or absent.
+   Prefix: jbm
    ============================================================================ */
 
-.no-data { color: #666; font-size: 12px; text-align: center; padding: 20px; font-style: italic; }
-.loading { color: #666; text-align: center; padding: 20px; }
-
-
-/* ============================================================================
-   DM MODAL CONTENT (Server Switch Picker)
-   Sub-components rendered inside the shared xf-modal-body when displaying
-   the SharePoint server picker. The outer modal container uses the shared
-   .xf-modal-overlay / .xf-modal / .xf-modal-header / .xf-modal-body
-   classes from engine-events.css.
-
-   The .locked state hides the close button and shows not-allowed cursor
-   during the ~90-second switch operation. We toggle .locked on the
-   xf-modal-body so the body's CSS rules can scope to it; the close button
-   in the header is hidden via the descendant selector.
-   ============================================================================ */
-
-/* Subtitle below the modal header */
-.dm-modal-subtitle {
-    font-size: 12px;
-    color: #888;
-    margin: -4px 0 16px;
+/* Styles the "no data" placeholder message. */
+.jbm-no-data {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-content);
+    text-align: center;
+    padding: var(--size-spacing-2xl);
+    font-style: italic;
 }
 
-/* Three-up grid of picker buttons */
-.dm-server-grid {
+/* Styles the "loading" placeholder message. */
+.jbm-loading {
+    color: var(--color-text-subtle);
+    text-align: center;
+    padding: var(--size-spacing-2xl);
+}
+
+/* ============================================================================
+   CONTENT: SWITCH MODAL BODY
+   ----------------------------------------------------------------------------
+   Sub-components rendered inside the shared dialog body for the DM app-server
+   switch picker. The locked state hides the close control during the switch.
+   Prefix: jbm
+   ============================================================================ */
+
+/* Styles the subtitle line below the switch modal header. */
+.jbm-switch-subtitle {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    margin: -4px 0 var(--size-spacing-xl);
+}
+
+/* Lays out the server picker buttons in an even row. */
+.jbm-switch-grid {
     display: flex;
     gap: 10px;
-    margin-bottom: 16px;
+    margin-bottom: var(--size-spacing-xl);
 }
-.dm-server-btn {
+
+/* Styles a single server picker button. */
+.jbm-switch-btn {
     flex: 1;
-    background: #1e1e1e;
-    border: 2px solid #404040;
-    border-radius: 8px;
+    background: var(--color-bg-page);
+    border: 2px solid var(--color-border-default);
+    border-radius: var(--size-radius-xl);
     padding: 14px 10px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-fast);
     text-align: center;
 }
-.dm-server-btn:hover:not(.active):not(:disabled) {
-    border-color: #569cd6;
-    background: #2a2d2e;
+
+.jbm-switch-btn:hover { /* hover state for a selectable picker button */
+    border-color: var(--color-accent-platform);
+    background: var(--color-bg-card-hover);
 }
-.dm-server-btn.active {
-    border-color: #4ec9b0;
+
+/* Marks the picker button for the currently active server. */
+.jbm-switch-btn-active {
+    border-color: var(--color-accent-shared);
     background: rgba(78, 201, 176, 0.1);
     cursor: default;
 }
-.dm-server-btn.active .dm-server-name { color: #4ec9b0; }
-.dm-server-btn:disabled:not(.active)  { opacity: 0.5; cursor: not-allowed; }
 
-.dm-server-name {
-    font-size: 16px;
+/* Styles the server short-name inside a picker button. */
+.jbm-switch-name {
+    font-size: var(--font-size-heading-lg);
     font-weight: 700;
-    color: #d4d4d4;
-    margin-bottom: 4px;
-}
-.dm-server-host {
-    font-size: 11px;
-    color: #888;
-    font-family: Consolas, monospace;
+    color: var(--color-text-primary);
+    margin-bottom: var(--size-spacing-xs);
 }
 
-/* Status text shown during/after a switch operation */
-.dm-status {
-    font-size: 12px;
-    min-height: 20px;
+/* Colors the server short-name green within the active picker button. */
+.jbm-switch-name-active {
+    color: var(--color-accent-shared);
 }
-.dm-status.success { color: #4ade80; }
-.dm-status.error   { color: #ef4444; }
-.dm-status.working { color: #569cd6; }
 
-/* Locked state: applied during 90-second switch operation. Hides the
-   close button (so the user can't dismiss mid-switch) and shows a
-   not-allowed cursor on the overlay. */
-.xf-modal-overlay.dm-locked              { cursor: not-allowed; }
-.xf-modal-overlay.dm-locked .modal-close { display: none; }
+/* Styles the server hostname inside a picker button. */
+.jbm-switch-host {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    font-family: var(--font-family-monospace);
+}
+
+/* Styles the status line shown during and after a switch operation. */
+.jbm-switch-status {
+    font-size: var(--font-size-content);
+    min-height: var(--size-spacing-2xl);
+}
+
+/* Colors the switch status line green on success. */
+.jbm-switch-status-success {
+    color: #4ade80;
+}
+
+/* Colors the switch status line red on error. */
+.jbm-switch-status-error {
+    color: #ef4444;
+}
+
+/* Colors the switch status line blue while a switch is in progress. */
+.jbm-switch-status-working {
+    color: var(--color-accent-platform);
+}
+
+/* Disables the close control while a switch is locked in progress. */
+.jbm-switch-locked {
+    display: none;
+}
