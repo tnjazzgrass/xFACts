@@ -1,676 +1,604 @@
 /* ============================================================================
-   xFACts Control Center - JobFlow Monitoring Styles
+   xFACts Control Center - JobFlow Monitoring styles (jobflow-monitoring.css)
    Location: E:\xFACts-ControlCenter\public\css\jobflow-monitoring.css
    Version: Tracked in dbo.System_Metadata (component: JobFlow)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin (now in engine-events.css), engine-card/engine-row/
-               engine-bar/engine-label/engine-countdown block (shared),
-               scrollbar rules (shared), and orphan .spinning utility class
-               (page-refresh-btn uses shared page-refresh-spin keyframe).
-               Kept: .connection-error (page-specific), @keyframes pulse and
-               @keyframes spin (used by .live-indicator and .cs-spinner).
+   JobFlow Monitoring styles for the Job Flow Monitoring page.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE GRID AND SECTION SCAFFOLD
+   CONTENT: HEADER CONTROLS
+   CONTENT: LIVE ACTIVITY
+   CONTENT: PROCESS STATUS
+   CONTENT: DAILY SUMMARY
+   CONTENT: FLOW ITEMS
+   CONTENT: STALL EPISODES
+   CONTENT: EXECUTION HISTORY
+   CONTENT: SLIDEOUT DETAIL
+   CONTENT: APP SERVER TASKS
+   CONTENT: CONFIRM CHANGES
+   CONTENT: CONFIGSYNC
    ============================================================================ */
-
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px 30px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-
-h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { color: #888; font-size: 14px; margin: 0; }
 
 /* ============================================================================
-   Header
+   LAYOUT: PAGE GRID AND SECTION SCAFFOLD
+   ----------------------------------------------------------------------------
+   The two-column grid that arranges the JobFlow page's content sections, the
+   subsection wrappers inside them, and the per-section content containers that
+   the page's JavaScript fills. Visual chrome for the sections themselves comes
+   from cc-shared.css; these classes only arrange and size page content.
+   Prefix: jfm
    ============================================================================ */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 15px;
-}
 
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-
-/* Section Action Button (e.g., App Server Tasks in Process Status header) */
-.section-action-btn {
-    background: #264f78;
-    border: 1px solid #3d6e99;
-    color: #d4d4d4;
-    padding: 4px 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    transition: all 0.2s;
-    margin-left: auto;
-}
-
-.section-action-btn:hover {
-    background: #2d5a8a;
-    border-color: #4a8bc2;
-}
-
-.section-action-btn .btn-icon { font-size: 12px; }
-
-.refresh-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #888;
-    font-size: 13px;
-}
-
-.live-indicator {
-    width: 8px;
-    height: 8px;
-    background: #4ec9b0;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-.last-updated { color: #4ec9b0; }
-
-.connection-error {
-    display: none;
-    background-color: rgba(244, 71, 71, 0.2);
-    border: 1px solid #f44747;
-    color: #f44747;
-    padding: 12px 20px;
-    margin-bottom: 15px;
-    border-radius: 4px;
-}
-
-/* ============================================================================
-   Grid Layout
-   ============================================================================ */
-.grid-layout {
+/* Two-column grid wrapping the page's content sections. */
+.jfm-grid-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 15px;
 }
 
-.grid-column {
+/* A single column within the page grid (stacks its sections vertically). */
+.jfm-grid-column {
     display: flex;
     flex-direction: column;
     gap: 15px;
 }
 
-/* ============================================================================
-   Sections
-   ============================================================================ */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
+/* A labeled grouping within a section body (e.g. Currently Executing). */
+.jfm-subsection {
+    margin-bottom: 15px;
 }
 
-.section-compact {
-    padding: 12px 15px;
+.jfm-subsection:last-child { /* last subsection in a section drops its bottom gap */
+    margin-bottom: 0;
 }
 
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
-
-.section-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: #4ec9b0;
+/* Heading text for a subsection. */
+.jfm-subsection-title {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    margin: 0 0 var(--size-spacing-md) 0;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    margin: 0;
+    letter-spacing: 0.5px;
 }
 
-.section-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+/* Content container for the Live Activity executing-jobs area. */
+.jfm-activity-content {
+    min-height: 60px;
 }
 
-.refresh-btn {
-    background: transparent;
-    border: 1px solid #555;
-    color: #888;
-    padding: 3px 8px;
-    border-radius: 3px;
+/* Content container for the Daily Summary area. */
+.jfm-summary-content {
+    min-height: 80px;
+}
+
+/* Content container for the Execution History tree (scrolls internally). */
+.jfm-history-content {
+    max-height: calc(100vh - 420px);
+    overflow-y: auto;
+}
+
+/* Hides a page element (non-overlay) until toggled visible by script. */
+.jfm-hidden {
+    display: none;
+}
+
+/* Inline loading placeholder shown while a section's data is fetched. */
+.jfm-loading {
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding: var(--size-page-padding-y);
+    text-align: center;
+}
+
+/* ============================================================================
+   CONTENT: HEADER CONTROLS
+   ----------------------------------------------------------------------------
+   Page-specific controls that sit in section headers: the App Server Tasks
+   action button in the Process Status header and the Pending button plus its
+   count badge in the Live Activity header.
+   Prefix: jfm
+   ============================================================================ */
+
+/* Action button placed in a section header (e.g. App Server Tasks). */
+.jfm-section-action-btn {
+    background: #264f78;
+    border: var(--size-border-thin) solid #3d6e99;
+    color: var(--color-text-primary);
+    padding: var(--size-spacing-xs) 10px;
+    border-radius: var(--size-radius-sm);
     cursor: pointer;
-    font-size: 14px;
-    transition: all 0.2s;
-}
-
-.refresh-btn:hover {
-    background: #333;
-    color: #d4d4d4;
-    border-color: #666;
-}
-
-.pending-btn {
-    font-size: 12px;
+    font-size: var(--font-size-body);
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--size-spacing-xs);
+    transition: all var(--duration-fast);
 }
 
-.pending-badge {
-    background: #dcdcaa;
-    color: #1e1e1e;
-    font-size: 10px;
+.jfm-section-action-btn:hover { /* hover state for the section action button */
+    background: #2d5a8a;
+    border-color: #4a8bc2;
+}
+
+/* Icon glyph inside a section action button. */
+.jfm-btn-icon {
+    font-size: var(--font-size-content);
+}
+
+/* The Pending button in the Live Activity header. */
+.jfm-pending-btn {
+    background: transparent;
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    font-size: var(--font-size-content);
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+    transition: all var(--duration-fast);
+}
+
+.jfm-pending-btn:hover { /* hover state for the Pending button */
+    background: var(--color-border-divider);
+    color: var(--color-text-primary);
+    border-color: var(--color-text-subtle);
+}
+
+/* Count badge inside the Pending button. */
+.jfm-pending-badge {
+    background: var(--color-accent-departmental);
+    color: var(--color-bg-page);
+    font-size: var(--font-size-default);
     font-weight: 600;
     padding: 1px 5px;
-    border-radius: 8px;
+    border-radius: var(--size-radius-xl);
     min-width: 16px;
     text-align: center;
 }
 
-.refresh-badge {
-    font-size: 10px;
-    color: #666;
-    background: #333;
-    padding: 2px 6px;
-    border-radius: 3px;
-}
-
-.subsection {
-    margin-bottom: 15px;
-}
-
-.subsection:last-child {
-    margin-bottom: 0;
-}
-
-.subsection-title {
-    font-size: 12px;
-    color: #888;
-    margin: 0 0 8px 0;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.loading {
-    color: #888;
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-}
-
 /* ============================================================================
-   Live Activity - Executing Jobs
+   CONTENT: LIVE ACTIVITY
+   ----------------------------------------------------------------------------
+   The Live Activity section: the executing/pending data tables, job-name and
+   flow-code styling, the in-row progress bar, and the small per-row value
+   accents (ETA, rate). These tables live in the page section (not a slideout),
+   so they remain page-local rather than mapping to the shared slide table.
+   Prefix: jfm
    ============================================================================ */
-.activity-content {
-    min-height: 60px;
-}
 
-.executing-table, .pending-table {
+/* Data table listing currently executing or pending jobs. */
+.jfm-activity-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
 
-.executing-table th, .pending-table th {
+/* Header cell in the activity table. */
+.jfm-activity-th {
     text-align: left;
-    padding: 6px 8px;
-    background: #2d2d2d;
-    color: #888;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-muted);
     font-weight: 500;
-    border-bottom: 1px solid #404040;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.executing-table td, .pending-table td {
-    padding: 8px;
-    border-bottom: 1px solid #333;
+/* Data cell in the activity table. */
+.jfm-activity-td {
+    padding: var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
     vertical-align: middle;
 }
 
-.executing-table tr:hover, .pending-table tr:hover {
-    background: #2a2a2a;
+/* Data row in the activity table (standalone base for hover styling). */
+.jfm-activity-row { }
+
+.jfm-activity-row:hover { /* hover state for an activity table row */
+    background: var(--color-bg-card-deep);
 }
 
-.executing-table td.success { color: #4ec9b0; }
-.executing-table td.failed { color: #f48771; }
-.executing-table td.log-id {
-    color: #888;
-    font-size: 11px;
+/* Success-colored activity cell. */
+.jfm-activity-cell-success {
+    color: var(--color-accent-shared);
 }
 
-.job-name {
-    color: #4ec9b0;
+/* Failure-colored activity cell. */
+.jfm-activity-cell-failed {
+    color: var(--color-status-critical);
+}
+
+/* Log-id activity cell (muted, smaller). */
+.jfm-activity-cell-log-id {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Job-name text accent. */
+.jfm-job-name {
+    color: var(--color-accent-shared);
     font-weight: 500;
 }
 
-.flow-badge {
+/* Inline flow-code chip shown beside a job or flow. */
+.jfm-flow-badge {
     display: inline-block;
-    background: rgba(86, 156, 214, 0.15);
-    color: #9cdcfe;
-    border: 1px solid rgba(86, 156, 214, 0.4);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-family: 'Consolas', monospace;
+    background: var(--color-banner-reconnecting-bg);
+    color: var(--color-text-link);
+    border: var(--size-border-thin) solid var(--color-glow-status-running);
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-body);
+    font-family: var(--font-family-monospace);
     font-weight: 600;
 }
 
-.progress-bar-container {
+/* Container framing the in-row progress bar. */
+.jfm-progress-bar-container {
     width: 100%;
     height: 16px;
-    background: #333;
-    border-radius: 3px;
+    background: var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
     overflow: hidden;
     position: relative;
 }
 
-.progress-bar {
+/* The filled portion of the progress bar. */
+.jfm-progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, #2d6b5e, #266053);
-    border-radius: 3px;
-    transition: width 0.3s ease;
+    background: var(--gradient-progress-default);
+    border-radius: var(--size-radius-sm);
+    transition: width var(--duration-default) ease;
 }
 
-.progress-text {
+/* Centered percentage text overlaid on the progress bar. */
+.jfm-progress-text {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 10px;
-    color: #d4d4d4;
+    font-size: var(--font-size-default);
+    color: var(--color-text-primary);
     text-shadow: 0 0 2px #000;
     white-space: nowrap;
 }
 
-.eta-value {
-    color: #dcdcaa;
+/* ETA value accent in an activity row. */
+.jfm-eta-value {
+    color: var(--color-accent-departmental);
 }
 
-.rate-value {
-    color: #888;
-    font-size: 11px;
+/* Records-per-second value accent in an activity row. */
+.jfm-rate-value {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
 }
 
-.no-activity {
-    color: #666;
+/* Empty-state placeholder when no live activity is present. */
+.jfm-no-activity {
+    color: var(--color-text-subtle);
     font-style: italic;
     padding: 15px;
     text-align: center;
 }
 
-.pending-count {
+/* Small count chip appended to a label (e.g. pending count). */
+.jfm-pending-count {
     background: #3d3d3d;
-    color: #dcdcaa;
-    padding: 2px 8px;
+    color: var(--color-accent-departmental);
+    padding: 2px var(--size-spacing-md);
     border-radius: 10px;
-    font-size: 11px;
-    margin-left: 8px;
+    font-size: var(--font-size-body);
+    margin-left: var(--size-spacing-md);
 }
 
-/* Pending Queue Slideout */
-.pending-summary {
+/* Summary band atop the pending-queue slideout. */
+.jfm-pending-summary {
     margin-bottom: 15px;
     padding: 10px;
-    background: #2d2d2d;
-    border-radius: 4px;
+    background: var(--color-bg-card-hover);
+    border-radius: var(--size-radius-default);
 }
 
-.pending-total {
-    color: #dcdcaa;
-    font-size: 14px;
+/* Total-count text inside the pending summary band. */
+.jfm-pending-total {
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-heading-sm);
     font-weight: 500;
 }
 
 /* ============================================================================
-   Process Status Dashboard
+   CONTENT: PROCESS STATUS
+   ----------------------------------------------------------------------------
+   The orchestrator process-status grid: the four-up card grid and each status
+   card's header, name, icon, count, and time, with severity color variants
+   applied directly on the element.
+   Prefix: jfm
    ============================================================================ */
-.status-grid {
+
+/* Four-column grid of process status cards. */
+.jfm-status-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    gap: var(--size-spacing-md);
 }
 
-.status-card {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 8px 10px;
+/* A single process status card. */
+.jfm-status-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-md) 10px;
     position: relative;
 }
 
-.status-card.warning { border-color: #dcdcaa; background: rgba(220, 220, 170, 0.1); }
-.status-card.error { border-color: #f48771; background: rgba(244, 135, 113, 0.1); }
+/* Clickable status card shows a pointer cursor (e.g. Config Sync). */
+.jfm-status-card-clickable {
+    cursor: pointer;
+}
 
-.status-card-header {
+/* Warning severity tint and border on a status card. */
+.jfm-status-card-warning {
+    border-color: var(--color-accent-departmental);
+    background: var(--color-tint-warning);
+}
+
+/* Error severity tint and border on a status card. */
+.jfm-status-card-error {
+    border-color: var(--color-status-critical);
+    background: var(--color-tint-critical);
+}
+
+/* Header row of a status card (name left, icon right). */
+.jfm-status-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 4px;
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.status-card-name {
-    font-size: 10px;
-    color: #888;
+/* Process name label on a status card. */
+.jfm-status-card-name {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-.status-card-icon {
-    font-size: 12px;
-    color: #555;
+/* Status icon glyph on a status card. */
+.jfm-status-card-icon {
+    font-size: var(--font-size-content);
+    color: var(--color-border-strong);
 }
 
-.status-card-count {
-    font-size: 20px;
+/* The large count value on a status card. */
+.jfm-status-card-count {
+    font-size: var(--size-page-padding-y);
     font-weight: 600;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     text-align: center;
     line-height: 1.3;
 }
 
-.status-card-count.count-healthy { color: #4ec9b0; }
-.status-card-count.count-warning { color: #dcdcaa; }
-.status-card-count.count-error { color: #f48771; }
+/* Healthy color on a status card count. */
+.jfm-status-card-count-healthy {
+    color: var(--color-accent-shared);
+}
 
-.status-card-time {
-    font-size: 9px;
-    color: #666;
+/* Warning color on a status card count. */
+.jfm-status-card-count-warning {
+    color: var(--color-accent-departmental);
+}
+
+/* Error color on a status card count. */
+.jfm-status-card-count-error {
+    color: var(--color-status-critical);
+}
+
+/* The relative-time line beneath a status card count. */
+.jfm-status-card-time {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-subtle);
     text-align: center;
     margin-top: 2px;
 }
 
 /* ============================================================================
-   Daily Summary
+   CONTENT: DAILY SUMMARY
+   ----------------------------------------------------------------------------
+   The Daily Summary section: the three-up summary cards (with clickable and
+   stall-active variants), the per-card detail accents, and the summary
+   sub-sections that list flows beneath the cards.
+   Prefix: jfm
    ============================================================================ */
-.summary-content {
-    min-height: 80px;
-}
 
-.summary-cards {
+/* Three-column grid of daily summary cards. */
+.jfm-summary-cards {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     margin-bottom: 15px;
 }
 
-.summary-card {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 12px;
+/* A single daily summary card. */
+.jfm-summary-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg);
     text-align: center;
     position: relative;
 }
 
-.card-click-arrow {
-    position: absolute;
-    bottom: 4px;
-    right: 6px;
-    font-size: 8px;
-    color: #555;
+/* Clickable summary card shows a pointer cursor. */
+.jfm-summary-card-clickable {
+    cursor: pointer;
+    transition: background var(--duration-fast);
 }
 
-.summary-card-label {
-    font-size: 10px;
-    color: #888;
+.jfm-summary-card-clickable:hover { /* hover state for a clickable summary card */
+    background: var(--color-border-divider);
+}
+
+/* Stall-active card uses a warning border and tint. */
+.jfm-summary-card-stall-active {
+    border-color: var(--color-accent-departmental);
+    background: var(--color-tint-warning);
+}
+
+/* Small click-affordance arrow in a card corner. */
+.jfm-card-click-arrow {
+    position: absolute;
+    bottom: var(--size-spacing-xs);
+    right: var(--size-spacing-sm);
+    font-size: var(--font-size-xs);
+    color: var(--color-border-strong);
+}
+
+/* Label text on a summary card. */
+.jfm-summary-card-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 4px;
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.summary-card-value {
-    font-size: 24px;
+/* The large value on a summary card. */
+.jfm-summary-card-value {
+    font-size: var(--font-size-h1);
     font-weight: 400;
-    color: #4ec9b0;
+    color: var(--color-accent-shared);
     line-height: 1.2;
 }
 
-.summary-card-detail {
-    font-size: 10px;
-    margin-top: 4px;
+/* Stall-count value uses the warning accent. */
+.jfm-summary-card-value-stall {
+    color: var(--color-accent-departmental);
+}
+
+/* The detail line beneath a summary card value. */
+.jfm-summary-card-detail {
+    font-size: var(--font-size-default);
+    margin-top: var(--size-spacing-xs);
     display: flex;
     justify-content: center;
-    gap: 8px;
+    gap: var(--size-spacing-md);
     flex-wrap: wrap;
 }
 
-.summary-card-detail .success { color: #4ec9b0; }
-.summary-card-detail .in-progress { color: #569cd6; }
-.summary-card-detail .failed { color: #f48771; }
-.summary-card-detail .muted { color: #666; }
-
-/* Stall Events Card */
-.summary-card.stall-active {
-    border-color: #dcdcaa;
-    background: rgba(220, 220, 170, 0.05);
+/* Success accent within a summary card detail line. */
+.jfm-summary-detail-success {
+    color: var(--color-accent-shared);
 }
 
-.summary-card.stall-active .summary-card-value.stall-value {
-    color: #dcdcaa;
+/* In-progress accent within a summary card detail line. */
+.jfm-summary-detail-in-progress {
+    color: var(--color-accent-platform);
 }
 
-.summary-card.clickable {
-    cursor: pointer;
-    transition: background 0.2s;
+/* Failure accent within a summary card detail line. */
+.jfm-summary-detail-failed {
+    color: var(--color-status-critical);
 }
 
-.summary-card.clickable:hover {
-    background: #333;
+/* Muted accent within a summary card detail line. */
+.jfm-summary-detail-muted {
+    color: var(--color-text-subtle);
 }
 
-/* Stall Episode Slideout */
-.stall-episodes {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-/* Row-based episode layout */
-.stall-episode-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 6px 10px;
-    background: #252525;
-    border-radius: 3px;
-    font-size: 11px;
-}
-
-.stall-episode-row:hover {
-    background: #2d2d2d;
-}
-
-.stall-ep-icon {
-    font-size: 10px;
-    flex-shrink: 0;
-}
-.stall-ep-icon.resolved { color: #4ec9b0; }
-.stall-ep-icon.ongoing { color: #dcdcaa; }
-
-.stall-ep-num {
-    font-weight: 600;
-    color: #d4d4d4;
-    min-width: 65px;
-}
-
-.stall-ep-alert-badge {
-    font-size: 10px;
-    color: #f48771;
-    font-weight: 600;
-    padding: 1px 5px;
-    border: 1px solid rgba(244, 135, 113, 0.3);
-    border-radius: 3px;
-}
-
-.stall-ep-overnight-badge {
-    font-size: 10px;
-    color: #569cd6;
-    font-weight: 600;
-    padding: 1px 5px;
-    border: 1px solid rgba(86, 156, 214, 0.3);
-    border-radius: 3px;
-}
-
-.stall-ep-field {
-    color: #ccc;
-    min-width: 70px;
-}
-
-.stall-ep-label {
-    color: #666;
-    font-size: 10px;
-    margin-right: 3px;
-}
-
-.stall-ep-resolution {
-    margin-left: auto;
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 3px;
-}
-.stall-ep-resolution.resolved {
-    background: rgba(78, 201, 176, 0.15);
-    color: #4ec9b0;
-}
-.stall-ep-resolution.ongoing {
-    background: rgba(220, 220, 170, 0.15);
-    color: #dcdcaa;
-}
-
-.stall-history-link {
-    text-align: center;
-    margin-top: 15px;
-    padding-top: 12px;
-    border-top: 1px solid #333;
-}
-.stall-history-btn {
-    background: #333;
-    color: #9cdcfe;
-    border: 1px solid #555;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-}
-.stall-history-btn:hover { background: #444; border-color: #9cdcfe; }
-.stall-history-summary {
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #333;
-}
-.stall-history-range { color: #888; font-size: 12px; }
-.stall-date-group {
-    margin-bottom: 12px;
-    border: 1px solid #3c3c3c;
-    border-radius: 4px;
-    overflow: hidden;
-}
-.stall-date-header {
-    font-size: 12px;
-    color: #d4d4d4;
-    font-weight: 600;
-    margin-bottom: 0;
-    padding: 6px 10px;
-    background: #2a2a2a;
-    border-bottom: 1px solid #3c3c3c;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.stall-date-val { color: #569cd6; font-size: 13px; }
-.stall-date-dow { color: #888; font-weight: normal; }
-.stall-date-episodes-count { color: #ccc; font-weight: normal; }
-.stall-date-total-time { color: #dcdcaa; font-weight: normal; font-size: 11px; }
-.stall-date-alert {
-    color: #f48771;
-    font-size: 11px;
-    font-weight: normal;
-    margin-left: auto;
-}
-.stall-date-episodes {
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.summary-section {
+/* Sub-section grouping flows beneath the summary cards. */
+.jfm-summary-section {
     margin-top: 15px;
 }
 
-.summary-section-title {
-    font-size: 11px;
-    color: #888;
+/* Title of a summary sub-section. */
+.jfm-summary-section-title {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid #333;
+    margin-bottom: var(--size-spacing-md);
+    padding-bottom: var(--size-spacing-xs);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.summary-items {
+/* Clickable summary section title shows pointer. */
+.jfm-summary-section-title-clickable {
+    cursor: pointer;
+}
+
+.jfm-summary-section-title-clickable:hover { /* hover state for clickable section title */
+    color: var(--color-accent-shared);
+}
+
+/* Vertical list of summary items within a sub-section. */
+.jfm-summary-items {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--size-spacing-xs);
 }
 
-/* Flow Items (used in Daily Summary and Slideout) */
-.flow-item {
+/* Expand/collapse arrow appended to a clickable section title. */
+.jfm-section-arrow {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    margin-left: var(--size-spacing-md);
+}
+
+/* ============================================================================
+   CONTENT: FLOW ITEMS
+   ----------------------------------------------------------------------------
+   Flow rows shared by the Daily Summary and the slideouts: the clickable row
+   layout, the status badge with its state colors, the flow-code chip, the
+   validation badge with its verdict colors, and the per-field value accents.
+   Prefix: jfm
+   ============================================================================ */
+
+/* A flow row (label left, stats right). */
+.jfm-flow-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 10px;
-    background: #2a2a2a;
-    border-radius: 4px;
-    transition: background 0.2s;
+    padding: var(--size-spacing-md) 10px;
+    background: var(--color-bg-card-deep);
+    border-radius: var(--size-radius-default);
+    transition: background var(--duration-fast);
 }
 
-.flow-item.clickable {
+/* Clickable flow row shows a pointer cursor. */
+.jfm-flow-item-clickable {
     cursor: pointer;
 }
 
-.flow-item.clickable:hover {
-    background: #333;
+.jfm-flow-item-clickable:hover { /* hover state for a clickable flow row */
+    background: var(--color-border-divider);
 }
 
-.flow-item-left {
+/* Left cluster of a flow row (badge + code + name). */
+.jfm-flow-item-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--size-spacing-md);
 }
 
-.flow-item-right {
+/* Right cluster of a flow row (numeric stats). */
+.jfm-flow-item-right {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--size-spacing-lg);
     flex-shrink: 0;
 }
 
-.flow-status-badge {
-    font-size: 9px;
+/* Execution-state badge on a flow row. */
+.jfm-flow-status-badge {
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
@@ -678,351 +606,773 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     text-align: center;
     display: inline-block;
 }
-.flow-status-badge.complete { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.flow-status-badge.detected { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
-.flow-status-badge.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.flow-status-badge.warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
 
-.flow-code {
+/* Complete state colors for a flow status badge. */
+.jfm-flow-status-badge-complete {
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
+
+/* Detected state colors for a flow status badge. */
+.jfm-flow-status-badge-detected {
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+}
+
+/* Failed state colors for a flow status badge. */
+.jfm-flow-status-badge-failed {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Warning state colors for a flow status badge. */
+.jfm-flow-status-badge-warning {
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
+
+/* Monospaced flow-code chip. */
+.jfm-flow-code {
     display: inline-block;
-    background: rgba(86, 156, 214, 0.15);
-    color: #9cdcfe;
-    border: 1px solid rgba(86, 156, 214, 0.4);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-family: 'Consolas', monospace;
+    background: var(--color-banner-reconnecting-bg);
+    color: var(--color-text-link);
+    border: var(--size-border-thin) solid var(--color-glow-status-running);
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-body);
+    font-family: var(--font-family-monospace);
     font-weight: 600;
     min-width: 60px;
     text-align: center;
 }
 
-.flow-code.adhoc {
+/* Ad-hoc variant of the flow-code chip (plain, left-aligned). */
+.jfm-flow-code-adhoc {
     background: transparent;
-    color: #dcdcaa;
+    color: var(--color-accent-departmental);
     padding: 0;
     min-width: auto;
     text-align: left;
 }
 
-.validation-badge {
+/* Validation verdict badge appended to a flow. */
+.jfm-validation-badge {
     display: inline-block;
-    font-size: 9px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     padding: 1px 5px;
-    border-radius: 3px;
-    margin-left: 6px;
+    border-radius: var(--size-radius-sm);
+    margin-left: var(--size-spacing-sm);
     vertical-align: middle;
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
 }
-.validation-badge.val-success { background: rgba(197, 134, 192, 0.2); color: #c586c0; }
-.validation-badge.val-warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.validation-badge.val-error { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.validation-badge.val-dimmed { background: rgba(102, 102, 102, 0.2); color: #666; }
-.validation-badge.val-none { background: rgba(85, 85, 85, 0.2); color: #555; }
 
-.flow-jobs {
-    font-size: 11px;
-    color: #888;
+/* Success verdict colors for a validation badge. */
+.jfm-validation-badge-success {
+    background: rgba(197, 134, 192, 0.2);
+    color: #c586c0;
+}
+
+/* Warning verdict colors for a validation badge. */
+.jfm-validation-badge-warning {
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
+
+/* Error verdict colors for a validation badge. */
+.jfm-validation-badge-error {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Dimmed verdict colors for a validation badge. */
+.jfm-validation-badge-dimmed {
+    background: rgba(102, 102, 102, 0.2);
+    color: var(--color-text-subtle);
+}
+
+/* None verdict colors for a validation badge. */
+.jfm-validation-badge-none {
+    background: rgba(85, 85, 85, 0.2);
+    color: var(--color-border-strong);
+}
+
+/* Job-count field in a flow row. */
+.jfm-flow-jobs {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     width: 110px;
     text-align: right;
 }
 
-.flow-succeeded {
-    font-size: 11px;
-    color: #4ec9b0;
+/* Succeeded-count field in a flow row. */
+.jfm-flow-succeeded {
+    font-size: var(--font-size-body);
+    color: var(--color-accent-shared);
     width: 75px;
     text-align: right;
 }
 
-.flow-failed {
-    font-size: 11px;
-    color: #f48771;
+/* Failed-count field in a flow row. */
+.jfm-flow-failed {
+    font-size: var(--font-size-body);
+    color: var(--color-status-critical);
     width: 55px;
     text-align: right;
 }
 
-.flow-duration {
-    font-size: 11px;
-    color: #dcdcaa;
+/* Duration field in a flow row. */
+.jfm-flow-duration {
+    font-size: var(--font-size-body);
+    color: var(--color-accent-departmental);
     width: 70px;
     text-align: right;
 }
 
-.flow-user {
-    font-size: 11px;
-    color: #888;
+/* User field in a flow row. */
+.jfm-flow-user {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
 
-.flow-name {
-    font-size: 12px;
-    color: #9cdcfe;
+/* Flow-name text in a flow row (truncates with ellipsis). */
+.jfm-flow-name {
+    font-size: var(--font-size-content);
+    color: var(--color-text-link);
     margin-left: 15px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.flow-name.flow-name-complete { color: #4ec9b0; }
-.flow-name.flow-name-detected { color: #569cd6; }
-.flow-name.flow-name-failed { color: #f48771; }
 
-.flow-arrow {
-    font-size: 10px;
-    color: #555;
+/* Complete state color for a flow name. */
+.jfm-flow-name-complete {
+    color: var(--color-accent-shared);
 }
 
-.summary-section-title.clickable {
-    cursor: pointer;
+/* Detected state color for a flow name. */
+.jfm-flow-name-detected {
+    color: var(--color-accent-platform);
 }
 
-.summary-section-title.clickable:hover {
-    color: #4ec9b0;
+/* Failed state color for a flow name. */
+.jfm-flow-name-failed {
+    color: var(--color-status-critical);
 }
 
-.section-arrow {
-    font-size: 10px;
-    color: #555;
-    margin-left: 8px;
+/* Expand/collapse arrow on a flow row. */
+.jfm-flow-arrow {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
 }
 
 /* ============================================================================
-   Execution History - BIDATA Style
+   CONTENT: STALL EPISODES
+   ----------------------------------------------------------------------------
+   Stall-detection content shown in the stall slideouts: the per-episode row
+   with its icon, number, badges, fields, and resolution chip, plus the stall
+   history's date-grouped layout and its drill-in button.
+   Prefix: jfm
    ============================================================================ */
-.history-content {
-    max-height: calc(100vh - 420px);
-    overflow-y: auto;
+
+/* Vertical list of stall episodes. */
+.jfm-stall-episodes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-xs);
 }
 
-.history-count { font-size: 11px; color: #888; }
-.history-tree { font-size: 13px; }
-.history-year { margin-bottom: 8px; }
-
-.year-header {
+/* A single stall-episode row. */
+.jfm-stall-episode-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    cursor: pointer;
-    border-radius: 4px;
-    background-color: #2d2d2d;
-    border: 1px solid #404040;
-    transition: background-color 0.2s;
+    gap: var(--size-spacing-lg);
+    padding: var(--size-spacing-sm) 10px;
+    background: #252525;
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-body);
 }
 
-.year-header:hover { background-color: #353535; }
-.expand-icon { color: #888; font-size: 10px; width: 12px; }
-.year-label { font-weight: 700; color: #569cd6; font-size: 18px; letter-spacing: 1px; }
-.year-header .year-stats { margin-left: auto; display: flex; gap: 6px; font-size: 11px; }
-.year-header .year-stat { min-width: 120px; text-align: right; color: #888; }
-.year-header .year-stat.success { color: #4ec9b0; }
-.year-header .year-stat.failed { color: #f48771; }
+.jfm-stall-episode-row:hover { /* hover state for a stall-episode row */
+    background: var(--color-bg-card-hover);
+}
 
-.year-content { margin-left: 10px; margin-top: 8px; }
+/* Status icon on a stall-episode row. */
+.jfm-stall-ep-icon {
+    font-size: var(--font-size-default);
+    flex-shrink: 0;
+}
 
-/* Month Summary Table */
-.month-summary-table {
+/* Resolved color for the episode status icon. */
+.jfm-stall-ep-icon-resolved {
+    color: var(--color-accent-shared);
+}
+
+/* Ongoing color for the episode status icon. */
+.jfm-stall-ep-icon-ongoing {
+    color: var(--color-accent-departmental);
+}
+
+/* Episode number label on a stall-episode row. */
+.jfm-stall-ep-num {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    min-width: 65px;
+}
+
+/* Alert-sent badge on a stall-episode row. */
+.jfm-stall-ep-alert-badge {
+    font-size: var(--font-size-default);
+    color: var(--color-status-critical);
+    font-weight: 600;
+    padding: 1px 5px;
+    border: var(--size-border-thin) solid var(--color-banner-disconnected-border);
+    border-radius: var(--size-radius-sm);
+}
+
+/* Overnight badge on a stall-episode row. */
+.jfm-stall-ep-overnight-badge {
+    font-size: var(--font-size-default);
+    color: var(--color-accent-platform);
+    font-weight: 600;
+    padding: 1px 5px;
+    border: var(--size-border-thin) solid var(--color-banner-reconnecting-border);
+    border-radius: var(--size-radius-sm);
+}
+
+/* A labeled value field on a stall-episode row. */
+.jfm-stall-ep-field {
+    color: #ccc;
+    min-width: 70px;
+}
+
+/* The small caption preceding a stall-episode field value. */
+.jfm-stall-ep-label {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-default);
+    margin-right: 3px;
+}
+
+/* Resolution chip pinned to the right of a stall-episode row. */
+.jfm-stall-ep-resolution {
+    margin-left: auto;
+    font-size: var(--font-size-default);
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+}
+
+/* Resolved colors for the resolution chip. */
+.jfm-stall-ep-resolution-resolved {
+    background: var(--color-banner-reloading-bg);
+    color: var(--color-accent-shared);
+}
+
+/* Ongoing colors for the resolution chip. */
+.jfm-stall-ep-resolution-ongoing {
+    background: var(--color-banner-session-bg);
+    color: var(--color-accent-departmental);
+}
+
+/* Centered link block opening the stall-history slideout. */
+.jfm-stall-history-link {
+    text-align: center;
+    margin-top: 15px;
+    padding-top: var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Button that opens the stall-history slideout. */
+.jfm-stall-history-btn {
+    background: var(--color-border-divider);
+    color: var(--color-text-link);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    padding: var(--size-spacing-sm) var(--size-spacing-xl);
+    border-radius: var(--size-radius-default);
+    cursor: pointer;
+    font-size: var(--font-size-content);
+}
+
+.jfm-stall-history-btn:hover { /* hover state for the stall-history button */
+    background: #444;
+    border-color: var(--color-text-link);
+}
+
+/* Summary band atop the stall-history slideout. */
+.jfm-stall-history-summary {
+    margin-bottom: var(--size-spacing-lg);
+    padding-bottom: var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Date-range caption in the stall-history summary. */
+.jfm-stall-history-range {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
+}
+
+/* A date-grouped block of stall episodes. */
+.jfm-stall-date-group {
+    margin-bottom: var(--size-spacing-lg);
+    border: var(--size-border-thin) solid #3c3c3c;
+    border-radius: var(--size-radius-default);
+    overflow: hidden;
+}
+
+/* Header row of a stall date group. */
+.jfm-stall-date-header {
+    font-size: var(--font-size-content);
+    color: var(--color-text-primary);
+    font-weight: 600;
+    margin-bottom: 0;
+    padding: var(--size-spacing-sm) 10px;
+    background: var(--color-bg-card-deep);
+    border-bottom: var(--size-border-thin) solid #3c3c3c;
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-lg);
+}
+
+/* Date value in a stall date-group header. */
+.jfm-stall-date-val {
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Day-of-week caption in a stall date-group header. */
+.jfm-stall-date-dow {
+    color: var(--color-text-muted);
+    font-weight: normal;
+}
+
+/* Episode-count caption in a stall date-group header. */
+.jfm-stall-date-episodes-count {
+    color: #ccc;
+    font-weight: normal;
+}
+
+/* Total-stall-time caption in a stall date-group header. */
+.jfm-stall-date-total-time {
+    color: var(--color-accent-departmental);
+    font-weight: normal;
+    font-size: var(--font-size-body);
+}
+
+/* Alert caption pinned right in a stall date-group header. */
+.jfm-stall-date-alert {
+    color: var(--color-status-critical);
+    font-size: var(--font-size-body);
+    font-weight: normal;
+    margin-left: auto;
+}
+
+/* The episodes container within a stall date group. */
+.jfm-stall-date-episodes {
+    padding: var(--size-spacing-md) 10px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-sm);
+}
+
+/* ============================================================================
+   CONTENT: EXECUTION HISTORY
+   ----------------------------------------------------------------------------
+   The Execution History tree: the year accordion header with its stats, the
+   month-summary table with expandable month rows, and the day-level history
+   table with odd-row striping. These tables live in the page section, so they
+   are page-local; hover and stripe states are applied on the row element.
+   Prefix: jfm
+   ============================================================================ */
+
+/* Count caption shown in the history section header. */
+.jfm-history-count {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* The history tree container. */
+.jfm-history-tree {
+    font-size: var(--font-size-content-lg);
+}
+
+/* A year grouping within the history tree. */
+.jfm-history-year {
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Clickable header row for a year group. */
+.jfm-year-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) 10px;
+    cursor: pointer;
+    border-radius: var(--size-radius-default);
+    background-color: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    transition: background-color var(--duration-fast);
+}
+
+.jfm-year-header:hover { /* hover state for a year header */
+    background-color: #353535;
+}
+
+/* Expand/collapse icon in a year or month header. */
+.jfm-expand-icon {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
+    width: var(--font-size-content);
+}
+
+/* Year label text in a year header. */
+.jfm-year-label {
+    font-weight: 700;
+    color: var(--color-accent-platform);
+    font-size: 18px;
+    letter-spacing: 1px;
+}
+
+/* Stats cluster pinned right in a year header. */
+.jfm-year-stats {
+    margin-left: auto;
+    display: flex;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-body);
+}
+
+/* A single stat within a year header's stats cluster. */
+.jfm-year-stat {
+    min-width: 120px;
+    text-align: right;
+    color: var(--color-text-muted);
+}
+
+/* Success color for a year stat. */
+.jfm-year-stat-success {
+    color: var(--color-accent-shared);
+}
+
+/* Failure color for a year stat. */
+.jfm-year-stat-failed {
+    color: var(--color-status-critical);
+}
+
+/* Expanded content area beneath a year header. */
+.jfm-year-content {
+    margin-left: 10px;
+    margin-top: var(--size-spacing-md);
+}
+
+/* Month-summary table within a year's content. */
+.jfm-month-summary-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
-    margin-bottom: 8px;
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-md);
 }
 
-.month-summary-table th {
+/* Header cell in the month-summary table. */
+.jfm-month-summary-th {
     text-align: left;
-    padding: 6px 10px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
 }
 
-.month-summary-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* Data cell in the month-summary table. */
+.jfm-month-summary-td {
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
 
-.month-summary-table tr.month-row {
+/* A clickable month row in the month-summary table. */
+.jfm-month-row {
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-fast);
 }
 
-.month-summary-table tr.month-row:hover td {
-    background: #2d2d2d;
+.jfm-month-row:hover { /* hover state for a month row */
+    background: var(--color-bg-card-hover);
 }
 
-.month-summary-table .expand-cell {
+/* Expand-affordance cell in a month row. */
+.jfm-month-cell-expand {
     width: 24px;
     text-align: center;
 }
 
-.month-summary-table .month-cell {
+/* Month-name cell in a month row. */
+.jfm-month-cell-name {
     font-weight: 500;
 }
 
-.month-summary-table .success-cell {
-    color: #4ec9b0;
+/* Success-count cell in a month row. */
+.jfm-month-cell-success {
+    color: var(--color-accent-shared);
 }
 
-.month-summary-table .fail-cell {
-    color: #f44747;
+/* Failure-count cell in a month row. */
+.jfm-month-cell-fail {
+    color: var(--color-status-critical);
 }
 
-/* Month details row (expanded content) */
-.month-details td {
-    padding: 0 0 12px 20px;
+/* The expanded detail cell beneath a month row. */
+.jfm-month-details-cell {
+    padding: 0 0 var(--size-spacing-lg) var(--size-spacing-xl);
     background: transparent;
 }
 
-.month-details-content {
-    margin-top: 8px;
+/* The expanded month detail content wrapper. */
+.jfm-month-details-content {
+    margin-top: var(--size-spacing-md);
 }
 
-/* History Table (day rows) */
-.history-table {
+/* Structural marker for a month's tbody group (JS toggle hook, no styling). */
+.jfm-month-group { }
+
+/* Structural marker for a month's collapsible detail row (JS toggle hook). */
+.jfm-month-details { }
+
+/* Day-level history table. */
+.jfm-history-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
 
-.history-table th {
+/* Header cell in the history table (sticky to the section top). */
+.jfm-history-th {
     text-align: left;
-    padding: 8px 10px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
     position: sticky;
     top: 0;
-    background: #252526;
+    background: var(--color-bg-card);
 }
 
-.history-table td {
-    padding: 6px 10px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* Data cell in the history table. */
+.jfm-history-td {
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
 
-.history-table tr:hover td {
-    background: #2d2d2d;
+/* A clickable day row in the history table. */
+.jfm-history-row {
     cursor: pointer;
 }
 
-.history-table tr.row-odd td {
+.jfm-history-row:hover { /* hover state for a history day row */
+    background: var(--color-bg-card-hover);
+}
+
+/* Subtle stripe on odd history rows. */
+.jfm-history-row-odd {
     background: rgba(255, 255, 255, 0.02);
 }
 
-.history-table tr.row-odd:hover td {
-    background: #2d2d2d;
+.jfm-history-row-odd:hover { /* hover state for an odd-striped history row */
+    background: var(--color-bg-card-hover);
 }
 
-.history-table .success-cell { color: #4ec9b0; }
-.history-table .fail-cell { color: #f44747; }
+/* Success-count cell in the history table. */
+.jfm-history-cell-success {
+    color: var(--color-accent-shared);
+}
 
-/* Status indicator in table */
-.status-indicator {
+/* Failure-count cell in the history table. */
+.jfm-history-cell-fail {
+    color: var(--color-status-critical);
+}
+
+/* Status indicator dot in a history row. */
+.jfm-status-indicator {
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: var(--size-scrollbar-width);
+    height: var(--size-scrollbar-width);
     border-radius: 50%;
-    margin-right: 6px;
+    margin-right: var(--size-spacing-sm);
 }
 
-.status-indicator.success { background: #4ec9b0; }
-.status-indicator.warning { background: #dcdcaa; }
-.status-indicator.error { background: #f44747; }
+/* Success color for the status indicator dot. */
+.jfm-status-indicator-success {
+    background: var(--color-accent-shared);
+}
 
-/* Flow group in slideout */
-.flow-group {
-    margin-bottom: 20px;
-    border: 1px solid #404040;
-    border-radius: 4px;
+/* Warning color for the status indicator dot. */
+.jfm-status-indicator-warning {
+    background: var(--color-accent-departmental);
+}
+
+/* Error color for the status indicator dot. */
+.jfm-status-indicator-error {
+    background: var(--color-status-critical);
+}
+
+/* ============================================================================
+   CONTENT: SLIDEOUT DETAIL
+   ----------------------------------------------------------------------------
+   Page-specific detail content rendered inside the flow/day slideout. The
+   slideout shell, summary grid, stat cards, section titles, and job tables use
+   the shared cc-slide-* components; the classes here cover the flow/execution
+   grouping wrappers, the page-specific job cell colors and status badge, and
+   the stat-value and stat-state accents layered onto the shared stat cards.
+   Prefix: jfm
+   ============================================================================ */
+
+/* Stat-value accents layered on a shared cc-slide-stat-value. */
+.jfm-stat-value-success {
+    color: var(--color-accent-shared);
+}
+
+/* Failure accent layered on a shared cc-slide-stat-value. */
+.jfm-stat-value-failed {
+    color: var(--color-status-critical);
+}
+
+/* Executing accent layered on a shared cc-slide-stat-value. */
+.jfm-stat-value-executing {
+    color: var(--color-accent-platform);
+}
+
+/* Clickable accent layered on a shared cc-slide-stat (filterable). */
+.jfm-stat-clickable {
+    cursor: pointer;
+    transition: border-color var(--duration-fast), background var(--duration-fast);
+}
+
+.jfm-stat-clickable:hover { /* hover state for a clickable slideout stat */
+    border-color: var(--color-text-subtle);
+    background: var(--color-border-divider);
+}
+
+/* Active-filter state on a slideout stat. */
+.jfm-stat-filter-active {
+    border-color: var(--color-status-critical);
+    background: #3a2525;
+}
+
+/* A flow grouping wrapper inside the slideout. */
+.jfm-flow-group {
+    margin-bottom: var(--size-spacing-2xl);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     overflow: hidden;
 }
 
-.flow-group-header {
+/* Header row of a flow group. */
+.jfm-flow-group-header {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 12px;
-    background: #2d2d2d;
+    padding: 10px var(--size-spacing-lg);
+    background: var(--color-bg-card-hover);
 }
 
-.flow-group-stats {
-    font-size: 11px;
-    color: #888;
+/* Stats caption pinned right in a flow group header. */
+.jfm-flow-group-stats {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     margin-left: auto;
 }
 
-.flow-group-time {
-    font-size: 11px;
-    color: #dcdcaa;
+/* Time caption in a flow group header. */
+.jfm-flow-group-time {
+    font-size: var(--font-size-body);
+    color: var(--color-accent-departmental);
 }
 
-/* Execution group for multi-daily flows */
-.execution-group {
+/* An execution grouping wrapper for multi-run-per-day flows. */
+.jfm-execution-group {
     margin-bottom: 15px;
-    border: 1px solid #3c3c3c;
-    border-radius: 4px;
+    border: var(--size-border-thin) solid #3c3c3c;
+    border-radius: var(--size-radius-default);
     overflow: hidden;
 }
 
-.execution-header {
+/* Header row of an execution group. */
+.jfm-execution-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    background: #2d2d2d;
-    border-bottom: 1px solid #3c3c3c;
+    gap: var(--size-spacing-lg);
+    padding: 10px var(--size-spacing-lg);
+    background: var(--color-bg-card-hover);
+    border-bottom: var(--size-border-thin) solid #3c3c3c;
 }
 
-.execution-time {
+/* Run-time label in an execution group header. */
+.jfm-execution-time {
     font-weight: 600;
-    color: #4ec9b0;
-    font-size: 14px;
+    color: var(--color-accent-shared);
+    font-size: var(--font-size-heading-sm);
 }
 
-.execution-stats {
-    font-size: 12px;
+/* Stats caption in an execution group header. */
+.jfm-execution-stats {
+    font-size: var(--font-size-content);
     color: #ccc;
 }
 
-.execution-duration {
-    font-size: 11px;
-    color: #888;
+/* Duration caption pinned right in an execution group header. */
+.jfm-execution-duration {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     margin-left: auto;
 }
 
-.execution-start-label {
-    color: #666;
-    font-size: 10px;
+/* Small caption preceding a run's start time. */
+.jfm-execution-start-label {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-default);
 }
 
-.execution-jobs-table {
-    margin: 0;
+/* Success-colored job cell in a slideout job table. */
+.jfm-job-cell-success {
+    color: var(--color-accent-shared);
 }
 
-.execution-jobs-table th {
-    background: #252526;
+/* Failure-colored job cell in a slideout job table. */
+.jfm-job-cell-failed {
+    color: var(--color-status-critical);
 }
 
-.flow-jobs-table {
-    margin: 0;
+/* Log-id job cell in a slideout job table. */
+.jfm-job-cell-log-id {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
 }
 
-.flow-jobs-table th {
-    background: #252526;
+/* Execution-order job cell in a slideout job table. */
+.jfm-job-cell-exec-order {
+    color: var(--color-text-muted);
+    text-align: center;
+    width: 28px;
+    min-width: 28px;
+    font-size: var(--font-size-body);
 }
 
-/* Error message row */
-.error-row td {
-    padding: 4px 8px 8px 30px !important;
-    border-bottom: 1px solid #333;
+/* Execution-order header cell in a slideout job table. */
+.jfm-job-th-order {
+    width: 28px;
+    min-width: 28px;
+    text-align: center;
 }
 
-.error-message {
-    color: #f48771;
-    font-size: 11px;
+/* The error-message row beneath a failed job. */
+.jfm-error-row-cell {
+    padding: var(--size-spacing-xs) var(--size-spacing-md) var(--size-spacing-md) 30px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* The error-message text within an error row. */
+.jfm-error-message {
+    color: var(--color-status-critical);
+    font-size: var(--font-size-body);
     font-style: italic;
     display: block;
     max-width: 600px;
@@ -1031,962 +1381,657 @@ h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
     white-space: nowrap;
 }
 
-/* Jobs table cell colors */
-.jobs-table td.success { color: #4ec9b0; }
-.jobs-table td.failed { color: #f48771; }
-.jobs-table td.log-id { color: #888; font-size: 11px; }
-.jobs-table td.exec-order { color: #888; text-align: center; width: 28px; min-width: 28px; font-size: 11px; }
-.jobs-table th:nth-child(2) { width: 28px; min-width: 28px; text-align: center; }
-
-/* ============================================================================
-   Slideout Panel
-   ============================================================================ */
-.slideout {
-    position: fixed;
-    top: 0;
-    right: -1050px;
-    width: 1050px;
-    height: 100%;
-    background: #252526;
-    border-left: 1px solid #404040;
-    z-index: 1001;
-    transition: right 0.3s ease;
-    display: flex;
-    flex-direction: column;
-}
-
-.slideout.open { right: 0; }
-
-.slideout-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    display: none;
-}
-
-.slideout.open ~ .slideout-overlay { display: block; }
-
-.slideout-content {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
-
-.slideout-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #404040;
-    background: #2d2d2d;
-}
-
-.slideout-header h2 {
-    margin: 0;
-    font-size: 16px;
-    color: #4ec9b0;
-}
-
-.slideout-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-}
-
-.slideout-close:hover { color: #d4d4d4; }
-
-.slideout-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
-}
-
-/* Slideout Flow Summary */
-.slideout-summary {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    margin-bottom: 16px;
-}
-
-.slideout-stat {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 8px 10px;
-    text-align: center;
-}
-
-.slideout-stat.clickable {
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-}
-
-.slideout-stat.clickable:hover {
-    border-color: #666;
-    background: #333;
-}
-
-.slideout-stat.filter-active {
-    border-color: #f48771;
-    background: #3a2525;
-}
-
-.slideout-stat-label {
-    font-size: 10px;
-    color: #888;
-    text-transform: uppercase;
-    margin-bottom: 2px;
-}
-
-.slideout-stat-value {
-    font-size: 14px;
-    color: #d4d4d4;
-}
-
-.slideout-stat-value.success { color: #4ec9b0; }
-.slideout-stat-value.failed { color: #f48771; }
-.slideout-stat-value.executing { color: #569cd6; }
-
-/* Slideout Jobs Table */
-.slideout-section-title {
-    font-size: 12px;
-    color: #888;
-    text-transform: uppercase;
-    margin: 20px 0 10px 0;
-    padding-bottom: 5px;
-    border-bottom: 1px solid #404040;
-}
-
-.jobs-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 11px;
-}
-
-.jobs-table th {
-    text-align: left;
-    padding: 6px 8px;
-    background: #2d2d2d;
-    color: #888;
-    font-weight: 500;
-    position: sticky;
-    top: 0;
-}
-
-.jobs-table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid #333;
-    vertical-align: middle;
-}
-
-.jobs-table tr:hover { background: #2a2a2a; }
-
-.job-status-badge {
-    font-size: 9px;
+/* Per-job status badge in a slideout job table. */
+.jfm-job-status-badge {
+    font-size: var(--font-size-sm);
     font-weight: 600;
     padding: 1px 5px;
-    border-radius: 3px;
+    border-radius: var(--size-radius-sm);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
 }
-.job-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.job-status-badge.failed { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.job-status-badge.partial { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
+
+/* Success colors for a job status badge. */
+.jfm-job-status-badge-success {
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
+
+/* Failure colors for a job status badge. */
+.jfm-job-status-badge-failed {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Partial colors for a job status badge. */
+.jfm-job-status-badge-partial {
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
 
 /* ============================================================================
-   App Server Tasks Modal
+   CONTENT: APP SERVER TASKS
+   ----------------------------------------------------------------------------
+   Page-specific body content for the App Server Tasks modal: the server/flow
+   grid, the per-server toggle cells with their enabled/disabled and staged
+   pending states, the status glyphs, and the warning row for active flows with
+   no enabled task. The modal shell itself comes from cc-shared.
+   Prefix: jfm
    ============================================================================ */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 2000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
 
-.modal-overlay.hidden { display: none; }
-
-.modal-content {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-}
-
-.modal-wide {
-    width: 800px;
-    max-width: 90vw;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #404040;
-}
-
-.modal-header h3 {
-    margin: 0;
-    color: #4ec9b0;
-    font-size: 16px;
-}
-
-.modal-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 24px;
-    cursor: pointer;
-}
-
-.modal-close:hover { color: #d4d4d4; }
-
-.modal-body {
-    padding: 20px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.modal-subtitle {
-    color: #888;
-    font-size: 12px;
+/* Helper subtitle text beneath the tasks modal title. */
+.jfm-modal-subtitle {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
     margin: 0 0 15px 0;
 }
 
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 15px 20px;
-    border-top: 1px solid #404040;
-}
-
-.modal-btn {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-}
-
-.modal-btn-cancel {
-    background: #404040;
-    color: #d4d4d4;
-}
-
-.modal-btn-cancel:hover { background: #4a4a4a; }
-
-.modal-btn-secondary {
-    background: #333;
-    color: #888;
-    border: 1px solid #555;
-}
-
-.modal-btn-secondary:hover { background: #3a3a3a; color: #d4d4d4; }
-
-/* Tasks Grid */
-.tasks-grid {
+/* The server/flow task distribution grid. */
+.jfm-tasks-grid {
     display: grid;
     grid-template-columns: auto repeat(3, 1fr);
     gap: 1px;
-    background: #404040;
-    border: 1px solid #404040;
-    border-radius: 4px;
+    background: var(--color-border-default);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     overflow: hidden;
 }
 
-.tasks-header {
-    background: #2d2d2d;
-    padding: 10px 12px;
-    font-size: 12px;
+/* A column header in the tasks grid. */
+.jfm-tasks-header {
+    background: var(--color-bg-card-hover);
+    padding: 10px var(--size-spacing-lg);
+    font-size: var(--font-size-content);
     font-weight: 600;
-    color: #888;
+    color: var(--color-text-muted);
     text-align: center;
 }
 
-.tasks-header.flow-col {
+/* The flow-column header (left-aligned, teal). */
+.jfm-tasks-header-flow {
     text-align: left;
-    color: #4ec9b0;
+    color: var(--color-accent-shared);
 }
 
-.task-row-flow {
-    background: #2a2a2a;
-    padding: 8px 12px;
-    font-family: 'Consolas', monospace;
-    font-size: 12px;
-    color: #9cdcfe;
+/* A flow-name cell at the start of a tasks grid row. */
+.jfm-task-row-flow {
+    background: var(--color-bg-card-deep);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-content);
+    color: var(--color-text-link);
     display: flex;
     align-items: center;
 }
 
-.task-cell {
-    background: #252526;
-    padding: 8px 12px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: 2px solid transparent;
-}
-
-.task-cell:hover { background: #2d2d2d; }
-
-.task-cell.enabled {
-    background: rgba(78, 201, 176, 0.15);
-}
-
-.task-cell.enabled:hover {
-    background: rgba(78, 201, 176, 0.25);
-}
-
-.task-cell.disabled {
-    background: #252526;
-}
-
-/* Pending state styles */
-.task-cell.pending-enable {
-    background: rgba(220, 220, 170, 0.2);
-    border-color: #dcdcaa;
-}
-
-.task-cell.pending-disable {
-    background: rgba(220, 170, 100, 0.15);
-    border-color: #dca864;
-}
-
-.task-status {
-    font-size: 14px;
-}
-
-.task-status.enabled { color: #4ec9b0; }
-.task-status.disabled { color: #555; }
-.task-status.pending-enable { color: #dcdcaa; }
-.task-status.pending-disable { color: #dca864; }
-
-.task-cell.loading {
-    opacity: 0.5;
-    pointer-events: none;
-}
-
-.task-error {
-    grid-column: 1 / -1;
-    background: rgba(244, 135, 113, 0.1);
-    color: #f48771;
-    padding: 15px;
-    text-align: center;
-}
-
-/* Warning row - active flow with no enabled task */
-.task-row-flow.warning-row {
+/* Active flow with no enabled task (warning tint). */
+.jfm-task-row-flow-warning {
     background: rgba(220, 170, 100, 0.2);
     color: #dca864;
 }
 
-/* Pending changes indicator and Apply button */
-#pending-changes-indicator {
-    color: #dcdcaa;
-    font-size: 12px;
-    padding: 4px 10px;
-    background: rgba(220, 220, 170, 0.15);
-    border-radius: 4px;
-    margin-right: 10px;
-}
-
-#btn-apply-changes {
-    background: #4ec9b0;
-    color: #1e1e1e;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 4px;
+/* A per-server toggle cell in the tasks grid. */
+.jfm-task-cell {
+    background: var(--color-bg-card);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    text-align: center;
     cursor: pointer;
-    font-weight: 500;
+    transition: all var(--duration-fast);
+    border: 2px solid transparent;
 }
 
-#btn-apply-changes:hover {
-    background: #3db89f;
+.jfm-task-cell:hover { /* hover state for a task cell */
+    background: var(--color-bg-card-hover);
 }
 
-/* Confirmation Modal */
-#confirm-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2100;
+/* Enabled state tint for a task cell. */
+.jfm-task-cell-enabled {
+    background: rgba(78, 201, 176, 0.15);
 }
 
-.confirm-modal {
-    background: #252526;
-    border-radius: 8px;
-    width: 450px;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+.jfm-task-cell-enabled:hover { /* hover state for an enabled task cell */
+    background: rgba(78, 201, 176, 0.25);
 }
 
-.confirm-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #333;
+/* Disabled state for a task cell. */
+.jfm-task-cell-disabled {
+    background: var(--color-bg-card);
 }
 
-.confirm-modal-header h3 {
-    margin: 0;
-    color: #dcdcaa;
-    font-size: 16px;
+/* Staged-enable state for a task cell. */
+.jfm-task-cell-pending-enable {
+    background: rgba(220, 220, 170, 0.2);
+    border-color: var(--color-accent-departmental);
 }
 
-.confirm-modal-body {
-    padding: 20px;
-    overflow-y: auto;
-    flex: 1;
+/* Staged-disable state for a task cell. */
+.jfm-task-cell-pending-disable {
+    background: rgba(220, 170, 100, 0.15);
+    border-color: #dca864;
 }
 
-.confirm-changes-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+/* Loading state for a task cell (dimmed, inert). */
+.jfm-task-cell-loading {
+    opacity: 0.5;
+    pointer-events: none;
 }
 
-.confirm-change-item {
-    padding: 10px 12px;
-    background: #1e1e1e;
-    border-radius: 4px;
-    font-size: 13px;
-    color: #ccc;
+/* The status glyph inside a task cell. */
+.jfm-task-status {
+    font-size: var(--font-size-heading-sm);
 }
 
-.confirm-change-item strong {
-    color: #9cdcfe;
+/* Enabled color for the task status glyph. */
+.jfm-task-status-enabled {
+    color: var(--color-accent-shared);
 }
 
-.confirm-change-item .from-server {
+/* Disabled color for the task status glyph. */
+.jfm-task-status-disabled {
+    color: var(--color-border-strong);
+}
+
+/* Staged-enable color for the task status glyph. */
+.jfm-task-status-pending-enable {
+    color: var(--color-accent-departmental);
+}
+
+/* Staged-disable color for the task status glyph. */
+.jfm-task-status-pending-disable {
     color: #dca864;
 }
 
-.confirm-change-item .to-server {
-    color: #4ec9b0;
-}
-
-.confirm-modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 15px 20px;
-    border-top: 1px solid #333;
-}
-
-#btn-confirm-cancel {
-    background: #3c3c3c;
-    color: #ccc;
-    border: none;
-    padding: 8px 20px;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-#btn-confirm-cancel:hover {
-    background: #4a4a4a;
-}
-
-#btn-confirm-apply {
-    background: #4ec9b0;
-    color: #1e1e1e;
-    border: none;
-    padding: 8px 20px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-}
-
-#btn-confirm-apply:hover {
-    background: #3db89f;
-}
-
-#btn-confirm-apply:disabled,
-#btn-confirm-cancel:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* ============================================================================
-   Utility Classes
-   ============================================================================ */
-.hidden { display: none !important; }
-
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-/* ============================================================================
-   ConfigSync Modal
-   ============================================================================ */
-
-/* Modal structure - reuses existing .modal-overlay pattern */
-#configsync-modal-overlay .modal-content {
-    width: 700px;
-    max-width: 90vw;
-    max-height: 85vh;
-}
-
-/* Flow selector in header */
-.cs-selector-bar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 20px;
-    border-bottom: 1px solid #333;
-    background: #2a2a2a;
-}
-
-.cs-selector-bar label {
-    font-size: 12px;
-    color: #888;
-    white-space: nowrap;
-}
-
-.cs-selector-bar select {
-    flex: 1;
-    padding: 6px 10px;
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    color: #d4d4d4;
-    font-size: 13px;
-    font-family: inherit;
-    cursor: pointer;
-}
-
-.cs-selector-bar select:focus {
-    outline: none;
-    border-color: #569cd6;
-}
-
-/* Body content area */
-#configsync-body {
-    padding: 20px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-/* Flow header */
-.cs-flow-header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 16px;
-}
-
-.cs-flow-code {
-    font-size: 18px;
-    font-weight: 600;
-    color: #4ec9b0;
-    font-family: 'Consolas', 'Courier New', monospace;
-}
-
-.cs-flow-name {
-    font-size: 13px;
-    color: #888;
-}
-
-/* Status badges */
-.cs-badges {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-}
-
-.cs-badge {
-    font-size: 11px;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-weight: 500;
-}
-
-.cs-badge-active {
-    background: rgba(78, 201, 176, 0.15);
-    color: #4ec9b0;
-    border: 1px solid rgba(78, 201, 176, 0.3);
-}
-
-.cs-badge-inactive {
-    background: rgba(136, 136, 136, 0.15);
-    color: #888;
-    border: 1px solid rgba(136, 136, 136, 0.3);
-}
-
-.cs-badge-neutral {
-    background: rgba(86, 156, 214, 0.15);
-    color: #569cd6;
-    border: 1px solid rgba(86, 156, 214, 0.3);
-}
-
-/* Section headers */
-.cs-section-header {
-    font-size: 11px;
-    font-weight: 600;
-    color: #569cd6;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin: 20px 0 10px 0;
-    padding-bottom: 5px;
-    border-bottom: 1px solid #333;
-}
-
-/* Detail grid (label/value pairs) */
-.cs-detail-grid {
-    display: grid;
-    grid-template-columns: 140px 1fr;
-    gap: 6px 16px;
-    font-size: 13px;
-}
-
-.cs-detail-label {
-    color: #888;
-}
-
-.cs-detail-value {
-    color: #d4d4d4;
-}
-
-/* Banners */
-.cs-banner {
-    padding: 12px 16px;
-    border-radius: 6px;
-    font-size: 13px;
-    line-height: 1.5;
-    margin-bottom: 16px;
-}
-
-.cs-banner-new {
-    background: rgba(86, 156, 214, 0.1);
-    border: 1px solid rgba(86, 156, 214, 0.3);
-    color: #9cdcfe;
-}
-
-.cs-banner-deactivated {
-    background: rgba(220, 220, 170, 0.1);
-    border: 1px solid rgba(220, 220, 170, 0.3);
-    color: #dcdcaa;
-}
-
-.cs-banner-reactivated {
-    background: rgba(78, 201, 176, 0.1);
-    border: 1px solid rgba(78, 201, 176, 0.3);
-    color: #9cdcfe;
-}
-
-.cs-summary-banner {
-    padding: 16px 20px;
-    border-radius: 6px;
-    font-size: 13px;
+/* Full-width error banner spanning the tasks grid. */
+.jfm-task-error {
+    grid-column: 1 / -1;
+    background: var(--color-tint-critical);
+    color: var(--color-status-critical);
+    padding: 15px;
     text-align: center;
 }
 
-.cs-summary-banner.cs-warning {
-    background: rgba(220, 220, 170, 0.1);
-    border: 1px solid rgba(220, 220, 170, 0.3);
-    color: #dcdcaa;
+/* Staged-changes indicator in the tasks modal footer. */
+.jfm-pending-changes-indicator {
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-xs) 10px;
+    background: var(--color-banner-session-bg);
+    border-radius: var(--size-radius-default);
+    margin-right: 10px;
 }
 
-.cs-summary-banner.cs-healthy {
-    background: rgba(78, 201, 176, 0.1);
-    border: 1px solid rgba(78, 201, 176, 0.3);
-    color: #4ec9b0;
-}
+/* ============================================================================
+   CONTENT: CONFIRM CHANGES
+   ----------------------------------------------------------------------------
+   Page-specific body content for the app-task confirmation modal: the staged
+   change list and each change item with its from/to server accents. The modal
+   shell and footer buttons come from cc-shared.
+   Prefix: jfm
+   ============================================================================ */
 
-.cs-banner-icon {
-    margin-right: 6px;
-}
-
-/* Task Scheduler status */
-.cs-task-loading {
-    padding: 12px 16px;
-    background: rgba(86, 156, 214, 0.08);
-    border: 1px solid #333;
-    border-radius: 6px;
-    color: #888;
-    font-size: 13px;
-}
-
-.cs-spinner {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid #444;
-    border-top: 2px solid #569cd6;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    vertical-align: middle;
-    margin-right: 8px;
-}
-
-.cs-task-found {
-    padding: 10px 16px;
-    background: rgba(78, 201, 176, 0.1);
-    border: 1px solid rgba(78, 201, 176, 0.3);
-    border-radius: 6px;
-    color: #4ec9b0;
-    font-size: 13px;
-    margin-bottom: 12px;
-}
-
-.cs-task-not-found {
-    padding: 10px 16px;
-    background: rgba(220, 220, 170, 0.1);
-    border: 1px solid rgba(220, 220, 170, 0.3);
-    border-radius: 6px;
-    color: #dcdcaa;
-    font-size: 13px;
-    margin-bottom: 16px;
-}
-
-.cs-error { color: #f48771; padding: 20px; text-align: center; }
-.cs-error-text { color: #f48771; }
-
-/* Chooser (VARIABLE / ON-DEMAND / SCHEDULED) */
-.cs-chooser {
+/* Vertical list of staged task changes. */
+.jfm-confirm-changes-list {
     display: flex;
     flex-direction: column;
     gap: 10px;
 }
 
-.cs-chooser-option {
-    padding: 14px 18px;
-    background: #2a2a2a;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+/* A single staged-change item. */
+.jfm-confirm-change-item {
+    padding: 10px var(--size-spacing-lg);
+    background: var(--color-bg-page);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-content-lg);
+    color: #ccc;
 }
 
-.cs-chooser-option:hover {
-    border-color: #569cd6;
-    background: rgba(86, 156, 214, 0.08);
+/* From-server accent within a staged-change item. */
+.jfm-confirm-from-server {
+    color: #dca864;
 }
 
-.cs-chooser-option.cs-selected {
-    border-color: #4ec9b0;
-    background: rgba(78, 201, 176, 0.1);
+/* To-server accent within a staged-change item. */
+.jfm-confirm-to-server {
+    color: var(--color-accent-shared);
 }
 
-.cs-chooser-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: #d4d4d4;
-    margin-bottom: 4px;
+/* Emphasized flow name within a staged-change item. */
+.jfm-confirm-change-flow {
+    color: var(--color-text-link);
 }
 
-.cs-chooser-desc {
-    font-size: 12px;
-    color: #888;
-}
+/* ============================================================================
+   CONTENT: CONFIGSYNC
+   ----------------------------------------------------------------------------
+   Page-specific body content for the flow configuration sync modal: the flow
+   selector bar, flow header, status badges, detail grid, drift banners, the
+   Task Scheduler lookup status with its spinner, the schedule-type chooser,
+   the form controls, and the confirmation dialog's body. The modal shells come
+   from cc-shared; the spinner uses the shared spin keyframe.
+   Prefix: jfm
+   ============================================================================ */
 
-/* Type details / preview after chooser selection */
-.cs-type-summary {
-    margin-top: 16px;
-}
+/* Content wrapper inside the configsync dialog body (re-rendered by JS). */
+.jfm-cs-content { }
 
-.cs-info-box {
-    padding: 12px 16px;
-    background: rgba(86, 156, 214, 0.08);
-    border: 1px solid rgba(86, 156, 214, 0.3);
-    border-radius: 6px;
-    color: #9cdcfe;
-    font-size: 13px;
-    line-height: 1.5;
-}
-
-/* Form controls */
-.cs-form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px 16px;
-}
-
-.cs-form-group {
+/* Flow selector bar at the top of the configsync modal. */
+.jfm-cs-selector-bar {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: var(--size-spacing-lg);
+    padding: var(--size-spacing-lg) var(--size-page-padding-y);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    background: var(--color-bg-card-deep);
 }
 
-.cs-form-group label {
-    font-size: 12px;
-    color: #888;
-    margin-bottom: 5px;
-}
-
-.cs-form-control {
-    padding: 6px 10px;
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    color: #d4d4d4;
-    font-size: 13px;
+/* The flow-select dropdown in the selector bar. */
+.jfm-cs-selector-select {
+    flex: 1;
+    padding: var(--size-spacing-sm) 10px;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
     font-family: inherit;
-}
-
-.cs-form-control:focus {
-    outline: none;
-    border-color: #569cd6;
-}
-
-select.cs-form-control {
     cursor: pointer;
 }
 
-.cs-hidden {
-    display: none !important;
+.jfm-cs-selector-select:focus { /* focus state for the flow-select dropdown */
+    outline: none;
+    border-color: var(--color-accent-platform);
 }
 
-/* Checkbox row */
-.cs-checkbox-row {
+/* Flow header row inside the configsync body. */
+.jfm-cs-flow-header {
     display: flex;
-    gap: 20px;
+    align-items: baseline;
+    gap: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* Monospaced flow-code in the configsync flow header. */
+.jfm-cs-flow-code {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-accent-shared);
+    font-family: var(--font-family-monospace);
+}
+
+/* Flow-name caption in the configsync flow header. */
+.jfm-cs-flow-name {
+    font-size: var(--font-size-content-lg);
+    color: var(--color-text-muted);
+}
+
+/* Row of status badges in the configsync body. */
+.jfm-cs-badges {
+    display: flex;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-2xl);
     flex-wrap: wrap;
 }
 
-.cs-checkbox {
+/* A single configsync status badge. */
+.jfm-cs-badge {
+    font-size: var(--font-size-body);
+    padding: 3px 10px;
+    border-radius: var(--font-size-content);
+    font-weight: 500;
+}
+
+/* Active-state colors for a configsync badge. */
+.jfm-cs-badge-active {
+    background: var(--color-banner-reloading-bg);
+    color: var(--color-accent-shared);
+    border: var(--size-border-thin) solid var(--color-banner-reloading-border);
+}
+
+/* Inactive-state colors for a configsync badge. */
+.jfm-cs-badge-inactive {
+    background: rgba(136, 136, 136, 0.15);
+    color: var(--color-text-muted);
+    border: var(--size-border-thin) solid rgba(136, 136, 136, 0.3);
+}
+
+/* Neutral-state colors for a configsync badge. */
+.jfm-cs-badge-neutral {
+    background: var(--color-banner-reconnecting-bg);
+    color: var(--color-accent-platform);
+    border: var(--size-border-thin) solid var(--color-banner-reconnecting-border);
+}
+
+/* A section header within the configsync body. */
+.jfm-cs-section-header {
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: var(--size-spacing-2xl) 0 10px 0;
+    padding-bottom: 5px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Label/value detail grid in the configsync body. */
+.jfm-cs-detail-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: var(--size-spacing-sm) var(--size-spacing-xl);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Label cell in the configsync detail grid. */
+.jfm-cs-detail-label {
+    color: var(--color-text-muted);
+}
+
+/* Value cell in the configsync detail grid. */
+.jfm-cs-detail-value {
+    color: var(--color-text-primary);
+}
+
+/* A drift-explanation banner in the configsync body. */
+.jfm-cs-banner {
+    padding: var(--size-spacing-lg) var(--size-spacing-xl);
+    border-radius: var(--size-radius-lg);
+    font-size: var(--font-size-content-lg);
+    line-height: 1.5;
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* New-flow drift banner colors. */
+.jfm-cs-banner-new {
+    background: rgba(86, 156, 214, 0.08);
+    border: var(--size-border-thin) solid var(--color-banner-reconnecting-border);
+    color: var(--color-text-link);
+}
+
+/* Deactivated drift banner colors. */
+.jfm-cs-banner-deactivated {
+    background: var(--color-tint-warning);
+    border: var(--size-border-thin) solid var(--color-banner-session-border);
+    color: var(--color-accent-departmental);
+}
+
+/* Reactivated drift banner colors. */
+.jfm-cs-banner-reactivated {
+    background: rgba(78, 201, 176, 0.1);
+    border: var(--size-border-thin) solid var(--color-banner-reloading-border);
+    color: var(--color-text-link);
+}
+
+/* A summary banner shown when configuration is aligned or drifted. */
+.jfm-cs-summary-banner {
+    padding: var(--size-spacing-xl) var(--size-page-padding-y);
+    border-radius: var(--size-radius-lg);
+    font-size: var(--font-size-content-lg);
+    text-align: center;
+}
+
+/* Warning colors for the summary banner. */
+.jfm-cs-summary-banner-warning {
+    background: var(--color-tint-warning);
+    border: var(--size-border-thin) solid var(--color-banner-session-border);
+    color: var(--color-accent-departmental);
+}
+
+/* Healthy colors for the summary banner. */
+.jfm-cs-summary-banner-healthy {
+    background: rgba(78, 201, 176, 0.1);
+    border: var(--size-border-thin) solid var(--color-banner-reloading-border);
+    color: var(--color-accent-shared);
+}
+
+/* Leading icon inside a configsync banner. */
+.jfm-cs-banner-icon {
+    margin-right: var(--size-spacing-sm);
+}
+
+/* Task Scheduler lookup loading state in the configsync body. */
+.jfm-cs-task-loading {
+    padding: var(--size-spacing-lg) var(--size-spacing-xl);
+    background: rgba(86, 156, 214, 0.08);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Inline spinner shown during Task Scheduler lookup. */
+.jfm-cs-spinner {
+    display: inline-block;
+    width: var(--font-size-heading-sm);
+    height: var(--font-size-heading-sm);
+    border: 2px solid #444;
+    border-top: 2px solid var(--color-accent-platform);
+    border-radius: 50%;
+    animation: spin var(--duration-spinner) linear infinite;
+    vertical-align: middle;
+    margin-right: var(--size-spacing-md);
+}
+
+/* Task-found result state in the configsync body. */
+.jfm-cs-task-found {
+    padding: 10px var(--size-spacing-xl);
+    background: rgba(78, 201, 176, 0.1);
+    border: var(--size-border-thin) solid var(--color-banner-reloading-border);
+    border-radius: var(--size-radius-lg);
+    color: var(--color-accent-shared);
+    font-size: var(--font-size-content-lg);
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* Task-not-found result state in the configsync body. */
+.jfm-cs-task-not-found {
+    padding: 10px var(--size-spacing-xl);
+    background: var(--color-tint-warning);
+    border: var(--size-border-thin) solid var(--color-banner-session-border);
+    border-radius: var(--size-radius-lg);
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-content-lg);
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* Error state text in the configsync body. */
+.jfm-cs-error {
+    color: var(--color-status-critical);
+    padding: var(--size-page-padding-y);
+    text-align: center;
+}
+
+/* Inline error text in the configsync body. */
+.jfm-cs-error-text {
+    color: var(--color-status-critical);
+}
+
+/* Schedule-type chooser column. */
+.jfm-cs-chooser {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* A single chooser option card. */
+.jfm-cs-chooser-option {
+    padding: var(--size-spacing-lg) 18px;
+    background: var(--color-bg-card-deep);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    cursor: pointer;
+    transition: border-color var(--duration-instant), background var(--duration-instant);
+}
+
+.jfm-cs-chooser-option:hover { /* hover state for a chooser option */
+    border-color: var(--color-accent-platform);
+    background: rgba(86, 156, 214, 0.08);
+}
+
+/* Selected state for a chooser option. */
+.jfm-cs-chooser-option-selected {
+    border-color: var(--color-accent-shared);
+    background: rgba(78, 201, 176, 0.1);
+}
+
+/* Title text in a chooser option. */
+.jfm-cs-chooser-title {
+    font-size: var(--font-size-heading-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* Description text in a chooser option. */
+.jfm-cs-chooser-desc {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
+
+/* Type-summary preview shown after a chooser selection. */
+.jfm-cs-type-summary {
+    margin-top: var(--size-spacing-xl);
+}
+
+/* Informational box within the configsync body. */
+.jfm-cs-info-box {
+    padding: var(--size-spacing-lg) var(--size-spacing-xl);
+    background: rgba(86, 156, 214, 0.08);
+    border: var(--size-border-thin) solid var(--color-banner-reconnecting-border);
+    border-radius: var(--size-radius-lg);
+    color: var(--color-text-link);
+    font-size: var(--font-size-content-lg);
+    line-height: 1.5;
+}
+
+/* Three-column form grid in the configsync body. */
+.jfm-cs-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--size-spacing-lg) var(--size-spacing-xl);
+}
+
+/* A labeled form field group. */
+.jfm-cs-form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+/* A form input/select control. */
+.jfm-cs-form-control {
+    padding: var(--size-spacing-sm) 10px;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
+    font-family: inherit;
+}
+
+.jfm-cs-form-control:focus { /* focus state for a form control */
+    outline: none;
+    border-color: var(--color-accent-platform);
+}
+
+/* Hides a conditional schedule form field group. */
+.jfm-cs-hidden {
+    display: none;
+}
+
+/* Checkbox row in the configsync form. */
+.jfm-cs-checkbox-row {
+    display: flex;
+    gap: var(--size-spacing-2xl);
+    flex-wrap: wrap;
+}
+
+/* A single labeled checkbox. */
+.jfm-cs-checkbox {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: #d4d4d4;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-content-lg);
+    color: var(--color-text-primary);
     cursor: pointer;
 }
 
-.cs-checkbox input {
-    accent-color: #4ec9b0;
-    cursor: pointer;
-}
-
-/* Footer actions */
-#configsync-footer-actions {
+/* Footer action cluster for the configsync modal. */
+.jfm-cs-footer-actions {
     display: flex;
     gap: 10px;
 }
 
-.cs-btn {
-    padding: 8px 20px;
+/* A configsync footer button. */
+.jfm-cs-btn {
+    padding: var(--size-spacing-md) var(--size-spacing-2xl);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--size-radius-default);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-content-lg);
     font-family: inherit;
 }
 
-.cs-btn:disabled {
+.jfm-cs-btn:disabled { /* disabled state for a configsync button */
     opacity: 0.6;
     cursor: not-allowed;
 }
 
-.cs-btn-primary {
-    background: #4ec9b0;
-    color: #1e1e1e;
+/* Primary configsync footer button. */
+.jfm-cs-btn-primary {
+    background: var(--color-accent-shared);
+    color: var(--color-bg-page);
     font-weight: 600;
 }
 
-.cs-btn-primary:hover:not(:disabled) {
+.jfm-cs-btn-primary:hover { /* hover state for the primary configsync button */
     background: #5fd4bb;
 }
 
-/* ConfigSync Confirmation Dialog */
-#cs-confirm-overlay {
-    z-index: 2100;
-}
-
-.cs-confirm-modal {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    width: 420px;
-    max-width: 90vw;
-}
-
-.cs-confirm-modal-header {
-    padding: 14px 20px;
-    border-bottom: 1px solid #404040;
-}
-
-.cs-confirm-modal-header h3 {
-    margin: 0;
-    font-size: 15px;
-    color: #d4d4d4;
-}
-
-.cs-confirm-modal-body {
-    padding: 20px;
-}
-
-.cs-confirm-modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 14px 20px;
-    border-top: 1px solid #404040;
-}
-
-.cs-confirm-header {
+/* Flow-code header in the configsync confirmation dialog. */
+.jfm-cs-confirm-header {
     font-size: 18px;
     font-weight: 600;
-    color: #4ec9b0;
-    font-family: 'Consolas', 'Courier New', monospace;
-    margin-bottom: 4px;
+    color: var(--color-accent-shared);
+    font-family: var(--font-family-monospace);
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.cs-confirm-subheader {
-    font-size: 12px;
-    color: #888;
-    margin-bottom: 16px;
+/* Subheader caption in the configsync confirmation dialog. */
+.jfm-cs-confirm-subheader {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-xl);
 }
 
-.cs-confirm-changes {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 12px 16px;
+/* The changes summary box in the configsync confirmation dialog. */
+.jfm-cs-confirm-changes {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg) var(--size-spacing-xl);
 }
 
-.cs-confirm-row {
-    font-size: 13px;
-    padding: 4px 0;
+/* A single row in the confirm changes box. */
+.jfm-cs-confirm-row {
+    font-size: var(--font-size-content-lg);
+    padding: var(--size-spacing-xs) 0;
 }
 
-.cs-confirm-label {
-    color: #888;
+/* Label text in a confirm-changes row. */
+.jfm-cs-confirm-label {
+    color: var(--color-text-muted);
 }
 
-.cs-confirm-value {
-    color: #d4d4d4;
+/* Value text in a confirm-changes row. */
+.jfm-cs-confirm-value {
+    color: var(--color-text-primary);
 }
 
-.cs-confirm-note {
-    font-size: 11px;
-    color: #569cd6;
+/* Explanatory note beneath the confirm-changes box. */
+.jfm-cs-confirm-note {
+    font-size: var(--font-size-body);
+    color: var(--color-accent-platform);
     margin-top: 10px;
-    padding-top: 8px;
-    border-top: 1px solid #333;
+    padding-top: var(--size-spacing-md);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
 }
