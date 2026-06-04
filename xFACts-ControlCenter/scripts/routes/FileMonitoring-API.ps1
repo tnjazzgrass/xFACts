@@ -1,23 +1,41 @@
-# ============================================================================
-# xFACts Control Center - File Monitoring API
-# Location: E:\xFACts-ControlCenter\scripts\routes\FileMonitoring-API.ps1
-# 
-# API endpoints for File Monitoring data and configuration management.
-# Version: Tracked in dbo.System_Metadata (component: FileOps)
-# ============================================================================
+<#
+.SYNOPSIS
+    Control Center API endpoints for File Monitoring.
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/servers
-# Returns list of configured SFTP servers for dropdown
-# ----------------------------------------------------------------------------
+.DESCRIPTION
+    Registers the File Monitoring API endpoints backing the dashboard: SFTP
+    server and monitor configuration reads, current monitor status, the daily
+    scheduled-but-not-started list, detection history, configuration create
+    and update with Teams subscription management, monitor enable and disable,
+    and webhook configuration and subscription reads.
+
+.COMPONENT
+    FileOps
+
+.NOTES
+    File Name : FileMonitoring-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\FileMonitoring-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers all File Monitoring API endpoints. Each endpoint calls
+   Test-ActionEndpoint as its first statement, accesses data through the
+   shared Invoke-XFActsQuery / Invoke-XFActsNonQuery wrappers, and ends with
+   Write-PodeJsonResponse.
+   Prefix: (none)
+   ============================================================================ #>
+
 Add-PodeRoute -Method Get -Path '/api/fileops/servers' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 server_id AS ServerId,
                 server_name AS ServerName,
                 sftp_host AS SftpHost,
@@ -27,27 +45,18 @@ Add-PodeRoute -Method Get -Path '/api/fileops/servers' -Authentication 'ADLogin'
             WHERE is_enabled = 1
             ORDER BY server_name
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+
         $result = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $result += [PSCustomObject]@{
-                ServerId = [int]$row['ServerId']
+                ServerId   = [int]$row['ServerId']
                 ServerName = $row['ServerName']
-                SftpHost = $row['SftpHost']
-                SftpPort = [int]$row['SftpPort']
-                IsEnabled = [bool]$row['IsEnabled']
+                SftpHost   = $row['SftpHost']
+                SftpPort   = [int]$row['SftpPort']
+                IsEnabled  = [bool]$row['IsEnabled']
             }
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -55,18 +64,11 @@ Add-PodeRoute -Method Get -Path '/api/fileops/servers' -Authentication 'ADLogin'
     }
 }
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/status
-# Returns current monitor status for all active monitors
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/status' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 ms.status_id AS StatusId,
                 ms.config_id AS ConfigId,
                 ms.config_name AS ConfigName,
@@ -82,43 +84,34 @@ Add-PodeRoute -Method Get -Path '/api/fileops/status' -Authentication 'ADLogin' 
             FROM FileOps.MonitorStatus ms
             INNER JOIN FileOps.MonitorConfig mc ON ms.config_id = mc.config_id
             WHERE mc.is_enabled = 1
-            ORDER BY 
-                CASE ms.last_status 
-                    WHEN 'Escalated' THEN 1 
-                    WHEN 'Monitoring' THEN 2 
-                    WHEN 'Detected' THEN 3 
-                    ELSE 4 
+            ORDER BY
+                CASE ms.last_status
+                    WHEN 'Escalated' THEN 1
+                    WHEN 'Monitoring' THEN 2
+                    WHEN 'Detected' THEN 3
+                    ELSE 4
                 END,
                 ms.config_name
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+
         $result = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $result += [PSCustomObject]@{
-                StatusId = [int]$row['StatusId']
-                ConfigId = [int]$row['ConfigId']
-                ConfigName = $row['ConfigName']
-                SftpPath = $row['SftpPath']
-                LastStatus = $row['LastStatus']
-                LastScannedDttm = if ($row['LastScannedDttm'] -is [DBNull]) { $null } else { $row['LastScannedDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
+                StatusId         = [int]$row['StatusId']
+                ConfigId         = [int]$row['ConfigId']
+                ConfigName       = $row['ConfigName']
+                SftpPath         = $row['SftpPath']
+                LastStatus       = $row['LastStatus']
+                LastScannedDttm  = if ($row['LastScannedDttm'] -is [DBNull]) { $null } else { $row['LastScannedDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
                 FileDetectedName = if ($row['FileDetectedName'] -is [DBNull]) { $null } else { $row['FileDetectedName'] }
                 FileDetectedDttm = if ($row['FileDetectedDttm'] -is [DBNull]) { $null } else { $row['FileDetectedDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
-                EscalatedDttm = if ($row['EscalatedDttm'] -is [DBNull]) { $null } else { $row['EscalatedDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
-                CheckStartTime = $row['CheckStartTime'].ToString()
-                EscalationTime = $row['EscalationTime'].ToString()
-                CheckEndTime = $row['CheckEndTime'].ToString()
+                EscalatedDttm    = if ($row['EscalatedDttm'] -is [DBNull]) { $null } else { $row['EscalatedDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
+                CheckStartTime   = $row['CheckStartTime'].ToString()
+                EscalationTime   = $row['EscalationTime'].ToString()
+                CheckEndTime     = $row['CheckEndTime'].ToString()
             }
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -126,22 +119,14 @@ Add-PodeRoute -Method Get -Path '/api/fileops/status' -Authentication 'ADLogin' 
     }
 }
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/scheduled
-# Returns active monitors scheduled for today that are NOT yet in their
-# check window (start time is in the future). Used by the "Scheduled" modal.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/scheduled' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            DECLARE @CurrentTime TIME = CAST(GETDATE() AS TIME);
-            DECLARE @DayOfWeek INT = DATEPART(WEEKDAY, GETDATE());
+        $currentTime = (Get-Date).ToString('HH:mm:ss')
+        $dayOfWeek = [int](Get-Date).DayOfWeek + 1
 
-            SELECT 
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 mc.config_id AS ConfigId,
                 mc.config_name AS ConfigName,
                 mc.sftp_path AS SftpPath,
@@ -165,18 +150,10 @@ Add-PodeRoute -Method Get -Path '/api/fileops/scheduled' -Authentication 'ADLogi
                 (@DayOfWeek = 7 AND mc.check_saturday = 1)
               )
             ORDER BY mc.check_start_time ASC
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+"@ -Parameters @{ CurrentTime = $currentTime; DayOfWeek = $dayOfWeek }
+
         $result = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $result += [PSCustomObject]@{
                 ConfigId       = [int]$row['ConfigId']
                 ConfigName     = $row['ConfigName']
@@ -188,8 +165,7 @@ Add-PodeRoute -Method Get -Path '/api/fileops/scheduled' -Authentication 'ADLogi
                 ServerName     = $row['ServerName']
             }
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -197,18 +173,11 @@ Add-PodeRoute -Method Get -Path '/api/fileops/scheduled' -Authentication 'ADLogi
     }
 }
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/configs
-# Returns all monitor configurations
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/configs' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 mc.config_id AS ConfigId,
                 mc.server_id AS ServerId,
                 sc.server_name AS ServerName,
@@ -237,46 +206,37 @@ Add-PodeRoute -Method Get -Path '/api/fileops/configs' -Authentication 'ADLogin'
             INNER JOIN FileOps.ServerConfig sc ON mc.server_id = sc.server_id
             ORDER BY mc.is_enabled DESC, mc.config_name
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+
         $result = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $result += [PSCustomObject]@{
-                ConfigId = [int]$row['ConfigId']
-                ServerId = [int]$row['ServerId']
-                ServerName = $row['ServerName']
-                ConfigName = $row['ConfigName']
-                SftpPath = $row['SftpPath']
-                FilePattern = $row['FilePattern']
-                CheckStartTime = $row['CheckStartTime'].ToString()
-                CheckEndTime = $row['CheckEndTime'].ToString()
-                EscalationTime = $row['EscalationTime'].ToString()
-                CheckSunday = [bool]$row['CheckSunday']
-                CheckMonday = [bool]$row['CheckMonday']
-                CheckTuesday = [bool]$row['CheckTuesday']
-                CheckWednesday = [bool]$row['CheckWednesday']
-                CheckThursday = [bool]$row['CheckThursday']
-                CheckFriday = [bool]$row['CheckFriday']
-                CheckSaturday = [bool]$row['CheckSaturday']
-                CheckHolidays = [bool]$row['CheckHolidays']
-                NotifyOnDetection = [bool]$row['NotifyOnDetection']
-                NotifyOnEscalation = [bool]$row['NotifyOnEscalation']
+                ConfigId               = [int]$row['ConfigId']
+                ServerId               = [int]$row['ServerId']
+                ServerName             = $row['ServerName']
+                ConfigName             = $row['ConfigName']
+                SftpPath               = $row['SftpPath']
+                FilePattern            = $row['FilePattern']
+                CheckStartTime         = $row['CheckStartTime'].ToString()
+                CheckEndTime           = $row['CheckEndTime'].ToString()
+                EscalationTime         = $row['EscalationTime'].ToString()
+                CheckSunday            = [bool]$row['CheckSunday']
+                CheckMonday            = [bool]$row['CheckMonday']
+                CheckTuesday           = [bool]$row['CheckTuesday']
+                CheckWednesday         = [bool]$row['CheckWednesday']
+                CheckThursday          = [bool]$row['CheckThursday']
+                CheckFriday            = [bool]$row['CheckFriday']
+                CheckSaturday          = [bool]$row['CheckSaturday']
+                CheckHolidays          = [bool]$row['CheckHolidays']
+                NotifyOnDetection      = [bool]$row['NotifyOnDetection']
+                NotifyOnEscalation     = [bool]$row['NotifyOnEscalation']
                 CreateJiraOnEscalation = [bool]$row['CreateJiraOnEscalation']
-                DefaultPriority = $row['DefaultPriority']
-                IsEnabled = [bool]$row['IsEnabled']
-                CreatedDttm = $row['CreatedDttm'].ToString("yyyy-MM-dd HH:mm:ss")
-                ModifiedDttm = if ($row['ModifiedDttm'] -is [DBNull]) { $null } else { $row['ModifiedDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
+                DefaultPriority        = $row['DefaultPriority']
+                IsEnabled              = [bool]$row['IsEnabled']
+                CreatedDttm            = $row['CreatedDttm'].ToString("yyyy-MM-dd HH:mm:ss")
+                ModifiedDttm           = if ($row['ModifiedDttm'] -is [DBNull]) { $null } else { $row['ModifiedDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
             }
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -284,20 +244,13 @@ Add-PodeRoute -Method Get -Path '/api/fileops/configs' -Authentication 'ADLogin'
     }
 }
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/config/:id
-# Returns a single configuration by ID
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/config/:id' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $configId = [int]$WebEvent.Parameters['id']
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 mc.config_id AS ConfigId,
                 mc.server_id AS ServerId,
                 sc.server_name AS ServerName,
@@ -323,49 +276,39 @@ Add-PodeRoute -Method Get -Path '/api/fileops/config/:id' -Authentication 'ADLog
             FROM FileOps.MonitorConfig mc
             INNER JOIN FileOps.ServerConfig sc ON mc.server_id = sc.server_id
             WHERE mc.config_id = @ConfigId
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@ConfigId", $configId) | Out-Null
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        if ($dataset.Tables[0].Rows.Count -eq 0) {
+"@ -Parameters @{ ConfigId = $configId }
+
+        if (-not $rows -or $rows.Count -eq 0) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Configuration not found" }) -StatusCode 404
             return
         }
-        
-        $row = $dataset.Tables[0].Rows[0]
+
+        $row = $rows[0]
         $result = [PSCustomObject]@{
-            ConfigId = [int]$row['ConfigId']
-            ServerId = [int]$row['ServerId']
-            ServerName = $row['ServerName']
-            ConfigName = $row['ConfigName']
-            SftpPath = $row['SftpPath']
-            FilePattern = $row['FilePattern']
-            CheckStartTime = $row['CheckStartTime'].ToString()
-            CheckEndTime = $row['CheckEndTime'].ToString()
-            EscalationTime = $row['EscalationTime'].ToString()
-            CheckSunday = [bool]$row['CheckSunday']
-            CheckMonday = [bool]$row['CheckMonday']
-            CheckTuesday = [bool]$row['CheckTuesday']
-            CheckWednesday = [bool]$row['CheckWednesday']
-            CheckThursday = [bool]$row['CheckThursday']
-            CheckFriday = [bool]$row['CheckFriday']
-            CheckSaturday = [bool]$row['CheckSaturday']
-            CheckHolidays = [bool]$row['CheckHolidays']
-            NotifyOnDetection = [bool]$row['NotifyOnDetection']
-            NotifyOnEscalation = [bool]$row['NotifyOnEscalation']
+            ConfigId               = [int]$row['ConfigId']
+            ServerId               = [int]$row['ServerId']
+            ServerName             = $row['ServerName']
+            ConfigName             = $row['ConfigName']
+            SftpPath               = $row['SftpPath']
+            FilePattern            = $row['FilePattern']
+            CheckStartTime         = $row['CheckStartTime'].ToString()
+            CheckEndTime           = $row['CheckEndTime'].ToString()
+            EscalationTime         = $row['EscalationTime'].ToString()
+            CheckSunday            = [bool]$row['CheckSunday']
+            CheckMonday            = [bool]$row['CheckMonday']
+            CheckTuesday           = [bool]$row['CheckTuesday']
+            CheckWednesday         = [bool]$row['CheckWednesday']
+            CheckThursday          = [bool]$row['CheckThursday']
+            CheckFriday            = [bool]$row['CheckFriday']
+            CheckSaturday          = [bool]$row['CheckSaturday']
+            CheckHolidays          = [bool]$row['CheckHolidays']
+            NotifyOnDetection      = [bool]$row['NotifyOnDetection']
+            NotifyOnEscalation     = [bool]$row['NotifyOnEscalation']
             CreateJiraOnEscalation = [bool]$row['CreateJiraOnEscalation']
-            DefaultPriority = $row['DefaultPriority']
-            IsEnabled = [bool]$row['IsEnabled']
+            DefaultPriority        = $row['DefaultPriority']
+            IsEnabled              = [bool]$row['IsEnabled']
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -373,22 +316,14 @@ Add-PodeRoute -Method Get -Path '/api/fileops/config/:id' -Authentication 'ADLog
     }
 }
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/history
-# Returns monitor log history (detection and escalation events)
-# Query params: limit (default 50)
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $limit = $WebEvent.Query['limit']
         if (-not $limit) { $limit = 50 }
         $limit = [Math]::Min([int]$limit, 500)
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
+
+        $rows = Invoke-XFActsQuery -Query @"
             SELECT TOP (@Limit)
                 log_id AS LogId,
                 config_id AS ConfigId,
@@ -403,35 +338,25 @@ Add-PodeRoute -Method Get -Path '/api/fileops/history' -Authentication 'ADLogin'
                 created_dttm AS CreatedDttm
             FROM FileOps.MonitorLog
             ORDER BY event_dttm DESC
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@Limit", $limit) | Out-Null
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+"@ -Parameters @{ Limit = $limit }
+
         $result = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $result += [PSCustomObject]@{
-                LogId = [int]$row['LogId']
-                ConfigId = [int]$row['ConfigId']
-                ConfigName = $row['ConfigName']
-                SftpPath = $row['SftpPath']
-                LogDate = $row['LogDate'].ToString("yyyy-MM-dd")
-                EventType = $row['EventType']
+                LogId            = [int]$row['LogId']
+                ConfigId         = [int]$row['ConfigId']
+                ConfigName       = $row['ConfigName']
+                SftpPath         = $row['SftpPath']
+                LogDate          = $row['LogDate'].ToString("yyyy-MM-dd")
+                EventType        = $row['EventType']
                 FileDetectedName = if ($row['FileDetectedName'] -is [DBNull]) { $null } else { $row['FileDetectedName'] }
-                EventDttm = $row['EventDttm'].ToString("yyyy-MM-dd HH:mm:ss")
+                EventDttm        = $row['EventDttm'].ToString("yyyy-MM-dd HH:mm:ss")
                 TeamsAlertQueued = [bool]$row['TeamsAlertQueued']
                 JiraTicketQueued = [bool]$row['JiraTicketQueued']
-                CreatedDttm = $row['CreatedDttm'].ToString("yyyy-MM-dd HH:mm:ss")
+                CreatedDttm      = $row['CreatedDttm'].ToString("yyyy-MM-dd HH:mm:ss")
             }
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -439,39 +364,16 @@ Add-PodeRoute -Method Get -Path '/api/fileops/history' -Authentication 'ADLogin'
     }
 }
 
-# ----------------------------------------------------------------------------
-# POST /api/fileops/config/save
-# Creates or updates a monitor configuration and manages alert subscription
-#
-# Subscription logic:
-# - If webhook selected + any notification checkbox checked:
-#   -> Upsert subscription with trigger_type = config_name, alert_category = NULL
-# - If both notification checkboxes unchecked:
-#   -> Deactivate existing subscription (if any)
-# - If config_name changed on update:
-#   -> Update trigger_type on existing subscription to match new name
-# - If reactivating an inactive subscription:
-#   -> Set is_active = 1
-#
-# Body includes: WebhookConfigId (nullable), DeactivateSubscription (bool),
-#   ReactivateSubscription (bool) - these flags are set by the JS after
-#   user confirmation dialogs
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/fileops/config/save' -Authentication 'ADLogin' -ScriptBlock {
-        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-        try {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
         $body = $WebEvent.Data
-        
-        # Get current user for audit
-        $currentUser = $WebEvent.Auth.User.Name
-        if ([string]::IsNullOrEmpty($currentUser)) {
-            $currentUser = $WebEvent.Auth.User.Username
-        }
+
+        $currentUser = $WebEvent.Auth.User.Username
         if ([string]::IsNullOrEmpty($currentUser)) {
             $currentUser = "Unknown"
         }
-        
-        # Validate required fields
+
         if ([string]::IsNullOrWhiteSpace($body.ConfigName)) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Monitor name is required" }) -StatusCode 400
             return
@@ -484,59 +386,67 @@ Add-PodeRoute -Method Post -Path '/api/fileops/config/save' -Authentication 'ADL
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "File pattern is required" }) -StatusCode 400
             return
         }
-        
-        # Validate at least one day is selected
-        $anyDay = $body.CheckSunday -or $body.CheckMonday -or $body.CheckTuesday -or 
+
+        $anyDay = $body.CheckSunday -or $body.CheckMonday -or $body.CheckTuesday -or
                   $body.CheckWednesday -or $body.CheckThursday -or $body.CheckFriday -or $body.CheckSaturday
         if (-not $anyDay) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "At least one day must be selected" }) -StatusCode 400
             return
         }
-   
-           # Validate unique config name
-        $dupCheckConn = New-Object System.Data.SqlClient.SqlConnection("Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;")
-        $dupCheckConn.Open()
-        $dupQuery = "SELECT config_id FROM FileOps.MonitorConfig WHERE config_name = @Name"
-        $dupCmd = $dupCheckConn.CreateCommand()
-        $dupCmd.CommandText = $dupQuery
-        $dupCmd.CommandTimeout = 10
-        $dupCmd.Parameters.AddWithValue("@Name", $body.ConfigName) | Out-Null
-        $dupResult = $dupCmd.ExecuteScalar()
-        $dupCheckConn.Close()
-        
-        if ($null -ne $dupResult) {
-            $existingId = [int]$dupResult
-            $isUpdate = $null -ne $body.ConfigId -and $body.ConfigId -gt 0
+
+        $isUpdate = $null -ne $body.ConfigId -and $body.ConfigId -gt 0
+
+        $dupRows = Invoke-XFActsQuery -Query @"
+            SELECT config_id AS ConfigId
+            FROM FileOps.MonitorConfig
+            WHERE config_name = @Name
+"@ -Parameters @{ Name = $body.ConfigName }
+
+        if ($dupRows -and $dupRows.Count -gt 0) {
+            $existingId = [int]$dupRows[0]['ConfigId']
             if (-not $isUpdate -or $existingId -ne [int]$body.ConfigId) {
                 Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "A monitor named '$($body.ConfigName)' already exists (config_id: $existingId)" }) -StatusCode 400
                 return
             }
         }
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $isUpdate = $null -ne $body.ConfigId -and $body.ConfigId -gt 0
-        
-        # ----------------------------------------------------------------
-        # Step 1: Get the old config_name if this is an update (for trigger_type rename)
-        # ----------------------------------------------------------------
+
         $oldConfigName = $null
         if ($isUpdate) {
-            $nameQuery = "SELECT config_name FROM FileOps.MonitorConfig WHERE config_id = @ConfigId"
-            $nameCmd = $conn.CreateCommand()
-            $nameCmd.CommandText = $nameQuery
-            $nameCmd.CommandTimeout = 10
-            $nameCmd.Parameters.AddWithValue("@ConfigId", [int]$body.ConfigId) | Out-Null
-            $oldConfigName = $nameCmd.ExecuteScalar()
+            $nameRows = Invoke-XFActsQuery -Query @"
+                SELECT config_name AS ConfigName
+                FROM FileOps.MonitorConfig
+                WHERE config_id = @ConfigId
+"@ -Parameters @{ ConfigId = [int]$body.ConfigId }
+            if ($nameRows -and $nameRows.Count -gt 0) {
+                $oldConfigName = $nameRows[0]['ConfigName']
+            }
         }
-        
-        # ----------------------------------------------------------------
-        # Step 2: Save the MonitorConfig (INSERT or UPDATE)
-        # ----------------------------------------------------------------
+
+        $saveParams = @{
+            ServerId               = [int]$body.ServerId
+            ConfigName             = $body.ConfigName
+            SftpPath               = $body.SftpPath
+            FilePattern            = $body.FilePattern
+            CheckStartTime         = $body.CheckStartTime
+            CheckEndTime           = $body.CheckEndTime
+            EscalationTime         = $body.EscalationTime
+            CheckSunday            = [bool]$body.CheckSunday
+            CheckMonday            = [bool]$body.CheckMonday
+            CheckTuesday           = [bool]$body.CheckTuesday
+            CheckWednesday         = [bool]$body.CheckWednesday
+            CheckThursday          = [bool]$body.CheckThursday
+            CheckFriday            = [bool]$body.CheckFriday
+            CheckSaturday          = [bool]$body.CheckSaturday
+            NotifyOnDetection      = [bool]$body.NotifyOnDetection
+            NotifyOnEscalation     = [bool]$body.NotifyOnEscalation
+            CreateJiraOnEscalation = [bool]$body.CreateJiraOnEscalation
+            DefaultPriority        = $body.DefaultPriority
+            IsEnabled              = [bool]$body.IsEnabled
+        }
+
         if ($isUpdate) {
-            $query = @"
+            $saveParams['ConfigId'] = [int]$body.ConfigId
+            $saveRows = Invoke-XFActsQuery -Query @"
                 UPDATE FileOps.MonitorConfig
                 SET server_id = @ServerId,
                     config_name = @ConfigName,
@@ -559,12 +469,12 @@ Add-PodeRoute -Method Post -Path '/api/fileops/config/save' -Authentication 'ADL
                     is_enabled = @IsEnabled,
                     modified_dttm = GETDATE()
                 WHERE config_id = @ConfigId;
-                
+
                 SELECT @ConfigId AS ConfigId;
-"@
+"@ -Parameters $saveParams
         }
         else {
-            $query = @"
+            $saveRows = Invoke-XFActsQuery -Query @"
                 INSERT INTO FileOps.MonitorConfig (
                     server_id, config_name, sftp_path, file_pattern,
                     check_start_time, check_end_time, escalation_time,
@@ -581,94 +491,46 @@ Add-PodeRoute -Method Post -Path '/api/fileops/config/save' -Authentication 'ADL
                     @NotifyOnDetection, @NotifyOnEscalation, @CreateJiraOnEscalation,
                     @DefaultPriority, @IsEnabled
                 );
-                
+
                 SELECT SCOPE_IDENTITY() AS ConfigId;
-"@
+"@ -Parameters $saveParams
         }
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        if ($isUpdate) {
-            $cmd.Parameters.AddWithValue("@ConfigId", [int]$body.ConfigId) | Out-Null
-        }
-        $cmd.Parameters.AddWithValue("@ServerId", [int]$body.ServerId) | Out-Null
-        $cmd.Parameters.AddWithValue("@ConfigName", $body.ConfigName) | Out-Null
-        $cmd.Parameters.AddWithValue("@SftpPath", $body.SftpPath) | Out-Null
-        $cmd.Parameters.AddWithValue("@FilePattern", $body.FilePattern) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckStartTime", $body.CheckStartTime) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckEndTime", $body.CheckEndTime) | Out-Null
-        $cmd.Parameters.AddWithValue("@EscalationTime", $body.EscalationTime) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckSunday", [bool]$body.CheckSunday) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckMonday", [bool]$body.CheckMonday) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckTuesday", [bool]$body.CheckTuesday) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckWednesday", [bool]$body.CheckWednesday) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckThursday", [bool]$body.CheckThursday) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckFriday", [bool]$body.CheckFriday) | Out-Null
-        $cmd.Parameters.AddWithValue("@CheckSaturday", [bool]$body.CheckSaturday) | Out-Null
-        $cmd.Parameters.AddWithValue("@NotifyOnDetection", [bool]$body.NotifyOnDetection) | Out-Null
-        $cmd.Parameters.AddWithValue("@NotifyOnEscalation", [bool]$body.NotifyOnEscalation) | Out-Null
-        $cmd.Parameters.AddWithValue("@CreateJiraOnEscalation", [bool]$body.CreateJiraOnEscalation) | Out-Null
-        $cmd.Parameters.AddWithValue("@DefaultPriority", $body.DefaultPriority) | Out-Null
-        $cmd.Parameters.AddWithValue("@IsEnabled", [bool]$body.IsEnabled) | Out-Null
-        
-        $resultId = $cmd.ExecuteScalar()
-        $savedConfigId = [int]$resultId
-        
-        # ----------------------------------------------------------------
-        # Step 3: Handle subscription management
-        # ----------------------------------------------------------------
+
+        $savedConfigId = [int]$saveRows[0]['ConfigId']
+
         $subscriptionAction = "None"
         $newConfigName = $body.ConfigName
         $webhookConfigId = $body.WebhookConfigId
         $hasAnyNotification = [bool]$body.NotifyOnDetection -or [bool]$body.NotifyOnEscalation
         $deactivateRequested = [bool]$body.DeactivateSubscription
         $reactivateRequested = [bool]$body.ReactivateSubscription
-        
-        # Determine the trigger_type to search for (old name for updates, new name for inserts)
+
         $searchTriggerType = if ($isUpdate -and $oldConfigName) { $oldConfigName } else { $newConfigName }
-        
-        # Look for existing subscription
-        $subQuery = @"
-            SELECT subscription_id, config_id, is_active, trigger_type
+
+        $subRows = Invoke-XFActsQuery -Query @"
+            SELECT subscription_id AS SubscriptionId, config_id AS ConfigId,
+                   is_active AS IsActive, trigger_type AS TriggerType
             FROM Teams.WebhookSubscription
             WHERE source_module = 'FileOps'
               AND trigger_type = @TriggerType
-"@
-        $subCmd = $conn.CreateCommand()
-        $subCmd.CommandText = $subQuery
-        $subCmd.CommandTimeout = 10
-        $subCmd.Parameters.AddWithValue("@TriggerType", $searchTriggerType) | Out-Null
-        
-        $subAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($subCmd)
-        $subDataset = New-Object System.Data.DataSet
-        $subAdapter.Fill($subDataset) | Out-Null
-        
+"@ -Parameters @{ TriggerType = $searchTriggerType }
+
         $existingSub = $null
-        if ($subDataset.Tables[0].Rows.Count -gt 0) {
-            $subRow = $subDataset.Tables[0].Rows[0]
+        if ($subRows -and $subRows.Count -gt 0) {
+            $subRow = $subRows[0]
             $existingSub = @{
-                SubscriptionId = [int]$subRow['subscription_id']
-                ConfigId = [int]$subRow['config_id']
-                IsActive = [bool]$subRow['is_active']
-                TriggerType = $subRow['trigger_type']
+                SubscriptionId = [int]$subRow['SubscriptionId']
+                ConfigId       = [int]$subRow['ConfigId']
+                IsActive       = [bool]$subRow['IsActive']
+                TriggerType    = $subRow['TriggerType']
             }
         }
-        
+
         if ($webhookConfigId -and $webhookConfigId -gt 0 -and $hasAnyNotification) {
-            # Webhook selected + at least one notification checkbox checked
-            
             if ($existingSub) {
-                # Existing subscription found - update it
-                $updateFields = @(
-                    "config_id = @NewWebhookConfigId"
-                    "trigger_type = @NewTriggerType"
-                    "modified_dttm = GETDATE()"
-                )
-                
+                $setReactivate = ''
                 if ($reactivateRequested -and -not $existingSub.IsActive) {
-                    $updateFields += "is_active = 1"
+                    $setReactivate = ', is_active = 1'
                     $subscriptionAction = "Reactivated"
                 } elseif ($existingSub.ConfigId -ne [int]$webhookConfigId) {
                     $subscriptionAction = "Updated"
@@ -677,28 +539,26 @@ Add-PodeRoute -Method Post -Path '/api/fileops/config/save' -Authentication 'ADL
                 } else {
                     $subscriptionAction = "Unchanged"
                 }
-                
-                $updateQuery = @"
+
+                Invoke-XFActsNonQuery -Query @"
                     UPDATE Teams.WebhookSubscription
-                    SET $($updateFields -join ', ')
+                    SET config_id = @NewWebhookConfigId,
+                        trigger_type = @NewTriggerType,
+                        modified_dttm = GETDATE()$setReactivate
                     WHERE subscription_id = @SubId
-"@
-                $updateCmd = $conn.CreateCommand()
-                $updateCmd.CommandText = $updateQuery
-                $updateCmd.CommandTimeout = 10
-                $updateCmd.Parameters.AddWithValue("@SubId", $existingSub.SubscriptionId) | Out-Null
-                $updateCmd.Parameters.AddWithValue("@NewWebhookConfigId", [int]$webhookConfigId) | Out-Null
-                $updateCmd.Parameters.AddWithValue("@NewTriggerType", $newConfigName) | Out-Null
-                $updateCmd.ExecuteNonQuery() | Out-Null
-                
-            } else {
-                # No existing subscription - create one
-                $insertQuery = @"
+"@ -Parameters @{
+                    SubId              = $existingSub.SubscriptionId
+                    NewWebhookConfigId = [int]$webhookConfigId
+                    NewTriggerType     = $newConfigName
+                } | Out-Null
+            }
+            else {
+                Invoke-XFActsNonQuery -Query @"
                     INSERT INTO Teams.WebhookSubscription (
                         config_id, channel_name, source_module,
                         alert_category, trigger_type, is_active, description
                     )
-                    SELECT 
+                    SELECT
                         @WebhookConfigId,
                         w.webhook_name,
                         'FileOps',
@@ -708,59 +568,44 @@ Add-PodeRoute -Method Post -Path '/api/fileops/config/save' -Authentication 'ADL
                         'Auto-created by File Monitoring configuration'
                     FROM Teams.WebhookConfig w
                     WHERE w.config_id = @WebhookConfigId;
-"@
-                $insertCmd = $conn.CreateCommand()
-                $insertCmd.CommandText = $insertQuery
-                $insertCmd.CommandTimeout = 10
-                $insertCmd.Parameters.AddWithValue("@WebhookConfigId", [int]$webhookConfigId) | Out-Null
-                $insertCmd.Parameters.AddWithValue("@TriggerType", $newConfigName) | Out-Null
-                $insertCmd.ExecuteNonQuery() | Out-Null
-                
+"@ -Parameters @{
+                    WebhookConfigId = [int]$webhookConfigId
+                    TriggerType     = $newConfigName
+                } | Out-Null
+
                 $subscriptionAction = "Created"
             }
-            
-        } elseif ($deactivateRequested -and $existingSub -and $existingSub.IsActive) {
-            # Both checkboxes unchecked and user confirmed deactivation
-            $deactQuery = @"
+        }
+        elseif ($deactivateRequested -and $existingSub -and $existingSub.IsActive) {
+            Invoke-XFActsNonQuery -Query @"
                 UPDATE Teams.WebhookSubscription
                 SET is_active = 0,
                     modified_dttm = GETDATE()
                 WHERE subscription_id = @SubId
-"@
-            $deactCmd = $conn.CreateCommand()
-            $deactCmd.CommandText = $deactQuery
-            $deactCmd.CommandTimeout = 10
-            $deactCmd.Parameters.AddWithValue("@SubId", $existingSub.SubscriptionId) | Out-Null
-            $deactCmd.ExecuteNonQuery() | Out-Null
-            
+"@ -Parameters @{ SubId = $existingSub.SubscriptionId } | Out-Null
+
             $subscriptionAction = "Deactivated"
-            
-        } elseif ($isUpdate -and $existingSub -and $oldConfigName -ne $newConfigName) {
-            # Config name changed but no webhook/notification changes - still update trigger_type
-            $renameQuery = @"
+        }
+        elseif ($isUpdate -and $existingSub -and $oldConfigName -ne $newConfigName) {
+            Invoke-XFActsNonQuery -Query @"
                 UPDATE Teams.WebhookSubscription
                 SET trigger_type = @NewTriggerType,
                     modified_dttm = GETDATE()
                 WHERE subscription_id = @SubId
-"@
-            $renameCmd = $conn.CreateCommand()
-            $renameCmd.CommandText = $renameQuery
-            $renameCmd.CommandTimeout = 10
-            $renameCmd.Parameters.AddWithValue("@SubId", $existingSub.SubscriptionId) | Out-Null
-            $renameCmd.Parameters.AddWithValue("@NewTriggerType", $newConfigName) | Out-Null
-            $renameCmd.ExecuteNonQuery() | Out-Null
-            
+"@ -Parameters @{
+                SubId          = $existingSub.SubscriptionId
+                NewTriggerType = $newConfigName
+            } | Out-Null
+
             $subscriptionAction = "Renamed"
         }
-        
-        $conn.Close()
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
-            Success = $true
-            ConfigId = $savedConfigId
-            Action = if ($isUpdate) { "Updated" } else { "Created" }
+            Success            = $true
+            ConfigId           = $savedConfigId
+            Action             = if ($isUpdate) { "Updated" } else { "Created" }
             SubscriptionAction = $subscriptionAction
-            ModifiedBy = $currentUser
+            ModifiedBy         = $currentUser
         })
     }
     catch {
@@ -768,47 +613,31 @@ Add-PodeRoute -Method Post -Path '/api/fileops/config/save' -Authentication 'ADL
     }
 }
 
-# ----------------------------------------------------------------------------
-# POST /api/fileops/config/toggle
-# Enables or disables a monitor configuration
-# Body: { ConfigId, IsEnabled }
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/fileops/config/toggle' -Authentication 'ADLogin' -ScriptBlock {
-        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-        try {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
         $body = $WebEvent.Data
         $configId = [int]$body.ConfigId
         $isEnabled = [bool]$body.IsEnabled
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
+
+        $rowsAffected = Invoke-XFActsNonQuery -Query @"
             UPDATE FileOps.MonitorConfig
             SET is_enabled = @IsEnabled,
                 modified_dttm = GETDATE()
             WHERE config_id = @ConfigId
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@ConfigId", $configId) | Out-Null
-        $cmd.Parameters.AddWithValue("@IsEnabled", $isEnabled) | Out-Null
-        
-        $rowsAffected = $cmd.ExecuteNonQuery()
-        
-        $conn.Close()
-        
+"@ -Parameters @{
+            IsEnabled = $isEnabled
+            ConfigId  = $configId
+        }
+
         if ($rowsAffected -eq 0) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Configuration not found" }) -StatusCode 404
             return
         }
-        
+
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
-            Success = $true
-            ConfigId = $configId
+            Success   = $true
+            ConfigId  = $configId
             IsEnabled = $isEnabled
         })
     }
@@ -817,22 +646,11 @@ Add-PodeRoute -Method Post -Path '/api/fileops/config/toggle' -Authentication 'A
     }
 }
 
-# ============================================================================
-# WEBHOOK AND SUBSCRIPTION ENDPOINTS
-# ============================================================================
-
-# ----------------------------------------------------------------------------
-# GET /api/fileops/webhooks
-# Returns list of all webhook configurations
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/webhooks' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 config_id AS ConfigId,
                 webhook_name AS WebhookName,
                 webhook_url AS WebhookUrl,
@@ -843,28 +661,19 @@ Add-PodeRoute -Method Get -Path '/api/fileops/webhooks' -Authentication 'ADLogin
             WHERE is_active = 1
             ORDER BY webhook_name
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+
         $result = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $result += [PSCustomObject]@{
-                ConfigId = [int]$row['ConfigId']
-                WebhookName = $row['WebhookName']
-                WebhookUrl = $row['WebhookUrl']
+                ConfigId      = [int]$row['ConfigId']
+                WebhookName   = $row['WebhookName']
+                WebhookUrl    = $row['WebhookUrl']
                 AlertCategory = $row['AlertCategory']
-                Description = if ($row['Description'] -is [DBNull]) { $null } else { $row['Description'] }
-                IsActive = [bool]$row['IsActive']
+                Description   = if ($row['Description'] -is [DBNull]) { $null } else { $row['Description'] }
+                IsActive      = [bool]$row['IsActive']
             }
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -872,18 +681,11 @@ Add-PodeRoute -Method Get -Path '/api/fileops/webhooks' -Authentication 'ADLogin
     }
 }
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/subscriptions
-# Returns FileOps webhook subscriptions (read-only display)
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/subscriptions' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 s.subscription_id AS SubscriptionId,
                 s.config_id AS ConfigId,
                 w.webhook_name AS WebhookName,
@@ -898,31 +700,22 @@ Add-PodeRoute -Method Get -Path '/api/fileops/subscriptions' -Authentication 'AD
             WHERE s.source_module = 'FileOps'
             ORDER BY s.is_active DESC, s.channel_name
 "@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
+
         $result = @()
-        foreach ($row in $dataset.Tables[0].Rows) {
+        foreach ($row in $rows) {
             $result += [PSCustomObject]@{
                 SubscriptionId = [int]$row['SubscriptionId']
-                ConfigId = [int]$row['ConfigId']
-                WebhookName = $row['WebhookName']
-                ChannelName = $row['ChannelName']
-                SourceModule = $row['SourceModule']
-                AlertCategory = if ($row['AlertCategory'] -is [DBNull]) { $null } else { $row['AlertCategory'] }
-                TriggerType = if ($row['TriggerType'] -is [DBNull]) { $null } else { $row['TriggerType'] }
-                IsActive = [bool]$row['IsActive']
-                Description = if ($row['Description'] -is [DBNull]) { $null } else { $row['Description'] }
+                ConfigId       = [int]$row['ConfigId']
+                WebhookName    = $row['WebhookName']
+                ChannelName    = $row['ChannelName']
+                SourceModule   = $row['SourceModule']
+                AlertCategory  = if ($row['AlertCategory'] -is [DBNull]) { $null } else { $row['AlertCategory'] }
+                TriggerType    = if ($row['TriggerType'] -is [DBNull]) { $null } else { $row['TriggerType'] }
+                IsActive       = [bool]$row['IsActive']
+                Description    = if ($row['Description'] -is [DBNull]) { $null } else { $row['Description'] }
             }
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -930,26 +723,18 @@ Add-PodeRoute -Method Get -Path '/api/fileops/subscriptions' -Authentication 'AD
     }
 }
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/config/subscription
-# Returns subscription info for a given config_name (trigger_type lookup)
-# Query param: configName
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/fileops/config/subscription' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $configName = $WebEvent.Query['configName']
-        
+
         if ([string]::IsNullOrWhiteSpace($configName)) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Found = $false })
             return
         }
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT 
+
+        $rows = Invoke-XFActsQuery -Query @"
+            SELECT
                 s.subscription_id AS SubscriptionId,
                 s.config_id AS WebhookConfigId,
                 w.webhook_name AS WebhookName,
@@ -961,36 +746,25 @@ Add-PodeRoute -Method Get -Path '/api/fileops/config/subscription' -Authenticati
             INNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id
             WHERE s.source_module = 'FileOps'
               AND s.trigger_type = @ConfigName
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@ConfigName", $configName) | Out-Null
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        if ($dataset.Tables[0].Rows.Count -eq 0) {
-            $conn.Close()
+"@ -Parameters @{ ConfigName = $configName }
+
+        if (-not $rows -or $rows.Count -eq 0) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Found = $false })
             return
         }
-        
-        $row = $dataset.Tables[0].Rows[0]
+
+        $row = $rows[0]
         $result = [PSCustomObject]@{
-            Found = $true
-            SubscriptionId = [int]$row['SubscriptionId']
+            Found           = $true
+            SubscriptionId  = [int]$row['SubscriptionId']
             WebhookConfigId = [int]$row['WebhookConfigId']
-            WebhookName = $row['WebhookName']
-            ChannelName = $row['ChannelName']
-            AlertCategory = if ($row['AlertCategory'] -is [DBNull]) { $null } else { $row['AlertCategory'] }
-            TriggerType = $row['TriggerType']
-            IsActive = [bool]$row['IsActive']
+            WebhookName     = $row['WebhookName']
+            ChannelName     = $row['ChannelName']
+            AlertCategory   = if ($row['AlertCategory'] -is [DBNull]) { $null } else { $row['AlertCategory'] }
+            TriggerType     = $row['TriggerType']
+            IsActive        = [bool]$row['IsActive']
         }
-        
-        $conn.Close()
+
         Write-PodeJsonResponse -Value $result
     }
     catch {
@@ -998,15 +772,11 @@ Add-PodeRoute -Method Get -Path '/api/fileops/config/subscription' -Authenticati
     }
 }
 
-# ----------------------------------------------------------------------------
-# POST /api/fileops/webhook/save
-# Creates a new webhook configuration (used by inline creation in config modal)
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/fileops/webhook/save' -Authentication 'ADLogin' -ScriptBlock {
-        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
-        try {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
         $body = $WebEvent.Data
-        
+
         if ([string]::IsNullOrWhiteSpace($body.WebhookName)) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Webhook name is required" }) -StatusCode 400
             return
@@ -1015,105 +785,32 @@ Add-PodeRoute -Method Post -Path '/api/fileops/webhook/save' -Authentication 'AD
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Webhook URL is required" }) -StatusCode 400
             return
         }
-        
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
+
+        $alertCategory = if ($body.AlertCategory) { $body.AlertCategory } else { 'ALL' }
+        $description = if ([string]::IsNullOrWhiteSpace($body.Description)) { [DBNull]::Value } else { $body.Description }
+
+        $rows = Invoke-XFActsQuery -Query @"
             INSERT INTO Teams.WebhookConfig (
                 webhook_name, webhook_url, alert_category, description, is_active
             )
             VALUES (
                 @WebhookName, @WebhookUrl, @AlertCategory, @Description, 1
             );
-            
-            SELECT SCOPE_IDENTITY() AS ConfigId;
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        $cmd.Parameters.AddWithValue("@WebhookName", $body.WebhookName) | Out-Null
-        $cmd.Parameters.AddWithValue("@WebhookUrl", $body.WebhookUrl) | Out-Null
-        $cmd.Parameters.AddWithValue("@AlertCategory", $(if ($body.AlertCategory) { $body.AlertCategory } else { 'ALL' })) | Out-Null
-        $descParam = if ([string]::IsNullOrWhiteSpace($body.Description)) { [DBNull]::Value } else { $body.Description }
-        $cmd.Parameters.AddWithValue("@Description", $descParam) | Out-Null
-        
-        $resultId = $cmd.ExecuteScalar()
-        
-        $conn.Close()
-        
-        Write-PodeJsonResponse -Value ([PSCustomObject]@{
-            Success = $true
-            ConfigId = [int]$resultId
-        })
-    }
-    catch {
-        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
-    }
-}
 
-# ----------------------------------------------------------------------------
-# GET /api/fileops/engine-status
-# Returns orchestrator process health for the FileOps scanner
-# Driven entirely by ProcessRegistry - no module-specific status table needed
-# ----------------------------------------------------------------------------
-Add-PodeRoute -Method Get -Path '/api/fileops/engine-status' -Authentication 'ADLogin' -ScriptBlock {
-    try {
-        $connString = "Server=AVG-PROD-LSNR;Database=xFACts;Integrated Security=True;Connect Timeout=5;"
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $conn.Open()
-        
-        $query = @"
-            SELECT
-                p.process_id AS ProcessId,
-                p.run_mode AS RunMode,
-                p.interval_seconds AS IntervalSeconds,
-                p.running_count AS RunningCount,
-                p.last_execution_dttm AS LastExecutionDttm,
-                p.last_execution_status AS LastExecutionStatus,
-                p.last_duration_ms AS LastDurationMs,
-                CASE
-                    WHEN p.run_mode = 0 THEN NULL
-                    WHEN p.run_mode = 2 THEN NULL
-                    WHEN p.run_mode = 1 AND p.last_execution_dttm IS NOT NULL THEN
-                        p.interval_seconds - DATEDIFF(SECOND, p.last_execution_dttm, GETDATE())
-                    WHEN p.run_mode = 1 AND p.last_execution_dttm IS NULL THEN -1
-                    ELSE NULL
-                END AS SecondsUntilNext
-            FROM Orchestrator.ProcessRegistry p
-            WHERE p.module_name = 'FileOps'
-              AND p.process_name = 'Scan-SFTPFiles'
-"@
-        
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $query
-        $cmd.CommandTimeout = 10
-        
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-        $dataset = New-Object System.Data.DataSet
-        $adapter.Fill($dataset) | Out-Null
-        
-        if ($dataset.Tables[0].Rows.Count -eq 0) {
-            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Process not found in registry" }) -StatusCode 404
-            return
+            SELECT SCOPE_IDENTITY() AS ConfigId;
+"@ -Parameters @{
+            WebhookName   = $body.WebhookName
+            WebhookUrl    = $body.WebhookUrl
+            AlertCategory = $alertCategory
+            Description   = $description
         }
-        
-        $row = $dataset.Tables[0].Rows[0]
-        $result = [PSCustomObject]@{
-            ProcessId = [int]$row['ProcessId']
-            RunMode = [int]$row['RunMode']
-            IntervalSeconds = [int]$row['IntervalSeconds']
-            RunningCount = [int]$row['RunningCount']
-            LastExecutionDttm = if ($row['LastExecutionDttm'] -is [DBNull]) { $null } else { $row['LastExecutionDttm'].ToString("yyyy-MM-dd HH:mm:ss") }
-            LastExecutionStatus = if ($row['LastExecutionStatus'] -is [DBNull]) { $null } else { $row['LastExecutionStatus'] }
-            LastDurationMs = if ($row['LastDurationMs'] -is [DBNull]) { $null } else { [int]$row['LastDurationMs'] }
-            SecondsUntilNext = if ($row['SecondsUntilNext'] -is [DBNull]) { $null } else { [int]$row['SecondsUntilNext'] }
-        }
-        
-        $conn.Close()
-        Write-PodeJsonResponse -Value $result
+
+        $newConfigId = [int]$rows[0]['ConfigId']
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{
+            Success  = $true
+            ConfigId = $newConfigId
+        })
     }
     catch {
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
