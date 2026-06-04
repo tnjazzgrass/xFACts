@@ -1,240 +1,257 @@
-# ============================================================================
-# xFACts Control Center - JobFlow Monitoring Page
-# Location: E:\xFACts-ControlCenter\scripts\routes\JobFlowMonitoring.ps1
-#
-# Renders the JobFlow monitoring dashboard page with real-time DM queue
-# visibility, process status, today's summary, and execution history.
-# CSS: /css/jobflow-monitoring.css
-# JS:  /js/jobflow-monitoring.js
-# APIs: JobFlowMonitoring-API.ps1
-#
-# Version: Tracked in dbo.System_Metadata (component: JobFlow)
-#
-# CHANGELOG
-# ---------
-# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
-#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
-#             browser tab title now render from RBAC_NavRegistry via
-#             Get-PageHeaderHtml and Get-PageBrowserTitle.
-# ============================================================================
+<#
+.SYNOPSIS
+    Control Center page route for the JobFlow Monitoring dashboard.
+
+.DESCRIPTION
+    Renders the JobFlow monitoring dashboard: live Debt Manager activity, the
+    orchestrator process-status grid, the day's flow summary, and the
+    expandable execution history. Authenticated and access-gated, then composes
+    the page shell from shared chrome helpers and emits page-specific content
+    plus the overlay constructs the page's JavaScript drives.
+
+.COMPONENT
+    JobFlow
+
+.NOTES
+    File Name : JobFlowMonitoring.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\JobFlowMonitoring.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-driven change history for this route file. Most recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-04  Refactored to the CC file-format specs. Adopted the cc-shared
+#             chrome model (cc-shared.css, cc-shared.js bootloader), the
+#             data-cc-page / data-cc-prefix body contract, $bannerHtml chrome
+#             banners, the unified cc- overlay constructs, and data-action-*
+#             dispatch in place of inline handlers.
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   Registers the GET /jobflow-monitoring page route. Gates on RBAC access,
+   resolves the user context, composes the shared chrome fragments, and emits
+   the full page document.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/jobflow-monitoring' -Authentication 'ADLogin' -ScriptBlock {
+    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
 
-    # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/jobflow-monitoring'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/jobflow-monitoring') -StatusCode 403
         return
     }
 
-    # --- User context (used by helper for nav rendering) ---
-    $ctx = Get-UserContext -WebEvent $WebEvent
-
-    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
-    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/jobflow-monitoring'
-    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/jobflow-monitoring'
+    $ctx          = Get-UserContext -WebEvent $WebEvent
+    $navHtml      = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/jobflow-monitoring'
+    $headerHtml   = Get-PageHeaderHtml -PageRoute '/jobflow-monitoring'
     $browserTitle = Get-PageBrowserTitle -PageRoute '/jobflow-monitoring'
+    $bannerHtml   = Get-ChromeBannersHtml
 
     $html = @"
-
 <!DOCTYPE html>
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/jobflow-monitoring.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
+
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body>
+<body class="cc-section-platform" data-cc-page="jobflow-monitoring" data-cc-prefix="jfm">
 $navHtml
 
-    <div class="header-bar">
+    <div class="cc-header-bar">
         <div>
             $headerHtml
         </div>
-        <div class="header-right">
-            <div class="refresh-info">
-                <span class="live-indicator"></span>
-                <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-                <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>
+        <div class="cc-header-right">
+            <div class="cc-refresh-info">
+                <span class="cc-live-indicator"></span>
+                <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+                <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
-            <div class="engine-row">
-                <div class="engine-card" id="card-engine-jobflow">
-                    <span class="engine-label">JobFlow</span>
-                    <div class="engine-bar disabled" id="engine-bar-jobflow"></div>
-                    <span class="engine-countdown" id="engine-cd-jobflow">&nbsp;</span>
+            <div class="cc-engine-row">
+                <div class="cc-card-engine" id="cc-card-engine-jobflow">
+                    <span class="cc-engine-label">JobFlow</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-jobflow"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-jobflow"></span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+    $bannerHtml
 
-    <!-- Two Column Layout -->
-    <div class="grid-layout">
+    <div class="jfm-grid-layout">
 
-        <!-- Left Column - Daily Summary and Live Activity -->
-        <div class="grid-column">
-            <!-- Daily Summary -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Daily Summary</h2>
-                    <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+        <div class="jfm-grid-column">
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Daily Summary</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
-                <div id="daily-summary" class="summary-content">
-                    <div class="loading">Loading...</div>
+                <div id="jfm-daily-summary" class="jfm-summary-content">
+                    <div class="jfm-loading">Loading...</div>
                 </div>
             </div>
 
-            <!-- Live Activity from Debt Manager -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Live Activity</h2>
-                    <div class="section-header-right">
-                        <button id="btn-pending-queue" class="refresh-btn pending-btn" title="View pending queue">
-                            &#9202; Pending <span id="pending-count-badge" class="pending-badge hidden">0</span>
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Live Activity</h2>
+                    <div class="cc-section-header-right">
+                        <button id="jfm-btn-pending-queue" class="jfm-pending-btn" data-action-click="jfm-open-pending-queue" title="View pending queue">
+                            &#9202; Pending <span id="jfm-pending-count-badge" class="jfm-pending-badge jfm-hidden">0</span>
                         </button>
-                        <span class="refresh-badge-live" title="Refreshes on live interval"><span class="badge-dot"></span></span>
+                        <span class="cc-refresh-badge-live" title="Refreshes on live interval"><span class="cc-refresh-badge-dot"></span></span>
                     </div>
                 </div>
-
-                <!-- Currently Executing Jobs -->
-                <div class="subsection">
-                    <h3 class="subsection-title">Currently Executing</h3>
-                    <div id="executing-jobs" class="activity-content">
-                        <div class="loading">Loading...</div>
+                <div class="jfm-subsection">
+                    <h3 class="jfm-subsection-title">Currently Executing</h3>
+                    <div id="jfm-executing-jobs" class="jfm-activity-content">
+                        <div class="jfm-loading">Loading...</div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Right Column - Status, History -->
-        <div class="grid-column">
-            <!-- Process Status Dashboard -->
-            <div class="section section-compact">
-                <div class="section-header">
-                    <h2 class="section-title">Process Status</h2>
-                    <div class="section-header-right">
-                        <button id="btn-app-tasks" class="section-action-btn" title="View and manage scheduled tasks across application servers">
-                            <span class="btn-icon">&#9881;</span> App Server Tasks
+        <div class="jfm-grid-column">
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Process Status</h2>
+                    <div class="cc-section-header-right">
+                        <button id="jfm-btn-app-tasks" class="jfm-section-action-btn" data-action-click="jfm-open-tasks" title="View and manage scheduled tasks across application servers">
+                            <span class="jfm-btn-icon">&#9881;</span> App Server Tasks
                         </button>
-                        <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+                        <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                     </div>
                 </div>
-                <div id="process-status" class="status-grid">
-                    <div class="loading">Loading...</div>
+                <div id="jfm-process-status" class="jfm-status-grid">
+                    <div class="jfm-loading">Loading...</div>
                 </div>
             </div>
 
-            <!-- Flow/Job History - Expandable, at bottom -->
-            <div class="section section-history">
-                <div class="section-header">
-                    <h2 class="section-title">Execution History</h2>
-                    <div class="section-header-right">
-                        <span class="history-count" id="history-count"></span>
-                        <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+            <div class="cc-section cc-fill">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Execution History</h2>
+                    <div class="cc-section-header-right">
+                        <span class="jfm-history-count" id="jfm-history-count"></span>
+                        <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                     </div>
                 </div>
-                <div id="execution-history" class="history-content">
-                    <div class="loading">Loading...</div>
+                <div id="jfm-execution-history" class="jfm-history-content">
+                    <div class="jfm-loading">Loading...</div>
                 </div>
             </div>
         </div>
 
     </div>
 
-    <!-- Flow Details Slideout -->
-    <div id="flow-slideout" class="slideout">
-        <div class="slideout-content">
-            <div class="slideout-header">
-                <h2 id="slideout-title">Flow Details</h2>
-                <button class="slideout-close" onclick="closeSlideout()">&times;</button>
+    <!-- Purpose: flow / day / pending / ad-hoc / stall detail slideout -->
+    <div id="jfm-slideout-flow" class="cc-slide-overlay" data-action-click="jfm-close-slideout">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 id="jfm-slideout-title" class="cc-dialog-title">Flow Details</h3>
+                <button class="cc-dialog-close" data-action-click="jfm-close-slideout">&times;</button>
             </div>
-            <div id="slideout-body" class="slideout-body">
-                <div class="loading">Loading...</div>
+            <div id="jfm-slideout-body" class="cc-dialog-body">
+                <div class="jfm-loading">Loading...</div>
             </div>
         </div>
     </div>
-    <div id="slideout-overlay" class="slideout-overlay" onclick="closeSlideout()"></div>
 
-    <!-- App Server Tasks Modal -->
-    <div id="tasks-modal-overlay" class="modal-overlay hidden">
-        <div class="modal-content modal-wide">
-            <div class="modal-header">
-                <h3>App Server Task Distribution</h3>
-                <button class="modal-close" onclick="closeTasksModal()">&times;</button>
+    <!-- Purpose: app server task distribution editor modal -->
+    <div id="jfm-modal-tasks" class="cc-modal-overlay cc-hidden" data-action-click="jfm-close-tasks">
+        <div class="cc-dialog cc-dialog-modal cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">App Server Task Distribution</h3>
+                <button class="cc-dialog-close" data-action-click="jfm-close-tasks">&times;</button>
             </div>
-            <div class="modal-body">
-                <p class="modal-subtitle">Click a cell to stage changes. Only one server should be enabled per flow.</p>
-                <div id="tasks-grid" class="tasks-grid">
-                    <div class="loading">Loading...</div>
+            <div class="cc-dialog-body">
+                <p class="jfm-modal-subtitle">Click a cell to stage changes. Only one server should be enabled per flow.</p>
+                <div id="jfm-tasks-grid" class="jfm-tasks-grid">
+                    <div class="jfm-loading">Loading...</div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <span id="pending-changes-indicator" class="hidden"></span>
-                <button id="btn-apply-changes" class="hidden" onclick="showApplyConfirmation()">Apply Changes</button>
-                <button class="modal-btn modal-btn-cancel" onclick="closeTasksModal()">Close</button>
+            <div class="cc-dialog-actions">
+                <span id="jfm-pending-changes-indicator" class="jfm-pending-changes-indicator jfm-hidden"></span>
+                <button id="jfm-btn-apply-changes" class="cc-dialog-btn-primary jfm-hidden" data-action-click="jfm-show-apply-confirmation">Apply Changes</button>
+                <button class="cc-dialog-btn-cancel" data-action-click="jfm-close-tasks">Close</button>
             </div>
         </div>
     </div>
 
-    <!-- Confirmation Modal -->
-    <div id="confirm-modal-overlay" class="modal-overlay hidden">
-        <div class="confirm-modal">
-            <div class="confirm-modal-header">
-                <h3>Confirm Changes</h3>
+    <!-- Purpose: confirm staged app server task changes -->
+    <div id="jfm-modal-confirm" class="cc-modal-overlay cc-hidden" data-action-click="jfm-close-confirm">
+        <div class="cc-dialog cc-dialog-modal">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Confirm Changes</h3>
+                <button class="cc-dialog-close" data-action-click="jfm-close-confirm">&times;</button>
             </div>
-            <div class="confirm-modal-body" id="confirm-changes-body">
+            <div id="jfm-confirm-changes-body" class="cc-dialog-body">
             </div>
-            <div class="confirm-modal-footer">
-                <button id="btn-confirm-cancel" onclick="cancelAllChanges()">Cancel</button>
-                <button id="btn-confirm-apply" onclick="applyAllChanges()">Apply</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ConfigSync Modal -->
-    <div id="configsync-modal-overlay" class="modal-overlay hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Flow Configuration</h3>
-                <button class="modal-close" onclick="closeConfigSyncModal()">&times;</button>
-            </div>
-            <div class="cs-selector-bar">
-                <label>Flow:</label>
-                <select id="configsync-flow-select" onchange="onConfigSyncFlowSelected()">
-                    <option value="">Loading...</option>
-                </select>
-            </div>
-            <div id="configsync-body" class="modal-body">
-                <div class="loading">Loading...</div>
-            </div>
-            <div class="modal-footer">
-                <div id="configsync-footer-actions"></div>
-                <button class="modal-btn modal-btn-cancel" onclick="closeConfigSyncModal()">Close</button>
+            <div class="cc-dialog-actions">
+                <button class="cc-dialog-btn-cancel" data-action-click="jfm-cancel-all-changes">Cancel</button>
+                <button class="cc-dialog-btn-primary" data-action-click="jfm-apply-all-changes">Apply</button>
             </div>
         </div>
     </div>
 
-    <!-- ConfigSync Confirmation Dialog -->
-    <div id="cs-confirm-overlay" class="modal-overlay hidden">
-        <div class="cs-confirm-modal">
-            <div class="cs-confirm-modal-header">
-                <h3>Confirm Changes</h3>
+    <!-- Purpose: flow configuration viewer and drift resolution modal -->
+    <div id="jfm-modal-configsync" class="cc-modal-overlay cc-hidden" data-action-click="jfm-close-configsync">
+        <div class="cc-dialog cc-dialog-modal cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Flow Configuration</h3>
+                <button class="cc-dialog-close" data-action-click="jfm-close-configsync">&times;</button>
             </div>
-            <div id="cs-confirm-body" class="cs-confirm-modal-body">
+            <div class="cc-dialog-body">
+                <div class="jfm-cs-selector-bar">
+                    <label for="jfm-configsync-flow-select">Flow:</label>
+                    <select id="jfm-configsync-flow-select" class="jfm-cs-selector-select" data-action-change="jfm-configsync-flow-selected">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                <div id="jfm-configsync-body" class="jfm-cs-content">
+                    <div class="jfm-loading">Loading...</div>
+                </div>
             </div>
-            <div class="cs-confirm-modal-footer">
-                <button class="modal-btn modal-btn-cancel" onclick="closeConfigSyncConfirmation()">Cancel</button>
-                <button class="cs-btn cs-btn-primary" onclick="confirmAndSaveConfigSync()">Apply Changes</button>
+            <div class="cc-dialog-actions">
+                <div id="jfm-configsync-footer-actions" class="jfm-cs-footer-actions"></div>
+                <button class="cc-dialog-btn-cancel" data-action-click="jfm-close-configsync">Close</button>
             </div>
         </div>
     </div>
 
-    <script src="/js/jobflow-monitoring.js"></script>
-    <script src="/js/engine-events.js"></script>
+    <!-- Purpose: confirm flow configuration changes before save -->
+    <div id="jfm-modal-cs-confirm" class="cc-modal-overlay cc-hidden" data-action-click="jfm-close-cs-confirm">
+        <div class="cc-dialog cc-dialog-modal">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Confirm Changes</h3>
+                <button class="cc-dialog-close" data-action-click="jfm-close-cs-confirm">&times;</button>
+            </div>
+            <div id="jfm-cs-confirm-body" class="cc-dialog-body">
+            </div>
+            <div class="cc-dialog-actions">
+                <button class="cc-dialog-btn-cancel" data-action-click="jfm-close-cs-confirm">Cancel</button>
+                <button class="cc-dialog-btn-primary" data-action-click="jfm-confirm-and-save-configsync">Apply Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/cc-shared.js"></script>
 </body>
 </html>
-
 "@
     Write-PodeHtmlResponse -Value $html
 }
