@@ -445,6 +445,7 @@ A `data-action-<event>` attribute is valid only on:
 
 - An interactive HTML element: `<button>`, `<a>` with `href`, `<input>`, `<select>`, `<textarea>`.
 - An element carrying one of the three overlay container classes from §14.2: `cc-modal-overlay`, `cc-slide-overlay`, `cc-slideup-overlay`. This carve-out enables the "click outside the dialog to close" UX pattern on overlay constructs.
+- A clickable non-interactive region (card, tile, row) is expressed as a `<button>`; when it must contain a nested interactive element, it remains a container with a transparent full-cover `<button>` as the click target.
 
 The carve-out list is closed. Adding a new non-interactive element type that may carry action attributes requires a spec amendment.
 
