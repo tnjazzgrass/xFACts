@@ -1,233 +1,350 @@
-// ============================================================================
-// xFACts Control Center - File Monitoring JavaScript
-// Location: E:\xFACts-ControlCenter\public\js\file-monitoring.js
-// Version: Tracked in dbo.System_Metadata (component: FileOps)
-// ============================================================================
+/* ============================================================================
+   xFACts Control Center - File Monitoring (file-monitoring.js)
+   Location: E:\xFACts-ControlCenter\public\js\file-monitoring.js
+   Version: Tracked in dbo.System_Metadata (component: FileOps)
 
-// ============================================================================
-// STATE
-// ============================================================================
+   Page module for the File Monitoring dashboard. Loaded by the cc-shared.js
+   bootloader, which reads the body's data-cc-prefix and calls flm_init. Owns
+   the daily monitor queue, status summary, configuration cards, detection
+   history tree, the slide-up management console with inline-edit monitor
+   rows, the server list, the scheduled-monitors modal, the day detail
+   slideout, and the new-webhook modal.
 
-var servers = [];
-var configs = [];
-var webhooks = [];
-var subscriptions = [];
-var refreshTimer = null;
-var expandedYears = {};
-var expandedMonths = {};
-var pageLoadDate = new Date().toDateString();
-var monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
-                  'July', 'August', 'September', 'October', 'November', 'December'];
-var dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-var dayKeys = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-var dayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+   FILE ORGANIZATION
+   -----------------
+   CONSTANTS: ENGINE PROCESSES
+   CONSTANTS: ACTION DISPATCH
+   CONSTANTS: LOOKUPS
+   STATE: PAGE STATE
+   FUNCTIONS: INITIALIZATION
+   FUNCTIONS: ACTION DISPATCH
+   FUNCTIONS: DATA LOADING
+   FUNCTIONS: DAILY QUEUE
+   FUNCTIONS: STATUS SUMMARY
+   FUNCTIONS: CONFIGURATION CARDS
+   FUNCTIONS: MANAGEMENT CONSOLE
+   FUNCTIONS: MONITOR LIST
+   FUNCTIONS: INLINE EDIT
+   FUNCTIONS: ADD MONITOR
+   FUNCTIONS: SAVE MONITOR
+   FUNCTIONS: WEBHOOK MODAL
+   FUNCTIONS: SERVER LIST
+   FUNCTIONS: SCHEDULED MODAL
+   FUNCTIONS: DETECTION HISTORY
+   FUNCTIONS: DAY DETAIL
+   FUNCTIONS: UTILITIES
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
+   ============================================================================ */
 
-// Engine events — process map for shared WebSocket module (engine-events.js)
-var ENGINE_PROCESSES = {
-    'Scan-SFTPFiles': { slug: 'sftp'}
+/* ============================================================================
+   CONSTANTS: ENGINE PROCESSES
+   ----------------------------------------------------------------------------
+   Engine process map consumed by the shared engine-card system to bind this
+   page's SFTP scan process to its status card.
+   Prefix: flm
+   ============================================================================ */
+
+/*
+ * Engine process map consumed by cc_connectEngineEvents to populate the SFTP
+ * engine card. Declared with var so the bootloader can read it off window.
+ */
+var flm_ENGINE_PROCESSES = {
+    'Scan-SFTPFiles': { slug: 'sftp' }
 };
 
-// Live polling (Refresh Architecture)
-var PAGE_REFRESH_INTERVAL = 30;   // Default; overridden by GlobalConfig on load
+/* ============================================================================
+   CONSTANTS: ACTION DISPATCH
+   ----------------------------------------------------------------------------
+   Dispatch tables mapping each data-action-click and data-action-change
+   value to its handler function. The delegated body listeners in flm_init
+   route events through these tables.
+   Prefix: flm
+   ============================================================================ */
 
-// Page hooks for engine-events.js shared module
-function onPageResumed() { pageRefresh(); }
-function onSessionExpired() { stopLivePolling(); }
-var livePollingTimer = null;
+/*
+ * Click action dispatch table. Maps each data-action-click value to its
+ * handler; the delegated body listener in flm_init routes to these.
+ */
+const flm_clickActions = {
+    'flm-open-scheduled': flm_openScheduledModal,
+    'flm-open-console': flm_openConsoleFromCard,
+    'flm-open-console-monitor': flm_openConsoleToMonitor,
+    'flm-flip-console': flm_flipConsole,
+    'flm-add-monitor': flm_addNewMonitor,
+    'flm-close-console': flm_closeConsole,
+    'flm-close-day': flm_closeDayPanel,
+    'flm-close-scheduled': flm_closeScheduledModal,
+    'flm-close-webhook': flm_closeWebhookModal,
+    'flm-save-webhook': flm_saveNewWebhook,
+    'flm-toggle-year': flm_toggleYear,
+    'flm-toggle-month': flm_toggleMonth,
+    'flm-open-day': flm_openDayDetail,
+    'flm-toggle-field': flm_toggleFieldAction,
+    'flm-set-priority': flm_setPriorityAction,
+    'flm-save-row': flm_saveRowAction,
+    'flm-cancel-row': flm_cancelRowAction
+};
 
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
+/*
+ * Change action dispatch table. Maps each data-action-change value to its
+ * handler; the delegated body listener in flm_init routes to these.
+ */
+const flm_changeActions = {
+    'flm-set-field': flm_setFieldAction,
+    'flm-select-webhook': flm_selectWebhookAction
+};
 
-document.addEventListener('DOMContentLoaded', async function() {
-    await loadRefreshInterval();
-    await loadServers();
-    await loadWebhooks();
-    await loadSubscriptions();
-    await loadAllData();
-    loadDetectionHistory();
-    loadScheduledCount();
-    startAutoRefresh();
-    connectEngineEvents();
-    initEngineCardClicks();
-    startLivePolling();
-});
+/* ============================================================================
+   CONSTANTS: LOOKUPS
+   ----------------------------------------------------------------------------
+   Static lookup arrays for monitor-row rendering: day labels and SQL
+   day-column suffixes for the day toggle badges, and the Jira priority
+   button definitions.
+   Prefix: flm
+   ============================================================================ */
 
-async function loadAllData() {
+/* Two-letter day labels for the monitor-row day toggle badges, Sun-first. */
+const flm_DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+/*
+ * SQL day-column suffixes for the monitor-row day toggle badges, Sun-first.
+ * Combined as 'Check' + suffix to address MonitorConfig day columns.
+ */
+const flm_DAY_KEYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/* Jira priority buttons rendered in each monitor row, in display order. */
+const flm_PRIORITIES = [
+    { key: 'Highest', label: 'Highest', cls: 'flm-pri-highest' },
+    { key: 'High', label: 'High', cls: 'flm-pri-high' },
+    { key: 'Medium', label: 'Medium', cls: 'flm-pri-medium' },
+    { key: 'Low', label: 'Low', cls: 'flm-pri-low' }
+];
+
+/* ============================================================================
+   STATE: PAGE STATE
+   ----------------------------------------------------------------------------
+   Module-level mutable state: cached server, monitor, webhook, and
+   subscription collections; detection-history expand maps; per-row unsaved
+   edits; the active console face; and modal handles.
+   Prefix: flm
+   ============================================================================ */
+
+/* Cached SFTP server configurations from /api/fileops/servers. */
+var flm_servers = [];
+
+/* Cached monitor configurations from /api/fileops/configs. */
+var flm_configs = [];
+
+/* Cached Teams webhook configurations from /api/fileops/webhooks. */
+var flm_webhooks = [];
+
+/* Cached Teams webhook subscriptions from /api/fileops/subscriptions. */
+var flm_subscriptions = [];
+
+/* Expanded-state map for detection-history year groups, keyed by year. */
+var flm_expandedYears = {};
+
+/* Expanded-state map for detection-history month rows, keyed by year-month. */
+var flm_expandedMonths = {};
+
+/* Per-row unsaved-edit map, keyed by config id; each value is a field-delta object. */
+var flm_dirtyRows = {};
+
+/* The currently displayed console face, either 'monitors' or 'servers'. */
+var flm_currentFace = 'monitors';
+
+/* The config id whose row triggered the new-webhook modal, or null. */
+var flm_webhookModalForRowId = null;
+
+/* The interval handle for the scheduled-modal countdown ticker, or null. */
+var flm_schedCountdownInterval = null;
+
+/* ============================================================================
+   FUNCTIONS: INITIALIZATION
+   ----------------------------------------------------------------------------
+   Page entry point invoked by the cc-shared.js bootloader.
+   Prefix: flm
+   ============================================================================ */
+
+/*
+ * Page entry point invoked by the cc-shared.js bootloader. Registers the
+ * delegated click and change listeners, connects the engine card system,
+ * and loads all dashboard data.
+ */
+async function flm_init() {
+    document.body.addEventListener('click', flm_dispatchClick);
+    document.body.addEventListener('change', flm_dispatchChange);
+    cc_connectEngineEvents();
+    await flm_loadServers();
+    await flm_loadWebhooks();
+    await flm_loadSubscriptions();
+    await flm_loadAllData();
+    flm_loadDetectionHistory();
+    flm_loadScheduledCount();
+}
+
+/* ============================================================================
+   FUNCTIONS: ACTION DISPATCH
+   ----------------------------------------------------------------------------
+   Delegated event dispatchers that resolve the nearest element carrying an
+   action attribute and route it to the matching handler in the dispatch
+   tables.
+   Prefix: flm
+   ============================================================================ */
+
+/*
+ * Delegated click dispatcher. Resolves the nearest element carrying a
+ * data-action-click attribute and routes it to the matching handler.
+ */
+function flm_dispatchClick(event) {
+    var el = event.target.closest('[data-action-click]');
+    if (!el) return;
+    var action = el.getAttribute('data-action-click');
+    var handler = flm_clickActions[action];
+    if (handler) handler(el, event);
+}
+
+/*
+ * Delegated change dispatcher. Resolves the nearest element carrying a
+ * data-action-change attribute and routes it to the matching handler.
+ */
+function flm_dispatchChange(event) {
+    var el = event.target.closest('[data-action-change]');
+    if (!el) return;
+    var action = el.getAttribute('data-action-change');
+    var handler = flm_changeActions[action];
+    if (handler) handler(el, event);
+}
+
+/* ============================================================================
+   FUNCTIONS: DATA LOADING
+   ----------------------------------------------------------------------------
+   Functions that fetch dashboard data from the page API endpoints into the
+   module caches and refresh the header timestamp.
+   Prefix: flm
+   ============================================================================ */
+
+/*
+ * Loads the daily queue and configuration data in parallel, then updates
+ * the page timestamp.
+ */
+async function flm_loadAllData() {
     await Promise.all([
-        loadDailyQueue(),
-        loadConfigs()
+        flm_loadDailyQueue(),
+        flm_loadConfigs()
     ]);
-    updateLastRefresh();
+    flm_updateLastRefresh();
 }
 
-function startAutoRefresh() {
-    // Lightweight timer — only checks for overnight date change (page reload)
-    // All data refresh is event-driven via onEngineProcessCompleted
-    refreshTimer = setInterval(function() {
-        var today = new Date().toDateString();
-        if (today !== pageLoadDate) {
-            window.location.reload();
-        }
-    }, 60000);
-}
-
-// Called by engine-events.js when a relevant PROCESS_COMPLETED event arrives
-function onEngineProcessCompleted(processName, event) {
-    loadAllData();
-    loadScheduledCount();
-}
-
-// ============================================================================
-// MANUAL REFRESH
-// ============================================================================
-
-function refreshAll() {
-    loadAllData();
-    loadDetectionHistory();
-    loadScheduledCount();
-}
-
-function pageRefresh() {
-    var btn = document.querySelector('.page-refresh-btn');
-    if (btn) {
-        btn.classList.add('spinning');
-        btn.addEventListener('animationend', function() {
-            btn.classList.remove('spinning');
-        }, { once: true });
-    }
-    refreshAll();
-}
-
-// ============================================================================
-// LIVE POLLING (Refresh Architecture)
-// ============================================================================
-// Framework for live polling sections that refresh on a GlobalConfig-driven
-// timer. File Monitoring is currently all event-driven (no live sections),
-// so loadLiveData() is a stub. When live sections are added to this page,
-// add their refresh calls inside loadLiveData().
-//
-// See: Refresh Architecture doc, Section 2.2 (Live Polling Mode)
-// ============================================================================
-
-/**
- * Loads the page-specific refresh interval from GlobalConfig via shared API.
- * Called once on page init. Falls back to default if API unavailable.
- */
-async function loadRefreshInterval() {
+/* Loads SFTP server configurations into the module cache. */
+async function flm_loadServers() {
     try {
-        var data = await engineFetch('/api/config/refresh-interval?page=fileops');
-        if (data) {
-            // engineFetch handles auth and returns parsed JSON
-            PAGE_REFRESH_INTERVAL = data.interval || 30;
-        }
-    } catch (e) {
-        // API unavailable — use default. Not worth logging; page works fine.
+        var result = await cc_engineFetch('/api/fileops/servers');
+        if (!result) return;
+        flm_servers = result;
+    } catch (error) {
+        console.error('Error loading servers:', error);
     }
 }
 
-/**
- * Starts the live polling timer using the GlobalConfig interval.
- * Timer calls refreshLiveSections() which reloads all live sections on the page.
- */
-function startLivePolling() {
-    if (livePollingTimer) clearInterval(livePollingTimer);
-    livePollingTimer = setInterval(function() {
-        refreshLiveSections();
-    }, PAGE_REFRESH_INTERVAL * 1000);
-}
-
-/**
- * Stops live polling. Used by smart polling (activity-aware) when the page
- * detects no orchestrator activity and live data would be unchanged.
- */
-function stopLivePolling() {
-    if (enginePageHidden || engineSessionExpired) return;
-    if (livePollingTimer) {
-        clearInterval(livePollingTimer);
-        livePollingTimer = null;
+/* Loads Teams webhook configurations into the module cache. */
+async function flm_loadWebhooks() {
+    try {
+        var result = await cc_engineFetch('/api/fileops/webhooks');
+        if (!result) return;
+        flm_webhooks = result;
+    } catch (error) {
+        console.error('Error loading webhooks:', error);
     }
 }
 
-/**
- * Reloads all live polling sections and updates the page timestamp.
- * Called by the live polling timer and by manual refresh button clicks
- * on any live badge.
- */
-function refreshLiveSections() {
-    loadLiveData();
-    updateLastRefresh();
+/* Loads Teams webhook subscriptions into the module cache. */
+async function flm_loadSubscriptions() {
+    try {
+        var result = await cc_engineFetch('/api/fileops/subscriptions');
+        if (!result) return;
+        flm_subscriptions = result;
+    } catch (error) {
+        console.error('Error loading subscriptions:', error);
+    }
 }
 
-/**
- * Loads data for all live polling sections on this page.
- *
- * FILE MONITORING: Currently no live sections — all data is event-driven
- * (refreshed on Scan-SFTPFiles PROCESS_COMPLETED events).
- *
- * When live sections are added, put their load calls here:
- *   async function loadLiveData() {
- *       await Promise.all([
- *           loadSomeLiveSection(),
- *           loadAnotherLiveSection()
- *       ]);
- *   }
- */
-function loadLiveData() {
-    // No live sections on this page yet.
-    // Add live section refresh calls here when implemented.
+/* Loads monitor configurations and updates the configuration card counts. */
+async function flm_loadConfigs() {
+    try {
+        var result = await cc_engineFetch('/api/fileops/configs');
+        if (!result) return;
+        flm_configs = result;
+        document.getElementById('flm-monitor-count').textContent = flm_configs.length;
+        document.getElementById('flm-server-count').textContent = flm_servers.length;
+    } catch (error) {
+        console.error('Error loading configs:', error);
+    }
 }
 
-// ============================================================================
-// ENGINE HEALTH — handled by shared engine-events.js module
-// ============================================================================
+/* Returns the subscriptions whose trigger type matches a monitor name. */
+function flm_getSubscriptionsForMonitor(configName) {
+    if (!configName || !flm_subscriptions.length) return [];
+    return flm_subscriptions.filter(function(s) {
+        return s.TriggerType === configName;
+    });
+}
 
-function updateLastRefresh() {
+/* Updates the last-refresh timestamp shown in the header refresh info. */
+function flm_updateLastRefresh() {
+    var el = document.getElementById('cc-last-update');
+    if (!el) return;
     var now = new Date();
-    document.getElementById('last-update').textContent = now.toLocaleTimeString('en-US', {
+    el.textContent = now.toLocaleTimeString('en-US', {
         hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
 }
 
-// ============================================================================
-// DAILY QUEUE
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: DAILY QUEUE
+   ----------------------------------------------------------------------------
+   Functions that load and render the daily monitor queue, grouped into
+   escalated, monitoring, and detected sections.
+   Prefix: flm
+   ============================================================================ */
 
-async function loadDailyQueue() {
+/* Loads the monitor status feed and renders the daily queue and summary. */
+async function flm_loadDailyQueue() {
     try {
-        var data = await engineFetch('/api/fileops/status');
+        var data = await cc_engineFetch('/api/fileops/status');
         if (!data) return;
-        hideConnectionError();
-        renderDailyQueue(data);
-        renderStatusSummary(data);
+        flm_renderDailyQueue(data);
+        flm_renderStatusSummary(data);
     } catch (error) {
-        showConnectionError('Failed to load monitor status');
+        console.error('Error loading daily queue:', error);
     }
 }
 
-function renderDailyQueue(data) {
-    var escalated = [], detected = [], monitoring = [];
-    var now = new Date();
-    var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+/*
+ * Renders today's monitor activity into the queue table, grouped into the
+ * escalated, monitoring, and detected sections.
+ */
+function flm_renderDailyQueue(data) {
+    var escalated = [];
+    var detected = [];
+    var monitoring = [];
+    var today = flm_todayKey();
 
     if (data && data.length > 0) {
         data.forEach(function(m) {
             if (!m.LastScannedDttm || m.LastScannedDttm.split(' ')[0] < today) return;
-
             if (m.LastStatus === 'Escalated') escalated.push(m);
             else if (m.LastStatus === 'Detected' || m.LastStatus === 'LateDetected') detected.push(m);
             else if (m.LastStatus === 'Monitoring') monitoring.push(m);
         });
     }
 
-    // Sort detected by detection time descending (most recent first)
     detected.sort(function(a, b) {
         var ta = a.FileDetectedDttm || '';
         var tb = b.FileDetectedDttm || '';
         return tb.localeCompare(ta);
     });
 
-    // Sort escalated by escalation time descending
     escalated.sort(function(a, b) {
         var ta = a.EscalatedDttm || a.EscalationTime || '';
         var tb = b.EscalatedDttm || b.EscalationTime || '';
@@ -235,583 +352,466 @@ function renderDailyQueue(data) {
     });
 
     var html = '';
-
-    // Escalated section (top priority)
     if (escalated.length > 0) {
-        html += renderQueueRows(escalated);
+        html += flm_renderQueueRows(escalated);
     } else {
-        html += '<tr><td colspan="4" class="queue-section-empty">No current escalations</td></tr>';
+        html += '<tr><td colspan="4" class="flm-queue-section-empty">No current escalations</td></tr>';
     }
-
-    // Divider
-    html += '<tr class="queue-divider-row"><td colspan="4"></td></tr>';
-
-    // Monitoring section (actively scanning)
+    html += '<tr><td colspan="4" class="flm-queue-divider"></td></tr>';
     if (monitoring.length > 0) {
-        html += renderQueueRows(monitoring);
+        html += flm_renderQueueRows(monitoring);
     } else {
-        html += '<tr><td colspan="4" class="queue-section-empty">No current monitoring</td></tr>';
+        html += '<tr><td colspan="4" class="flm-queue-section-empty">No current monitoring</td></tr>';
     }
-
-    // Divider
-    html += '<tr class="queue-divider-row"><td colspan="4"></td></tr>';
-
-    // Detected section (reverse time order)
+    html += '<tr><td colspan="4" class="flm-queue-divider"></td></tr>';
     if (detected.length > 0) {
-        html += renderQueueRows(detected);
+        html += flm_renderQueueRows(detected);
     } else {
-        html += '<tr><td colspan="4" class="queue-section-empty">No detections yet today</td></tr>';
+        html += '<tr><td colspan="4" class="flm-queue-section-empty">No detections yet today</td></tr>';
     }
 
-    document.getElementById('queue-body').innerHTML = html;
+    document.getElementById('flm-queue-body').innerHTML = html;
 }
 
-function renderQueueRows(monitors) {
+/* Builds the table rows for a set of monitors in the daily queue. */
+function flm_renderQueueRows(monitors) {
     var html = '';
     monitors.forEach(function(m) {
-        var cls = m.LastStatus.toLowerCase();
+        var badgeCls = flm_statusBadgeClass(m.LastStatus);
         var txt = m.LastStatus === 'LateDetected' ? 'LATE' : m.LastStatus.toUpperCase();
-        var time = getTimeDisplay(m);
-        var file = m.FileDetectedName ? '<span class="monitor-file">' + esc(m.FileDetectedName) + '</span>' : '<span style="color:#555;">—</span>';
-        html += '<tr class="clickable" onclick="openConsoleToMonitor(' + m.ConfigId + ')">';
-        html += '<td><span class="status-badge ' + cls + '">' + txt + '</span></td>';
-        html += '<td><span class="monitor-name">' + esc(m.ConfigName) + '</span></td>';
-        html += '<td><span class="monitor-time">' + time + '</span></td>';
-        html += '<td>' + file + '</td></tr>';
+        var time = flm_getTimeDisplay(m);
+        var file = m.FileDetectedName
+            ? '<span class="flm-monitor-file">' + cc_escapeHtml(m.FileDetectedName) + '</span>'
+            : '<span class="flm-empty-cell">\u2014</span>';
+        html += '<tr class="flm-queue-row" data-action-click="flm-open-console-monitor" data-action-flm-id="' + m.ConfigId + '">';
+        html += '<td class="flm-monitor-table-td"><span class="flm-status-badge ' + badgeCls + '">' + txt + '</span></td>';
+        html += '<td class="flm-monitor-table-td"><span class="flm-monitor-name">' + cc_escapeHtml(m.ConfigName) + '</span></td>';
+        html += '<td class="flm-monitor-table-td"><span class="flm-monitor-time">' + time + '</span></td>';
+        html += '<td class="flm-monitor-table-td">' + file + '</td></tr>';
     });
     return html;
 }
 
-function getTimeDisplay(m) {
-    // Always return a time - use the most relevant per status
+/* Chooses the most relevant time to display for a monitor by status. */
+function flm_getTimeDisplay(m) {
     if (m.LastStatus === 'Detected' || m.LastStatus === 'LateDetected') {
-        if (m.FileDetectedDttm) return formatTime(m.FileDetectedDttm);
+        if (m.FileDetectedDttm) return cc_formatTimeOfDay(m.FileDetectedDttm);
     }
     if (m.LastStatus === 'Escalated') {
-        if (m.EscalatedDttm) return formatTime(m.EscalatedDttm);
-        if (m.EscalationTime) return fmtTimeOnly(m.EscalationTime);
+        if (m.EscalatedDttm) return cc_formatTimeOfDay(m.EscalatedDttm);
+        if (m.EscalationTime) return flm_fmtTimeOnly(m.EscalationTime);
     }
     if (m.LastStatus === 'Monitoring') {
-        if (m.LastScannedDttm) return formatTime(m.LastScannedDttm);
-        if (m.CheckStartTime) return fmtTimeOnly(m.CheckStartTime);
+        if (m.LastScannedDttm) return cc_formatTimeOfDay(m.LastScannedDttm);
+        if (m.CheckStartTime) return flm_fmtTimeOnly(m.CheckStartTime);
     }
-    // Fallback: last scanned or start time
-    if (m.LastScannedDttm) return formatTime(m.LastScannedDttm);
-    if (m.CheckStartTime) return fmtTimeOnly(m.CheckStartTime);
-    return '—';
+    if (m.LastScannedDttm) return cc_formatTimeOfDay(m.LastScannedDttm);
+    if (m.CheckStartTime) return flm_fmtTimeOnly(m.CheckStartTime);
+    return '\u2014';
 }
 
-// ============================================================================
-// STATUS SUMMARY
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: STATUS SUMMARY
+   ----------------------------------------------------------------------------
+   Functions that compute the day's escalated, monitoring, and detected
+   counts and update the three summary cards.
+   Prefix: flm
+   ============================================================================ */
 
-function renderStatusSummary(data) {
-    var esc = 0, mon = 0, det = 0;
-    var now = new Date();
-    var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+/*
+ * Computes today's escalated, monitoring, and detected counts and updates
+ * the three summary cards.
+ */
+function flm_renderStatusSummary(data) {
+    var escCount = 0;
+    var monCount = 0;
+    var detCount = 0;
+    var today = flm_todayKey();
+
     if (data && data.length > 0) {
         data.forEach(function(m) {
             if (!m.LastScannedDttm || m.LastScannedDttm.split(' ')[0] < today) return;
-            if (m.LastStatus === 'Escalated') esc++;
-            else if (m.LastStatus === 'Monitoring') mon++;
-            else if (m.LastStatus === 'Detected' || m.LastStatus === 'LateDetected') det++;
+            if (m.LastStatus === 'Escalated') escCount++;
+            else if (m.LastStatus === 'Monitoring') monCount++;
+            else if (m.LastStatus === 'Detected' || m.LastStatus === 'LateDetected') detCount++;
         });
     }
 
-    var elEsc = document.getElementById('val-escalated');
-    var elMon = document.getElementById('val-monitoring');
-    var elDet = document.getElementById('val-detected');
+    var elEsc = document.getElementById('flm-val-escalated');
+    var elMon = document.getElementById('flm-val-monitoring');
+    var elDet = document.getElementById('flm-val-detected');
 
-    elEsc.textContent = esc;
-    elEsc.className = 'card-value ' + (esc > 0 ? 'escalated' : 'zero');
+    elEsc.textContent = escCount;
+    elEsc.className = 'flm-card-value ' + (escCount > 0 ? 'flm-card-value-escalated' : 'flm-zero');
 
-    elMon.textContent = mon;
-    elMon.className = 'card-value ' + (mon > 0 ? 'monitoring' : 'zero');
+    elMon.textContent = monCount;
+    elMon.className = 'flm-card-value ' + (monCount > 0 ? 'flm-card-value-monitoring' : 'flm-zero');
 
-    elDet.textContent = det;
-    elDet.className = 'card-value ' + (det > 0 ? 'detected' : 'zero');
+    elDet.textContent = detCount;
+    elDet.className = 'flm-card-value ' + (detCount > 0 ? 'flm-card-value-detected' : 'flm-zero');
 
-    // Card frame coloring per standard: color means "look at me"
-    var cardEsc = document.getElementById('card-escalated');
-    cardEsc.className = 'summary-card' + (esc > 0 ? ' card-critical' : '');
+    var cardEsc = document.getElementById('flm-card-escalated');
+    cardEsc.className = 'flm-summary-card' + (escCount > 0 ? ' flm-card-critical' : '');
 }
 
-// ============================================================================
-// CONFIGS & SERVERS
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: CONFIGURATION CARDS
+   ----------------------------------------------------------------------------
+   Handlers for the configuration card clicks that open the management
+   console to the requested face.
+   Prefix: flm
+   ============================================================================ */
 
-async function loadConfigs() {
-    try {
-        var result = await engineFetch('/api/fileops/configs');
-        if (!result) return;
-        configs = result;
-        document.getElementById('monitor-count').textContent = configs.length;
-        document.getElementById('server-count').textContent = servers.length;
-    } catch (error) { console.error('Error loading configs:', error); }
+/*
+ * Opens the management console from a configuration card click, using the
+ * card's data-action-flm-face argument to pick the face.
+ */
+function flm_openConsoleFromCard(target) {
+    var face = target.getAttribute('data-action-flm-face') || 'monitors';
+    flm_openConsole(face);
 }
 
-async function loadServers() {
-    try {
-        var result = await engineFetch('/api/fileops/servers');
-        if (!result) return;
-        servers = result;
-    } catch (error) { console.error('Error loading servers:', error); }
+/* ============================================================================
+   FUNCTIONS: MANAGEMENT CONSOLE
+   ----------------------------------------------------------------------------
+   Functions that open, close, flip, and apply the face state of the
+   slide-up management console.
+   Prefix: flm
+   ============================================================================ */
+
+/* Opens the slide-up management console to the requested face. */
+function flm_openConsole(face) {
+    document.getElementById('flm-console-overlay').classList.add('flm-console-overlay-open');
+    document.getElementById('flm-console-panel').classList.add('flm-console-panel-open');
+    flm_currentFace = face || 'monitors';
+    flm_applyConsoleFace();
 }
 
-async function loadWebhooks() {
-    try {
-        var result = await engineFetch('/api/fileops/webhooks');
-        if (!result) return;
-        webhooks = result;
-    } catch (error) { console.error('Error loading webhooks:', error); }
-}
-
-async function loadSubscriptions() {
-    try {
-        var result = await engineFetch('/api/fileops/subscriptions');
-        if (!result) return;
-        subscriptions = result;
-    } catch (error) { console.error('Error loading subscriptions:', error); }
-}
-
-function getSubscriptionsForMonitor(configName) {
-    if (!configName || !subscriptions.length) return [];
-    return subscriptions.filter(function(s) {
-        return s.TriggerType === configName;
-    });
-}
-
-// ============================================================================
-// SLIDE-UP MANAGEMENT CONSOLE
-// ============================================================================
-
-function openConsole(tab) {
-    document.getElementById('console-overlay').classList.add('visible');
-    document.getElementById('console-panel').classList.add('visible');
-    currentFace = tab || 'monitors';
-    applyConsoleFace();
-}
-
-function openConsoleToMonitor(configId) {
-    openConsole('monitors');
-    // Scroll to the specific row after render
+/* Opens the console to the monitors face and scrolls to a specific row. */
+function flm_openConsoleToMonitor(target) {
+    var configId = target.getAttribute('data-action-flm-id');
+    flm_openConsole('monitors');
     setTimeout(function() {
-        var el = document.querySelector('.monitor-row[data-id="' + configId + '"]');
+        var el = document.querySelector('.flm-monitor-row[data-id="' + configId + '"]');
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
 }
 
-function closeConsole() {
-    // Check for unsaved changes
-    if (Object.keys(dirtyRows).length > 0) {
-        if (!confirm('You have unsaved changes. Close anyway?')) return;
+/* Closes the management console, prompting first if there are unsaved edits. */
+function flm_closeConsole() {
+    if (Object.keys(flm_dirtyRows).length > 0) {
+        cc_showConfirm('You have unsaved changes. Close anyway?').then(function(ok) {
+            if (!ok) return;
+            flm_dirtyRows = {};
+            flm_hideConsole();
+        });
+        return;
     }
-    document.getElementById('console-overlay').classList.remove('visible');
-    document.getElementById('console-panel').classList.remove('visible');
-    dirtyRows = {};
+    flm_hideConsole();
 }
 
-function flipConsole() {
-    currentFace = currentFace === 'monitors' ? 'servers' : 'monitors';
-    applyConsoleFace();
+/* Removes the open-state classes that reveal the console. */
+function flm_hideConsole() {
+    document.getElementById('flm-console-overlay').classList.remove('flm-console-overlay-open');
+    document.getElementById('flm-console-panel').classList.remove('flm-console-panel-open');
 }
 
-function applyConsoleFace() {
-    var flipCard = document.getElementById('console-flip-card');
-    var title = document.getElementById('console-face-title');
-    var addBtn = document.getElementById('console-add-btn');
+/* Flips the console between the monitors and servers faces. */
+function flm_flipConsole() {
+    flm_currentFace = flm_currentFace === 'monitors' ? 'servers' : 'monitors';
+    flm_applyConsoleFace();
+}
 
-    if (currentFace === 'servers') {
-        flipCard.classList.add('flipped');
+/* Applies the current face to the flip card, title, add button, and list. */
+function flm_applyConsoleFace() {
+    var flipCard = document.getElementById('flm-console-flip-card');
+    var title = document.getElementById('flm-console-face-title');
+    var addBtn = document.getElementById('flm-console-add-btn');
+
+    if (flm_currentFace === 'servers') {
+        flipCard.classList.add('flm-console-flipped');
         title.textContent = 'Servers';
-        addBtn.style.display = 'none';
-        renderServerList();
+        addBtn.classList.add('cc-hidden');
+        flm_renderServerList();
     } else {
-        flipCard.classList.remove('flipped');
+        flipCard.classList.remove('flm-console-flipped');
         title.textContent = 'Monitors';
-        addBtn.style.display = '';
-        renderMonitorList();
+        addBtn.classList.remove('cc-hidden');
+        flm_renderMonitorList();
     }
 }
 
-// ============================================================================
-// MONITOR LIST (inline-edit rows)
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: MONITOR LIST
+   ----------------------------------------------------------------------------
+   Functions that render the inline-edit monitor list and individual monitor
+   rows on the console front face.
+   Prefix: flm
+   ============================================================================ */
 
-var dirtyRows = {};
-var currentFace = 'monitors';
-
-function renderMonitorList() {
-    var container = document.getElementById('monitor-list');
-    if (configs.length === 0) {
-        container.innerHTML = '<div class="no-activity">No monitors configured yet</div>';
+/* Renders the inline-edit monitor list on the console's front face. */
+function flm_renderMonitorList() {
+    var container = document.getElementById('flm-monitor-list');
+    if (flm_configs.length === 0) {
+        container.innerHTML = '<div class="flm-no-activity">No monitors configured yet</div>';
         return;
     }
 
-    var active = configs.filter(function(c) { return c.IsEnabled; });
-    var inactive = configs.filter(function(c) { return !c.IsEnabled; });
+    var active = flm_configs.filter(function(c) { return c.IsEnabled; });
+    var inactive = flm_configs.filter(function(c) { return !c.IsEnabled; });
 
-    // Column header
-    var html = '<div class="monitor-col-header">';
-    html += '<div class="col-grid">';
-    html += '<span class="monitor-col-label">Status</span>';
-    html += '<span class="monitor-col-label">Monitor</span>';
-    html += '<span class="monitor-col-label">Server</span>';
-    html += '<span class="monitor-col-label">Path</span>';
-    html += '<span class="monitor-col-label">Pattern</span>';
-    html += '<span class="monitor-col-label">Days</span>';
-    html += '<span class="monitor-col-label">Start</span>';
-    html += '<span class="monitor-col-label">End</span>';
-    html += '<span class="monitor-col-label">Escalate</span>';
+    var html = '<div class="flm-monitor-col-header">';
+    html += '<div class="flm-col-grid">';
+    html += '<span class="flm-monitor-col-label">Status</span>';
+    html += '<span class="flm-monitor-col-label">Monitor</span>';
+    html += '<span class="flm-monitor-col-label">Server</span>';
+    html += '<span class="flm-monitor-col-label">Path</span>';
+    html += '<span class="flm-monitor-col-label">Pattern</span>';
+    html += '<span class="flm-monitor-col-label">Days</span>';
+    html += '<span class="flm-monitor-col-label">Start</span>';
+    html += '<span class="flm-monitor-col-label">End</span>';
+    html += '<span class="flm-monitor-col-label">Escalate</span>';
     html += '</div>';
-    html += '<div class="col-subs"><span class="monitor-col-label">Alerts</span></div>';
+    html += '<div class="flm-col-subs"><span class="flm-monitor-col-label">Alerts</span></div>';
     html += '</div>';
 
-    active.forEach(function(c) { html += renderMonitorRow(c); });
-    inactive.forEach(function(c) { html += renderMonitorRow(c); });
+    active.forEach(function(c) { html += flm_renderMonitorRow(c); });
+    inactive.forEach(function(c) { html += flm_renderMonitorRow(c); });
 
     container.innerHTML = html;
 }
 
-function renderMonitorRow(c) {
+/* Builds the markup for a single inline-editable monitor row. */
+function flm_renderMonitorRow(c) {
     var id = c.ConfigId;
-    var isDirty = !!dirtyRows[id];
-    var dirtyCls = isDirty ? ' dirty' : '';
-    var disabledCls = getVal(id, 'IsEnabled', c.IsEnabled) ? '' : ' disabled';
+    var isDirty = !!flm_dirtyRows[id];
+    var rowCls = 'flm-monitor-row' + (isDirty ? ' flm-dirty' : '');
+    var enabled = flm_getVal(id, 'IsEnabled', c.IsEnabled);
+    if (!enabled) rowCls += ' flm-row-disabled';
 
-    // Get current values (dirty overrides or original)
-    var name = getVal(id, 'ConfigName', c.ConfigName);
-    var serverId = getVal(id, 'ServerId', c.ServerId);
-    var path = getVal(id, 'SftpPath', c.SftpPath);
-    var pattern = getVal(id, 'FilePattern', c.FilePattern);
-    var startTime = getVal(id, 'CheckStartTime', fmtTimeInput(c.CheckStartTime));
-    var endTime = getVal(id, 'CheckEndTime', fmtTimeInput(c.CheckEndTime));
-    var escTime = getVal(id, 'EscalationTime', fmtTimeInput(c.EscalationTime));
-    var notifyDet = getVal(id, 'NotifyOnDetection', c.NotifyOnDetection);
-    var notifyEsc = getVal(id, 'NotifyOnEscalation', c.NotifyOnEscalation);
-    var jira = getVal(id, 'CreateJiraOnEscalation', c.CreateJiraOnEscalation);
-    var priority = getVal(id, 'DefaultPriority', c.DefaultPriority);
-    var enabled = getVal(id, 'IsEnabled', c.IsEnabled);
+    var name = flm_getVal(id, 'ConfigName', c.ConfigName);
+    var serverId = flm_getVal(id, 'ServerId', c.ServerId);
+    var path = flm_getVal(id, 'SftpPath', c.SftpPath);
+    var pattern = flm_getVal(id, 'FilePattern', c.FilePattern);
+    var startTime = flm_getVal(id, 'CheckStartTime', flm_fmtTimeInput(c.CheckStartTime));
+    var endTime = flm_getVal(id, 'CheckEndTime', flm_fmtTimeInput(c.CheckEndTime));
+    var escTime = flm_getVal(id, 'EscalationTime', flm_fmtTimeInput(c.EscalationTime));
+    var notifyDet = flm_getVal(id, 'NotifyOnDetection', c.NotifyOnDetection);
+    var notifyEsc = flm_getVal(id, 'NotifyOnEscalation', c.NotifyOnEscalation);
+    var jira = flm_getVal(id, 'CreateJiraOnEscalation', c.CreateJiraOnEscalation);
+    var priority = flm_getVal(id, 'DefaultPriority', c.DefaultPriority);
 
-    // Server dropdown
-    var serverOpts = servers.map(function(sv) {
+    var serverOpts = flm_servers.map(function(sv) {
         var sel = sv.ServerId === serverId ? ' selected' : '';
-        return '<option value="' + sv.ServerId + '"' + sel + '>' + esc(sv.ServerName) + '</option>';
+        return '<option value="' + sv.ServerId + '"' + sel + '>' + cc_escapeHtml(sv.ServerName) + '</option>';
     }).join('');
 
-    // Day badges
     var dayBadges = '';
     for (var i = 0; i < 7; i++) {
-        var key = 'Check' + dayKeys[i];
-        var isOn = getVal(id, key, c[key]);
-        dayBadges += '<span class="day-badge ' + (isOn ? 'on' : 'off') + '" onclick="event.stopPropagation();toggleField(' + id + ',\'' + key + '\',' + !isOn + ')">' + dayLabels[i] + '</span>';
+        var key = 'Check' + flm_DAY_KEYS[i];
+        var isOn = flm_getVal(id, key, c[key]);
+        dayBadges += '<span class="flm-day-badge ' + (isOn ? 'flm-day-on' : 'flm-day-off') + '" data-action-click="flm-toggle-field" data-action-flm-id="' + id + '" data-action-flm-field="' + key + '" data-action-flm-value="' + (!isOn) + '">' + flm_DAY_LABELS[i] + '</span>';
     }
 
-    // Mini-badges
-    var detBadge = '<span class="mini-badge det ' + (notifyDet ? 'on' : 'off') + '" onclick="event.stopPropagation();toggleField(' + id + ',\'NotifyOnDetection\',' + !notifyDet + ')">DET</span>';
-    var escBadge = '<span class="mini-badge esc ' + (notifyEsc ? 'on' : 'off') + '" onclick="event.stopPropagation();toggleField(' + id + ',\'NotifyOnEscalation\',' + !notifyEsc + ')">ESC</span>';
-    var jiraBadge = '<span class="mini-badge jira ' + (jira ? 'on' : 'off') + '" onclick="event.stopPropagation();toggleField(' + id + ',\'CreateJiraOnEscalation\',' + !jira + ')">JIRA</span>';
+    var detBadge = flm_miniBadge(id, 'NotifyOnDetection', notifyDet, 'flm-mini-det-on', 'DET');
+    var escBadge = flm_miniBadge(id, 'NotifyOnEscalation', notifyEsc, 'flm-mini-esc-on', 'ESC');
+    var jiraBadge = flm_miniBadge(id, 'CreateJiraOnEscalation', jira, 'flm-mini-jira-on', 'JIRA');
 
-    // Priority 2x2 grid (Jira color scheme)
-    var priValues = [
-        { key: 'Highest', label: 'Highest', cls: 'pri-highest' },
-        { key: 'High', label: 'High', cls: 'pri-high' },
-        { key: 'Medium', label: 'Medium', cls: 'pri-medium' },
-        { key: 'Low', label: 'Low', cls: 'pri-low' }
-    ];
-    var priGrid = '<div class="priority-grid">';
-    priValues.forEach(function(p) {
-        var sel = (priority === p.key) ? ' selected' : '';
-        var dis = jira ? '' : ' disabled';
-        priGrid += '<button class="priority-btn ' + p.cls + sel + dis + '" onclick="event.stopPropagation();' + (jira ? 'setPriority(' + id + ',\'' + p.key + '\')' : '') + '" title="' + p.key + '">' + p.label + '</button>';
+    var priGrid = '<div class="flm-priority-grid">';
+    flm_PRIORITIES.forEach(function(p) {
+        var sel = (priority === p.key) ? ' ' + p.cls : '';
+        var cls = 'flm-priority-btn' + sel + (jira ? '' : ' flm-priority-disabled');
+        var attrs = jira
+            ? ' data-action-click="flm-set-priority" data-action-flm-id="' + id + '" data-action-flm-value="' + p.key + '"'
+            : '';
+        priGrid += '<button class="' + cls + '"' + attrs + ' title="' + p.key + '">' + p.label + '</button>';
     });
     priGrid += '</div>';
 
-    // Status badge (clickable toggle)
     var statusBadge = enabled
-        ? '<span class="status-badge active status-toggle" onclick="event.stopPropagation();toggleField(' + id + ',\'IsEnabled\',false)">ACTIVE</span>'
-        : '<span class="status-badge inactive status-toggle" onclick="event.stopPropagation();toggleField(' + id + ',\'IsEnabled\',true)">OFF</span>';
+        ? '<span class="flm-status-badge flm-badge-active flm-status-toggle" data-action-click="flm-toggle-field" data-action-flm-id="' + id + '" data-action-flm-field="IsEnabled" data-action-flm-value="false">ACTIVE</span>'
+        : '<span class="flm-status-badge flm-badge-inactive flm-status-toggle" data-action-click="flm-toggle-field" data-action-flm-id="' + id + '" data-action-flm-field="IsEnabled" data-action-flm-value="true">OFF</span>';
 
-    var html = '<div class="monitor-row' + dirtyCls + disabledCls + '" data-id="' + id + '">';
-    html += '<div class="monitor-row-fields">';
+    var html = '<div class="' + rowCls + '" data-id="' + id + '">';
+    html += '<div class="flm-monitor-row-fields">';
 
-    // Fixed grid zone (config fields)
-    html += '<div class="row-grid">';
+    html += '<div class="flm-row-grid">';
     html += statusBadge;
-    html += '<input class="inline-input name-input" value="' + escAttr(name) + '" onchange="setField(' + id + ',\'ConfigName\',this.value)">';
-    html += '<select class="inline-input" onchange="setField(' + id + ',\'ServerId\',parseInt(this.value))">' + serverOpts + '</select>';
-    html += '<input class="inline-input" value="' + escAttr(path) + '" onchange="setField(' + id + ',\'SftpPath\',this.value)" placeholder="/path/">';
-    html += '<input class="inline-input" value="' + escAttr(pattern) + '" onchange="setField(' + id + ',\'FilePattern\',this.value)" placeholder="*.txt">';
-    html += '<div class="monitor-row-days">' + dayBadges + '</div>';
-    html += '<input type="time" class="inline-input" value="' + startTime + '" onchange="setField(' + id + ',\'CheckStartTime\',this.value)">';
-    html += '<input type="time" class="inline-input" value="' + endTime + '" onchange="setField(' + id + ',\'CheckEndTime\',this.value)">';
-    html += '<input type="time" class="inline-input" value="' + escTime + '" onchange="setField(' + id + ',\'EscalationTime\',this.value)">';
+    html += '<input class="flm-inline-input flm-name-input" value="' + flm_escAttr(name) + '" data-action-change="flm-set-field" data-action-flm-id="' + id + '" data-action-flm-field="ConfigName">';
+    html += '<select class="flm-inline-input" data-action-change="flm-set-field" data-action-flm-id="' + id + '" data-action-flm-field="ServerId" data-action-flm-numeric="1">' + serverOpts + '</select>';
+    html += '<input class="flm-inline-input" value="' + flm_escAttr(path) + '" data-action-change="flm-set-field" data-action-flm-id="' + id + '" data-action-flm-field="SftpPath" placeholder="/path/">';
+    html += '<input class="flm-inline-input" value="' + flm_escAttr(pattern) + '" data-action-change="flm-set-field" data-action-flm-id="' + id + '" data-action-flm-field="FilePattern" placeholder="*.txt">';
+    html += '<div class="flm-monitor-row-days">' + dayBadges + '</div>';
+    html += '<input type="time" class="flm-inline-input" value="' + startTime + '" data-action-change="flm-set-field" data-action-flm-id="' + id + '" data-action-flm-field="CheckStartTime">';
+    html += '<input type="time" class="flm-inline-input" value="' + endTime + '" data-action-change="flm-set-field" data-action-flm-id="' + id + '" data-action-flm-field="CheckEndTime">';
+    html += '<input type="time" class="flm-inline-input" value="' + escTime + '" data-action-change="flm-set-field" data-action-flm-id="' + id + '" data-action-flm-field="EscalationTime">';
     html += '</div>';
 
-    // Jira section
-    html += '<div class="row-jira-section">';
+    html += '<div class="flm-row-jira-section">';
     html += jiraBadge;
     html += priGrid;
     html += '</div>';
 
-    // Subscription zone
-    html += '<div class="row-subs">';
-    var monitorSubs = getSubscriptionsForMonitor(c.ConfigName);
-    if (monitorSubs.length > 0) {
-        // Existing subscriptions - show channel badges with DET/ESC
-        monitorSubs.forEach(function(sub) {
-            var activeCls = sub.IsActive ? '' : ' inactive';
-            html += '<div class="sub-group">';
-            html += '<span class="sub-channel-badge' + activeCls + '" title="' + esc(sub.WebhookName) + '">' + esc(sub.ChannelName) + '</span>';
-            html += '<div class="sub-det-esc">';
-            html += detBadge;
-            html += escBadge;
-            html += '</div>';
-            html += '</div>';
-        });
-    } else if (webhooks.length > 0) {
-        // No subscriptions - show webhook selector
-        var selWebhookId = getVal(id, 'WebhookConfigId', '');
-        var webhookOpts = '<option value="">No Teams Routing</option>';
-        webhooks.forEach(function(wh) {
-            var sel = (selWebhookId && selWebhookId == wh.ConfigId) ? ' selected' : '';
-            webhookOpts += '<option value="' + wh.ConfigId + '"' + sel + '>' + esc(wh.WebhookName) + '</option>';
-        });
-        webhookOpts += '<option value="new">+ New Webhook...</option>';
-        html += '<div class="sub-group">';
-        html += '<select class="inline-input sub-webhook-select" onchange="if(this.value===\'new\'){this.value=\'\';openWebhookModal(' + id + ');}else{setField(' + id + ',\'WebhookConfigId\',this.value?parseInt(this.value):null)}">' + webhookOpts + '</select>';
-        // Show preview badge + disabled DET/ESC when a webhook is selected
-        if (selWebhookId) {
-            var selWebhook = webhooks.find(function(w) { return w.ConfigId == selWebhookId; });
-            var previewName = selWebhook ? selWebhook.WebhookName : 'Selected';
-            html += '<div class="sub-group preview">';
-            html += '<span class="sub-channel-badge preview" title="Will be created on save">' + esc(previewName) + '</span>';
-            html += '<div class="sub-det-esc">';
-            html += detBadge;
-            html += escBadge;
-            html += '</div>';
-            html += '</div>';
-        }
-        html += '</div>';
-    }
+    html += '<div class="flm-row-subs">';
+    html += flm_renderSubscriptionZone(c, id, detBadge, escBadge);
     html += '</div>';
 
     html += '</div>';
 
-    // Save/Cancel bar
-    html += '<div class="monitor-save-bar">';
-    html += '<button class="btn btn-secondary" onclick="cancelRowEdit(' + id + ')">Cancel</button>';
-    html += '<button class="btn btn-primary" onclick="saveRow(' + id + ')">Save</button>';
+    html += '<div class="flm-monitor-save-bar' + (isDirty ? ' flm-save-bar-visible' : '') + '">';
+    html += '<button class="flm-btn-action" data-action-click="flm-cancel-row" data-action-flm-id="' + id + '">Cancel</button>';
+    html += '<button class="flm-btn-action" data-action-click="flm-save-row" data-action-flm-id="' + id + '">Save</button>';
     html += '</div>';
 
     html += '</div>';
     return html;
 }
 
-// ============================================================================
-// INLINE EDIT - DIRTY TRACKING
-// ============================================================================
+/* Builds a single notification mini-badge for a monitor row. */
+function flm_miniBadge(id, field, isOn, onClass, label) {
+    var cls = 'flm-mini-badge ' + (isOn ? onClass : 'flm-mini-off');
+    return '<span class="' + cls + '" data-action-click="flm-toggle-field" data-action-flm-id="' + id + '" data-action-flm-field="' + field + '" data-action-flm-value="' + (!isOn) + '">' + label + '</span>';
+}
 
-function getVal(id, field, original) {
-    if (dirtyRows[id] && dirtyRows[id].hasOwnProperty(field)) return dirtyRows[id][field];
+/*
+ * Builds the subscription zone for a monitor row: existing channel badges or
+ * a webhook selector with an optional preview badge.
+ */
+function flm_renderSubscriptionZone(c, id, detBadge, escBadge) {
+    var html = '';
+    var monitorSubs = flm_getSubscriptionsForMonitor(c.ConfigName);
+    if (monitorSubs.length > 0) {
+        monitorSubs.forEach(function(sub) {
+            var activeCls = sub.IsActive ? '' : ' flm-sub-inactive';
+            html += '<div class="flm-sub-group">';
+            html += '<span class="flm-sub-channel-badge' + activeCls + '" title="' + flm_escAttr(sub.WebhookName) + '">' + cc_escapeHtml(sub.ChannelName) + '</span>';
+            html += '<div class="flm-sub-det-esc">' + detBadge + escBadge + '</div>';
+            html += '</div>';
+        });
+        return html;
+    }
+
+    if (flm_webhooks.length > 0) {
+        var selWebhookId = flm_getVal(id, 'WebhookConfigId', '');
+        var webhookOpts = '<option value="">No Teams Routing</option>';
+        flm_webhooks.forEach(function(wh) {
+            var sel = (selWebhookId && selWebhookId == wh.ConfigId) ? ' selected' : '';
+            webhookOpts += '<option value="' + wh.ConfigId + '"' + sel + '>' + cc_escapeHtml(wh.WebhookName) + '</option>';
+        });
+        webhookOpts += '<option value="new">+ New Webhook...</option>';
+        html += '<div class="flm-sub-group">';
+        html += '<select class="flm-inline-input flm-sub-webhook-select" data-action-change="flm-select-webhook" data-action-flm-id="' + id + '">' + webhookOpts + '</select>';
+        if (selWebhookId) {
+            var selWebhook = flm_webhooks.find(function(w) { return w.ConfigId == selWebhookId; });
+            var previewName = selWebhook ? selWebhook.WebhookName : 'Selected';
+            html += '<div class="flm-sub-group flm-sub-preview">';
+            html += '<span class="flm-sub-channel-badge flm-sub-preview" title="Will be created on save">' + cc_escapeHtml(previewName) + '</span>';
+            html += '<div class="flm-sub-det-esc">' + detBadge + escBadge + '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+    }
+    return html;
+}
+
+/* ============================================================================
+   FUNCTIONS: INLINE EDIT
+   ----------------------------------------------------------------------------
+   Functions that read and record per-row unsaved edits and handle the
+   inline field, toggle, priority, webhook, cancel, and save controls.
+   Prefix: flm
+   ============================================================================ */
+
+/* Returns the current value for a row field, preferring an unsaved edit. */
+function flm_getVal(id, field, original) {
+    if (flm_dirtyRows[id] && flm_dirtyRows[id].hasOwnProperty(field)) return flm_dirtyRows[id][field];
     return original;
 }
 
-function setField(id, field, value) {
-    if (!dirtyRows[id]) dirtyRows[id] = {};
-    dirtyRows[id][field] = value;
-    renderMonitorList();
+/* Records an unsaved edit for a row field and re-renders the monitor list. */
+function flm_setField(id, field, value) {
+    if (!flm_dirtyRows[id]) flm_dirtyRows[id] = {};
+    flm_dirtyRows[id][field] = value;
+    flm_renderMonitorList();
 }
 
-function toggleField(id, field, value) {
-    setField(id, field, value);
-}
-
-function setPriority(id, value) {
-    setField(id, 'DefaultPriority', value);
-}
-
-var webhookModalForRowId = null;
-
-function openWebhookModal(rowId) {
-    webhookModalForRowId = rowId;
-    document.getElementById('wh-new-name').value = '';
-    document.getElementById('wh-new-url').value = '';
-    document.getElementById('wh-new-desc').value = '';
-    document.getElementById('wh-modal-overlay').classList.add('visible');
-    setTimeout(function() { document.getElementById('wh-new-name').focus(); }, 50);
-}
-
-function closeWebhookModal() {
-    document.getElementById('wh-modal-overlay').classList.remove('visible');
-    webhookModalForRowId = null;
-}
-
-// ============================================================================
-// SCHEDULED MONITORS MODAL
-// ============================================================================
-
-var schedCountdownInterval = null;
-
-function openScheduledModal() {
-    document.getElementById('sched-modal-overlay').classList.add('visible');
-    loadScheduledMonitors();
-}
-
-function closeScheduledModal() {
-    document.getElementById('sched-modal-overlay').classList.remove('visible');
-    if (schedCountdownInterval) {
-        clearInterval(schedCountdownInterval);
-        schedCountdownInterval = null;
+/* Change handler for inline text, select, and time inputs in a monitor row. */
+function flm_setFieldAction(target) {
+    var id = parseInt(target.getAttribute('data-action-flm-id'), 10);
+    var field = target.getAttribute('data-action-flm-field');
+    var value = target.value;
+    if (target.getAttribute('data-action-flm-numeric') === '1') {
+        value = parseInt(value, 10);
     }
+    flm_setField(id, field, value);
 }
 
-async function loadScheduledMonitors() {
-    var body = document.getElementById('sched-modal-body');
-    body.innerHTML = '<div class="loading">Loading...</div>';
-
-    try {
-        var data = await engineFetch('/api/fileops/scheduled');
-        if (!data) return;
-        updateScheduledBadge(data.length);
-        renderScheduledMonitors(data);
-    } catch (error) {
-        body.innerHTML = '<div class="no-activity">Failed to load scheduled monitors</div>';
-    }
+/* Click handler for the day, notification, and status toggle badges. */
+function flm_toggleFieldAction(target) {
+    var id = parseInt(target.getAttribute('data-action-flm-id'), 10);
+    var field = target.getAttribute('data-action-flm-field');
+    var value = target.getAttribute('data-action-flm-value') === 'true';
+    flm_setField(id, field, value);
 }
 
-function updateScheduledBadge(count) {
-    var badge = document.getElementById('sched-count-badge');
-    if (!badge) return;
-    if (count > 0) {
-        badge.textContent = count;
-        badge.classList.remove('hidden');
-    } else {
-        badge.classList.add('hidden');
-    }
+/* Click handler for the Jira priority buttons. */
+function flm_setPriorityAction(target) {
+    var id = parseInt(target.getAttribute('data-action-flm-id'), 10);
+    var value = target.getAttribute('data-action-flm-value');
+    flm_setField(id, 'DefaultPriority', value);
 }
 
-async function loadScheduledCount() {
-    try {
-        var data = await engineFetch('/api/fileops/scheduled');
-        if (!data) return;
-        updateScheduledBadge(data.length);
-    } catch (e) { /* silent */ }
-}
-
-function renderScheduledMonitors(data) {
-    var body = document.getElementById('sched-modal-body');
-
-    if (!data || data.length === 0) {
-        body.innerHTML = '<div class="no-activity" style="padding:20px;">No monitors waiting to start today</div>';
+/*
+ * Change handler for the webhook selector; opens the new-webhook modal when
+ * the sentinel option is chosen, otherwise records the selected webhook id.
+ */
+function flm_selectWebhookAction(target) {
+    var id = parseInt(target.getAttribute('data-action-flm-id'), 10);
+    if (target.value === 'new') {
+        target.value = '';
+        flm_openWebhookModal(id);
         return;
     }
-
-    var html = '<table class="sched-table">';
-    html += '<thead><tr><th>Monitor</th><th>Start</th><th>Escalate</th><th>Starts In</th></tr></thead>';
-    html += '<tbody>';
-    data.forEach(function(m) {
-        html += '<tr>';
-        html += '<td class="sched-name">' + esc(m.ConfigName) + '</td>';
-        html += '<td class="sched-time">' + fmtTimeOnly(m.CheckStartTime) + '</td>';
-        html += '<td class="sched-time">' + fmtTimeOnly(m.EscalationTime) + '</td>';
-        html += '<td class="sched-countdown" data-start="' + m.CheckStartTime + '"></td>';
-        html += '</tr>';
-    });
-    html += '</tbody></table>';
-
-    body.innerHTML = html;
-    updateScheduledCountdowns();
-    if (schedCountdownInterval) clearInterval(schedCountdownInterval);
-    schedCountdownInterval = setInterval(updateScheduledCountdowns, 1000);
+    flm_setField(id, 'WebhookConfigId', target.value ? parseInt(target.value, 10) : null);
 }
 
-function updateScheduledCountdowns() {
-    var cells = document.querySelectorAll('.sched-countdown');
-    var now = new Date();
-    cells.forEach(function(cell) {
-        var startStr = cell.getAttribute('data-start');
-        if (!startStr) return;
-        var parts = startStr.split(':');
-        var target = new Date();
-        target.setHours(parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2] || 0), 0);
-        var diffMs = target - now;
-        if (diffMs <= 0) {
-            cell.innerHTML = '<span style="color:#4ec9b0;">Starting...</span>';
-        } else {
-            var h = Math.floor(diffMs / 3600000);
-            var m = Math.floor((diffMs % 3600000) / 60000);
-            var s = Math.floor((diffMs % 60000) / 1000);
-            var str = '';
-            if (h > 0) str += h + 'h ';
-            str += m + 'm ' + s + 's';
-            cell.textContent = str;
-        }
-    });
+/* Click handler for the row Cancel button. */
+function flm_cancelRowAction(target) {
+    var id = parseInt(target.getAttribute('data-action-flm-id'), 10);
+    flm_cancelRowEdit(id);
 }
 
-async function saveNewWebhook() {
-    var name = document.getElementById('wh-new-name').value.trim();
-    var url = document.getElementById('wh-new-url').value.trim();
-    var desc = document.getElementById('wh-new-desc').value.trim();
-
-    if (!name) { alert('Webhook name is required'); return; }
-    if (!url) { alert('Webhook URL is required'); return; }
-    if (!url.startsWith('https://')) { alert('Webhook URL must start with https://'); return; }
-
-     try {
-        var response = await engineFetch('/api/fileops/webhook/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                WebhookName: name,
-                WebhookUrl: url,
-                AlertCategory: 'ALL',
-                Description: desc || null
-            })
-        });
-        if (!response) return;
-        if (response.Error) {
-            throw new Error(response.Error || 'Failed to create webhook');
-        }
-        var newConfigId = response.ConfigId;
-
-        // Refresh webhooks list
-        await loadWebhooks();
-
-        // Set the new webhook on the row that triggered the modal
-        if (webhookModalForRowId !== null) {
-            setField(webhookModalForRowId, 'WebhookConfigId', newConfigId);
-        }
-
-        closeWebhookModal();
-    } catch (error) {
-        alert('Failed to create webhook: ' + error.message);
-    }
+/* Click handler for the row Save button. */
+function flm_saveRowAction(target) {
+    var id = parseInt(target.getAttribute('data-action-flm-id'), 10);
+    flm_saveRow(id);
 }
 
-function cancelRowEdit(id) {
-    delete dirtyRows[id];
-    // If canceling a new monitor, remove it from the array
+/* Discards unsaved edits for a row, removing a never-saved new monitor. */
+function flm_cancelRowEdit(id) {
+    delete flm_dirtyRows[id];
     if (id === -1) {
-        configs = configs.filter(function(x) { return x.ConfigId !== -1; });
+        flm_configs = flm_configs.filter(function(x) { return x.ConfigId !== -1; });
     }
-    renderMonitorList();
+    flm_renderMonitorList();
 }
 
-// ============================================================================
-// ADD NEW MONITOR
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: ADD MONITOR
+   ----------------------------------------------------------------------------
+   Function that inserts a blank monitor row at the top of the list for
+   creating a new monitor.
+   Prefix: flm
+   ============================================================================ */
 
-function addNewMonitor() {
-    // Insert a temporary config at the top
-    var newId = -1;
-    var existing = configs.find(function(c) { return c.ConfigId === -1; });
-    if (existing) return; // already adding
+/* Inserts a blank monitor row at the top of the list for a new monitor. */
+function flm_addNewMonitor() {
+    var existing = flm_configs.find(function(c) { return c.ConfigId === -1; });
+    if (existing) return;
 
     var newConfig = {
-        ConfigId: newId,
-        ServerId: servers.length > 0 ? servers[0].ServerId : null,
+        ConfigId: -1,
+        ServerId: flm_servers.length > 0 ? flm_servers[0].ServerId : null,
         ConfigName: '',
         SftpPath: '',
         FilePattern: '',
@@ -832,36 +832,44 @@ function addNewMonitor() {
         CheckSaturday: false
     };
 
-    configs.unshift(newConfig);
-    dirtyRows[newId] = {}; // Mark as dirty immediately so save bar shows
-    renderMonitorList();
+    flm_configs.unshift(newConfig);
+    flm_dirtyRows[-1] = {};
+    flm_renderMonitorList();
 
-    // Focus the name input
     setTimeout(function() {
-        var firstInput = document.querySelector('.monitor-row[data-id="-1"] .name-input');
+        var firstInput = document.querySelector('.flm-monitor-row[data-id="-1"] .flm-name-input');
         if (firstInput) firstInput.focus();
     }, 50);
 }
 
-async function saveRow(id) {
-    var c = configs.find(function(x) { return x.ConfigId === id; });
+/* ============================================================================
+   FUNCTIONS: SAVE MONITOR
+   ----------------------------------------------------------------------------
+   Function that validates and persists a monitor row, then refreshes the
+   dependent sections.
+   Prefix: flm
+   ============================================================================ */
+
+/* Validates and persists a monitor row, then refreshes dependent sections. */
+async function flm_saveRow(id) {
+    var c = flm_configs.find(function(x) { return x.ConfigId === id; });
     if (!c) return;
 
-    var d = dirtyRows[id] || {};
+    var d = flm_dirtyRows[id] || {};
     var name = d.hasOwnProperty('ConfigName') ? d.ConfigName : c.ConfigName;
     var path = d.hasOwnProperty('SftpPath') ? d.SftpPath : c.SftpPath;
     var pattern = d.hasOwnProperty('FilePattern') ? d.FilePattern : c.FilePattern;
 
-    if (!name || !name.trim()) { alert('Monitor name is required'); return; }
-    if (!path || !path.trim()) { alert('SFTP path is required'); return; }
-    if (!pattern || !pattern.trim()) { alert('File pattern is required'); return; }
+    if (!name || !name.trim()) { cc_showAlert('Monitor name is required'); return; }
+    if (!path || !path.trim()) { cc_showAlert('SFTP path is required'); return; }
+    if (!pattern || !pattern.trim()) { cc_showAlert('File pattern is required'); return; }
 
     path = path.trim();
     if (!path.endsWith('/')) path += '/';
 
-    var startTime = d.hasOwnProperty('CheckStartTime') ? d.CheckStartTime : fmtTimeInput(c.CheckStartTime);
-    var endTime = d.hasOwnProperty('CheckEndTime') ? d.CheckEndTime : fmtTimeInput(c.CheckEndTime);
-    var escTime = d.hasOwnProperty('EscalationTime') ? d.EscalationTime : fmtTimeInput(c.EscalationTime);
+    var startTime = d.hasOwnProperty('CheckStartTime') ? d.CheckStartTime : flm_fmtTimeInput(c.CheckStartTime);
+    var endTime = d.hasOwnProperty('CheckEndTime') ? d.CheckEndTime : flm_fmtTimeInput(c.CheckEndTime);
+    var escTime = d.hasOwnProperty('EscalationTime') ? d.EscalationTime : flm_fmtTimeInput(c.EscalationTime);
 
     var payload = {
         ConfigId: id === -1 ? null : id,
@@ -880,12 +888,12 @@ async function saveRow(id) {
         WebhookConfigId: d.hasOwnProperty('WebhookConfigId') ? d.WebhookConfigId : null
     };
     for (var i = 0; i < 7; i++) {
-        var key = 'Check' + dayKeys[i];
+        var key = 'Check' + flm_DAY_KEYS[i];
         payload[key] = d.hasOwnProperty(key) ? d[key] : c[key];
     }
 
     try {
-        var response = await engineFetch('/api/fileops/config/save', {
+        var response = await cc_engineFetch('/api/fileops/config/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -894,69 +902,267 @@ async function saveRow(id) {
         if (response.Error) {
             throw new Error(response.Error || 'Failed to save');
         }
-        delete dirtyRows[id];
-        // Remove temp config if it was a new one
+        delete flm_dirtyRows[id];
         if (id === -1) {
-            configs = configs.filter(function(x) { return x.ConfigId !== -1; });
+            flm_configs = flm_configs.filter(function(x) { return x.ConfigId !== -1; });
         }
-        await loadSubscriptions();
-        await loadConfigs();
-        renderMonitorList();
-        await loadDailyQueue();
+        await flm_loadSubscriptions();
+        await flm_loadConfigs();
+        flm_renderMonitorList();
+        await flm_loadDailyQueue();
     } catch (error) {
-        alert('Failed to save: ' + error.message);
+        cc_showAlert('Failed to save: ' + error.message);
     }
 }
 
-// ============================================================================
-// SERVER LIST
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: WEBHOOK MODAL
+   ----------------------------------------------------------------------------
+   Functions that open and close the new-webhook modal and create a new
+   Teams webhook for the requesting row.
+   Prefix: flm
+   ============================================================================ */
 
-function renderServerList() {
-    var container = document.getElementById('server-list');
-    if (servers.length === 0) {
-        container.innerHTML = '<div class="no-activity">No SFTP servers configured</div>';
+/* Opens the new-webhook modal for the row that requested it. */
+function flm_openWebhookModal(rowId) {
+    flm_webhookModalForRowId = rowId;
+    document.getElementById('flm-wh-new-name').value = '';
+    document.getElementById('flm-wh-new-url').value = '';
+    document.getElementById('flm-wh-new-desc').value = '';
+    document.getElementById('flm-modal-webhook').classList.remove('cc-hidden');
+    setTimeout(function() { document.getElementById('flm-wh-new-name').focus(); }, 50);
+}
+
+/*
+ * Closes the new-webhook modal. A backdrop click dismisses while clicks
+ * bubbling from the dialog interior are ignored.
+ */
+function flm_closeWebhookModal(target, event) {
+    if (event && target.id === 'flm-modal-webhook' && event.target !== target) {
+        return;
+    }
+    document.getElementById('flm-modal-webhook').classList.add('cc-hidden');
+    flm_webhookModalForRowId = null;
+}
+
+/* Validates and creates a new Teams webhook, then assigns it to the row. */
+async function flm_saveNewWebhook() {
+    var name = document.getElementById('flm-wh-new-name').value.trim();
+    var url = document.getElementById('flm-wh-new-url').value.trim();
+    var desc = document.getElementById('flm-wh-new-desc').value.trim();
+
+    if (!name) { cc_showAlert('Webhook name is required'); return; }
+    if (!url) { cc_showAlert('Webhook URL is required'); return; }
+    if (!url.startsWith('https://')) { cc_showAlert('Webhook URL must start with https://'); return; }
+
+    try {
+        var response = await cc_engineFetch('/api/fileops/webhook/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                WebhookName: name,
+                WebhookUrl: url,
+                AlertCategory: 'ALL',
+                Description: desc || null
+            })
+        });
+        if (!response) return;
+        if (response.Error) {
+            throw new Error(response.Error || 'Failed to create webhook');
+        }
+        var newConfigId = response.ConfigId;
+        await flm_loadWebhooks();
+        if (flm_webhookModalForRowId !== null) {
+            flm_setField(flm_webhookModalForRowId, 'WebhookConfigId', newConfigId);
+        }
+        flm_closeWebhookModal();
+    } catch (error) {
+        cc_showAlert('Failed to create webhook: ' + error.message);
+    }
+}
+
+/* ============================================================================
+   FUNCTIONS: SERVER LIST
+   ----------------------------------------------------------------------------
+   Function that renders the SFTP server rows on the console back face.
+   Prefix: flm
+   ============================================================================ */
+
+/* Renders the SFTP server rows on the console's back face. */
+function flm_renderServerList() {
+    var container = document.getElementById('flm-server-list');
+    if (flm_servers.length === 0) {
+        container.innerHTML = '<div class="flm-no-activity">No SFTP servers configured</div>';
         return;
     }
 
     var html = '';
-    servers.forEach(function(s) {
-        html += '<div class="server-row">';
-        html += '<span class="server-row-name">' + esc(s.ServerName) + '</span>';
-        html += '<span class="server-row-host">' + esc(s.SftpHost) + '</span>';
-        html += '<span class="server-row-port">Port ' + (s.SftpPort || 22) + '</span>';
-        html += '<span class="server-row-status"><span class="status-badge active">ACTIVE</span></span>';
+    flm_servers.forEach(function(s) {
+        html += '<div class="flm-server-row">';
+        html += '<span class="flm-server-row-name">' + cc_escapeHtml(s.ServerName) + '</span>';
+        html += '<span class="flm-server-row-host">' + cc_escapeHtml(s.SftpHost) + '</span>';
+        html += '<span class="flm-server-row-port">Port ' + (s.SftpPort || 22) + '</span>';
+        html += '<span class="flm-server-row-status"><span class="flm-status-badge flm-badge-active">ACTIVE</span></span>';
         html += '</div>';
     });
 
     container.innerHTML = html;
 }
 
-// ============================================================================
-// DETECTION HISTORY TREE
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: SCHEDULED MODAL
+   ----------------------------------------------------------------------------
+   Functions that open and close the scheduled-monitors modal, load and
+   render its content, drive the countdown ticker, and maintain the header
+   count badge.
+   Prefix: flm
+   ============================================================================ */
 
-async function loadDetectionHistory() {
-    var container = document.getElementById('detection-history');
-    try {
-        var data = await engineFetch('/api/fileops/history?limit=500');
-        if (!data) return;
-        renderDetectionHistory(container, data);
-    } catch (error) {
-        container.innerHTML = '<div class="no-activity">Failed to load history</div>';
+/* Opens the scheduled-monitors modal and loads its content. */
+function flm_openScheduledModal() {
+    document.getElementById('flm-modal-scheduled').classList.remove('cc-hidden');
+    flm_loadScheduledMonitors();
+}
+
+/*
+ * Closes the scheduled-monitors modal and stops its countdown ticker.
+ * A backdrop click dismisses while clicks bubbling from the dialog interior
+ * are ignored.
+ */
+function flm_closeScheduledModal(target, event) {
+    if (event && target.id === 'flm-modal-scheduled' && event.target !== target) {
+        return;
+    }
+    document.getElementById('flm-modal-scheduled').classList.add('cc-hidden');
+    if (flm_schedCountdownInterval) {
+        clearInterval(flm_schedCountdownInterval);
+        flm_schedCountdownInterval = null;
     }
 }
 
-function renderDetectionHistory(container, data) {
+/* Loads the scheduled-but-not-started monitors and renders them. */
+async function flm_loadScheduledMonitors() {
+    var body = document.getElementById('flm-sched-modal-body');
+    body.innerHTML = '<div class="flm-loading">Loading...</div>';
+    try {
+        var data = await cc_engineFetch('/api/fileops/scheduled');
+        if (!data) return;
+        flm_updateScheduledBadge(data.length);
+        flm_renderScheduledMonitors(data);
+    } catch (error) {
+        body.innerHTML = '<div class="flm-no-activity">Failed to load scheduled monitors</div>';
+    }
+}
+
+/* Loads just the scheduled count to update the header badge. */
+async function flm_loadScheduledCount() {
+    try {
+        var data = await cc_engineFetch('/api/fileops/scheduled');
+        if (!data) return;
+        flm_updateScheduledBadge(data.length);
+    } catch (e) {
+        console.error('Error loading scheduled count:', e);
+    }
+}
+
+/* Shows or hides the scheduled-count badge in the daily queue header. */
+function flm_updateScheduledBadge(count) {
+    var badge = document.getElementById('flm-sched-count-badge');
+    if (!badge) return;
+    if (count > 0) {
+        badge.textContent = count;
+        badge.classList.remove('cc-hidden');
+    } else {
+        badge.classList.add('cc-hidden');
+    }
+}
+
+/* Renders the scheduled-monitors table and starts the countdown ticker. */
+function flm_renderScheduledMonitors(data) {
+    var body = document.getElementById('flm-sched-modal-body');
     if (!data || data.length === 0) {
-        container.innerHTML = '<div class="no-activity">No detection history available</div>';
+        body.innerHTML = '<div class="flm-no-activity">No monitors waiting to start today</div>';
+        return;
+    }
+
+    var html = '<table class="flm-sched-table">';
+    html += '<thead><tr><th class="flm-sched-table-th">Monitor</th><th class="flm-sched-table-th">Start</th><th class="flm-sched-table-th">Escalate</th><th class="flm-sched-table-th">Starts In</th></tr></thead>';
+    html += '<tbody>';
+    data.forEach(function(m) {
+        html += '<tr>';
+        html += '<td class="flm-sched-table-td flm-sched-name">' + cc_escapeHtml(m.ConfigName) + '</td>';
+        html += '<td class="flm-sched-table-td flm-sched-time">' + flm_fmtTimeOnly(m.CheckStartTime) + '</td>';
+        html += '<td class="flm-sched-table-td flm-sched-time">' + flm_fmtTimeOnly(m.EscalationTime) + '</td>';
+        html += '<td class="flm-sched-table-td flm-sched-countdown" data-start="' + m.CheckStartTime + '"></td>';
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+
+    body.innerHTML = html;
+    flm_updateScheduledCountdowns();
+    if (flm_schedCountdownInterval) clearInterval(flm_schedCountdownInterval);
+    flm_schedCountdownInterval = setInterval(flm_updateScheduledCountdowns, 1000);
+}
+
+/* Recomputes the live countdown text in each scheduled-monitor row. */
+function flm_updateScheduledCountdowns() {
+    var cells = document.querySelectorAll('.flm-sched-countdown');
+    var now = new Date();
+    cells.forEach(function(cell) {
+        var startStr = cell.getAttribute('data-start');
+        if (!startStr) return;
+        var parts = startStr.split(':');
+        var target = new Date();
+        target.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), parseInt(parts[2] || 0, 10), 0);
+        var diffMs = target - now;
+        if (diffMs <= 0) {
+            cell.textContent = 'Starting...';
+            cell.classList.add('flm-sched-starting');
+        } else {
+            var h = Math.floor(diffMs / 3600000);
+            var m = Math.floor((diffMs % 3600000) / 60000);
+            var s = Math.floor((diffMs % 60000) / 1000);
+            var str = '';
+            if (h > 0) str += h + 'h ';
+            str += m + 'm ' + s + 's';
+            cell.textContent = str;
+            cell.classList.remove('flm-sched-starting');
+        }
+    });
+}
+
+/* ============================================================================
+   FUNCTIONS: DETECTION HISTORY
+   ----------------------------------------------------------------------------
+   Functions that load detection events and render and toggle the year,
+   month, and day breakdown tree.
+   Prefix: flm
+   ============================================================================ */
+
+/* Loads the detection history feed and renders the year/month/day tree. */
+async function flm_loadDetectionHistory() {
+    var container = document.getElementById('flm-detection-history');
+    try {
+        var data = await cc_engineFetch('/api/fileops/history?limit=500');
+        if (!data) return;
+        flm_renderDetectionHistory(container, data);
+    } catch (error) {
+        container.innerHTML = '<div class="flm-no-activity">Failed to load history</div>';
+    }
+}
+
+/* Aggregates detection events into a year/month/day tree and renders it. */
+function flm_renderDetectionHistory(container, data) {
+    if (!data || data.length === 0) {
+        container.innerHTML = '<div class="flm-no-activity">No detection history available</div>';
         return;
     }
 
     var yearMap = {};
     data.forEach(function(e) {
         var d = new Date(e.EventDttm);
-        var y = d.getFullYear(), m = d.getMonth() + 1;
+        var y = d.getFullYear();
+        var m = d.getMonth() + 1;
         var dayKey = d.toISOString().split('T')[0];
         if (!yearMap[y]) yearMap[y] = { detected: 0, escalated: 0, monitors: {}, months: {} };
         if (!yearMap[y].months[m]) yearMap[y].months[m] = { detected: 0, escalated: 0, monitors: {}, days: {} };
@@ -964,178 +1170,258 @@ function renderDetectionHistory(container, data) {
         yearMap[y].monitors[e.ConfigName] = true;
         yearMap[y].months[m].monitors[e.ConfigName] = true;
         yearMap[y].months[m].days[dayKey].monitors[e.ConfigName] = true;
-        if (e.EventType === 'Escalated') { yearMap[y].escalated++; yearMap[y].months[m].escalated++; yearMap[y].months[m].days[dayKey].escalated++; }
-        else { yearMap[y].detected++; yearMap[y].months[m].detected++; yearMap[y].months[m].days[dayKey].detected++; }
+        if (e.EventType === 'Escalated') {
+            yearMap[y].escalated++;
+            yearMap[y].months[m].escalated++;
+            yearMap[y].months[m].days[dayKey].escalated++;
+        } else {
+            yearMap[y].detected++;
+            yearMap[y].months[m].detected++;
+            yearMap[y].months[m].days[dayKey].detected++;
+        }
     });
 
     var sortedYears = Object.keys(yearMap).sort(function(a, b) { return b - a; });
     var html = '';
-
     sortedYears.forEach(function(year) {
         var yd = yearMap[year];
         var yMonCount = Object.keys(yd.monitors).length;
-        var isExp = expandedYears[year] || false;
-        html += '<div class="year-group"><div class="year-header" onclick="toggleYear(\'' + year + '\')">';
-        html += '<span class="expand-icon ' + (isExp ? 'expanded' : '') + '" id="year-icon-' + year + '">&#9654;</span>';
-        html += '<span class="year-label">' + year + '</span>';
-        html += '<div class="year-stats">';
-        html += '<span class="year-stat">' + yMonCount + ' monitor' + (yMonCount !== 1 ? 's' : '') + '</span>';
-        html += '<span class="year-stat detected">' + yd.detected + ' detected</span>';
-        html += '<span class="year-stat escalated">' + (yd.escalated > 0 ? yd.escalated + ' escalated' : '-') + '</span>';
+        var isExp = flm_expandedYears[year] || false;
+        html += '<div class="flm-year-group"><div class="flm-year-header" data-action-click="flm-toggle-year" data-action-flm-year="' + year + '">';
+        html += '<span class="flm-expand-icon ' + (isExp ? 'flm-expanded' : '') + '" id="flm-year-icon-' + year + '">&#9654;</span>';
+        html += '<span class="flm-year-label">' + year + '</span>';
+        html += '<div class="flm-year-stats">';
+        html += '<span class="flm-year-stat">' + yMonCount + ' monitor' + (yMonCount !== 1 ? 's' : '') + '</span>';
+        html += '<span class="flm-year-stat flm-stat-detected">' + yd.detected + ' detected</span>';
+        html += '<span class="flm-year-stat flm-stat-escalated">' + (yd.escalated > 0 ? yd.escalated + ' escalated' : '-') + '</span>';
         html += '</div></div>';
-        html += '<div class="year-content ' + (isExp ? 'expanded' : '') + '" id="year-content-' + year + '">';
+        html += '<div class="flm-year-content ' + (isExp ? 'flm-year-content-expanded' : '') + '" id="flm-year-content-' + year + '">';
 
         var sortedMonths = Object.keys(yd.months).sort(function(a, b) { return b - a; });
-        html += '<table class="month-summary-table"><thead><tr><th class="expand-cell"></th><th>Month</th><th>Monitors</th><th>Detected</th><th>Escalated</th></tr></thead><tbody>';
-
+        html += '<table class="flm-month-table"><thead><tr><th class="flm-month-table-th flm-expand-cell"></th><th class="flm-month-table-th">Month</th><th class="flm-month-table-th">Monitors</th><th class="flm-month-table-th">Detected</th><th class="flm-month-table-th">Escalated</th></tr></thead><tbody>';
         sortedMonths.forEach(function(month) {
             var md = yd.months[month];
             var mMonCount = Object.keys(md.monitors).length;
             var mk = year + '-' + month;
-            var isMExp = expandedMonths[mk];
-            html += '<tr class="month-row" onclick="toggleMonth(\'' + year + '\', \'' + month + '\')">';
-            html += '<td class="expand-cell"><span class="expand-icon ' + (isMExp ? 'expanded' : '') + '" id="month-icon-' + mk + '">&#9654;</span></td>';
-            html += '<td class="month-cell">' + monthNames[parseInt(month)] + '</td>';
-            html += '<td class="monitors-cell">' + mMonCount + '</td>';
-            html += '<td class="detected-cell">' + md.detected + '</td>';
-            html += '<td class="escalated-cell">' + (md.escalated > 0 ? md.escalated : '-') + '</td></tr>';
-
-            html += '<tr class="month-details" id="month-row-' + mk + '" style="display:' + (isMExp ? 'table-row' : 'none') + '">';
-            html += '<td colspan="5"><div class="month-details-content" id="month-detail-' + mk + '">';
-            if (isMExp) html += renderDayTable(md.days);
+            var isMExp = flm_expandedMonths[mk];
+            html += '<tr class="flm-month-row" data-action-click="flm-toggle-month" data-action-flm-year="' + year + '" data-action-flm-month="' + month + '">';
+            html += '<td class="flm-month-table-td flm-expand-cell"><span class="flm-expand-icon ' + (isMExp ? 'flm-expanded' : '') + '" id="flm-month-icon-' + mk + '">&#9654;</span></td>';
+            html += '<td class="flm-month-table-td flm-month-cell">' + cc_MONTH_NAMES[parseInt(month, 10)] + '</td>';
+            html += '<td class="flm-month-table-td flm-monitors-cell">' + mMonCount + '</td>';
+            html += '<td class="flm-month-table-td flm-detected-cell">' + md.detected + '</td>';
+            html += '<td class="flm-month-table-td flm-escalated-cell">' + (md.escalated > 0 ? md.escalated : '-') + '</td></tr>';
+            html += '<tr class="flm-month-details" id="flm-month-row-' + mk + '" style="display:' + (isMExp ? 'table-row' : 'none') + '">';
+            html += '<td class="flm-month-table-td" colspan="5"><div class="flm-month-details-content" id="flm-month-detail-' + mk + '">';
+            if (isMExp) html += flm_renderDayTable(md.days);
             html += '</div></td></tr>';
         });
-
         html += '</tbody></table></div></div>';
     });
 
     container.innerHTML = html;
 }
 
-function renderDayTable(days) {
+/* Builds the per-day breakdown table for an expanded month. */
+function flm_renderDayTable(days) {
     var sorted = Object.keys(days).sort().reverse();
-    var html = '<table class="day-table"><thead><tr><th>Date</th><th>Day</th><th>Monitors</th><th>Detected</th><th>Escalated</th></tr></thead><tbody>';
+    var html = '<table class="flm-day-table"><thead><tr><th class="flm-day-table-th">Date</th><th class="flm-day-table-th">Day</th><th class="flm-day-table-th">Monitors</th><th class="flm-day-table-th">Detected</th><th class="flm-day-table-th">Escalated</th></tr></thead><tbody>';
     sorted.forEach(function(dk) {
-        var dd = days[dk], parts = dk.split('-');
+        var dd = days[dk];
+        var parts = dk.split('-');
         var dMonCount = Object.keys(dd.monitors).length;
-        var dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        html += '<tr class="clickable" onclick="openDayDetail(\'' + dk + '\')">';
-        html += '<td>' + (dateObj.getMonth() + 1) + '/' + dateObj.getDate() + '</td>';
-        html += '<td>' + dayNames[dateObj.getDay()] + '</td>';
-        html += '<td class="monitors-cell">' + dMonCount + '</td>';
-        html += '<td class="detected-cell">' + dd.detected + '</td>';
-        html += '<td class="escalated-cell">' + (dd.escalated > 0 ? dd.escalated : '-') + '</td></tr>';
+        var dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        html += '<tr class="flm-day-row" data-action-click="flm-open-day" data-action-flm-date="' + dk + '">';
+        html += '<td class="flm-day-table-td">' + (dateObj.getMonth() + 1) + '/' + dateObj.getDate() + '</td>';
+        html += '<td class="flm-day-table-td">' + cc_DAY_NAMES[dateObj.getDay() + 1] + '</td>';
+        html += '<td class="flm-day-table-td flm-monitors-cell">' + dMonCount + '</td>';
+        html += '<td class="flm-day-table-td flm-detected-cell">' + dd.detected + '</td>';
+        html += '<td class="flm-day-table-td flm-escalated-cell">' + (dd.escalated > 0 ? dd.escalated : '-') + '</td></tr>';
     });
     html += '</tbody></table>';
     return html;
 }
 
-function toggleYear(year) {
-    expandedYears[year] = !expandedYears[year];
-    var c = document.getElementById('year-content-' + year);
-    var i = document.getElementById('year-icon-' + year);
-    if (expandedYears[year]) { c.classList.add('expanded'); i.classList.add('expanded'); }
-    else { c.classList.remove('expanded'); i.classList.remove('expanded'); }
+/* Click handler toggling a detection-history year group open or closed. */
+function flm_toggleYear(target) {
+    var year = target.getAttribute('data-action-flm-year');
+    flm_expandedYears[year] = !flm_expandedYears[year];
+    var content = document.getElementById('flm-year-content-' + year);
+    var icon = document.getElementById('flm-year-icon-' + year);
+    if (flm_expandedYears[year]) {
+        content.classList.add('flm-year-content-expanded');
+        icon.classList.add('flm-expanded');
+    } else {
+        content.classList.remove('flm-year-content-expanded');
+        icon.classList.remove('flm-expanded');
+    }
 }
 
-function toggleMonth(year, month) {
+/* Click handler toggling a detection-history month row open or closed. */
+function flm_toggleMonth(target) {
+    var year = target.getAttribute('data-action-flm-year');
+    var month = target.getAttribute('data-action-flm-month');
     var key = year + '-' + month;
-    expandedMonths[key] = !expandedMonths[key];
-    var row = document.getElementById('month-row-' + key);
-    var icon = document.getElementById('month-icon-' + key);
-    if (expandedMonths[key]) { row.style.display = 'table-row'; icon.classList.add('expanded'); loadDetectionHistory(); }
-    else { row.style.display = 'none'; icon.classList.remove('expanded'); }
+    flm_expandedMonths[key] = !flm_expandedMonths[key];
+    var row = document.getElementById('flm-month-row-' + key);
+    var icon = document.getElementById('flm-month-icon-' + key);
+    if (flm_expandedMonths[key]) {
+        row.style.display = 'table-row';
+        icon.classList.add('flm-expanded');
+        flm_loadDetectionHistory();
+    } else {
+        row.style.display = 'none';
+        icon.classList.remove('flm-expanded');
+    }
 }
 
-// ============================================================================
-// DAY DETAIL SLIDEOUT
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: DAY DETAIL
+   ----------------------------------------------------------------------------
+   Functions that open, render, and close the day detail slideout for a
+   selected detection date.
+   Prefix: flm
+   ============================================================================ */
 
-async function openDayDetail(dateKey) {
-    document.getElementById('day-overlay').classList.add('visible');
-    document.getElementById('day-slideout').classList.add('visible');
+/* Opens the day detail slideout and loads the events for the chosen date. */
+async function flm_openDayDetail(target) {
+    var dateKey = target.getAttribute('data-action-flm-date');
+    var overlay = document.getElementById('flm-slideout-day');
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
     var parts = dateKey.split('-');
-    var dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    document.getElementById('day-slideout-title').textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-    var container = document.getElementById('day-body');
-    container.innerHTML = '<div class="loading">Loading...</div>';
+    var dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    document.getElementById('flm-day-title').textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    var container = document.getElementById('flm-day-body');
+    container.innerHTML = '<div class="flm-loading">Loading...</div>';
     try {
-        var data = await engineFetch('/api/fileops/history?limit=200');
+        var data = await cc_engineFetch('/api/fileops/history?limit=200');
         if (!data) return;
-        var filtered = data.filter(function(e) { return new Date(e.EventDttm).toISOString().split('T')[0] === dateKey; });
-        renderDayDetail(container, filtered);
-    } catch (error) { container.innerHTML = '<div class="no-activity">Failed to load details</div>'; }
+        var filtered = data.filter(function(e) {
+            return new Date(e.EventDttm).toISOString().split('T')[0] === dateKey;
+        });
+        flm_renderDayDetail(container, filtered);
+    } catch (error) {
+        container.innerHTML = '<div class="flm-no-activity">Failed to load details</div>';
+    }
 }
 
-function renderDayDetail(container, events) {
-    if (!events || events.length === 0) { container.innerHTML = '<div class="no-activity">No events for this date</div>'; return; }
-    var html = '<table class="slideout-table"><thead><tr><th>Status</th><th>Monitor</th><th>Time</th><th>File</th><th>Alerts</th></tr></thead><tbody>';
+/* Renders the day detail event table into the slideout body. */
+function flm_renderDayDetail(container, events) {
+    if (!events || events.length === 0) {
+        container.innerHTML = '<div class="cc-slide-empty">No events for this date</div>';
+        return;
+    }
+    var html = '<table class="cc-slide-table"><thead><tr><th class="cc-slide-table-th">Status</th><th class="cc-slide-table-th">Monitor</th><th class="cc-slide-table-th">Time</th><th class="cc-slide-table-th">File</th><th class="cc-slide-table-th">Alerts</th></tr></thead><tbody>';
     events.forEach(function(e) {
-        var cls = e.EventType.toLowerCase();
+        var badgeCls = flm_statusBadgeClass(e.EventType);
         var badge = e.EventType === 'LateDetected' ? 'LATE' : e.EventType.toUpperCase();
         var alertHtml = '';
-        if (e.TeamsAlertQueued) alertHtml += '<span class="alert-badge teams">Teams</span>';
-        if (e.JiraTicketQueued) alertHtml += '<span class="alert-badge jira">Jira</span>';
-        if (!alertHtml) alertHtml = '<span style="color:#444;">—</span>';
-        html += '<tr><td><span class="status-badge ' + cls + '">' + badge + '</span></td>';
-        html += '<td>' + esc(e.ConfigName) + '</td>';
-        html += '<td style="font-size:11px;color:#dcdcaa;">' + formatTime(e.EventDttm) + '</td>';
-        html += '<td style="font-size:11px;">' + (e.FileDetectedName ? esc(e.FileDetectedName) : '—') + '</td>';
-        html += '<td>' + alertHtml + '</td></tr>';
+        if (e.TeamsAlertQueued) alertHtml += '<span class="flm-alert-badge flm-alert-teams">Teams</span>';
+        if (e.JiraTicketQueued) alertHtml += '<span class="flm-alert-badge flm-alert-jira">Jira</span>';
+        if (!alertHtml) alertHtml = '<span class="flm-empty-cell">\u2014</span>';
+        html += '<tr class="cc-slide-table-row"><td class="cc-slide-table-td"><span class="flm-status-badge ' + badgeCls + '">' + badge + '</span></td>';
+        html += '<td class="cc-slide-table-td">' + cc_escapeHtml(e.ConfigName) + '</td>';
+        html += '<td class="cc-slide-table-td flm-monitor-time">' + cc_formatTimeOfDay(e.EventDttm) + '</td>';
+        html += '<td class="cc-slide-table-td flm-monitor-file">' + (e.FileDetectedName ? cc_escapeHtml(e.FileDetectedName) : '\u2014') + '</td>';
+        html += '<td class="cc-slide-table-td">' + alertHtml + '</td></tr>';
     });
     html += '</tbody></table>';
     container.innerHTML = html;
 }
 
-function closeDayPanel() {
-    document.getElementById('day-overlay').classList.remove('visible');
-    document.getElementById('day-slideout').classList.remove('visible');
+/*
+ * Closes the day detail slideout. A one-shot transitionend on the inner
+ * dialog removes cc-open from the overlay; a backdrop click dismisses while
+ * interior clicks are ignored.
+ */
+function flm_closeDayPanel(target, event) {
+    if (event && target.id === 'flm-slideout-day' && event.target !== target) {
+        return;
+    }
+    var overlay = document.getElementById('flm-slideout-day');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
 }
 
-// ============================================================================
-// UTILITIES
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: UTILITIES
+   ----------------------------------------------------------------------------
+   Small shared helpers for date keys, status-badge classes, attribute
+   escaping, and SQL TIME formatting used across the page module.
+   Prefix: flm
+   ============================================================================ */
 
-function esc(text) {
-    if (!text) return '';
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+/* Returns the local YYYY-MM-DD key for today, used for same-day filtering. */
+function flm_todayKey() {
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
 }
 
-function escAttr(text) {
+/* Maps a monitor or event status to its status-badge class. */
+function flm_statusBadgeClass(status) {
+    if (status === 'Escalated') return 'flm-badge-escalated';
+    if (status === 'Monitoring') return 'flm-badge-monitoring';
+    if (status === 'Detected') return 'flm-badge-detected';
+    if (status === 'LateDetected') return 'flm-badge-latedetected';
+    return 'flm-badge-monitoring';
+}
+
+/* Attribute-safe escaping for values placed inside HTML attribute values. */
+function flm_escAttr(text) {
     if (!text) return '';
     return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function formatTime(dateStr) {
-    if (!dateStr) return '';
-    return new Date(dateStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-function fmtTimeOnly(timeStr) {
+/* Formats a SQL TIME-of-day string ("HH:MM:SS") as a 12-hour clock time. */
+function flm_fmtTimeOnly(timeStr) {
     if (!timeStr) return '';
     var p = timeStr.split(':');
     if (p.length >= 2) {
-        var h = parseInt(p[0]), m = p[1];
+        var h = parseInt(p[0], 10);
+        var m = p[1];
         return (h > 12 ? h - 12 : (h === 0 ? 12 : h)) + ':' + m + ' ' + (h >= 12 ? 'PM' : 'AM');
     }
     return timeStr;
 }
 
-function fmtTimeInput(timeStr) {
+/* Normalizes a SQL TIME string to the "HH:MM" form an input[type=time] needs. */
+function flm_fmtTimeInput(timeStr) {
     if (!timeStr) return '';
     var p = timeStr.split(':');
     if (p.length >= 2) return p[0].padStart(2, '0') + ':' + p[1].padStart(2, '0');
     return timeStr;
 }
 
-function showConnectionError(msg) {
-    var el = document.getElementById('connection-error');
-    el.textContent = msg;
-    el.classList.add('visible');
+/* ============================================================================
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
+   ----------------------------------------------------------------------------
+   Lifecycle hook functions invoked by the cc-shared.js bootloader on page
+   refresh, tab resume, and engine-process completion.
+   Prefix: flm
+   ============================================================================ */
+
+/* Invoked by the shared page-refresh control; reloads all dashboard data. */
+function flm_onPageRefresh() {
+    flm_loadAllData();
+    flm_loadDetectionHistory();
+    flm_loadScheduledCount();
 }
 
-function hideConnectionError() {
-    document.getElementById('connection-error').classList.remove('visible');
+/* Invoked when the tab regains focus after being hidden; reloads data. */
+function flm_onPageResumed() {
+    flm_loadAllData();
+    flm_loadScheduledCount();
+}
+
+/* Invoked when a Scan-SFTPFiles process completes; reloads activity data. */
+function flm_onEngineProcessCompleted(processName, event) {
+    flm_loadAllData();
+    flm_loadScheduledCount();
 }
