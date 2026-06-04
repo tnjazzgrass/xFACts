@@ -1,25 +1,40 @@
-# ============================================================================
-# xFACts Control Center - Batch Monitoring API
-# Location: E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring-API.ps1
-# Version: Tracked in dbo.System_Metadata (component: BatchOps)
-#
-# API endpoints for Batch Monitoring dashboard.
-# All endpoints require ADLogin authentication.
-#
-# Endpoints:
-#   GET /api/batch-monitoring/process-status    - Collector health from BatchOps.Status
-#   GET /api/batch-monitoring/active-batches    - Currently in-flight NB + PMT + BDL batches
-#   GET /api/batch-monitoring/daily-summary     - Today's batch counts and status breakdown
-#   GET /api/batch-monitoring/history           - Year/month rollup for tree navigation
-#   GET /api/batch-monitoring/history-month     - Day-level detail for a given month
-#   GET /api/batch-monitoring/history-day       - Individual batch detail for a given day
-#
-# ============================================================================
+<#
+.SYNOPSIS
+    Registers the Batch Monitoring API endpoints.
 
-# ============================================================================
-# Process Status - Collector Health Cards
-# ============================================================================
+.DESCRIPTION
+    Read-only API surface backing the Batch Monitoring dashboard. Exposes
+    collector process health, the live in-flight batch view (queried directly
+    from Debt Manager via the CRS5 read path), today's batch activity summary,
+    and the year / month / day batch history drill-down. All endpoints require
+    ADLogin authentication and return JSON.
+
+.COMPONENT
+    BatchOps
+
+.NOTES
+    File Name : BatchMonitoring-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   The Batch Monitoring API endpoints. Process status reads collector health
+   from BatchOps.Status; active batches reads live in-flight batches from the
+   Debt Manager source tables; daily summary and the history endpoints read
+   the BatchOps tracking tables for today's counts and historical rollups.
+   Prefix: bat
+   ============================================================================ #>
+
+# Process Status - collector health cards from BatchOps.Status joined to ProcessRegistry.
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/process-status' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $results = Invoke-XFActsQuery -Query @"
             SELECT
@@ -48,7 +63,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/process-status' -Authenti
                 AND pr.module_name = 'BatchOps'
             ORDER BY s.collector_name
 "@
-        
+
         Write-PodeJsonResponse -Value @{ processes = $results }
     }
     catch {
@@ -56,17 +71,16 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/process-status' -Authenti
     }
 }
 
-# ============================================================================
-# Active Batches - Live view from Debt Manager (via AG secondary replica)
-# Queries crs5_oltp directly for real-time batch status. No dependency on
-# xFACts tracking tables — batches appear as soon as DM creates them.
-# 3-day lookback window covers weekends and lingering problem batches.
-# ============================================================================
+# Active Batches - live view from Debt Manager via the CRS5 read path.
+# Queries crs5_oltp directly for real-time batch status; batches appear as soon
+# as DM creates them. 3-day lookback covers weekends and lingering problem batches.
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
-        # Active NB batches - direct from DM source tables
-        # Excludes: DELETED (5), terminal merge statuses (3, 5, 6, 8, 10)
-        # Keeps: UPLOADFAILED (3), RELEASEFAILED (9), FAILED (13) visible until resolved/deleted
+        # Active NB batches - direct from DM source tables.
+        # Excludes: DELETED (5), terminal merge statuses (3, 5, 6, 8, 10).
+        # Keeps: UPLOADFAILED (3), RELEASEFAILED (9), FAILED (13) visible until resolved/deleted.
         $nbBatches = Invoke-CRS5ReadQuery -Query @"
             SELECT
                 'NB' AS batch_type,
@@ -84,9 +98,9 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
                 b.new_bsnss_btch_cnsmr_cnt_nmr AS consumer_count,
                 lp.merge_processed_count
             FROM dbo.new_bsnss_btch b
-            INNER JOIN dbo.Ref_new_bsnss_btch_stts_cd bs 
+            INNER JOIN dbo.Ref_new_bsnss_btch_stts_cd bs
                 ON b.new_bsnss_btch_stts_cd = bs.new_bsnss_btch_stts_cd
-            LEFT JOIN dbo.ref_cnsmr_mrg_lnk_stts_cd ms 
+            LEFT JOIN dbo.ref_cnsmr_mrg_lnk_stts_cd ms
                 ON b.cnsmr_mrg_lnk_stts_cd = ms.cnsmr_mrg_lnk_stts_cd
             OUTER APPLY (
                 SELECT COUNT(DISTINCT l.frm_cnsmr_idntfr_agncy_id) - 1 AS merge_processed_count
@@ -99,11 +113,11 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
               AND ISNULL(b.cnsmr_mrg_lnk_stts_cd, 0) NOT IN (3, 5, 6, 8, 10)     -- Exclude terminal merge statuses
             ORDER BY b.new_bsnss_btch_crt_dt DESC
 "@
-        
-        # Active PMT batches - direct from DM source tables
-        # Excludes: ACTIVE (1), POSTED (4), ARCHIVED (7), PROCESSED (29), PROCESSEDWITHSUSPENSE (31)
+
+        # Active PMT batches - direct from DM source tables.
+        # Excludes: ACTIVE (1), POSTED (4), ARCHIVED (7), PROCESSED (29), PROCESSEDWITHSUSPENSE (31).
         # Keeps: FAILED (6), IMPORTFAILED (11), PARTIAL (5), REVERSALFAILED (27),
-        #        ACTIVEWITHSUSPENSE (30), and all in-flight statuses visible
+        #        ACTIVEWITHSUSPENSE (30), and all in-flight statuses visible.
         $pmtBatches = Invoke-CRS5ReadQuery -Query @"
             SELECT
                 'PMT' AS batch_type,
@@ -120,12 +134,12 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
                 j.journal_failed_count,
                 b.cnsmr_pymnt_btch_extrnl_nm AS external_name
             FROM dbo.cnsmr_pymnt_btch b
-            INNER JOIN dbo.ref_pymnt_btch_stts_cd s 
+            INNER JOIN dbo.ref_pymnt_btch_stts_cd s
                 ON b.cnsmr_pymnt_btch_stts_cd = s.pymnt_btch_stts_cd
-            LEFT JOIN dbo.ref_pymnt_btch_typ_cd t 
+            LEFT JOIN dbo.ref_pymnt_btch_typ_cd t
                 ON b.cnsmr_pymnt_btch_typ_cd = t.pymnt_btch_typ_cd
             OUTER APPLY (
-                SELECT 
+                SELECT
                     SUM(CASE WHEN pj.cnsmr_pymnt_stts_cd = 5 THEN 1 ELSE 0 END) AS journal_posted_count,
                     SUM(CASE WHEN pj.cnsmr_pymnt_stts_cd = 4 THEN 1 ELSE 0 END) AS journal_failed_count
                 FROM dbo.cnsmr_pymnt_jrnl pj
@@ -135,12 +149,12 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
               AND b.cnsmr_pymnt_btch_stts_cd NOT IN (1, 4, 7, 29, 31)    -- Exclude ACTIVE, POSTED, ARCHIVED, PROCESSED, PROCESSEDWITHSUSPENSE
             ORDER BY b.cnsmr_pymnt_btch_crt_dttm DESC
 "@
-        
-        # Active BDL files - direct from DM source tables
+
+        # Active BDL files - direct from DM source tables.
         # Terminal detection via File_Registry.file_stts_cd (authoritative):
-        #   5 = PROCESSED, 6 = FAILED, 7 = CANCELED, 8 = PARTIALLY_PROCESSED
+        #   5 = PROCESSED, 6 = FAILED, 7 = CANCELED, 8 = PARTIALLY_PROCESSED.
         # bdl_log used for progress info (partition counts) and timing only.
-        # CurrentBDLStatus CTE finds the latest file-level bdl_log entry for display,
+        # CurrentBDLStatus CTE finds the latest file-level bdl_log entry for display;
         # File_Registry.file_stts_cd determines whether the file is still active.
         $bdlBatches = Invoke-CRS5ReadQuery -Query @"
             ;WITH CurrentBDLStatus AS (
@@ -196,7 +210,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
               AND fr.file_stts_cd NOT IN (5, 6, 7, 8)    -- Exclude terminal: PROCESSED, FAILED, CANCELED, PARTIALLY_PROCESSED
             ORDER BY fr.file_crt_dttm DESC
 "@
-        
+
         Write-PodeJsonResponse -Value @{
             nb = $nbBatches
             pmt = $pmtBatches
@@ -211,13 +225,13 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/active-batches' -Authenti
     }
 }
 
-# ============================================================================
-# Daily Summary - Today's batch activity at a glance
-# ============================================================================
+# Daily Summary - today's batch activity at a glance across NB, PMT, and BDL.
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
-        # NB batches created today
-        # Success = merge-complete statuses; Failed = everything else complete
+        # NB batches created today.
+        # Success = merge-complete statuses; Failed = everything else complete.
         $nbToday = Invoke-XFActsQuery -Query @"
             SELECT
                 COUNT(*) AS total,
@@ -236,10 +250,10 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentic
             FROM BatchOps.NB_BatchTracking
             WHERE CAST(batch_created_dttm AS DATE) = CAST(GETDATE() AS DATE)
 "@
-        
-        # PMT batches created today
-        # Success = POSTED; Failed = everything else complete
-        # Excludes REAPPLY, BALANCE_ADJUSTMENT, VIRTUAL, CONSUMER_CHECK from headline counts
+
+        # PMT batches created today.
+        # Success = POSTED; Failed = everything else complete.
+        # Excludes REAPPLY, BALANCE_ADJUSTMENT, VIRTUAL, CONSUMER_CHECK from headline counts.
         $pmtToday = Invoke-XFActsQuery -Query @"
             SELECT
                 SUM(CASE WHEN batch_type NOT IN ('REAPPLY', 'BALANCE_ADJUSTMENT', 'VIRTUAL', 'CONSUMER_CHECK') THEN 1 ELSE 0 END) AS total,
@@ -252,9 +266,9 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentic
             FROM BatchOps.PMT_BatchTracking
             WHERE CAST(batch_created_dttm AS DATE) = CAST(GETDATE() AS DATE)
 "@
-        
-        # BDL files created today
-        # Success = PROCESSED or PARTIALLY_PROCESSED; Failed = FAILED or CANCELED
+
+        # BDL files created today.
+        # Success = PROCESSED or PARTIALLY_PROCESSED; Failed = FAILED or CANCELED.
         $bdlToday = Invoke-XFActsQuery -Query @"
             SELECT
                 COUNT(*) AS total,
@@ -265,7 +279,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentic
             FROM BatchOps.BDL_BatchTracking
             WHERE CAST(file_created_dttm AS DATE) = CAST(GETDATE() AS DATE)
 "@
-        
+
         Write-PodeJsonResponse -Value @{
             nb = if ($nbToday.Count -gt 0) { $nbToday[0] } else { @{ total = 0; completed = 0; failed = 0; in_flight = 0; total_accounts = 0 } }
             pmt = if ($pmtToday.Count -gt 0) { $pmtToday[0] } else { @{ total = 0; completed = 0; failed = 0; in_flight = 0; total_payments = 0; reapply_count = 0; other_count = 0 } }
@@ -277,18 +291,17 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/daily-summary' -Authentic
     }
 }
 
-# ============================================================================
-# History - Year/Month rollup for tree navigation
-# Query parameter: ?type=ALL|NB|PMT|BDL (default ALL)
-# ============================================================================
+# History - year/month rollup for tree navigation. Query parameter: ?type=ALL|NB|PMT|BDL (default ALL).
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $typeFilter = $WebEvent.Query['type']
         if (-not $typeFilter) { $typeFilter = 'ALL' }
-        
+
         $years = @()
-        
-        # NB history rollup
+
+        # NB history rollup.
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'NB') {
             $nbYears = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -315,8 +328,8 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 
 "@
             $years += $nbYears
         }
-        
-        # PMT history rollup
+
+        # PMT history rollup.
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'PMT') {
             $pmtYears = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -336,8 +349,8 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 
 "@
             $years += $pmtYears
         }
-        
-        # BDL history rollup
+
+        # BDL history rollup.
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'BDL') {
             $bdlYears = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -356,7 +369,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 
 "@
             $years += $bdlYears
         }
-        
+
         Write-PodeJsonResponse -Value @{ data = $years }
     }
     catch {
@@ -364,19 +377,18 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history' -Authentication 
     }
 }
 
-# ============================================================================
-# History Month Detail - Day-level rows for a given year/month
-# Query parameters: ?year=YYYY&month=MM&type=ALL|NB|PMT|BDL
-# ============================================================================
+# History Month Detail - day-level rows for a year/month. Query parameters: ?year=YYYY&month=MM&type=ALL|NB|PMT|BDL.
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $year = [int]$WebEvent.Query['year']
         $month = [int]$WebEvent.Query['month']
         $typeFilter = $WebEvent.Query['type']
         if (-not $typeFilter) { $typeFilter = 'ALL' }
-        
+
         $days = @()
-        
+
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'NB') {
             $nbDays = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -407,7 +419,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentic
 "@ -Parameters @{ year = $year; month = $month }
             $days += $nbDays
         }
-        
+
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'PMT') {
             $pmtDays = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -431,7 +443,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentic
 "@ -Parameters @{ year = $year; month = $month }
             $days += $pmtDays
         }
-        
+
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'BDL') {
             $bdlDays = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -454,7 +466,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentic
 "@ -Parameters @{ year = $year; month = $month }
             $days += $bdlDays
         }
-        
+
         Write-PodeJsonResponse -Value @{ data = $days }
     }
     catch {
@@ -462,18 +474,17 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-month' -Authentic
     }
 }
 
-# ============================================================================
-# History Day Detail - Individual batches for a given day
-# Query parameters: ?date=YYYY-MM-DD&type=ALL|NB|PMT|BDL
-# ============================================================================
+# History Day Detail - individual batches for a day. Query parameters: ?date=YYYY-MM-DD&type=ALL|NB|PMT|BDL.
 Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-day' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $date = $WebEvent.Query['date']
         $typeFilter = $WebEvent.Query['type']
         if (-not $typeFilter) { $typeFilter = 'ALL' }
-        
+
         $batches = @()
-        
+
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'NB') {
             $nbBatches = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -509,7 +520,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-day' -Authenticat
 "@ -Parameters @{ date = $date }
             $batches += $nbBatches
         }
-        
+
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'PMT') {
             $pmtBatches = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -541,7 +552,7 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-day' -Authenticat
 "@ -Parameters @{ date = $date }
             $batches += $pmtBatches
         }
-        
+
         if ($typeFilter -eq 'ALL' -or $typeFilter -eq 'BDL') {
             $bdlBatches = Invoke-XFActsQuery -Query @"
                 SELECT
@@ -580,20 +591,10 @@ Add-PodeRoute -Method Get -Path '/api/batch-monitoring/history-day' -Authenticat
 "@ -Parameters @{ date = $date }
             $batches += $bdlBatches
         }
-        
+
         Write-PodeJsonResponse -Value @{ data = $batches }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
     }
 }
-
-# ============================================================================
-# ============================================================================
-# ENGINE STATUS — REMOVED
-# ============================================================================
-# The /api/batch-monitoring/engine-status endpoint (~80 lines) was removed.
-# Engine indicator cards (NB, PMT, Summary) are now driven by the shared
-# engine-events.js WebSocket module via real-time PROCESS_STARTED/COMPLETED events.
-# See: RealTime_Engine_Events_Architecture.md
-# ============================================================================
