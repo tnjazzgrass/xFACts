@@ -1,36 +1,47 @@
-# ============================================================================
-# xFACts Control Center - JBoss Monitoring API Endpoints
-# Location: E:\xFACts-ControlCenter\scripts\routes\JBossMonitoring-API.ps1
-#
-# API endpoints for the JBoss Monitoring page.
-#
-# Version: Tracked in dbo.System_Metadata (component: JBoss)
-#
-# CHANGELOG
-# ---------
-# 2026-03-18  Renamed from DmMonitoring-API.ps1. Schema DmOps → JBoss.
-#             Tables: App_Snapshot → Snapshot, App_QueueSnapshot → QueueSnapshot.
-#             Routes: /api/dm-monitoring/* → /api/jboss-monitoring/*.
-#             GlobalConfig module: DmOps → JBoss.
-# 2026-03-09  Delta seeding: status endpoint returns two most recent snapshots
-#             per server (prev_ fields for delta-relevant counters). Queue-status
-#             endpoint returns two most recent cycles per server (prev_messages_added
-#             per queue). Enables immediate delta display on page load.
-# 2026-03-08  Phase 2: Expanded status endpoint with all Management API
-#             columns. Added queue-status and queue-detail endpoints.
-#             Removed http_response_bytes (column dropped).
-# 2026-03-08  Added GET /api/jboss-monitoring/active-server and
-#             POST /api/jboss-monitoring/switch-server (migrated from Admin-API)
-# 2026-03-07  Initial implementation — GET /api/jboss-monitoring/status
-# ============================================================================
+<#
+.SYNOPSIS
+    Provides the JBoss Monitoring dashboard's JSON API endpoints.
 
-# ============================================================================
-# API: Current Server Status (with previous snapshot for delta seeding)
-# Returns the latest Snapshot per server with all metrics, plus the
-# previous snapshot's delta-relevant fields so the JS can compute deltas
+.DESCRIPTION
+    API routes backing the Control Center JBoss Monitoring dashboard. Exposes read
+    endpoints for the current per-server metric snapshot (with the previous snapshot's
+    delta-relevant fields for immediate delta seeding), the per-server JMS queue
+    snapshot (with previous-cycle messages-added for queue delta seeding), and the
+    currently active DM application server (the SharePoint link target, with an
+    admin CanSwitch gate flag). One admin-gated action endpoint switches the active
+    DM application server, coordinating the firewall rule, the SharePoint navigation
+    node, GlobalConfig, and the audit log. Every endpoint runs the action-permission
+    hook and returns JSON.
+
+.COMPONENT
+    JBoss
+
+.NOTES
+    File Name : JBossMonitoring-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\JBossMonitoring-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers the GET and POST endpoints under /api/jboss-monitoring, each gated by
+   ADLogin authentication and the Test-ActionEndpoint permission hook and returning
+   a JSON response. Read endpoints query the xFActs AG listener through the shared
+   data-access helpers; the switch-server action additionally drives the firewall,
+   SharePoint, GlobalConfig, and audit log behind an admin check.
+   Prefix: (none)
+   ============================================================================ #>
+
+# GET /api/jboss-monitoring/status
+# Returns the latest Snapshot per active app server with all metrics, plus the
+# previous snapshot's delta-relevant fields so the client can compute deltas
 # immediately on page load without waiting for a second collection cycle.
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/jboss-monitoring/status' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $query = @"
 ;WITH RankedSnaps AS (
@@ -42,6 +53,13 @@ Add-PodeRoute -Method Get -Path '/api/jboss-monitoring/status' -Authentication '
     WHERE s.is_active = 1
       AND s.jboss_enabled = 1
       AND s.server_type = 'APP_SERVER'
+      -- Bound the ranked set to a recent window so this seeks a small slice
+      -- off the collected_dttm index instead of ranking full snapshot history.
+      -- 24h is wide enough to always contain each server's latest two cycles
+      -- (collection runs every few minutes) and to keep a server that has
+      -- gone silent visible across an overnight gap. There is no retention on
+      -- JBoss.Snapshot, so without this floor the scan grows unbounded.
+      AND a.collected_dttm >= DATEADD(HOUR, -24, GETDATE())
 )
 SELECT
     s.server_id,
@@ -86,7 +104,6 @@ SELECT
     cur.ds_timed_out,
     cur.ds_avg_get_time_ms,
     cur.ds_max_wait_time_ms,
-    -- Previous snapshot: only delta-relevant fields
     prev.collected_dttm         AS prev_collected_dttm,
     prev.server_uptime_hours    AS prev_server_uptime_hours,
     prev.tx_committed           AS prev_tx_committed,
@@ -109,7 +126,7 @@ ORDER BY s.server_name
 "@
         $results = Invoke-XFActsQuery -Query $query
 
-        # Helper to clean DBNull
+        # Local DBNull-to-null/typed-value cleaners for the wide metric projection
         function cv($val) { if ($val -is [DBNull]) { return $null } return $val }
         function ci($val) { if ($val -is [DBNull]) { return $null } return [int]$val }
         function cl($val) { if ($val -is [DBNull]) { return $null } return [long]$val }
@@ -123,44 +140,35 @@ ORDER BY s.server_name
                 server_role          = cv $row.server_role
                 is_domain_controller = [bool]$row.is_domain_controller
                 collected_dttm       = if ($row.collected_dttm -is [DBNull]) { $null } else { $row.collected_dttm.ToString("yyyy-MM-dd HH:mm:ss") }
-                # HTTP
                 http_status_code     = ci $row.http_status_code
                 http_response_ms     = ci $row.http_response_ms
                 http_error_message   = cv $row.http_error_message
-                # CIM Service
                 service_name         = cv $row.service_name
                 service_state        = cv $row.service_state
                 service_start_mode   = cv $row.service_start_mode
-                # CIM Process
                 jboss_process_id     = ci $row.jboss_process_id
                 jboss_working_set_mb = ci $row.jboss_working_set_mb
                 jboss_thread_count   = ci $row.jboss_thread_count
                 jboss_handle_count   = ci $row.jboss_handle_count
                 server_uptime_hours  = if ($row.server_uptime_hours -is [DBNull]) { $null } else { [double]0 + $row.server_uptime_hours }
-                # Management API — Server State
                 api_server_state     = cv $row.api_server_state
-                # Management API — JVM
                 jvm_heap_used_mb     = ci $row.jvm_heap_used_mb
                 jvm_heap_max_mb      = ci $row.jvm_heap_max_mb
                 jvm_nonheap_used_mb  = ci $row.jvm_nonheap_used_mb
                 jvm_thread_count     = ci $row.jvm_thread_count
                 jvm_thread_peak      = ci $row.jvm_thread_peak
-                # Management API — Undertow
                 undertow_request_count = cl $row.undertow_request_count
                 undertow_error_count   = cl $row.undertow_error_count
                 undertow_bytes_sent    = cl $row.undertow_bytes_sent
                 undertow_processing_ms = cl $row.undertow_processing_ms
                 undertow_max_proc_ms   = cl $row.undertow_max_proc_ms
-                # Management API — IO Worker
                 io_worker_queue_size = ci $row.io_worker_queue_size
-                # Management API — Transactions
                 tx_committed         = cl $row.tx_committed
                 tx_inflight          = ci $row.tx_inflight
                 tx_timed_out         = cl $row.tx_timed_out
                 tx_rollbacks         = cl $row.tx_rollbacks
                 tx_aborted           = cl $row.tx_aborted
                 tx_heuristics        = cl $row.tx_heuristics
-                # Management API — Datasource Pool
                 ds_active_count      = ci $row.ds_active_count
                 ds_in_use_count      = ci $row.ds_in_use_count
                 ds_idle_count        = ci $row.ds_idle_count
@@ -200,12 +208,11 @@ ORDER BY s.server_name
     }
 }
 
-# ============================================================================
-# API: Queue Status Summary (with previous cycle for delta seeding)
-# Returns latest queue snapshot per server plus the previous cycle's
-# messages_added values so the JS can compute queue deltas on page load.
-# ============================================================================
+# GET /api/jboss-monitoring/queue-status
+# Returns the latest JMS queue snapshot per server plus the previous cycle's
+# messages-added values so the client can compute queue deltas on page load.
 Add-PodeRoute -Method Get -Path '/api/jboss-monitoring/queue-status' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $query = @"
 ;WITH RankedCycles AS (
@@ -214,7 +221,22 @@ Add-PodeRoute -Method Get -Path '/api/jboss-monitoring/queue-status' -Authentica
         collected_dttm,
         DENSE_RANK() OVER (PARTITION BY server_id ORDER BY collected_dttm DESC) AS cycle_rank
     FROM JBoss.QueueSnapshot
+    -- Bound the ranked set to a recent window so this dedups/ranks a small
+    -- recent slice off the collected_dttm index instead of the full queue
+    -- history. 24h is wide enough to always contain each server's latest two
+    -- cycles (collection runs every few minutes) and to keep a server that has
+    -- gone silent visible across an overnight gap. There is no retention on
+    -- JBoss.QueueSnapshot, so without this floor the scan grows unbounded.
+    WHERE collected_dttm >= DATEADD(HOUR, -24, GETDATE())
     GROUP BY server_id, collected_dttm
+),
+PrevCycle AS (
+    -- The single previous-cycle timestamp per server (rank 2), materialized
+    -- once so the prev-snapshot join keys against it directly rather than
+    -- re-evaluating RankedCycles per row via a correlated subquery.
+    SELECT server_id, collected_dttm
+    FROM RankedCycles
+    WHERE cycle_rank = 2
 )
 SELECT
     q.server_id,
@@ -231,13 +253,10 @@ FROM JBoss.QueueSnapshot q
 JOIN RankedCycles rc ON q.server_id = rc.server_id
     AND q.collected_dttm = rc.collected_dttm
     AND rc.cycle_rank = 1
+LEFT JOIN PrevCycle pc ON pc.server_id = q.server_id
 LEFT JOIN JBoss.QueueSnapshot prev ON prev.server_id = q.server_id
     AND prev.queue_name = q.queue_name
-    AND prev.collected_dttm = (
-        SELECT collected_dttm
-        FROM RankedCycles rc2
-        WHERE rc2.server_id = q.server_id AND rc2.cycle_rank = 2
-    )
+    AND prev.collected_dttm = pc.collected_dttm
 ORDER BY q.server_id, q.queue_name
 "@
         $results = Invoke-XFActsQuery -Query $query
@@ -299,12 +318,17 @@ ORDER BY q.server_id, q.queue_name
     }
 }
 
-# ============================================================================
-# API: Active Server
-# Returns the currently active DM app server (SharePoint link target)
-# ============================================================================
+# GET /api/jboss-monitoring/active-server
+# Returns the currently active DM app server (the SharePoint link target) and
+# the admin CanSwitch gate flag. The client renders the clickable Users badge
+# only when CanSwitch is true; the switch-server endpoint enforces the same
+# admin check server-side.
 Add-PodeRoute -Method Get -Path '/api/jboss-monitoring/active-server' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
+        $ctx = Get-UserContext -WebEvent $WebEvent
+        $canSwitch = [bool]$ctx.IsAdmin
+
         $result = Invoke-XFActsQuery -Query @"
             SELECT config_id, setting_value
             FROM dbo.GlobalConfig
@@ -321,6 +345,7 @@ Add-PodeRoute -Method Get -Path '/api/jboss-monitoring/active-server' -Authentic
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             active_server = $result[0].setting_value
             config_id     = $result[0].config_id
+            CanSwitch     = $canSwitch
         })
     }
     catch {
@@ -328,19 +353,19 @@ Add-PodeRoute -Method Get -Path '/api/jboss-monitoring/active-server' -Authentic
     }
 }
 
-# ============================================================================
-# API: Switch Server
-# Changes the active DM app server — updates firewall, SharePoint, GlobalConfig
-# ============================================================================
+# POST /api/jboss-monitoring/switch-server
+# Admin-gated switch of the active DM app server. Coordinates the Palo Alto
+# firewall rule, the SharePoint navigation node, GlobalConfig, and the audit
+# log. Body: { target_server: 'DM-PROD-APP'|'DM-PROD-APP2'|'DM-PROD-APP3' }.
 Add-PodeRoute -Method Post -Path '/api/jboss-monitoring/switch-server' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
-        # Admin check
         $ctx = Get-UserContext -WebEvent $WebEvent
         if (-not $ctx.IsAdmin) {
-            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Access denied — admin role required" }) -StatusCode 403
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Access denied -- admin role required" }) -StatusCode 403
             return
         }
-        $user = $ctx.DisplayName
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
 
         $body = $WebEvent.Data
         $targetServer = $body.target_server
@@ -376,9 +401,7 @@ Add-PodeRoute -Method Post -Path '/api/jboss-monitoring/switch-server' -Authenti
             return
         }
 
-        # ==============================================================
-        # Helper: Invoke Palo Alto API with certificate bypass
-        # ==============================================================
+        # Invokes a Palo Alto firewall API call with PowerShell 5.1 certificate bypass.
         function Invoke-PaloAltoAPI {
             param([string]$Uri, [string]$FwApiKey)
 
@@ -408,9 +431,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
             }
         }
 
-        # ==============================================================
-        # Helper: Set firewall rule enabled/disabled
-        # ==============================================================
+        # Enables or disables the prod-APP firewall rule and waits for the commit job to finish.
         function Set-FirewallRule {
             param([string]$Enabled, [string]$FwApiKey)
 
@@ -452,9 +473,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
             }
         }
 
-        # ==============================================================
-        # Helper: Get SharePoint OAuth2 access token
-        # ==============================================================
+        # Obtains a SharePoint OAuth2 client-credentials access token.
         function Get-SharePointAccessToken {
             param([hashtable]$Creds)
 
@@ -473,9 +492,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
             return $tokenResponse.access_token
         }
 
-        # ==============================================================
-        # Helper: Update SharePoint navigation node URL
-        # ==============================================================
+        # Updates the SharePoint "Debt Manager" top-navigation node to the new URL.
         function Update-SharePointNavNode {
             param([string]$AccessToken, [string]$NewUrl)
 
@@ -526,51 +543,49 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
             return $nodeId
         }
 
-        # ==============================================================
-        # EXECUTION: Firewall + SharePoint + GlobalConfig + Audit
-        # ==============================================================
-
-        # PowerShell 5.1 defaults to TLS 1.0 — force TLS 1.2 for all external API calls
+        # PowerShell 5.1 defaults to TLS 1.0 -- force TLS 1.2 for all external API calls
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
         $newUrl = "http://$($targetServer.ToLower()).fac.local/CRSServicesWeb/#"
 
         if ($targetServer -ne 'DM-PROD-APP2') {
-            # Switching AWAY from APP2: Enable firewall first, then update SharePoint
+            # Switching AWAY from APP2: enable firewall first (disabled=no), then update SharePoint
             $fwCreds = Get-ServiceCredentials -ServiceName 'PaloAlto'
-            Set-FirewallRule -Enabled 'no' -FwApiKey $fwCreds.ApiKey    # disabled=no means ENABLE the rule
+            Set-FirewallRule -Enabled 'no' -FwApiKey $fwCreds.ApiKey
 
             $spCreds = Get-ServiceCredentials -ServiceName 'SharePoint'
             $token = Get-SharePointAccessToken -Creds $spCreds
             Update-SharePointNavNode -AccessToken $token -NewUrl $newUrl
         }
         else {
-            # Switching BACK to APP2: Update SharePoint first, then disable firewall
+            # Switching BACK to APP2: update SharePoint first, then disable firewall (disabled=yes)
             $spCreds = Get-ServiceCredentials -ServiceName 'SharePoint'
             $token = Get-SharePointAccessToken -Creds $spCreds
             Update-SharePointNavNode -AccessToken $token -NewUrl $newUrl
 
             $fwCreds = Get-ServiceCredentials -ServiceName 'PaloAlto'
-            Set-FirewallRule -Enabled 'yes' -FwApiKey $fwCreds.ApiKey   # disabled=yes means DISABLE the rule
+            Set-FirewallRule -Enabled 'yes' -FwApiKey $fwCreds.ApiKey
         }
 
         # Update GlobalConfig
-        Invoke-XFActsQuery -Query @"
+        Invoke-XFActsNonQuery -Query @"
             UPDATE dbo.GlobalConfig
             SET setting_value = @val
             WHERE config_id = @cid
 "@ -Parameters @{ val = $targetServer; cid = [int]$configId }
 
         # Audit log
-        Invoke-XFActsQuery -Query @"
-            INSERT INTO dbo.ActionAuditLog
-                (page_route, action_type, action_summary, executed_by)
-            VALUES
-                ('/jboss-monitoring', 'CONFIG_CHANGE', @summary, @user)
+        try {
+            Invoke-XFActsNonQuery -Query @"
+                INSERT INTO dbo.ActionAuditLog
+                    (page_route, action_type, action_summary, result, executed_by)
+                VALUES
+                    ('/jboss-monitoring', 'CONFIG_CHANGE', @summary, 'SUCCESS', @executedBy)
 "@ -Parameters @{
-            summary = "Changed dm_sharepoint_active_server from $oldServer to $targetServer"
-            user    = $user
-        }
+                summary    = "Changed dm_sharepoint_active_server from $oldServer to $targetServer"
+                executedBy = $user
+            }
+        } catch { }
 
         Write-PodeJsonResponse -Value ([PSCustomObject]@{
             success       = $true
