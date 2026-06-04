@@ -1,203 +1,207 @@
-# ============================================================================
-# xFACts Control Center - Batch Monitoring Page
-# Location: E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring.ps1
-#
-# Renders the Batch Monitoring dashboard page showing batch lifecycle
-# tracking across NB, PMT, and BDL batch types with live activity, process
-# health, and historical analysis with phase duration breakdowns.
-#
-# CSS: /css/batch-monitoring.css
-# JS:  /js/batch-monitoring.js
-# APIs: BatchMonitoring-API.ps1
-#
-# Version: Tracked in dbo.System_Metadata (component: BatchOps)
-#
-# CHANGELOG
-# ---------
-# 2026-04-30  Phase 4 (Standardization): full alignment to shared infrastructure.
-#               - Added body class="section-platform" so H1 color is driven
-#                 by shared CSS via RBAC_NavRegistry section_key.
-#               - Renamed connection banner placeholder from id/class
-#                 connection-error to connection-banner matching the
-#                 engine-events.js rename.
-#               - Batch detail slideout migrated from page-local
-#                 .slideout/.slideout-overlay/.slideout-content/.slideout-header/
-#                 .slideout-body/.slideout-close markup to shared
-#                 .slide-panel-overlay/.slide-panel.xwide/.slide-panel-header/
-#                 .slide-panel-body/.modal-close from engine-events.css
-#                 (Section 9). The 950px .xwide tier matches the page's
-#                 prior page-local width.
-#               - Slideout overlay ID renamed from #slideout-overlay to
-#                 #batch-slideout-overlay for unambiguous naming.
-#               - Header element h2 -> h3 to match shared
-#                 .slide-panel-header h3 styling rule.
-# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
-#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
-#             browser tab title now render from RBAC_NavRegistry via
-#             Get-PageHeaderHtml and Get-PageBrowserTitle.
-# ============================================================================
+<#
+.SYNOPSIS
+    Renders the Batch Monitoring dashboard page route.
+
+.DESCRIPTION
+    Registers the /batch-monitoring page route. Renders the batch lifecycle
+    dashboard covering NB, PMT, and BDL batch types: a daily activity summary,
+    a live view of in-flight batches, collector process health, and a
+    drill-down batch history tree with a day-detail slideout. Page chrome
+    (nav, header, banners) is rendered by the shared CCShared helpers and the
+    page consumes the shared cc- chrome and overlay classes.
+
+.COMPONENT
+    BatchOps
+
+.NOTES
+    File Name : BatchMonitoring.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this route file, most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-04  Refactored to the CC file format specs. Replaced the legacy
+#             engine-events chrome with shared cc- chrome: cc-header-bar,
+#             cc-refresh-info, cc-engine-row, and the cc-shared.js bootloader
+#             contract. Body now declares cc-section-platform plus the
+#             data-cc-page / data-cc-prefix bootloader attributes. Engine
+#             cards reprefixed to the shared cc-card-engine-<slug> /
+#             cc-engine-bar-<slug> / cc-engine-cd-<slug> ids for the four
+#             BatchOps processes (nb, pmt, bdl, summary). Batch detail
+#             slideout migrated to the shared cc-slide-overlay /
+#             cc-dialog cc-dialog-slide cc-xwide construct with backdrop
+#             close wired via data-action-click. All inline onclick handlers
+#             replaced by data-action-click values routed through the page
+#             dispatch tables. CCShared import shim added as the first
+#             statement inside the route scriptblock.
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   The /batch-monitoring page route. Gates on page access, resolves the user
+   context, renders the shared chrome, and emits the page shell with its
+   content sections and the batch detail slideout.
+   Prefix: bat
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/batch-monitoring' -Authentication 'ADLogin' -ScriptBlock {
+    Import-Module -Name "E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1" -Force -DisableNameChecking
 
-    # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/batch-monitoring'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/batch-monitoring') -StatusCode 403
         return
     }
 
-    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
 
-    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
-    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/batch-monitoring'
-    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/batch-monitoring'
+    $navHtml      = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/batch-monitoring'
+    $headerHtml   = Get-PageHeaderHtml -PageRoute '/batch-monitoring'
     $browserTitle = Get-PageBrowserTitle -PageRoute '/batch-monitoring'
+    $bannerHtml   = Get-ChromeBannersHtml
 
     $html = @"
-
 <!DOCTYPE html>
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/batch-monitoring.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
+
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body class="section-platform">
+<body class="cc-section-platform" data-cc-page="batch-monitoring" data-cc-prefix="bat">
 $navHtml
 
-    <div class="header-bar">
+    <div class="cc-header-bar">
         <div>
             $headerHtml
         </div>
-        <div class="header-right">
-            <div class="refresh-info">
-                <span class="live-indicator"></span>
-                <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-                <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>
+        <div class="cc-header-right">
+            <div class="cc-refresh-info">
+                <span class="cc-live-indicator"></span>
+                <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+                <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
-            <div class="engine-row">
-                <div class="engine-card" id="card-engine-nb">
-                    <span class="engine-label">NB</span>
-                    <div class="engine-bar disabled" id="engine-bar-nb"></div>
-                    <span class="engine-countdown" id="engine-cd-nb">&nbsp;</span>
+            <div class="cc-engine-row">
+                <div class="cc-card-engine" id="cc-card-engine-nb">
+                    <span class="cc-engine-label">NB</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-nb"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-nb"></span>
                 </div>
-                <div class="engine-card" id="card-engine-pmt">
-                    <span class="engine-label">PMT</span>
-                    <div class="engine-bar disabled" id="engine-bar-pmt"></div>
-                    <span class="engine-countdown" id="engine-cd-pmt">&nbsp;</span>
+                <div class="cc-card-engine" id="cc-card-engine-pmt">
+                    <span class="cc-engine-label">PMT</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-pmt"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-pmt"></span>
                 </div>
-                <div class="engine-card" id="card-engine-bdl">
-                    <span class="engine-label">BDL</span>
-                    <div class="engine-bar disabled" id="engine-bar-bdl"></div>
-                    <span class="engine-countdown" id="engine-cd-bdl">&nbsp;</span>
+                <div class="cc-card-engine" id="cc-card-engine-bdl">
+                    <span class="cc-engine-label">BDL</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-bdl"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-bdl"></span>
                 </div>
-                <div class="engine-card" id="card-engine-summary">
-                    <span class="engine-label">Summary</span>
-                    <div class="engine-bar disabled" id="engine-bar-summary"></div>
-                    <span class="engine-countdown" id="engine-cd-summary">&nbsp;</span>
+                <div class="cc-card-engine" id="cc-card-engine-summary">
+                    <span class="cc-engine-label">SUMMARY</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-summary"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-summary"></span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="connection-banner" class="connection-banner"></div>
+    $bannerHtml
 
-    <!-- Two Column Layout -->
-    <div class="grid-layout">
+    <div class="bat-grid-layout">
 
-        <!-- Left Column: Daily Summary, Active Batches -->
-        <div class="grid-column">
+        <div class="bat-grid-column">
 
-            <!-- Daily Batch Summary -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Today's Activity</h2>
-                    <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Today's Activity</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
-                <div id="daily-summary" class="summary-cards">
-                    <div class="loading">Loading...</div>
+                <div id="bat-daily-summary" class="bat-summary-cards">
+                    <div class="bat-loading">Loading...</div>
                 </div>
             </div>
 
-            <!-- Active Batches (Unified View) -->
-            <div class="section section-fill">
-                <div class="section-header">
-                    <h2 class="section-title">Active Batches</h2>
-                    <div class="section-header-right">
-                        <div class="filter-group">
-                            <button class="active-filter-btn active" data-filter="ALL">All</button>
-                            <button class="active-filter-btn" data-filter="NB">NB</button>
-                            <button class="active-filter-btn" data-filter="PMT">PMT</button>
-                            <button class="active-filter-btn" data-filter="BDL">BDL</button>
+            <div class="cc-section cc-fill">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Active Batches</h2>
+                    <div class="cc-section-header-right">
+                        <div class="bat-filter-group">
+                            <button class="bat-active-filter-btn bat-active" data-action-click="bat-set-active-filter" data-bat-filter="ALL">All</button>
+                            <button class="bat-active-filter-btn" data-action-click="bat-set-active-filter" data-bat-filter="NB">NB</button>
+                            <button class="bat-active-filter-btn" data-action-click="bat-set-active-filter" data-bat-filter="PMT">PMT</button>
+                            <button class="bat-active-filter-btn" data-action-click="bat-set-active-filter" data-bat-filter="BDL">BDL</button>
                         </div>
-                        <span class="refresh-badge-live" title="Refreshes on live interval"><span class="badge-dot"></span></span>
+                        <span class="cc-refresh-badge-live" title="Refreshes on live interval"><span class="cc-refresh-badge-dot"></span></span>
                     </div>
                 </div>
-                <div id="active-batches" class="activity-content">
-                    <div class="loading">Loading...</div>
+                <div id="bat-active-batches" class="bat-activity-content">
+                    <div class="bat-loading">Loading...</div>
                 </div>
             </div>
         </div>
 
-        <!-- Right Column: Process Status, Batch History -->
-        <div class="grid-column">
+        <div class="bat-grid-column">
 
-            <!-- Process Status -->
-            <div class="section section-compact">
-                <div class="section-header">
-                    <h2 class="section-title">Process Status</h2>
-                    <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+            <div class="cc-section bat-section-compact">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Process Status</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
-                <div id="process-status" class="status-grid">
-                    <div class="loading">Loading...</div>
+                <div id="bat-process-status" class="bat-status-grid">
+                    <div class="bat-loading">Loading...</div>
                 </div>
             </div>
 
-            <!-- Batch History (Tree Drill-Down) -->
-            <div class="section section-fill section-history">
-                <div class="section-header">
-                    <h2 class="section-title">Batch History</h2>
-                    <div class="section-header-right">
-                        <div class="filter-group">
-                            <button class="filter-btn active" data-filter="ALL">All</button>
-                            <button class="filter-btn" data-filter="NB">NB</button>
-                            <button class="filter-btn" data-filter="PMT">PMT</button>
-                            <button class="filter-btn" data-filter="BDL">BDL</button>
+            <div class="cc-section cc-fill">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Batch History</h2>
+                    <div class="cc-section-header-right">
+                        <div class="bat-filter-group">
+                            <button class="bat-filter-btn bat-active" data-action-click="bat-set-history-filter" data-bat-filter="ALL">All</button>
+                            <button class="bat-filter-btn" data-action-click="bat-set-history-filter" data-bat-filter="NB">NB</button>
+                            <button class="bat-filter-btn" data-action-click="bat-set-history-filter" data-bat-filter="PMT">PMT</button>
+                            <button class="bat-filter-btn" data-action-click="bat-set-history-filter" data-bat-filter="BDL">BDL</button>
                         </div>
-                        <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+                        <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                     </div>
                 </div>
-                <div id="batch-history" class="history-content">
-                    <div class="loading">Loading...</div>
+                <div id="bat-batch-history" class="bat-history-content">
+                    <div class="bat-loading">Loading...</div>
                 </div>
             </div>
         </div>
 
     </div>
 
-    <!-- ================================================================
-         BATCH DETAIL SLIDEOUT
-         Shared .slide-panel-* infrastructure from engine-events.css.
-         The .xwide variant (950px) accommodates the wide multi-column
-         batch detail rows with metrics and phase timelines.
-         ================================================================ -->
-    <div id="batch-slideout-overlay" class="slide-panel-overlay" onclick="closeSlideout()"></div>
-    <div id="batch-slideout" class="slide-panel xwide">
-        <div class="slide-panel-header">
-            <h3 id="slideout-title">Batch Details</h3>
-            <button class="modal-close" onclick="closeSlideout()">&times;</button>
-        </div>
-        <div class="slide-panel-body" id="slideout-body">
-            <div class="loading">Loading...</div>
+    <!-- Purpose: batch detail slideout showing per-day batch rows with metrics and phase timelines -->
+    <div id="bat-slideout-detail" class="cc-slide-overlay" data-action-click="bat-close-slideout">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="bat-slideout-title">Batch Details</h3>
+                <button class="cc-dialog-close" data-action-click="bat-close-slideout">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="bat-slideout-body">
+                <div class="bat-loading">Loading...</div>
+            </div>
         </div>
     </div>
 
-    <script src="/js/batch-monitoring.js"></script>
-    <script src="/js/engine-events.js"></script>
+    <script src="/js/cc-shared.js"></script>
 </body>
 </html>
-
 "@
     Write-PodeHtmlResponse -Value $html
 }
