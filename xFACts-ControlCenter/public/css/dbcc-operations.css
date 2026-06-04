@@ -1,100 +1,46 @@
 /* ============================================================================
-   xFACts Control Center - DBCC Operations Styles
+   xFACts Control Center - DBCC Operations Styles (dbcc-operations.css)
    Location: E:\xFACts-ControlCenter\public\css\dbcc-operations.css
    Version: Tracked in dbo.System_Metadata (component: ServerOps.DBCC)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css), engine-card/
-               engine-row/engine-bar/engine-label/engine-countdown block
-               (shared), .section-header-right (shared), and per-container
-               scrollbar overrides (shared global ::-webkit-scrollbar rule
-               applies). Kept @keyframes pulse (.live-indicator) and
-               @keyframes spin (.spinning-gear).
+   Page-specific styles for the DBCC Operations dashboard: the two-column
+   viewport-constrained layout, live progress cards, today's execution grid,
+   the year/month/day execution-history accordion, the schedule overview and
+   detail tables, and the schedule-edit form controls. Chrome (header,
+   sections, overlays, badges-shell) comes from cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: TWO-COLUMN VIEWPORT
+   CONTENT: SHARED PAGE PRIMITIVES
+   CONTENT: LIVE PROGRESS
+   CONTENT: STATUS AND OPERATION BADGES
+   CONTENT: TODAY'S EXECUTIONS
+   CONTENT: EXECUTION HISTORY
+   CONTENT: SCHEDULE OVERVIEW
+   CONTENT: SCHEDULE DETAIL TABLE
+   CONTENT: SCHEDULE EDIT FORM
    ============================================================================ */
-
-/* Base Layout */
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { color: #888; font-size: 14px; margin: 0; }
-a { color: #9cdcfe; }
-
-/* Header */
-.header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 20px;
-    gap: 10px;
-}
-
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-
-.refresh-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #888;
-    font-size: 13px;
-}
-.last-updated { color: #4ec9b0; }
-
-.live-indicator {
-    width: 8px;
-    height: 8px;
-    background: #4ec9b0;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-/* Connection Error */
-.connection-error {
-    background: #5a1d1d;
-    border: 1px solid #ff6b6b;
-    color: #ff9999;
-    padding: 10px 15px;
-    border-radius: 4px;
-    margin-bottom: 15px;
-    display: none;
-}
-.connection-error.visible { display: block; }
 
 /* ============================================================================
-   Viewport-Constrained Layout — no page scroll, internal section scrolling
+   LAYOUT: TWO-COLUMN VIEWPORT
+   ----------------------------------------------------------------------------
+   The viewport-constrained two-column dashboard frame. Columns fill the
+   available height with internal section scrolling rather than page scroll,
+   collapsing to a single stacked column on narrow viewports.
+   Prefix: dbc
    ============================================================================ */
-.two-column-layout {
+
+/* Two-column dashboard frame constrained to the viewport height. */
+.dbc-two-column {
     display: flex;
-    gap: 20px;
+    gap: var(--size-spacing-2xl);
     height: calc(100vh - 200px);
     overflow: hidden;
 }
-.left-column {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    overflow: hidden;
-}
-.right-column {
+
+/* A single dashboard column that stacks its sections and scrolls internally. */
+.dbc-column {
     flex: 1;
     min-width: 0;
     display: flex;
@@ -103,873 +49,1114 @@ a { color: #9cdcfe; }
     overflow: hidden;
 }
 
+/* Collapses the two-column frame to a stacked single column on narrow viewports. */
 @media (max-width: 1200px) {
-    .two-column-layout { flex-direction: column; height: auto; overflow: auto; }
+    /* Stacks the two columns vertically and allows natural page scroll on narrow viewports. */
+    .dbc-two-column {
+        flex-direction: column;
+        height: auto;
+        overflow: auto;
+    }
 }
 
 /* ============================================================================
-   Sections
+   CONTENT: SHARED PAGE PRIMITIVES
+   ----------------------------------------------------------------------------
+   Small page-wide primitives: the fixed-height schedule section variant,
+   the loading placeholder, the empty-state message, and the pending-queue
+   header button with its count badge.
+   Prefix: dbc
    ============================================================================ */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
 
-.section-fill {
-    flex: 1;
-    flex-shrink: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.section-fixed-schedule {
+/* Caps the schedule overview section at a fixed height so the history section below it fills the rest. */
+.dbc-section-schedule {
     max-height: 320px;
     flex-shrink: 0;
 }
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
-.section-title {
-    color: #4ec9b0;
-    font-size: 14px;
-    font-weight: 600;
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+
+/* Centered italic placeholder shown while a section's data is loading. */
+.dbc-loading {
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding: 15px;
+    text-align: center;
 }
 
-/* Pending Queue Button */
-.refresh-btn {
+/* Centered subtle message shown when a section has no rows to display. */
+.dbc-no-activity {
+    color: var(--color-text-subtle);
+    padding: var(--size-spacing-lg);
+    text-align: center;
+    font-size: var(--font-size-content);
+    font-style: italic;
+}
+
+/* Pending-queue button in the Today's Executions section header. */
+.dbc-pending-btn {
     background: transparent;
-    border: 1px solid #555;
-    color: #888;
-    padding: 3px 8px;
-    border-radius: 3px;
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
     cursor: pointer;
-    font-size: 14px;
-    transition: all 0.2s;
-}
-
-.refresh-btn:hover {
-    background: #333;
-    color: #d4d4d4;
-    border-color: #666;
-}
-
-.pending-btn {
-    font-size: 12px;
+    font-size: var(--font-size-content);
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--size-spacing-sm);
+    transition: all var(--duration-fast);
 }
 
-.pending-badge {
-    background: #dcdcaa;
-    color: #1e1e1e;
-    font-size: 10px;
+.dbc-pending-btn:hover { /* hover state for the pending-queue button */
+    background: var(--color-border-divider);
+    color: var(--color-text-primary);
+    border-color: var(--color-text-subtle);
+}
+
+/* Count badge showing the number of pending operations on the pending button. */
+.dbc-pending-badge {
+    background: var(--color-accent-departmental);
+    color: var(--color-bg-page);
+    font-size: var(--font-size-default);
     font-weight: 600;
-    padding: 1px 5px;
-    border-radius: 8px;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-spacing-md);
     min-width: 16px;
     text-align: center;
 }
 
-.hidden { display: none !important; }
-
-/* Loading & Messages */
-.loading {
-    color: #888;
-    font-style: italic;
-    padding: 15px;
-    text-align: center;
-}
-.no-activity {
-    color: #666;
-    padding: 12px;
-    text-align: center;
-    font-size: 12px;
-    font-style: italic;
-}
-
 /* ============================================================================
-   Live Progress — Active DBCC operations with progress bars
+   CONTENT: LIVE PROGRESS
+   ----------------------------------------------------------------------------
+   The live progress panel showing active DBCC operations as cards with a
+   title block, run stats, and an animated percent-complete progress bar.
+   Prefix: dbc
    ============================================================================ */
-.live-progress-content {
+
+/* Scrollable container for the live progress operation cards. */
+.dbc-live-progress-content {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
 }
 
-.live-op-card {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 12px 15px;
+/* A single running-operation card. */
+.dbc-live-op-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg) 15px;
     margin-bottom: 10px;
 }
-.live-op-card:last-child { margin-bottom: 0; }
 
-.live-op-card.status-running {
-    border-color: #569cd6;
-    background: rgba(86, 156, 214, 0.08);
+.dbc-live-op-card:last-child { /* drop the trailing margin on the final card */
+    margin-bottom: 0;
 }
 
-.live-op-card.status-pending {
-    border-color: #dcdcaa;
-    background: rgba(220, 220, 170, 0.05);
+/* State tag indicating an element is in the running state. Used on operation cards and status badges. */
+.dbc-running { }
+
+.dbc-live-op-card.dbc-running { /* Running-state accent for an operation card (blue frame and tint). */
+    border-color: var(--color-accent-platform);
+    background: var(--color-glow-status-running);
 }
 
-.live-op-header {
+/* Header row of a live op card: title block on the left, status badge on the right. */
+.dbc-live-op-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: var(--size-spacing-md);
 }
 
-.live-op-title-block {
+/* Stacks the operation/database title and its subtitle. */
+.dbc-live-op-title-block {
     display: flex;
     flex-direction: column;
     gap: 2px;
 }
 
-.live-op-title {
-    font-size: 13px;
+/* The operation + database title line in a live op card. */
+.dbc-live-op-title {
+    font-size: var(--font-size-content-lg);
     font-weight: 500;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--size-spacing-md);
 }
 
-.live-op-title .op-name {
-    color: #9cdcfe;
-    font-weight: 600;
+/* Database name emphasis within the live op title. */
+.dbc-live-op-db {
+    color: var(--color-text-pre);
+    font-size: var(--font-size-heading-sm);
 }
 
-.live-op-title .db-name {
-    color: #ce9178;
-    font-size: 14px;
+/* Secondary line under the title showing check mode and MAXDOP. */
+.dbc-live-op-subtitle {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
 }
 
-.live-op-subtitle {
-    font-size: 10px;
-    color: #666;
-}
-
-.live-op-stats {
+/* Row of labeled run statistics on a live op card. */
+.dbc-live-op-stats {
     display: flex;
-    gap: 20px;
-    font-size: 12px;
-    margin-bottom: 8px;
+    gap: var(--size-spacing-2xl);
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-md);
     flex-wrap: wrap;
 }
 
-.live-op-stat .label {
-    color: #888;
-    margin-right: 4px;
+/* Muted label preceding a stat value. */
+.dbc-live-op-stat-label {
+    color: var(--color-text-muted);
+    margin-right: var(--size-spacing-xs);
 }
 
-.live-op-stat .value {
-    color: #d4d4d4;
+/* The value portion of a run statistic. */
+.dbc-live-op-stat-value {
+    color: var(--color-text-primary);
 }
 
-/* Spinning gear for running status */
-.spinning-gear {
-    display: inline-block;
-    animation: spin 2s linear infinite;
-}
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-
-/* Progress Bar */
-.progress-bar-container {
+/* Track container for the percent-complete progress bar. */
+.dbc-progress-track {
     position: relative;
-    background: #333;
-    border-radius: 3px;
+    background: var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
     height: 16px;
     overflow: hidden;
 }
-.progress-bar {
+
+/* The filled portion of the progress bar (width set inline from percent complete). */
+.dbc-progress-fill {
     position: absolute;
     left: 0;
     top: 0;
     bottom: 0;
-    background: linear-gradient(90deg, #2d6b5e, #266053);
-    border-radius: 3px;
-    transition: width 0.3s ease;
+    background: var(--gradient-progress-default);
+    border-radius: var(--size-radius-sm);
+    transition: width var(--duration-default) ease;
 }
-.progress-text {
+
+/* The centered percent label overlaid on the progress bar. */
+.dbc-progress-text {
     position: relative;
     z-index: 1;
     display: block;
     text-align: center;
-    font-size: 10px;
+    font-size: var(--font-size-default);
     font-weight: 600;
     line-height: 16px;
-    color: #d4d4d4;
-    text-shadow: 0 0 2px #000;
+    color: var(--color-text-primary);
 }
 
 /* ============================================================================
-   Status Badges (pills) — used across all sections
+   CONTENT: STATUS AND OPERATION BADGES
+   ----------------------------------------------------------------------------
+   Pill badges used across every section: execution-status badges (success,
+   running, pending, failed, errors-found, never-run) and DBCC operation-type
+   badges (checkdb, checkalloc, checkcatalog, checkconstraints, checktable).
+   Prefix: dbc
    ============================================================================ */
-.status-badge {
-    font-size: 9px;
+
+/* Base execution-status pill. */
+.dbc-status-badge {
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
 }
-.status-badge.success {
+
+/* State tag indicating an element is in the success state. Used on status badges and year stats. */
+.dbc-success { }
+
+.dbc-status-badge.dbc-success { /* Success state for a status pill. */
     background: rgba(78, 201, 176, 0.2);
-    color: #4ec9b0;
-}
-.status-badge.running {
-    background: rgba(86, 156, 214, 0.2);
-    color: #569cd6;
-}
-.status-badge.pending {
-    background: rgba(220, 220, 170, 0.2);
-    color: #dcdcaa;
-}
-.status-badge.failed {
-    background: rgba(244, 135, 113, 0.2);
-    color: #f48771;
-}
-.status-badge.errors-found {
-    background: rgba(220, 220, 170, 0.25);
-    color: #dcdcaa;
-}
-.status-badge.never-run {
-    background: rgba(85, 85, 85, 0.3);
-    color: #666;
+    color: var(--color-accent-shared);
 }
 
-/* Operation type badges */
-.op-badge {
-    font-size: 9px;
+.dbc-status-badge.dbc-running { /* Running state for a status pill. */
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+}
+
+/* State tag indicating a status badge is in the pending state. */
+.dbc-pending { }
+
+.dbc-status-badge.dbc-pending { /* Pending state for a status pill. */
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
+
+/* State tag indicating an element is in the failed state. Used on status badges and year stats. */
+.dbc-failed { }
+
+.dbc-status-badge.dbc-failed { /* Failed state for a status pill. */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* State tag indicating a status badge is in the errors-found state. */
+.dbc-errors-found { }
+
+.dbc-status-badge.dbc-errors-found { /* Errors-found state for a status pill. */
+    background: rgba(220, 220, 170, 0.25);
+    color: var(--color-accent-departmental);
+}
+
+/* State tag indicating a status badge is in the never-run state. */
+.dbc-never-run { }
+
+.dbc-status-badge.dbc-never-run { /* Never-run state for a status pill. */
+    background: rgba(85, 85, 85, 0.3);
+    color: var(--color-text-subtle);
+}
+
+/* Base operation-type pill. */
+.dbc-op-badge {
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
 }
-.op-badge.checkdb {
+
+/* Operation tag marking an operation badge as the CHECKDB operation. */
+.dbc-op-checkdb { }
+
+.dbc-op-badge.dbc-op-checkdb { /* CHECKDB operation accent. */
     background: rgba(86, 156, 214, 0.15);
-    color: #569cd6;
+    color: var(--color-accent-platform);
 }
-.op-badge.checkalloc {
+
+/* Operation tag marking an operation badge as the CHECKALLOC operation. */
+.dbc-op-checkalloc { }
+
+.dbc-op-badge.dbc-op-checkalloc { /* CHECKALLOC operation accent. */
     background: rgba(78, 201, 176, 0.15);
-    color: #4ec9b0;
+    color: var(--color-accent-shared);
 }
-.op-badge.checkcatalog {
+
+/* Operation tag marking an operation badge as the CHECKCATALOG operation. */
+.dbc-op-checkcatalog { }
+
+.dbc-op-badge.dbc-op-checkcatalog { /* CHECKCATALOG operation accent. */
     background: rgba(156, 220, 254, 0.15);
-    color: #9cdcfe;
+    color: var(--color-text-link);
 }
-.op-badge.checkconstraints {
+
+/* Operation tag marking an operation badge as the CHECKCONSTRAINTS operation. */
+.dbc-op-checkconstraints { }
+
+.dbc-op-badge.dbc-op-checkconstraints { /* CHECKCONSTRAINTS operation accent. */
     background: rgba(220, 220, 170, 0.15);
-    color: #dcdcaa;
+    color: var(--color-accent-departmental);
 }
-.op-badge.checktable {
+
+/* Operation tag marking an operation badge as the CHECKTABLE operation. */
+.dbc-op-checktable { }
+
+.dbc-op-badge.dbc-op-checktable { /* CHECKTABLE operation accent. */
     background: rgba(206, 145, 120, 0.15);
-    color: #ce9178;
+    color: var(--color-text-pre);
+}
+
+/* Small muted inline annotation (check mode, secondary server) beside a badge or cell. */
+.dbc-annotation {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-default);
+}
+
+/* Small inline expand-affordance chevron shown on expandable status cells. */
+.dbc-inline-chevron {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-sm);
 }
 
 /* ============================================================================
-   Today's Executions — CSS Grid columnar layout
+   CONTENT: TODAY'S EXECUTIONS
+   ----------------------------------------------------------------------------
+   The Today's Executions list: a scrollable column of grid rows, one per
+   completed or in-progress execution, with operation, server, database,
+   duration, time, mode, and status columns.
+   Prefix: dbc
    ============================================================================ */
-.todays-list {
+
+/* Scrollable container for today's execution rows. */
+.dbc-todays-list {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
 }
 
-.today-row {
+/* A single execution row laid out as a fixed-column grid. */
+.dbc-today-row {
     display: grid;
     grid-template-columns: 130px 120px 1fr 60px 70px 90px 95px;
     align-items: center;
-    gap: 8px;
-    padding: 5px 8px;
-    border-radius: 3px;
-    font-size: 12px;
-    transition: background 0.15s;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-content);
+    transition: background var(--duration-instant);
 }
-.today-row:hover { background: #2d2d2d; }
 
-.today-row .op-badge { display: inline-block; text-align: center; width: 100%; }
+.dbc-today-row:hover { /* hover highlight for an execution row */
+    background: var(--color-bg-card-hover);
+}
 
-.today-row-failed { color: #f48771; }
-.today-row-errors { color: #dcdcaa; }
-.today-row-running {
+/* State tag indicating a table row is in the failed state. Used on execution and history rows. */
+.dbc-row-failed { }
+
+.dbc-today-row.dbc-row-failed { /* Failed-execution row text coloring. */
+    color: var(--color-status-critical);
+}
+
+/* State tag indicating a today-execution row is in the errors-found state. */
+.dbc-row-errors { }
+
+.dbc-today-row.dbc-row-errors { /* Errors-found execution row text coloring. */
+    color: var(--color-accent-departmental);
+}
+
+/* State tag indicating a today-execution row is in the running state. */
+.dbc-row-running { }
+
+.dbc-today-row.dbc-row-running { /* In-progress execution row tint. */
     background: rgba(86, 156, 214, 0.06);
 }
 
-.today-server {
-    color: #888;
-    font-size: 11px;
+/* The operation badge cell, centered and full-width within its grid column. */
+.dbc-today-op {
+    display: inline-block;
+    text-align: center;
+    width: 100%;
+}
+
+/* Server name cell (muted, truncated). */
+.dbc-today-server {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.today-db {
-    color: #d4d4d4;
+/* Database name cell (truncated). */
+.dbc-today-db {
+    color: var(--color-text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.today-duration {
-    color: #888;
-    font-size: 11px;
+/* Right-aligned duration cell. */
+.dbc-today-duration {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
     text-align: right;
 }
 
-.today-time {
-    color: #666;
-    font-size: 11px;
+/* Right-aligned completion-time cell. */
+.dbc-today-time {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-body);
     text-align: right;
 }
 
-.today-mode {
-    color: #666;
-    font-size: 10px;
+/* Right-aligned check-mode cell. */
+.dbc-today-mode {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-default);
     text-align: right;
 }
 
-.today-status {
+/* Right-aligned status badge cell. */
+.dbc-today-status {
     text-align: right;
 }
 
 /* ============================================================================
-   Execution History — Accordion by run_id
+   CONTENT: EXECUTION HISTORY
+   ----------------------------------------------------------------------------
+   The year/month/day execution-history accordion: collapsible year headers,
+   per-month summary tables, expandable day rows, and the per-operation
+   detail rows with error and DBCC-output text panels.
+   Prefix: dbc
    ============================================================================ */
-.history-tree { font-size: 13px; flex: 1; overflow-y: auto; min-height: 0; }
-.history-year { margin-bottom: 8px; }
 
-.year-header {
+/* Scrollable tree container for the execution-history accordion. */
+.dbc-history-tree {
+    font-size: var(--font-size-content-lg);
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* A year grouping within the history tree. */
+.dbc-history-year {
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Clickable year header row. */
+.dbc-year-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) 10px;
     cursor: pointer;
-    border-radius: 4px;
-    background-color: #2d2d2d;
-    border: 1px solid #404040;
-    transition: background-color 0.2s;
+    border-radius: var(--size-radius-default);
+    background-color: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    transition: background-color var(--duration-fast);
 }
-.year-header:hover { background-color: #353535; }
 
-.year-label { font-weight: 700; color: #569cd6; font-size: 18px; letter-spacing: 1px; }
-.year-stats { margin-left: auto; display: flex; gap: 6px; font-size: 11px; }
-.year-stat { min-width: 110px; text-align: right; color: #888; }
-.year-stat.success { color: #4ec9b0; }
-.year-stat.warning { color: #dcdcaa; }
-.year-stat.failed { color: #f48771; }
+.dbc-year-header:hover { /* hover highlight for the year header */
+    background-color: #353535;
+}
 
-.year-content { margin-left: 10px; margin-top: 8px; }
+/* The large year label in a year header. */
+.dbc-year-label {
+    font-weight: 700;
+    color: var(--color-accent-platform);
+    font-size: 18px;
+    letter-spacing: 1px;
+}
 
-/* Month summary table */
-.month-summary-table {
+/* Right-aligned stats cluster in a year header. */
+.dbc-year-stats {
+    margin-left: auto;
+    display: flex;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-body);
+}
+
+/* A single stat figure in the year header stats cluster. */
+.dbc-year-stat {
+    min-width: 110px;
+    text-align: right;
+    color: var(--color-text-muted);
+}
+
+.dbc-year-stat.dbc-success { /* Success coloring for a year stat. */
+    color: var(--color-accent-shared);
+}
+
+.dbc-year-stat.dbc-failed { /* Failed coloring for a year stat. */
+    color: var(--color-status-critical);
+}
+
+/* The expandable body of a year, holding the month summary table. */
+.dbc-year-content {
+    display: none;
+    margin-left: 10px;
+    margin-top: var(--size-spacing-md);
+}
+
+/* State tag indicating an accordion body or detail row is expanded. Used on year, month, day, and detail rows. */
+.dbc-expanded { }
+
+.dbc-year-content.dbc-expanded { /* Expanded state for a year body. */
+    display: block;
+}
+
+/* Month summary table inside a year. */
+.dbc-month-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
-    margin-bottom: 8px;
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-md);
 }
-.month-summary-table th {
+
+/* Month summary table header cell. */
+.dbc-month-table-th {
     text-align: left;
-    padding: 6px 10px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
 }
-.month-summary-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+
+/* Month summary table data cell. */
+.dbc-month-table-td {
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
-.month-summary-table tr.month-row {
+
+/* Clickable month summary row. */
+.dbc-month-row {
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-fast);
 }
-.month-summary-table tr.month-row:hover td { background: #2d2d2d; }
-.month-summary-table .expand-cell { width: 24px; text-align: center; }
-.month-summary-table .month-cell { font-weight: 500; }
-.month-summary-table .success-cell { color: #4ec9b0; }
-.month-summary-table .warning-cell { color: #dcdcaa; }
-.month-summary-table .fail-cell { color: #f48771; }
 
-/* Month details (expanded day table) */
-.month-details td {
-    padding: 0 0 12px 20px;
+/* Expand-toggle cell at the start of expandable rows. */
+.dbc-expand-cell {
+    width: 24px;
+    text-align: center;
+}
+
+/* Month-name cell emphasis. */
+.dbc-month-cell {
+    font-weight: 500;
+}
+
+/* Success-count cell coloring. */
+.dbc-success-cell {
+    color: var(--color-accent-shared);
+}
+
+/* Warning-count cell coloring. */
+.dbc-warning-cell {
+    color: var(--color-accent-departmental);
+}
+
+/* Failed-count cell coloring. */
+.dbc-fail-cell {
+    color: var(--color-status-critical);
+}
+
+/* The month-detail row wrapping the day table (hidden until its month expands). */
+.dbc-month-details-row {
+    display: none;
+}
+
+.dbc-month-details-row.dbc-expanded { /* Expanded state for a month-detail row. */
+    display: table-row;
+}
+
+/* The expanded month-detail cell wrapping the day table. */
+.dbc-month-details-td {
+    padding: 0 0 var(--size-spacing-lg) var(--size-spacing-2xl);
     background: transparent;
 }
-.month-details-content { padding-top: 4px; }
 
-/* Status indicator dot for day rows */
-.status-indicator {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+/* Inner wrapper for expanded month-detail content. */
+.dbc-month-details-content {
+    padding-top: var(--size-spacing-xs);
 }
-.status-indicator.success { background: #4ec9b0; }
-.status-indicator.warning { background: #dcdcaa; }
-.status-indicator.error { background: #f48771; }
 
-/* Day detail (expanded operations) */
-.day-detail-row td {
-    padding: 4px 0 12px 20px;
+/* The day-detail row holding the lazily-loaded operation table (hidden until its day expands). */
+.dbc-day-detail-row {
+    display: none;
+}
+
+.dbc-day-detail-row.dbc-expanded { /* Expanded state for a day-detail row. */
+    display: table-row;
+}
+
+/* The day-detail cell wrapping the per-operation table. */
+.dbc-day-detail-td {
+    padding: var(--size-spacing-xs) 0 var(--size-spacing-lg) var(--size-spacing-2xl);
     background: transparent;
 }
-.day-detail-content { padding-top: 4px; }
 
-/* Expand icon (shared) */
-.expand-icon {
-    color: #888;
-    font-size: 10px;
+/* Inner wrapper for day-detail content. */
+.dbc-day-detail-content {
+    padding-top: var(--size-spacing-xs);
+}
+
+/* Expand/collapse chevron icon shared across history rows. */
+.dbc-expand-icon {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
     width: 12px;
     flex-shrink: 0;
 }
 
-/* History table inside accordion */
-.history-table {
+/* Day-level history table inside a month. */
+.dbc-history-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
-.history-table th {
+
+/* Day/operation history table header cell. */
+.dbc-history-table-th {
     text-align: left;
-    padding: 4px 8px;
-    color: #888;
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    color: var(--color-text-muted);
     font-weight: 500;
-    font-size: 11px;
-    border-bottom: 1px solid #404040;
-}
-.history-table td {
-    padding: 4px 8px;
-    border-bottom: 1px solid #333;
-}
-.history-table tr:hover { background: #2a2a2a; }
-.history-table tr.row-failed td { color: #f48771; }
-.history-table tr.expandable { cursor: pointer; }
-.history-table .success-cell { color: #4ec9b0; }
-.history-table .warning-cell { color: #dcdcaa; }
-.history-table .fail-cell { color: #f48771; }
-.history-table tr.row-warning td { color: #dcdcaa; }
-
-/* Expandable detail row (error details + summary output) */
-.detail-expand-row { display: none; }
-.detail-expand-row.expanded { display: table-row; }
-.detail-expand-row td {
-    background: #2a2a2a;
-    padding: 8px 12px;
-    border-bottom: 1px solid #404040;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.detail-expand-content {
-    padding: 4px;
+/* Day/operation history table data cell. */
+.dbc-history-table-td {
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.detail-label {
-    font-size: 10px;
-    color: #888;
+/* Clickable expandable row in the history table (day rows and detail-bearing op rows). */
+.dbc-history-row {
+    cursor: pointer;
+    transition: background-color var(--duration-fast);
+}
+
+.dbc-history-row:hover { /* hover highlight for an expandable history row */
+    background: var(--color-bg-card-deep);
+}
+
+.dbc-history-row.dbc-row-failed { /* Failed-operation row text coloring in the history table. */
+    color: var(--color-status-critical);
+}
+
+/* State tag indicating a history row is in the warning state. */
+.dbc-row-warning { }
+
+.dbc-history-row.dbc-row-warning { /* Errors-found operation row text coloring in the history table. */
+    color: var(--color-accent-departmental);
+}
+
+/* Collapsed detail row holding error and DBCC-output panels (hidden until expanded). */
+.dbc-detail-row {
+    display: none;
+}
+
+.dbc-detail-row.dbc-expanded { /* Expanded state for a detail row. */
+    display: table-row;
+}
+
+/* Detail-row cell surface. */
+.dbc-detail-td {
+    background: var(--color-bg-card-deep);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* Inner wrapper for detail-row content. */
+.dbc-detail-content {
+    padding: var(--size-spacing-xs);
+}
+
+/* Small uppercase label above a detail text panel. */
+.dbc-detail-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 4px;
+    margin-bottom: var(--size-spacing-xs);
 }
 
-.detail-text {
-    font-family: 'Consolas', monospace;
-    font-size: 11px;
-    color: #d4d4d4;
+/* Monospace scrollable panel for error details or DBCC output. */
+.dbc-detail-text {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-primary);
     white-space: pre-wrap;
     word-break: break-all;
     max-height: 200px;
     overflow-y: auto;
-    padding: 8px;
-    background: #1e1e1e;
-    border-radius: 3px;
-    border: 1px solid #404040;
+    padding: var(--size-spacing-md);
+    background: var(--color-bg-pre);
+    border-radius: var(--size-radius-sm);
+    border: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.detail-text.error-text {
-    color: #f48771;
+/* State tag indicating a detail text panel holds error output. */
+.dbc-error-text { }
+
+.dbc-detail-text.dbc-error-text { /* Error-text coloring variant of the detail text panel. */
+    color: var(--color-status-critical);
 }
 
-/* Day rows in history table */
-.day-row {
-    cursor: pointer;
-    transition: background-color 0.2s;
+/* Spacer between stacked detail panels within a detail row. */
+.dbc-detail-gap {
+    margin-top: var(--size-spacing-md);
 }
-.day-row:hover td { background: #2d2d2d; }
 
 /* ============================================================================
-   Schedule Overview — Server list with click-through to database details
+   CONTENT: SCHEDULE OVERVIEW
+   ----------------------------------------------------------------------------
+   The schedule overview server list: one clickable row per server showing
+   the server name, optional replica-override warning, database count, and an
+   active/disabled status badge.
+   Prefix: dbc
    ============================================================================ */
-.schedule-server-list {
+
+/* Scrollable container for the schedule server rows. */
+.dbc-schedule-list {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
 }
 
-.schedule-server-row {
+/* A single clickable server row in the schedule overview. */
+.dbc-schedule-row {
     display: grid;
     grid-template-columns: 1fr auto 120px 80px;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 4px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) 10px;
+    border-radius: var(--size-radius-default);
     cursor: pointer;
-    transition: background 0.15s;
-    font-size: 12px;
-}
-.schedule-server-row:hover { background: #333; }
-
-.schedule-server-name {
-    color: #d4d4d4;
-    font-weight: 500;
+    transition: background var(--duration-instant);
+    font-size: var(--font-size-content);
 }
 
-.schedule-override-badge {
-    color: #dcdcaa;
-    font-size: 11px;
-    font-weight: 500;
+.dbc-schedule-row:hover { /* hover highlight for a server row */
+    background: var(--color-border-divider);
 }
 
-.schedule-db-count {
-    color: #888;
-    font-size: 11px;
-    text-align: right;
-}
+/* State tag indicating a row or cell is disabled. Used on schedule rows, detail rows, and schedule cells. */
+.dbc-disabled { }
 
-.schedule-server-status {
-    text-align: right;
-}
-
-.schedule-server-row-disabled {
+.dbc-schedule-row.dbc-disabled { /* Disabled-server row dimming. */
     opacity: 0.4;
 }
 
+/* Server name cell in the schedule overview. */
+.dbc-schedule-server {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* Replica-override warning badge on a server row. */
+.dbc-schedule-override {
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-body);
+    font-weight: 500;
+}
+
+/* Right-aligned database-count cell on a server row. */
+.dbc-schedule-count {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    text-align: right;
+}
+
+/* Right-aligned status-badge cell on a server row. */
+.dbc-schedule-status {
+    text-align: right;
+}
+
 /* ============================================================================
-   Modal — Centered popup for schedule details
+   CONTENT: SCHEDULE DETAIL TABLE
+   ----------------------------------------------------------------------------
+   The per-server schedule detail table rendered inside the schedule modal:
+   one row per database with override indicator, mode, per-operation schedule
+   cells, and an admin edit affordance.
+   Prefix: dbc
    ============================================================================ */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    z-index: 2000;
+
+/* Schedule detail table inside the schedule modal. */
+.dbc-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Schedule detail table header cell. */
+.dbc-detail-table-th {
+    text-align: left;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-muted);
+    font-weight: 500;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* Schedule detail table data cell. */
+.dbc-detail-table-td {
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Schedule detail table data row. Base class carries no styling of its own; its disabled state lives in the compound below. */
+.dbc-detail-table-row { }
+
+.dbc-detail-table-row.dbc-disabled { /* Disabled-row dimming for a schedule detail row. */
+    opacity: 0.4;
+}
+
+/* Narrow override-indicator column in the schedule detail table. */
+.dbc-detail-override-col {
+    width: 24px;
+    text-align: center;
+    padding: var(--size-spacing-sm) var(--size-spacing-xs);
+}
+
+/* Replica-override warning icon in the schedule detail table. */
+.dbc-detail-override-icon {
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Database-name cell in the schedule detail table. */
+.dbc-detail-db {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* Centered check-mode cell in the schedule detail table. */
+.dbc-detail-mode {
+    white-space: nowrap;
+    text-align: center;
+}
+
+/* Muted/disabled rendering of a check-mode value. */
+.dbc-mode-off {
+    color: var(--color-border-strong);
+}
+
+/* PHYSICAL_ONLY check-mode value coloring. */
+.dbc-mode-physical {
+    color: var(--color-text-link);
+    font-size: var(--font-size-body);
+}
+
+/* FULL check-mode value coloring. */
+.dbc-mode-full {
+    color: var(--color-accent-departmental);
+    font-size: var(--font-size-body);
+}
+
+/* Per-operation schedule cell. Base class carries no styling of its own; its enabled and disabled states live in the compounds below. */
+.dbc-detail-cell { }
+
+/* State tag indicating a schedule cell is enabled. */
+.dbc-enabled { }
+
+.dbc-detail-cell.dbc-enabled { /* Per-operation schedule cell when the operation is enabled. */
+    color: var(--color-accent-shared);
+}
+
+.dbc-detail-cell.dbc-disabled { /* Per-operation schedule cell when the operation is disabled. */
+    color: var(--color-border-strong);
+}
+
+/* Calendar edit icon for a database row (admin only). */
+.dbc-edit-icon {
+    cursor: pointer;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-heading-sm);
+    opacity: 0.6;
+    transition: opacity var(--duration-fast);
+}
+
+.dbc-edit-icon:hover { /* hover state for the edit icon */
+    opacity: 1;
+}
+
+/* ============================================================================
+   CONTENT: SCHEDULE EDIT FORM
+   ----------------------------------------------------------------------------
+   The schedule-edit form inside the edit modal: section headers, the
+   check-mode and replica-override badge-pill option rows, the per-operation
+   toggle + day/time selector rows, and the inline save status line.
+   Prefix: dbc
+   ============================================================================ */
+
+/* Section header dividing groups of edit-form controls. */
+.dbc-edit-section-header {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 0 var(--size-spacing-xs);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* A labeled option row holding a badge-pill group. */
+.dbc-edit-option-row {
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: var(--size-spacing-lg);
+    padding: var(--size-spacing-md) 0;
 }
-.modal-overlay.hidden { display: none; }
 
-.modal-dialog {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    width: 700px;
-    max-width: 90vw;
-    max-height: 80vh;
+/* The label preceding a badge-pill group. */
+.dbc-edit-option-label {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    min-width: 90px;
+}
+
+/* The horizontal group of badge-pill options. */
+.dbc-edit-option-badges {
     display: flex;
-    flex-direction: column;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    gap: var(--size-spacing-sm);
 }
 
-.modal-dialog.modal-narrow {
-    width: 480px;
+/* A selectable badge pill (check mode / replica override option). */
+.dbc-badge-pill {
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    border-radius: 10px;
+    font-size: var(--font-size-body);
+    font-weight: 400;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    background: transparent;
+    color: var(--color-text-subtle);
 }
 
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #404040;
-}
-.modal-header h3 {
-    margin: 0;
-    color: #4ec9b0;
-    font-size: 16px;
+.dbc-badge-pill:hover { /* hover state for an inactive badge pill */
+    border-color: var(--color-text-subtle);
+    color: var(--color-text-secondary);
 }
 
-.modal-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 15px 20px;
+/* State tag indicating a badge pill is the active (selected) choice. */
+.dbc-active { }
+
+.dbc-badge-pill.dbc-active { /* Active (selected) base state for a badge pill. */
+    font-weight: 600;
+    border-color: transparent;
 }
 
-.modal-footer {
-    padding: 12px 20px;
-    border-top: 1px solid #404040;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
+/* Choice tag marking a badge pill as the "None" check-mode option. */
+.dbc-pill-none { }
+
+.dbc-badge-pill.dbc-pill-none { /* Active "None" check-mode pill coloring. */
+    background: #3c3c3c;
+    color: var(--color-text-muted);
+    border-color: var(--color-border-strong);
 }
 
-/* Edit form controls */
-.edit-op-row {
+/* Choice tag marking a badge pill as the "Physical Only" check-mode option. */
+.dbc-pill-physical { }
+
+.dbc-badge-pill.dbc-pill-physical { /* Active "Physical Only" check-mode pill coloring. */
+    background: #264f78;
+    color: var(--color-text-link);
+}
+
+/* Choice tag marking a badge pill as the "Full" check-mode option. */
+.dbc-pill-full { }
+
+.dbc-badge-pill.dbc-pill-full { /* Active "Full" check-mode pill coloring. */
+    background: #5a3a1e;
+    color: var(--color-accent-departmental);
+}
+
+/* Choice tag marking a badge pill as the "Default" replica-override option. */
+.dbc-pill-default { }
+
+.dbc-badge-pill.dbc-pill-default { /* Active "Default" replica-override pill coloring. */
+    background: #264f78;
+    color: var(--color-text-primary);
+}
+
+/* Choice tag marking a badge pill as the "Primary" replica-override option. */
+.dbc-pill-primary { }
+
+.dbc-badge-pill.dbc-pill-primary { /* Active "Primary" replica-override pill coloring. */
+    background: #5a3a1e;
+    color: var(--color-accent-departmental);
+}
+
+/* Choice tag marking a badge pill as the "Secondary" replica-override option. */
+.dbc-pill-secondary { }
+
+.dbc-badge-pill.dbc-pill-secondary { /* Active "Secondary" replica-override pill coloring. */
+    background: #264f78;
+    color: var(--color-text-link);
+}
+
+/* A per-operation edit row: label, toggle, day select, time select. */
+.dbc-edit-op-row {
     display: grid;
     grid-template-columns: 140px 50px 100px 80px;
     align-items: center;
     gap: 10px;
-    padding: 8px 0;
-    border-bottom: 1px solid #333;
+    padding: var(--size-spacing-md) 0;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
-.edit-op-row:last-child { border-bottom: none; }
 
-.edit-op-label {
-    font-size: 12px;
-    color: #d4d4d4;
+.dbc-edit-op-row:last-child { /* drop the trailing divider on the final op row */
+    border-bottom: none;
+}
+
+/* Operation-name label in an edit op row. */
+.dbc-edit-op-label {
+    font-size: var(--font-size-content);
+    color: var(--color-text-primary);
     font-weight: 500;
 }
 
-.edit-toggle {
+/* Clickable enable/disable toggle wrapper. */
+.dbc-edit-toggle {
     cursor: pointer;
     user-select: none;
 }
 
-.edit-toggle-track {
+/* The toggle track (background pill of the on/off switch). */
+.dbc-edit-toggle-track {
     display: inline-block;
     width: 36px;
     height: 18px;
     border-radius: 9px;
-    background: #555;
+    background: var(--color-border-strong);
     position: relative;
-    transition: background 0.2s;
+    transition: background var(--duration-fast);
     vertical-align: middle;
 }
-.edit-toggle-track.on {
-    background: #4ec9b0;
+
+/* State tag indicating a toggle is on. Used on the toggle track and knob. */
+.dbc-on { }
+
+.dbc-edit-toggle-track.dbc-on { /* On state for the toggle track. */
+    background: var(--color-accent-shared);
 }
-.edit-toggle-knob {
+
+/* The sliding knob inside the toggle track. */
+.dbc-edit-toggle-knob {
     position: absolute;
     top: 2px;
     left: 2px;
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #d4d4d4;
-    transition: left 0.2s;
+    background: var(--color-text-primary);
+    transition: left var(--duration-fast);
 }
-.edit-toggle-track.on .edit-toggle-knob {
+
+.dbc-edit-toggle-knob.dbc-on { /* Knob position when the toggle is on (state applied directly to the knob). */
     left: 20px;
 }
 
-.edit-select {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 3px;
-    color: #d4d4d4;
-    font-size: 11px;
-    padding: 4px 6px;
-    font-family: 'Segoe UI', Arial, sans-serif;
+/* Day/time dropdown in an edit op row. */
+.dbc-edit-select {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-xs) var(--size-spacing-sm);
+    font-family: var(--font-family-default);
 }
-.edit-select:focus {
+
+.dbc-edit-select:focus { /* focus state for an edit select */
     outline: none;
-    border-color: #569cd6;
+    border-color: var(--color-accent-platform);
 }
-.edit-select:disabled {
+
+.dbc-edit-select:disabled { /* disabled state for an edit select */
     opacity: 0.3;
     cursor: not-allowed;
 }
 
-.edit-section-header {
-    font-size: 11px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 10px 0 4px;
-    border-bottom: 1px solid #404040;
-    margin-bottom: 4px;
-}
-
-.edit-status {
-    font-size: 11px;
-    padding: 6px 0;
-    text-align: center;
-}
-.edit-status.success { color: #4ec9b0; }
-.edit-status.error { color: #f48771; }
-
-/* Calendar icon for database rows in server modal */
-.schedule-edit-icon {
-    cursor: pointer;
-    color: #569cd6;
-    font-size: 14px;
-    opacity: 0.6;
-    transition: opacity 0.2s;
-}
-.schedule-edit-icon:hover {
-    opacity: 1;
-}
-
-/* Save/Cancel buttons */
-.btn-save {
-    background: #4ec9b0;
-    color: #1e1e1e;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    transition: background 0.2s;
-}
-.btn-save:hover { background: #5fd4bd; }
-
-.btn-cancel {
-    background: transparent;
-    color: #888;
-    border: 1px solid #555;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    transition: all 0.2s;
-}
-.btn-cancel:hover { border-color: #888; color: #d4d4d4; }
-
-/* Override indicator column in schedule detail table */
-.schedule-detail-override-col {
-    width: 24px;
-    text-align: center;
-    padding: 6px 4px !important;
-}
-
-.schedule-override-icon {
-    color: #dcdcaa;
-    font-size: 13px;
-}
-
-/* ============================================================================
-   Edit Modal — Badge Pill Option Controls
-   Used for Check Mode and Replica Override in the edit form.
-   ============================================================================ */
-.edit-option-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 0;
-}
-
-.edit-option-label {
-    font-size: 12px;
-    color: #888;
-    white-space: nowrap;
-    min-width: 90px;
-}
-
-.edit-option-badges {
-    display: flex;
-    gap: 6px;
-}
-
-.edit-badge-pill {
-    padding: 4px 12px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    font-weight: 400;
-    cursor: pointer;
-    transition: all 0.15s;
-    border: 1px solid #404040;
-    background: transparent;
-    color: #666;
-}
-.edit-badge-pill:hover {
-    border-color: #666;
-    color: #aaa;
-}
-
-.edit-badge-pill.active {
-    font-weight: 600;
-    border-color: transparent;
-}
-
-.edit-badge-pill.active[data-value="NONE"] {
-    background: #3c3c3c;
-    color: #888;
-    border-color: #555;
-}
-.edit-badge-pill.active[data-value="PHYSICAL_ONLY"] {
-    background: #264f78;
-    color: #9cdcfe;
-}
-.edit-badge-pill.active[data-value="FULL"] {
-    background: #5a3a1e;
-    color: #dcdcaa;
-}
-
-.edit-badge-pill.active[data-value=""] {
-    background: #264f78;
-    color: #d4d4d4;
-}
-.edit-badge-pill.active[data-value="PRIMARY"] {
-    background: #5a3a1e;
-    color: #dcdcaa;
-}
-.edit-badge-pill.active[data-value="SECONDARY"] {
-    background: #264f78;
-    color: #9cdcfe;
-}
-
-/* Mode column in schedule detail table */
-.schedule-detail-mode {
-    white-space: nowrap;
+/* Inline save-status line at the bottom of the edit form. */
+.dbc-edit-status {
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-sm) 0;
     text-align: center;
 }
 
-/* Schedule detail table inside modal */
-.schedule-detail-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-.schedule-detail-table th {
-    text-align: left;
-    padding: 6px 8px;
-    background: #2d2d2d;
-    color: #888;
-    font-weight: 500;
-    font-size: 11px;
-    border-bottom: 1px solid #404040;
-}
-.schedule-detail-table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid #333;
+.dbc-edit-status.dbc-success { /* Success coloring for the edit status line. */
+    color: var(--color-accent-shared);
 }
 
-.schedule-detail-db {
-    color: #d4d4d4;
-    font-weight: 500;
-}
+/* State tag indicating the edit status line holds an error message. */
+.dbc-error { }
 
-.schedule-detail-cell.enabled {
-    color: #4ec9b0;
-}
-.schedule-detail-cell.disabled {
-    color: #555;
+.dbc-edit-status.dbc-error { /* Error coloring for the edit status line. */
+    color: var(--color-status-critical);
 }
