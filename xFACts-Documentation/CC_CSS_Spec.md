@@ -146,13 +146,13 @@ A class-on-class compound (`.foo.bar`) is not a variant. It is a rule that style
 - A variant follows its base class's purpose comment in the file. It does not carry its own purpose comment.
 - Every variant has a base class definition in the same file. A pseudo-class variant or a class-on-class compound that references a class without a single-class definition in the same file is drift.
 - A base class definition precedes its pseudo-element rules, which precede its pseudo-class variants. A pseudo-element rule appearing before its base, or after a variant on the same class, is drift. A variant appearing before its base class definition is drift.
-- A class-on-class compound rule is neither a class definition nor a variant. It does not carry a purpose comment or a trailing inline comment. Each class token in the compound must be defined by a separate single-class rule in the same file.
-- Every variant carries a trailing inline comment on the same line as the opening `{`, describing the state: `.foo:hover { /* state */ ... }`.
+- A class-on-class compound rule carries no purpose comment and a trailing inline comment describing the state: `.foo.bar { /* state */ ... }`. Each token is defined by a separate single-class rule in the same file; the state token's rule is empty (`{ }`) with its purpose comment, and the compound carries the styling.- Every variant carries a trailing inline comment on the same line as the opening `{`, describing the state: `.foo:hover { /* state */ ... }`.
 - Every class token in a compound selector carries its section's declared prefix (§5).
 - Compound depth is capped at two class tokens. `.foo.bar.baz` and deeper compounds are forbidden.
 - Stacked pseudo-classes (`.foo:hover:focus`) are forbidden.
 - `:not(...)` is forbidden in any form.
 - A pseudo-class appearing between class tokens (`.a:hover.b`) is forbidden.
+- A state or choice condition is expressed as a state token on a base class via a compound. A distinct class baking base and state into one styled rule is drift.
 
 ### 7.2 State-on-element pattern
 
