@@ -1,59 +1,42 @@
 /* ============================================================================
-   xFACts Control Center - Batch Monitoring Styles
+   xFACts Control Center - Batch Monitoring Styles (batch-monitoring.css)
    Location: E:\xFACts-ControlCenter\public\css\batch-monitoring.css
    Version: Tracked in dbo.System_Metadata (component: BatchOps)
 
-   Page-specific styles for the Batch Monitoring dashboard. Universal
-   chrome (body, h1, header-bar, refresh-info, sections, engine cards,
-   connection banner, animations, slide-panel system, modal system) is
-   provided by engine-events.css per the CC Page Chrome Contract
-   (Development Guidelines Section 5.12).
+   Page-specific styles for the Batch Monitoring dashboard. Universal chrome,
+   section containers, the slide-overlay shell, and the refresh badges are
+   provided by cc-shared.css; this file holds the page's own content: the
+   two-column grid, the daily summary cards, the active-batch and history
+   tables, the batch-type tags and progress bars, and the batch-detail
+   slideout body sub-components.
 
-   CHANGELOG
-   ---------
-   2026-04-30  Phase 4 (Standardization): full alignment to shared
-               infrastructure. Stripped:
-                 - Box-sizing reset, body, h1, page-subtitle (now shared)
-                 - .header-bar, .header-right, .refresh-info,
-                   .live-indicator, .last-updated (now shared)
-                 - .connection-error block (replaced by shared
-                   .connection-banner)
-                 - @keyframes pulse, @keyframes spin (now shared)
-                 - Base .section, .section-header, .section-title rules
-                   (now shared)
-                 - Entire page-local slideout block: .slideout, .slideout.open,
-                   .slideout-overlay, .slideout-content, .slideout-header,
-                   .slideout-close, .slideout-body, plus the slideout body
-                   sub-components renamed to detail-* (replaced by shared
-                   .slide-panel-* from engine-events.css; sub-components
-                   for the batch detail rendering remain page-specific)
-                 - Orphan .refresh-btn block: a section-level refresh
-                   button that no longer exists in the route HTML (per
-                   the universal page-refresh-btn standard, all pages
-                   have one shared refresh control instead of per-section
-                   refresh buttons). The dedicated keyframes spin rule
-                   that fed it is also removed -- the shared
-                   .spinning utility class covers any future need.
-               Restructured Active Batches and Batch History height
-               management: removed max-height: calc(100vh - 300px) on
-               .history-content. Both sections now use shared
-               .section-fill from engine-events.css to consume remaining
-               vertical space within the viewport-constrained body and
-               scroll internally.
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css) and engine-
-               card/engine-row/engine-bar/engine-label/engine-countdown block
-               (shared). Kept @keyframes pulse and @keyframes spin (used by
-               .live-indicator and .refresh-btn.spinning respectively).
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE GRID
+   CONTENT: LOADING AND EMPTY STATES
+   CONTENT: DAILY SUMMARY CARDS
+   CONTENT: BATCH TYPE TAGS
+   CONTENT: PROCESS STATUS CARDS
+   CONTENT: ACTIVE BATCH TABLE
+   CONTENT: PROGRESS BARS
+   CONTENT: FILTER BUTTONS
+   CONTENT: BATCH HISTORY TREE
+   CONTENT: SLIDEOUT TABS AND FILTERS
+   CONTENT: SLIDEOUT BATCH ROWS
+   CONTENT: SLIDEOUT PHASE TIMELINE
    ============================================================================ */
-
 
 /* ============================================================================
-   GRID LAYOUT
-   Top-level layout for the BatchMon page content area. Two equal columns.
+   LAYOUT: PAGE GRID
+   ----------------------------------------------------------------------------
+   The top-level two-column content layout for the page. Each column stacks
+   its sections vertically and shares the remaining viewport height with the
+   shared .cc-section / .cc-fill containers.
+   Prefix: bat
    ============================================================================ */
 
-.grid-layout {
+/* Two equal-width columns filling the content area below the chrome. */
+.bat-grid-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 15px;
@@ -61,781 +44,1173 @@
     min-height: 0;
 }
 
-.grid-column {
+/* A single column that stacks its sections vertically. */
+.bat-grid-column {
     display: flex;
     flex-direction: column;
     gap: 15px;
     min-height: 0;
 }
 
+/* Tightened section padding for the compact Process Status section. */
+.bat-section-compact {
+    padding: 12px 15px;
+}
 
 /* ============================================================================
-   SECTION VARIANTS
-   Page-specific section styling on top of the shared .section base.
+   CONTENT: LOADING AND EMPTY STATES
+   ----------------------------------------------------------------------------
+   Placeholder states shown while a section's data is loading and when a
+   section or filtered view has no rows to display.
+   Prefix: bat
    ============================================================================ */
 
-.section-compact { padding: 12px 15px; }
-
-
-/* ============================================================================
-   LOADING & EMPTY STATES
-   ============================================================================ */
-
-.loading {
-    color: #888;
+/* Centered italic placeholder shown while a section is loading its data. */
+.bat-loading {
+    color: var(--color-text-muted);
     font-style: italic;
     padding: 20px;
     text-align: center;
 }
 
-.no-activity {
-    color: #666;
+/* Centered placeholder shown when a section or filtered view has no rows. */
+.bat-no-activity {
+    color: var(--color-text-subtle);
     text-align: center;
     padding: 30px 20px;
-    font-size: 13px;
+    font-size: var(--font-size-content-lg);
 }
 
-
 /* ============================================================================
-   DAILY SUMMARY CARDS
-   Top-left section. Three cards (NB, PMT, BDL) showing today's batch
-   counts with success/failed/active breakdown.
+   CONTENT: DAILY SUMMARY CARDS
+   ----------------------------------------------------------------------------
+   The top-left "Today's Activity" cards: three cards (NB, PMT, BDL) each
+   showing today's batch count with a success / failed / active breakdown and
+   an optional muted footnote for excluded companion batch types.
+   Prefix: bat
    ============================================================================ */
 
-.summary-cards {
+/* Three-column grid holding the daily summary cards. */
+.bat-summary-cards {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 10px;
 }
 
-.summary-card {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 6px;
+/* A single daily summary card. */
+.bat-summary-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
     padding: 12px 15px;
     position: relative;
 }
 
-.summary-card .card-label {
-    font-size: 11px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
+/* Card-type tag tinting the NB card border. */
+.bat-nb-card { /* NB card accent border */
+    border-color: rgba(86, 156, 214, 0.4);
 }
 
-.summary-card .card-value {
+/* Card-type tag tinting the PMT card border. */
+.bat-pmt-card { /* PMT card accent border */
+    border-color: rgba(197, 134, 192, 0.4);
+}
+
+/* Card-type tag tinting the BDL card border. */
+.bat-bdl-card { /* BDL card accent border */
+    border-color: rgba(206, 145, 120, 0.4);
+}
+
+/* Small uppercase caption above the card value. */
+.bat-card-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Large centered count value on the card. */
+.bat-card-value {
     font-size: 24px;
     font-weight: 600;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     line-height: 1;
-    margin-bottom: 8px;
+    margin-bottom: var(--size-spacing-md);
     text-align: center;
 }
 
-.summary-card .card-detail {
+/* Centered wrap-flow row of count breakdown items below the value. */
+.bat-card-detail {
     display: flex;
     justify-content: center;
-    gap: 12px;
-    font-size: 11px;
-    color: #666;
+    gap: var(--size-spacing-lg);
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
     flex-wrap: wrap;
 }
 
-.summary-card .card-detail .success { color: #4ec9b0; }
-.summary-card .card-detail .failed  { color: #f48771; }
-.summary-card .card-detail .active  { color: #dcdcaa; }
-.summary-card .card-detail .card-footnote {
+/* Count-state tag coloring a breakdown item as a success count. */
+.bat-success {
+    color: var(--color-accent-shared);
+}
+
+/* Count-state tag coloring a breakdown item as a failed count. */
+.bat-failed {
+    color: var(--color-status-critical);
+}
+
+/* Count-state tag coloring a breakdown item as an active count. */
+.bat-active {
+    color: var(--color-status-overdue);
+}
+
+/* Full-width muted footnote line for excluded companion batch types. */
+.bat-card-footnote {
     width: 100%;
     text-align: center;
-    color: #555;
-    font-size: 10px;
+    color: var(--color-border-strong);
+    font-size: var(--font-size-default);
     margin-top: 2px;
 }
 
-.summary-card.nb-card  { border-color: rgba(86, 156, 214, 0.4); }
-.summary-card.pmt-card { border-color: rgba(197, 134, 192, 0.4); }
-.summary-card.bdl-card { border-color: rgba(206, 145, 120, 0.4); }
-
-
 /* ============================================================================
-   BATCH TYPE INDICATORS
-   Inline tags identifying batch type (NB/PMT/BDL) in tables and lists.
+   CONTENT: BATCH TYPE TAGS
+   ----------------------------------------------------------------------------
+   Small inline tags identifying a batch's type (NB, PMT, BDL) in the active
+   and slideout tables, plus the muted entity-type label shown beside a BDL
+   file name.
+   Prefix: bat
    ============================================================================ */
 
-.batch-type-tag {
+/* Inline pill identifying a row's batch type. */
+.bat-type-tag {
     display: inline-block;
-    padding: 1px 6px;
-    border-radius: 3px;
-    font-size: 10px;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-default);
     font-weight: 600;
     letter-spacing: 0.5px;
 }
 
-.batch-type-tag.nb {
+/* Batch-type tag styled for an NB batch. */
+.bat-type-nb { /* NB type pill coloring */
     background: rgba(86, 156, 214, 0.2);
-    color: #569cd6;
-    border: 1px solid rgba(86, 156, 214, 0.3);
+    color: var(--color-accent-platform);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
 }
 
-.batch-type-tag.pmt {
+/* Batch-type tag styled for a PMT batch. */
+.bat-type-pmt { /* PMT type pill coloring */
     background: rgba(197, 134, 192, 0.2);
     color: #c586c0;
-    border: 1px solid rgba(197, 134, 192, 0.3);
+    border: var(--size-border-thin) solid rgba(197, 134, 192, 0.3);
 }
 
-.batch-type-tag.bdl {
+/* Batch-type tag styled for a BDL batch. */
+.bat-type-bdl { /* BDL type pill coloring */
     background: rgba(206, 145, 120, 0.2);
-    color: #ce9178;
-    border: 1px solid rgba(206, 145, 120, 0.3);
+    color: var(--color-text-pre);
+    border: var(--size-border-thin) solid rgba(206, 145, 120, 0.3);
 }
 
-/* BDL entity type label in active batches name column */
-.bdl-entity-label {
-    font-size: 10px;
-    color: #888;
+/* Muted entity-type label shown beside a BDL file name. */
+.bat-entity-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
     font-weight: 400;
-    margin-left: 4px;
+    margin-left: var(--size-spacing-xs);
 }
-
 
 /* ============================================================================
-   PROCESS STATUS CARDS
-   Top-right section. Compact 4-column grid showing collector health.
+   CONTENT: PROCESS STATUS CARDS
+   ----------------------------------------------------------------------------
+   The top-right "Process Status" grid: one compact card per collector showing
+   a health badge, the collector name, and last-run timing. Card frame color
+   reflects the collector's health state.
+   Prefix: bat
    ============================================================================ */
 
-.status-grid {
+/* Four-column grid holding the collector status cards. */
+.bat-status-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    gap: var(--size-spacing-md);
 }
 
-.process-card {
+/* A single collector status card. */
+.bat-process-card {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--size-spacing-lg);
     padding: 10px 12px;
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 4px;
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
 }
 
-.process-card.warning {
-    border-color: #dcdcaa;
+/* State tag indicating a collector is in a warning state. */
+.bat-warning { }
+
+.bat-process-card.bat-warning { /* warning frame and surface tint */
+    border-color: var(--color-status-overdue);
     background: rgba(220, 220, 170, 0.05);
 }
 
-.process-card.critical {
-    border-color: #f48771;
+/* State tag indicating a collector is in a critical state. */
+.bat-critical { }
+
+.bat-process-card.bat-critical { /* critical frame and surface tint */
+    border-color: var(--color-status-critical);
     background: rgba(244, 135, 113, 0.05);
 }
 
-.process-card.running {
-    border-color: #569cd6;
+/* State tag indicating a collector is actively running. */
+.bat-running { }
+
+.bat-process-card.bat-running { /* running frame and surface tint */
+    border-color: var(--color-accent-platform);
     background: rgba(86, 156, 214, 0.05);
 }
 
-.process-status-badge {
-    font-size: 9px;
+/* Health badge shown at the left of a status card. */
+.bat-process-status-badge {
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
     min-width: 50px;
     text-align: center;
 }
-.process-status-badge.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.process-status-badge.active  { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
-.process-status-badge.warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.process-status-badge.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
 
-.process-card .process-info { flex: 1; min-width: 0; }
-.process-card .process-name { font-size: 12px; font-weight: 600; color: #d4d4d4; }
-.process-card .process-meta { font-size: 11px; color: #888; }
-
-.process-card .process-timing {
-    text-align: right;
-    font-size: 11px;
-    color: #888;
+/* Process badge styled for a healthy/OK state. */
+.bat-process-status-badge.bat-success { /* healthy badge coloring */
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
 }
-.process-card .process-timing .timing-value {
-    color: #d4d4d4;
+
+/* Process badge styled for an actively-running state. */
+.bat-process-status-badge.bat-active { /* running badge coloring */
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+}
+
+/* Process badge styled for a delayed/warning state. */
+.bat-process-status-badge.bat-warning { /* delayed badge coloring */
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-status-overdue);
+}
+
+/* Process badge styled for a failed/stale state. */
+.bat-process-status-badge.bat-failed { /* failed badge coloring */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Flexible middle column holding the collector name and meta. */
+.bat-process-info {
+    flex: 1;
+    min-width: 0;
+}
+
+/* The collector name line in a status card. */
+.bat-process-name {
+    font-size: var(--font-size-content);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+/* Secondary meta line in a status card. */
+.bat-process-meta {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* Right-aligned last-run timing column in a status card. */
+.bat-process-timing {
+    text-align: right;
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* Emphasized timing value inside the timing column. */
+.bat-timing-value {
+    color: var(--color-text-primary);
     font-weight: 500;
 }
 
-
 /* ============================================================================
-   ACTIVE BATCHES
-   Bottom-left section. Live table showing currently in-flight batches
-   across NB, PMT, and BDL types. Uses shared .section-fill to consume
-   remaining vertical space and scroll internally.
+   CONTENT: ACTIVE BATCH TABLE
+   ----------------------------------------------------------------------------
+   The live "Active Batches" table showing in-flight NB, PMT, and BDL batches.
+   Sticky header, hover rows, status badges, and an activity column that holds
+   either a status label or an inline progress bar.
+   Prefix: bat
    ============================================================================ */
 
-.activity-content {
+/* The active-batch table container. */
+.bat-activity-content {
     flex: 1;
     overflow-y: auto;
     min-height: 60px;
 }
 
-.active-batch-table {
+/* The active-batch data table. */
+.bat-active-batch-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
 
-.active-batch-table th {
+/* Sticky header cell in the active-batch table. */
+.bat-active-th {
     text-align: left;
-    padding: 6px 8px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
-    font-size: 11px;
+    font-size: var(--font-size-body);
     position: sticky;
     top: 0;
-    background: #252526;
+    background: var(--color-bg-card);
 }
 
-.active-batch-table td {
-    padding: 8px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* Data cell in the active-batch table. */
+.bat-active-td {
+    padding: var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
 
-.active-batch-table tr:hover td { background: rgba(255, 255, 255, 0.03); }
+/* Data row in the active-batch table (base for hover styling). */
+.bat-active-row { }
 
-.active-batch-table .batch-name-cell { font-weight: 500; }
-.active-batch-table .status-cell     { white-space: nowrap; }
-
-.active-batch-table .status-badge {
-    display: inline-block;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
+.bat-active-row:hover { /* hover highlight for an active-batch row */
+    background: rgba(255, 255, 255, 0.03);
 }
-.active-batch-table .status-badge.processing { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.active-batch-table .status-badge.active     { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
-.active-batch-table .status-badge.waiting    { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.active-batch-table .status-badge.failed     { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.active-batch-table .status-badge.info       { background: rgba(102, 102, 102, 0.2); color: #888; }
 
-.active-batch-table .age-cell   { white-space: nowrap; text-align: right; }
-.active-batch-table .count-cell { white-space: nowrap; text-align: right; color: #d4d4d4; }
+/* Batch-name cell emphasis in the active-batch table. */
+.bat-name-cell {
+    font-weight: 500;
+}
 
-/* Activity/progress column - consistent font */
-.active-batch-table .activity-cell {
-    font-size: 11px;
+/* Status cell holding a status badge (kept on one line). */
+.bat-status-cell {
+    white-space: nowrap;
+}
+
+/* Right-aligned age cell in the active-batch table. */
+.bat-age-cell {
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* Right-aligned count cell in the active-batch table. */
+.bat-count-cell {
+    white-space: nowrap;
+    text-align: right;
+    color: var(--color-text-primary);
+}
+
+/* Activity/progress cell with a consistent minimum width. */
+.bat-activity-cell {
+    font-size: var(--font-size-body);
     min-width: 160px;
 }
 
-.active-batch-table .activity-cell .activity-label {
+/* Status badge shown in the status cell. */
+.bat-status-badge {
     display: inline-block;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 9px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-sm);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
 
-.active-batch-table .activity-cell .activity-label.processing {
+/* State tag indicating a processing status. */
+.bat-processing { }
+
+.bat-status-badge.bat-processing { /* processing status coloring */
     background: rgba(78, 201, 176, 0.2);
-    color: #4ec9b0;
-}
-.active-batch-table .activity-cell .activity-label.waiting {
-    background: rgba(220, 220, 170, 0.2);
-    color: #dcdcaa;
-}
-.active-batch-table .activity-cell .activity-label.failed {
-    background: rgba(244, 135, 113, 0.2);
-    color: #f48771;
-}
-.active-batch-table .activity-cell .activity-label.info {
-    background: rgba(102, 102, 102, 0.2);
-    color: #888;
+    color: var(--color-accent-shared);
 }
 
-/* Progress bar - full width with text inside (matches JobFlow pattern) */
-.progress-bar-container {
+.bat-status-badge.bat-active { /* active status coloring */
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+}
+
+/* State tag indicating a waiting status. */
+.bat-waiting { }
+
+.bat-status-badge.bat-waiting { /* waiting status coloring */
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-status-overdue);
+}
+
+.bat-status-badge.bat-failed { /* failed status coloring */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* State tag indicating a neutral/info status. */
+.bat-info { }
+
+.bat-status-badge.bat-info { /* neutral/info status coloring */
+    background: rgba(102, 102, 102, 0.2);
+    color: var(--color-text-muted);
+}
+
+/* Inline activity label shown in the activity cell. */
+.bat-activity-label {
+    display: inline-block;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.bat-activity-label.bat-processing { /* processing activity coloring */
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
+
+.bat-activity-label.bat-waiting { /* waiting activity coloring */
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-status-overdue);
+}
+
+.bat-activity-label.bat-failed { /* failed activity coloring */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+.bat-activity-label.bat-info { /* neutral/info activity coloring */
+    background: rgba(102, 102, 102, 0.2);
+    color: var(--color-text-muted);
+}
+
+/* ============================================================================
+   CONTENT: PROGRESS BARS
+   ----------------------------------------------------------------------------
+   The inline progress meter shown in the activity column for batches with a
+   measurable completion percentage (NB merge, PMT journal, BDL partitions).
+   Prefix: bat
+   ============================================================================ */
+
+/* Track container for an inline progress meter. */
+.bat-progress-bar-container {
     width: 100%;
-    height: 16px;
-    background: #333;
-    border-radius: 3px;
+    height: var(--size-spacing-xl);
+    background: var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
     overflow: hidden;
     position: relative;
 }
 
-.progress-bar {
+/* Filled portion of the progress meter. */
+.bat-progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, #2d6b5e, #266053);
-    border-radius: 3px;
-    transition: width 0.3s ease;
+    background: var(--gradient-progress-default);
+    border-radius: var(--size-radius-sm);
+    transition: width var(--duration-default) ease;
 }
 
-.progress-text {
+/* Centered text overlay showing the progress fraction and percentage. */
+.bat-progress-text {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 10px;
-    color: #d4d4d4;
+    font-size: var(--font-size-default);
+    color: var(--color-text-primary);
     text-shadow: 0 0 2px #000;
     white-space: nowrap;
 }
 
-
 /* ============================================================================
-   FILTER BUTTONS
-   Used by Active Batches and Batch History sections, plus the slideout
-   tab/filter bars.
+   CONTENT: FILTER BUTTONS
+   ----------------------------------------------------------------------------
+   The All / NB / PMT / BDL filter toggles used by the Active Batches and
+   Batch History section headers and by the slideout filter bars.
+   Prefix: bat
    ============================================================================ */
 
-.filter-group { display: flex; gap: 2px; }
+/* Row container grouping a set of filter buttons. */
+.bat-filter-group {
+    display: flex;
+    gap: 2px;
+}
 
-.filter-btn,
-.active-filter-btn {
-    padding: 3px 10px;
-    background: #333;
-    border: 1px solid #555;
-    border-radius: 3px;
-    color: #888;
-    font-size: 11px;
+/* A history-section filter toggle button. */
+.bat-filter-btn {
+    padding: var(--size-radius-sm) 10px;
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-fast);
 }
 
-.filter-btn:hover,
-.active-filter-btn:hover {
-    background: #3c3c3c;
-    color: #d4d4d4;
+.bat-filter-btn:hover { /* hover state for a history filter button */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
 }
 
-.filter-btn.active,
-.active-filter-btn.active {
-    background: #4ec9b0;
-    border-color: #4ec9b0;
-    color: #1e1e1e;
+.bat-filter-btn.bat-active { /* selected state for a history filter button */
+    background: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+    color: var(--color-bg-page);
     font-weight: 600;
 }
 
+/* An active-batches-section filter toggle button. */
+.bat-active-filter-btn {
+    padding: var(--size-radius-sm) 10px;
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.bat-active-filter-btn:hover { /* hover state for an active-batches filter button */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+}
+
+.bat-active-filter-btn.bat-active { /* selected state for an active-batches filter button */
+    background: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+    color: var(--color-bg-page);
+    font-weight: 600;
+}
 
 /* ============================================================================
-   BATCH HISTORY (TREE)
-   Bottom-right section. Year/month rollup with drill-down to day-level
-   detail. Uses shared .section-fill to consume remaining vertical space
-   and scroll internally.
+   CONTENT: BATCH HISTORY TREE
+   ----------------------------------------------------------------------------
+   The bottom-right "Batch History" drill-down: collapsible year groups, each
+   containing a month-summary table whose rows expand to a day-level table.
+   Day rows are clickable to open the batch-detail slideout.
+   Prefix: bat
    ============================================================================ */
 
-.history-content {
+/* Scrollable container for the history tree. */
+.bat-history-content {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
 }
 
-.year-group { margin-bottom: 8px; }
+/* A single collapsible year group. */
+.bat-year-group {
+    margin-bottom: var(--size-spacing-md);
+}
 
-.year-header {
+/* Clickable header row for a year group. */
+.bat-year-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 4px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) 10px;
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--duration-fast);
     user-select: none;
 }
 
-.year-header:hover { background-color: #353535; }
-
-.year-header .expand-icon {
-    color: #888;
-    font-size: 10px;
-    width: 14px;
-    transition: transform 0.2s;
+.bat-year-header:hover { /* hover highlight for a year header */
+    background-color: #353535;
 }
-.year-header .expand-icon.expanded { transform: rotate(90deg); }
 
-.year-header .year-label {
+/* Expand/collapse chevron in a year or month header. */
+.bat-expand-icon {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
+    width: 14px;
+    transition: transform var(--duration-fast);
+}
+
+/* State tag indicating an expandable element is expanded. */
+.bat-expanded { }
+
+.bat-expand-icon.bat-expanded { /* rotated chevron when expanded */
+    transform: rotate(90deg);
+}
+
+/* The year label text in a year header. */
+.bat-year-label {
     font-weight: 700;
-    color: #569cd6;
+    color: var(--color-accent-platform);
     font-size: 18px;
     letter-spacing: 1px;
 }
 
-.year-header .year-stats {
+/* Right-aligned stats group in a year header. */
+.bat-year-stats {
     margin-left: auto;
     display: flex;
-    gap: 6px;
-    font-size: 11px;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-body);
 }
 
-.year-header .year-active {
+/* Active-batch count callout in a year header. */
+.bat-year-active {
     margin-left: auto;
-    font-size: 11px;
-    color: #569cd6;
+    font-size: var(--font-size-body);
+    color: var(--color-accent-platform);
 }
 
-.year-header .year-stat {
+/* A single stat figure in the year header stats group. */
+.bat-year-stat {
     min-width: 120px;
     text-align: right;
-    color: #888;
+    color: var(--color-text-muted);
 }
-.year-header .year-stat.success { color: #4ec9b0; }
-.year-header .year-stat.failed  { color: #f48771; }
-.year-header .year-stat.active  { color: #569cd6; }
 
-.year-content {
+.bat-year-stat.bat-success { /* success-count stat coloring */
+    color: var(--color-accent-shared);
+}
+
+.bat-year-stat.bat-failed { /* failed-count stat coloring */
+    color: var(--color-status-critical);
+}
+
+.bat-year-stat.bat-active { /* active-count stat coloring */
+    color: var(--color-accent-platform);
+}
+
+/* Collapsible body of a year group (hidden until expanded). */
+.bat-year-content {
     margin-left: 10px;
-    margin-top: 6px;
+    margin-top: var(--size-spacing-sm);
     display: none;
 }
-.year-content.expanded { display: block; }
 
-/* Month Summary Table */
-.month-summary-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-bottom: 8px;
+.bat-year-content.bat-expanded { /* visible state when the year is expanded */
+    display: block;
 }
 
-.month-summary-table th {
+/* The month-summary table inside an expanded year. */
+.bat-month-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Header cell in the month-summary table. */
+.bat-month-th {
     text-align: left;
-    padding: 6px 10px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
 }
 
-.month-summary-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* Data cell in the month-summary table. */
+.bat-month-td {
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
 
-.month-summary-table tr.month-row {
+/* Clickable month row that expands to a day-level table. */
+.bat-month-row {
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-fast);
 }
-.month-summary-table tr.month-row:hover td { background: #2d2d2d; }
 
-.month-summary-table .expand-cell {
+.bat-month-row:hover { /* hover highlight for a month row */
+    background: var(--color-bg-card-hover);
+}
+
+/* Narrow expand-toggle cell at the left of a month row. */
+.bat-expand-cell {
     width: 24px;
     text-align: center;
-    color: #888;
-    font-size: 10px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-default);
 }
-.month-summary-table .month-cell   { font-weight: 500; }
-.month-summary-table .success-cell { color: #4ec9b0; }
-.month-summary-table .fail-cell    { color: #f48771; }
-.month-summary-table .active-cell  { color: #569cd6; }
 
-/* Month details row */
-.month-details td {
-    padding: 0 0 12px 20px;
+/* Month-name cell emphasis. */
+.bat-month-cell {
+    font-weight: 500;
+}
+
+/* Success-count cell coloring in history tables. */
+.bat-success-cell {
+    color: var(--color-accent-shared);
+}
+
+/* Failed-count cell coloring in history tables. */
+.bat-fail-cell {
+    color: var(--color-status-critical);
+}
+
+/* Active-count cell coloring in history tables. */
+.bat-active-cell {
+    color: var(--color-accent-platform);
+}
+
+/* Container cell holding an expanded month's day-level table. */
+.bat-month-details-cell {
+    padding: 0 0 var(--size-spacing-lg) var(--size-spacing-2xl);
     background: transparent;
 }
-.month-details-content { margin-top: 8px; }
 
-/* Day-level table within month expansion */
-.day-table {
+/* Wrapper for the day-level table content within a month expansion. */
+.bat-month-details-content {
+    margin-top: var(--size-spacing-md);
+}
+
+/* The day-level table within a month expansion. */
+.bat-day-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size-content);
 }
 
-.day-table th {
+/* Header cell in the day-level table. */
+.bat-day-th {
     text-align: left;
-    padding: 5px 8px;
-    border-bottom: 1px solid #404040;
-    color: #888;
+    padding: var(--size-radius-sm) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
     font-weight: 500;
-    font-size: 11px;
+    font-size: var(--font-size-body);
 }
 
-.day-table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid #333;
-    color: #d4d4d4;
+/* Data cell in the day-level table. */
+.bat-day-td {
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
 }
 
-.day-table tr.clickable {
+/* Clickable day row that opens the batch-detail slideout. */
+.bat-day-row {
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--duration-fast);
 }
-.day-table tr.clickable:hover td { background: #2d2d2d; }
 
-.day-table .success-cell { color: #4ec9b0; }
-.day-table .fail-cell    { color: #f48771; }
-.day-table .active-cell  { color: #569cd6; }
+.bat-day-row:hover { /* hover highlight for a clickable day row */
+    background: var(--color-bg-card-hover);
+}
 
-/* Duration columns */
-.duration-cell {
-    font-size: 11px;
-    color: #888;
+/* Duration cell coloring in history tables (neutral baseline). */
+.bat-duration-cell {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     white-space: nowrap;
 }
-.duration-cell.long      { color: #dcdcaa; }
-.duration-cell.very-long { color: #f48771; }
 
+/* State tag indicating a long-running duration. */
+.bat-long { }
+
+.bat-duration-cell.bat-long { /* elevated coloring for a long duration */
+    color: var(--color-status-overdue);
+}
+
+/* State tag indicating a very-long-running duration. */
+.bat-very-long { }
+
+.bat-duration-cell.bat-very-long { /* critical coloring for a very long duration */
+    color: var(--color-status-critical);
+}
 
 /* ============================================================================
-   SLIDEOUT BODY CONTENT
-   Sub-components rendered inside the shared slide-panel-body when
-   displaying batch details. The outer panel itself uses
-   .slide-panel-overlay/.slide-panel.xwide/.slide-panel-header/
-   .slide-panel-body from engine-events.css (950px width).
+   CONTENT: SLIDEOUT TABS AND FILTERS
+   ----------------------------------------------------------------------------
+   The batch-detail slideout body header controls: the batch-type tab bar, the
+   status and PMT sub-type filter bars, and the batch-count summary line. These
+   render inside the shared .cc-dialog-body.
+   Prefix: bat
    ============================================================================ */
 
-/* -- Slideout tab bar: batch type selector -- */
-.slideout-tab-bar {
+/* Tab bar selecting the batch type shown in the slideout. */
+.bat-slideout-tab-bar {
     display: flex;
-    gap: 4px;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #404040;
+    gap: var(--size-spacing-xs);
+    margin-bottom: var(--size-spacing-lg);
+    padding-bottom: var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
 }
 
-.slideout-tab {
-    padding: 6px 18px;
-    background: #2a2a2a;
-    border: 1px solid #555;
-    border-radius: 4px;
-    color: #888;
-    font-size: 12px;
+/* A single batch-type tab in the slideout tab bar. */
+.bat-slideout-tab {
+    padding: var(--size-spacing-sm) 18px;
+    background: var(--color-bg-card-deep);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-fast);
 }
 
-.slideout-tab:hover {
-    background: #3c3c3c;
-    color: #d4d4d4;
+.bat-slideout-tab:hover { /* hover state for a slideout tab */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
     border-color: #777;
 }
 
-.slideout-tab.active {
-    background: #569cd6;
-    border-color: #569cd6;
-    color: #1e1e1e;
+.bat-slideout-tab.bat-active { /* selected state for a slideout tab */
+    background: var(--color-accent-platform);
+    border-color: var(--color-accent-platform);
+    color: var(--color-bg-page);
     font-weight: 600;
 }
 
-.slideout-tab .tab-count {
-    font-size: 10px;
-    margin-left: 4px;
+/* Small count suffix shown on a slideout tab. */
+.bat-tab-count {
+    font-size: var(--font-size-default);
+    margin-left: var(--size-spacing-xs);
     opacity: 0.7;
 }
-.slideout-tab.active .tab-count { opacity: 0.85; }
 
-/* -- Slideout filter bar: status + PMT sub-type -- */
-.slideout-filter-bar {
+.bat-tab-count.bat-active { /* brighter count when its tab is the active tab */
+    opacity: 0.85;
+}
+
+/* Filter bar holding status and PMT sub-type filter buttons. */
+.bat-slideout-filter-bar {
     display: flex;
-    gap: 4px;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #404040;
+    gap: var(--size-spacing-xs);
+    margin-bottom: var(--size-spacing-lg);
+    padding-bottom: var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     flex-wrap: wrap;
     align-items: center;
 }
 
-.slideout-filter-bar .filter-separator {
+/* Thin vertical divider separating filter groups in the slideout. */
+.bat-filter-separator {
     width: 1px;
     height: 18px;
-    background: #555;
-    margin: 0 6px;
+    background: var(--color-border-strong);
+    margin: 0 var(--size-spacing-sm);
 }
 
-.slideout-filter-btn,
-.slideout-status-btn {
-    padding: 4px 12px;
-    background: #333;
-    border: 1px solid #555;
-    border-radius: 3px;
-    color: #888;
-    font-size: 11px;
+/* A PMT sub-type filter button in the slideout filter bar. */
+.bat-slideout-filter-btn {
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-fast);
 }
 
-.slideout-filter-btn:hover,
-.slideout-status-btn:hover {
-    background: #3c3c3c;
-    color: #d4d4d4;
+.bat-slideout-filter-btn:hover { /* hover state for a PMT sub-type filter button */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
 }
 
-.slideout-filter-btn.active {
+.bat-slideout-filter-btn.bat-active { /* selected state for a PMT sub-type filter button */
     background: #c586c0;
     border-color: #c586c0;
-    color: #1e1e1e;
+    color: var(--color-bg-page);
     font-weight: 600;
 }
 
-/* Status filter uses green accent to distinguish from type filter */
-.slideout-status-btn.active {
-    background: #4ec9b0;
-    border-color: #4ec9b0;
-    color: #1e1e1e;
+/* A status filter button in the slideout filter bar. */
+.bat-slideout-status-btn {
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.bat-slideout-status-btn:hover { /* hover state for a status filter button */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+}
+
+.bat-slideout-status-btn.bat-active { /* selected state for a status filter button */
+    background: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+    color: var(--color-bg-page);
     font-weight: 600;
 }
 
-/* -- Batch count summary header -- */
-.slideout-batch-count {
-    font-size: 11px;
-    color: #888;
-    margin-bottom: 8px;
+/* Batch-count summary line above the slideout batch rows. */
+.bat-slideout-batch-count {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-md);
 }
-.slideout-batch-count .count-success { color: #4ec9b0; }
-.slideout-batch-count .count-failed  { color: #f48771; }
-.slideout-batch-count .count-active  { color: #569cd6; }
 
-/* -- Compact batch rows with expand-on-click detail -- */
-.batch-row {
-    border: 1px solid #404040;
-    border-radius: 4px;
-    margin-bottom: 4px;
+/* Success-count fragment in the slideout batch-count line. */
+.bat-count-success {
+    color: var(--color-accent-shared);
+}
+
+/* Failed-count fragment in the slideout batch-count line. */
+.bat-count-failed {
+    color: var(--color-status-critical);
+}
+
+/* Active-count fragment in the slideout batch-count line. */
+.bat-count-active {
+    color: var(--color-accent-platform);
+}
+
+/* ============================================================================
+   CONTENT: SLIDEOUT BATCH ROWS
+   ----------------------------------------------------------------------------
+   The expandable per-batch rows rendered in the slideout body: a clickable
+   header summarizing each batch and an expandable detail panel holding inline
+   metrics.
+   Prefix: bat
+   ============================================================================ */
+
+/* A single expandable batch row in the slideout. */
+.bat-batch-row {
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    margin-bottom: var(--size-spacing-xs);
     overflow: hidden;
-    transition: border-color 0.2s;
+    transition: border-color var(--duration-fast);
 }
-.batch-row:hover { border-color: #555; }
 
-.batch-row-header {
+.bat-batch-row:hover { /* hover highlight for a batch row */
+    border-color: var(--color-border-strong);
+}
+
+/* Clickable summary header of a batch row. */
+.bat-batch-row-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
     cursor: pointer;
-    background: #2d2d2d;
+    background: var(--color-bg-card-hover);
     user-select: none;
 }
-.batch-row-header:hover { background: #333; }
 
-.batch-row .expand-icon {
-    font-size: 9px;
-    color: #666;
-    transition: transform 0.2s;
+.bat-batch-row-header:hover { /* hover highlight for a batch row header */
+    background: var(--color-border-divider);
+}
+
+/* Expand chevron inside a batch row header. */
+.bat-batch-row-icon {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-subtle);
+    transition: transform var(--duration-fast);
     flex-shrink: 0;
 }
-.batch-row.expanded .expand-icon { transform: rotate(90deg); }
 
-.batch-row-id {
+.bat-batch-row-icon.bat-expanded { /* rotated chevron when its row is expanded */
+    transform: rotate(90deg);
+}
+
+/* Batch ID label in a batch row header. */
+.bat-batch-row-id {
     font-weight: 600;
-    color: #569cd6;
-    font-size: 12px;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-content);
     white-space: nowrap;
 }
 
-.batch-row-name {
+/* Batch name (ellipsized) in a batch row header. */
+.bat-batch-row-name {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
-    color: #d4d4d4;
+    font-size: var(--font-size-content);
+    color: var(--color-text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.batch-row-time {
-    font-size: 11px;
-    color: #888;
+/* Timestamp text in a batch row header. */
+.bat-batch-row-time {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
     white-space: nowrap;
 }
 
-.batch-row-status {
-    font-size: 9px;
+/* Status pill at the right of a batch row header. */
+.bat-batch-row-status {
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
     margin-left: auto;
 }
-.batch-row-status.success { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.batch-row-status.failed  { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.batch-row-status.active  { background: rgba(86, 156, 214, 0.2); color: #569cd6; }
-.batch-row-status.warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.batch-row-status.neutral { background: rgba(102, 102, 102, 0.2); color: #888; }
 
-.batch-row-detail {
-    display: none;
-    padding: 10px 12px;
-    border-top: 1px solid #404040;
-    background: #1e1e1e;
+.bat-batch-row-status.bat-success { /* success status coloring */
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
 }
-.batch-row.expanded .batch-row-detail { display: block; }
 
-/* -- Inline metrics within expanded detail -- */
-.detail-metrics {
+.bat-batch-row-status.bat-failed { /* failed status coloring */
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+.bat-batch-row-status.bat-active { /* active status coloring */
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+}
+
+.bat-batch-row-status.bat-warning { /* warning status coloring */
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-status-overdue);
+}
+
+/* State tag indicating a neutral status pill. */
+.bat-neutral { }
+
+.bat-batch-row-status.bat-neutral { /* neutral status coloring */
+    background: rgba(102, 102, 102, 0.2);
+    color: var(--color-text-muted);
+}
+
+/* Expandable detail panel of a batch row (hidden until expanded). */
+.bat-batch-row-detail {
+    display: none;
+    padding: 10px var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+    background: var(--color-bg-pre);
+}
+
+.bat-batch-row-detail.bat-expanded { /* visible detail panel when its row is expanded */
+    display: block;
+}
+
+/* Wrap-flow row of inline metrics inside an expanded batch detail. */
+.bat-detail-metrics {
     display: flex;
-    gap: 16px;
+    gap: var(--size-spacing-xl);
     flex-wrap: wrap;
     margin-bottom: 10px;
 }
 
-.detail-metric { font-size: 11px; }
-.detail-metric .metric-label { color: #888; margin-right: 4px; }
-.detail-metric .metric-value { color: #d4d4d4; font-weight: 500; }
+/* A single label/value metric inside the detail panel. */
+.bat-detail-metric {
+    font-size: var(--font-size-body);
+}
 
-/* -- Phase timeline (per-batch lifecycle phase durations) -- */
-.phase-timeline {
+/* The label portion of a detail metric. */
+.bat-metric-label {
+    color: var(--color-text-muted);
+    margin-right: var(--size-spacing-xs);
+}
+
+/* The value portion of a detail metric. */
+.bat-metric-value {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* ============================================================================
+   CONTENT: SLIDEOUT PHASE TIMELINE
+   ----------------------------------------------------------------------------
+   The per-batch lifecycle phase-duration breakdown shown inside an expanded
+   batch detail: a labeled row per phase with a proportional duration bar.
+   Prefix: bat
+   ============================================================================ */
+
+/* Bordered container for the phase timeline. */
+.bat-phase-timeline {
     margin: 15px 0;
-    border: 1px solid #404040;
-    border-radius: 4px;
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     overflow: hidden;
 }
 
-.phase-timeline-header {
-    padding: 8px 12px;
-    background: #2d2d2d;
-    font-size: 11px;
+/* Uppercase caption header of the phase timeline. */
+.bat-phase-timeline-header {
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    background: var(--color-bg-card-hover);
+    font-size: var(--font-size-body);
     font-weight: 600;
-    color: #888;
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-.phase-row {
+/* A single phase row in the timeline. */
+.bat-phase-row {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
-    border-top: 1px solid #333;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.phase-name {
+/* Fixed-width phase name label. */
+.bat-phase-name {
     width: 140px;
-    font-size: 12px;
-    color: #888;
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
 }
 
-.phase-bar {
+/* Proportional track for a phase's duration bar. */
+.bat-phase-bar {
     flex: 1;
-    height: 8px;
-    background: #404040;
-    border-radius: 4px;
+    height: var(--size-spacing-md);
+    background: var(--color-border-default);
+    border-radius: var(--size-radius-default);
     overflow: hidden;
     margin: 0 10px;
 }
 
-.phase-bar-fill {
+/* The filled portion of a phase duration bar. */
+.bat-phase-bar-fill {
     height: 100%;
-    border-radius: 4px;
+    border-radius: var(--size-radius-default);
     min-width: 2px;
 }
-.phase-bar-fill.upload  { background: #569cd6; }
-.phase-bar-fill.release { background: #4ec9b0; }
-.phase-bar-fill.merge   { background: #dcdcaa; }
-.phase-bar-fill.process { background: #c586c0; }
 
-.phase-duration {
+/* Phase-fill coloring for the upload phase. */
+.bat-phase-upload { /* upload phase bar color */
+    background: var(--color-accent-platform);
+}
+
+/* Phase-fill coloring for the release phase. */
+.bat-phase-release { /* release phase bar color */
+    background: var(--color-accent-shared);
+}
+
+/* Phase-fill coloring for the merge phase. */
+.bat-phase-merge { /* merge phase bar color */
+    background: var(--color-status-overdue);
+}
+
+/* Phase-fill coloring for the process phase. */
+.bat-phase-process { /* process phase bar color */
+    background: #c586c0;
+}
+
+/* Right-aligned phase duration value. */
+.bat-phase-duration {
     width: 60px;
     text-align: right;
-    font-size: 11px;
-    color: #d4d4d4;
+    font-size: var(--font-size-body);
+    color: var(--color-text-primary);
 }
